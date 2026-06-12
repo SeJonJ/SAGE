@@ -1,0 +1,1 @@
+{ "hook_id": "capture-declared-risk", "hook_event_name": "UserPromptSubmit", "session_id": "test", "prompt": "이번 기능 L3로 작업해줘", "now_utc": "2026-06-13T00:00:00Z" }

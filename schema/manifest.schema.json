@@ -35,7 +35,21 @@
         },
         "canonical_hash": {
           "$ref": "#/$defs/sha",
-          "description": "hook 정본 알고리즘(scripts/sage_harness/hooks/{id}.sh) 해시 (hook 전용)"
+          "description": "hook 정본 알고리즘(scripts/sage_harness/hooks/{id}_core.py 또는 {id}.sh) 해시 (hook 전용)"
+        },
+        "adapter_hash": {
+          "type": "object",
+          "description": "런타임별 adapter(입력추출/출력렌더/경로바인딩) 해시 — algorithm 과 별개로 adapter drift 추적 (hook 전용)",
+          "properties": {
+            "claude": { "$ref": "#/$defs/sha" },
+            "codex": { "$ref": "#/$defs/sha" }
+          },
+          "additionalProperties": false,
+          "minProperties": 1
+        },
+        "adapter_contract_version": {
+          "type": "string",
+          "description": "표준 event/decision 계약 버전 — core.CONTRACT_VERSION 과 일치해야 함"
         },
         "render_hash": {
           "type": "object",

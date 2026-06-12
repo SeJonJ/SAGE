@@ -1,0 +1,24 @@
+{
+  "sage_version": "0.1.0",
+  "generator_version": "0.1.0",
+  "template_version": "0.1.0",
+  "host_runtime": "claude",
+  "assets": {
+    "hooks/capture-declared-risk": {
+      "spec_hash": "sha256:e0c0726337db18f8c94929877993654be70f23b004bbef3759e544ab9931fa90",
+      "canonical_hash": "sha256:2d64532d93233fdbdcc419a58a58f08b09d436ec64c233ed3c9863152bbd2ee2",
+      "adapter_hash": {
+        "claude": "sha256:e98d0c3d12739ac5c7f53578f4649ec1d2d3573875deb36f16ad4ab0c9b2edc3",
+        "codex": "sha256:e9dccbc5254fac96a8c38a84c32737b2107592ccb233a88aff4a8ecc61344314"
+      },
+      "adapter_contract_version": "1",
+      "render_hash": {
+        "claude": "sha256:e98d0c3d12739ac5c7f53578f4649ec1d2d3573875deb36f16ad4ab0c9b2edc3",
+        "codex": "sha256:e9dccbc5254fac96a8c38a84c32737b2107592ccb233a88aff4a8ecc61344314"
+      },
+      "conformance": "PASS",
+      "risk": [],
+      "unresolved": []
+    }
+  }
+}
