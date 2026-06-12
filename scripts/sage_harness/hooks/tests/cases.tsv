@@ -1,0 +1,16 @@
+# path	expected_exit	description
+.claude/agents/backend.md	2	claude agent 산출물 block
+.claude/hooks/pre-gate.sh	2	claude hook 산출물 block
+.claude/skills/backend-convention/SKILL.md	2	claude skill 산출물 block
+.codex/agents/backend.md	2	codex agent 산출물 block
+.codex/hooks/pre-gate.sh	2	codex hook 산출물 block
+.codex/skills/backend-convention/SKILL.md	2	codex skill 산출물 block
+/Users/sejon/project/ChatForYou_v2/.claude/agents/x.md	2	절대경로 산출물도 block
+./.codex/agents/y.md	2	상대 ./ prefix 정규화 후 block
+docs/sage_harness/agents/backend.md	0	spec(소스)은 허용
+docs/sage_harness/hooks/pre-gate.md	0	hook spec 허용
+scripts/sage_harness/hooks/pre-gate.sh	0	정본 알고리즘 허용
+src/main/java/webChat/Foo.java	0	일반 소스코드 통과
+.claude/settings.json	0	등록 산출물은 v1 가드 범위 밖(통과)
+.codex/hooks.json	0	등록 산출물은 v1 가드 범위 밖(통과)
+README.md	0	루트 문서 통과
