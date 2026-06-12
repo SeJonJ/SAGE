@@ -1,0 +1,85 @@
+# SAGE project-profile.yaml — 단일 가변 SSOT (빈 스키마 템플릿)
+# sage install 이 배치 → AI 대화로 값 채움. 스키마 키는 고정, 값만 채운다 (결정론 제약).
+# 전문/주석: 마스터 설계 §6.
+
+project:
+  name: ""
+  prefix: "sage"
+
+options:                         # 옵션 플래그 — generator가 읽어 산출물 가감
+  cross_model: false             # reviewer 슬롯을 opposite-runtime reviewer로 승격 + opposite 산출물
+  codegraph:   optional
+  obsidian:    optional
+
+paths:
+  framework_docs: "."
+  agent_docs: "docs/agent"
+  sage_home: "sage"
+  plan_docs: "plan_docs"
+  component_plan_docs: "{component}/plan_docs"
+  # 고정(이동 불가): .claude/ · .codex/ · 루트 CLAUDE.md/CODEX.md
+
+components: []                    # 예: [{ id: backend, paths: ["src/backend/**"] }]
+
+risk:                            # 레벨 의미 고정, 트리거만 주입
+  content_keywords: { L3: [], L2: [] }
+  l2_triggers: { path_globs: [] }
+  phase_gate: { enabled: true }
+
+conventions: []                  # 예: [{ scope: backend, stack: "spring-boot", doc: sage/conventions/springboot.md, file_globs: ["**/*.java"] }]
+
+verification:                    # 결정론 검증
+  gate_policy:
+    L1: { checks: [syntax],                    mode: advisory }
+    L2: { checks: [build, test, lint],         mode: block }
+    L3: { checks: [build, test, lint, review], mode: block }
+  backend:  {}                   # { build: "...", test: "...", lint: "..." }
+  frontend: {}                   # { syntax: "node --check {file}", test: "...", lint: "..." }
+
+runtime:                         # host runtime 모델 (§2.2). Claude 특권화 금지
+  host: claude                   # claude | codex — 설치 시 택1
+  external_reviewer: clean_context_same_runtime   # opposite_runtime | clean_context_same_runtime
+  asset_ssot: deferred
+
+team:                            # CORE 5인. reviewer = Phase 05 수행자
+  core:
+    leader:   { enabled: true,  model: opus }
+    backend:  { enabled: true,  model: opus,   owns: [backend] }
+    frontend: { enabled: true,  model: opus,   owns: [frontend] }
+    qa:       { enabled: true,  model: sonnet, owns: ["**/test/**"] }
+    reviewer: { enabled: true,  model: sonnet,
+                cross_model: { capability: from_options.cross_model,
+                               fallback: clean_context_same_runtime } }
+  optional_reviewers: []         # roster 밖 온디맨드 (external-consultant류)
+  extensions: []
+
+cross_model:                     # opposite-runtime 무상관 검증. 권장 optional
+  peer: opposite_runtime         # host=claude → codex / host=codex → claude (하드코딩 금지)
+  invocation:
+    claude_host: "/codex consult (gstack)"   # requires: gstack
+    codex_host:  ""              # Claude 호출 경로 — v1 설계 미해결 (§12)
+  on_unavailable: clean_context_same_runtime
+
+hooks:
+  enabled: true
+  project_root_env: "SAGE_PROJECT_ROOT"   # 미설정 시 CLAUDE_PROJECT_DIR/CODEX_PROJECT_ROOT fallback
+  register: [claude]             # cross_model on이면 [claude, codex]
+  tests: ".{claude,codex}/hooks/tests"
+
+codegraph:
+  enabled: from_options.codegraph
+  mcp: "codegraph"
+  degraded_features: ["symbol trace/impact 불가", "대규모 탐색 rg/read degrade"]
+
+knowledge_capture:               # obsidian
+  vault_path: ""                 # 마스터 게이트: 비면 vault 기능 전부 OFF (graceful N/A)
+  provider: obsidian
+  mcp_check: true
+  scan_before_dev: true
+  update_after_dev: true
+  note_convention: { folder: "wiki", filename_pattern: "{prefix} - {title}.md", prefixes: [], flat: true }
+
+context_management:
+  compaction:
+    enabled: true
+    preserve: [architectural_decisions, open_bugs, file_ownership, pending_verifications]

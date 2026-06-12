@@ -1,0 +1,29 @@
+{
+  "_comment": "예시 manifest. 실제 파일은 docs/sage_harness/.manifest.json. schema: schema/manifest.schema.json",
+  "sage_version": "0.1.0",
+  "generator_version": "0.1.0",
+  "template_version": "0.1.0",
+  "host_runtime": "claude",
+  "assets": {
+    "agents/backend": {
+      "spec_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "claims_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "render_hash": {
+        "claude": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "conformance": "PASS",
+      "risk": [],
+      "unresolved": []
+    },
+    "hooks/pre-phase4-checklist-gate": {
+      "spec_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "canonical_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "render_hash": {
+        "claude": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "conformance": "PASS",
+      "risk": [],
+      "unresolved": []
+    }
+  }
+}
