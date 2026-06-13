@@ -20,13 +20,15 @@ scripts/sage_harness/hooks/pre_implementation_gate_core.py
 - `decide(event, profile, snapshot, strategy_result) -> {status, exit_code, risk, message_key, safety_degraded?}`
 - core 는 fs/time 의존 0. plan 후보 내용은 snapshot, L3 review 매칭은 strategy_result(주입).
 
-## ⚠️ algorithm_delta — 병합 금지 (unresolved 전략 슬롯)
-"L3 review doc 매칭"이 런타임마다 다른 알고리즘 → **둘 다 보존, canonical 미선택**:
+## algorithm_delta — 전략 슬롯 (사람 결정 완료 2026-06-13)
+"L3 review doc 매칭"이 런타임마다 다른 알고리즘 → 둘 다 보존:
 - scripts/sage_harness/hooks/strategies/pre_implementation_gate/claude_grep_first.py (grep-first)
 - scripts/sage_harness/hooks/strategies/pre_implementation_gate/codex_feature_signal.py (토큰 스코어링)
-- **find_l3_review(signals, snapshot) -> {found, path}** 공통 인터페이스. v1 미선택(strategy_result=None).
-- 안전 합의(G1): 미선택 시 L3 review 확인 불가 → **BLOCK + override-required + safety_degraded:true**
-  (WARN degrade 안 함 — drift 안 가리고 안전 바닥 유지). 사람이 canonical 선택하면 원본 동작(found→ok/notfound→warn) 복원.
+- **find_l3_review(signals, snapshot) -> {found, path}** 공통 인터페이스.
+- **canonical 결정: `codex_feature_signal`** (정교한 feature-signal 스코어링 채택, 사람 결정).
+  profile.risk.l3_review_strategy 로 주입(독립 — 엔진 하드코딩 아님). adapter 가 CORE_DIR 의 전략 모듈 로드·실행.
+  → L3 + plan 있음 + review 매칭 시 GATE OK, 매칭 실패 시 WARN. plan 없음은 여전히 hard block.
+- 미선택(profile 에 strategy 없음) 시 = BLOCK + override-required + safety_degraded(안전 바닥, 다른 프로젝트 기본값).
 
 ## profile_bound (risk trigger = 프로젝트 선언값, §7 I2~I7)
 profile.risk: { desktop_block_glob, l0_pass_globs, l3_filename_globs, l2_path_globs, l1_path_globs,

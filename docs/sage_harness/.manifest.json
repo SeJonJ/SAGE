@@ -36,10 +36,7 @@
       },
       "conformance": "PASS",
       "risk": [],
-      "unresolved": [
-        "plan-doc glob drift: Claude '*/plan_docs/*' vs Codex '^plan_docs/'; canonical='*plan_docs/*' (사람 확인)",
-        "type=other 기록 drift: Claude 기록 vs Codex skip; canonical=skip (사람 확인)"
-      ],
+      "unresolved": [],
       "form": "core_adapter",
       "test": "scripts/sage_harness/hooks/tests/test_post_tool_logger.py"
     },
@@ -62,28 +59,24 @@
       "test": "scripts/sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py"
     },
     "hooks/pre-implementation-gate": {
-      "spec_hash": "sha256:15392fb351cbedc3cdabf3cc8c8a4e3dc4af2016a3e82b2dd6f1e9d72b35b395",
+      "spec_hash": "sha256:d545721a76aab2f7cee270e2b95381722c706b96e4f3df14152836542c4c5604",
       "canonical_hash": "sha256:46d8d8e130b26a1d0bfc8d06412f51bfac3705ddbe5488a9d908f65b9511ce43",
       "adapter_hash": {
-        "claude": "sha256:7c226bca8e3397fe427e47c78bf74d7af38a04375972ede023c7bc744f0358cb",
-        "codex": "sha256:e44bf65b83d687641bce9f5085a4e0668ac31251791b1cd6dfcb6687b0b82290"
+        "claude": "sha256:f42a9e917c0b5edfdc0fe4823ec6f55ca6d02248a89564bd228ad19962087484",
+        "codex": "sha256:08f61f881e97cbb6133aa922f45778a668809fa03e7a3a555b03fd440577942b"
       },
       "adapter_contract_version": "1",
       "render_hash": {
-        "claude": "sha256:7c226bca8e3397fe427e47c78bf74d7af38a04375972ede023c7bc744f0358cb",
-        "codex": "sha256:e44bf65b83d687641bce9f5085a4e0668ac31251791b1cd6dfcb6687b0b82290"
+        "claude": "sha256:f42a9e917c0b5edfdc0fe4823ec6f55ca6d02248a89564bd228ad19962087484",
+        "codex": "sha256:08f61f881e97cbb6133aa922f45778a668809fa03e7a3a555b03fd440577942b"
       },
       "conformance": "PASS",
-      "safety_degraded": true,
-      "risk": [
-        "L3 review 전략 미선택 시 BLOCK degrade"
-      ],
-      "unresolved": [
-        "algorithm_delta: L3 review 매칭 전략 미선택 — claude_grep_first vs codex_feature_signal 둘 다 보존, canonical 사람 결정 필요",
-        "minor drift: content keyword case — canonical=case-insensitive 채택, 사람 확인"
-      ],
+      "safety_degraded": false,
+      "risk": [],
+      "unresolved": [],
       "form": "core_adapter",
-      "test": "scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py"
+      "test": "scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py",
+      "l3_review_strategy": "codex_feature_signal"
     },
     "hooks/stop-compliance-report": {
       "spec_hash": "sha256:04cdde06cee3563754dc9cdb7e45cf3c01ca05b161885dec0c42155d5001c898",
@@ -99,10 +92,7 @@
       },
       "conformance": "PASS",
       "risk": [],
-      "unresolved": [
-        "policy_delta: output_contract_check — Codex-only(transcript 결합), promote_output_contract_semantics? 사람 결정",
-        "policy_delta: knowledge_capture — OPTION(obsidian) 레이어 소속, CORE 미병합"
-      ],
+      "unresolved": [],
       "form": "core_adapter",
       "test": "scripts/sage_harness/hooks/tests/test_stop_compliance_report.py"
     },

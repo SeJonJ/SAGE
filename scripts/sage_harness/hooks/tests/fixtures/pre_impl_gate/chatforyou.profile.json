@@ -1,8 +1,20 @@
 {
   "risk": {
     "desktop_block_glob": "*chatforyou-desktop/src/*",
-    "l0_pass_globs": ["*plan_docs/*", "*docs/*", "*.md"],
-    "l3_filename_globs": ["*kurento*", "*webrtc*", "*signaling*", "*roommanager*", "*datachannel*", "*icecandidate*", "*sdpoffer*"],
+    "l0_pass_globs": [
+      "*plan_docs/*",
+      "*docs/*",
+      "*.md"
+    ],
+    "l3_filename_globs": [
+      "*kurento*",
+      "*webrtc*",
+      "*signaling*",
+      "*roommanager*",
+      "*datachannel*",
+      "*icecandidate*",
+      "*sdpoffer*"
+    ],
     "l2_path_globs": [
       "*springboot-backend/src/main/java/*",
       "*springboot-backend/src/main/resources/*.properties",
@@ -20,8 +32,32 @@
       "*nodejs-frontend/*.html",
       "*nodejs-frontend/*.ejs"
     ],
-    "l3_content_keywords": ["WebRtcEndpoint","IceCandidate","addIceCandidate","onicecandidate","SdpOffer","processOffer","MediaPipeline","RTCPeerConnection","createOffer","createAnswer","KurentoClient","DataChannel"],
-    "l2_content_keywords": ["RedisTemplate","@Cacheable","JwtTokenProvider","jwt.","@Entity","JpaRepository","SecurityContext","setAccessToken","refreshToken"],
-    "plan_glob": "plan_docs/00-base_plan/**/*.md"
+    "l3_content_keywords": [
+      "WebRtcEndpoint",
+      "IceCandidate",
+      "addIceCandidate",
+      "onicecandidate",
+      "SdpOffer",
+      "processOffer",
+      "MediaPipeline",
+      "RTCPeerConnection",
+      "createOffer",
+      "createAnswer",
+      "KurentoClient",
+      "DataChannel"
+    ],
+    "l2_content_keywords": [
+      "RedisTemplate",
+      "@Cacheable",
+      "JwtTokenProvider",
+      "jwt.",
+      "@Entity",
+      "JpaRepository",
+      "SecurityContext",
+      "setAccessToken",
+      "refreshToken"
+    ],
+    "plan_glob": "plan_docs/00-base_plan/**/*.md",
+    "l3_review_strategy": "codex_feature_signal"
   }
 }

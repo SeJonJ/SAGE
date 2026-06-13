@@ -68,10 +68,25 @@ for p in paths:
     except Exception: c = ""
     recent = (_now - os.path.getmtime(p)) <= 7 * 86400   # 원본 -mtime -7 충실성
     plan_files.append({"path": rel(p), "content": c, "recent": recent})
-snapshot = {"plan_files": plan_files, "review_candidates": []}
+# review_candidates: review 매칭 전략 입력(최근 30일 plan/review 문서)
+review_candidates = [pf for pf, p in zip(plan_files, paths) if (_now - os.path.getmtime(p)) <= 30 * 86400]
+snapshot = {"plan_files": plan_files, "review_candidates": review_candidates}
 
-# L3 review 전략 미선택(unresolved) → strategy_result=None
-decision = core.decide(event, profile, snapshot, None)
+# L3 review 매칭 전략: profile.risk.l3_review_strategy(독립 — 엔진 하드코딩 아님). 미설정 시 None(안전 BLOCK).
+strategy_result = None
+strat = (profile.get("risk") or {}).get("l3_review_strategy", "")
+if strat:
+    import importlib
+    # 전략은 SAGE 코어 자산 → CORE_DIR(스크립트 위치) 기준, 타겟 프로젝트 root 아님
+    sys.path.insert(0, os.path.join(core_dir, "strategies", "pre_implementation_gate"))
+    try:
+        smod = importlib.import_module(strat)
+        signals = {"tickets": set(re.findall(r"[0-9]+", event.get("branch", "") or "")),
+                   "plan": set(), "files": {c["path"] for c in changes}}
+        strategy_result = smod.find_l3_review(signals, snapshot)
+    except Exception:
+        strategy_result = None
+decision = core.decide(event, profile, snapshot, strategy_result)
 
 def msg(d):
     k = d.get("message_key")
