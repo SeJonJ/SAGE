@@ -1,6 +1,6 @@
 """stop-compliance-report — canonical core (pure, 부분추출).
 
-SAGE 에 stop hook 없음 → ChatForYou 실측 기반 신규 SAGE stop hook 설계(Codex 2R 합의).
+양 런타임 실측 기반 SAGE stop hook 설계(Codex 2R 합의).
 공유 core 만 canonical: JSONL 집계 → activity_summary → gate compliance 3종 → report_model → markdown.
 
 ⚠️ policy_delta(병합금지, Codex-only/OPTION — 별도 정책모듈 보존):
@@ -17,7 +17,7 @@ CONTRACT_VERSION = "1"
 
 
 def _l3_tokens(profile: dict) -> list:
-    """profile.risk.l3_filename_globs('*kurento*' 등) → substring 토큰('kurento'). 단일소스 재사용."""
+    """profile.risk.l3_filename_globs('*high-risk*' 등) → substring 토큰. 단일소스 재사용."""
     out = []
     for g in (profile.get("risk", {}) or {}).get("l3_filename_globs", []):
         t = g.strip("*").lower()

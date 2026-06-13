@@ -26,7 +26,7 @@ risk:                            # 레벨 의미 고정, 트리거만 주입
   l2_triggers: { path_globs: [] }
   phase_gate: { enabled: true }
 
-conventions: []                  # 예: [{ scope: backend, stack: "spring-boot", doc: sage/conventions/springboot.md, file_globs: ["**/*.java"] }]
+conventions: []                  # 예: [{ scope: backend, stack: "<stack>", doc: sage/conventions/<name>.md, file_globs: ["**/*.<ext>"] }]
 
 verification:                    # 결정론 검증
   gate_policy:

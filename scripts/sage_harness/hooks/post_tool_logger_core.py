@@ -2,9 +2,9 @@
 
 계약: decide(event, profile) -> decision  (런타임 중립, 결정론적).
 - event: adapter 가 런타임 raw 입력을 정규화한 표준 이벤트(+ branch, + now_utc).
-- profile: 프로젝트 선언값(외부 주입 필수). core 에 ChatForYou 등 도메인 기본값을 두지 않는다.
+- profile: 프로젝트 선언값(외부 주입 필수). core 에 도메인 기본값을 두지 않는다.
 
-추출 출처: ChatForYou .claude/.codex/hooks/post-tool-logger.sh 의 공유 알고리즘
+양 런타임(claude/codex) hook 공유 알고리즘
 (tracked 파일 type 분류 후 JSONL 로그 엔트리 생성).
 - structural_io_adapter: 입력추출(Claude file_path 단일 vs Codex apply_patch 본문 다중) → adapter 가 changes[] 로 정규화
 - profile_bound: file_type_map(경로글롭→type) 은 프로젝트 선언값 → profile

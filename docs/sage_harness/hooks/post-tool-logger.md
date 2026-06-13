@@ -28,14 +28,14 @@ scripts/sage_harness/hooks/post_tool_logger_core.py  →  decide(event, profile)
 
 ## reverse_extract 분류 (8범주 — profile_bound 신설)
 - structural_io_adapter: 입력추출 (Claude 단일 file_path vs Codex apply_patch 다중파일 정규식)
-- profile_bound (신설): file_type_map 경로글롭(springboot-backend/... 등) = ChatForYou 선언값 → profile (§7 I2). core엔 없음
+- profile_bound (신설): file_type_map 경로글롭(백엔드 소스 경로 등) = 프로젝트 선언값 → profile (§7 I2). core엔 없음
 - token_adapter: PROJECT_ROOT env명, 로그경로(.claude↔.codex)
 - algorithm(공유, core): changes[] → profile 분류 → 로그엔트리. skip_untyped.
 - noise(정규화): 주석, 따옴표, import 정렬
 
 ## unresolved (drift 표면화 — 사람 확인)
 1. **plan-doc 글롭 drift**: Claude `*/plan_docs/*`(어디든) vs Codex `^plan_docs/`(루트만).
-   컴포넌트 plan_docs(springboot-backend/plan_docs) 처리가 갈림. canonical = `*plan_docs/*`(둘 다 매칭)
+   컴포넌트 plan_docs({component}/plan_docs) 처리가 갈림. canonical = `*plan_docs/*`(둘 다 매칭)
    채택 — §7 I11(plan_docs + {comp}/plan_docs) 의도에 부합. **사람 확인 필요**.
 2. **type=other 기록 drift**: Claude 는 미분류도 type=other 로 기록, Codex 는 skip.
    canonical = skip(skip_untyped:true) — "tracked type만 기록" 의도. Claude other 기록은 회귀로 봄. **사람 확인 필요**.

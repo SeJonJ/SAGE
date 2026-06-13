@@ -6,7 +6,7 @@ IO-bound gate 일반형 (Codex 2R 합의): 2단계.
   3. decide(event, profile, snapshot)      -> decision (block|warn|ok|skip)
 core 는 fs/time 에 의존하지 않는다. 모든 IO 는 adapter 가 snapshot 으로 주입.
 
-추출 출처: ChatForYou .claude/.codex/hooks/pre-phase4-checklist-gate.sh 의 공유 알고리즘
+양 런타임(claude/codex) hook 공유 알고리즘
 (suffix 반복제거 base 추출, exact우선+prefix양방향 find_match, 미완료 체크박스 스캔, gate 판정).
 algorithm_delta 없음. 차이 = structural_io_adapter + output_adapter + token_adapter + profile_bound.
 """
@@ -17,7 +17,7 @@ import re
 
 CONTRACT_VERSION = "1"
 
-# PDCA phase 산출물 네이밍 = SAGE-PDCA 방법론 규약(framework 기본, ChatForYou 정체성 아님). profile.suffixes 로 override.
+# PDCA phase 산출물 네이밍 = SAGE-PDCA 방법론 규약(framework 기본, 특정 프로젝트 정체성 아님). profile.suffixes 로 override.
 # (phase4_trigger_glob 의 04-analyze 기본값도 동일 — SAGE PDCA phase 구조. 다른 PDCA 미사용 프로젝트는 profile 로 교체)
 DEFAULT_SUFFIXES = [
     "_backend_eval", "_frontend_eval", "_external_eval", "_qa_eval",

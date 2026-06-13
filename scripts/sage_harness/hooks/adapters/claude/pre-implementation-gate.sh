@@ -54,9 +54,9 @@ event = {"hook_id": "pre-implementation-gate", "hook_event_name": "PreToolUse", 
          "session_id": raw.get("session_id", "") or "", "branch": os.environ.get("SAGE_BRANCH", ""),
          "declared_max": declared, "changes": changes}
 
-# snapshot: plan_files. plan_glob 은 profile 주입(독립 — ChatForYou 경로 하드코딩/디렉토리 가정 제거).
+# snapshot: plan_files. plan_glob 은 profile 주입(독립 — 경로 하드코딩/디렉토리 가정 제거).
 pg = (profile.get("risk") or {}).get("plan_glob", "")   # 미설정/무효 → plan scan 없음(graceful)
-if pg and (os.path.isabs(pg) or ".." in pg.split("/")):  # root 밖 glob 거부 → ChatForYou 경로 fallback 대신 빈 scan
+if pg and (os.path.isabs(pg) or ".." in pg.split("/")):  # root 밖 glob 거부 → 경로 fallback 대신 빈 scan
     pg = ""
 import time as _t
 paths = sorted(glob.glob(os.path.join(root, pg), recursive=True), key=lambda p: -os.path.getmtime(p)) if pg else []
@@ -92,9 +92,10 @@ def msg(d):
     k = d.get("message_key")
     fs = d.get("file_short", ""); rs = d.get("reason", "")
     if k == "block_desktop":
-        return f"⛔ [GATE BLOCK — Desktop] chatforyou-desktop/src 직접수정 금지. 파일: {fs}\n  → nodejs-frontend/ 수정 후 npm run sync"
+        hint = (profile.get("risk") or {}).get("desktop_block_hint", "원본 경로 수정 후 동기화")
+        return f"⛔ [GATE BLOCK] 동기화 산출물/금지 경로 직접수정 금지. 파일: {fs}\n  → {hint}"
     if k == "block_l3_no_plan":
-        return f"⛔ [GATE BLOCK — L3] L3 작업 + plan 문서 없음. 파일: {fs} | 근거: {rs}\n  plan_docs/00-base_plan/ plan 생성 + webrtc-review-protocol 2라운드 리뷰"
+        return f"⛔ [GATE BLOCK — L3] L3 작업 + plan 문서 없음. 파일: {fs} | 근거: {rs}\n  plan 문서 생성 + L3 리뷰 프로토콜(2라운드) 수행"
     if k == "block_l3_strategy_unresolved":
         return f"⛔ [GATE BLOCK — L3] L3 review 매칭 전략 미선택(unresolved) → 리뷰 확인 불가. 파일: {fs} | 근거: {rs}\n  (override required: SAGE manifest 에서 find_l3_review 전략 canonical 선택 필요)"
     if k == "warn_l3_no_review":

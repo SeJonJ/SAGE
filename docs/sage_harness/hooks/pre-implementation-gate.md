@@ -6,8 +6,8 @@ runtime_bindings:
   codex: { event: PreToolUse, matcher: "apply_patch", timeout: 10 }
 ---
 ## intent
-소스/설정 변경 전 위험도(L0~L3)를 분류해 게이트를 적용한다. Desktop 직접수정 하드블록,
-L3(WebRTC/Kurento) + plan 없음 하드블록, L3 review 확인, L2 plan 확인.
+소스/설정 변경 전 위험도(L0~L3)를 분류해 게이트를 적용한다. 동기화 산출물/금지 경로 직접수정 하드블록,
+L3(profile.risk 고위험 도메인) + plan 없음 하드블록, L3 review 확인, L2 plan 확인.
 
 ## runtime_bindings
 - claude: { event: PreToolUse, matcher: "Write|Edit|MultiEdit", input: file_path + content/new_string/edits }
@@ -42,8 +42,8 @@ profile.risk: { desktop_block_glob, l0_pass_globs, l3_filename_globs, l2_path_gl
 - profile_bound: risk trigger 전부
 - **algorithm_delta**: L3 review 매칭 (전략 슬롯, 병합금지)
 - minor drift: content keyword case (Claude 고정대소문자 vs Codex (?i)) → canonical case-insensitive
-  · **의도적 drift(audit P2)**: case-insensitive 는 원본보다 더 많은 L3 포착(안전 방향). 단 일반 문서/테스트의
-    "webrtc" 문자열을 L3 로 올릴 수 있음. L0 문서(plan_docs/docs/*.md) pass 가 선행이라 문서 오탐은 제한됨.
+  · **의도적 drift(audit P2)**: case-insensitive 는 원본보다 더 많은 L3 포착(안전 방향). 단 일반 문서/테스트에
+    섞인 L3 키워드 문자열도 L3 로 올릴 수 있음. L0 문서(plan_docs/docs/*.md) pass 가 선행이라 문서 오탐은 제한됨.
 
 ## tests
 scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py (16 PASS)

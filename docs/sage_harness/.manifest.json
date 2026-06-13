@@ -6,7 +6,7 @@
   "assets": {
     "hooks/capture-declared-risk": {
       "spec_hash": "sha256:b0d38a4480d7cacf863b40a0e8753707a6935db154440118a70aa5b4adb8b9e9",
-      "canonical_hash": "sha256:2d64532d93233fdbdcc419a58a58f08b09d436ec64c233ed3c9863152bbd2ee2",
+      "canonical_hash": "sha256:eaf95e8df3c5521a3b1f3eabd735a8e8937573090a6a60e8ac0c0f80dfba9e7a",
       "adapter_hash": {
         "claude": "sha256:e98d0c3d12739ac5c7f53578f4649ec1d2d3573875deb36f16ad4ab0c9b2edc3",
         "codex": "sha256:e9dccbc5254fac96a8c38a84c32737b2107592ccb233a88aff4a8ecc61344314"
@@ -23,8 +23,8 @@
       "test": "scripts/sage_harness/hooks/tests/test_capture_declared_risk.py"
     },
     "hooks/post-tool-logger": {
-      "spec_hash": "sha256:b1351fb1b70960e9ca93e2034c3227163d150239d1bc9b245fd9cb8a88d75e4d",
-      "canonical_hash": "sha256:f8b860a0af919c6e8c69adadab322784d129f72b02e0bc7b17c0e79ac0987d6d",
+      "spec_hash": "sha256:9bcc616cb18a6dc4ad91646e1fdff815d2958822a8cd38b58d368a430367a718",
+      "canonical_hash": "sha256:69e89672b17bbaf723bb9633518fc4ca8fdae4b376499c21edfe400d642f7f48",
       "adapter_hash": {
         "claude": "sha256:f0e6387f01b9bfc3687fe7f76a15470948b09a411c8c10b801c13d609672d602",
         "codex": "sha256:652b6cd2d0994fcecab664f358a15aa3efcbedf88f94dedee688c1e08b1c4796"
@@ -42,7 +42,7 @@
     },
     "hooks/pre-phase4-checklist-gate": {
       "spec_hash": "sha256:9d1f8a28c5cd2b44158b7bf64b8addfc2fcdb5f9152ae225d5e41978c2dabf9d",
-      "canonical_hash": "sha256:8e5af21a48eb71802c76916ed5050705de22bdeeaf530a926c143e17c1e65c15",
+      "canonical_hash": "sha256:fcaa8ffa11c08e0f63cdd57853c34fe71fe3a09a4ef953dcc4165423116ddf89",
       "adapter_hash": {
         "claude": "sha256:1b8cdc2ed5e10b480d0be2ede21aef8c33729e09c01f8121226b9a36c339120d",
         "codex": "sha256:2a0ecc0d3ac84f853176063a93378b73ffb24025c8711ae4acd27c70eff9eed4"
@@ -59,16 +59,16 @@
       "test": "scripts/sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py"
     },
     "hooks/pre-implementation-gate": {
-      "spec_hash": "sha256:d545721a76aab2f7cee270e2b95381722c706b96e4f3df14152836542c4c5604",
-      "canonical_hash": "sha256:46d8d8e130b26a1d0bfc8d06412f51bfac3705ddbe5488a9d908f65b9511ce43",
+      "spec_hash": "sha256:541b8659709e2e1dc141dc6ac833dade959c3dcf440e1924e16e97273fde98cd",
+      "canonical_hash": "sha256:94fe7c1a3c923023adce480477d61fac75d5adde353010771103f8ecce4c2871",
       "adapter_hash": {
-        "claude": "sha256:f42a9e917c0b5edfdc0fe4823ec6f55ca6d02248a89564bd228ad19962087484",
-        "codex": "sha256:08f61f881e97cbb6133aa922f45778a668809fa03e7a3a555b03fd440577942b"
+        "claude": "sha256:cce6d5125a5ee87abdf93a544b22a465371d6682d092fb3069e5cfba9cec4707",
+        "codex": "sha256:70ec30a82566db8808db1ecc8b305ebefcafee10ab6a93c22daa1f78ff446479"
       },
       "adapter_contract_version": "1",
       "render_hash": {
-        "claude": "sha256:f42a9e917c0b5edfdc0fe4823ec6f55ca6d02248a89564bd228ad19962087484",
-        "codex": "sha256:08f61f881e97cbb6133aa922f45778a668809fa03e7a3a555b03fd440577942b"
+        "claude": "sha256:cce6d5125a5ee87abdf93a544b22a465371d6682d092fb3069e5cfba9cec4707",
+        "codex": "sha256:70ec30a82566db8808db1ecc8b305ebefcafee10ab6a93c22daa1f78ff446479"
       },
       "conformance": "PASS",
       "safety_degraded": false,
@@ -80,7 +80,7 @@
     },
     "hooks/stop-compliance-report": {
       "spec_hash": "sha256:04cdde06cee3563754dc9cdb7e45cf3c01ca05b161885dec0c42155d5001c898",
-      "canonical_hash": "sha256:b143e17168b8490bea2b89b2ef78d3d68620568d3adefd1971b507488da3b5f3",
+      "canonical_hash": "sha256:9722b3c9694ea0649208fb0ae021467cd872ded6b4328794aa8b08dc5690fcb6",
       "adapter_hash": {
         "claude": "sha256:1d5dce6b00ec9b68edf86a60ef86e7a43ea29f47b4dbe1a365c3057143143564",
         "codex": "sha256:7d9d7a8dcb263bbc1ba0601d6532249dc8401dc3261a2e18aac7490057219514"
@@ -97,7 +97,7 @@
       "test": "scripts/sage_harness/hooks/tests/test_stop_compliance_report.py"
     },
     "hooks/generated-artifact-write-guard": {
-      "spec_hash": "sha256:9c224fc1b1474a93f214d2a7d40313deda0b57993571d76210b2ceea10eadb05",
+      "spec_hash": "sha256:918c8c54d3fa7c5c061d959acde1b3dd1fd390cea8b6e992356070d7d2a25cf6",
       "canonical_hash": "sha256:398a7869b6e4cc2d3121551134c22d7c874eac37977f6e44950cbed794465b45",
       "render_hash": {
         "native": "sha256:398a7869b6e4cc2d3121551134c22d7c874eac37977f6e44950cbed794465b45"

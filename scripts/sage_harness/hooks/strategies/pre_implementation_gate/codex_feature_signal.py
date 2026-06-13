@@ -10,11 +10,11 @@
 
 import re
 
+# 범용 stopword(스택 무관) — feature signal 로 보기엔 너무 흔한 토큰.
+# 스택특화 토큰(프레임워크/언어명 등)은 signals["generic_tokens"](profile 주입)로 확장 — 엔진 하드코딩 아님(독립).
 GENERIC_SIGNAL_TOKENS = {
-    "src", "main", "test", "java", "static", "nodejs", "frontend",
-    "springboot", "backend", "service", "controller", "config",
-    "js", "scss", "html", "json", "true", "false",
-    "plan", "plans", "docs", "base", "design", "review",
+    "src", "main", "test", "static", "service", "controller", "config",
+    "json", "true", "false", "plan", "plans", "docs", "base", "design", "review",
 }
 
 
@@ -23,11 +23,12 @@ def _tokens(value: str) -> set:
     return {p.lower() for p in parts if len(p) >= 3}
 
 
-def _specific(value: str) -> set:
-    return {t for t in _tokens(value) if t not in GENERIC_SIGNAL_TOKENS}
+def _specific(value: str, stop: set) -> set:
+    return {t for t in _tokens(value) if t not in stop}
 
 
 def find_l3_review(signals: dict, snapshot: dict) -> dict:
+    stop = GENERIC_SIGNAL_TOKENS | {t.lower() for t in (signals.get("generic_tokens") or [])}
     want = set()
     for key in ("tickets", "plan", "files"):
         want |= set(signals.get(key) or [])
@@ -36,7 +37,7 @@ def find_l3_review(signals: dict, snapshot: dict) -> dict:
 
     best, best_score = None, 0
     for cand in snapshot.get("review_candidates") or []:
-        have = _specific(cand.get("content") or "") | _specific(cand.get("path") or "")
+        have = _specific(cand.get("content") or "", stop) | _specific(cand.get("path") or "", stop)
         score = len(want & have)
         if score > best_score:
             best, best_score = cand.get("path", ""), score

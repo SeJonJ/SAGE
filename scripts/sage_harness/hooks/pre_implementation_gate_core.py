@@ -39,7 +39,7 @@ def _classify_one(path: str, content: str, profile: dict) -> tuple:
     risk, reason, is_l3_filename = "none", "", False
     for g in r.get("l3_filename_globs", []):
         if _imatch(path, g):
-            # 라벨은 범용(제약 #2 독립). 도메인명(WebRTC/Kurento 등)은 profile.risk 가 정의, core 는 중립 라벨.
+            # 라벨은 범용(제약 #2 독립). 도메인명(고위험 컴포넌트 등)은 profile.risk 가 정의, core 는 중립 라벨.
             risk, reason, is_l3_filename = "L3", "L3 filename 패턴", True
             break
     if risk == "none":

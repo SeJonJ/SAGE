@@ -3,7 +3,7 @@
 SAGE hook 단일소스의 알고리즘 계층. 런타임 입력 추출/출력 렌더/파일IO는 adapter 책임.
 계약: decide(event: dict) -> decision: dict  (런타임 중립, now_utc 주어지면 결정론적).
 
-추출 출처: ChatForYou .claude/.codex/hooks/capture-declared-risk.sh 의 공유 알고리즘
+양 런타임(claude/codex) hook 공유 알고리즘
 (위험레벨 정규식 2패턴, 세션 sanitize, 2일 cleanup 선언, state 구조).
 런타임 차이(env명/로그경로/출력 프로토콜/메시지 텍스트)는 adapter 로 분리됨.
 """

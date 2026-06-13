@@ -61,7 +61,7 @@ event = {"hook_id": "pre-implementation-gate", "hook_event_name": "PreToolUse", 
          "declared_max": declared, "changes": changes}
 
 pg = (profile.get("risk") or {}).get("plan_glob", "")   # profile 주입(독립). 미설정/무효 → plan scan 없음
-if pg and (os.path.isabs(pg) or ".." in pg.split("/")):  # root 밖 glob 거부 → 빈 scan(ChatForYou 경로 fallback 제거)
+if pg and (os.path.isabs(pg) or ".." in pg.split("/")):  # root 밖 glob 거부 → 빈 scan(경로 fallback 제거)
     pg = ""
 import time as _t
 paths = sorted(glob.glob(os.path.join(root, pg), recursive=True), key=lambda p: -os.path.getmtime(p)) if pg else []
@@ -95,7 +95,7 @@ decision = core.decide(event, profile, snapshot, strategy_result)
 def msg(d):
     k = d.get("message_key"); fs = d.get("file_short",""); rs = d.get("reason","")
     table = {
-        "block_desktop": f"[GATE BLOCK - Desktop] chatforyou-desktop/src 직접수정 금지. 파일: {fs}",
+        "block_desktop": f"[GATE BLOCK] 동기화 산출물/금지 경로 직접수정 금지. 파일: {fs} | {(profile.get('risk') or {}).get('desktop_block_hint','원본 경로 수정 후 동기화')}",
         "block_l3_no_plan": f"[GATE BLOCK - L3] L3 작업 + plan 문서 없음. 파일: {fs} | 근거: {rs}",
         "block_l3_strategy_unresolved": f"[GATE BLOCK - L3] L3 review 전략 미선택(unresolved) → 리뷰 확인 불가. 파일: {fs} (override required)",
         "warn_l3_no_review": f"[GATE WARN - L3] 2라운드 리뷰 문서 미확인. 파일: {fs} | 근거: {rs}",

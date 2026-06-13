@@ -36,4 +36,4 @@ scripts/sage_harness/hooks/tests/ (cases.tsv: path → expected exit)
 
 ## mode (forward-compat)
 - v1 SAGE-mode = block (spec-SSOT 존재 전제)
-- ChatForYou 등 spec 미존재 환경에 선적용 시 = warn-mode 미러 drift 탐지로 degrade (profile `guard.mode`)
+- spec 미존재 환경에 선적용 시 = warn-mode 미러 drift 탐지로 degrade (profile `guard.mode`)
