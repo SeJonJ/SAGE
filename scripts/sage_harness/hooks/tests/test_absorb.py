@@ -49,9 +49,12 @@ def setup_root(d, claims_yaml):
     json.dump({"sage_version": "0.1.0", "host_runtime": "claude", "assets": {}},
               open(os.path.join(d, "docs", "sage_harness", ".manifest.json"), "w"))
     open(os.path.join(d, "docs", "sage_harness", "agents", "demo.claims.yml"), "w").write(claims_yaml)
-    # 임시 config 모듈
-    cfgp = os.path.join(REPO, "scripts", "sage_harness", "extract_config_demo_absorb.py")
-    open(cfgp, "w").write('CFG = {"component_path_globs": [r"myapp/[\\w./-]+"], "guide_boundary_tokens": ["commit","push"], "signal_rules": []}\n')
+    # config 모듈은 테스트 임시 root 에 쓴다(소스트리 오염 금지 — read-only 샌드박스 격리).
+    # absorb 가 root/scripts/sage_harness 를 sys.path 에 추가하므로 거기서 import 됨.
+    sh = os.path.join(d, "scripts", "sage_harness")
+    os.makedirs(sh, exist_ok=True)
+    open(os.path.join(sh, "extract_config_demo_absorb.py"), "w").write(
+        'CFG = {"component_path_globs": [r"myapp/[\\w./-]+"], "guide_boundary_tokens": ["commit","push"], "signal_rules": []}\n')
 
 
 class Args:
@@ -70,9 +73,8 @@ def run_absorb(args):
 
 class TestAbsorb(unittest.TestCase):
     def tearDown(self):
-        cfgp = os.path.join(REPO, "scripts", "sage_harness", "extract_config_demo_absorb.py")
-        if os.path.exists(cfgp):
-            os.remove(cfgp)
+        # tempdir 별 config 재import 보장(캐시 격리). 소스트리엔 더는 쓰지 않음.
+        sys.modules.pop("extract_config_demo_absorb", None)
 
     def test_no_change(self):
         with tempfile.TemporaryDirectory() as d:
