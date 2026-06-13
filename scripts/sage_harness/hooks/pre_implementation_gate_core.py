@@ -57,9 +57,9 @@ def _classify_one(path: str, content: str, profile: dict) -> tuple:
 
     # 내용 escalation (L1/L2 → L3, L1 → L2)
     if risk in ("L1", "L2") and _has_kw(content, r.get("l3_content_keywords", [])):
-        risk, reason = "L3", reason + " + 내용 WebRTC 시그널링 키워드"
+        risk, reason = "L3", reason + " + 내용 L3 키워드"
     elif risk == "L1" and _has_kw(content, r.get("l2_content_keywords", [])):
-        risk, reason = "L2", reason + " + 내용 Redis/JWT/JPA/Auth 키워드"
+        risk, reason = "L2", reason + " + 내용 L2 키워드"
     return (risk, reason, is_l3_filename)
 
 

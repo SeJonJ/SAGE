@@ -1,9 +1,19 @@
-"""ChatForYou 인스턴스용 ExtractConfig (엔진 밖 — 제약 #2: SAGE 독립).
+"""ChatForYou 인스턴스 config (엔진 밖 — 제약 #2: SAGE 독립).
 
-reverse_extract_agent 엔진은 도메인값 0. ChatForYou 고유 컴포넌트 경로·컨벤션 휴리스틱은 여기 분리한다.
-다른 프로젝트는 자기 config 를 만들어 주입하면 같은 엔진이 동작한다(독립 입증).
-이 파일은 ChatForYou 전용 인스턴스 설정일 뿐 프레임워크 코드가 아니다.
+reverse_extract_agent / conformance 엔진은 도메인값 0. ChatForYou 고유 컴포넌트 경로·컨벤션 휴리스틱·
+conformance contradiction 패턴은 여기 분리한다. 다른 프로젝트는 자기 config 를 만들어 주입하면 같은
+엔진이 동작한다(독립 입증). 이 파일은 ChatForYou 전용 인스턴스 설정일 뿐 프레임워크 코드가 아니다.
 """
+
+# conformance 금지-반대 허용문구 denylist (엔진 기본=commit/push 범용, 여기서 ChatForYou 고유 추가).
+# conformance.conformance_lint(..., contradiction_patterns=CHATFORYOU_CONTRADICTION_PATTERNS) 로 주입.
+CHATFORYOU_CONTRADICTION_PATTERNS = [
+    (r"git\s*commit|커밋\s*(을)?\s*(한다|수행|실행)", "commit/push"),
+    (r"git\s*push|push\s*(를)?\s*(한다|수행|실행)", "commit/push"),
+    (r"통합\s*테스트\s*(를)?\s*(작성|수행|담당)", "integration tests"),
+    (r"경계값\s*테스트\s*(를)?\s*(작성|수행|담당)", "boundary tests"),
+    (r"chatforyou-desktop/src\s*(를)?\s*(직접\s*)?(수정|편집)", "desktop/src edit"),
+]
 
 CHATFORYOU_EXTRACT_CONFIG = {
     "component_path_globs": [r"(?:springboot-backend|nodejs-frontend|chatforyou-desktop)/[\w./-]+"],

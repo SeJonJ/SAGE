@@ -63,7 +63,7 @@
     },
     "hooks/pre-implementation-gate": {
       "spec_hash": "sha256:a01fa190ab8cab92dd022edd73a1daf49d49cb8c31b8b2c0daac478d97f8c4b2",
-      "canonical_hash": "sha256:e101c7df1cf893df5e25176b6799084c878f120b40bf7928b80c5a09a788c7b0",
+      "canonical_hash": "sha256:46d8d8e130b26a1d0bfc8d06412f51bfac3705ddbe5488a9d908f65b9511ce43",
       "adapter_hash": {
         "claude": "sha256:bb9fb790935d150c7ddf9186d2099bb387b264183bb564b992844d0fb8d71ddf",
         "codex": "sha256:1327390809e3953b7c260cec01e95a7addbf7d5c3603fbd813d0c819dd4a4132"
