@@ -3,12 +3,22 @@
 SAGE 자산(hook/agent/skill)의 **의도(intent) 단일 진실원**. `.claude/.codex` 산출물은 여기서
 생성되는 generated artifact이며 **직접수정 금지(write guard로 block)**.
 
+> [!important] 프레임워크 ↔ 인스턴스 경계 (제약 #2: SAGE 독립)
+> **이 디렉토리에 현재 채워진 자산(`agents/chatforyou-*`, `hooks/*`, `.manifest.json` 의 해당 엔트리)은
+> ChatForYou 참조 인스턴스(v1 데모)다.** 프레임워크 엔진이 아니다.
+> - **프레임워크(재사용)**: `sage/` CLI, `scripts/sage_harness/*.py`(엔진: reverse_extract_agent, conformance),
+>   hook `*_core.py` + adapters(참조 구현), `schema/`, `templates/`. 엔진은 도메인값 0(검증: config 없으면 owned_paths 0).
+> - **ChatForYou 인스턴스(데모)**: 위 채워진 자산 + `extract_config_chatforyou.py` + `fixtures/**/chatforyou.profile.json`
+>   + `hooks/strategies/**` + `hooks/policies/**`.
+> - **새 프로젝트**: 이 디렉토리를 비우고(또는 `sage install` 빈 스키마) 자기 `ExtractConfig`/profile 로 자산을 채운다.
+>   프레임워크는 인스턴스 데이터가 비어도 graceful (validate 0 assets PASS — 검증됨).
+
 ## 레이아웃
 
 ```
 docs/sage_harness/
 ├── .manifest.json          # spec_hash / render_hash(target별) / claims_hash / conformance 추적
-├── hooks/{id}.md           # hook 정책·등록·테스트 명세 (알고리즘은 scripts/sage_harness/hooks/{id}.sh)
+├── hooks/{id}.md           # hook 정책·등록·테스트 명세 (알고리즘: core_adapter={id}_core.py / native={id}.sh)
 ├── agents/{id}.md          # agent intent + advisory_scope (사람 수기 최소 단위)
 ├── agents/{id}.claims.yml  # 자동도출 claims (reverse_extract 생성 — 사람 intent와 분리)
 └── skills/{id}.md          # skill intent + when_to_use + procedure
