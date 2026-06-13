@@ -36,5 +36,9 @@ echo "### 8. conformance_lint (agent/skill 렌더 부합 결정론 검사)"
 python3 "$HERE/test_conformance.py" || rc=1
 
 echo ""
+echo "### 9. auto_approve_decision (승인 UX — auto_approve_safe_default)"
+python3 "$HERE/test_review.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

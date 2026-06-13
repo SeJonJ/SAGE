@@ -9,9 +9,9 @@ import argparse
 import sys
 
 from sage import __version__
-from sage.commands import install, generate, validate, absorb, doctor, change
+from sage.commands import install, generate, validate, review, absorb, doctor, change
 
-_COMMANDS = [install, generate, validate, absorb, doctor, change]
+_COMMANDS = [install, generate, validate, review, absorb, doctor, change]
 
 
 def build_parser() -> argparse.ArgumentParser:
