@@ -24,5 +24,9 @@ echo "### 5. pre-implementation-gate reverse_extract 폐루프 (부분추출 + u
 python3 "$HERE/test_pre_implementation_gate.py" || rc=1
 
 echo ""
+echo "### 6. stop-compliance-report reverse_extract 폐루프 (부분추출 + policy_delta 보존)"
+python3 "$HERE/test_stop_compliance_report.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

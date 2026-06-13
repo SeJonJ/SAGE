@@ -76,6 +76,25 @@
         "algorithm_delta: L3 review 매칭 전략 미선택 — claude_grep_first vs codex_feature_signal 둘 다 보존, canonical 사람 결정 필요",
         "minor drift: content keyword case — canonical=case-insensitive 채택, 사람 확인"
       ]
+    },
+    "hooks/stop-compliance-report": {
+      "spec_hash": "sha256:0c0b5d63364ad55dd5ad11d97ca40f572d64db30e7b3dd6d9350e3ae4d04acb7",
+      "canonical_hash": "sha256:f4ee14a80639bcae4b58deecae39da554334f428f4f4de54468fcd2180faa968",
+      "adapter_hash": {
+        "claude": "sha256:1d5dce6b00ec9b68edf86a60ef86e7a43ea29f47b4dbe1a365c3057143143564",
+        "codex": "sha256:f97509e7a0c1b1efd1bd349242679022c958e7de08162e9f8d9f4b3767a0c1b8"
+      },
+      "adapter_contract_version": "1",
+      "render_hash": {
+        "claude": "sha256:1d5dce6b00ec9b68edf86a60ef86e7a43ea29f47b4dbe1a365c3057143143564",
+        "codex": "sha256:f97509e7a0c1b1efd1bd349242679022c958e7de08162e9f8d9f4b3767a0c1b8"
+      },
+      "conformance": "PASS",
+      "risk": [],
+      "unresolved": [
+        "policy_delta: output_contract_check — Codex-only(transcript 결합), promote_output_contract_semantics? 사람 결정",
+        "policy_delta: knowledge_capture — OPTION(obsidian) 레이어 소속, CORE 미병합"
+      ]
     }
   }
 }
