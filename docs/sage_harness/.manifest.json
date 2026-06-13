@@ -54,6 +54,28 @@
       "conformance": "PASS",
       "risk": [],
       "unresolved": []
+    },
+    "hooks/pre-implementation-gate": {
+      "spec_hash": "sha256:b3f8b01f2f0806d331b7ee95d851cce9b645c4d0bddcdcd3712687a94168769d",
+      "canonical_hash": "sha256:b315ff4d90f6ee1a2d9f21bf1b29df4b90809a75cf6b26c9ffd1f74d3d33de66",
+      "adapter_hash": {
+        "claude": "sha256:b5258f5d00591500f0b01bde2e297a4f7ae3aa1e3a54ddfc5f53e7cf033e291c",
+        "codex": "sha256:f625c5ab4c8eade37f2a64d6fb809a6eee180de56e9fe30bd7e8283eddd99627"
+      },
+      "adapter_contract_version": "1",
+      "render_hash": {
+        "claude": "sha256:b5258f5d00591500f0b01bde2e297a4f7ae3aa1e3a54ddfc5f53e7cf033e291c",
+        "codex": "sha256:f625c5ab4c8eade37f2a64d6fb809a6eee180de56e9fe30bd7e8283eddd99627"
+      },
+      "conformance": "PASS",
+      "safety_degraded": true,
+      "risk": [
+        "L3 review 전략 미선택 시 BLOCK degrade"
+      ],
+      "unresolved": [
+        "algorithm_delta: L3 review 매칭 전략 미선택 — claude_grep_first vs codex_feature_signal 둘 다 보존, canonical 사람 결정 필요",
+        "minor drift: content keyword case — canonical=case-insensitive 채택, 사람 확인"
+      ]
     }
   }
 }

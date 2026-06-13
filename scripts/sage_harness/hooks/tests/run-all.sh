@@ -20,5 +20,9 @@ echo "### 4. pre-phase4-checklist-gate reverse_extract 폐루프 (IO-bound gate,
 python3 "$HERE/test_pre_phase4_checklist_gate.py" || rc=1
 
 echo ""
+echo "### 5. pre-implementation-gate reverse_extract 폐루프 (부분추출 + unresolved 전략슬롯)"
+python3 "$HERE/test_pre_implementation_gate.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"
