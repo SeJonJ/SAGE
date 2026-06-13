@@ -60,6 +60,10 @@ echo "### 14. manifest_util (manifest 공용 헬퍼)"
 python3 "$HERE/test_manifest_util.py" || rc=1
 
 echo ""
+echo "### 16. sage absorb (직접수정→spec patch 제안)"
+python3 "$HERE/test_absorb.py" || rc=1
+
+echo ""
 echo "### 15. sage install (부트스트랩)"
 python3 "$HERE/test_install.py" || rc=1
 
