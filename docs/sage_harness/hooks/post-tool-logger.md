@@ -1,6 +1,9 @@
 ---
 id: post-tool-logger
 kind: hook
+runtime_bindings:
+  claude: { event: PostToolUse, matcher: "Write|Edit|MultiEdit", timeout: 5 }
+  codex: { event: PostToolUse, matcher: "apply_patch", timeout: 5 }
 ---
 ## intent
 Write/Edit(Claude) 또는 apply_patch(Codex) 완료 시 tracked 소스/plan 파일 변경을

@@ -1,6 +1,9 @@
 ---
 id: pre-phase4-checklist-gate
 kind: hook
+runtime_bindings:
+  claude: { event: PreToolUse, matcher: "Write|Edit|MultiEdit", timeout: 10 }
+  codex: { event: PreToolUse, matcher: "apply_patch", timeout: 10 }
 ---
 ## intent
 04-analyze 문서 작성(Phase 3→4 전환 신호) 시, 해당 기능의 03-implementation + 컴포넌트 plan_docs

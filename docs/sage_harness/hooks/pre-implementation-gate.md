@@ -1,6 +1,9 @@
 ---
 id: pre-implementation-gate
 kind: hook
+runtime_bindings:
+  claude: { event: PreToolUse, matcher: "Write|Edit|MultiEdit", timeout: 10 }
+  codex: { event: PreToolUse, matcher: "apply_patch", timeout: 10 }
 ---
 ## intent
 소스/설정 변경 전 위험도(L0~L3)를 분류해 게이트를 적용한다. Desktop 직접수정 하드블록,

@@ -1,27 +1,201 @@
-"""sage generate — spec-SSOT → 런타임 산출물 생성.
+"""sage generate — spec-SSOT → 런타임 산출물 생성 (Codex 2R 합의).
 
-마스터 §5.4/§5.5: hook=결정론 생성(spec+canonical→adapter+등록), agent/skill=interpretive render.
-이 CLI는 AI 편집도구(Write/Edit/apply_patch) 밖의 별도 프로세스 → write guard 대상이 아님 (§5.6 G3).
+결정론 코어 = hook 등록 산출물(settings.json/hooks.json) + manifest 스탬프.
+- adapter 본문은 재생성 안 함(§5.5 M4: reverse_extract 정본). 없으면 FAIL.
+- agent/skill render 는 interpretive(런타임 AI) → generate 는 안내 + manifest 스탬프만(스켈레톤은 extract_* 드라이버).
+- generate CLI 는 편집도구 밖이라 write guard 대상 아님(§5.6 G3).
+등록 순서는 hook id lexicographic 정렬로 결정론 보장.
 """
-
-from sage.commands._common import not_implemented
+import json
+import os
+import re
+import sys
 
 
 def register(sub):
-    p = sub.add_parser("generate", help="spec → .claude/.codex 산출물 생성")
+    p = sub.add_parser("generate", help="spec → 등록 산출물(settings.json/hooks.json) + manifest 스탬프")
     p.add_argument("--kind", choices=["hook", "agent", "skill"], required=True)
-    p.add_argument("--id", required=True, help="자산 id (docs/sage_harness/<kind>s/<id>.md)")
-    p.add_argument("--write", action="store_true",
-                   help="실제 파일 기록 (없으면 dry-run/diff)")
-    p.add_argument("--target", choices=["host", "opposite", "both"], default="host",
-                   help="opposite/both 는 cross_model on 일 때만")
+    p.add_argument("--id", default=None, help="단일 자산 (없으면 kind 전체)")
+    p.add_argument("--write", action="store_true", help="파일 기록 (없으면 dry-run 미리보기)")
+    p.add_argument("--target", choices=["claude", "codex", "both"], default="claude",
+                   help="등록 대상 런타임 (both 는 cross_model on)")
+    p.add_argument("--dest", default=".", help="등록 산출물 기록 루트 (기본 cwd)")
+    p.add_argument("--root", default=None, help="SAGE 루트 (manifest 탐색)")
     p.set_defaults(func=run)
 
 
+def _find_root(start):
+    cur = os.path.abspath(start or os.getcwd())
+    while True:
+        if os.path.exists(os.path.join(cur, "docs", "sage_harness", ".manifest.json")):
+            return cur
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            return None
+        cur = parent
+
+
+def _parse_runtime_bindings(spec_path):
+    """hook spec frontmatter 의 runtime_bindings YAML 블록을 간이 파싱(pyyaml 비의존).
+
+    형식: runtime_bindings:\n  claude: { event: X, matcher: "Y", timeout: N }\n  codex: {...}
+    """
+    text = open(spec_path, encoding="utf-8").read()
+    m = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
+    if not m:
+        return {}
+    fm = m.group(1)
+    out = {}
+    in_rb = False
+    for line in fm.splitlines():
+        if re.match(r"^runtime_bindings:\s*$", line):
+            in_rb = True
+            continue
+        if in_rb:
+            rm = re.match(r'^\s+(claude|codex):\s*\{(.+)\}\s*$', line)
+            if rm:
+                rt, body = rm.group(1), rm.group(2)
+                d = {}
+                for kv in re.finditer(r'(\w+):\s*("(?:[^"]*)"|[^,}]+)', body):
+                    k, v = kv.group(1), kv.group(2).strip().strip('"')
+                    d[k] = int(v) if v.isdigit() else v
+                out[rt] = d
+            elif not line.startswith(" "):
+                break
+    return out
+
+
+def _command_template(target, hook_id):
+    """런타임별 등록 command 문자열 (ChatForYou 실측 형식)."""
+    if target == "claude":
+        return f'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/{hook_id}.sh"'
+    # codex: PROJECT_ROOT/CODEX_HOME wrapper
+    return ("bash -c 'PROJECT_ROOT=\"${CODEX_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; "
+            f"CODEX_HOME=\"${{CODEX_HOME:-$PROJECT_ROOT/.codex}}\"; bash \"$CODEX_HOME/hooks/{hook_id}.sh\"'")
+
+
+def _build_registration(root, target, hook_ids):
+    """hook id 정렬 → target 별 {Event: [{matcher, hooks:[...]}]} 등록 dict (결정론).
+
+    같은 event+matcher 는 한 블록에 hooks append. adapter 파일 존재 확인(없으면 (None, missing))."""
+    missing = []
+    # event → matcher → [command블록]  (matcher 안정 정렬)
+    by_event = {}
+    for hid in sorted(hook_ids):   # lexicographic 정렬(결정론)
+        spec = os.path.join(root, "docs", "sage_harness", "hooks", f"{hid}.md")
+        if not os.path.exists(spec):
+            missing.append(f"spec:{hid}"); continue
+        rb = _parse_runtime_bindings(spec)
+        if target not in rb:
+            continue
+        # adapter/native 파일 존재 확인
+        snake = hid.replace("-", "_")
+        adapter = os.path.join(root, "scripts", "sage_harness", "hooks", "adapters", target, f"{hid}.sh")
+        native = os.path.join(root, "scripts", "sage_harness", "hooks", f"{hid}.sh")
+        if not (os.path.exists(adapter) or os.path.exists(native)):
+            missing.append(f"adapter:{target}:{hid}")
+            continue
+        ev = rb[target].get("event", "PreToolUse")
+        mt = rb[target].get("matcher", "")
+        to = rb[target].get("timeout", 10)
+        blk = {"type": "command", "command": _command_template(target, hid), "timeout": to}
+        by_event.setdefault(ev, {}).setdefault(mt, []).append(blk)
+
+    reg = {}
+    for ev in sorted(by_event):
+        reg[ev] = [{"matcher": mt, "hooks": by_event[ev][mt]} for mt in sorted(by_event[ev])]
+    return reg, missing
+
+
+def _gen_hook(args, root):
+    manifest = json.load(open(os.path.join(root, "docs", "sage_harness", ".manifest.json")))
+    hook_ids = [k.split("/", 1)[1] for k in manifest["assets"] if k.startswith("hooks/")]
+    if args.id:
+        if args.id not in hook_ids:
+            print(f"[sage generate] TOOL ERROR: manifest 에 hooks/{args.id} 없음", file=sys.stderr); return 2
+        hook_ids = [args.id]
+
+    targets = ["claude", "codex"] if args.target == "both" else [args.target]
+    rc = 0
+    for tgt in targets:
+        reg, missing = _build_registration(root, tgt, hook_ids)
+        if missing:
+            print(f"[sage generate] FAIL ({tgt}): 누락 — {', '.join(missing)} (adapter 는 reverse_extract 정본)", file=sys.stderr)
+            rc = 1
+            continue
+        if tgt == "claude":
+            doc = {"hooks": reg}
+            outp = os.path.join(args.dest, ".claude", "settings.json")
+        else:
+            doc = {"hooks": reg}
+            outp = os.path.join(args.dest, ".codex", "hooks.json")
+        body = json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
+        if args.write:
+            os.makedirs(os.path.dirname(outp), exist_ok=True)
+            # 기존 settings.json 에 hooks 키만 갱신(다른 설정 보존)
+            if tgt == "claude" and os.path.exists(outp):
+                try:
+                    existing = json.load(open(outp))
+                    existing["hooks"] = reg
+                    body = json.dumps(existing, ensure_ascii=False, indent=2) + "\n"
+                except Exception:
+                    pass
+            open(outp, "w", encoding="utf-8").write(body)
+            print(f"✅ ({tgt}) 등록 생성: {os.path.relpath(outp, args.dest)} — {sum(len(v) for v in reg.values())} event 블록")
+        else:
+            print(f"== generate {tgt} (dry-run) ==\n{body}")
+
+    # manifest 스탬프 (--write)
+    if args.write and rc == 0:
+        _stamp_manifest(root, hook_ids)
+    return rc
+
+
+def _stamp_manifest(root, hook_ids):
+    import hashlib
+    def sha(p):
+        return "sha256:" + hashlib.sha256(open(p, "rb").read()).hexdigest()
+    H = os.path.join(root, "scripts", "sage_harness", "hooks")
+    m = json.load(open(os.path.join(root, "docs", "sage_harness", ".manifest.json")))
+    for hid in hook_ids:
+        e = m["assets"].get(f"hooks/{hid}")
+        if not e:
+            continue
+        spec = os.path.join(root, "docs", "sage_harness", "hooks", f"{hid}.md")
+        if os.path.exists(spec):
+            e["spec_hash"] = sha(spec)
+        snake = hid.replace("-", "_")
+        if e.get("form") == "native":
+            nat = os.path.join(H, f"{hid}.sh")
+            if os.path.exists(nat):
+                e["canonical_hash"] = sha(nat); e["render_hash"] = {"native": sha(nat)}
+        else:
+            core = os.path.join(H, f"{snake}_core.py")
+            if os.path.exists(core):
+                e["canonical_hash"] = sha(core)
+            ah = {}
+            for rt in ("claude", "codex"):
+                ap = os.path.join(H, "adapters", rt, f"{hid}.sh")
+                if os.path.exists(ap):
+                    ah[rt] = sha(ap)
+            if ah:
+                e["adapter_hash"] = ah; e["render_hash"] = ah
+    json.dump(m, open(os.path.join(root, "docs", "sage_harness", ".manifest.json"), "w"),
+              ensure_ascii=False, indent=2)
+    print("✅ manifest 스탬프 갱신")
+
+
 def run(args) -> int:
-    mode = "write" if args.write else "dry-run(diff)"
-    return not_implemented(
-        "generate",
-        f"{args.kind}:{args.id} → target={args.target} ({mode}). "
-        f"생성 후 .manifest.json 에 spec_hash/render_hash/claims_hash 스탬프",
-    )
+    root = _find_root(args.root)
+    if not root:
+        print("[sage generate] TOOL ERROR: manifest 미발견", file=sys.stderr)
+        return 2
+    if args.kind == "hook":
+        return _gen_hook(args, root)
+    # agent/skill: render 는 interpretive(런타임 AI). generate 는 안내만.
+    drv = "extract_agent.py" if args.kind == "agent" else "extract_skill.py"
+    print(f"== sage generate ({args.kind}) ==")
+    print(f"{args.kind} render 는 interpretive(런타임 AI 영역) — generate 가 결정론 생성하지 않음.")
+    print(f"→ 스펙/claims 산출은 scripts/sage_harness/{drv} 드라이버 사용(--write --register).")
+    print(f"→ 런타임 산출물(.claude/.codex agents/skills 의 .md)은 런타임 AI 가 spec+claims 로 렌더.")
+    return 0

@@ -1,6 +1,9 @@
 ---
 id: generated-artifact-write-guard
 kind: hook
+runtime_bindings:
+  claude: { event: PreToolUse, matcher: "Write|Edit|MultiEdit", timeout: 10 }
+  codex: { event: PreToolUse, matcher: "apply_patch", timeout: 10 }
 ---
 ## intent
 생성 산출물(.claude/.codex 의 agents/hooks/skills) 직접수정을 결정론적으로 block 하고

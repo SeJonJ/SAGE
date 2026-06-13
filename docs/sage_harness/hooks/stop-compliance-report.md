@@ -1,6 +1,9 @@
 ---
 id: stop-compliance-report
 kind: hook
+runtime_bindings:
+  claude: { event: Stop, matcher: "", timeout: 15 }
+  codex: { event: Stop, matcher: "", timeout: 15 }
 ---
 ## intent
 세션 종료(Stop) 시 session-{today}.jsonl 을 집계해 compliance 리포트(compliance-{today}.md)를 생성한다.

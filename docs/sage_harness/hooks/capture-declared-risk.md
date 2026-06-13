@@ -1,6 +1,9 @@
 ---
 id: capture-declared-risk
 kind: hook
+runtime_bindings:
+  claude: { event: UserPromptSubmit, matcher: "", timeout: 5 }
+  codex: { event: UserPromptSubmit, matcher: "", timeout: 5 }
 ---
 ## intent
 유저 프롬프트에서 명시적 risk level 선언(L0~L3)을 포착해 세션별로 저장한다.
