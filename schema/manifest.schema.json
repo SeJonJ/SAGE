@@ -23,7 +23,8 @@
     },
     "assetEntry": {
       "type": "object",
-      "required": ["spec_hash", "render_hash", "conformance"],
+      "description": "install 직후(미스탬프)는 conformance=UNKNOWN + form 만 존재 가능. hash(spec/render/...)는 generate --write 가 추가하며 validate 가 미스탬프를 STALE 로 보고한다.",
+      "required": ["conformance", "form"],
       "properties": {
         "spec_hash": {
           "$ref": "#/$defs/sha",
@@ -74,6 +75,10 @@
         "safety_degraded": {
           "type": "boolean",
           "description": "전략/정책 미선택 등으로 안전성이 낮아진 상태(WARN). 예: pre-implementation-gate L3 전략 미선택"
+        },
+        "l3_review_strategy": {
+          "type": "string",
+          "description": "pre-implementation-gate L3 review 매칭 canonical 전략 선택(claude_grep_first | codex_feature_signal | <모듈명>). 미선택이면 키 생략 → core 가 L3 BLOCK(safe default)"
         },
         "risk": { "type": "array", "items": { "type": "string" } },
         "unresolved": { "type": "array", "items": { "type": "string" } }

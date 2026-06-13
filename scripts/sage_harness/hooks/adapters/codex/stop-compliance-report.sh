@@ -46,7 +46,11 @@ event = {"hook_id": "stop-compliance-report", "hook_event_name": "Stop", "runtim
 model = core.decide(event, profile, snapshot)
 
 # ── Codex-only 정책 주입(policy_results) ──
-CODE_TYPES = ("backend-main", "backend-test", "frontend-js", "frontend-server", "frontend-config")
+# code type 은 profile 주입(독립 — 도메인 하드코딩 금지). plan_gate_code_types 우선, 없으면 file_type_map 전체 type.
+_comp = profile.get("compliance", {}) or {}
+CODE_TYPES = set(_comp.get("plan_gate_code_types") or [])
+if not CODE_TYPES:
+    CODE_TYPES = {m.get("type") for m in (profile.get("file_type_map") or []) if m.get("type")}
 has_code = any(e.get("type") in CODE_TYPES for e in entries)
 
 def last_assistant_text(path):

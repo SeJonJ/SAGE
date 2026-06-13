@@ -42,8 +42,12 @@ skip_untyped: true               # post-tool-logger: file_type_map 미분류 파
 phase4_trigger_glob: "*plan_docs/04-analyze/*.md"   # pre-phase4-checklist-gate 발동 글롭
 suffixes: []                     # pre-phase4: PDCA phase 접미사(빈값=framework 기본)
 checklist_scan_targets: []       # pre-phase4: 체크리스트 스캔 대상 글롭
-compliance:                      # stop-compliance-report
-  convention_reminder: {}        # 예: { types: [backend], text: "백엔드 컨벤션 검증 확인 권장" }
+compliance:                      # stop-compliance-report (전부 빈값=해당 검사 비활성, 채우면 활성)
+  activity_groups: []            # 예: [{ label: 백엔드, types: [backend-main, backend-test] }] — 빈값이면 raw type 별 generic 그룹
+  plan_types: []                 # plan 활동으로 칠 type. 예: [plan-doc]
+  plan_gate_code_types: []       # "코드 변경"으로 칠 type(plan 없으면 WARN) — stop/output_contract/knowledge_capture 공용
+  plan_gate_text: ""             # code_without_plan WARN 메시지(빈값=기본)
+  convention_reminder: {}        # 예: { types: [backend-main], text: "백엔드 컨벤션 검증 확인 권장" }
 
 conventions: []                  # 예: [{ scope: backend, stack: "<stack>", doc: sage/conventions/<name>.md, file_globs: ["**/*.<ext>"] }]
 
