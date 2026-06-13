@@ -28,10 +28,18 @@ while IFS=$'\t' read -r path expected desc; do
   run_case "$path" "$expected" "$desc"
 done < "$CASES"
 
-# stdin JSON 추출 경로도 1건 검증 (런타임 어댑터 모사)
-stdin_exit=0
-echo '{"tool_input":{"file_path":".claude/agents/z.md"}}' | bash "$GUARD" >/dev/null 2>&1 || stdin_exit=$?
-if [[ "$stdin_exit" == "2" ]]; then pass=$((pass+1)); else fail=$((fail+1)); echo "  ✗ [stdin JSON] exit=$stdin_exit expected=2"; fi
+# stdin 케이스 검증 (런타임 어댑터 모사) — Claude file_path / Codex apply_patch / 정상
+check_stdin() {
+  local json="$1" expected="$2" desc="$3" e=0
+  echo "$json" | bash "$GUARD" >/dev/null 2>&1 || e=$?
+  if [[ "$e" == "$expected" ]]; then pass=$((pass+1)); else fail=$((fail+1)); printf '  ✗ [stdin:%s] exit=%s expected=%s\n' "$desc" "$e" "$expected"; fi
+}
+check_stdin '{"tool_input":{"file_path":".claude/agents/z.md"}}' 2 "claude file_path guarded"
+# audit 1회차 P0: Codex apply_patch 본문 다중 target 우회 차단
+check_stdin '{"tool_name":"apply_patch","tool_input":{"command":"*** Add File: .codex/hooks/foo.sh\n+x\n"}}' 2 "codex apply_patch guarded"
+check_stdin '{"tool_name":"apply_patch","tool_input":{"command":"*** Update File: .codex/agents/bar.md\n+y\n"}}' 2 "codex apply_patch agent guarded"
+check_stdin '{"tool_name":"apply_patch","tool_input":{"command":"*** Add File: src/main/java/Foo.java\n+z\n"}}' 0 "codex apply_patch 일반소스 통과"
+check_stdin '{"tool_name":"apply_patch","tool_input":{"command":"*** Add File: docs/sage_harness/hooks/x.md\n+z\n"}}' 0 "codex apply_patch spec 통과"
 
 echo "----"
 echo "PASS=$pass FAIL=$fail"

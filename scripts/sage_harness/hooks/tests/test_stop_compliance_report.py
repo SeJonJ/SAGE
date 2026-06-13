@@ -82,15 +82,20 @@ class TestCore(unittest.TestCase):
 
 class TestPolicyModulesPreserved(unittest.TestCase):
     def test_output_contract(self):
-        self.assertEqual(output_contract_check.check("", False)["text"][:3], "N/A")
-        full = "요약 변경 검증 리스크 다음"
+        # 원본 충실: 5마커 hit>=4 → OK
+        self.assertEqual(output_contract_check.check("", False)["severity"], "INFO")  # 코드변경 없음 N/A
+        self.assertEqual(output_contract_check.check("", True)["severity"], "INFO")    # transcript 없음 N/A
+        full = "작업 요약. risk level L2. impact backend. 변경 파일 목록. 검증 test 통과."
         self.assertEqual(output_contract_check.check(full, True)["severity"], "OK")
-        self.assertEqual(output_contract_check.check("요약만", True)["severity"], "WARN")
+        self.assertEqual(output_contract_check.check("요약만 있음", True)["severity"], "WARN")
 
     def test_knowledge_capture(self):
-        self.assertIn("N/A", knowledge_capture.check("", True, False)["text"])
-        self.assertEqual(knowledge_capture.check("/vault", True, True)["severity"], "OK")
-        self.assertEqual(knowledge_capture.check("/vault", True, False)["severity"], "WARN")
+        # 새 시그니처: check(vault_root, has_code, wiki_log_mtime, earliest_code_ts)
+        self.assertEqual(knowledge_capture.check("", True, None, None)["severity"], "INFO")        # vault 없음
+        self.assertEqual(knowledge_capture.check("/v", False, None, None)["severity"], "INFO")     # 코드변경 없음
+        self.assertEqual(knowledge_capture.check("/v", True, None, 100)["severity"], "WARN")       # wiki/log.md 없음
+        self.assertEqual(knowledge_capture.check("/v", True, 200, 100)["severity"], "OK")          # 갱신됨
+        self.assertEqual(knowledge_capture.check("/v", True, 50, 100)["severity"], "WARN")         # 미갱신
 
 
 def run_adapter(runtime, root, entries):
@@ -104,7 +109,7 @@ def run_adapter(runtime, root, entries):
     env = dict(os.environ, **{env_root: root, "SAGE_HOOK_CORE_DIR": HOOKS_DIR,
                               "SAGE_PROFILE": PROFILE_PATH, "SAGE_TODAY": TODAY, "SAGE_GATE_BRANCH": "main"})
     adapter = os.path.join(ADAPTERS, runtime, "stop-compliance-report.sh")
-    p = subprocess.run(["bash", adapter], capture_output=True, text=True, env=env)
+    p = subprocess.run(["bash", adapter], input="", capture_output=True, text=True, env=env)  # codex adapter stdin(transcript) 안전
     report = os.path.join(log_dir, f"compliance-{TODAY}.md")
     return p, (open(report, encoding="utf-8").read() if os.path.exists(report) else "")
 

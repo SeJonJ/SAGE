@@ -89,7 +89,11 @@ def classify_risk(event: dict, profile: dict) -> dict:
 
 
 def _plan_exists(event: dict, snapshot: dict) -> str:
-    """ticket(브랜치 숫자) 매칭 plan → 없으면 최근 plan. snapshot.plan_files = [{path, content}] (최근순)."""
+    """ticket(브랜치 숫자) 매칭 plan → 없으면 **최근(7일 이내) fallback**.
+
+    원본 Claude 충실성(audit 1회차 P1): ticket 매칭은 전체 plan 대상, fallback 은 -mtime -7 제한.
+    snapshot.plan_files = [{path, content, recent}] (recent=adapter 가 mtime<7일 판정, 최근순).
+    """
     plan_files = snapshot.get("plan_files") or []
     branch = event.get("branch") or ""
     import re
@@ -99,7 +103,11 @@ def _plan_exists(event: dict, snapshot: dict) -> str:
         for pf in plan_files:
             if ticket in (pf.get("content") or ""):
                 return pf.get("path", "")
-    return plan_files[0]["path"] if plan_files else ""
+    # fallback: 7일 이내(recent) plan 만 인정 (오래된 plan 은 게이트 충족 안 됨)
+    for pf in plan_files:
+        if pf.get("recent"):
+            return pf.get("path", "")
+    return ""
 
 
 def decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:

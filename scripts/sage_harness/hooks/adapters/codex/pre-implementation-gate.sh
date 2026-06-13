@@ -61,13 +61,16 @@ event = {"hook_id": "pre-implementation-gate", "hook_event_name": "PreToolUse", 
          "declared_max": declared, "changes": changes}
 
 pg = (profile.get("risk") or {}).get("plan_glob", "plan_docs/00-base_plan/**/*.md")
+import time as _t
 paths = sorted(glob.glob(os.path.join(root, pg), recursive=True), key=lambda p: -os.path.getmtime(p)) if os.path.isdir(os.path.join(root, "plan_docs")) else []
+_now = _t.time()
 plan_files = []
 for p in paths:
     try:
         with open(p, encoding="utf-8", errors="ignore") as f: c = f.read()
     except Exception: c = ""
-    plan_files.append({"path": rel(p), "content": c})
+    recent = (_now - os.path.getmtime(p)) <= 7 * 86400   # 원본 -mtime -7 충실성
+    plan_files.append({"path": rel(p), "content": c, "recent": recent})
 snapshot = {"plan_files": plan_files, "review_candidates": []}
 
 decision = core.decide(event, profile, snapshot, None)

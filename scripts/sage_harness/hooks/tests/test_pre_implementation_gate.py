@@ -100,6 +100,16 @@ class TestDecide(unittest.TestCase):
         plan = [{"path": "p.md", "content": "#127"}]
         self.assertEqual(core.decide(ev(f, branch="bug/127"), PROFILE, snap(plan=plan), None)["status"], "ok")
 
+    def test_plan_fallback_7day(self):
+        # audit P1: ticket 미매칭 시 7일 이내(recent) plan 만 fallback 인정
+        f = "springboot-backend/src/main/java/Foo.java"
+        recent_plan = [{"path": "r.md", "content": "무관", "recent": True}]
+        old_plan = [{"path": "o.md", "content": "무관", "recent": False}]
+        # branch 에 ticket 없음 → fallback. recent=True → plan 인정(ok)
+        self.assertEqual(core.decide(ev(f, branch="main"), PROFILE, snap(plan=recent_plan), None)["status"], "ok")
+        # recent=False(오래된 plan) → plan 미인정 → warn_l2_no_plan
+        self.assertEqual(core.decide(ev(f, branch="main"), PROFILE, snap(plan=old_plan), None)["message_key"], "warn_l2_no_plan")
+
     def test_l1_ok(self):
         self.assertEqual(core.decide(ev("nodejs-frontend/static/js/x.js"), PROFILE, snap(), None)["status"], "ok")
 

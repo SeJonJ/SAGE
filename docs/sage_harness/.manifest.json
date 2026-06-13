@@ -62,16 +62,16 @@
       "test": "scripts/sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py"
     },
     "hooks/pre-implementation-gate": {
-      "spec_hash": "sha256:b3f8b01f2f0806d331b7ee95d851cce9b645c4d0bddcdcd3712687a94168769d",
-      "canonical_hash": "sha256:b315ff4d90f6ee1a2d9f21bf1b29df4b90809a75cf6b26c9ffd1f74d3d33de66",
+      "spec_hash": "sha256:a01fa190ab8cab92dd022edd73a1daf49d49cb8c31b8b2c0daac478d97f8c4b2",
+      "canonical_hash": "sha256:fb019fcf4a33775ef6a4d792141aee2c88cd8b1c59be1c9e6d339c5808b5e515",
       "adapter_hash": {
-        "claude": "sha256:b5258f5d00591500f0b01bde2e297a4f7ae3aa1e3a54ddfc5f53e7cf033e291c",
-        "codex": "sha256:f625c5ab4c8eade37f2a64d6fb809a6eee180de56e9fe30bd7e8283eddd99627"
+        "claude": "sha256:ae6fa2a9851f3dc47eaca2e1cb2444c41e21f640d8aa34b3a461086eae8b4b17",
+        "codex": "sha256:04e9308d1c751d6c0f90a1fdcce69a09f7c32fb90c500a4459d934ad8ec73318"
       },
       "adapter_contract_version": "1",
       "render_hash": {
-        "claude": "sha256:b5258f5d00591500f0b01bde2e297a4f7ae3aa1e3a54ddfc5f53e7cf033e291c",
-        "codex": "sha256:f625c5ab4c8eade37f2a64d6fb809a6eee180de56e9fe30bd7e8283eddd99627"
+        "claude": "sha256:ae6fa2a9851f3dc47eaca2e1cb2444c41e21f640d8aa34b3a461086eae8b4b17",
+        "codex": "sha256:04e9308d1c751d6c0f90a1fdcce69a09f7c32fb90c500a4459d934ad8ec73318"
       },
       "conformance": "PASS",
       "safety_degraded": true,
@@ -90,12 +90,12 @@
       "canonical_hash": "sha256:f4ee14a80639bcae4b58deecae39da554334f428f4f4de54468fcd2180faa968",
       "adapter_hash": {
         "claude": "sha256:1d5dce6b00ec9b68edf86a60ef86e7a43ea29f47b4dbe1a365c3057143143564",
-        "codex": "sha256:f97509e7a0c1b1efd1bd349242679022c958e7de08162e9f8d9f4b3767a0c1b8"
+        "codex": "sha256:674cb0f5316c7deb9b154eef20aa7a0b4103b349fd6a66ecb4be5883853f2420"
       },
       "adapter_contract_version": "1",
       "render_hash": {
         "claude": "sha256:1d5dce6b00ec9b68edf86a60ef86e7a43ea29f47b4dbe1a365c3057143143564",
-        "codex": "sha256:f97509e7a0c1b1efd1bd349242679022c958e7de08162e9f8d9f4b3767a0c1b8"
+        "codex": "sha256:674cb0f5316c7deb9b154eef20aa7a0b4103b349fd6a66ecb4be5883853f2420"
       },
       "conformance": "PASS",
       "risk": [],
@@ -108,9 +108,9 @@
     },
     "hooks/generated-artifact-write-guard": {
       "spec_hash": "sha256:31cf9e18c6b4db3f612ffacb46ec30c4a8d4a3bab6d1078b79dd57df4bf8668f",
-      "canonical_hash": "sha256:4fafe97a54dca737cc415237953f3a35a5b6e1781b6b7063ef9a651136c26e79",
+      "canonical_hash": "sha256:4949a7dbf9f46e15825070de621308ac3e4e6a70d198bde803e6c9d0352b4af8",
       "render_hash": {
-        "native": "sha256:4fafe97a54dca737cc415237953f3a35a5b6e1781b6b7063ef9a651136c26e79"
+        "native": "sha256:4949a7dbf9f46e15825070de621308ac3e4e6a70d198bde803e6c9d0352b4af8"
       },
       "adapter_contract_version": "1",
       "conformance": "PASS",
