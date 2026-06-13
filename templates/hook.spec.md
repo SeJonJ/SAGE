@@ -11,10 +11,11 @@ kind: hook
 - on_fail: block            # block | warn | context — adapter가 exit code/JSON/stderr로 매핑
 
 ## canonical
-scripts/sage_harness/hooks/<id>.sh   # 실제 알고리즘 (양 런타임 공유 정본)
+# form=core_adapter: scripts/sage_harness/hooks/<id>_core.py (pure decide) + adapters/{claude,codex}/<id>.sh
+# form=native:       scripts/sage_harness/hooks/<id>.sh (단일 정본, 예: write-guard)
 
 ## enforcement
 - 차단 조건과 통과 조건을 명시 (enforcement는 hook 전용)
 
 ## tests
-.{claude,codex}/hooks/tests/   # 런타임별 입력 fixture 회귀
+scripts/sage_harness/hooks/tests/test_<id>.py   # 결정론 회귀 (core/adapter)

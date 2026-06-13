@@ -53,12 +53,12 @@ is_guarded() {
 }
 
 block() {
-  cat >&2 <<EOF
-⛔ SAGE write guard: '$1' 는 생성 산출물입니다. 직접수정 금지.
-→ docs/sage_harness/<kind>s/<id>.md (spec) 을 고치고 'sage generate' 를 쓰세요.
-→ 이미 수정한 diff 라면 'sage absorb --kind <k> --id <id> --from-blocked-diff' 로 spec patch 로 변환하세요.
-(sage generate CLI 는 편집도구를 안 거치므로 이 가드에 걸리지 않습니다.)
-EOF
+  # printf 사용(heredoc temp 파일 회피 — 제한 환경에서도 exit 2 보장, audit 5회차 P1).
+  printf '%s\n' \
+    "⛔ SAGE write guard: '$1' 는 생성 산출물입니다. 직접수정 금지." \
+    "→ docs/sage_harness/<kind>s/<id>.md (spec) 을 고치고 'sage generate' 를 쓰세요." \
+    "→ 이미 수정한 diff 라면 'sage absorb --kind <k> --id <id> --from-blocked-diff' 로 spec patch 로 변환하세요." \
+    "(sage generate CLI 는 편집도구를 안 거치므로 이 가드에 걸리지 않습니다.)" >&2
   exit 2
 }
 

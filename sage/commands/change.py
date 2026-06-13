@@ -13,9 +13,8 @@ import sys
 from sage.commands import validate as V
 from sage.commands import review as R
 
-# action 분류 — absorb 를 generate 보다 먼저 판정(이미 고친 산출물 흡수 우선)
+# action 분류 — absorb 를 generate 보다 먼저 판정(이미 고친 산출물 흡수 우선). 그 외는 generate (default).
 _ABSORB_KW = ["이미 고쳤", "이미 수정", "직접 수정", "직접수정", "생성물", "산출물", "blocked", "되돌려", "흡수"]
-_GENERATE_KW = ["수정", "고쳐", "고치", "바꿔", "바꾸", "추가", "만들어", "생성", "신규", "새 ", "기능"]
 _KIND_HINT = {"hook": "hook", "hooks": "hook", "agent": "agent", "agents": "agent", "skill": "skill", "skills": "skill"}
 
 
@@ -106,6 +105,7 @@ def run(args):
         k = tgt.split("/")[0][:-1]
         print(f"→ 결정: GENERATE (기존 자산 수정) — 대상: {tgt}")
         print(f"   흐름: docs/sage_harness/{tgt.split('/')[0]}/{tgt.split('/')[-1]}.md (spec) 수정 → sage generate --kind {k} --id {tgt.split('/')[-1]} --write")
+        print("   ※ generate 는 v1 stub(render=런타임 AI 영역). 현재는 spec 수정 후 런타임이 산출물을 렌더, validate/review 로 검증.")
         print(f"   현재 승인상태: {dec['decision']}" + (f" ({', '.join(dec['reasons'])})" if dec["reasons"] else ""))
         return 0
 

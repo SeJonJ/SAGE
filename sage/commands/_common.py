@@ -2,14 +2,11 @@
 
 import sys
 
-# v1 구현 순서 (최종검증 §5) — stub이 어느 단계인지 표시
+# stub(미구현) 명령만 not_implemented 가 참조. validate/review/change/doctor 는 구현됨(여기 미포함).
 STEP = {
-    "install": "10단계 외 (부트스트랩) — 미구현",
-    "generate": "§5-3~7 (write guard 후) — 미구현",
-    "validate": "§5-2/5 (manifest staleness) — 일부 구현 예정",
-    "absorb": "§5 M3 (직접수정 흡수) — 미구현",
-    "doctor": "§5 옵션 의존성 — 미구현",
-    "change": "§5-9 (v1.1 라우터) — 미구현",
+    "install": "부트스트랩(host 택1 + 빈 스키마 배치) — v1 stub",
+    "generate": "spec → 산출물 렌더. agent/skill render 는 interpretive(런타임 AI) — v1 stub",
+    "absorb": "직접수정 diff → spec patch 제안 (§5 M3) — v1 stub",
 }
 
 

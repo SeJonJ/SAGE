@@ -23,7 +23,8 @@ _EXIT = {"PASS": 0, "WARN": 0, "FAIL": 1, "STALE": 3}
 
 
 def register(sub):
-    p = sub.add_parser("validate", help="스키마/drift/staleness 결정론 검사 (읽기전용)")
+    # 주: JSON Schema 검증이 아니라 hash 기반 drift/staleness + regression 검사다(schema 파일은 참조 문서).
+    p = sub.add_parser("validate", help="drift/staleness + regression 결정론 검사 (읽기전용)")
     p.add_argument("--check", action="store_true", help="staleness 만 (regression 미실행, 빠른 CI/hook용)")
     p.add_argument("--kind", choices=["hook", "agent", "skill", "all"], default="hook")
     p.add_argument("--id", default=None, help="단일 자산 검사")

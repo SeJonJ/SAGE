@@ -127,18 +127,6 @@ def _confidence(value: str, in_claude: bool, in_codex: bool, guide_text: str) ->
     return "unresolved"
 
 
-def _confidence(value: str, in_claude: bool, in_codex: bool, guide_text: str) -> str:
-    if in_claude and in_codex:
-        return "high"
-    only_codex = in_codex and not in_claude
-    low = value.lower()
-    if any(tok in low for tok in _GUIDE_BOUNDARY_TOKENS) and any(tok in (guide_text or "").lower() for tok in _GUIDE_BOUNDARY_TOKENS if tok in low):
-        return "source_supported"
-    if only_codex and any(tok in low for tok in _CODEX_RUNTIME_TOKENS):
-        return "runtime_allowed"
-    return "unresolved"
-
-
 def extract_claims(claude_text: str, codex_text: str, guide_text: str = "") -> dict:
     """양쪽 typed claim 교집합/차집합 → confidence 부여한 claims dict."""
     # codex 런타임 토큰(gstack) 보강: codex 본문에 gstack 규칙이 있으면 tool_or_skill_ref 로

@@ -17,7 +17,8 @@ docs/sage_harness/
 ## 원칙 (최종검증 노트)
 
 - 사람 수기 최소 = `intent + advisory_scope`. claims/manifest는 자동.
-- hook 단일소스 = spec md(정책/등록/테스트) + `scripts/sage_harness/hooks/{id}.sh`(정본 알고리즘).
+- hook 단일소스 = spec md(정책/등록/테스트) + 정본 알고리즘. form=`core_adapter`(대부분: `{id}_core.py` pure core
+  + `adapters/{claude,codex}/{id}.sh`) / `native`(write-guard: 단일 `{id}.sh`).
 - enforcement는 hook 전용. agent/skill은 advisory_scope만.
 - 수정은 항상 여기(spec)부터 → `sage generate`. 산출물 직접수정은 block → `sage absorb`.
 - 승인은 `auto_approve_safe_default`(conformance/hash PASS면 자동, 예외만 사람).

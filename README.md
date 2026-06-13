@@ -12,7 +12,8 @@ ChatForYou의 AI 하네스(PDCA 워크플로우, 팀 오케스트레이션, hook
 - **CORE(항상) + OPTION(opt-in)**: cross_model / codegraph / obsidian.
 - **spec-SSOT**: `docs/sage_harness/{hooks,agents,skills}/{id}.md`가 의도(intent) SSOT.
   `.claude/.codex` 산출물은 generated artifact (직접수정 block).
-- **hook 단일소스**: spec md(정책/등록/테스트) + `scripts/sage_harness/hooks/{id}.sh`(정본 알고리즘).
+- **hook 단일소스**: spec md(정책/등록/테스트) + 정본 알고리즘. 형태(form) 2종:
+  `core_adapter`(`{id}_core.py` pure core + 런타임 adapter — 대부분의 hook) / `native`(단일 `{id}.sh` — write-guard).
 - **자동도출 claims**: `{id}.claims.yml`(reverse_extract 자동). 사람 수기 최소 = `intent + advisory_scope`.
 - **승인 UX**: `auto_approve_safe_default` — conformance/hash PASS면 자동, 사람은 예외만.
 
@@ -50,6 +51,9 @@ sage change "자연어 의도"   # (v1.1) 최소 라우터
 9. `sage change` 최소 라우터
 10. codex-host opposite reviewer (fallback으로 닫기)
 
-## 상태
+## 상태 (v1 10/10 steps 완료)
 
-🚧 **스캐폴드** — 디렉토리 레이아웃 + CLI 골격 + 스키마/템플릿. 명령 로직은 미구현(stub).
+- **구현됨**: `validate`(staleness+regression), `review`(auto_approve_safe_default), `change`(라우터), `doctor`(옵션의존성+reviewer fallback).
+  hook 5종 reverse_extract(core+adapter), agent claims 자동도출(backend-expert 파일럿), conformance lint, write-guard.
+- **stub(미구현)**: `install`, `generate`(render는 interpretive=런타임 AI 영역), `absorb`. 호출 시 exit 2 + 예정동작 안내.
+- 검증: 전체 테스트 PASS (Codex 다회 감사 반영). 자세한 진척: vault `TECH - SAGE 구현 진행 로그`.
