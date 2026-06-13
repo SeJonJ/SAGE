@@ -27,21 +27,21 @@ templates/                 # profile/spec/claims 템플릿
 schema/                    # manifest 등 JSON Schema
 ```
 
-## CLI (골격 — v1 진행 중)
+## CLI
 
 ```
-sage install               # host 택1 + 빈 스키마 profile + framework 배치
-sage generate --kind {hook|agent|skill} --id X [--write]   # 산출물 생성
+sage install               # host 택1 + CORE 하네스 배치(framework + CORE hook 정본/spec/어댑터 + roster agent + manifest)
+sage generate --kind {hook|agent|skill} --id X [--write]   # hook 등록 산출물 + {host}/hooks shim + profile 컴파일 + manifest 스탬프
 sage validate [--check]    # 스키마 · drift · staleness 검사
 sage absorb --kind X --id Y [--from-blocked-diff]          # 직접수정 → spec patch 제안
 sage doctor                # 옵션 의존성 확인 + degrade 안내
 sage change "자연어 의도"   # (v1.1) 최소 라우터
 ```
 
-## v1 구현 순서 (최종검증 §5)
+## v1 구현 순서 (최종검증 §5 — 1~10 전부 완료 + install/generate 동작화)
 
 1. ~~문구 정리~~ (설계 wiki 반영 완료)
-2. **`.manifest.json` 스키마 확정** ← 현재 스캐폴드 단계
+2. ~~`.manifest.json` 스키마 확정~~ (jsonschema valid)
 3. generated-artifact write guard
 4. hook 5종 reverse_extract (spec + canonical + adapter 분리)
 5. hook validate 폐루프
@@ -51,16 +51,21 @@ sage change "자연어 의도"   # (v1.1) 최소 라우터
 9. `sage change` 최소 라우터
 10. codex-host opposite reviewer (fallback으로 닫기)
 
-## 상태 (자산관리 사이클 완성)
+## 상태 (CLI 7종 구현 + install→generate 동작 하네스)
 
-- **CLI 7종 전부 구현**: `install`(부트스트랩) · `generate`(hook 등록 결정론 + manifest 스탬프 / agent·skill render 안내) ·
-  `validate`(staleness+regression+conformance) · `review`(auto_approve_safe_default) · `change`(자연어 라우터) ·
-  `doctor`(옵션의존성+reviewer fallback) · `absorb`(직접수정→spec patch 제안).
-- **자산 17개 등록**: hook 6(reverse_extract core+adapter) + agent 5 + skill 6 (claims 자동도출). **manifest unresolved 0**(사람 결정 완료).
-- **검증**: 로컬 전체 테스트 PASS(tempfile 쓰기 가능 환경 기준). Codex 다회 + 자가 다회 감사 반영.
-  자세한 진척: vault `TECH - SAGE 구현 진행 로그`.
-- **독립성(제약 #2)**: 엔진(extractor/conformance/hook core)은 도메인값 0 — ChatForYou 패턴은 `extract_config_chatforyou.py`·profile·fixtures 로 분리.
-  ChatForYou 없는 격리 환경에서 전체 테스트·CLI 동작 확인. `docs/sage_harness/agents/chatforyou-*`·`hooks/strategies/**` 는 ChatForYou 참조 인스턴스.
+- **CLI 7종 구현**: `install`(CORE 하네스 부트스트랩) · `generate`(hook 등록 + `{host}/hooks` shim + profile YAML→JSON + manifest 스탬프) ·
+  `validate`(staleness+regression+conformance, 미스탬프=STALE) · `review`(auto_approve_safe_default) ·
+  `change`(자연어 라우터) · `doctor`(옵션의존성 + profile 로드 실패 구분) · `absorb`(직접수정→spec patch / hook 정본 divergence).
+- **install→generate 동작 검증(e2e)**: 빈 신규 프로젝트에 install → generate → hook 실행까지 확인.
+  profile 없음=통과 / L2 WARN / L3·금지경로 BLOCK / 잘못된 YAML→generate fail-closed / 신규 install→validate STALE.
+- **독립성(제약 #2)**: 설치 트리 **도메인 토큰 0**(회귀 가드 테스트). 엔진/CORE 정본·중립 framework·roster agent 는 도메인값 0 —
+  ChatForYou 패턴은 `extract_config_chatforyou.py`·profile·fixtures·`chatforyou-*` 인스턴스에만. 전략은 profile 확장형(`signals[generic_tokens/review_patterns]`).
+- **검증**: writable 환경 전체 테스트 PASS, `validate --kind all --check` 종합 PASS, manifest jsonschema valid, manifest unresolved 0(사람 결정 완료).
+  Codex 다라운드 + 자가 다회 감사 반영(전문가 피드백으로 install/generate P0 2건 발견·수정 — 상세 vault `TECH - SAGE 구현 진행 로그`).
+- **배포(정직)**: 현재 git clone / `pip install -e .`(editable) / sdist(레포 레이아웃) 기준. 리소스 경로는 `sage/_resources.py`
+  (`$SAGE_RESOURCE_ROOT` override + repo fallback)로 해석. 순수 PyPI wheel 단독 배포는 dual-use 인 `scripts/sage_harness` 의
+  패키지 이전(importlib.resources)이 필요 — **공개 전 과제**. `pyyaml` 은 generate(빌드) 의존성(hook 런타임은 의존성 0=JSON).
+- **남은 범위**: Tier 2(2번째 프로젝트 실적용) / Tier 4(전체 SAGE Phase A~H) / Tier 5(ChatForYou 역적용).
 
 ## License
 
