@@ -14,56 +14,86 @@ import re
 
 CONTRACT_VERSION = "1"
 
-# AGENT_GUIDE non-negotiable 경계 토큰 (source_supported 판정용)
-_GUIDE_BOUNDARY_TOKENS = ["commit", "push", "chatforyou-desktop/src"]
-# codex 런타임 고유 정책 토큰 (runtime_allowed 판정용)
-_CODEX_RUNTIME_TOKENS = ["gstack"]
+# ───────────────────────────────────────────────────────────────────────────
+# 엔진은 도메인값 0 (제약 #2: ChatForYou 독립). 프로젝트 고유 패턴은 ExtractConfig 로 주입한다.
+# DEFAULT 는 범용(commit/push 안전 + gstack 은 SAGE cross-model 도구). 컴포넌트 경로/컨벤션 휴리스틱은
+# 프로젝트 config 가 제공(없으면 해당 claim 미추출 — 다른 스택에서도 graceful). ChatForYou 패턴은
+# extract_config_chatforyou.py 에 분리(인스턴스), 엔진에는 없음.
+# ───────────────────────────────────────────────────────────────────────────
+DEFAULT_EXTRACT_CONFIG = {
+    "component_path_globs": [],        # owned_paths 인식용 regex(프로젝트 컴포넌트 경로). 비면 owned 미추출
+    "not_owned_substrings": [],        # 소유 아님(동기화 산출물/금지 경로)
+    "planning_path_substrings": ["plan_docs"],  # 워크플로우 산출물(소유 아님) — 범용
+    "guide_boundary_tokens": ["commit", "push"],            # source_supported 판정 경계(범용 AI 안전)
+    "runtime_policy_tokens": {"codex": ["gstack"]},         # 한쪽 런타임 고유 정책(SAGE cross-model)
+    "signal_rules": [],                # 라인 단위 프로젝트 컨벤션 휴리스틱(아래 _apply_signal_rules)
+}
+
 # persona/권위 문구 — drop (verifiability 필터). 역할명(예: "백엔드 전문가")은 보존하고
-# 권위 수식("N년 경력/시니어/베테랑/전문가입니다")만 제거한다.
+# 권위 수식("N년 경력/시니어/베테랑/전문가입니다")만 제거한다. (범용)
 _PERSONA_RE = re.compile(r"(\d+\s*년\s*경력|시니어|전문가입니다|베테랑)")
 
-# ⚠️ v1 pilot 한계(audit 2회차 P1-7): 경로/역할 regex 가 ChatForYou 컴포넌트(springboot-backend 등)에
-#    묶여 있다. lead/qa/frontend 일반화는 후속에서 component/role 규칙을 profile 로 외부화해야 한다.
-#    v1 은 backend-expert 파일럿으로 알고리즘(typed 교집합/verifiability/confidence)을 증명하는 범위.
-
-_COMPONENT_PATH_RE = re.compile(r"(?:springboot-backend|nodejs-frontend|chatforyou-desktop)/[\w./-]+")
+# 범용 추출 패턴(프로젝트 무관)
 _CONVENTION_DOC_RE = re.compile(r"docs/[\w_]+\.md")
 _NAMESPACED_REF_RE = re.compile(r"`([a-z][\w-]+:[\w-]+)`")          # backend-development:backend-architect
 _SKILL_PATH_RE = re.compile(r"\.(?:claude|codex)/skills/([\w-]+)(?:/SKILL)?\.md")
 _AGENT_PATH_RE = re.compile(r"\.(?:claude|codex)/agents/([\w-]+)\.md")
 _BARE_REF_RE = re.compile(r"`([a-z][\w-]+-(?:checker|layer|expert|architect|auditor|debugger))`")
+# tool_ref 문맥 마커 — namespaced ref(`a:b`)는 이 문맥 동반 라인에서만 (audit 2회차 P0-2)
+_TOOL_CTX_RE = re.compile(r"(\||사용|도구|활용|참조|호출|점검|추적|skill|agent|mcp|검증)", re.IGNORECASE)
 
 
 def _norm_path(p: str) -> str:
     return p.rstrip("/").split("←")[0].strip()
 
 
-# tool_ref 문맥 마커 — namespaced ref(`a:b`)를 tool claim 으로 올리려면 이 문맥이 동반돼야 함
-# (audit 2회차 P0-2: 임의의 a:b 가 본문 예시/잡음으로 잡히는 false positive 차단)
-_TOOL_CTX_RE = re.compile(r"(\||사용|도구|활용|참조|호출|점검|추적|skill|agent|mcp|검증)", re.IGNORECASE)
-_PLANNING_PATH_RE = re.compile(r"plan_docs", re.IGNORECASE)
-# owned_paths 에서 제외할 경로: 동기화 산출물/금지 경로(소유 아님). AGENT_GUIDE Non-Negotiable Boundary.
-# (다른 agent 일반화 시 surface — frontend-expert 가 desktop/src 를 owned 로 오분류하던 것 차단)
-_NOT_OWNED_RE = re.compile(r"chatforyou-desktop/src", re.IGNORECASE)
+def _effective_config(config):
+    eff = dict(DEFAULT_EXTRACT_CONFIG)
+    if config:
+        eff.update(config)
+    return eff
 
 
-def _extract_typed(text: str) -> dict:
-    """한 텍스트에서 타입별 claim value 집합 추출 (verifiability: object 있는 것만)."""
+def _apply_signal_rules(line, low, claims, rules):
+    """라인 단위 프로젝트 컨벤션 휴리스틱(config.signal_rules). 각 rule:
+    { type, value, match_any:[regex], require_any:[regex](선택), exclude_persona:bool(선택) }."""
+    for r in rules:
+        if r.get("exclude_persona") and _PERSONA_RE.search(line):
+            continue
+        req = r.get("require_any")
+        if req and not any(re.search(p, line) for p in req):
+            continue
+        if any(re.search(p, line, re.IGNORECASE) for p in r["match_any"]):
+            claims[r["type"]].add(r["value"])
+
+
+def _extract_typed(text: str, config=None) -> dict:
+    """한 텍스트에서 타입별 claim value 집합 추출 (verifiability: object 있는 것만). config 주입형."""
+    eff = _effective_config(config)
+    comp_res = [re.compile(g) for g in eff["component_path_globs"]]
+    not_owned = eff["not_owned_substrings"]
+    planning = eff["planning_path_substrings"]
+    rules = eff["signal_rules"]
+
     claims = {t: set() for t in
               ("owned_paths", "role_boundary", "test_scope", "tool_or_skill_ref",
                "convention_doc", "safety_forbid", "workflow_step")}
 
-    # owned_paths — plan_docs(워크플로우)·.md·desktop/src(동기화 산출물/금지) 는 소유경로 아님 (audit P1-3, P1-7)
-    for m in _COMPONENT_PATH_RE.findall(text):
-        v = _norm_path(m)
-        if v and not v.endswith(".md") and not _PLANNING_PATH_RE.search(v) and not _NOT_OWNED_RE.search(v):
+    # owned_paths — 프로젝트 컴포넌트 경로 regex(config) 매칭. plan_docs·.md·not_owned 는 소유 아님
+    for cre in comp_res:
+        for m in cre.findall(text):
+            v = _norm_path(m if isinstance(m, str) else m[0])
+            if not v or v.endswith(".md"):
+                continue
+            if any(s in v for s in planning) or any(s.lower() in v.lower() for s in not_owned):
+                continue
             claims["owned_paths"].add(v)
 
-    # convention_doc
+    # convention_doc (범용)
     for m in _CONVENTION_DOC_RE.findall(text):
         claims["convention_doc"].add(m)
 
-    # tool_or_skill_ref — 경로기반(skill:/agent:)이 canonical. namespaced 는 문맥 동반 시만(라인 단위).
+    # tool_or_skill_ref — 경로기반(skill:/agent:)이 canonical (범용)
     skill_ids, agent_ids = set(), set()
     for m in _SKILL_PATH_RE.findall(text):
         claims["tool_or_skill_ref"].add(f"skill:{m.lower()}"); skill_ids.add(m.lower())
@@ -77,32 +107,19 @@ def _extract_typed(text: str) -> dict:
         low = line.lower()
         if not line:
             continue
-        # namespaced ref: 문맥 마커 동반 라인에서만 (false positive 차단)
+        # namespaced ref: 문맥 마커 동반 라인에서만 (범용, false positive 차단)
         if _TOOL_CTX_RE.search(line):
             for m in _NAMESPACED_REF_RE.findall(line):
                 claims["tool_or_skill_ref"].add(m.lower())
             for m in _BARE_REF_RE.findall(line):
                 base = m.lower()
-                # dedupe: 이미 skill:/agent: 로 잡힌 대상은 skill_or_agent 로 중복 추가 안 함 (audit P0-1)
-                if base not in skill_ids and base not in agent_ids:
+                if base not in skill_ids and base not in agent_ids:  # dedupe (audit P0-1)
                     claims["tool_or_skill_ref"].add(f"skill_or_agent:{base}")
-        # safety_forbid
-        if re.search(r"(금지|미담당|하지\s*않는다|영역이다|영역\b)", line) and not _PERSONA_RE.search(line):
-            if re.search(r"(통합|http|경계값|시나리오)\s*테스트", line):
-                claims["safety_forbid"].add("forbid:integration/http/boundary/scenario tests")
-            if re.search(r"commit|push", low):
-                claims["safety_forbid"].add("forbid:commit/push")
-            if "nodejs-frontend" in low or "미배분" in line:
-                claims["safety_forbid"].add("forbid:unassigned files")
-        # test_scope
-        if re.search(r"(service|서비스).*(단위\s*테스트|unit test)", low) or "MockitoExtension" in line:
-            claims["test_scope"].add("test_scope:service unit only")
-        # role_boundary (QA 인계)
-        if "qa" in low and re.search(r"(영역|인계|전문가)", line):
-            claims["role_boundary"].add("boundary:integration/scenario → qa")
-        # workflow_step
-        if "구현 가이드" in line:
-            claims["workflow_step"].add("workflow:write impl guide")
+        # commit/push 금지 (범용 AI 안전 — 항상 적용)
+        if re.search(r"(금지|하지\s*않는다)", line) and re.search(r"commit|push", low) and not _PERSONA_RE.search(line):
+            claims["safety_forbid"].add("forbid:commit/push")
+        # 프로젝트 컨벤션 휴리스틱(config.signal_rules)
+        _apply_signal_rules(line, low, claims, rules)
 
     return claims
 
@@ -113,35 +130,38 @@ def _guide_subject_tokens(value: str):
     return [t for t in re.split(r"[\s/]+", subject.lower()) if t]
 
 
-def _confidence(value: str, in_claude: bool, in_codex: bool, guide_text: str) -> str:
+def _confidence(value, in_claude, in_codex, guide_text, eff) -> str:
     if in_claude and in_codex:
         return "high"
     only_codex = in_codex and not in_claude
     low = value.lower()
     guide_low = (guide_text or "").lower()
-    # source_supported: 값의 핵심 토큰이 AGENT_GUIDE 경계와 매칭 + 그 토큰이 전부 guide 에 존재 (audit P1-4: 엄격화)
-    boundary_hit = [tok for tok in _GUIDE_BOUNDARY_TOKENS if tok in low]
+    # source_supported: 값의 핵심 토큰이 경계와 매칭 + 그 토큰이 전부 guide 에 존재 (audit P1-4: 엄격화)
+    boundary_hit = [tok for tok in eff["guide_boundary_tokens"] if tok in low]
     if boundary_hit:
         subj = _guide_subject_tokens(value)
         if subj and all(t in guide_low for t in subj):
             return "source_supported"
-    if only_codex and any(tok in low for tok in _CODEX_RUNTIME_TOKENS):
+    codex_tokens = eff["runtime_policy_tokens"].get("codex", [])
+    if only_codex and any(tok in low for tok in codex_tokens):
         return "runtime_allowed"
     return "unresolved"
 
 
-def extract_claims(claude_text: str, codex_text: str, guide_text: str = "") -> dict:
-    """양쪽 typed claim 교집합/차집합 → confidence 부여한 claims dict."""
-    # codex 런타임 토큰(gstack) 보강: codex 본문에 gstack 규칙이 있으면 tool_or_skill_ref 로
-    c_claude = _extract_typed(claude_text)
-    c_codex = _extract_typed(codex_text)
-    if "gstack" in codex_text.lower():
-        c_codex["tool_or_skill_ref"].add("runtime_policy.codex:gstack")
+def extract_claims(claude_text: str, codex_text: str, guide_text: str = "", config=None) -> dict:
+    """양쪽 typed claim 교집합/차집합 → confidence 부여한 claims dict. config 로 프로젝트 패턴 주입(독립)."""
+    eff = _effective_config(config)
+    c_claude = _extract_typed(claude_text, config)
+    c_codex = _extract_typed(codex_text, config)
+    # 한쪽 런타임 고유 정책 토큰(codex gstack 등) 보강
+    for tok in eff["runtime_policy_tokens"].get("codex", []):
+        if tok in codex_text.lower():
+            c_codex["tool_or_skill_ref"].add(f"runtime_policy.codex:{tok}")
 
     required, forbidden, allowlist, unresolved = [], [], [], []
     for ctype in c_claude:
         for value in sorted(c_claude[ctype] | c_codex[ctype]):
-            conf = _confidence(value, value in c_claude[ctype], value in c_codex[ctype], guide_text)
+            conf = _confidence(value, value in c_claude[ctype], value in c_codex[ctype], guide_text, eff)
             entry = {"type": ctype, "value": value, "confidence": conf}
             if ctype == "safety_forbid":
                 forbidden.append(entry)

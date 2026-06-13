@@ -49,39 +49,39 @@ docs/springboot_backend.md. backend-test-layer. commit/push 금지."""
 
 class TestConformance(unittest.TestCase):
     def test_a_pass(self):
-        r = cf.conformance_lint(RENDERED_PASS, CLAIMS)
+        r = cf.conformance_lint(RENDERED_PASS, CLAIMS, cf.CHATFORYOU_CONTRADICTION_PATTERNS)
         self.assertEqual(r["status"], "PASS", r)
         self.assertEqual(r["missing_required"], [])
 
     def test_b_missing_path_fail(self):
-        r = cf.conformance_lint(RENDERED_MISS_PATH, CLAIMS)
+        r = cf.conformance_lint(RENDERED_MISS_PATH, CLAIMS, cf.CHATFORYOU_CONTRADICTION_PATTERNS)
         self.assertEqual(r["status"], "FAIL")
         self.assertTrue(any(m["type"] == "owned_paths" for m in r["missing_required"]))
 
     def test_c_contradiction_fail(self):
-        r = cf.conformance_lint(RENDERED_CONTRADICT, CLAIMS)
+        r = cf.conformance_lint(RENDERED_CONTRADICT, CLAIMS, cf.CHATFORYOU_CONTRADICTION_PATTERNS)
         self.assertEqual(r["status"], "FAIL")
         self.assertTrue(r["forbidden_policy_contradictions"])
 
     def test_d_forbidden_missing_warn(self):
-        r = cf.conformance_lint(RENDERED_WARN, CLAIMS)
+        r = cf.conformance_lint(RENDERED_WARN, CLAIMS, cf.CHATFORYOU_CONTRADICTION_PATTERNS)
         self.assertEqual(r["status"], "WARN")
         self.assertTrue(any("integration" in f["value"] for f in r["forbidden_policy_missing"]))
 
     def test_descriptive_skipped(self):
         # role_boundary(서술형)은 토큰 미검출이어도 FAIL/WARN 유발 안 함
-        r = cf.conformance_lint(RENDERED_PASS, CLAIMS)
+        r = cf.conformance_lint(RENDERED_PASS, CLAIMS, cf.CHATFORYOU_CONTRADICTION_PATTERNS)
         self.assertEqual(r["status"], "PASS")
 
     def test_priority_fail_over_warn(self):
-        r = cf.conformance_lint(RENDERED_MISS_PATH, CLAIMS)
+        r = cf.conformance_lint(RENDERED_MISS_PATH, CLAIMS, cf.CHATFORYOU_CONTRADICTION_PATTERNS)
         self.assertEqual(r["status"], "FAIL")  # FAIL > WARN
 
     def test_boundary_aware_presence(self):
         # audit P1-6: substring 오탐 차단 — 'backend-test-layer-extra' 는 'backend-test-layer' presence 아님
         rendered = ("owns springboot-backend/src/main/java/webChat. docs/springboot_backend.md. "
                     "backend-test-layer-extra 라는 다른 토큰만 있음. commit/push 금지. integration.")
-        r = cf.conformance_lint(rendered, CLAIMS)
+        r = cf.conformance_lint(rendered, CLAIMS, cf.CHATFORYOU_CONTRADICTION_PATTERNS)
         self.assertEqual(r["status"], "FAIL")  # skill:backend-test-layer 미검출 → FAIL
         self.assertTrue(any("backend-test-layer" in m["value"] for m in r["missing_required"]))
 

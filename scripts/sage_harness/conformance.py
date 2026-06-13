@@ -23,9 +23,13 @@ _SKIP_PRESENCE_TYPES = {"role_boundary", "test_scope", "workflow_step"}
 _GATING_CONF = {"high", "source_supported", "runtime_allowed"}
 
 # forbidden 금지-반대 허용문구 denylist (FAIL). 보수적 — 명백한 위반만.
-_CONTRADICTION_PATTERNS = [
+# 제약 #2(SAGE 독립): commit/push 만 범용 기본. 프로젝트 고유 패턴(통합테스트/desktop 등)은 caller 가 주입.
+_DEFAULT_CONTRADICTION_PATTERNS = [
     (r"git\s*commit|커밋\s*(을)?\s*(한다|수행|실행)", "commit/push"),
     (r"git\s*push|push\s*(를)?\s*(한다|수행|실행)", "commit/push"),
+]
+# ChatForYou 인스턴스용(엔진 기본 아님) — 테스트/호출 시 contradiction_patterns 로 주입
+CHATFORYOU_CONTRADICTION_PATTERNS = _DEFAULT_CONTRADICTION_PATTERNS + [
     (r"통합\s*테스트\s*(를)?\s*(작성|수행|담당)", "integration tests"),
     (r"경계값\s*테스트\s*(를)?\s*(작성|수행|담당)", "boundary tests"),
     (r"chatforyou-desktop/src\s*(를)?\s*(직접\s*)?(수정|편집)", "desktop/src edit"),
@@ -41,9 +45,10 @@ def _presence_token(value: str) -> str:
     return value
 
 
-def conformance_lint(rendered_text: str, claims: dict) -> dict:
+def conformance_lint(rendered_text: str, claims: dict, contradiction_patterns=None) -> dict:
     text = rendered_text or ""
     low = text.lower()
+    patterns = contradiction_patterns if contradiction_patterns is not None else _DEFAULT_CONTRADICTION_PATTERNS
 
     missing_required = []
     warnings = []
@@ -75,7 +80,7 @@ def conformance_lint(rendered_text: str, claims: dict) -> dict:
         val = c.get("value", "")
         subject = val.split(":", 1)[1] if ":" in val else val
         # contradiction
-        for pat, label in _CONTRADICTION_PATTERNS:
+        for pat, label in patterns:
             if label in subject and re.search(pat, text, re.IGNORECASE):
                 contradictions.append({"value": val, "matched": label})
         # missing-policy: 금지 주제어가 rendered 에 아예 없음

@@ -39,7 +39,8 @@ def _classify_one(path: str, content: str, profile: dict) -> tuple:
     risk, reason, is_l3_filename = "none", "", False
     for g in r.get("l3_filename_globs", []):
         if _imatch(path, g):
-            risk, reason, is_l3_filename = "L3", "WebRTC/Kurento filename 패턴", True
+            # 라벨은 범용(제약 #2 독립). 도메인명(WebRTC/Kurento 등)은 profile.risk 가 정의, core 는 중립 라벨.
+            risk, reason, is_l3_filename = "L3", "L3 filename 패턴", True
             break
     if risk == "none":
         for g in r.get("l2_path_globs", []):
@@ -72,7 +73,7 @@ def classify_risk(event: dict, profile: dict) -> dict:
     for ch in changes:
         path = ch.get("path") or ""
         if desktop_glob and _imatch(path, desktop_glob):
-            return {"risk": "DESKTOP_BLOCK", "reason": "chatforyou-desktop/src 직접수정 금지",
+            return {"risk": "DESKTOP_BLOCK", "reason": f"동기화 산출물/금지 경로 직접수정 금지: {path}",
                     "is_l3_filename": False, "declared_l3": False, "file_short": path}
         risk, reason, is_l3 = _classify_one(path, ch.get("content") or "", profile)
         if _RANK.get(risk, -1) > _RANK.get(best["risk"], -1):

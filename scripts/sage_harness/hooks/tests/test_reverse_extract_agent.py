@@ -18,6 +18,7 @@ HOOKS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # scripts/s
 SAGE_SCRIPTS = os.path.dirname(HOOKS)                                 # scripts/sage_harness
 sys.path.insert(0, SAGE_SCRIPTS)
 import reverse_extract_agent as rx  # noqa: E402
+from extract_config_chatforyou import CHATFORYOU_EXTRACT_CONFIG as CFG  # noqa: E402  (인스턴스 config 주입)
 
 GUIDE = "Do not run git commit or git push. Do not edit chatforyou-desktop/src directly."
 
@@ -58,7 +59,7 @@ gstack 사용 규칙: 보안 작업은 gstack skill 우선.
 
 class TestExtract(unittest.TestCase):
     def setUp(self):
-        self.claims = rx.extract_claims(CLAUDE, CODEX, GUIDE)
+        self.claims = rx.extract_claims(CLAUDE, CODEX, GUIDE, CFG)
         self.req = self.claims["required_claims"]
         self.types = {c["type"] for c in self.req if "type" in c}
 
@@ -122,7 +123,7 @@ class TestExtract(unittest.TestCase):
 
 class TestSpecDraft(unittest.TestCase):
     def test_draft_skeleton(self):
-        claims = rx.extract_claims(CLAUDE, CODEX, GUIDE)
+        claims = rx.extract_claims(CLAUDE, CODEX, GUIDE, CFG)
         draft = rx.spec_draft("chatforyou-backend-expert", CLAUDE, CODEX, claims)
         self.assertIn("## intent", draft)
         self.assertIn("## advisory_scope", draft)

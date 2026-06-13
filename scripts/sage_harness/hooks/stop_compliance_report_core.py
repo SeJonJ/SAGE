@@ -50,7 +50,7 @@ def decide(event: dict, profile: dict, snapshot: dict) -> dict:
                        "text": "백엔드 소스 수정이 있었으나 plan_docs 활동 없음 (L2 gate 참조)"})
     if l3_files:
         issues.append({"severity": "NOTICE", "key": "l3_pattern_detected",
-                       "text": f"L3 패턴 파일 수정 감지: {', '.join(l3_files)} → webrtc-review-protocol 2라운드 리뷰 확인 필요"})
+                       "text": f"L3 패턴 파일 수정 감지: {', '.join(l3_files)} → L3 리뷰 프로토콜(2라운드) 확인 필요"})
     if backend_main:
         issues.append({"severity": "INFO", "key": "backend_convention_reminder",
                        "text": "백엔드 변경: backend-convention-checker 실행 여부 수동 확인 권장"})

@@ -63,7 +63,7 @@
     },
     "hooks/pre-implementation-gate": {
       "spec_hash": "sha256:a01fa190ab8cab92dd022edd73a1daf49d49cb8c31b8b2c0daac478d97f8c4b2",
-      "canonical_hash": "sha256:fb019fcf4a33775ef6a4d792141aee2c88cd8b1c59be1c9e6d339c5808b5e515",
+      "canonical_hash": "sha256:e101c7df1cf893df5e25176b6799084c878f120b40bf7928b80c5a09a788c7b0",
       "adapter_hash": {
         "claude": "sha256:bb9fb790935d150c7ddf9186d2099bb387b264183bb564b992844d0fb8d71ddf",
         "codex": "sha256:1327390809e3953b7c260cec01e95a7addbf7d5c3603fbd813d0c819dd4a4132"
@@ -87,7 +87,7 @@
     },
     "hooks/stop-compliance-report": {
       "spec_hash": "sha256:0c0b5d63364ad55dd5ad11d97ca40f572d64db30e7b3dd6d9350e3ae4d04acb7",
-      "canonical_hash": "sha256:f4ee14a80639bcae4b58deecae39da554334f428f4f4de54468fcd2180faa968",
+      "canonical_hash": "sha256:0ba79fc51f7127afcb6f94e90aa8bb5ba5891f9f3dff2d0eba381fbc93d1352f",
       "adapter_hash": {
         "claude": "sha256:1d5dce6b00ec9b68edf86a60ef86e7a43ea29f47b4dbe1a365c3057143143564",
         "codex": "sha256:7d9d7a8dcb263bbc1ba0601d6532249dc8401dc3261a2e18aac7490057219514"
