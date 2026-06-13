@@ -158,6 +158,8 @@ def extract_claims(claude_text, codex_text, guide_text="", config=None):
         guide_text=guide_text, guide_boundary_tokens=eff["guide_boundary_tokens"],
         codex_tokens=codex_tokens,
         inherited_forbidden="AGENT_GUIDE.non_negotiable_boundaries",
+        # 서술형(conformance skip 타입)은 unresolved 표면화 제외 — 절차 어휘차이 노이즈 폭증 방지
+        descriptive_types={"procedure_step", "when_to_use", "state_mutation"},
     )
     # procedure_step 에 order 부여(순서 보존, gate 는 WARN — conformance 가 skip)
     for c in merged["required_claims"]:

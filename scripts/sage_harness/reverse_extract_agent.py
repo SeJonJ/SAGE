@@ -121,6 +121,8 @@ def extract_claims(claude_text: str, codex_text: str, guide_text: str = "", conf
         guide_text=guide_text, guide_boundary_tokens=eff["guide_boundary_tokens"],
         codex_tokens=codex_tokens,
         inherited_forbidden="AGENT_GUIDE.non_negotiable_boundaries",
+        # 서술형(conformance skip 타입)은 unresolved 표면화 제외 — 일관성(skill 과 동일 규칙)
+        descriptive_types={"role_boundary", "test_scope", "workflow_step"},
     )
 
 

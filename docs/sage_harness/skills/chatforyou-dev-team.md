@@ -61,15 +61,13 @@ ChatForYou v2 주요 기능 개발을 위한 5인 에이전트 팀 조율 워크
 49. L3에서 fallback까지 실패하면  에 `Final Status
 50. Risk별 review-rework loop 적용 기준
 51. STEP 2 Exit Gate 충족 여부 확인
-52. 결정론 검증 Gate
-53. 결정론 검증 대상이 있는 경우  기준으로  실행 결과를 구현 가이드 또는
-54. 데스크톱 반영이 필요하면  기준으로 수정 후 의 sync 절차로 처리
-55. 백엔드/프론트/QA 전원 결과물 + STEP 4 의 04 gap find
-56. 실패 시 자동 fallback을 순서대로 시도한다
-57. 예외 처리/로그 표시 관련 미해결 항목이 있으면 구현 가이드 하단  또는
-58. 외부 전문가 + Claude 교차검증
-59. 외부 전문가 Critical 항목 + Claude 교차검증 결과를 유저에
-60. 팀 의견 상충 지점, 누락 위험 요소 분석
+52. 데스크톱 반영이 필요하면  기준으로 수정 후 의 sync 절차로 처리
+53. 백엔드/프론트/QA 전원 결과물 + STEP 4 의 04 gap find
+54. 실패 시 자동 fallback을 순서대로 시도한다
+55. 예외 처리/로그 표시 관련 미해결 항목이 있으면 구현 가이드 하단  또는
+56. 외부 전문가 + Claude 교차검증
+57. 외부 전문가 Critical 항목 + Claude 교차검증 결과를 유저에
+58. 팀 의견 상충 지점, 누락 위험 요소 분석
 
 ## advisory_scope
 - uses: bkit:audit, bkit:code-review, bkit:qa-phase, bkit:zero-script-qa, docs/ARCHITECT_GUIDE.md, docs/chatforyou_desktop.md, docs/nodejs_frontend.md, docs/springboot_backend.md

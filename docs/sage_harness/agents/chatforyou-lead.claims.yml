@@ -7,7 +7,7 @@ required_claims:
   - { type: tool_or_skill_ref, value: "gstack:office-hours", confidence: high }
   - { type: tool_or_skill_ref, value: "gstack:plan-eng-review", confidence: high }
   - { type: tool_or_skill_ref, value: "mcp:codegraph", confidence: high }
-  - { type: tool_or_skill_ref, value: "skill_or_agent:chatforyou-qa-expert", confidence: unresolved }
+  - { type: tool_or_skill_ref, value: "skill_or_agent:chatforyou-qa-expert", confidence: high }
   - { type: convention_doc, value: "docs/ARCHITECT_GUIDE.md", confidence: high }
   - { type: convention_doc, value: "docs/nodejs_frontend.md", confidence: high }
   - { type: convention_doc, value: "docs/springboot_backend.md", confidence: high }
@@ -18,4 +18,4 @@ forbidden_claims:
   - { inherited_forbidden_claims: "AGENT_GUIDE.non_negotiable_boundaries" }
 runtime_delta_allowlist:
   - { type: tool_or_skill_ref, value: "runtime_policy.codex:gstack", confidence: runtime_allowed }
-unresolved: ["skill_or_agent:chatforyou-qa-expert"]
+unresolved: []

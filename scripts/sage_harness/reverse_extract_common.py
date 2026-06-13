@@ -66,11 +66,14 @@ def confidence(value, in_claude, in_codex, guide_text, guide_boundary_tokens, co
 
 
 def merge_typed(c_claude: dict, c_codex: dict, *, forbidden_types, allowlist_extra,
-                guide_text, guide_boundary_tokens, codex_tokens, inherited_forbidden):
+                guide_text, guide_boundary_tokens, codex_tokens, inherited_forbidden,
+                descriptive_types=frozenset()):
     """양 런타임 typed claim dict → required/forbidden/allowlist/unresolved (confidence 부여).
 
     forbidden_types: forbidden 으로 분류할 claim type 집합(예: {"safety_forbid"}).
     allowlist_extra: codex 본문에서 보강할 runtime_policy 토큰 list(이미 c_codex 에 추가됐다고 가정).
+    descriptive_types: 서술형 타입(예: procedure_step) — conformance 가 어차피 skip 하므로 한쪽-only 여도
+      unresolved 표면화에서 제외(사람 결정 불필요). required 에는 보존(정보성). 노이즈 폭증 방지.
     """
     required, forbidden, allowlist, unresolved = [], [], [], []
     for ctype in c_claude:
@@ -83,7 +86,10 @@ def merge_typed(c_claude: dict, c_codex: dict, *, forbidden_types, allowlist_ext
             elif conf == "runtime_allowed":
                 allowlist.append(entry)
             elif conf == "unresolved":
-                unresolved.append(entry); required.append(entry)
+                # 서술형은 unresolved 목록에서 제외(사람 결정 대상 아님), required 엔 보존
+                if ctype not in descriptive_types:
+                    unresolved.append(entry)
+                required.append(entry)
             else:
                 required.append(entry)
     fb = forbidden + [{"inherited_forbidden_claims": inherited_forbidden}] if inherited_forbidden else forbidden

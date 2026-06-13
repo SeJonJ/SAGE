@@ -137,7 +137,7 @@
       "spec_hash": "sha256:3994f08ef241acfe0ff5001f9941bea9bbba3897d29fe7ad6771c93d8dfdf919",
       "claims_hash": "sha256:58ed7b1c7f787e3faf0b303ad712967370407a39c44aeb8c93634304f2b06fec",
       "render_hash": {
-        "claude": "sha256:cf2ff1ecc0b4f66c0580991c114c8254cef58677e674671dfc20e03042036346",
+        "claude": "sha256:b0b8832bfc16ff8107a67aab9f803802ab0f18719082f808c32e05233e3f62d3",
         "codex": "sha256:837c1faf5cd7d67f66baf477d2ec68f833f6b17687e846a63003abf3377b5cb8"
       },
       "adapter_contract_version": "1",
@@ -152,7 +152,7 @@
       "claims_hash": "sha256:8917560c98886e1eac6649055ac0796425e6a22eb0af908e2153480358bfc001",
       "render_hash": {
         "claude": "sha256:21f260c56670036f9bbadee71e16ae58681743ac4d427a02e09bb9d754c8edcd",
-        "codex": "sha256:de750643dbfa3503fea41dd460cef5119e0228b77c011ee3784e25ba30f92449"
+        "codex": "sha256:e0970ae18059470d5e75541eb68e6ac920561da07dba882358cfc88968262744"
       },
       "adapter_contract_version": "1",
       "conformance": "PASS",
@@ -163,26 +163,24 @@
     },
     "agents/chatforyou-lead": {
       "spec_hash": "sha256:81ffea7add4b4266129b6d75f73a2fc7774f9c51021ca83779ee8cc425906e3f",
-      "claims_hash": "sha256:535627b7141c81adf45471373ab40765348c0b97644a4b6a255937c874a9e43a",
+      "claims_hash": "sha256:6808df7278021376a4fa0619d860c5bf715121a588789db3a011e253a0f65fd2",
       "render_hash": {
-        "claude": "sha256:6b410d964302a9edd3405075f6314c291c4d9dada0b62cc8a775153339b248f6",
-        "codex": "sha256:10e10569cc20e5ea2ef63c70937b7eeebbd0b7775082e5301b8b413b41aab687"
+        "claude": "sha256:f912c67598c3414d0f4b82ef26f0f44a10932decf3420110a913f2d02b86bcc5",
+        "codex": "sha256:8724d1571a5cb25704c63c6b4556dda32a31e131fcde38b004b06cc9c96729a0"
       },
       "adapter_contract_version": "1",
       "conformance": "PASS",
       "form": "interpretive",
       "test": "scripts/sage_harness/hooks/tests/test_reverse_extract_agent.py",
       "risk": [],
-      "unresolved": [
-        "skill_or_agent:chatforyou-qa-expert"
-      ]
+      "unresolved": []
     },
     "agents/chatforyou-external-expert": {
       "spec_hash": "sha256:02539476f3f616ba878ab91a1fef74045b731b74e4865f1d6a70b51dcf654852",
       "claims_hash": "sha256:2059b7e6a40f25eaa32c9cf5f574868c9a7f3db3043ef092e129e9ce8105bb3c",
       "render_hash": {
-        "claude": "sha256:bc2cf79e53cdd30d63b641316b404be9500dfb86d3563654ab26fb44898e94ba",
-        "codex": "sha256:6b663512948dcb4b2e9122950e5b0080230fdf9a8ca4b3314d223512e654fc60"
+        "claude": "sha256:0e73626007155814f2df176f6b87082bdc38bf934afa7f7c577290f03a5d6177",
+        "codex": "sha256:7a27353788dd3fb0c16be62c9a4ba41e92f4c6c96e7036aa5b053eb267179611"
       },
       "adapter_contract_version": "1",
       "conformance": "PASS",
@@ -222,47 +220,19 @@
       }
     },
     "skills/chatforyou-dev-team": {
-      "spec_hash": "sha256:8b562b26d5e1673e68f8b7a33945d256799c0983a27d149f7ee7c96481db9b99",
-      "claims_hash": "sha256:03b3c693f44f3625a78e6d870dcb814b58007911b54b3edf259f79b47dc2de40",
+      "spec_hash": "sha256:6943ae1eacebf82a71d7bca1b07b73b222454f4e8567cd55c644e2b23c0f1c55",
+      "claims_hash": "sha256:0ba5f023193201112451a56b11f1df26f6410773c1bd0f80851b18a84e30c58f",
       "adapter_contract_version": "1",
       "conformance": "PASS",
       "form": "interpretive",
       "test": "scripts/sage_harness/hooks/tests/test_reverse_extract_skill.py",
       "risk": [],
       "unresolved": [
-        "04 의  섹션에는 아래 항목을 반드시 포함한다",
-        "1 iteration의 정의",
-        "3-iteration stop rule",
-        "APPROVED → 루프 종료 → STEP 6",
-        "Claude 교차검증 (cross-model independent rev",
-        "Codex APPROVED → 루프 종료 → STEP 6",
-        "Codex FAIL → triage → 채택 항목 \"Iteration 1",
-        "Core WebRTC Architecture Gate",
-        "FAIL → triage → \"Iteration 2 Required Fi",
-        "L2에서 외부 리뷰가 recommended인 경우에만, 사용자 명시 수용",
-        "L3에서 fallback까지 실패하면  에 `Final Status",
-        "Risk별 review-rework loop 적용 기준",
-        "STEP 2 Exit Gate 충족 여부 확인",
-        "STEP 2 Exit Gate 충족 여부 확인 (구현 가이드 체크박스 +",
-        "STEP 4 에서 lead 가 04-analyze 작성 시 QA Cove",
-        "external-expert",
-        "결정론 검증 Gate",
-        "결정론 검증 대상이 있는 경우  기준으로  실행 결과를 구현 가이드 또는",
-        "데스크톱 반영이 필요하면  기준으로 수정 후 의 sync 절차로 처리",
-        "백엔드/프론트/QA 전원 결과물 + STEP 4 의 04 gap find",
-        "실패 시 자동 fallback을 순서대로 시도한다",
-        "여전히 FAIL → Final Status",
-        "예외 처리/로그 표시 관련 미해결 항목이 있으면 구현 가이드 하단  또는",
-        "외부 전문가 + Claude 교차검증",
-        "외부 전문가 + Codex 반복 검토 루프",
-        "외부 전문가 Critical 항목 + Claude 교차검증 결과를 유저에",
-        "외부 전문가 Critical 항목 + Codex 교차검증 결과를 유저에게",
-        "팀 의견 상충 지점, 누락 위험 요소 분석",
         "gstack:codex"
       ],
       "render_hash": {
-        "claude": "sha256:4dd4d79aa927ed1eccd04f162c88504e28ff6af2912740d69e684c23a63789e2",
-        "codex": "sha256:6ff58f33c1746f058108c88a57d7e5c141c3a092c08af0f8d17189d0538eaee5"
+        "claude": "sha256:5f8ecf3c04050ddf32fdb2e9cc2709c2b083f43c97fe9d6226b12a5e5e917bae",
+        "codex": "sha256:7967468b9a2f57d547d71a6abc9105e3df467f35d9346ddd59b854c162f68114"
       }
     },
     "skills/chatforyou-ship": {

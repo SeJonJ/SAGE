@@ -33,8 +33,6 @@ required_claims:
   - { type: procedure_step, value: "src/test/service/ 에 Service 단위 테스트 작성 (정", confidence: high, order: 130 }
   - { type: procedure_step, value: "가 STEP 3 에서 작성한 통합/경계/HTTP 테스트의 커버리지 검증 ", confidence: high, order: 320 }
   - { type: procedure_step, value: "검증 결과에 따라 구현 가이드 체크박스 갱신", confidence: high, order: 220 }
-  - { type: procedure_step, value: "결정론 검증 Gate", confidence: unresolved }
-  - { type: procedure_step, value: "결정론 검증 대상이 있는 경우  기준으로  실행 결과를 구현 가이드 또는", confidence: unresolved }
   - { type: procedure_step, value: "구현 전 , ,  재확인", confidence: high, order: 180 }
   - { type: procedure_step, value: "기존 구현 가이드 존재 여부 확인 (, )", confidence: high, order: 40 }
   - { type: procedure_step, value: "데스크톱 반영이 필요하면  기준으로 수정 후 의 sync 절차로 처리", confidence: unresolved }
@@ -87,4 +85,4 @@ forbidden_claims:
   - { inherited_forbidden_claims: "AGENT_GUIDE.non_negotiable_boundaries" }
 runtime_delta_allowlist:
   - { type: uses, value: "runtime_policy.codex:gstack", confidence: runtime_allowed }
-unresolved: ["04 의  섹션에는 아래 항목을 반드시 포함한다", "1 iteration의 정의", "3-iteration stop rule", "APPROVED → 루프 종료 → STEP 6", "Claude 교차검증 (cross-model independent rev", "Codex APPROVED → 루프 종료 → STEP 6", "Codex FAIL → triage → 채택 항목 \"Iteration 1", "Core WebRTC Architecture Gate", "FAIL → triage → \"Iteration 2 Required Fi", "L2에서 외부 리뷰가 recommended인 경우에만, 사용자 명시 수용", "L3에서 fallback까지 실패하면  에 `Final Status", "Risk별 review-rework loop 적용 기준", "STEP 2 Exit Gate 충족 여부 확인", "STEP 2 Exit Gate 충족 여부 확인 (구현 가이드 체크박스 +", "STEP 4 에서 lead 가 04-analyze 작성 시 QA Cove", "external-expert", "결정론 검증 Gate", "결정론 검증 대상이 있는 경우  기준으로  실행 결과를 구현 가이드 또는", "데스크톱 반영이 필요하면  기준으로 수정 후 의 sync 절차로 처리", "백엔드/프론트/QA 전원 결과물 + STEP 4 의 04 gap find", "실패 시 자동 fallback을 순서대로 시도한다", "여전히 FAIL → Final Status", "예외 처리/로그 표시 관련 미해결 항목이 있으면 구현 가이드 하단  또는", "외부 전문가 + Claude 교차검증", "외부 전문가 + Codex 반복 검토 루프", "외부 전문가 Critical 항목 + Claude 교차검증 결과를 유저에", "외부 전문가 Critical 항목 + Codex 교차검증 결과를 유저에게", "팀 의견 상충 지점, 누락 위험 요소 분석", "gstack:codex"]
+unresolved: ["gstack:codex"]
