@@ -1,0 +1,8 @@
+# sdist 에 번들 리소스 포함 — install 이 대상 프로젝트로 복사하는 자산.
+# (sage CLI 는 sage/_resources.py 로 이 트리들을 해석. editable/sdist 레이아웃에서 동작.)
+recursive-include templates *
+recursive-include schema *.json
+recursive-include scripts/sage_harness *.py *.sh *.md
+recursive-include docs/sage_harness *.md *.json *.yml
+include README.md
+include AGENT_GUIDE.md

@@ -76,5 +76,9 @@ echo "### 17. reverse_extract_skill (skill typed claim 자동도출)"
 python3 "$HERE/test_reverse_extract_skill.py" || rc=1
 
 echo ""
+echo "### 19. _resources (번들 리소스 경로 해석 — 패키징/재배치)"
+python3 "$HERE/test_resources.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

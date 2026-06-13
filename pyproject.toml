@@ -16,3 +16,10 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["sage*"]
+
+# 번들 리소스(templates/·schema/·scripts/sage_harness/·docs/sage_harness/)는 sage 패키지 밖에 있고
+# install 이 대상 프로젝트로 복사한다. sdist 는 MANIFEST.in 으로 포함되며 sage/_resources.py 가 경로를
+# 해석한다($SAGE_RESOURCE_ROOT override + repo fallback). 순수 PyPI wheel 단독 배포는 dual-use 인
+# scripts/sage_harness 의 패키지 이전(importlib.resources)이 필요 — 공개 전 과제(README 참조).
+[tool.setuptools]
+include-package-data = true

@@ -13,12 +13,7 @@
 import json
 import os
 
-# 이 파일: sage/commands/install.py → 레포 루트 = ../../
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_TEMPLATES = os.path.join(_REPO_ROOT, "templates")
-_CORE = os.path.join(_TEMPLATES, "core")                         # 중립 framework/agent 템플릿
-_SCHEMA = os.path.join(_REPO_ROOT, "schema")
-_HOOKS_SRC = os.path.join(_REPO_ROOT, "scripts", "sage_harness", "hooks")   # 정본(도메인값 0)
+from sage import _resources   # 번들 리소스 경로 단일 해석(env override + repo fallback — 재배치/설치 대비)
 
 # CORE roster (중립 6인) + CORE hook 6종(form). 도메인값 아님 = framework 메타.
 _CORE_AGENTS = ["leader", "backend", "frontend", "qa", "reviewer", "convention-checker"]
@@ -76,7 +71,7 @@ def _copy_tree(src_dir, dst_dir, force, created, skipped):
 
 def _profile_with_host(host, prefix):
     """templates/project-profile.yaml 을 읽어 host/prefix 만 치환(나머지는 빈 스키마 유지)."""
-    src = os.path.join(_TEMPLATES, "project-profile.yaml")
+    src = os.path.join(_resources.templates_dir(), "project-profile.yaml")
     text = open(src, encoding="utf-8").read()
     out = []
     for line in text.splitlines():
@@ -109,7 +104,8 @@ def run(args) -> int:
     dest = os.path.abspath(args.dest)
     created, skipped = [], []
     wrapper = "CLAUDE.md" if args.host == "claude" else "CODEX.md"
-    fw = os.path.join(_CORE, "framework")
+    core = _resources.core_dir()
+    fw = os.path.join(core, "framework")
 
     # 1. profile (host/prefix 치환, 나머지 빈 스키마)
     _write(os.path.join(dest, "sage", "project-profile.yaml"),
@@ -125,16 +121,17 @@ def run(args) -> int:
     _copy_tree(os.path.join(fw, "docs", "agent"), os.path.join(dest, "docs", "agent"), args.force, created, skipped)
 
     # 3. CORE hook spec(중립 6종) → docs/sage_harness/hooks/
+    specs = _resources.hook_specs_dir()
     for hid, _form in _CORE_HOOKS:
-        _copy_file(os.path.join(_REPO_ROOT, "docs", "sage_harness", "hooks", f"{hid}.md"),
+        _copy_file(os.path.join(specs, f"{hid}.md"),
                    os.path.join(dest, "docs", "sage_harness", "hooks", f"{hid}.md"), args.force, created, skipped)
 
     # 4. CORE hook 정본(core+adapter+strategy+native) → scripts/sage_harness/hooks/ (도메인값 0)
-    _copy_tree(_HOOKS_SRC, os.path.join(dest, "scripts", "sage_harness", "hooks"), args.force, created, skipped)
+    _copy_tree(_resources.hooks_src_dir(), os.path.join(dest, "scripts", "sage_harness", "hooks"), args.force, created, skipped)
 
     # 5. CORE roster agent spec(중립 6인) → docs/sage_harness/agents/
     for aid in _CORE_AGENTS:
-        _copy_file(os.path.join(_CORE, "agents", f"{aid}.md"),
+        _copy_file(os.path.join(core, "agents", f"{aid}.md"),
                    os.path.join(dest, "docs", "sage_harness", "agents", f"{aid}.md"), args.force, created, skipped)
     for sub in ("skills",):   # 빈 자산 디렉토리(프로젝트별 skill 은 추후)
         d = os.path.join(dest, "docs", "sage_harness", sub)
@@ -148,9 +145,10 @@ def run(args) -> int:
            json.dumps(_manifest(args.host), ensure_ascii=False, indent=2) + "\n", args.force, created, skipped)
 
     # 7. spec 템플릿(사람 작성 참고) + schema(validate 참조)
+    templates = _resources.templates_dir()
     for t in ("agent.spec.md", "hook.spec.md", "skill.spec.md", "claims.yml"):
-        _copy_file(os.path.join(_TEMPLATES, t), os.path.join(dest, "sage", "templates", t), args.force, created, skipped)
-    _copy_file(os.path.join(_SCHEMA, "manifest.schema.json"),
+        _copy_file(os.path.join(templates, t), os.path.join(dest, "sage", "templates", t), args.force, created, skipped)
+    _copy_file(os.path.join(_resources.schema_dir(), "manifest.schema.json"),
                os.path.join(dest, "schema", "manifest.schema.json"), args.force, created, skipped)
 
     # 보고

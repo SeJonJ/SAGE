@@ -60,8 +60,8 @@ def _load_profile(path):
 
 
 def run(args):
-    here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # sage_project
-    prof_path = args.profile or os.path.join(here, "templates", "project-profile.yaml")
+    from sage import _resources
+    prof_path = args.profile or os.path.join(_resources.templates_dir(), "project-profile.yaml")
     profile = _load_profile(prof_path)
     print("== sage doctor ==")
     if profile is None:
