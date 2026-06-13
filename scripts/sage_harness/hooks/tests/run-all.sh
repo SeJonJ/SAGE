@@ -16,5 +16,9 @@ echo "### 3. post-tool-logger reverse_extract 폐루프 (structural + profile_bo
 python3 "$HERE/test_post_tool_logger.py" || rc=1
 
 echo ""
+echo "### 4. pre-phase4-checklist-gate reverse_extract 폐루프 (IO-bound gate, 2단계 pure core)"
+python3 "$HERE/test_pre_phase4_checklist_gate.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

@@ -38,6 +38,22 @@
         "plan-doc glob drift: Claude '*/plan_docs/*' vs Codex '^plan_docs/'; canonical='*plan_docs/*' (사람 확인)",
         "type=other 기록 drift: Claude 기록 vs Codex skip; canonical=skip (사람 확인)"
       ]
+    },
+    "hooks/pre-phase4-checklist-gate": {
+      "spec_hash": "sha256:b1532745f8aa931853281c3cc2bad5b58a3f7dc45e9cc68b437c87665329c191",
+      "canonical_hash": "sha256:4e113a82b5ccb61d67ce0fdd5b0d21351a4dcfc446810c6c04f14d852d10637b",
+      "adapter_hash": {
+        "claude": "sha256:1b8cdc2ed5e10b480d0be2ede21aef8c33729e09c01f8121226b9a36c339120d",
+        "codex": "sha256:2a0ecc0d3ac84f853176063a93378b73ffb24025c8711ae4acd27c70eff9eed4"
+      },
+      "adapter_contract_version": "1",
+      "render_hash": {
+        "claude": "sha256:1b8cdc2ed5e10b480d0be2ede21aef8c33729e09c01f8121226b9a36c339120d",
+        "codex": "sha256:2a0ecc0d3ac84f853176063a93378b73ffb24025c8711ae4acd27c70eff9eed4"
+      },
+      "conformance": "PASS",
+      "risk": [],
+      "unresolved": []
     }
   }
 }

@@ -1,0 +1,8 @@
+{
+  "phase4_trigger_glob": "*plan_docs/04-analyze/*.md",
+  "checklist_scan_targets": [
+    { "label": "03-implementation", "glob": "plan_docs/03-implementation/*.md", "is_impl": true },
+    { "label": "backend plan_docs", "glob": "springboot-backend/plan_docs/*.md" },
+    { "label": "frontend plan_docs", "glob": "nodejs-frontend/plan_docs/*.md" }
+  ]
+}
