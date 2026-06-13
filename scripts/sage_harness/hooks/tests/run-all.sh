@@ -56,5 +56,9 @@ echo "### 13. extract_agent 드라이버 (재현 가능 진입점, 독립)"
 python3 "$HERE/test_extract_driver.py" || rc=1
 
 echo ""
+echo "### 14. manifest_util (manifest 공용 헬퍼)"
+python3 "$HERE/test_manifest_util.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

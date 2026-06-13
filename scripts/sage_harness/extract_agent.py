@@ -50,6 +50,12 @@ def main(argv=None):
     p.add_argument("--config", default="", help="module:VAR | *.json | (없으면 DEFAULT 범용)")
     p.add_argument("--out-dir", default="docs/sage_harness/agents")
     p.add_argument("--write", action="store_true", help="파일 기록 (없으면 stdout 미리보기)")
+    p.add_argument("--register", action="store_true",
+                   help="--write 시 manifest 자동 등록 (spec/claims hash + render_hash). --render-claude/-codex 로 렌더경로 지정")
+    p.add_argument("--render-claude", default="", help="manifest render_hash.claude 산출물 경로(있으면 해시)")
+    p.add_argument("--render-codex", default="", help="manifest render_hash.codex 산출물 경로(있으면 해시)")
+    p.add_argument("--test", default="scripts/sage_harness/hooks/tests/test_reverse_extract_agent.py",
+                   help="manifest.test 경로(regression)")
     args = p.parse_args(argv)
 
     config = load_config(args.config)
@@ -63,7 +69,18 @@ def main(argv=None):
             f.write(claims_yaml)
         print(f"✅ wrote {args.out_dir}/{args.id}.md + .claims.yml "
               f"(required={len(claims['required_claims'])}, unresolved={len(claims['unresolved'])})")
-        print("   ※ manifest 등록은 sage generate/validate 흐름에서. spec_hash/claims_hash 갱신 필요.")
+        if args.register:
+            import manifest_util as mu
+            root = mu.find_root(os.getcwd())
+            if not root:
+                print("   ⚠️ manifest 미발견 — 등록 건너뜀", file=sys.stderr)
+            else:
+                mu.upsert_agent(root, args.id,
+                                claude_render=args.render_claude, codex_render=args.render_codex,
+                                test=args.test, unresolved=claims["unresolved"])
+                print(f"✅ manifest 등록: agents/{args.id} (form:interpretive)")
+        else:
+            print("   ※ manifest 등록은 --register 또는 sage generate 흐름에서.")
     else:
         print("=== spec.md (draft) ===\n" + spec_md)
         print("=== claims.yml ===\n" + claims_yaml)
