@@ -44,5 +44,9 @@ echo "### 10. sage change 라우터 (자연어 의도 → generate/absorb)"
 python3 "$HERE/test_change_router.py" || rc=1
 
 echo ""
+echo "### 11. reviewer_resolution (codex-host opposite reviewer fallback)"
+python3 "$HERE/test_reviewer_resolution.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"
