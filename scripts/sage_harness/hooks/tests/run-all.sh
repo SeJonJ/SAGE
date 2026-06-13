@@ -48,5 +48,9 @@ echo "### 11. reviewer_resolution (codex-host opposite reviewer fallback)"
 python3 "$HERE/test_reviewer_resolution.py" || rc=1
 
 echo ""
+echo "### 12. validate 안전성 (오염 manifest test 경로 차단)"
+python3 "$HERE/test_validate_safety.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

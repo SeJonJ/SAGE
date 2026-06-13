@@ -36,6 +36,24 @@ def _sha(path):
         return "sha256:" + hashlib.sha256(f.read()).hexdigest()
 
 
+def _safe_test_path(root, test):
+    """manifest.test 를 안전 실행 경로로만 허용 (audit 4회차 P1: 오염 manifest 임의 실행 차단).
+
+    조건: 상대경로 / `..` 없음 / .py·.sh 확장자 / realpath 가 root 내부 / scripts/sage_harness/ 하위.
+    위반 시 None.
+    """
+    if not test or os.path.isabs(test) or ".." in test.split("/"):
+        return None
+    if not (test.endswith(".py") or test.endswith(".sh")):
+        return None
+    rp = os.path.realpath(os.path.join(root, test))
+    root_rp = os.path.realpath(root)
+    allowed = os.path.realpath(os.path.join(root, "scripts", "sage_harness"))
+    if not rp.startswith(root_rp + os.sep) or not rp.startswith(allowed + os.sep):
+        return None
+    return rp if os.path.exists(rp) else None
+
+
 def _find_root(start):
     cur = os.path.abspath(start or os.getcwd())
     while True:
@@ -105,9 +123,9 @@ def _validate_hook(root, asset_id, entry, run_regression):
     if run_regression and sev in ("PASS", "WARN"):
         test = entry.get("test")
         if test:
-            tpath = os.path.join(root, test)
-            if not os.path.exists(tpath):
-                bump("FAIL"); msgs.append(f"  FAIL missing test: {test}")
+            tpath = _safe_test_path(root, test)
+            if tpath is None:
+                bump("FAIL"); msgs.append(f"  FAIL unsafe/missing test path: {test}")
             else:
                 runner = ["python3", tpath] if tpath.endswith(".py") else ["bash", tpath]
                 r = subprocess.run(runner, cwd=root, capture_output=True, text=True)
@@ -142,8 +160,10 @@ def _validate_agent(root, asset_id, entry, run_regression=True):
     # render_hash 는 interpretive/외부 산출물이라 v1 staleness 재계산 제외(정보성)
     test = entry.get("test")
     if run_regression and test and sev in ("PASS", "WARN"):
-        tpath = os.path.join(root, test)
-        if os.path.exists(tpath):
+        tpath = _safe_test_path(root, test)
+        if tpath is None:
+            bump("FAIL"); msgs.append(f"  FAIL unsafe/missing test path: {test}")
+        else:
             r = subprocess.run(["python3", tpath], cwd=root, capture_output=True, text=True)
             if r.returncode != 0:
                 bump("FAIL"); msgs.append(f"  FAIL regression 실패: {test}")

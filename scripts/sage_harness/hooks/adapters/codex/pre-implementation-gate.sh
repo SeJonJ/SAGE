@@ -61,6 +61,8 @@ event = {"hook_id": "pre-implementation-gate", "hook_event_name": "PreToolUse", 
          "declared_max": declared, "changes": changes}
 
 pg = (profile.get("risk") or {}).get("plan_glob", "plan_docs/00-base_plan/**/*.md")
+if os.path.isabs(pg) or ".." in pg.split("/"):  # audit P1: root 밖 glob 거부
+    pg = "plan_docs/00-base_plan/**/*.md"
 import time as _t
 paths = sorted(glob.glob(os.path.join(root, pg), recursive=True), key=lambda p: -os.path.getmtime(p)) if os.path.isdir(os.path.join(root, "plan_docs")) else []
 _now = _t.time()

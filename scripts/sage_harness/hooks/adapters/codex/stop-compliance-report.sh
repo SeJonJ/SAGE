@@ -53,9 +53,13 @@ def last_assistant_text(path):
     if not path or not os.path.exists(path):
         return ""
     last = ""
+    seen = 0
     try:
         with open(path, encoding="utf-8", errors="ignore") as fh:
             for line in fh:
+                seen += 1
+                if seen > 200000:   # audit P1: 거대 transcript DoS 방지 (라인 캡)
+                    break
                 line = line.strip()
                 if not line:
                     continue

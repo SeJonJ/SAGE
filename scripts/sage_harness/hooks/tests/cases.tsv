@@ -16,3 +16,5 @@ src/main/java/webChat/Foo.java	0	일반 소스코드 통과
 README.md	0	루트 문서 통과
 .codex/hooks/scripts/sage_harness/x.sh	2	산출물 하위 source-like 경로도 guarded 우선 차단(P1)
 .claude/agents/scripts/sage_harness/y.md	2	agents 하위 source-like 경로도 차단(P1)
+.CODEX/agents/x.md	2	대소문자 우회(.CODEX) 차단(audit4 P1-2)
+.Claude/Hooks/y.sh	2	대소문자 우회(.Claude/Hooks) 차단
