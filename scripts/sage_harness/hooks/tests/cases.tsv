@@ -5,7 +5,7 @@
 .codex/agents/backend.md	2	codex agent 산출물 block
 .codex/hooks/pre-gate.sh	2	codex hook 산출물 block
 .codex/skills/backend-convention/SKILL.md	2	codex skill 산출물 block
-/Users/sejon/project/ChatForYou_v2/.claude/agents/x.md	2	절대경로 산출물도 block
+/home/user/myproject/.claude/agents/x.md	2	절대경로 산출물도 block (범용 경로 — 작성자 fs 비의존)
 ./.codex/agents/y.md	2	상대 ./ prefix 정규화 후 block
 docs/sage_harness/agents/backend.md	0	spec(소스)은 허용
 docs/sage_harness/hooks/pre-gate.md	0	hook spec 허용
