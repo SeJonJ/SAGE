@@ -12,5 +12,9 @@ echo "### 2. capture-declared-risk reverse_extract 폐루프"
 python3 "$HERE/test_capture_declared_risk.py" || rc=1
 
 echo ""
+echo "### 3. post-tool-logger reverse_extract 폐루프 (structural + profile_bound)"
+python3 "$HERE/test_post_tool_logger.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

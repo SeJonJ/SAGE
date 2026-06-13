@@ -19,6 +19,25 @@
       "conformance": "PASS",
       "risk": [],
       "unresolved": []
+    },
+    "hooks/post-tool-logger": {
+      "spec_hash": "sha256:cc089662d23ebecf052d72eee8fcfdff891aec6adad4ceec94c3720f473b42bd",
+      "canonical_hash": "sha256:f8b860a0af919c6e8c69adadab322784d129f72b02e0bc7b17c0e79ac0987d6d",
+      "adapter_hash": {
+        "claude": "sha256:f0e6387f01b9bfc3687fe7f76a15470948b09a411c8c10b801c13d609672d602",
+        "codex": "sha256:652b6cd2d0994fcecab664f358a15aa3efcbedf88f94dedee688c1e08b1c4796"
+      },
+      "adapter_contract_version": "1",
+      "render_hash": {
+        "claude": "sha256:f0e6387f01b9bfc3687fe7f76a15470948b09a411c8c10b801c13d609672d602",
+        "codex": "sha256:652b6cd2d0994fcecab664f358a15aa3efcbedf88f94dedee688c1e08b1c4796"
+      },
+      "conformance": "PASS",
+      "risk": [],
+      "unresolved": [
+        "plan-doc glob drift: Claude '*/plan_docs/*' vs Codex '^plan_docs/'; canonical='*plan_docs/*' (사람 확인)",
+        "type=other 기록 drift: Claude 기록 vs Codex skip; canonical=skip (사람 확인)"
+      ]
     }
   }
 }

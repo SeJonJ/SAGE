@@ -1,0 +1,12 @@
+{
+  "file_type_map": [
+    { "glob": "springboot-backend/src/main/java/*", "type": "backend-main" },
+    { "glob": "springboot-backend/src/test/java/*", "type": "backend-test" },
+    { "glob": "nodejs-frontend/static/js/*", "type": "frontend-js" },
+    { "glob": "nodejs-frontend/server.js", "type": "frontend-server" },
+    { "glob": "nodejs-frontend/config/*", "type": "frontend-config" },
+    { "glob": "*plan_docs/*", "type": "plan-doc" }
+  ],
+  "skip_untyped": true,
+  "log_schema_version": "1"
+}
