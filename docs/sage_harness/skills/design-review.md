@@ -9,17 +9,15 @@ kind: skill
 ## when_to_use
 - design review
 - plan 검토
-- 검토
 - 구조 분석
-- 분석
-- 설계
+- 설계 검토
+- 설계 방향
+- 아키텍처
 
 ## procedure
 1. 설계 문서 + 관련 파일 분석
-2. 관련 기존 plan 파일 (유사 기능이 있는 경우)
-3. 설계에서 언급된 기존 소스 파일 (필요 시)
-4. 타당성 검증 및 수정
-5. 구현 가이드 작성
+2. 타당성 검증 및 수정
+3. 구현 가이드 작성
 
 ## advisory_scope
 - uses: docs/ARCHITECT_GUIDE.md, docs/nodejs_frontend.md, docs/springboot_backend.md

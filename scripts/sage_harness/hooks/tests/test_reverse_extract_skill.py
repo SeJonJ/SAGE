@@ -88,6 +88,28 @@ class TestSkillExtract(unittest.TestCase):
         b = rs.claims_to_yaml(rs.extract_claims(CLAUDE, CODEX, GUIDE, CFG))
         self.assertEqual(a, b)
 
+    def test_noise_filters(self):
+        # design-review 추출 노이즈 보강: when_to_use 부분문자열 단어 + procedure 읽기대상 파일참조 배제
+        claude = ('---\nname: dr\ndescription: >\n'
+                  '  "설계 검토", "설계", "검토", "구조 분석", "분석" 표현에 사용.\n---\n'
+                  '## 목적\n검토.\n## 실행 방법\n'
+                  '1. 설계 문서 분석\n'
+                  '2. 관련 기존 plan 파일 (유사 기능이 있는 경우)\n'
+                  '3. 설계에서 언급된 소스 파일 (필요 시)\n'
+                  '4. 타당성 검증\n')
+        codex = claude.replace(".claude", ".codex")
+        c = rs.extract_claims(claude, codex, GUIDE, CFG)
+        whens = {x["value"] for x in c["required_claims"] if x["type"] == "when_to_use"}
+        self.assertIn("설계 검토", whens)
+        self.assertIn("구조 분석", whens)
+        self.assertNotIn("설계", whens)   # 부분문자열 → 제거
+        self.assertNotIn("검토", whens)
+        self.assertNotIn("분석", whens)
+        steps = {x["value"] for x in c["required_claims"] if x["type"] == "procedure_step"}
+        self.assertTrue(any("분석" in s for s in steps))         # 실제 step 유지
+        self.assertTrue(any("검증" in s for s in steps))
+        self.assertFalse(any(s.endswith("경우)") or s.endswith("시)") for s in steps))  # 읽기대상 파일참조 배제
+
     def test_cross_model_invocation_allowlist(self):
         # 사람 결정: cross-model 호출 토큰(한쪽-only)은 unresolved 아니라 allowlist (§3.2.1)
         cfg = dict(CFG); cfg["cross_model_invocation"] = {"claude": ["gstack:codex"], "codex": ["$claude consult"]}

@@ -236,8 +236,8 @@
       }
     },
     "skills/design-review": {
-      "spec_hash": "sha256:3ea7790932e23c459c52a2e025799582cf315ef9e2258ac8736da5942f0cdba7",
-      "claims_hash": "sha256:61ec21b4d99737074304055c296c756869c6040b09a45773d7910734d3844ca4",
+      "spec_hash": "sha256:46250bf23224f753cbb640829fb951d412e009f753190e9362a52153f0ad7477",
+      "claims_hash": "sha256:1ea376d360ed6469fabc931d34fcc21ccd30f083819a4b1595de5f2100d0bd5a",
       "adapter_contract_version": "1",
       "conformance": "PASS",
       "form": "interpretive",

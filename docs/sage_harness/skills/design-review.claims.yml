@@ -4,17 +4,12 @@ kind: skill
 required_claims:
   - { type: when_to_use, value: "design review", confidence: high }
   - { type: when_to_use, value: "plan 검토", confidence: high }
-  - { type: when_to_use, value: "검토", confidence: high }
   - { type: when_to_use, value: "구조 분석", confidence: high }
-  - { type: when_to_use, value: "분석", confidence: high }
-  - { type: when_to_use, value: "설계", confidence: high }
   - { type: when_to_use, value: "설계 검토", confidence: high }
   - { type: when_to_use, value: "설계 방향", confidence: high }
   - { type: when_to_use, value: "아키텍처", confidence: high }
-  - { type: procedure_step, value: "관련 기존 plan 파일 (유사 기능이 있는 경우)", confidence: high, order: 20 }
   - { type: procedure_step, value: "구현 가이드 작성", confidence: high, order: 50 }
   - { type: procedure_step, value: "설계 문서 + 관련 파일 분석", confidence: high, order: 10 }
-  - { type: procedure_step, value: "설계에서 언급된 기존 소스 파일 (필요 시)", confidence: high, order: 30 }
   - { type: procedure_step, value: "타당성 검증 및 수정", confidence: high, order: 40 }
   - { type: uses, value: "docs/ARCHITECT_GUIDE.md", confidence: high }
   - { type: uses, value: "docs/nodejs_frontend.md", confidence: high }

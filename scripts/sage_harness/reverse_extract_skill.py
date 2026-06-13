@@ -38,6 +38,9 @@ _PATH_ITEM_RE = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+`?[\w./\[\]N월_-]+\.(?:md|j
 # input_scope: regex 패턴 → 사람이 읽는 라벨 (raw regex 노출 방지)
 _INPUT_SCOPE_LABELS = {r"git diff": "git diff 변경파일", r"변경된?\s*파일": "변경 파일",
                        r"changed files": "changed files"}
+# 절차가 아닌 "읽기 대상" 입력 참조 노이즈(파일/소스/문서/코드 + 괄호 조건) — procedure_step 에서 배제.
+# 예: "관련 기존 plan 파일 (유사 기능이 있는 경우)" / "설계에서 언급된 기존 소스 파일 (필요 시)"
+_INPUT_REF_RE = re.compile(r"(파일|소스|문서|코드)\s*\([^)]*\)\s*$")
 
 
 def _eff(config):
@@ -90,6 +93,9 @@ def _extract_typed(text, config=None):
     if fm:
         for q in re.findall(eff["trigger_quote_re"], fm.group(1)):
             claims["when_to_use"].add(q.strip())
+    # 더 긴 트리거의 부분문자열인 단어 제거(노이즈 "검토"/"분석"/"설계" 등 — 풀 트리거만 유지)
+    wt = claims["when_to_use"]
+    claims["when_to_use"] = {w for w in wt if not any(w != o and w in o for o in wt)}
 
     # input_scope: config 패턴 → 사람이 읽는 라벨(raw regex 노출 방지)
     for pat in eff["input_scope_patterns"]:
@@ -109,7 +115,7 @@ def _extract_typed(text, config=None):
             if shm:
                 step_no += 10
                 lbl = _step_label(shm.group(2))
-                if lbl:
+                if lbl and not _INPUT_REF_RE.search(lbl):   # 읽기대상 파일참조 노이즈 배제
                     claims["procedure_step"].add(lbl)
                     ordered_steps.append((step_no, lbl))
                 cur_section = "procedure"
@@ -124,7 +130,7 @@ def _extract_typed(text, config=None):
             if sm and not _PATH_ITEM_RE.match(line):   # 파일목록 항목 노이즈 배제(P2)
                 step_no += 10
                 lbl = _step_label(sm.group(2))
-                if lbl:
+                if lbl and not _INPUT_REF_RE.search(lbl):   # 읽기대상 파일참조 노이즈 배제
                     claims["procedure_step"].add(lbl)
                     ordered_steps.append((step_no, lbl))
         if cur_section == "output":
