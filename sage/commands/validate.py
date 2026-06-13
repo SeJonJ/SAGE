@@ -116,9 +116,43 @@ def _validate_hook(root, asset_id, entry, run_regression):
     return sev, msgs
 
 
+def _validate_agent(root, asset_id, entry):
+    """agent(form:interpretive) → spec_hash + claims_hash staleness + regression. (render 는 interpretive/외부)."""
+    msgs = []
+    sev = "PASS"
+    aid = asset_id.split("/", 1)[1]
+    spec = os.path.join(root, "docs", "sage_harness", "agents", f"{aid}.md")
+    claims = os.path.join(root, "docs", "sage_harness", "agents", f"{aid}.claims.yml")
+
+    def bump(s):
+        nonlocal sev
+        if _SEV_RANK[s] > _SEV_RANK[sev]:
+            sev = s
+
+    if not os.path.exists(spec):
+        bump("FAIL"); msgs.append(f"  FAIL missing spec: {spec}")
+    elif entry.get("spec_hash") and _sha(spec) != entry["spec_hash"]:
+        bump("STALE"); msgs.append("  STALE spec_hash 불일치")
+    if not os.path.exists(claims):
+        bump("FAIL"); msgs.append(f"  FAIL missing claims: {claims}")
+    elif entry.get("claims_hash") and _sha(claims) != entry["claims_hash"]:
+        bump("STALE"); msgs.append("  STALE claims_hash 불일치")
+    for u in entry.get("unresolved", []):
+        bump("WARN"); msgs.append(f"  WARN unresolved: {u}")
+    # render_hash 는 interpretive/외부 산출물이라 v1 staleness 재계산 제외(정보성)
+    test = entry.get("test")
+    if test and sev in ("PASS", "WARN"):
+        tpath = os.path.join(root, test)
+        if os.path.exists(tpath):
+            r = subprocess.run(["python3", tpath], cwd=root, capture_output=True, text=True)
+            if r.returncode != 0:
+                bump("FAIL"); msgs.append(f"  FAIL regression 실패: {test}")
+    return sev, msgs
+
+
 def run(args):
-    if args.kind not in ("hook", "all"):
-        return not_implemented("validate", f"{args.kind} validate 는 step6~7 (agent/skill conformance)")
+    if args.kind not in ("hook", "agent", "all"):
+        return not_implemented("validate", f"{args.kind} validate 는 후속 (skill conformance)")
 
     root = _find_root(args.root)
     if not root:
@@ -131,17 +165,25 @@ def run(args):
         return 2
 
     assets = manifest.get("assets", {})
-    hook_ids = [k for k in assets if k.startswith("hooks/")]
+    prefixes = []
+    if args.kind in ("hook", "all"):
+        prefixes.append("hooks/")
+    if args.kind in ("agent", "all"):
+        prefixes.append("agents/")
+    target_ids = [k for k in assets if any(k.startswith(p) for p in prefixes)]
     if args.id:
-        hook_ids = [k for k in hook_ids if k == f"hooks/{args.id}" or k == args.id]
-        if not hook_ids:
+        target_ids = [k for k in target_ids if k.split("/", 1)[1] == args.id or k == args.id]
+        if not target_ids:
             print(f"[sage validate] TOOL ERROR: manifest 에 '{args.id}' 없음", file=sys.stderr)
             return 2
 
     overall = "PASS"
-    print(f"== sage validate (hook{', --check' if args.check else ''}) — {len(hook_ids)} assets ==")
-    for aid in sorted(hook_ids):
-        sev, msgs = _validate_hook(root, aid, assets[aid], run_regression=not args.check)
+    print(f"== sage validate ({args.kind}{', --check' if args.check else ''}) — {len(target_ids)} assets ==")
+    for aid in sorted(target_ids):
+        if aid.startswith("hooks/"):
+            sev, msgs = _validate_hook(root, aid, assets[aid], run_regression=not args.check)
+        else:
+            sev, msgs = _validate_agent(root, aid, assets[aid])
         if _SEV_RANK[sev] > _SEV_RANK[overall]:
             overall = sev
         mark = {"PASS": "✅", "WARN": "⚠️ ", "STALE": "🔶", "FAIL": "❌"}[sev]
