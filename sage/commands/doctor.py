@@ -19,11 +19,12 @@ def register(sub):
 def reviewer_resolution(profile: dict, caps: dict) -> dict:
     """Phase 05 reviewer 해석 (순수). caps={'gstack':bool} 는 doctor 가 주입.
 
-    4행 결정표(Codex 2R 합의):
-    - cross_model off               → clean_context_same_runtime (의도적, degraded=false)
-    - cross on, claude-host, gstack  → opposite_runtime(codex)
-    - cross on, claude-host, !gstack → clean_context fallback (degraded, gstack_unavailable)
-    - cross on, codex-host           → clean_context fallback (degraded, codex_host_claude_invocation_unresolved)
+    결정표(Codex 2R 합의 + audit 3회차 주석정합):
+    - cross_model off                     → clean_context_same_runtime (의도적, degraded=false)
+    - cross on, claude-host, gstack 가용    → opposite_runtime(codex)
+    - cross on, claude-host, gstack 불가    → clean_context fallback (degraded, gstack_unavailable)
+    - cross on, codex-host, codex_host 설정 → opposite_runtime(claude) (forward-compat: 경로 명시 시 허용)
+    - cross on, codex-host, codex_host 미설정 → clean_context fallback (degraded, codex_host_claude_invocation_unresolved, §12)
     """
     runtime = profile.get("runtime", {}) or {}
     host = runtime.get("host", "claude")

@@ -27,7 +27,18 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _harden_io_encoding():
+    # audit 3회차 P1: 비 UTF-8 로케일(PYTHONIOENCODING=ascii 등)에서 한글/이모지 출력 시
+    # UnicodeEncodeError 스택트레이스 노출 방지 → errors="replace" 로 재구성.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except Exception:
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _harden_io_encoding()
     parser = build_parser()
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
     return args.func(args)

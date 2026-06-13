@@ -64,7 +64,11 @@ def run(args):
     if not root:
         print("[sage change] TOOL ERROR: manifest 없음", file=sys.stderr)
         return 2
-    manifest = json.load(open(os.path.join(root, "docs", "sage_harness", ".manifest.json")))
+    try:
+        manifest = json.load(open(os.path.join(root, "docs", "sage_harness", ".manifest.json")))
+    except Exception as e:
+        print(f"[sage change] TOOL ERROR: manifest 파싱 실패: {e}", file=sys.stderr)
+        return 2
     assets = manifest.get("assets", {})
 
     intent = args.intent
@@ -97,7 +101,7 @@ def run(args):
         if tgt.startswith("hooks/"):
             sev, _ = V._validate_hook(root, tgt, entry, run_regression=False)
         else:
-            sev, _ = V._validate_agent(root, tgt, entry)
+            sev, _ = V._validate_agent(root, tgt, entry, run_regression=False)
         dec = R.auto_approve_decision(tgt, sev, entry)
         k = tgt.split("/")[0][:-1]
         print(f"→ 결정: GENERATE (기존 자산 수정) — 대상: {tgt}")

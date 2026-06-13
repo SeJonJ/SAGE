@@ -76,7 +76,7 @@ def run(args):
         if aid.startswith("hooks/"):
             sev, _ = V._validate_hook(root, aid, entry, run_regression=False)
         else:
-            sev, _ = V._validate_agent(root, aid, entry)
+            sev, _ = V._validate_agent(root, aid, entry, run_regression=False)
         d = auto_approve_decision(aid, sev, entry)
         (auto if d["decision"] == "auto" else review).append((aid, d["reasons"]))
 

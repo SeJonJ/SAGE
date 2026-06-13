@@ -116,8 +116,8 @@ def _validate_hook(root, asset_id, entry, run_regression):
     return sev, msgs
 
 
-def _validate_agent(root, asset_id, entry):
-    """agent(form:interpretive) → spec_hash + claims_hash staleness + regression. (render 는 interpretive/외부)."""
+def _validate_agent(root, asset_id, entry, run_regression=True):
+    """agent(form:interpretive) → spec_hash + claims_hash staleness + (선택)regression. (render 는 interpretive/외부)."""
     msgs = []
     sev = "PASS"
     aid = asset_id.split("/", 1)[1]
@@ -141,7 +141,7 @@ def _validate_agent(root, asset_id, entry):
         bump("WARN"); msgs.append(f"  WARN unresolved: {u}")
     # render_hash 는 interpretive/외부 산출물이라 v1 staleness 재계산 제외(정보성)
     test = entry.get("test")
-    if test and sev in ("PASS", "WARN"):
+    if run_regression and test and sev in ("PASS", "WARN"):
         tpath = os.path.join(root, test)
         if os.path.exists(tpath):
             r = subprocess.run(["python3", tpath], cwd=root, capture_output=True, text=True)
@@ -183,7 +183,7 @@ def run(args):
         if aid.startswith("hooks/"):
             sev, msgs = _validate_hook(root, aid, assets[aid], run_regression=not args.check)
         else:
-            sev, msgs = _validate_agent(root, aid, assets[aid])
+            sev, msgs = _validate_agent(root, aid, assets[aid], run_regression=not args.check)
         if _SEV_RANK[sev] > _SEV_RANK[overall]:
             overall = sev
         mark = {"PASS": "✅", "WARN": "⚠️ ", "STALE": "🔶", "FAIL": "❌"}[sev]
