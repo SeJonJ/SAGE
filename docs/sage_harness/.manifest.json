@@ -132,6 +132,34 @@
       "test": "scripts/sage_harness/hooks/tests/test_reverse_extract_agent.py",
       "risk": [],
       "unresolved": []
+    },
+    "agents/chatforyou-frontend-expert": {
+      "spec_hash": "sha256:3994f08ef241acfe0ff5001f9941bea9bbba3897d29fe7ad6771c93d8dfdf919",
+      "claims_hash": "sha256:58ed7b1c7f787e3faf0b303ad712967370407a39c44aeb8c93634304f2b06fec",
+      "render_hash": {
+        "claude": "sha256:cf2ff1ecc0b4f66c0580991c114c8254cef58677e674671dfc20e03042036346",
+        "codex": "sha256:837c1faf5cd7d67f66baf477d2ec68f833f6b17687e846a63003abf3377b5cb8"
+      },
+      "adapter_contract_version": "1",
+      "conformance": "PASS",
+      "form": "interpretive",
+      "test": "scripts/sage_harness/hooks/tests/test_reverse_extract_agent.py",
+      "risk": [],
+      "unresolved": []
+    },
+    "agents/chatforyou-qa-expert": {
+      "spec_hash": "sha256:e4702c2c4c33c33685de84b349b68d3c10630c5be39f7e992363cb06ee52b458",
+      "claims_hash": "sha256:8917560c98886e1eac6649055ac0796425e6a22eb0af908e2153480358bfc001",
+      "render_hash": {
+        "claude": "sha256:21f260c56670036f9bbadee71e16ae58681743ac4d427a02e09bb9d754c8edcd",
+        "codex": "sha256:de750643dbfa3503fea41dd460cef5119e0228b77c011ee3784e25ba30f92449"
+      },
+      "adapter_contract_version": "1",
+      "conformance": "PASS",
+      "form": "interpretive",
+      "test": "scripts/sage_harness/hooks/tests/test_reverse_extract_agent.py",
+      "risk": [],
+      "unresolved": []
     }
   }
 }

@@ -42,6 +42,9 @@ def _norm_path(p: str) -> str:
 # (audit 2회차 P0-2: 임의의 a:b 가 본문 예시/잡음으로 잡히는 false positive 차단)
 _TOOL_CTX_RE = re.compile(r"(\||사용|도구|활용|참조|호출|점검|추적|skill|agent|mcp|검증)", re.IGNORECASE)
 _PLANNING_PATH_RE = re.compile(r"plan_docs", re.IGNORECASE)
+# owned_paths 에서 제외할 경로: 동기화 산출물/금지 경로(소유 아님). AGENT_GUIDE Non-Negotiable Boundary.
+# (다른 agent 일반화 시 surface — frontend-expert 가 desktop/src 를 owned 로 오분류하던 것 차단)
+_NOT_OWNED_RE = re.compile(r"chatforyou-desktop/src", re.IGNORECASE)
 
 
 def _extract_typed(text: str) -> dict:
@@ -50,10 +53,10 @@ def _extract_typed(text: str) -> dict:
               ("owned_paths", "role_boundary", "test_scope", "tool_or_skill_ref",
                "convention_doc", "safety_forbid", "workflow_step")}
 
-    # owned_paths — plan_docs(워크플로우 산출물)·.md 는 소유경로 아님 (audit P1-3)
+    # owned_paths — plan_docs(워크플로우)·.md·desktop/src(동기화 산출물/금지) 는 소유경로 아님 (audit P1-3, P1-7)
     for m in _COMPONENT_PATH_RE.findall(text):
         v = _norm_path(m)
-        if v and not v.endswith(".md") and not _PLANNING_PATH_RE.search(v):
+        if v and not v.endswith(".md") and not _PLANNING_PATH_RE.search(v) and not _NOT_OWNED_RE.search(v):
             claims["owned_paths"].add(v)
 
     # convention_doc
