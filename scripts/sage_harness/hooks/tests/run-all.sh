@@ -28,5 +28,9 @@ echo "### 6. stop-compliance-report reverse_extract 폐루프 (부분추출 + po
 python3 "$HERE/test_stop_compliance_report.py" || rc=1
 
 echo ""
+echo "### 7. reverse_extract_agent (agent typed claim 자동도출)"
+python3 "$HERE/test_reverse_extract_agent.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

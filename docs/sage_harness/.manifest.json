@@ -118,6 +118,20 @@
       "test": "scripts/sage_harness/hooks/tests/run-tests.sh",
       "risk": [],
       "unresolved": []
+    },
+    "agents/chatforyou-backend-expert": {
+      "spec_hash": "sha256:2e4ee216cadd409c15db5ba82db704b779e148d695d2c54b1828e14679f9bf2d",
+      "claims_hash": "sha256:009d19f2b32cd92f6232d9ae132148a79480c8bdb5b0803fa186ea752a7976d9",
+      "render_hash": {
+        "claude": "sha256:48aeeb56d3840ce111bdd804aaf0581cf4f5d9425999b6e53dae0ebf7baf0f52",
+        "codex": "sha256:a833f1c56e9e862a5dbd3f8513beeac12e33a02bfe1bc30b4684fe56b19bdb92"
+      },
+      "adapter_contract_version": "1",
+      "conformance": "PASS",
+      "form": "interpretive",
+      "test": "scripts/sage_harness/hooks/tests/test_reverse_extract_agent.py",
+      "risk": [],
+      "unresolved": []
     }
   }
 }

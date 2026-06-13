@@ -64,8 +64,8 @@
         },
         "conformance": { "enum": ["PASS", "FAIL", "STALE", "UNKNOWN"] },
         "form": {
-          "enum": ["native", "core_adapter"],
-          "description": "native=단일 canonical .sh(SAGE 자체 hook) / core_adapter=core+런타임 adapter(reverse_extract)"
+          "enum": ["native", "core_adapter", "interpretive"],
+          "description": "native=단일 canonical .sh / core_adapter=core+런타임 adapter(hook) / interpretive=spec+claims→런타임 렌더(agent/skill, canonical parity 불가)"
         },
         "test": {
           "type": "string",
