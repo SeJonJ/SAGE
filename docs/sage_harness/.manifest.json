@@ -18,7 +18,9 @@
       },
       "conformance": "PASS",
       "risk": [],
-      "unresolved": []
+      "unresolved": [],
+      "form": "core_adapter",
+      "test": "scripts/sage_harness/hooks/tests/test_capture_declared_risk.py"
     },
     "hooks/post-tool-logger": {
       "spec_hash": "sha256:cc089662d23ebecf052d72eee8fcfdff891aec6adad4ceec94c3720f473b42bd",
@@ -37,7 +39,9 @@
       "unresolved": [
         "plan-doc glob drift: Claude '*/plan_docs/*' vs Codex '^plan_docs/'; canonical='*plan_docs/*' (사람 확인)",
         "type=other 기록 drift: Claude 기록 vs Codex skip; canonical=skip (사람 확인)"
-      ]
+      ],
+      "form": "core_adapter",
+      "test": "scripts/sage_harness/hooks/tests/test_post_tool_logger.py"
     },
     "hooks/pre-phase4-checklist-gate": {
       "spec_hash": "sha256:b1532745f8aa931853281c3cc2bad5b58a3f7dc45e9cc68b437c87665329c191",
@@ -53,7 +57,9 @@
       },
       "conformance": "PASS",
       "risk": [],
-      "unresolved": []
+      "unresolved": [],
+      "form": "core_adapter",
+      "test": "scripts/sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py"
     },
     "hooks/pre-implementation-gate": {
       "spec_hash": "sha256:b3f8b01f2f0806d331b7ee95d851cce9b645c4d0bddcdcd3712687a94168769d",
@@ -75,7 +81,9 @@
       "unresolved": [
         "algorithm_delta: L3 review 매칭 전략 미선택 — claude_grep_first vs codex_feature_signal 둘 다 보존, canonical 사람 결정 필요",
         "minor drift: content keyword case — canonical=case-insensitive 채택, 사람 확인"
-      ]
+      ],
+      "form": "core_adapter",
+      "test": "scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py"
     },
     "hooks/stop-compliance-report": {
       "spec_hash": "sha256:0c0b5d63364ad55dd5ad11d97ca40f572d64db30e7b3dd6d9350e3ae4d04acb7",
@@ -94,7 +102,22 @@
       "unresolved": [
         "policy_delta: output_contract_check — Codex-only(transcript 결합), promote_output_contract_semantics? 사람 결정",
         "policy_delta: knowledge_capture — OPTION(obsidian) 레이어 소속, CORE 미병합"
-      ]
+      ],
+      "form": "core_adapter",
+      "test": "scripts/sage_harness/hooks/tests/test_stop_compliance_report.py"
+    },
+    "hooks/generated-artifact-write-guard": {
+      "spec_hash": "sha256:31cf9e18c6b4db3f612ffacb46ec30c4a8d4a3bab6d1078b79dd57df4bf8668f",
+      "canonical_hash": "sha256:4fafe97a54dca737cc415237953f3a35a5b6e1781b6b7063ef9a651136c26e79",
+      "render_hash": {
+        "native": "sha256:4fafe97a54dca737cc415237953f3a35a5b6e1781b6b7063ef9a651136c26e79"
+      },
+      "adapter_contract_version": "1",
+      "conformance": "PASS",
+      "form": "native",
+      "test": "scripts/sage_harness/hooks/tests/run-tests.sh",
+      "risk": [],
+      "unresolved": []
     }
   }
 }

@@ -53,15 +53,28 @@
         },
         "render_hash": {
           "type": "object",
-          "description": "target 런타임별 산출물 해시. cross_model on이면 claude+codex 둘 다",
+          "description": "target 런타임별 산출물 해시. cross_model on이면 claude+codex 둘 다. native hook 은 'native' 키",
           "properties": {
             "claude": { "$ref": "#/$defs/sha" },
-            "codex": { "$ref": "#/$defs/sha" }
+            "codex": { "$ref": "#/$defs/sha" },
+            "native": { "$ref": "#/$defs/sha" }
           },
           "additionalProperties": false,
           "minProperties": 1
         },
         "conformance": { "enum": ["PASS", "FAIL", "STALE", "UNKNOWN"] },
+        "form": {
+          "enum": ["native", "core_adapter"],
+          "description": "native=단일 canonical .sh(SAGE 자체 hook) / core_adapter=core+런타임 adapter(reverse_extract)"
+        },
+        "test": {
+          "type": "string",
+          "description": "regression 테스트 경로 (validate 가 실행). CI 계약상 명시값 권장"
+        },
+        "safety_degraded": {
+          "type": "boolean",
+          "description": "전략/정책 미선택 등으로 안전성이 낮아진 상태(WARN). 예: pre-implementation-gate L3 전략 미선택"
+        },
         "risk": { "type": "array", "items": { "type": "string" } },
         "unresolved": { "type": "array", "items": { "type": "string" } }
       },
