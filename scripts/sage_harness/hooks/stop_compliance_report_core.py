@@ -35,25 +35,41 @@ def decide(event: dict, profile: dict, snapshot: dict) -> dict:
     for e in entries:
         by_type[e.get("type", "other")].append(e.get("file", ""))
 
-    backend_main = sorted(set(by_type["backend-main"]))
-    backend_test = sorted(set(by_type["backend-test"]))
-    frontend = sorted(set(by_type["frontend-js"] + by_type["frontend-server"] + by_type["frontend-config"]))
-    plan_docs = sorted(set(by_type["plan-doc"]))
+    # 제약 #2(독립): file type 체계는 profile.compliance 주입. 없으면 raw type 별 generic 그룹(도메인 무관).
+    comp = profile.get("compliance", {}) or {}
+    groups_cfg = comp.get("activity_groups")
+    if not groups_cfg:
+        groups_cfg = [{"label": t, "types": [t]} for t in sorted(by_type) if t != "other"]
+    plan_types = comp.get("plan_types", [])
+    plan_gate_code_types = comp.get("plan_gate_code_types", [])
+    reminder = comp.get("convention_reminder")  # {types:[...], text:"..."} 선택
 
+    def files_of(types):
+        out = set()
+        for t in types:
+            out |= set(by_type.get(t, []))
+        return sorted(out)
+
+    activity = [{"label": g["label"], "count": len(files_of(g["types"])), "files": files_of(g["types"])}
+                for g in groups_cfg]
+
+    all_code_files = files_of([t for g in groups_cfg for t in g["types"]])
     l3_tokens = _l3_tokens(profile)
-    l3_files = sorted({f for f in (backend_main + frontend)
-                       if any(t in f.lower() for t in l3_tokens)})
+    l3_files = sorted({f for f in all_code_files if any(t in f.lower() for t in l3_tokens)})
+
+    plan_present = bool(files_of(plan_types))
+    code_present = bool(files_of(plan_gate_code_types))
 
     issues = []
-    if backend_main and not plan_docs:
-        issues.append({"severity": "WARN", "key": "backend_without_plan",
-                       "text": "백엔드 소스 수정이 있었으나 plan_docs 활동 없음 (L2 gate 참조)"})
+    if code_present and not plan_present:
+        issues.append({"severity": "WARN", "key": "code_without_plan",
+                       "text": comp.get("plan_gate_text", "코드 변경이 있었으나 plan 문서 활동 없음 (L2 gate 참조)")})
     if l3_files:
         issues.append({"severity": "NOTICE", "key": "l3_pattern_detected",
                        "text": f"L3 패턴 파일 수정 감지: {', '.join(l3_files)} → L3 리뷰 프로토콜(2라운드) 확인 필요"})
-    if backend_main:
-        issues.append({"severity": "INFO", "key": "backend_convention_reminder",
-                       "text": "백엔드 변경: backend-convention-checker 실행 여부 수동 확인 권장"})
+    if reminder and files_of(reminder.get("types", [])):
+        issues.append({"severity": "INFO", "key": "convention_reminder",
+                       "text": reminder.get("text", "변경 컨벤션 검증 확인 권장")})
 
     modified = sorted({e.get("file", "") for e in entries if e.get("file")})
 
@@ -61,12 +77,7 @@ def decide(event: dict, profile: dict, snapshot: dict) -> dict:
         "kind": "stop_compliance",
         "sections": {
             "header": {"date": today, "branch": branch, "total_tool_calls": len(entries)},
-            "activity_summary": {
-                "backend_main": {"count": len(backend_main), "files": backend_main},
-                "backend_test": {"count": len(backend_test), "files": backend_test},
-                "frontend": {"count": len(frontend), "files": frontend},
-                "plan_docs": {"count": len(plan_docs), "files": plan_docs},
-            },
+            "activity_summary": activity,   # [{label, count, files}] — profile 그룹(또는 raw type generic)
             "gate_compliance": {"issues": issues},
             "modified_files": modified,
             "policy_results": [],  # 확장 슬롯 — output_contract/knowledge_capture 등 OPTION/Codex policy 가 붙임 (core 미해석)
@@ -78,20 +89,17 @@ def decide(event: dict, profile: dict, snapshot: dict) -> dict:
 def render_markdown(report_model: dict) -> str:
     s = report_model["sections"]
     h = s["header"]
-    a = s["activity_summary"]
+    a = s["activity_summary"]   # [{label, count, files}]
     lines = [
         f"# Compliance Report — {h['date']}",
         f"Branch: {h['branch']}  |  Total tool calls logged: {h['total_tool_calls']}",
         "",
         "## Activity Summary",
         "| 구분 | 파일 수 |", "|---|---|",
-        f"| Backend src/main | {a['backend_main']['count']} |",
-        f"| Backend src/test | {a['backend_test']['count']} |",
-        f"| Frontend JS/server | {a['frontend']['count']} |",
-        f"| Plan docs | {a['plan_docs']['count']} |",
-        "",
-        "## Gate Compliance",
     ]
+    for g in a:
+        lines.append(f"| {g['label']} | {g['count']} |")
+    lines += ["", "## Gate Compliance"]
     issues = s["gate_compliance"]["issues"]
     if not issues:
         lines.append("✅ 감지된 위반 없음")

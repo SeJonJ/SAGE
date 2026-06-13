@@ -45,7 +45,7 @@
     },
     "hooks/pre-phase4-checklist-gate": {
       "spec_hash": "sha256:b1532745f8aa931853281c3cc2bad5b58a3f7dc45e9cc68b437c87665329c191",
-      "canonical_hash": "sha256:4e113a82b5ccb61d67ce0fdd5b0d21351a4dcfc446810c6c04f14d852d10637b",
+      "canonical_hash": "sha256:8e5af21a48eb71802c76916ed5050705de22bdeeaf530a926c143e17c1e65c15",
       "adapter_hash": {
         "claude": "sha256:1b8cdc2ed5e10b480d0be2ede21aef8c33729e09c01f8121226b9a36c339120d",
         "codex": "sha256:2a0ecc0d3ac84f853176063a93378b73ffb24025c8711ae4acd27c70eff9eed4"
@@ -65,13 +65,13 @@
       "spec_hash": "sha256:a01fa190ab8cab92dd022edd73a1daf49d49cb8c31b8b2c0daac478d97f8c4b2",
       "canonical_hash": "sha256:46d8d8e130b26a1d0bfc8d06412f51bfac3705ddbe5488a9d908f65b9511ce43",
       "adapter_hash": {
-        "claude": "sha256:bb9fb790935d150c7ddf9186d2099bb387b264183bb564b992844d0fb8d71ddf",
-        "codex": "sha256:1327390809e3953b7c260cec01e95a7addbf7d5c3603fbd813d0c819dd4a4132"
+        "claude": "sha256:7c226bca8e3397fe427e47c78bf74d7af38a04375972ede023c7bc744f0358cb",
+        "codex": "sha256:e44bf65b83d687641bce9f5085a4e0668ac31251791b1cd6dfcb6687b0b82290"
       },
       "adapter_contract_version": "1",
       "render_hash": {
-        "claude": "sha256:bb9fb790935d150c7ddf9186d2099bb387b264183bb564b992844d0fb8d71ddf",
-        "codex": "sha256:1327390809e3953b7c260cec01e95a7addbf7d5c3603fbd813d0c819dd4a4132"
+        "claude": "sha256:7c226bca8e3397fe427e47c78bf74d7af38a04375972ede023c7bc744f0358cb",
+        "codex": "sha256:e44bf65b83d687641bce9f5085a4e0668ac31251791b1cd6dfcb6687b0b82290"
       },
       "conformance": "PASS",
       "safety_degraded": true,
@@ -87,7 +87,7 @@
     },
     "hooks/stop-compliance-report": {
       "spec_hash": "sha256:0c0b5d63364ad55dd5ad11d97ca40f572d64db30e7b3dd6d9350e3ae4d04acb7",
-      "canonical_hash": "sha256:0ba79fc51f7127afcb6f94e90aa8bb5ba5891f9f3dff2d0eba381fbc93d1352f",
+      "canonical_hash": "sha256:b143e17168b8490bea2b89b2ef78d3d68620568d3adefd1971b507488da3b5f3",
       "adapter_hash": {
         "claude": "sha256:1d5dce6b00ec9b68edf86a60ef86e7a43ea29f47b4dbe1a365c3057143143564",
         "codex": "sha256:7d9d7a8dcb263bbc1ba0601d6532249dc8401dc3261a2e18aac7490057219514"

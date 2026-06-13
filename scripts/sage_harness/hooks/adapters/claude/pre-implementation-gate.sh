@@ -54,12 +54,12 @@ event = {"hook_id": "pre-implementation-gate", "hook_event_name": "PreToolUse", 
          "session_id": raw.get("session_id", "") or "", "branch": os.environ.get("SAGE_BRANCH", ""),
          "declared_max": declared, "changes": changes}
 
-# snapshot: plan_files (00-base_plan, 최근순 + 내용)
-pg = (profile.get("risk") or {}).get("plan_glob", "plan_docs/00-base_plan/**/*.md")
-if os.path.isabs(pg) or ".." in pg.split("/"):  # audit P1: root 밖 glob 거부
-    pg = "plan_docs/00-base_plan/**/*.md"
+# snapshot: plan_files. plan_glob 은 profile 주입(독립 — ChatForYou 경로 하드코딩/디렉토리 가정 제거).
+pg = (profile.get("risk") or {}).get("plan_glob", "")   # 미설정/무효 → plan scan 없음(graceful)
+if pg and (os.path.isabs(pg) or ".." in pg.split("/")):  # root 밖 glob 거부 → ChatForYou 경로 fallback 대신 빈 scan
+    pg = ""
 import time as _t
-paths = sorted(glob.glob(os.path.join(root, pg), recursive=True), key=lambda p: -os.path.getmtime(p)) if os.path.isdir(os.path.join(root, "plan_docs")) else []
+paths = sorted(glob.glob(os.path.join(root, pg), recursive=True), key=lambda p: -os.path.getmtime(p)) if pg else []
 _now = _t.time()
 plan_files = []
 for p in paths:

@@ -17,7 +17,8 @@ import re
 
 CONTRACT_VERSION = "1"
 
-# PDCA phase 산출물 네이밍 (framework 기본값 — profile.suffixes 로 override 가능)
+# PDCA phase 산출물 네이밍 = SAGE-PDCA 방법론 규약(framework 기본, ChatForYou 정체성 아님). profile.suffixes 로 override.
+# (phase4_trigger_glob 의 04-analyze 기본값도 동일 — SAGE PDCA phase 구조. 다른 PDCA 미사용 프로젝트는 profile 로 교체)
 DEFAULT_SUFFIXES = [
     "_backend_eval", "_frontend_eval", "_external_eval", "_qa_eval",
     "_backend_feedback", "_frontend_feedback", "_external_feedback", "_qa_feedback",

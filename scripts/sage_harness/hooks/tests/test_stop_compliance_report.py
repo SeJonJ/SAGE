@@ -39,18 +39,25 @@ def keys(model):
     return {i["key"] for i in model["sections"]["gate_compliance"]["issues"]}
 
 
+def group_count(m, label):
+    for g in m["sections"]["activity_summary"]:
+        if g["label"] == label:
+            return g["count"]
+    return None
+
+
 class TestCore(unittest.TestCase):
     def test_backend_without_plan(self):
         m = core.decide({}, PROFILE, snap([{"type": "backend-main", "file": "springboot-backend/src/main/java/A.java"}]))
-        self.assertIn("backend_without_plan", keys(m))
-        self.assertIn("backend_convention_reminder", keys(m))
+        self.assertIn("code_without_plan", keys(m))
+        self.assertIn("convention_reminder", keys(m))
 
     def test_backend_with_plan_no_warn(self):
         m = core.decide({}, PROFILE, snap([
             {"type": "backend-main", "file": "a/A.java"},
             {"type": "plan-doc", "file": "plan_docs/x.md"},
         ]))
-        self.assertNotIn("backend_without_plan", keys(m))
+        self.assertNotIn("code_without_plan", keys(m))
 
     def test_l3_pattern_detected(self):
         m = core.decide({}, PROFILE, snap([{"type": "backend-main", "file": "a/KurentoService.java"}]))
@@ -62,9 +69,15 @@ class TestCore(unittest.TestCase):
             {"type": "backend-main", "file": "a.java"},  # 중복 → set
             {"type": "frontend-js", "file": "b.js"},
         ]))
-        a = m["sections"]["activity_summary"]
-        self.assertEqual(a["backend_main"]["count"], 1)
-        self.assertEqual(a["frontend"]["count"], 1)
+        self.assertEqual(group_count(m, "Backend src/main"), 1)
+        self.assertEqual(group_count(m, "Frontend JS/server"), 1)
+
+    def test_independence_generic_grouping(self):
+        # 제약 #2: compliance config 없는 profile(비-ChatForYou) → raw type 별 generic 그룹
+        m = core.decide({}, {"risk": {}}, snap([{"type": "python-main", "file": "app/views.py"}]))
+        labels = [g["label"] for g in m["sections"]["activity_summary"]]
+        self.assertIn("python-main", labels)  # ChatForYou 타입 가정 없이 동작
+        self.assertEqual(group_count(m, "python-main"), 1)
 
     def test_empty(self):
         m = core.decide({}, PROFILE, snap([]))
