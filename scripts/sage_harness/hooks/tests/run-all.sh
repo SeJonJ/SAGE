@@ -68,5 +68,9 @@ echo "### 15. sage install (부트스트랩)"
 python3 "$HERE/test_install.py" || rc=1
 
 echo ""
+echo "### 17. reverse_extract_skill (skill typed claim 자동도출)"
+python3 "$HERE/test_reverse_extract_skill.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

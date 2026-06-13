@@ -21,6 +21,12 @@ CHATFORYOU_EXTRACT_CONFIG = {
     "planning_path_substrings": ["plan_docs"],
     "guide_boundary_tokens": ["commit", "push", "chatforyou-desktop/src"],
     "runtime_policy_tokens": {"codex": ["gstack"]},
+    # skill reverse_extract 용 (reverse_extract_skill) — section 헤더 한국어 + 입력범위 패턴
+    "intent_headers": ["목적", "개요", "purpose", "intent"],
+    "procedure_headers": ["실행 방법", "실행방법", "절차", "단계", "procedure", "steps"],
+    "output_headers": ["리포트 형식", "출력 형식", "결과", "report format", "output"],
+    "scope_headers": ["주의사항", "범위", "행동 규칙", "boundaries", "caveats"],
+    "input_scope_patterns": [r"git diff", r"변경된?\s*파일", r"changed files"],
     "signal_rules": [
         # 테스트 계층 경계(통합/HTTP/경계값/시나리오 = QA 영역, backend-expert 미담당)
         {"type": "safety_forbid", "value": "forbid:integration/http/boundary/scenario tests",

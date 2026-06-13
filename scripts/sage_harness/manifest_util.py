@@ -72,6 +72,34 @@ def upsert_agent(root: str, agent_id: str, *, claude_render: str, codex_render: 
     return entry
 
 
+def upsert_skill(root: str, skill_id: str, *, claude_render: str, codex_render: str,
+                 test: str, unresolved: list) -> dict:
+    """skill(form:interpretive) 엔트리 갱신. agent 와 동일 구조, 경로만 skills/."""
+    spec = os.path.join(root, "docs", "sage_harness", "skills", f"{skill_id}.md")
+    claims = os.path.join(root, "docs", "sage_harness", "skills", f"{skill_id}.claims.yml")
+    render = {}
+    if claude_render and os.path.exists(claude_render):
+        render["claude"] = sha256_of(claude_render)
+    if codex_render and os.path.exists(codex_render):
+        render["codex"] = sha256_of(codex_render)
+    m = load(root)
+    entry = m["assets"].get(f"skills/{skill_id}", {})
+    entry.update({
+        "spec_hash": sha256_of(spec),
+        "claims_hash": sha256_of(claims),
+        "adapter_contract_version": "1",
+        "conformance": "PASS",
+        "form": "interpretive",
+        "test": test,
+        "risk": entry.get("risk", []),
+        "unresolved": unresolved,
+    })
+    entry["render_hash"] = render or {"claude": entry["spec_hash"]}
+    m["assets"][f"skills/{skill_id}"] = entry
+    save(root, m)
+    return entry
+
+
 def refresh_hashes(root: str, asset_key: str, paths: dict) -> dict:
     """주어진 paths{field:filepath} 의 현재 해시로 manifest 엔트리 갱신(STALE 해소용 범용)."""
     m = load(root)

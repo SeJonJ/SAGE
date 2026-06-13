@@ -13,12 +13,15 @@ import re
 
 CONTRACT_VERSION = "1"
 
-# presence 누락 시 FAIL 가능(verbatim 안정 식별자만)
-_FAIL_PRESENCE_TYPES = {"owned_paths", "convention_doc", "tool_or_skill_ref"}
+# presence 누락 시 FAIL 가능(verbatim 안정 식별자만). agent: owned_paths/convention_doc/tool_or_skill_ref.
+# skill: uses/input_scope/output_contract (Codex 2R skill 합의).
+_FAIL_PRESENCE_TYPES = {"owned_paths", "convention_doc", "tool_or_skill_ref",
+                        "uses", "input_scope", "output_contract"}
 # 서술형/비-verbatim 정규화 타입 — v1 presence-gate 제외(skip). normalize 가 비-verbatim 이라
 # presence 매칭 신뢰 불가 → FAIL/WARN 둘 다 안 함(오탐 + auto-approve 무력화 회피).
-# v1.1 에서 claims 에 must_terms 추가 시 gating 검토.
-_SKIP_PRESENCE_TYPES = {"role_boundary", "test_scope", "workflow_step"}
+# agent: role_boundary/test_scope/workflow_step. skill: procedure_step/when_to_use/advisory_scope/state_mutation.
+_SKIP_PRESENCE_TYPES = {"role_boundary", "test_scope", "workflow_step",
+                        "procedure_step", "when_to_use", "advisory_scope", "state_mutation"}
 # gating 대상 confidence (unresolved 는 제외)
 _GATING_CONF = {"high", "source_supported", "runtime_allowed"}
 

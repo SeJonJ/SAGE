@@ -192,6 +192,120 @@
       "unresolved": [
         "gstack:codex"
       ]
+    },
+    "skills/backend-convention": {
+      "spec_hash": "sha256:ae68913f82f496471bf284582525e600d1b0dee22c08fcb8e2d9d790fc92381b",
+      "claims_hash": "sha256:86152be8b55c491622644f7770f18b27d32de0e95e2bce50915220022d9811c2",
+      "adapter_contract_version": "1",
+      "conformance": "PASS",
+      "form": "interpretive",
+      "test": "scripts/sage_harness/hooks/tests/test_reverse_extract_skill.py",
+      "risk": [],
+      "unresolved": [],
+      "render_hash": {
+        "claude": "sha256:152551fbb7c5e014085af42798ff14e9a7c8be01c81e3242153be83775a601e3",
+        "codex": "sha256:0b2e506d7e9c051fe0a64310a92a495eac87db7593e6a70462eaf7da13d8f5ab"
+      }
+    },
+    "skills/backend-test-layer": {
+      "spec_hash": "sha256:72b35b365e9f3cc8930602890642ad094a342eb20924344dea506c334b23b965",
+      "claims_hash": "sha256:b389457a6fab6a8965e47645c1205d4f87fae6c1c54e6b5e97f65a2e2cbb0eb7",
+      "adapter_contract_version": "1",
+      "conformance": "PASS",
+      "form": "interpretive",
+      "test": "scripts/sage_harness/hooks/tests/test_reverse_extract_skill.py",
+      "risk": [],
+      "unresolved": [],
+      "render_hash": {
+        "claude": "sha256:83a680be1f4b6955bb158bc8cbe1a62661ecf32012c44d89abef4ae68eff8d6c",
+        "codex": "sha256:83a680be1f4b6955bb158bc8cbe1a62661ecf32012c44d89abef4ae68eff8d6c"
+      }
+    },
+    "skills/chatforyou-dev-team": {
+      "spec_hash": "sha256:8b562b26d5e1673e68f8b7a33945d256799c0983a27d149f7ee7c96481db9b99",
+      "claims_hash": "sha256:03b3c693f44f3625a78e6d870dcb814b58007911b54b3edf259f79b47dc2de40",
+      "adapter_contract_version": "1",
+      "conformance": "PASS",
+      "form": "interpretive",
+      "test": "scripts/sage_harness/hooks/tests/test_reverse_extract_skill.py",
+      "risk": [],
+      "unresolved": [
+        "04 의  섹션에는 아래 항목을 반드시 포함한다",
+        "1 iteration의 정의",
+        "3-iteration stop rule",
+        "APPROVED → 루프 종료 → STEP 6",
+        "Claude 교차검증 (cross-model independent rev",
+        "Codex APPROVED → 루프 종료 → STEP 6",
+        "Codex FAIL → triage → 채택 항목 \"Iteration 1",
+        "Core WebRTC Architecture Gate",
+        "FAIL → triage → \"Iteration 2 Required Fi",
+        "L2에서 외부 리뷰가 recommended인 경우에만, 사용자 명시 수용",
+        "L3에서 fallback까지 실패하면  에 `Final Status",
+        "Risk별 review-rework loop 적용 기준",
+        "STEP 2 Exit Gate 충족 여부 확인",
+        "STEP 2 Exit Gate 충족 여부 확인 (구현 가이드 체크박스 +",
+        "STEP 4 에서 lead 가 04-analyze 작성 시 QA Cove",
+        "external-expert",
+        "결정론 검증 Gate",
+        "결정론 검증 대상이 있는 경우  기준으로  실행 결과를 구현 가이드 또는",
+        "데스크톱 반영이 필요하면  기준으로 수정 후 의 sync 절차로 처리",
+        "백엔드/프론트/QA 전원 결과물 + STEP 4 의 04 gap find",
+        "실패 시 자동 fallback을 순서대로 시도한다",
+        "여전히 FAIL → Final Status",
+        "예외 처리/로그 표시 관련 미해결 항목이 있으면 구현 가이드 하단  또는",
+        "외부 전문가 + Claude 교차검증",
+        "외부 전문가 + Codex 반복 검토 루프",
+        "외부 전문가 Critical 항목 + Claude 교차검증 결과를 유저에",
+        "외부 전문가 Critical 항목 + Codex 교차검증 결과를 유저에게",
+        "팀 의견 상충 지점, 누락 위험 요소 분석",
+        "gstack:codex"
+      ],
+      "render_hash": {
+        "claude": "sha256:4dd4d79aa927ed1eccd04f162c88504e28ff6af2912740d69e684c23a63789e2",
+        "codex": "sha256:6ff58f33c1746f058108c88a57d7e5c141c3a092c08af0f8d17189d0538eaee5"
+      }
+    },
+    "skills/chatforyou-ship": {
+      "spec_hash": "sha256:87d910cd97a6765e9797baa181cb59e4bf36b84a0eb4007f8c73f9f97eacd999",
+      "claims_hash": "sha256:0bbc6ac12925fb4536acf28b24fd0270bf680af100bef3a58c2702311138ac18",
+      "adapter_contract_version": "1",
+      "conformance": "PASS",
+      "form": "interpretive",
+      "test": "scripts/sage_harness/hooks/tests/test_reverse_extract_skill.py",
+      "risk": [],
+      "unresolved": [],
+      "render_hash": {
+        "claude": "sha256:ce963824130e05a488acfe3d0592fa0aba773c8755bbd988e045bff8b996cdf4",
+        "codex": "sha256:ce963824130e05a488acfe3d0592fa0aba773c8755bbd988e045bff8b996cdf4"
+      }
+    },
+    "skills/design-review": {
+      "spec_hash": "sha256:3ea7790932e23c459c52a2e025799582cf315ef9e2258ac8736da5942f0cdba7",
+      "claims_hash": "sha256:61ec21b4d99737074304055c296c756869c6040b09a45773d7910734d3844ca4",
+      "adapter_contract_version": "1",
+      "conformance": "PASS",
+      "form": "interpretive",
+      "test": "scripts/sage_harness/hooks/tests/test_reverse_extract_skill.py",
+      "risk": [],
+      "unresolved": [],
+      "render_hash": {
+        "claude": "sha256:d8d7b3d20bcaca79ed7b2b07559b38f28d95c6398b8663f9751934721ce3c8c3",
+        "codex": "sha256:abd7b2324d38062b095ac1cd9364ee17938a31f8c61a66b50acd5944a6a451a4"
+      }
+    },
+    "skills/frontend-convention": {
+      "spec_hash": "sha256:c1fd946ce99fd36b611cf3925bb47362a237ca9bc7fd369de455a4e4b32bfe87",
+      "claims_hash": "sha256:3b6688c7efb575ddc45618d7c9c807cbce4110aa248d26bfcfc7c2b10b2f48a3",
+      "adapter_contract_version": "1",
+      "conformance": "PASS",
+      "form": "interpretive",
+      "test": "scripts/sage_harness/hooks/tests/test_reverse_extract_skill.py",
+      "risk": [],
+      "unresolved": [],
+      "render_hash": {
+        "claude": "sha256:2be9ab828f1b203f9097972e0af4df86ae3401f01cde56ceb986ff7c4fba048f",
+        "codex": "sha256:82952c7cd57394c5f33231dab112c7c4a0a00cdb721035950f91eb0a88fa3420"
+      }
     }
   }
 }

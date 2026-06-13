@@ -135,13 +135,15 @@ def _validate_hook(root, asset_id, entry, run_regression):
     return sev, msgs
 
 
-def _validate_agent(root, asset_id, entry, run_regression=True):
-    """agent(form:interpretive) → spec_hash + claims_hash staleness + (선택)regression. (render 는 interpretive/외부)."""
+def _validate_interpretive(root, asset_id, entry, run_regression=True):
+    """interpretive 자산(agent/skill) → spec_hash + claims_hash staleness + (선택)regression.
+
+    asset_id 'agents/<id>' 또는 'skills/<id>' — prefix 에서 디렉토리 결정(독립: 하드코딩 아님)."""
     msgs = []
     sev = "PASS"
-    aid = asset_id.split("/", 1)[1]
-    spec = os.path.join(root, "docs", "sage_harness", "agents", f"{aid}.md")
-    claims = os.path.join(root, "docs", "sage_harness", "agents", f"{aid}.claims.yml")
+    subdir, aid = asset_id.split("/", 1)
+    spec = os.path.join(root, "docs", "sage_harness", subdir, f"{aid}.md")
+    claims = os.path.join(root, "docs", "sage_harness", subdir, f"{aid}.claims.yml")
 
     def bump(s):
         nonlocal sev
@@ -172,8 +174,7 @@ def _validate_agent(root, asset_id, entry, run_regression=True):
 
 
 def run(args):
-    if args.kind not in ("hook", "agent", "all"):
-        return not_implemented("validate", f"{args.kind} validate 는 후속 (skill conformance)")
+    # hook/agent/skill/all 전부 지원 (skill = interpretive, agent 와 동일 경로)
 
     root = _find_root(args.root)
     if not root:
@@ -191,6 +192,8 @@ def run(args):
         prefixes.append("hooks/")
     if args.kind in ("agent", "all"):
         prefixes.append("agents/")
+    if args.kind in ("skill", "all"):
+        prefixes.append("skills/")
     target_ids = [k for k in assets if any(k.startswith(p) for p in prefixes)]
     if args.id:
         target_ids = [k for k in target_ids if k.split("/", 1)[1] == args.id or k == args.id]
@@ -203,8 +206,8 @@ def run(args):
     for aid in sorted(target_ids):
         if aid.startswith("hooks/"):
             sev, msgs = _validate_hook(root, aid, assets[aid], run_regression=not args.check)
-        else:
-            sev, msgs = _validate_agent(root, aid, assets[aid], run_regression=not args.check)
+        else:  # agents/ or skills/ — interpretive
+            sev, msgs = _validate_interpretive(root, aid, assets[aid], run_regression=not args.check)
         if _SEV_RANK[sev] > _SEV_RANK[overall]:
             overall = sev
         mark = {"PASS": "✅", "WARN": "⚠️ ", "STALE": "🔶", "FAIL": "❌"}[sev]

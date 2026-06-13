@@ -10,7 +10,12 @@ Codex 2R 합의(최종검증 §6 알고리즘 구현):
 - conformance PASS/FAIL gate 는 결정론만(LLM judge 금지).
 """
 
+import os
 import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import reverse_extract_common as common  # noqa: E402
 
 CONTRACT_VERSION = "1"
 
@@ -29,22 +34,10 @@ DEFAULT_EXTRACT_CONFIG = {
     "signal_rules": [],                # 라인 단위 프로젝트 컨벤션 휴리스틱(아래 _apply_signal_rules)
 }
 
-# persona/권위 문구 — drop (verifiability 필터). 역할명(예: "백엔드 전문가")은 보존하고
-# 권위 수식("N년 경력/시니어/베테랑/전문가입니다")만 제거한다. (범용)
-_PERSONA_RE = re.compile(r"(\d+\s*년\s*경력|시니어|전문가입니다|베테랑)")
-
-# 범용 추출 패턴(프로젝트 무관)
-_CONVENTION_DOC_RE = re.compile(r"docs/[\w_]+\.md")
-_NAMESPACED_REF_RE = re.compile(r"`([a-z][\w-]+:[\w-]+)`")          # backend-development:backend-architect
-_SKILL_PATH_RE = re.compile(r"\.(?:claude|codex)/skills/([\w-]+)(?:/SKILL)?\.md")
-_AGENT_PATH_RE = re.compile(r"\.(?:claude|codex)/agents/([\w-]+)\.md")
-_BARE_REF_RE = re.compile(r"`([a-z][\w-]+-(?:checker|layer|expert|architect|auditor|debugger))`")
-# tool_ref 문맥 마커 — namespaced ref(`a:b`)는 이 문맥 동반 라인에서만 (audit 2회차 P0-2)
-_TOOL_CTX_RE = re.compile(r"(\||사용|도구|활용|참조|호출|점검|추적|skill|agent|mcp|검증)", re.IGNORECASE)
-
-
-def _norm_path(p: str) -> str:
-    return p.rstrip("/").split("←")[0].strip()
+# 공유 코어(reverse_extract_common) 위임 — persona/ref/confidence/merge/serialize 는 common (Codex 2R A1).
+_PERSONA_RE = common.PERSONA_RE
+_CONVENTION_DOC_RE = common.CONVENTION_DOC_RE
+_norm_path = common.norm_path
 
 
 def _effective_config(config):
@@ -93,28 +86,14 @@ def _extract_typed(text: str, config=None) -> dict:
     for m in _CONVENTION_DOC_RE.findall(text):
         claims["convention_doc"].add(m)
 
-    # tool_or_skill_ref — 경로기반(skill:/agent:)이 canonical (범용)
-    skill_ids, agent_ids = set(), set()
-    for m in _SKILL_PATH_RE.findall(text):
-        claims["tool_or_skill_ref"].add(f"skill:{m.lower()}"); skill_ids.add(m.lower())
-    for m in _AGENT_PATH_RE.findall(text):
-        claims["tool_or_skill_ref"].add(f"agent:{m.lower()}"); agent_ids.add(m.lower())
-    if "codegraph" in text.lower():
-        claims["tool_or_skill_ref"].add("mcp:codegraph")
+    # tool_or_skill_ref — 공유 코어 위임(경로기반 canonical + 문맥동반 namespaced/bare, dedupe)
+    common.extract_tool_refs(text, claims["tool_or_skill_ref"])
 
     for raw in text.splitlines():
         line = raw.strip()
         low = line.lower()
         if not line:
             continue
-        # namespaced ref: 문맥 마커 동반 라인에서만 (범용, false positive 차단)
-        if _TOOL_CTX_RE.search(line):
-            for m in _NAMESPACED_REF_RE.findall(line):
-                claims["tool_or_skill_ref"].add(m.lower())
-            for m in _BARE_REF_RE.findall(line):
-                base = m.lower()
-                if base not in skill_ids and base not in agent_ids:  # dedupe (audit P0-1)
-                    claims["tool_or_skill_ref"].add(f"skill_or_agent:{base}")
         # commit/push 금지 (범용 AI 안전 — 항상 적용)
         if re.search(r"(금지|하지\s*않는다)", line) and re.search(r"commit|push", low) and not _PERSONA_RE.search(line):
             claims["safety_forbid"].add("forbid:commit/push")
@@ -124,60 +103,25 @@ def _extract_typed(text: str, config=None) -> dict:
     return claims
 
 
-def _guide_subject_tokens(value: str):
-    """source_supported 판정용 subject 토큰 (예: forbid:commit/push → [commit, push])."""
-    subject = value.split(":", 1)[1] if ":" in value else value
-    return [t for t in re.split(r"[\s/]+", subject.lower()) if t]
-
-
-def _confidence(value, in_claude, in_codex, guide_text, eff) -> str:
-    if in_claude and in_codex:
-        return "high"
-    only_codex = in_codex and not in_claude
-    low = value.lower()
-    guide_low = (guide_text or "").lower()
-    # source_supported: 값의 핵심 토큰이 경계와 매칭 + 그 토큰이 전부 guide 에 존재 (audit P1-4: 엄격화)
-    boundary_hit = [tok for tok in eff["guide_boundary_tokens"] if tok in low]
-    if boundary_hit:
-        subj = _guide_subject_tokens(value)
-        if subj and all(t in guide_low for t in subj):
-            return "source_supported"
-    codex_tokens = eff["runtime_policy_tokens"].get("codex", [])
-    if only_codex and any(tok in low for tok in codex_tokens):
-        return "runtime_allowed"
-    return "unresolved"
-
-
 def extract_claims(claude_text: str, codex_text: str, guide_text: str = "", config=None) -> dict:
-    """양쪽 typed claim 교집합/차집합 → confidence 부여한 claims dict. config 로 프로젝트 패턴 주입(독립)."""
+    """양쪽 typed claim 교집합/차집합 → confidence 부여한 claims dict. config 로 프로젝트 패턴 주입(독립).
+
+    merge/confidence 는 공유 코어(common.merge_typed) 위임 — agent/skill 동일 로직.
+    """
     eff = _effective_config(config)
     c_claude = _extract_typed(claude_text, config)
     c_codex = _extract_typed(codex_text, config)
-    # 한쪽 런타임 고유 정책 토큰(codex gstack 등) 보강
-    for tok in eff["runtime_policy_tokens"].get("codex", []):
+    codex_tokens = eff["runtime_policy_tokens"].get("codex", [])
+    for tok in codex_tokens:
         if tok in codex_text.lower():
             c_codex["tool_or_skill_ref"].add(f"runtime_policy.codex:{tok}")
-
-    required, forbidden, allowlist, unresolved = [], [], [], []
-    for ctype in c_claude:
-        for value in sorted(c_claude[ctype] | c_codex[ctype]):
-            conf = _confidence(value, value in c_claude[ctype], value in c_codex[ctype], guide_text, eff)
-            entry = {"type": ctype, "value": value, "confidence": conf}
-            if ctype == "safety_forbid":
-                forbidden.append(entry)
-            elif conf == "runtime_allowed":
-                allowlist.append(entry)
-            elif conf == "unresolved":
-                unresolved.append(entry)
-                required.append(entry)  # 보존(검증은 unresolved 표시)
-            else:
-                required.append(entry)
-    return {
-        "required_claims": required,
-        "forbidden_claims": forbidden + [{"inherited_forbidden_claims": "AGENT_GUIDE.non_negotiable_boundaries"}],
-        "runtime_delta_allowlist": allowlist,
-        "unresolved": [e["value"] for e in unresolved],
-    }
+    return common.merge_typed(
+        c_claude, c_codex,
+        forbidden_types={"safety_forbid"}, allowlist_extra=codex_tokens,
+        guide_text=guide_text, guide_boundary_tokens=eff["guide_boundary_tokens"],
+        codex_tokens=codex_tokens,
+        inherited_forbidden="AGENT_GUIDE.non_negotiable_boundaries",
+    )
 
 
 def _frontmatter_description(text: str) -> str:

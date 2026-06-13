@@ -100,7 +100,7 @@ def run(args):
         if tgt.startswith("hooks/"):
             sev, _ = V._validate_hook(root, tgt, entry, run_regression=False)
         else:
-            sev, _ = V._validate_agent(root, tgt, entry, run_regression=False)
+            sev, _ = V._validate_interpretive(root, tgt, entry, run_regression=False)
         dec = R.auto_approve_decision(tgt, sev, entry)
         k = tgt.split("/")[0][:-1]
         print(f"→ 결정: GENERATE (기존 자산 수정) — 대상: {tgt}")
