@@ -131,5 +131,28 @@ class TestSpecDraft(unittest.TestCase):
         self.assertNotIn("30년 경력", draft)  # persona 제거
 
 
+class TestDeterminism(unittest.TestCase):
+    def test_extract_deterministic(self):
+        # 자가점검 R3: 같은 입력 → 같은 출력 (set 순서 비결정성 중화)
+        a = rx.extract_claims(CLAUDE, CODEX, GUIDE, CFG)
+        b = rx.extract_claims(CLAUDE, CODEX, GUIDE, CFG)
+        self.assertEqual(a, b)
+
+    def test_claims_to_yaml_deterministic_and_stable(self):
+        # 직렬화 결정론 + 재현성(커밋 코드가 생성기)
+        claims = rx.extract_claims(CLAUDE, CODEX, GUIDE, CFG)
+        y1 = rx.claims_to_yaml(claims)
+        y2 = rx.claims_to_yaml(claims)
+        self.assertEqual(y1, y2)
+        self.assertIn("required_claims:", y1)
+        self.assertIn("inherited_forbidden_claims", y1)
+
+    def test_engine_domain_free(self):
+        # 제약 #2(독립): config 없이는 owned_paths 미추출 (엔진에 ChatForYou 경로 하드코딩 없음)
+        c = rx.extract_claims(CLAUDE, CODEX, GUIDE)  # config 없음 = DEFAULT
+        owned = [x for x in c["required_claims"] if x["type"] == "owned_paths"]
+        self.assertEqual(owned, [], "엔진 default 는 프로젝트 컴포넌트 경로를 몰라야(독립)")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
