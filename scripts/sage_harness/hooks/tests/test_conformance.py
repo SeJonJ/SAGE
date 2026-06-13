@@ -77,6 +77,14 @@ class TestConformance(unittest.TestCase):
         r = cf.conformance_lint(RENDERED_MISS_PATH, CLAIMS)
         self.assertEqual(r["status"], "FAIL")  # FAIL > WARN
 
+    def test_boundary_aware_presence(self):
+        # audit P1-6: substring 오탐 차단 — 'backend-test-layer-extra' 는 'backend-test-layer' presence 아님
+        rendered = ("owns springboot-backend/src/main/java/webChat. docs/springboot_backend.md. "
+                    "backend-test-layer-extra 라는 다른 토큰만 있음. commit/push 금지. integration.")
+        r = cf.conformance_lint(rendered, CLAIMS)
+        self.assertEqual(r["status"], "FAIL")  # skill:backend-test-layer 미검출 → FAIL
+        self.assertTrue(any("backend-test-layer" in m["value"] for m in r["missing_required"]))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

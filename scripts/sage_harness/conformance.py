@@ -56,7 +56,8 @@ def conformance_lint(rendered_text: str, claims: dict) -> dict:
         if ctype in _SKIP_PRESENCE_TYPES:
             continue  # 서술형 — v1 presence-gate 제외
         token = _presence_token(c["value"]).lower()
-        if token and token in low:
+        # boundary-aware 매칭 (audit 2회차 P1-6: substring 오탐 차단 — backend-test-layer-extra 등)
+        if token and re.search(r"(?<![\w-])" + re.escape(token) + r"(?![\w-])", low):
             continue
         if conf not in _GATING_CONF:
             warnings.append({"reason": "unresolved/low-confidence 미검출", "claim": c["value"]})

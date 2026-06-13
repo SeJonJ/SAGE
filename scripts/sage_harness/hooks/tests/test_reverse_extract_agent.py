@@ -89,6 +89,28 @@ class TestExtract(unittest.TestCase):
         self.assertTrue(oc and oc[0]["confidence"] == "unresolved")
         self.assertIn("springboot-backend/src/main/java/onlyclaude", self.claims["unresolved"])
 
+    def test_no_skill_or_agent_duplicate(self):
+        # audit P0-1: skill:/agent: 로 잡힌 대상은 skill_or_agent: 중복 없음
+        vals = [c["value"] for c in self.req]
+        for v in vals:
+            if v.startswith("skill_or_agent:"):
+                base = v.split(":", 1)[1]
+                self.assertNotIn(f"skill:{base}", vals, f"중복: {v} vs skill:{base}")
+                self.assertNotIn(f"agent:{base}", vals, f"중복: {v} vs agent:{base}")
+
+    def test_namespaced_needs_context(self):
+        # audit P0-2: 문맥 마커 없는 prose 의 a:b 는 tool claim 으로 안 잡힘
+        prose = '---\ndescription: "x"\n---\n평범한 한 문장에 `foo:bar` 토큰이 들어있을 뿐이다.\n'
+        c = rx.extract_claims(prose, prose, GUIDE)
+        vals = [x["value"] for x in c["required_claims"]]
+        self.assertNotIn("foo:bar", vals)
+
+    def test_plan_docs_not_owned(self):
+        # audit P1-3: plan_docs 는 owned_paths 아님
+        for c in self.req:
+            if c["type"] == "owned_paths":
+                self.assertNotIn("plan_docs", c["value"])
+
     def test_inherited_forbidden_ref(self):
         self.assertTrue(any("inherited_forbidden_claims" in c for c in self.claims["forbidden_claims"]))
 

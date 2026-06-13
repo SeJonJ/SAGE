@@ -120,8 +120,8 @@
       "unresolved": []
     },
     "agents/chatforyou-backend-expert": {
-      "spec_hash": "sha256:2e4ee216cadd409c15db5ba82db704b779e148d695d2c54b1828e14679f9bf2d",
-      "claims_hash": "sha256:009d19f2b32cd92f6232d9ae132148a79480c8bdb5b0803fa186ea752a7976d9",
+      "spec_hash": "sha256:c6a621be8ba6b17615606152f7f6485637cf3fef6b725737884604cf1e933c47",
+      "claims_hash": "sha256:146482f94f8208eb6458a81006ad92b915d7dabed5ed189477af867a570565f9",
       "render_hash": {
         "claude": "sha256:48aeeb56d3840ce111bdd804aaf0581cf4f5d9425999b6e53dae0ebf7baf0f52",
         "codex": "sha256:a833f1c56e9e862a5dbd3f8513beeac12e33a02bfe1bc30b4684fe56b19bdb92"

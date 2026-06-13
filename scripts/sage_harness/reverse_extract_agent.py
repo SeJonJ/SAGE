@@ -18,8 +18,13 @@ CONTRACT_VERSION = "1"
 _GUIDE_BOUNDARY_TOKENS = ["commit", "push", "chatforyou-desktop/src"]
 # codex 런타임 고유 정책 토큰 (runtime_allowed 판정용)
 _CODEX_RUNTIME_TOKENS = ["gstack"]
-# persona/권위 — drop (verifiability 필터)
+# persona/권위 문구 — drop (verifiability 필터). 역할명(예: "백엔드 전문가")은 보존하고
+# 권위 수식("N년 경력/시니어/베테랑/전문가입니다")만 제거한다.
 _PERSONA_RE = re.compile(r"(\d+\s*년\s*경력|시니어|전문가입니다|베테랑)")
+
+# ⚠️ v1 pilot 한계(audit 2회차 P1-7): 경로/역할 regex 가 ChatForYou 컴포넌트(springboot-backend 등)에
+#    묶여 있다. lead/qa/frontend 일반화는 후속에서 component/role 규칙을 profile 로 외부화해야 한다.
+#    v1 은 backend-expert 파일럿으로 알고리즘(typed 교집합/verifiability/confidence)을 증명하는 범위.
 
 _COMPONENT_PATH_RE = re.compile(r"(?:springboot-backend|nodejs-frontend|chatforyou-desktop)/[\w./-]+")
 _CONVENTION_DOC_RE = re.compile(r"docs/[\w_]+\.md")
@@ -33,42 +38,52 @@ def _norm_path(p: str) -> str:
     return p.rstrip("/").split("←")[0].strip()
 
 
+# tool_ref 문맥 마커 — namespaced ref(`a:b`)를 tool claim 으로 올리려면 이 문맥이 동반돼야 함
+# (audit 2회차 P0-2: 임의의 a:b 가 본문 예시/잡음으로 잡히는 false positive 차단)
+_TOOL_CTX_RE = re.compile(r"(\||사용|도구|활용|참조|호출|점검|추적|skill|agent|mcp|검증)", re.IGNORECASE)
+_PLANNING_PATH_RE = re.compile(r"plan_docs", re.IGNORECASE)
+
+
 def _extract_typed(text: str) -> dict:
     """한 텍스트에서 타입별 claim value 집합 추출 (verifiability: object 있는 것만)."""
     claims = {t: set() for t in
               ("owned_paths", "role_boundary", "test_scope", "tool_or_skill_ref",
                "convention_doc", "safety_forbid", "workflow_step")}
 
-    # owned_paths
+    # owned_paths — plan_docs(워크플로우 산출물)·.md 는 소유경로 아님 (audit P1-3)
     for m in _COMPONENT_PATH_RE.findall(text):
         v = _norm_path(m)
-        # 디렉토리 루트만(파일 잡음 줄임): 4 depth 이하 + 트리 마커 제거
-        if v and not v.endswith(".md"):
+        if v and not v.endswith(".md") and not _PLANNING_PATH_RE.search(v):
             claims["owned_paths"].add(v)
 
     # convention_doc
     for m in _CONVENTION_DOC_RE.findall(text):
         claims["convention_doc"].add(m)
 
-    # tool_or_skill_ref (canonicalize)
-    for m in _NAMESPACED_REF_RE.findall(text):
-        claims["tool_or_skill_ref"].add(m.lower())
-    for m in _BARE_REF_RE.findall(text):
-        claims["tool_or_skill_ref"].add(f"skill_or_agent:{m.lower()}")
+    # tool_or_skill_ref — 경로기반(skill:/agent:)이 canonical. namespaced 는 문맥 동반 시만(라인 단위).
+    skill_ids, agent_ids = set(), set()
     for m in _SKILL_PATH_RE.findall(text):
-        claims["tool_or_skill_ref"].add(f"skill:{m.lower()}")
+        claims["tool_or_skill_ref"].add(f"skill:{m.lower()}"); skill_ids.add(m.lower())
     for m in _AGENT_PATH_RE.findall(text):
-        claims["tool_or_skill_ref"].add(f"agent:{m.lower()}")
+        claims["tool_or_skill_ref"].add(f"agent:{m.lower()}"); agent_ids.add(m.lower())
     if "codegraph" in text.lower():
         claims["tool_or_skill_ref"].add("mcp:codegraph")
 
-    # safety_forbid / role_boundary / test_scope / workflow_step (라인 신호)
     for raw in text.splitlines():
         line = raw.strip()
         low = line.lower()
         if not line:
             continue
-        # safety_forbid: 금지/미담당/하지 않는다 + object
+        # namespaced ref: 문맥 마커 동반 라인에서만 (false positive 차단)
+        if _TOOL_CTX_RE.search(line):
+            for m in _NAMESPACED_REF_RE.findall(line):
+                claims["tool_or_skill_ref"].add(m.lower())
+            for m in _BARE_REF_RE.findall(line):
+                base = m.lower()
+                # dedupe: 이미 skill:/agent: 로 잡힌 대상은 skill_or_agent 로 중복 추가 안 함 (audit P0-1)
+                if base not in skill_ids and base not in agent_ids:
+                    claims["tool_or_skill_ref"].add(f"skill_or_agent:{base}")
+        # safety_forbid
         if re.search(r"(금지|미담당|하지\s*않는다|영역이다|영역\b)", line) and not _PERSONA_RE.search(line):
             if re.search(r"(통합|http|경계값|시나리오)\s*테스트", line):
                 claims["safety_forbid"].add("forbid:integration/http/boundary/scenario tests")
@@ -82,12 +97,34 @@ def _extract_typed(text: str) -> dict:
         # role_boundary (QA 인계)
         if "qa" in low and re.search(r"(영역|인계|전문가)", line):
             claims["role_boundary"].add("boundary:integration/scenario → qa")
-        # workflow_step (numbered or 구현가이드)
-        if re.match(r"^\d+[.)]\s", line) or "구현 가이드" in line:
-            if "구현 가이드" in line:
-                claims["workflow_step"].add("workflow:write impl guide")
+        # workflow_step
+        if "구현 가이드" in line:
+            claims["workflow_step"].add("workflow:write impl guide")
 
     return claims
+
+
+def _guide_subject_tokens(value: str):
+    """source_supported 판정용 subject 토큰 (예: forbid:commit/push → [commit, push])."""
+    subject = value.split(":", 1)[1] if ":" in value else value
+    return [t for t in re.split(r"[\s/]+", subject.lower()) if t]
+
+
+def _confidence(value: str, in_claude: bool, in_codex: bool, guide_text: str) -> str:
+    if in_claude and in_codex:
+        return "high"
+    only_codex = in_codex and not in_claude
+    low = value.lower()
+    guide_low = (guide_text or "").lower()
+    # source_supported: 값의 핵심 토큰이 AGENT_GUIDE 경계와 매칭 + 그 토큰이 전부 guide 에 존재 (audit P1-4: 엄격화)
+    boundary_hit = [tok for tok in _GUIDE_BOUNDARY_TOKENS if tok in low]
+    if boundary_hit:
+        subj = _guide_subject_tokens(value)
+        if subj and all(t in guide_low for t in subj):
+            return "source_supported"
+    if only_codex and any(tok in low for tok in _CODEX_RUNTIME_TOKENS):
+        return "runtime_allowed"
+    return "unresolved"
 
 
 def _confidence(value: str, in_claude: bool, in_codex: bool, guide_text: str) -> str:
