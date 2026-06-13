@@ -8,7 +8,7 @@ chatforyou-dev-team의 외부 개발 전문가
 
 ## advisory_scope
 - owns: (미검출)
-- uses: agent:external-consultant, bkit:audit, bkit:code-review, code-review:code-review, gstack:codex, gstack:cso
+- uses: agent:external-consultant, bkit:audit, bkit:code-review, code-review:code-review, gstack:cso, gstack:review
 - convention_doc: (미검출)
 - role_boundary: boundary:integration/scenario → qa
 

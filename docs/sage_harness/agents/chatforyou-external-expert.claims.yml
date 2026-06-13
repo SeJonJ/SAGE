@@ -6,7 +6,6 @@ required_claims:
   - { type: tool_or_skill_ref, value: "bkit:audit", confidence: high }
   - { type: tool_or_skill_ref, value: "bkit:code-review", confidence: high }
   - { type: tool_or_skill_ref, value: "code-review:code-review", confidence: high }
-  - { type: tool_or_skill_ref, value: "gstack:codex", confidence: unresolved }
   - { type: tool_or_skill_ref, value: "gstack:cso", confidence: high }
   - { type: tool_or_skill_ref, value: "gstack:review", confidence: high }
   - { type: tool_or_skill_ref, value: "skill_or_agent:chatforyou-external-expert", confidence: high }
@@ -16,4 +15,5 @@ forbidden_claims:
   - { inherited_forbidden_claims: "AGENT_GUIDE.non_negotiable_boundaries" }
 runtime_delta_allowlist:
   - { type: tool_or_skill_ref, value: "runtime_policy.codex:gstack", confidence: runtime_allowed }
-unresolved: ["gstack:codex"]
+  - { type: tool_or_skill_ref, value: "runtime_policy.cross_model_review", confidence: runtime_allowed }
+unresolved: []

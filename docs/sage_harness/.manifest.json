@@ -153,7 +153,7 @@
     },
     "agents/chatforyou-lead": {
       "spec_hash": "sha256:81ffea7add4b4266129b6d75f73a2fc7774f9c51021ca83779ee8cc425906e3f",
-      "claims_hash": "sha256:6808df7278021376a4fa0619d860c5bf715121a588789db3a011e253a0f65fd2",
+      "claims_hash": "sha256:072a3f546ad02ef2bd3e378d155a97325dca1f6349ae44c2acc97cef5ace2e2c",
       "render_hash": {
         "claude": "sha256:f912c67598c3414d0f4b82ef26f0f44a10932decf3420110a913f2d02b86bcc5",
         "codex": "sha256:8724d1571a5cb25704c63c6b4556dda32a31e131fcde38b004b06cc9c96729a0"
@@ -166,20 +166,18 @@
       "unresolved": []
     },
     "agents/chatforyou-external-expert": {
-      "spec_hash": "sha256:02539476f3f616ba878ab91a1fef74045b731b74e4865f1d6a70b51dcf654852",
-      "claims_hash": "sha256:2059b7e6a40f25eaa32c9cf5f574868c9a7f3db3043ef092e129e9ce8105bb3c",
+      "spec_hash": "sha256:75827f0f028042af61fa847f0ae845e47d7b2a5280b50daaf326f0fb4d6b2996",
+      "claims_hash": "sha256:28708dc1123b1de0e463839e34d0930429ab22286381ffe05ba8bb6dd0e50ab2",
       "render_hash": {
-        "claude": "sha256:0e73626007155814f2df176f6b87082bdc38bf934afa7f7c577290f03a5d6177",
-        "codex": "sha256:7a27353788dd3fb0c16be62c9a4ba41e92f4c6c96e7036aa5b053eb267179611"
+        "claude": "sha256:bc2cf79e53cdd30d63b641316b404be9500dfb86d3563654ab26fb44898e94ba",
+        "codex": "sha256:c1df46f5763591aa2fa710c1aea550fc306eeca4bf9f791f04163840f1dc1384"
       },
       "adapter_contract_version": "1",
       "conformance": "PASS",
       "form": "interpretive",
       "test": "scripts/sage_harness/hooks/tests/test_reverse_extract_agent.py",
       "risk": [],
-      "unresolved": [
-        "gstack:codex"
-      ]
+      "unresolved": []
     },
     "skills/backend-convention": {
       "spec_hash": "sha256:ae68913f82f496471bf284582525e600d1b0dee22c08fcb8e2d9d790fc92381b",
@@ -210,19 +208,17 @@
       }
     },
     "skills/chatforyou-dev-team": {
-      "spec_hash": "sha256:6943ae1eacebf82a71d7bca1b07b73b222454f4e8567cd55c644e2b23c0f1c55",
-      "claims_hash": "sha256:0ba5f023193201112451a56b11f1df26f6410773c1bd0f80851b18a84e30c58f",
+      "spec_hash": "sha256:8b562b26d5e1673e68f8b7a33945d256799c0983a27d149f7ee7c96481db9b99",
+      "claims_hash": "sha256:afe5bf95a2c3e7e1e318ebac53cf828ab1a8b2c01895be82da080badda2bd07e",
       "adapter_contract_version": "1",
       "conformance": "PASS",
       "form": "interpretive",
       "test": "scripts/sage_harness/hooks/tests/test_reverse_extract_skill.py",
       "risk": [],
-      "unresolved": [
-        "gstack:codex"
-      ],
+      "unresolved": [],
       "render_hash": {
-        "claude": "sha256:5f8ecf3c04050ddf32fdb2e9cc2709c2b083f43c97fe9d6226b12a5e5e917bae",
-        "codex": "sha256:7967468b9a2f57d547d71a6abc9105e3df467f35d9346ddd59b854c162f68114"
+        "claude": "sha256:4dd4d79aa927ed1eccd04f162c88504e28ff6af2912740d69e684c23a63789e2",
+        "codex": "sha256:6ff58f33c1746f058108c88a57d7e5c141c3a092c08af0f8d17189d0538eaee5"
       }
     },
     "skills/chatforyou-ship": {

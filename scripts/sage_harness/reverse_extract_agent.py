@@ -31,6 +31,7 @@ DEFAULT_EXTRACT_CONFIG = {
     "planning_path_substrings": ["plan_docs"],  # 워크플로우 산출물(소유 아님) — 범용
     "guide_boundary_tokens": ["commit", "push"],            # source_supported 판정 경계(범용 AI 안전)
     "runtime_policy_tokens": {"codex": ["gstack"]},         # 한쪽 런타임 고유 정책(SAGE cross-model)
+    "cross_model_invocation": {},      # {claude:[토큰], codex:[토큰]} — cross-model 호출 의미동등(allowlist, §3.2.1)
     "signal_rules": [],                # 라인 단위 프로젝트 컨벤션 휴리스틱(아래 _apply_signal_rules)
 }
 
@@ -86,8 +87,10 @@ def _extract_typed(text: str, config=None) -> dict:
     for m in _CONVENTION_DOC_RE.findall(text):
         claims["convention_doc"].add(m)
 
-    # tool_or_skill_ref — 공유 코어 위임(경로기반 canonical + 문맥동반 namespaced/bare, dedupe)
-    common.extract_tool_refs(text, claims["tool_or_skill_ref"])
+    # tool_or_skill_ref — 공유 코어 위임. cross_model 호출 토큰은 제외(별도 allowlist 처리, §3.2.1)
+    cmi = eff.get("cross_model_invocation", {}) or {}
+    exclude = {t for toks in cmi.values() for t in toks}
+    common.extract_tool_refs(text, claims["tool_or_skill_ref"], exclude_refs=exclude)
 
     for raw in text.splitlines():
         line = raw.strip()
@@ -115,6 +118,8 @@ def extract_claims(claude_text: str, codex_text: str, guide_text: str = "", conf
     for tok in codex_tokens:
         if tok in codex_text.lower():
             c_codex["tool_or_skill_ref"].add(f"runtime_policy.codex:{tok}")
+    # cross-model 호출(§3.2.1): 어느 한쪽에 호출 토큰이 있으면 runtime delta allowlist (unresolved 아님)
+    common.apply_cross_model_invocation(eff.get("cross_model_invocation", {}), claude_text, codex_text, c_claude, c_codex)
     return common.merge_typed(
         c_claude, c_codex,
         forbidden_types={"safety_forbid"}, allowlist_extra=codex_tokens,

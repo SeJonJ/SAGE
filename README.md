@@ -51,13 +51,22 @@ sage change "자연어 의도"   # (v1.1) 최소 라우터
 9. `sage change` 최소 라우터
 10. codex-host opposite reviewer (fallback으로 닫기)
 
-## 상태 (v1 핵심 단계 진행 — 일부 stub)
+## 상태 (자산관리 사이클 완성)
 
-- **구현됨**: `validate`(staleness+regression), `review`(auto_approve_safe_default), `change`(라우터), `doctor`(옵션의존성+reviewer fallback).
-  hook 5종 reverse_extract(core+adapter), agent claims 자동도출(agent 5종), conformance lint, write-guard, extract_agent 드라이버.
-- **stub(미구현)**: `install`, `generate`(render는 interpretive=런타임 AI 영역), `absorb`. 호출 시 exit 2 + 예정동작 안내.
-- **미구현**: skill reverse_extract.
-- 검증: **로컬 전체 테스트 PASS**(tempfile 쓰기 가능 환경 기준 — read-only 샌드박스에선 tempfile 기반 adapter 테스트가 환경성 skip).
-  Codex 다회 + 자가 다회 감사 반영. 자세한 진척: vault `TECH - SAGE 구현 진행 로그`.
+- **CLI 7종 전부 구현**: `install`(부트스트랩) · `generate`(hook 등록 결정론 + manifest 스탬프 / agent·skill render 안내) ·
+  `validate`(staleness+regression+conformance) · `review`(auto_approve_safe_default) · `change`(자연어 라우터) ·
+  `doctor`(옵션의존성+reviewer fallback) · `absorb`(직접수정→spec patch 제안).
+- **자산 17개 등록**: hook 6(reverse_extract core+adapter) + agent 5 + skill 6 (claims 자동도출). **manifest unresolved 0**(사람 결정 완료).
+- **검증**: 로컬 전체 테스트 PASS(tempfile 쓰기 가능 환경 기준). Codex 다회 + 자가 다회 감사 반영.
+  자세한 진척: vault `TECH - SAGE 구현 진행 로그`.
 - **독립성(제약 #2)**: 엔진(extractor/conformance/hook core)은 도메인값 0 — ChatForYou 패턴은 `extract_config_chatforyou.py`·profile·fixtures 로 분리.
   ChatForYou 없는 격리 환경에서 전체 테스트·CLI 동작 확인. `docs/sage_harness/agents/chatforyou-*`·`hooks/strategies/**` 는 ChatForYou 참조 인스턴스.
+
+## License
+
+This project is licensed under the **Creative Commons Attribution‑NonCommercial 4.0 International (CC BY‑NC 4.0)**.
+
+You may **share** and **adapt** the material for **non‑commercial** purposes only, provided you give appropriate credit, indicate if changes were made, and distribute any derivative works under the same non‑commercial license.
+
+For the full license text, see: https://creativecommons.org/licenses/by-nc/4.0/
+

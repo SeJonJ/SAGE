@@ -24,8 +24,12 @@ def norm_path(p: str) -> str:
     return p.rstrip("/").split("←")[0].strip()
 
 
-def extract_tool_refs(text: str, into: set):
-    """경로기반(skill:/agent:) canonical + 문맥 동반 namespaced/bare ref. (범용)"""
+def extract_tool_refs(text: str, into: set, exclude_refs=frozenset()):
+    """경로기반(skill:/agent:) canonical + 문맥 동반 namespaced/bare ref. (범용)
+
+    exclude_refs: tool_or_skill_ref 로 넣지 않을 ref(소문자) — 예: cross_model 호출 토큰(별도 allowlist 처리).
+    """
+    excl = {e.lower() for e in exclude_refs}
     skill_ids, agent_ids = set(), set()
     for m in SKILL_PATH_RE.findall(text):
         into.add(f"skill:{m.lower()}"); skill_ids.add(m.lower())
@@ -37,11 +41,30 @@ def extract_tool_refs(text: str, into: set):
         line = raw.strip()
         if line and TOOL_CTX_RE.search(line):
             for m in NAMESPACED_REF_RE.findall(line):
-                into.add(m.lower())
+                v = m.lower()
+                if v not in excl:
+                    into.add(v)
             for m in BARE_REF_RE.findall(line):
                 base = m.lower()
-                if base not in skill_ids and base not in agent_ids:  # dedupe
+                if base not in skill_ids and base not in agent_ids and base not in excl:  # dedupe
                     into.add(f"skill_or_agent:{base}")
+
+
+def apply_cross_model_invocation(cmi: dict, claude_text: str, codex_text: str, c_claude: dict, c_codex: dict):
+    """cross-model 호출 토큰(§3.2.1)을 tool_or_skill_ref 가 아닌 runtime delta 로 처리.
+
+    cmi = {claude:[토큰...], codex:[토큰...]}. 각 런타임 텍스트에 자기쪽 호출 토큰이 있으면
+    그 산출물의 tool_or_skill_ref 에 'runtime_policy.cross_model_review' 추가 → merge 가 runtime_allowed 로 분류
+    (한쪽-only 여도 unresolved 아님). 둘 다 있으면 high(의미동등 인정).
+    """
+    if not cmi:
+        return
+    tag = "runtime_policy.cross_model_review"
+    cl_low, cx_low = claude_text.lower(), codex_text.lower()
+    if any(t.lower() in cl_low for t in cmi.get("claude", [])):
+        c_claude["tool_or_skill_ref"].add(tag)
+    if any(t.lower() in cx_low for t in cmi.get("codex", [])):
+        c_codex["tool_or_skill_ref"].add(tag)
 
 
 def guide_subject_tokens(value: str):
@@ -50,7 +73,10 @@ def guide_subject_tokens(value: str):
 
 
 def confidence(value, in_claude, in_codex, guide_text, guide_boundary_tokens, codex_tokens):
-    """양쪽=high / 한쪽+guide경계(subject 전부 존재)=source_supported / codex-only+runtime토큰=runtime_allowed / else unresolved."""
+    """양쪽=high / runtime_policy.*=runtime_allowed(한쪽 무관) / 한쪽+guide경계=source_supported / codex-only+runtime토큰=runtime_allowed / else unresolved."""
+    # runtime_policy.* 태그(cross_model_review / codex:gstack 등)는 런타임 delta — 한쪽-only 여도 allowlist
+    if value.startswith("runtime_policy."):
+        return "runtime_allowed"
     if in_claude and in_codex:
         return "high"
     only_codex = in_codex and not in_claude

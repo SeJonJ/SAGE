@@ -33,6 +33,8 @@ required_claims:
   - { type: procedure_step, value: "src/test/service/ 에 Service 단위 테스트 작성 (정", confidence: high, order: 130 }
   - { type: procedure_step, value: "가 STEP 3 에서 작성한 통합/경계/HTTP 테스트의 커버리지 검증 ", confidence: high, order: 320 }
   - { type: procedure_step, value: "검증 결과에 따라 구현 가이드 체크박스 갱신", confidence: high, order: 220 }
+  - { type: procedure_step, value: "결정론 검증 Gate", confidence: unresolved }
+  - { type: procedure_step, value: "결정론 검증 대상이 있는 경우  기준으로  실행 결과를 구현 가이드 또는", confidence: unresolved }
   - { type: procedure_step, value: "구현 전 , ,  재확인", confidence: high, order: 180 }
   - { type: procedure_step, value: "기존 구현 가이드 존재 여부 확인 (, )", confidence: high, order: 40 }
   - { type: procedure_step, value: "데스크톱 반영이 필요하면  기준으로 수정 후 의 sync 절차로 처리", confidence: unresolved }
@@ -69,7 +71,6 @@ required_claims:
   - { type: uses, value: "docs/nodejs_frontend.md", confidence: high }
   - { type: uses, value: "docs/springboot_backend.md", confidence: high }
   - { type: uses, value: "gstack:browse", confidence: high }
-  - { type: uses, value: "gstack:codex", confidence: unresolved }
   - { type: uses, value: "gstack:cso", confidence: high }
   - { type: uses, value: "gstack:investigate", confidence: high }
   - { type: uses, value: "gstack:office-hours", confidence: high }
@@ -85,4 +86,5 @@ forbidden_claims:
   - { inherited_forbidden_claims: "AGENT_GUIDE.non_negotiable_boundaries" }
 runtime_delta_allowlist:
   - { type: uses, value: "runtime_policy.codex:gstack", confidence: runtime_allowed }
-unresolved: ["gstack:codex"]
+  - { type: uses, value: "runtime_policy.cross_model_review", confidence: runtime_allowed }
+unresolved: []

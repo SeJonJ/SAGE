@@ -88,6 +88,16 @@ class TestSkillExtract(unittest.TestCase):
         b = rs.claims_to_yaml(rs.extract_claims(CLAUDE, CODEX, GUIDE, CFG))
         self.assertEqual(a, b)
 
+    def test_cross_model_invocation_allowlist(self):
+        # 사람 결정: cross-model 호출 토큰(한쪽-only)은 unresolved 아니라 allowlist (§3.2.1)
+        cfg = dict(CFG); cfg["cross_model_invocation"] = {"claude": ["gstack:codex"], "codex": ["$claude consult"]}
+        cl = CLAUDE + "\n외부 검증: `gstack:codex` 로 cross-model review.\n"
+        cx = CODEX + "\n외부 검증: $claude consult 로 cross-model review.\n"
+        c = rs.extract_claims(cl, cx, GUIDE, cfg)
+        self.assertNotIn("gstack:codex", [x["value"] for x in c["required_claims"]])  # required 아님
+        self.assertIn("runtime_policy.cross_model_review", [x["value"] for x in c["runtime_delta_allowlist"]])
+        self.assertNotIn("gstack:codex", c["unresolved"])  # unresolved 아님
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

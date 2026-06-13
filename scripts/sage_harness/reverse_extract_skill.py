@@ -25,6 +25,7 @@ DEFAULT_SKILL_CONFIG = {
     "input_scope_patterns": [],          # 프로젝트 입력 범위 표현(예: git diff 변경파일) — config 주입
     "guide_boundary_tokens": ["commit", "push"],
     "runtime_policy_tokens": {"codex": ["gstack"]},
+    "cross_model_invocation": {},        # {claude:[토큰], codex:[토큰]} — cross-model 호출(allowlist, §3.2.1)
     "trigger_quote_re": r'"([^"]{2,40})"',  # description/triggers 의 따옴표 발동표현
 }
 
@@ -46,7 +47,7 @@ def _eff(config):
         for k in DEFAULT_SKILL_CONFIG:
             if k in config:
                 e[k] = config[k]
-        for k in ("guide_boundary_tokens", "runtime_policy_tokens"):
+        for k in ("guide_boundary_tokens", "runtime_policy_tokens", "cross_model_invocation"):
             if k in config:
                 e[k] = config[k]
     return e
@@ -77,8 +78,10 @@ def _extract_typed(text, config=None):
                "input_scope", "advisory_scope", "state_mutation")}
     ordered_steps = []  # (order, label) — 순서 보존용
 
-    # uses (범용 ref) + convention doc
-    common.extract_tool_refs(text, claims["uses"])
+    # uses (범용 ref) + convention doc. cross_model 호출 토큰은 제외(별도 allowlist 처리, §3.2.1)
+    cmi = eff.get("cross_model_invocation", {}) or {}
+    exclude = {t for toks in cmi.values() for t in toks}
+    common.extract_tool_refs(text, claims["uses"], exclude_refs=exclude)
     for m in common.CONVENTION_DOC_RE.findall(text):
         claims["uses"].add(m)
 
@@ -151,6 +154,14 @@ def extract_claims(claude_text, codex_text, guide_text="", config=None):
     for tok in codex_tokens:
         if tok in codex_text.lower():
             cx["uses"].add(f"runtime_policy.codex:{tok}")
+    # cross-model 호출(§3.2.1): uses 키에 runtime_policy.cross_model_review 태그(allowlist)
+    cmi = eff.get("cross_model_invocation", {}) or {}
+    if cmi:
+        tag = "runtime_policy.cross_model_review"
+        if any(t.lower() in claude_text.lower() for t in cmi.get("claude", [])):
+            cc["uses"].add(tag)
+        if any(t.lower() in codex_text.lower() for t in cmi.get("codex", [])):
+            cx["uses"].add(tag)
     merged = common.merge_typed(
         cc, cx,
         forbidden_types={"advisory_scope"},   # skill 의 금지/범위 → forbidden 슬롯

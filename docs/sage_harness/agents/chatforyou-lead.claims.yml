@@ -18,4 +18,5 @@ forbidden_claims:
   - { inherited_forbidden_claims: "AGENT_GUIDE.non_negotiable_boundaries" }
 runtime_delta_allowlist:
   - { type: tool_or_skill_ref, value: "runtime_policy.codex:gstack", confidence: runtime_allowed }
+  - { type: tool_or_skill_ref, value: "runtime_policy.cross_model_review", confidence: runtime_allowed }
 unresolved: []
