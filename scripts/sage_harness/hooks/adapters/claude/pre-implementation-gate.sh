@@ -81,8 +81,15 @@ if strat:
     sys.path.insert(0, os.path.join(core_dir, "strategies", "pre_implementation_gate"))
     try:
         smod = importlib.import_module(strat)
+        rk = profile.get("risk") or {}
+        ftoks = set()
+        for c in changes:                       # whole-path 아닌 토큰으로(전략이 토큰 겹침 비교)
+            cp = c["path"]
+            ftoks |= {t.lower() for t in re.split(r"[^A-Za-z0-9가-힣]+", cp + " " + os.path.basename(cp)) if len(t) >= 3}
         signals = {"tickets": set(re.findall(r"[0-9]+", event.get("branch", "") or "")),
-                   "plan": set(), "files": {c["path"] for c in changes}}
+                   "plan": set(), "files": ftoks,
+                   "generic_tokens": rk.get("generic_tokens") or [],   # 전략 확장(profile 주입)
+                   "review_patterns": rk.get("review_patterns") or []}
         strategy_result = smod.find_l3_review(signals, snapshot)
     except Exception:
         strategy_result = None

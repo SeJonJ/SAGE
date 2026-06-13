@@ -95,8 +95,9 @@ def _manifest(host):
     """CORE hook 6종을 등록한 manifest(스켈레톤). hash/conformance 는 generate 가 스탬프."""
     assets = {}
     for hid, form in _CORE_HOOKS:
+        # 미스탬프 상태(install 직후): conformance=UNKNOWN(schema 준수). generate --write 가 hash/PASS 스탬프.
         assets[f"hooks/{hid}"] = {
-            "form": form, "conformance": "PENDING", "risk": [], "unresolved": [],
+            "form": form, "conformance": "UNKNOWN", "risk": [], "unresolved": [],
         }
     return {
         "sage_version": "0.1.0", "generator_version": "0.1.0", "template_version": "0.1.0",

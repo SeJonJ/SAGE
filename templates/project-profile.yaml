@@ -21,10 +21,29 @@ paths:
 
 components: []                    # 예: [{ id: backend, paths: ["src/backend/**"] }]
 
-risk:                            # 레벨 의미 고정, 트리거만 주입
-  content_keywords: { L3: [], L2: [] }
-  l2_triggers: { path_globs: [] }
-  phase_gate: { enabled: true }
+risk:                            # pre-implementation-gate / stop-compliance 가 읽는 위험 분류(flat 계약)
+  # 경로 글롭(L0 통과 / L1·L2·L3 분류). 빈 리스트 = 해당 레벨 미적용
+  l0_pass_globs: []              # 예: ["*.md", "plan_docs/*"] — 문서/plan 즉시 통과
+  l1_path_globs: []              # 예: ["**/*.css", "**/static/**"] — 저위험(UI/마크업)
+  l2_path_globs: []              # 예: ["src/**", "**/*.config.*"] — 소스/설정(build+test+lint)
+  l3_filename_globs: []          # 예: ["**/*payment*", "**/*auth*"] — 고위험 도메인(plan+리뷰 필수)
+  l2_content_keywords: []        # 내용 escalation: L1 → L2
+  l3_content_keywords: []        # 내용 escalation: L1/L2 → L3
+  desktop_block_glob: ""         # 동기화 산출물/금지 경로 직접수정 BLOCK. 예: "dist/**" | "**/generated/**"
+  desktop_block_hint: ""         # 차단 메시지 힌트. 예: "원본 수정 후 빌드/동기화"
+  plan_glob: ""                  # plan 문서 스캔 글롭(루트 상대). 예: "plan_docs/**/*.md"
+  l3_review_strategy: ""         # L3 review 매칭 canonical 선택(미선택=L3 안전 BLOCK): claude_grep_first | codex_feature_signal | <모듈명>
+  generic_tokens: []             # (전략 확장) codex_feature_signal stopword — 스택특화 토큰(프레임워크/언어명)
+  review_patterns: []            # (전략 확장) claude_grep_first 추가 리뷰 마커 정규식
+
+# --- hook 런타임 계약 (cores 가 직접 읽는 top-level 키. 어댑터가 profile 전체를 core 에 전달) ---
+file_type_map: []                # post-tool-logger: [{ glob: "src/**", type: backend }] 첫매치 분류
+skip_untyped: true               # post-tool-logger: file_type_map 미분류 파일 로깅 skip
+phase4_trigger_glob: "*plan_docs/04-analyze/*.md"   # pre-phase4-checklist-gate 발동 글롭
+suffixes: []                     # pre-phase4: PDCA phase 접미사(빈값=framework 기본)
+checklist_scan_targets: []       # pre-phase4: 체크리스트 스캔 대상 글롭
+compliance:                      # stop-compliance-report
+  convention_reminder: {}        # 예: { types: [backend], text: "백엔드 컨벤션 검증 확인 권장" }
 
 conventions: []                  # 예: [{ scope: backend, stack: "<stack>", doc: sage/conventions/<name>.md, file_globs: ["**/*.<ext>"] }]
 

@@ -92,6 +92,12 @@ def _validate_hook(root, asset_id, entry, run_regression):
         if _SEV_RANK[s] > _SEV_RANK[sev]:
             sev = s
 
+    # 0. 미스탬프 감지(install 후 generate 전): hash 없음 → STALE "generate 필요"
+    #    (pre-generate 등록만 된 hook 이 PASS 로 보여 위험을 가리는 것 방지 — Codex P2-6)
+    stamped = entry.get("spec_hash") and (entry.get("render_hash") or entry.get("canonical_hash"))
+    if not stamped and os.path.exists(p["spec"]):
+        bump("STALE"); msgs.append("  STALE 미스탬프 — sage generate --write 로 hash 등록 필요")
+
     # 1. spec hash
     if not os.path.exists(p["spec"]):
         bump("FAIL"); msgs.append(f"  FAIL missing spec: {p['spec']}")

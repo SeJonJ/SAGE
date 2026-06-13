@@ -66,7 +66,7 @@ def _parse_runtime_bindings(spec_path):
 
 
 def _command_template(target, hook_id):
-    """런타임별 등록 command 문자열 (ChatForYou 실측 형식)."""
+    """런타임별 등록 command 문자열 (관측된 런타임 command 형식)."""
     if target == "claude":
         return f'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/{hook_id}.sh"'
     # codex: PROJECT_ROOT/CODEX_HOME wrapper
@@ -153,23 +153,29 @@ def _write_hook_shims(args, root, manifest, hook_ids, target):
 def _compile_profile(root, dest):
     """sage/project-profile.yaml → project-profile.json (hook 런타임은 의존성 0 = JSON 만 읽음).
 
-    pyyaml 은 generate(빌드) 시점 의존성. 미설치/실패 시 경고만(hook 은 profile 없으면 통과).
+    반환: "none"(profile 파일 없음) | "ok"(컴파일 성공) | "fail"(profile 존재하나 컴파일 실패).
+    fail-closed(Codex 2R): profile 이 있는데 컴파일 실패하면 hook 이 조용히 pass-open 되어
+    risk gate 가 무력화된다 → generate 가 실패로 보고한다. pyyaml 은 generate(빌드) 의존성(pyproject 선언).
     """
     yml = os.path.join(dest, "sage", "project-profile.yaml")
     if not os.path.exists(yml):
         yml = os.path.join(root, "sage", "project-profile.yaml")
     if not os.path.exists(yml):
-        return
+        return "none"
     try:
         import yaml
         data = yaml.safe_load(open(yml, encoding="utf-8")) or {}
+    except ImportError:
+        print("   ❌ profile 컴파일 실패: pyyaml 미설치 (generate 빌드 의존성 — pip install pyyaml).", file=sys.stderr)
+        return "fail"
     except Exception as e:
-        print(f"   ⚠️  profile YAML→JSON 컴파일 생략({type(e).__name__}) — hook 은 profile 없으면 통과", file=sys.stderr)
-        return
+        print(f"   ❌ profile 컴파일 실패: YAML 파싱 오류 ({type(e).__name__}: {e}).", file=sys.stderr)
+        return "fail"
     outp = os.path.join(dest, "sage", "project-profile.json")
     os.makedirs(os.path.dirname(outp), exist_ok=True)
     json.dump(data, open(outp, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     print(f"   ↳ profile 컴파일: {os.path.relpath(outp, dest)} (hook 런타임 입력)")
+    return "ok"
 
 
 def _gen_hook(args, root):
@@ -179,6 +185,15 @@ def _gen_hook(args, root):
         if args.id not in hook_ids:
             print(f"[sage generate] TOOL ERROR: manifest 에 hooks/{args.id} 없음", file=sys.stderr); return 2
         hook_ids = [args.id]
+
+    # profile 컴파일 먼저(fail-closed): 실패면 산출물 쓰기 전에 중단 — hook risk gate 무력화 방지(Codex 2R)
+    if args.write:
+        status = _compile_profile(root, args.dest)
+        if status == "fail":
+            print("[sage generate] FAIL: profile 컴파일 실패 → hook risk gate 무력화 위험. "
+                  "pyyaml 설치 또는 YAML 수정 후 재실행(profile 없는 프로젝트면 sage/project-profile.yaml 제거).",
+                  file=sys.stderr)
+            return 1
 
     targets = ["claude", "codex"] if args.target == "both" else [args.target]
     rc = 0
@@ -212,9 +227,8 @@ def _gen_hook(args, root):
         else:
             print(f"== generate {tgt} (dry-run) ==\n{body}")
 
-    # 프로필 컴파일 + manifest 스탬프 (--write)
+    # manifest 스탬프 (--write) — profile 컴파일은 위에서 fail-closed 처리됨
     if args.write and rc == 0:
-        _compile_profile(root, args.dest)
         _stamp_manifest(root, hook_ids)
     return rc
 
@@ -254,7 +268,7 @@ def _stamp_manifest(root, hook_ids):
 
 
 def run(args) -> int:
-    root = _find_root(args.root)
+    root = _find_root(args.root or args.dest)   # --dest 프로젝트의 manifest 를 우선(Codex P1: dest 무시 버그)
     if not root:
         print("[sage generate] TOOL ERROR: manifest 미발견", file=sys.stderr)
         return 2

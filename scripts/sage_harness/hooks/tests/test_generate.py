@@ -13,6 +13,12 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.d
 sys.path.insert(0, REPO)
 from sage.commands import generate as gen  # noqa: E402
 
+try:
+    import yaml  # noqa: F401
+    _HAS_YAML = True
+except ImportError:
+    _HAS_YAML = False
+
 SPEC_A = """---
 id: aaa-hook
 kind: hook
@@ -97,6 +103,39 @@ class TestGenerate(unittest.TestCase):
             x = json.load(open(os.path.join(dest, ".codex", "hooks.json")))
             cmd = x["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
             self.assertIn("CODEX_HOME", cmd)
+
+    def test_root_defaults_to_dest(self):
+        # Codex P1: --root 없이 --dest 만 → dest 의 manifest 를 stamp (cwd 의 다른 manifest 아님)
+        with tempfile.TemporaryDirectory() as dest:
+            make_root(dest)
+            rc = gen.run(Args(target="claude", dest=dest, write=True))  # root=None
+            self.assertEqual(rc, 0)
+            m = json.load(open(os.path.join(dest, "docs", "sage_harness", ".manifest.json")))
+            # make_root 가 둔 "x" 가 실제 sha 로 스탬프됨 → dest manifest 가 갱신됐다는 증거
+            self.assertTrue(m["assets"]["hooks/aaa-hook"]["spec_hash"].startswith("sha256:"))
+
+    def test_profile_compile_failclosed(self):
+        # Codex P1: profile.yaml 존재 + 컴파일 실패(잘못된 YAML) → generate --write FAIL(rc 1), profile.json 미생성
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as dest:
+            make_root(d)
+            os.makedirs(os.path.join(dest, "sage"), exist_ok=True)
+            open(os.path.join(dest, "sage", "project-profile.yaml"), "w").write("risk:\n  l3_filename_globs: [unclosed\n")
+            rc = gen.run(Args(target="claude", dest=dest, root=d, write=True))
+            self.assertEqual(rc, 1)
+            self.assertFalse(os.path.exists(os.path.join(dest, "sage", "project-profile.json")))
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요(generate 빌드 의존성)")
+    def test_profile_compiles_to_json(self):
+        # profile.yaml(유효) → project-profile.json 컴파일(hook 런타임 입력, 의존성 0)
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as dest:
+            make_root(d)
+            os.makedirs(os.path.join(dest, "sage"), exist_ok=True)
+            open(os.path.join(dest, "sage", "project-profile.yaml"), "w").write(
+                "risk:\n  l3_filename_globs: ['*payment*']\n  l2_path_globs: ['src/*']\n")
+            rc = gen.run(Args(target="claude", dest=dest, root=d, write=True))
+            self.assertEqual(rc, 0)
+            prof = json.load(open(os.path.join(dest, "sage", "project-profile.json")))
+            self.assertEqual(prof["risk"]["l3_filename_globs"], ["*payment*"])
 
     def test_agent_generate_guidance(self):
         with tempfile.TemporaryDirectory() as d:

@@ -74,6 +74,20 @@ class TestInstall(unittest.TestCase):
                 capture_output=True, text=True).stdout.strip()
             self.assertEqual(hits, "", f"도메인 토큰 누출:\n{hits}")
 
+    def test_unstamped_validate_stale(self):
+        """Codex P2-6: install 직후(generate 전) hook 은 미스탬프 → validate STALE(exit 3), healthy 로 안 보임."""
+        from sage.commands import validate
+
+        class VArgs:
+            kind = "hook"; check = True; id = None
+
+            def __init__(self, root):
+                self.root = root
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            rc = validate.run(VArgs(d))
+            self.assertEqual(rc, 3)  # STALE — generate --write 로 스탬프 필요
+
     def test_idempotent_skip(self):
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("claude", d))
