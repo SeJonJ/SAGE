@@ -80,5 +80,9 @@ echo "### 19. _resources (번들 리소스 경로 해석 — 패키징/재배치
 python3 "$HERE/test_resources.py" || rc=1
 
 echo ""
+echo "### 20. sage doctor (profile 로드 실패 원인 구분)"
+python3 "$HERE/test_doctor.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

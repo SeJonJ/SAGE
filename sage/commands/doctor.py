@@ -2,7 +2,8 @@
 
 Codex 2R 합의: cross-invocation 경로(§12 미해결, codex-host→Claude)를 v1 에서 fallback 으로 닫음.
 reviewer_resolution 은 순수 판정 함수, doctor 가 옵션 의존성(gstack/codegraph/vault) + reviewer mode 를 정보성 출력.
-gstack 가용성 = profile requires/capabilities + PATH which (개인경로 의존 금지). 항상 exit 0.
+gstack 가용성 = profile requires/capabilities + PATH which (개인경로 의존 금지).
+exit: 정상/degraded/의존성미설치 = 0, profile YAML 파싱 오류(설정 무시됨) = 1 (Codex P1: 실패 원인 구분).
 """
 
 import os
@@ -50,23 +51,45 @@ def reviewer_resolution(profile: dict, caps: dict) -> dict:
                "codex-host→Claude 호출 경로 미확정(§12) → v1 fallback")
 
 
+_DEFAULT_PROFILE = {"runtime": {"host": "claude"}, "options": {"cross_model": False}}
+
+
 def _load_profile(path):
+    """반환 (profile|None, status). status 로 실패 원인 구분(Codex P1):
+    'ok' | 'missing_file' | 'missing_pyyaml' | 'parse_error:<예외명>'.
+    (이전엔 셋 다 None 으로 뭉개 사용자가 설정 무시 여부를 알 수 없었음.)"""
+    if not os.path.exists(path):
+        return None, "missing_file"
     try:
         import yaml  # pyyaml (선언 의존성)
+    except ImportError:
+        return None, "missing_pyyaml"
+    try:
         with open(path, encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    except Exception:
-        return None
+            return (yaml.safe_load(f) or {}), "ok"
+    except Exception as e:
+        return None, f"parse_error:{type(e).__name__}"
 
 
 def run(args):
     from sage import _resources
     prof_path = args.profile or os.path.join(_resources.templates_dir(), "project-profile.yaml")
-    profile = _load_profile(prof_path)
+    profile, status = _load_profile(prof_path)
     print("== sage doctor ==")
-    if profile is None:
-        print(f"  (profile 로드 실패/pyyaml 미설치: {prof_path}) — 기본값 가정")
-        profile = {"runtime": {"host": "claude"}, "options": {"cross_model": False}}
+    rc = 0
+    if status == "ok":
+        pass  # profile 정상 로드
+    elif status == "missing_file":
+        print(f"  ℹ️  profile 없음 ({prof_path}) — 기본값 가정 (sage install 후 값 채움)")
+        profile = dict(_DEFAULT_PROFILE)
+    elif status == "missing_pyyaml":
+        print(f"  ⚠️  WARN pyyaml 미설치 → profile 검사 불가, 기본값 가정. `pip install pyyaml` (선언 의존성)")
+        profile = dict(_DEFAULT_PROFILE)
+    elif status.startswith("parse_error"):
+        rc = 1  # profile 이 존재하나 깨짐 = 실제 오류(설정이 조용히 무시되는 것 방지)
+        print(f"  ❌ FAIL profile YAML 파싱 오류({status.split(':', 1)[1]}): {prof_path}")
+        print(f"        → 선언한 설정이 무시됩니다. YAML 수정 필요.")
+        profile = dict(_DEFAULT_PROFILE)
 
     # 옵션 의존성
     gstack_avail = bool(shutil.which("gstack")) or bool((profile.get("capabilities", {}) or {}).get("gstack"))
@@ -85,4 +108,4 @@ def run(args):
     print(f"  notice  : {rr['notice']}")
     if rr["reviewer_degraded"]:
         print(f"  ⚠️  L3 REVIEW DEGRADED: {rr['reviewer_degrade_reason']}")
-    return 0
+    return rc
