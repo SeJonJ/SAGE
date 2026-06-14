@@ -54,8 +54,11 @@ sage change "자연어 의도"   # (v1.1) 최소 라우터
 ## 상태 (CLI 7종 구현 + install→generate 동작 하네스)
 
 - **CLI 7종 구현**: `install`(CORE 하네스 부트스트랩) · `generate`(hook 등록 + `{host}/hooks` shim + profile YAML→JSON + manifest 스탬프) ·
-  `validate`(staleness+regression+conformance, 미스탬프=STALE) · `review`(auto_approve_safe_default) ·
+  `validate`(staleness+regression+conformance+`--schema`, 미스탬프=STALE) · `review`(auto_approve_safe_default, hook+agent+skill) ·
   `change`(자연어 라우터) · `doctor`(옵션의존성 + profile 로드 실패 구분) · `absorb`(직접수정→spec patch / hook 정본 divergence).
+- **결정론 경계(정직)**: `generate` 의 **hook 만 결정론 생성**(등록+shim+profile 컴파일+스탬프). **agent/skill 은 interpretive**
+  — spec+claims 는 `reverse_extract` 로 도출(결정론)하되 런타임 산출물(`.{claude,codex}/agents·skills/*.md`)은
+  **런타임 AI 가 렌더**(generate 가 결정론 생성하지 않음, v1 의도적 제외). "완전 자동 자산 생성기" 아님.
 - **install→generate 동작 검증(e2e)**: 빈 신규 프로젝트에 install → generate → hook 실행까지 확인.
   profile 없음=통과 / L2 WARN / L3·금지경로 BLOCK / 잘못된 YAML→generate fail-closed / 신규 install→validate STALE.
 - **독립성(제약 #2)**: 설치 트리 **도메인 토큰 0**(회귀 가드 테스트). 엔진/CORE 정본·중립 framework·roster agent 는 도메인값 0 —
