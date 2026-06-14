@@ -19,7 +19,7 @@ from pathlib import Path
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOKS_DIR = os.path.dirname(HERE)
 ADAPTERS = os.path.join(HOOKS_DIR, "adapters")
-PROFILE_PATH = os.path.join(HERE, "fixtures", "stop_compliance", "chatforyou.profile.json")
+PROFILE_PATH = os.path.join(HERE, "fixtures", "stop_compliance", "example.profile.json")
 TODAY = "2026-06-13"
 
 sys.path.insert(0, HOOKS_DIR)
@@ -49,7 +49,7 @@ def group_count(m, label):
 
 class TestCore(unittest.TestCase):
     def test_backend_without_plan(self):
-        m = core.decide({}, PROFILE, snap([{"type": "backend-main", "file": "springboot-backend/src/main/java/A.java"}]))
+        m = core.decide({}, PROFILE, snap([{"type": "backend-main", "file": "backend/src/main/A.java"}]))
         self.assertIn("code_without_plan", keys(m))
         self.assertIn("convention_reminder", keys(m))
 
@@ -61,7 +61,7 @@ class TestCore(unittest.TestCase):
         self.assertNotIn("code_without_plan", keys(m))
 
     def test_l3_pattern_detected(self):
-        m = core.decide({}, PROFILE, snap([{"type": "backend-main", "file": "a/KurentoService.java"}]))
+        m = core.decide({}, PROFILE, snap([{"type": "backend-main", "file": "a/PaymentService.java"}]))
         self.assertIn("l3_pattern_detected", keys(m))
 
     def test_activity_counts(self):
@@ -130,7 +130,7 @@ def run_adapter(runtime, root, entries):
 
 class TestAdapters(unittest.TestCase):
     def test_e2e_both(self):
-        entries = [{"type": "backend-main", "file": "a/KurentoSvc.java", "branch": "main"}]
+        entries = [{"type": "backend-main", "file": "a/PaymentSvc.java", "branch": "main"}]
         for runtime in ("claude", "codex"):
             with tempfile.TemporaryDirectory() as root:
                 p, report = run_adapter(runtime, root, entries)

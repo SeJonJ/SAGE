@@ -1,0 +1,12 @@
+{
+  "file_type_map": [
+    { "glob": "backend/src/main/*", "type": "backend-main" },
+    { "glob": "backend/src/test/*", "type": "backend-test" },
+    { "glob": "frontend/static/*", "type": "frontend-js" },
+    { "glob": "frontend/server.js", "type": "frontend-server" },
+    { "glob": "frontend/config/*", "type": "frontend-config" },
+    { "glob": "*plan_docs/*", "type": "plan-doc" }
+  ],
+  "skip_untyped": true,
+  "log_schema_version": "1"
+}

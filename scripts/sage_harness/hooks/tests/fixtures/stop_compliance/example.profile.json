@@ -1,6 +1,6 @@
 {
   "risk": {
-    "l3_filename_globs": ["*kurento*", "*webrtc*", "*signaling*", "*roommanager*", "*datachannel*", "*icecandidate*", "*sdpoffer*"]
+    "l3_filename_globs": ["*payment*", "*crypto*", "*auth*", "*keystore*", "*signing*", "*token*"]
   },
   "compliance": {
     "activity_groups": [
@@ -12,6 +12,6 @@
     "plan_types": ["plan-doc"],
     "plan_gate_code_types": ["backend-main"],
     "plan_gate_text": "백엔드 소스 수정이 있었으나 plan_docs 활동 없음 (L2 gate 참조)",
-    "convention_reminder": { "types": ["backend-main"], "text": "백엔드 변경: backend-convention-checker 실행 여부 수동 확인 권장" }
+    "convention_reminder": { "types": ["backend-main"], "text": "백엔드 변경: convention-checker 실행 여부 수동 확인 권장" }
   }
 }

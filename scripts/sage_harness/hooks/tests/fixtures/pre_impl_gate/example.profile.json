@@ -1,0 +1,51 @@
+{
+  "risk": {
+    "desktop_block_glob": "*generated/*",
+    "l0_pass_globs": [
+      "*plan_docs/*",
+      "*docs/*",
+      "*.md"
+    ],
+    "l3_filename_globs": [
+      "*payment*",
+      "*crypto*",
+      "*auth*",
+      "*keystore*",
+      "*signing*",
+      "*token*"
+    ],
+    "l2_path_globs": [
+      "*backend/*.java",
+      "*backend/*.properties",
+      "*backend/*.yml",
+      "*backend/*.yaml",
+      "*backend/*.gradle"
+    ],
+    "l1_path_globs": [
+      "*frontend/*.js",
+      "*frontend/*.css",
+      "*frontend/*.html",
+      "*frontend/*.ejs"
+    ],
+    "l3_content_keywords": [
+      "encrypt",
+      "PrivateKey",
+      "chargeCard",
+      "signTransaction",
+      "decryptSecret",
+      "KeyStore",
+      "AESKey",
+      "RSAKey"
+    ],
+    "l2_content_keywords": [
+      "Repository",
+      "@Entity",
+      "migration",
+      "schemaChange",
+      "Transactional",
+      "CacheConfig"
+    ],
+    "plan_glob": "plan_docs/00-base_plan/**/*.md",
+    "l3_review_strategy": "codex_feature_signal"
+  }
+}

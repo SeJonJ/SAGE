@@ -19,7 +19,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOKS_DIR = os.path.dirname(HERE)
 ADAPTERS = os.path.join(HOOKS_DIR, "adapters")
-PROFILE_PATH = os.path.join(HERE, "fixtures", "post_tool_logger", "chatforyou.profile.json")
+PROFILE_PATH = os.path.join(HERE, "fixtures", "post_tool_logger", "example.profile.json")
 FIXED_TS = "2026-06-13T00:00:00Z"
 BRANCH = "testbranch"
 
@@ -41,14 +41,14 @@ def mk_event(changes, tool="Write", runtime="claude"):
 class TestCore(unittest.TestCase):
     def test_classification(self):
         cases = [
-            ("springboot-backend/src/main/java/webChat/Foo.java", "backend-main"),
-            ("springboot-backend/src/test/java/webChat/FooTest.java", "backend-test"),
-            ("nodejs-frontend/static/js/rtc/x.js", "frontend-js"),
-            ("nodejs-frontend/server.js", "frontend-server"),
-            ("nodejs-frontend/config/app.js", "frontend-config"),
+            ("backend/src/main/Foo.java", "backend-main"),
+            ("backend/src/test/FooTest.java", "backend-test"),
+            ("frontend/static/x.js", "frontend-js"),
+            ("frontend/server.js", "frontend-server"),
+            ("frontend/config/app.js", "frontend-config"),
             ("plan_docs/00-base/x.md", "plan-doc"),
             # plan-doc drift canonical: 컴포넌트 plan_docs 도 포함 (*plan_docs/*)
-            ("springboot-backend/plan_docs/feature.md", "plan-doc"),
+            ("backend/plan_docs/feature.md", "plan-doc"),
         ]
         for path, expected_type in cases:
             d = core.decide(mk_event([{"path": path, "op": "write"}]), PROFILE)
@@ -64,9 +64,9 @@ class TestCore(unittest.TestCase):
 
     def test_multi_changes(self):
         d = core.decide(mk_event([
-            {"path": "springboot-backend/src/main/java/A.java", "op": "add"},
+            {"path": "backend/src/main/A.java", "op": "add"},
             {"path": "README.md", "op": "update"},                 # 미분류 → skip
-            {"path": "nodejs-frontend/static/js/b.js", "op": "update"},
+            {"path": "frontend/static/b.js", "op": "update"},
         ]), PROFILE)
         types = [e["type"] for e in d["log_entries"]]
         self.assertEqual(types, ["backend-main", "frontend-js"])  # README skip
@@ -94,21 +94,21 @@ def read_log(runtime, project_root):
 class TestAdapters(unittest.TestCase):
     def test_claude_single(self):
         with tempfile.TemporaryDirectory() as root:
-            fp = os.path.join(root, "springboot-backend/src/main/java/webChat/Foo.java")
+            fp = os.path.join(root, "backend/src/main/Foo.java")
             p = run_adapter("claude", {"tool_name": "Write", "tool_input": {"file_path": fp}, "session_id": "test"}, root)
             self.assertEqual(p.returncode, 0)
             entries = read_log("claude", root)
             self.assertEqual(len(entries), 1)
             self.assertEqual(entries[0]["type"], "backend-main")
-            self.assertEqual(entries[0]["file"], "springboot-backend/src/main/java/webChat/Foo.java")
+            self.assertEqual(entries[0]["file"], "backend/src/main/Foo.java")
             self.assertEqual(entries[0]["branch"], BRANCH)
 
     def test_codex_apply_patch_multi(self):
         with tempfile.TemporaryDirectory() as root:
             cmd = (
                 "*** Begin Patch\n"
-                "*** Add File: springboot-backend/src/main/java/A.java\n+x\n"
-                "*** Update File: nodejs-frontend/static/js/b.js\n+y\n"
+                "*** Add File: backend/src/main/A.java\n+x\n"
+                "*** Update File: frontend/static/b.js\n+y\n"
                 "*** Add File: README.md\n+z\n"          # 미분류 → skip
                 "*** End Patch\n"
             )
@@ -130,9 +130,9 @@ class TestAdapters(unittest.TestCase):
     def test_behavior_parity(self):
         # 동일 파일 변경 → (file,type) 동일, tool 필드만 런타임차이
         with tempfile.TemporaryDirectory() as r1, tempfile.TemporaryDirectory() as r2:
-            fp = os.path.join(r1, "springboot-backend/src/main/java/A.java")
+            fp = os.path.join(r1, "backend/src/main/A.java")
             run_adapter("claude", {"tool_name": "Write", "tool_input": {"file_path": fp}, "session_id": "test"}, r1)
-            run_adapter("codex", {"tool_name": "apply_patch", "tool_input": {"command": "*** Add File: springboot-backend/src/main/java/A.java\n+x\n"}, "session_id": "test"}, r2)
+            run_adapter("codex", {"tool_name": "apply_patch", "tool_input": {"command": "*** Add File: backend/src/main/A.java\n+x\n"}, "session_id": "test"}, r2)
             ec, ex = read_log("claude", r1), read_log("codex", r2)
             self.assertEqual([(e["file"], e["type"]) for e in ec], [(e["file"], e["type"]) for e in ex])
             self.assertEqual(ec[0]["tool"], "Write")

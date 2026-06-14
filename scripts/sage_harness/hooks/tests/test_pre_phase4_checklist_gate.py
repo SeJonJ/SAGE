@@ -16,7 +16,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOKS_DIR = os.path.dirname(HERE)
 ADAPTERS = os.path.join(HOOKS_DIR, "adapters")
-PROFILE_PATH = os.path.join(HERE, "fixtures", "pre_phase4", "chatforyou.profile.json")
+PROFILE_PATH = os.path.join(HERE, "fixtures", "pre_phase4", "example.profile.json")
 
 sys.path.insert(0, HOOKS_DIR)
 import pre_phase4_checklist_gate_core as core  # noqa: E402
@@ -25,8 +25,8 @@ with open(PROFILE_PATH, encoding="utf-8") as _f:
     PROFILE = json.load(_f)
 
 G_IMPL = "plan_docs/03-implementation/*.md"
-G_BE = "springboot-backend/plan_docs/*.md"
-G_FE = "nodejs-frontend/plan_docs/*.md"
+G_BE = "backend/plan_docs/*.md"
+G_FE = "frontend/plan_docs/*.md"
 
 
 def ev(four="plan_docs/04-analyze/feature_analyze.md"):
@@ -62,9 +62,9 @@ class TestCore(unittest.TestCase):
 
     def test_block_unchecked_backend(self):
         s = snap({G_IMPL: ["plan_docs/03-implementation/feature.md"],
-                  G_BE: ["springboot-backend/plan_docs/feature.md"], G_FE: []},
+                  G_BE: ["backend/plan_docs/feature.md"], G_FE: []},
                  {"plan_docs/03-implementation/feature.md": "- [x] ok",
-                  "springboot-backend/plan_docs/feature.md": "- [ ] a\n- [ ] b"})
+                  "backend/plan_docs/feature.md": "- [ ] a\n- [ ] b"})
         d = core.decide(ev(), PROFILE, s)
         self.assertEqual(d["status"], "block")
         self.assertEqual(d["total_unchecked"], 2)

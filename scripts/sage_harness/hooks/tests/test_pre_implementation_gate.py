@@ -18,7 +18,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOKS_DIR = os.path.dirname(HERE)
 ADAPTERS = os.path.join(HOOKS_DIR, "adapters")
-PROFILE_PATH = os.path.join(HERE, "fixtures", "pre_impl_gate", "chatforyou.profile.json")
+PROFILE_PATH = os.path.join(HERE, "fixtures", "pre_impl_gate", "example.profile.json")
 
 sys.path.insert(0, HOOKS_DIR)
 sys.path.insert(0, os.path.join(HOOKS_DIR, "strategies", "pre_implementation_gate"))
@@ -39,27 +39,27 @@ class TestClassify(unittest.TestCase):
     def test_levels(self):
         cases = [
             ("docs/x.md", "", "L0"),
-            ("nodejs-frontend/static/js/app.js", "", "L1"),
-            ("springboot-backend/src/main/java/Foo.java", "", "L2"),
-            ("springboot-backend/Kurento/Svc.java", "", "L3"),       # filename 패턴
+            ("frontend/static/js/app.js", "", "L1"),
+            ("backend/src/main/java/Foo.java", "", "L2"),
+            ("backend/payment/Svc.java", "", "L3"),       # filename 패턴(고위험=payment)
         ]
         for path, content, exp in cases:
             self.assertEqual(core.classify_risk(ev(path, content), PROFILE)["risk"], exp, path)
 
     def test_content_escalation(self):
-        self.assertEqual(core.classify_risk(ev("nodejs-frontend/static/js/x.js", "addIceCandidate()"), PROFILE)["risk"], "L3")
-        self.assertEqual(core.classify_risk(ev("nodejs-frontend/static/js/x.js", "JwtTokenProvider"), PROFILE)["risk"], "L2")
+        self.assertEqual(core.classify_risk(ev("frontend/static/js/x.js", "encrypt()"), PROFILE)["risk"], "L3")
+        self.assertEqual(core.classify_risk(ev("frontend/static/js/x.js", "Repository"), PROFILE)["risk"], "L2")
 
     def test_case_insensitive(self):
         # 소문자 키워드도 잡혀야(canonical=case-insensitive, 더 안전)
-        self.assertEqual(core.classify_risk(ev("springboot-backend/src/main/java/F.java", "webrtcendpoint"), PROFILE)["risk"], "L3")
-        self.assertEqual(core.classify_risk(ev("x/SDPOFFER_handler.txt", ""), PROFILE)["risk"], "L3")  # filename 대문자
+        self.assertEqual(core.classify_risk(ev("backend/src/main/java/F.java", "privatekey"), PROFILE)["risk"], "L3")
+        self.assertEqual(core.classify_risk(ev("x/KEYSTORE_handler.txt", ""), PROFILE)["risk"], "L3")  # filename 대문자
 
     def test_desktop_block(self):
-        self.assertEqual(core.classify_risk(ev("chatforyou-desktop/src/x.js"), PROFILE)["risk"], "DESKTOP_BLOCK")
+        self.assertEqual(core.classify_risk(ev("generated/x.js"), PROFILE)["risk"], "DESKTOP_BLOCK")
 
     def test_declared_escalation(self):
-        self.assertEqual(core.classify_risk(ev("nodejs-frontend/static/js/x.js", "", declared="L3"), PROFILE)["risk"], "L3")
+        self.assertEqual(core.classify_risk(ev("frontend/static/js/x.js", "", declared="L3"), PROFILE)["risk"], "L3")
 
 
 def snap(plan=None, review=None):
@@ -68,41 +68,41 @@ def snap(plan=None, review=None):
 
 class TestDecide(unittest.TestCase):
     def test_desktop(self):
-        d = core.decide(ev("chatforyou-desktop/src/x.js"), PROFILE, snap(), None)
+        d = core.decide(ev("generated/x.js"), PROFILE, snap(), None)
         self.assertEqual((d["status"], d["exit_code"]), ("block", 2))
 
     def test_l3_no_plan_block(self):
-        d = core.decide(ev("a/Kurento.java"), PROFILE, snap(plan=[]), None)
+        d = core.decide(ev("a/payment.java"), PROFILE, snap(plan=[]), None)
         self.assertEqual(d["message_key"], "block_l3_no_plan")
         self.assertEqual(d["exit_code"], 2)
 
     def test_l3_strategy_unselected_block(self):
         # plan 있음 → no-plan block 회피, 전략 미선택 → safety BLOCK
         plan = [{"path": "plan_docs/00-base_plan/x.md", "content": "#127 feature"}]
-        d = core.decide(ev("a/Kurento.java", branch="bug/127"), PROFILE, snap(plan=plan), None)
+        d = core.decide(ev("a/payment.java", branch="bug/127"), PROFILE, snap(plan=plan), None)
         self.assertEqual(d["message_key"], "block_l3_strategy_unresolved")
         self.assertTrue(d["safety_degraded"])
         self.assertEqual(d["exit_code"], 2)
 
     def test_l3_strategy_found_ok(self):
         plan = [{"path": "plan_docs/00-base_plan/x.md", "content": "#127"}]
-        d = core.decide(ev("a/Kurento.java", branch="bug/127"), PROFILE, snap(plan=plan), {"found": True, "path": "r.md"})
+        d = core.decide(ev("a/payment.java", branch="bug/127"), PROFILE, snap(plan=plan), {"found": True, "path": "r.md"})
         self.assertEqual((d["status"], d["exit_code"]), ("ok", 0))
 
     def test_l3_strategy_notfound_warn(self):
         plan = [{"path": "plan_docs/00-base_plan/x.md", "content": "#127"}]
-        d = core.decide(ev("a/Kurento.java", branch="bug/127"), PROFILE, snap(plan=plan), {"found": False})
+        d = core.decide(ev("a/payment.java", branch="bug/127"), PROFILE, snap(plan=plan), {"found": False})
         self.assertEqual((d["status"], d["exit_code"]), ("warn", 0))
 
     def test_l2_plan_gate(self):
-        f = "springboot-backend/src/main/java/Foo.java"
+        f = "backend/src/main/java/Foo.java"
         self.assertEqual(core.decide(ev(f), PROFILE, snap(plan=[]), None)["message_key"], "warn_l2_no_plan")
         plan = [{"path": "p.md", "content": "#127"}]
         self.assertEqual(core.decide(ev(f, branch="bug/127"), PROFILE, snap(plan=plan), None)["status"], "ok")
 
     def test_plan_fallback_7day(self):
         # audit P1: ticket 미매칭 시 7일 이내(recent) plan 만 fallback 인정
-        f = "springboot-backend/src/main/java/Foo.java"
+        f = "backend/src/main/java/Foo.java"
         recent_plan = [{"path": "r.md", "content": "무관", "recent": True}]
         old_plan = [{"path": "o.md", "content": "무관", "recent": False}]
         # branch 에 ticket 없음 → fallback. recent=True → plan 인정(ok)
@@ -111,7 +111,7 @@ class TestDecide(unittest.TestCase):
         self.assertEqual(core.decide(ev(f, branch="main"), PROFILE, snap(plan=old_plan), None)["message_key"], "warn_l2_no_plan")
 
     def test_l1_ok(self):
-        self.assertEqual(core.decide(ev("nodejs-frontend/static/js/x.js"), PROFILE, snap(), None)["status"], "ok")
+        self.assertEqual(core.decide(ev("frontend/static/js/x.js"), PROFILE, snap(), None)["status"], "ok")
 
 
 class TestStrategies(unittest.TestCase):
@@ -137,8 +137,8 @@ def run_adapter(runtime, raw, root):
 class TestAdapters(unittest.TestCase):
     def test_l3_block_both(self):
         for runtime, raw in [
-            ("claude", {"tool_name": "Write", "tool_input": {"file_path": "a/KurentoSvc.java"}, "session_id": "t"}),
-            ("codex", {"tool_name": "apply_patch", "tool_input": {"command": "*** Add File: a/KurentoSvc.java\n+x\n"}, "session_id": "t"}),
+            ("claude", {"tool_name": "Write", "tool_input": {"file_path": "a/payment.java"}, "session_id": "t"}),
+            ("codex", {"tool_name": "apply_patch", "tool_input": {"command": "*** Add File: a/payment.java\n+x\n"}, "session_id": "t"}),
         ]:
             with tempfile.TemporaryDirectory() as root:
                 p = run_adapter(runtime, raw, root)
@@ -146,8 +146,8 @@ class TestAdapters(unittest.TestCase):
 
     def test_l1_pass_both(self):
         for runtime, raw in [
-            ("claude", {"tool_name": "Write", "tool_input": {"file_path": "nodejs-frontend/static/js/x.js"}, "session_id": "t"}),
-            ("codex", {"tool_name": "apply_patch", "tool_input": {"command": "*** Add File: nodejs-frontend/static/js/x.js\n+x\n"}, "session_id": "t"}),
+            ("claude", {"tool_name": "Write", "tool_input": {"file_path": "frontend/static/js/x.js"}, "session_id": "t"}),
+            ("codex", {"tool_name": "apply_patch", "tool_input": {"command": "*** Add File: frontend/static/js/x.js\n+x\n"}, "session_id": "t"}),
         ]:
             with tempfile.TemporaryDirectory() as root:
                 p = run_adapter(runtime, raw, root)
