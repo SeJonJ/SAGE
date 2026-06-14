@@ -192,6 +192,16 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True):
         bump("STALE"); msgs.append("  STALE claims_hash 불일치")
     for u in entry.get("unresolved", []):
         bump("WARN"); msgs.append(f"  WARN unresolved: {u}")
+    # descriptive unresolved(비게이팅) 표면화: claims.yml 의 confidence:unresolved 중 manifest gating 에 없는 것.
+    # 서술형(절차/when_to_use 등)은 게이팅 제외 설계지만 조용히 숨으면 PDCA 핵심 의미가 빠질 수 있어 INFO 로 가시화(sev 불변).
+    if os.path.exists(claims):
+        try:
+            total_unres = sum(1 for ln in open(claims, encoding="utf-8") if "confidence: unresolved" in ln)
+        except Exception:
+            total_unres = 0
+        descriptive = total_unres - len(entry.get("unresolved", []))
+        if descriptive > 0:
+            msgs.append(f"  INFO descriptive unresolved {descriptive}건 (비게이팅 — 절차/서술 의미 누락 주의, {os.path.basename(claims)} 확인)")
     # render_hash 는 interpretive/외부 산출물이라 v1 staleness 재계산 제외(정보성)
     test = entry.get("test")
     if run_regression and test and sev in ("PASS", "WARN"):

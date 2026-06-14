@@ -7,7 +7,7 @@ import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
-from sage.commands.validate import _safe_test_path, _schema_check  # noqa: E402
+from sage.commands.validate import _safe_test_path, _schema_check, _validate_interpretive  # noqa: E402
 
 ROOT = REPO  # sage_project (실제 구조 사용)
 
@@ -65,6 +65,24 @@ class TestSchemaCheck(unittest.TestCase):
             m = {"sage_version": "0.1.0", "host_runtime": "claude",
                  "assets": {"hooks/x": {"conformance": "BOGUS", "form": "native"}}}  # enum 위반
             self.assertEqual(_schema_check(d, m)[0], "FAIL")
+
+
+class TestDescriptiveUnresolved(unittest.TestCase):
+    """descriptive unresolved(비게이팅) 가 INFO 로 가시화되되 severity 는 안 올리는지."""
+    def test_info_surfaced_not_gating(self):
+        with tempfile.TemporaryDirectory() as d:
+            sk = os.path.join(d, "docs", "sage_harness", "skills")
+            os.makedirs(sk)
+            open(os.path.join(sk, "x.md"), "w").write("# x\n")
+            open(os.path.join(sk, "x.claims.yml"), "w").write(
+                'required_claims:\n'
+                '  - { type: procedure_step, value: "a", confidence: unresolved }\n'
+                '  - { type: procedure_step, value: "b", confidence: unresolved }\n'
+                'forbidden_claims:\nruntime_delta_allowlist:\nunresolved: []\n')
+            entry = {"form": "interpretive", "unresolved": []}
+            sev, msgs = _validate_interpretive(d, "skills/x", entry, run_regression=False)
+            self.assertTrue(any("descriptive unresolved 2건" in m for m in msgs))
+            self.assertEqual(sev, "PASS")   # INFO 는 게이팅 아님
 
 
 if __name__ == "__main__":
