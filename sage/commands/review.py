@@ -17,7 +17,7 @@ from sage.commands import validate as V
 
 def register(sub):
     p = sub.add_parser("review", help="자동승인(auto)/사람검토(review) 분류 — auto_approve_safe_default")
-    p.add_argument("--kind", choices=["hook", "agent", "all"], default="all")
+    p.add_argument("--kind", choices=["hook", "agent", "skill", "all"], default="all")
     p.add_argument("--batch", action="store_true", help="auto 버킷을 1줄 요약")
     p.add_argument("--gate", action="store_true", help="review 버킷 있으면 exit 1 (CI 게이트)")
     p.add_argument("--root", default=None)
@@ -68,6 +68,8 @@ def run(args):
         prefixes.append("hooks/")
     if args.kind in ("agent", "all"):
         prefixes.append("agents/")
+    if args.kind in ("skill", "all"):
+        prefixes.append("skills/")   # skill(interpretive) 도 승인 UX 대상 (누락 수정)
     ids = sorted(k for k in assets if any(k.startswith(p) for p in prefixes))
 
     auto, review = [], []
