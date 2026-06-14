@@ -1,7 +1,8 @@
 # SAGE — System for Agentic Governance & Engineering
 
-ChatForYou의 AI 하네스(PDCA 워크플로우, 팀 오케스트레이션, hook, cross-model 검토)를
-**런타임 선택형(claude | codex) 재사용 프레임워크**로 추출한 standalone 프로젝트.
+PDCA 워크플로우 · 팀 오케스트레이션 · hook 게이트 · cross-model 검토를
+**런타임 선택형(claude | codex) 재사용 AI 하네스 프레임워크**로 제공하는 standalone 프로젝트.
+(실제 운영 프로젝트의 손관리 `.claude/.codex` 자산에서 추출·일반화한 spec-SSOT 자산관리 사이클.)
 
 > 설계 SSOT: Obsidian vault `TECH - SAGE 통합 마스터 설계` + `TECH - SAGE 자산관리 사이클 최종검증 (2026-06-12)`
 > + `TECH - SAGE CORE/OPTION 설치 리소스 카탈로그`. 본 레포는 그 설계의 **구현체**다.
@@ -38,6 +39,70 @@ sage doctor                # 옵션 의존성 확인 + degrade 안내
 sage change "자연어 의도"   # (v1.1) 최소 라우터
 ```
 
+## 브랜드 설정 (configurable, 기본 `sage`)
+
+자산/문서 정체성 접두는 `project.prefix` — 기본값 `sage`, 설치 시 변경 가능:
+
+```
+sage install --host claude --prefix acme    # project.prefix = acme
+```
+
+`project.prefix` 는 `sage/project-profile.yaml` 에 기록되어 문서 제목·knowledge-capture 파일명 등에 쓰인다.
+CORE roster agent 는 역할 기반 무접두(leader/backend/frontend/qa/reviewer/convention-checker)로 **브랜드 중립**이다.
+
+## 예시: 프로젝트 적용 (worked example)
+
+가상의 `backend/ + frontend/` 웹앱(고위험 도메인 = 결제/암호)에 SAGE 를 적용한다고 하자. 엔진은 이 도메인값을
+전혀 모르며, 전부 profile/spec 에서 온다 — 다른 스택이면 profile 만 바꾸면 같은 엔진이 동작한다(독립).
+
+1) `sage/project-profile.yaml` (발췌):
+
+```yaml
+project: { name: "acme", prefix: "acme" }
+risk:
+  l1_path_globs: ["*frontend/*.js", "*frontend/*.css"]      # 저위험(UI)
+  l2_path_globs: ["*backend/*.java", "*backend/*.gradle"]   # 소스/설정(build+test+lint)
+  l3_filename_globs: ["*payment*", "*crypto*", "*auth*"]    # 고위험 도메인(plan+리뷰 필수)
+  l3_content_keywords: ["encrypt", "PrivateKey", "chargeCard"]
+  desktop_block_glob: "*generated/*"                        # 동기화 산출물 직접수정 차단
+  plan_glob: "plan_docs/**/*.md"
+  l3_review_strategy: "codex_feature_signal"
+file_type_map:
+  - { glob: "backend/src/main/*", type: backend-main }
+  - { glob: "frontend/static/*",  type: frontend-js }
+verification:
+  commands: { build: "./gradlew build", test: "./gradlew test", lint: "ktlint" }
+```
+
+2) agent spec (사람 수기 최소 = intent + advisory_scope) — `docs/sage_harness/agents/backend.md`:
+
+```markdown
+---
+id: backend
+kind: agent
+---
+## intent
+백엔드 설계·구현·서비스 단위테스트.
+## advisory_scope
+- owns: backend/src/main
+- role_boundary: 통합/HTTP/경계값 테스트는 qa 영역
+- convention_doc: docs/backend.md
+```
+
+3) `sage generate` 후 자동도출 `backend.claims.yml` (발췌, reverse_extract):
+
+```yaml
+required_claims:
+  - { type: owned_paths,    value: "backend/src/main", confidence: high }
+  - { type: convention_doc, value: "docs/backend.md",  confidence: high }
+forbidden_claims:
+  - { type: safety_forbid,  value: "forbid:integration/http/boundary tests", confidence: high }
+  - { inherited_forbidden_claims: "AGENT_GUIDE.non_negotiable_boundaries" }
+```
+
+> 테스트/문서용 generic 예시 config 는 `scripts/sage_harness/extract_config_example.py` +
+> `fixtures/**/example.profile.json` 에 있다(프레임워크 레포엔 실제 인스턴스를 두지 않음).
+
 ## v1 구현 순서 (최종검증 §5 — 1~10 전부 완료 + install/generate 동작화)
 
 1. ~~문구 정리~~ (설계 wiki 반영 완료)
@@ -61,14 +126,15 @@ sage change "자연어 의도"   # (v1.1) 최소 라우터
   **런타임 AI 가 렌더**(generate 가 결정론 생성하지 않음, v1 의도적 제외). "완전 자동 자산 생성기" 아님.
 - **install→generate 동작 검증(e2e)**: 빈 신규 프로젝트에 install → generate → hook 실행까지 확인.
   profile 없음=통과 / L2 WARN / L3·금지경로 BLOCK / 잘못된 YAML→generate fail-closed / 신규 install→validate STALE.
-- **독립성(제약 #2)**: 설치 트리 **도메인 토큰 0**(회귀 가드 테스트). 엔진/CORE 정본·중립 framework·roster agent 는 도메인값 0 —
-  ChatForYou 패턴은 `extract_config_chatforyou.py`·profile·fixtures·`chatforyou-*` 인스턴스에만. 전략은 profile 확장형(`signals[generic_tokens/review_patterns]`).
+- **독립성(제약 #2)**: 레포 = 엔진 + CORE 만(특정 프로젝트 인스턴스 없음). 설치 트리 **특정 스택 토큰 0**(회귀 가드 테스트).
+  소비 프로젝트 패턴은 `project-profile.yaml` + `ExtractConfig` 로만 주입. 테스트/문서용 generic 예시 =
+  `extract_config_example.py`·`fixtures/**/example.profile.json`. 전략은 profile 확장형(`signals[generic_tokens/review_patterns]`).
 - **검증**: writable 환경 전체 테스트 PASS, `validate --kind all --check` 종합 PASS, manifest 구조검증 `sage validate --schema`(jsonschema 설치 시 `pip install 'sage-harness[schema]'`) PASS, manifest unresolved 0(사람 결정 완료).
   Codex 다라운드 + 자가 다회 감사 반영(전문가 피드백으로 install/generate P0 2건 발견·수정 — 상세 vault `TECH - SAGE 구현 진행 로그`).
 - **배포(정직)**: 현재 git clone / `pip install -e .`(editable) / sdist(레포 레이아웃) 기준. 리소스 경로는 `sage/_resources.py`
   (`$SAGE_RESOURCE_ROOT` override + repo fallback)로 해석. 순수 PyPI wheel 단독 배포는 dual-use 인 `scripts/sage_harness` 의
   패키지 이전(importlib.resources)이 필요 — **공개 전 과제**. `pyyaml` 은 generate(빌드) 의존성(hook 런타임은 의존성 0=JSON).
-- **남은 범위**: Tier 2(2번째 프로젝트 실적용) / Tier 4(전체 SAGE Phase A~H) / Tier 5(ChatForYou 역적용).
+- **남은 범위**: Tier 2(2번째 프로젝트 실적용) / Tier 4(전체 SAGE Phase A~H) / Tier 5(원본 프로젝트 역적용).
 
 ## License
 

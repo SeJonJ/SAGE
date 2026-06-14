@@ -4,14 +4,16 @@ SAGE 자산(hook/agent/skill)의 **의도(intent) 단일 진실원**. `.claude/.
 생성되는 generated artifact이며 **직접수정 금지(write guard로 block)**.
 
 > [!important] 프레임워크 ↔ 인스턴스 경계 (제약 #2: SAGE 독립)
-> **이 디렉토리에 현재 채워진 자산(`agents/chatforyou-*`, `hooks/*`, `.manifest.json` 의 해당 엔트리)은
-> ChatForYou 참조 인스턴스(v1 데모)다.** 프레임워크 엔진이 아니다.
+> **이 레포는 프레임워크(엔진 + CORE)만 담는다 — 특정 소비 프로젝트 인스턴스는 두지 않는다.**
+> 그래서 `agents/`·`skills/` 는 프레임워크 레포에선 비어 있고(`.gitkeep`), `hooks/` 만 CORE 6종 spec 을 담는다.
 > - **프레임워크(재사용)**: `sage/` CLI, `scripts/sage_harness/*.py`(엔진: reverse_extract_agent, conformance),
->   hook `*_core.py` + adapters(참조 구현), `schema/`, `templates/`. 엔진은 도메인값 0(검증: config 없으면 owned_paths 0).
-> - **ChatForYou 인스턴스(데모)**: 위 채워진 자산 + `extract_config_chatforyou.py` + `fixtures/**/chatforyou.profile.json`
->   + `hooks/strategies/**` + `hooks/policies/**`.
-> - **새 프로젝트**: 이 디렉토리를 비우고(또는 `sage install` 빈 스키마) 자기 `ExtractConfig`/profile 로 자산을 채운다.
->   프레임워크는 인스턴스 데이터가 비어도 graceful (validate 0 assets PASS — 검증됨).
+>   hook `*_core.py` + adapters(정본) + `strategies/**`·`policies/**`, `schema/`, `templates/`(CORE 중립 roster/framework/hook spec).
+>   엔진은 도메인값 0(검증: config 없으면 owned_paths 0 / 설치 트리 스택 토큰 0).
+> - **인스턴스(소비 프로젝트)**: `sage install` 로 CORE 를 받은 뒤 자기 `project-profile.yaml` + `ExtractConfig` 로
+>   agents/skills/claims 를 채운다. 인스턴스 자산은 **소비 프로젝트 레포에** 산다(이 프레임워크 레포엔 없음).
+> - **예시**: 실제 매핑 worked example 은 루트 `README.md` 참조. 테스트/문서용 generic 예시는
+>   `scripts/sage_harness/extract_config_example.py` + `fixtures/**/example.profile.json`.
+> - **브랜드/접두**: `project.prefix`(기본 `sage`) — `sage install --prefix <brand>` 로 설정.
 
 ## 레이아웃
 
