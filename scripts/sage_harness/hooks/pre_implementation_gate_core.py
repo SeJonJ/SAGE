@@ -37,20 +37,21 @@ def _classify_one(path: str, content: str, profile: dict) -> tuple:
             return ("L0", "문서/plan", False)
 
     risk, reason, is_l3_filename = "none", "", False
+    # 사유(reason)는 범용 규칙 참조형(제약 #2 독립). 특정 스택/도메인명 금지 —
+    # "어느 매칭 규칙이 발동했는지"만 기술한다. 도메인 명칭은 profile.risk(글롭/키워드)가 정의, core 는 중립.
     for g in r.get("l3_filename_globs", []):
         if _imatch(path, g):
-            # 라벨은 범용(제약 #2 독립). 도메인명(고위험 컴포넌트 등)은 profile.risk 가 정의, core 는 중립 라벨.
             risk, reason, is_l3_filename = "L3", "L3 filename 패턴", True
             break
     if risk == "none":
         for g in r.get("l2_path_globs", []):
             if _imatch(path, g):
-                risk, reason = "L2", "백엔드 소스/설정"
+                risk, reason = "L2", "L2 소스/설정"      # 중립: l2_path_globs 매치(스택 무관)
                 break
     if risk == "none":
         for g in r.get("l1_path_globs", []):
             if _imatch(path, g):
-                risk, reason = "L1", "프론트 JS/UI"
+                risk, reason = "L1", "L1 저위험"          # 중립: l1_path_globs 매치(스택 무관)
                 break
     if risk == "none":
         return ("none", "", False)

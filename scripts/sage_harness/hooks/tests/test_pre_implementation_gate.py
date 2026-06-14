@@ -61,6 +61,22 @@ class TestClassify(unittest.TestCase):
     def test_declared_escalation(self):
         self.assertEqual(core.classify_risk(ev("frontend/static/js/x.js", "", declared="L3"), PROFILE)["risk"], "L3")
 
+    def test_reason_neutral_no_stack_leak(self):
+        # 제약 #2: core 분류 사유는 스택/도메인 중립이어야 한다(엔진 도메인값 0).
+        # Tier 2(weatherapp) 회귀 가드: L1/L2 사유에 '백엔드/프론트/java' 등 스택어가 박히면 실패.
+        leak = ("백엔드", "프론트", "backend", "frontend", "springboot",
+                "nodejs", "java", "js/ui", "kurento", "webrtc", "kotlin")
+        l2 = core.classify_risk(ev("backend/src/main/java/Foo.java"), PROFILE)
+        l1 = core.classify_risk(ev("frontend/static/js/app.js"), PROFILE)
+        self.assertEqual(l2["risk"], "L2")
+        self.assertEqual(l1["risk"], "L1")
+        for label in (l2["reason"], l1["reason"]):
+            for w in leak:
+                self.assertNotIn(w, label.lower(), f"스택 누출: {label!r}")
+        # 중립 라벨은 발동 규칙(L1/L2)만 기술
+        self.assertEqual(l2["reason"], "L2 소스/설정")
+        self.assertEqual(l1["reason"], "L1 저위험")
+
 
 def snap(plan=None, review=None):
     return {"plan_files": plan or [], "review_candidates": review or []}
