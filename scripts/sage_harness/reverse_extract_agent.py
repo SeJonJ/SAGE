@@ -20,10 +20,10 @@ import reverse_extract_common as common  # noqa: E402
 CONTRACT_VERSION = "1"
 
 # ───────────────────────────────────────────────────────────────────────────
-# 엔진은 도메인값 0 (제약 #2: ChatForYou 독립). 프로젝트 고유 패턴은 ExtractConfig 로 주입한다.
+# 엔진은 도메인값 0 (제약 #2: 소비 프로젝트 독립). 프로젝트 고유 패턴은 ExtractConfig 로 주입한다.
 # DEFAULT 는 범용(commit/push 안전 + gstack 은 SAGE cross-model 도구). 컴포넌트 경로/컨벤션 휴리스틱은
-# 프로젝트 config 가 제공(없으면 해당 claim 미추출 — 다른 스택에서도 graceful). ChatForYou 패턴은
-# extract_config_chatforyou.py 에 분리(인스턴스), 엔진에는 없음.
+# 프로젝트 config 가 제공(없으면 해당 claim 미추출 — 다른 스택에서도 graceful). 프로젝트 고유 패턴은
+# 인스턴스 config(예: extract_config_example.py)에 분리, 엔진에는 없음.
 # ───────────────────────────────────────────────────────────────────────────
 DEFAULT_EXTRACT_CONFIG = {
     "component_path_globs": [],        # owned_paths 인식용 regex(프로젝트 컴포넌트 경로). 비면 owned 미추출

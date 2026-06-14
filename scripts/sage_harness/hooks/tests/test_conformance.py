@@ -3,6 +3,7 @@
 
 Codex DoD 4케이스: (a)PASS (b)owned_path 누락→FAIL (c)금지-반대 문구→FAIL (d)forbidden subject 부재→WARN.
 + unresolved=WARN / 서술형 skip / forbidden contradiction.
+self-contained: 합성 입력 + 예시 인스턴스 contradiction 패턴(특정 소비 프로젝트 비의존 = 독립).
 """
 import os
 import sys
@@ -11,12 +12,12 @@ import unittest
 SAGE_SCRIPTS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # scripts/sage_harness
 sys.path.insert(0, SAGE_SCRIPTS)
 import conformance as cf  # noqa: E402
-from extract_config_chatforyou import CHATFORYOU_CONTRADICTION_PATTERNS as CPAT  # noqa: E402
+from extract_config_example import EXAMPLE_CONTRADICTION_PATTERNS as CPAT  # noqa: E402
 
 CLAIMS = {
     "required_claims": [
-        {"type": "owned_paths", "value": "springboot-backend/src/main/java/webChat", "confidence": "high"},
-        {"type": "convention_doc", "value": "docs/springboot_backend.md", "confidence": "high"},
+        {"type": "owned_paths", "value": "backend/src/main/java/core", "confidence": "high"},
+        {"type": "convention_doc", "value": "docs/backend.md", "confidence": "high"},
         {"type": "tool_or_skill_ref", "value": "skill:backend-test-layer", "confidence": "high"},
         {"type": "role_boundary", "value": "boundary:integration/scenario → qa", "confidence": "high"},  # 서술형 skip
     ],
@@ -30,22 +31,22 @@ CLAIMS = {
 }
 
 # (a) PASS: 구조 식별자 전부 + forbidden subject 언급 + 반대문구 없음
-RENDERED_PASS = """owns springboot-backend/src/main/java/webChat.
-docs/springboot_backend.md 준수. backend-test-layer 스킬 참고.
+RENDERED_PASS = """owns backend/src/main/java/core.
+docs/backend.md 준수. backend-test-layer 스킬 참고.
 commit/push 금지. 통합(integration) 테스트는 QA 영역."""
 
 # (b) FAIL: owned_path 누락
-RENDERED_MISS_PATH = """docs/springboot_backend.md 준수. backend-test-layer 참고.
+RENDERED_MISS_PATH = """docs/backend.md 준수. backend-test-layer 참고.
 commit/push 금지. integration 테스트는 QA."""
 
 # (c) FAIL: 금지-반대 허용문구
-RENDERED_CONTRADICT = """owns springboot-backend/src/main/java/webChat.
-docs/springboot_backend.md. backend-test-layer.
+RENDERED_CONTRADICT = """owns backend/src/main/java/core.
+docs/backend.md. backend-test-layer.
 이 에이전트는 통합 테스트를 작성한다. commit/push. integration."""
 
 # (d) WARN: forbidden subject(integration) 부재 → forbidden_policy_missing
-RENDERED_WARN = """owns springboot-backend/src/main/java/webChat.
-docs/springboot_backend.md. backend-test-layer. commit/push 금지."""
+RENDERED_WARN = """owns backend/src/main/java/core.
+docs/backend.md. backend-test-layer. commit/push 금지."""
 
 
 class TestConformance(unittest.TestCase):
@@ -80,7 +81,7 @@ class TestConformance(unittest.TestCase):
 
     def test_boundary_aware_presence(self):
         # audit P1-6: substring 오탐 차단 — 'backend-test-layer-extra' 는 'backend-test-layer' presence 아님
-        rendered = ("owns springboot-backend/src/main/java/webChat. docs/springboot_backend.md. "
+        rendered = ("owns backend/src/main/java/core. docs/backend.md. "
                     "backend-test-layer-extra 라는 다른 토큰만 있음. commit/push 금지. integration.")
         r = cf.conformance_lint(rendered, CLAIMS, CPAT)
         self.assertEqual(r["status"], "FAIL")  # skill:backend-test-layer 미검출 → FAIL

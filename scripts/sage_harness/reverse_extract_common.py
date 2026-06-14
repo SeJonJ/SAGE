@@ -2,7 +2,7 @@
 
 agent(reverse_extract_agent)·skill(reverse_extract_skill) 둘 다 import. 상호 import 없음(Codex 2R A1).
 범용 추출 패턴·persona 필터·confidence·교집합 머지·claims 직렬화를 단일화.
-ChatForYou 고유값은 caller 의 config 로만 주입(엔진 도메인값 0).
+소비 프로젝트 고유값은 caller 의 config 로만 주입(엔진 도메인값 0).
 """
 import re
 

@@ -8,7 +8,7 @@
   python3 extract_agent.py --id <id> --claude <a.md> --codex <b.md> --guide <AGENT_GUIDE.md> \
       --config <yourproject_config>:YOUR_EXTRACT_CONFIG --out-dir docs/sage_harness/agents [--write]
   --config 미지정 시 엔진 DEFAULT(범용, owned_paths 미추출). JSON 파일 경로도 허용.
-  (ChatForYou 참조 인스턴스는 extract_config_chatforyou:CHATFORYOU_EXTRACT_CONFIG)
+  (예시 인스턴스 config 는 extract_config_example:EXAMPLE_EXTRACT_CONFIG — 테스트/문서용)
 """
 import argparse
 import importlib

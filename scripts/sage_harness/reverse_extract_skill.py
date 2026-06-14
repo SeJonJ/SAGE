@@ -2,7 +2,7 @@
 
 Codex 2R 합의: skill 은 agent 와 타입이 다르다(행위 절차). 공유 코어(reverse_extract_common) 위임.
 타입: when_to_use / procedure_step(순서보존) / uses / output_contract / input_scope / advisory_scope / state_mutation.
-section 헤더는 config alias(한국어 ChatForYou 헤더 엔진 고정 금지 — 독립). ChatForYou 패턴은 extract_config_chatforyou.
+section 헤더는 config alias(한국어 등 프로젝트 헤더 엔진 고정 금지 — 독립). 프로젝트 패턴은 인스턴스 config(예: extract_config_example).
 
 claim gate(conformance, v1): uses/input_scope/output_contract = presence FAIL 후보. procedure_step/when_to_use/
 advisory_scope = WARN/skip(서술형). state_mutation = advisory(WARN). procedure order = WARN only.

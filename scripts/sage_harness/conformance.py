@@ -26,8 +26,8 @@ _SKIP_PRESENCE_TYPES = {"role_boundary", "test_scope", "workflow_step",
 _GATING_CONF = {"high", "source_supported", "runtime_allowed"}
 
 # forbidden 금지-반대 허용문구 denylist (FAIL). 보수적 — 명백한 위반만.
-# 제약 #2(SAGE 독립): 엔진은 commit/push(범용 AI 안전)만. 프로젝트 고유 패턴(통합테스트/desktop 등)은
-# 인스턴스 config(extract_config_chatforyou.CHATFORYOU_CONTRADICTION_PATTERNS)에서 주입 — 엔진 모듈 도메인값 0.
+# 제약 #2(SAGE 독립): 엔진은 commit/push(범용 AI 안전)만. 프로젝트 고유 패턴(통합테스트/금지경로 등)은
+# 인스턴스 config(예: extract_config_example.EXAMPLE_CONTRADICTION_PATTERNS)에서 주입 — 엔진 모듈 도메인값 0.
 _DEFAULT_CONTRADICTION_PATTERNS = [
     (r"git\s*commit|커밋\s*(을)?\s*(한다|수행|실행)", "commit/push"),
     (r"git\s*push|push\s*(를)?\s*(한다|수행|실행)", "commit/push"),
