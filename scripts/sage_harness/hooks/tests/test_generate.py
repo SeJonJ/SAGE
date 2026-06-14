@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -45,16 +46,17 @@ def make_root(d, with_adapter=True):
     os.makedirs(os.path.join(d, "docs", "sage_harness", "hooks"), exist_ok=True)
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", "claude"), exist_ok=True)
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", "codex"), exist_ok=True)
-    open(os.path.join(d, "docs", "sage_harness", "hooks", "aaa-hook.md"), "w").write(SPEC_A)
-    open(os.path.join(d, "docs", "sage_harness", "hooks", "bbb-hook.md"), "w").write(SPEC_B)
-    json.dump({"sage_version": "0.1.0", "host_runtime": "claude", "assets": {
-        "hooks/aaa-hook": {"form": "core_adapter", "spec_hash": "x", "render_hash": {"claude": "x"}, "conformance": "PASS"},
-        "hooks/bbb-hook": {"form": "core_adapter", "spec_hash": "x", "render_hash": {"claude": "x"}, "conformance": "PASS"},
-    }}, open(os.path.join(d, "docs", "sage_harness", ".manifest.json"), "w"))
+    Path(os.path.join(d, "docs", "sage_harness", "hooks", "aaa-hook.md")).write_text(SPEC_A)
+    Path(os.path.join(d, "docs", "sage_harness", "hooks", "bbb-hook.md")).write_text(SPEC_B)
+    Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).write_text(json.dumps({
+        "sage_version": "0.1.0", "host_runtime": "claude", "assets": {
+            "hooks/aaa-hook": {"form": "core_adapter", "spec_hash": "x", "render_hash": {"claude": "x"}, "conformance": "PASS"},
+            "hooks/bbb-hook": {"form": "core_adapter", "spec_hash": "x", "render_hash": {"claude": "x"}, "conformance": "PASS"},
+        }}))
     if with_adapter:
         for hid in ("aaa-hook", "bbb-hook"):
             for rt in ("claude", "codex"):
-                open(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", rt, f"{hid}.sh"), "w").write("#!/bin/bash\n")
+                Path(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", rt, f"{hid}.sh")).write_text("#!/bin/bash\n")
 
 
 class Args:
@@ -97,10 +99,10 @@ class TestGenerate(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertTrue(os.path.exists(os.path.join(dest, ".claude", "settings.json")))
             self.assertTrue(os.path.exists(os.path.join(dest, ".codex", "hooks.json")))
-            s = json.load(open(os.path.join(dest, ".claude", "settings.json")))
+            s = json.loads(Path(os.path.join(dest, ".claude", "settings.json")).read_text())
             self.assertIn("hooks", s)
             # codex wrapper 형식
-            x = json.load(open(os.path.join(dest, ".codex", "hooks.json")))
+            x = json.loads(Path(os.path.join(dest, ".codex", "hooks.json")).read_text())
             cmd = x["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
             self.assertIn("CODEX_HOME", cmd)
 
@@ -110,7 +112,7 @@ class TestGenerate(unittest.TestCase):
             make_root(dest)
             rc = gen.run(Args(target="claude", dest=dest, write=True))  # root=None
             self.assertEqual(rc, 0)
-            m = json.load(open(os.path.join(dest, "docs", "sage_harness", ".manifest.json")))
+            m = json.loads(Path(os.path.join(dest, "docs", "sage_harness", ".manifest.json")).read_text())
             # make_root 가 둔 "x" 가 실제 sha 로 스탬프됨 → dest manifest 가 갱신됐다는 증거
             self.assertTrue(m["assets"]["hooks/aaa-hook"]["spec_hash"].startswith("sha256:"))
 
@@ -119,7 +121,7 @@ class TestGenerate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as dest:
             make_root(d)
             os.makedirs(os.path.join(dest, "sage"), exist_ok=True)
-            open(os.path.join(dest, "sage", "project-profile.yaml"), "w").write("risk:\n  l3_filename_globs: [unclosed\n")
+            Path(os.path.join(dest, "sage", "project-profile.yaml")).write_text("risk:\n  l3_filename_globs: [unclosed\n")
             rc = gen.run(Args(target="claude", dest=dest, root=d, write=True))
             self.assertEqual(rc, 1)
             self.assertFalse(os.path.exists(os.path.join(dest, "sage", "project-profile.json")))
@@ -130,11 +132,11 @@ class TestGenerate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as dest:
             make_root(d)
             os.makedirs(os.path.join(dest, "sage"), exist_ok=True)
-            open(os.path.join(dest, "sage", "project-profile.yaml"), "w").write(
+            Path(os.path.join(dest, "sage", "project-profile.yaml")).write_text(
                 "risk:\n  l3_filename_globs: ['*payment*']\n  l2_path_globs: ['src/*']\n")
             rc = gen.run(Args(target="claude", dest=dest, root=d, write=True))
             self.assertEqual(rc, 0)
-            prof = json.load(open(os.path.join(dest, "sage", "project-profile.json")))
+            prof = json.loads(Path(os.path.join(dest, "sage", "project-profile.json")).read_text())
             self.assertEqual(prof["risk"]["l3_filename_globs"], ["*payment*"])
 
     def test_agent_generate_guidance(self):

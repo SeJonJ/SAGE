@@ -15,6 +15,7 @@ import importlib
 import json
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import reverse_extract_agent as rx  # noqa: E402
@@ -34,9 +35,9 @@ def load_config(spec):
 
 def extract(agent_id, claude_path, codex_path, guide_path, config):
     """입력 → (spec_md, claims_yaml) 결정론 산출. (write 는 호출자가)."""
-    claude = open(claude_path, encoding="utf-8").read()
-    codex = open(codex_path, encoding="utf-8").read()
-    guide = open(guide_path, encoding="utf-8").read() if guide_path and os.path.exists(guide_path) else ""
+    claude = Path(claude_path).read_text(encoding="utf-8")
+    codex = Path(codex_path).read_text(encoding="utf-8")
+    guide = Path(guide_path).read_text(encoding="utf-8") if guide_path and os.path.exists(guide_path) else ""
     claims = rx.extract_claims(claude, codex, guide, config)
     return rx.spec_draft(agent_id, claude, codex, claims), rx.claims_to_yaml(claims), claims
 

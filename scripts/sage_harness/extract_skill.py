@@ -12,6 +12,7 @@ import argparse
 import importlib
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import reverse_extract_skill as rs  # noqa: E402
@@ -30,9 +31,9 @@ def load_config(spec):
 
 
 def extract(skill_id, claude_path, codex_path, guide_path, config):
-    claude = open(claude_path, encoding="utf-8").read()
-    codex = open(codex_path, encoding="utf-8").read()
-    guide = open(guide_path, encoding="utf-8").read() if guide_path and os.path.exists(guide_path) else ""
+    claude = Path(claude_path).read_text(encoding="utf-8")
+    codex = Path(codex_path).read_text(encoding="utf-8")
+    guide = Path(guide_path).read_text(encoding="utf-8") if guide_path and os.path.exists(guide_path) else ""
     claims = rs.extract_claims(claude, codex, guide, config)
     return rs.spec_draft(skill_id, claude, codex, claims), rs.claims_to_yaml(claims), claims
 
@@ -56,8 +57,8 @@ def main(argv=None):
     spec_md, claims_yaml, claims = extract(args.id, args.claude, args.codex, args.guide, config)
     if args.write:
         os.makedirs(args.out_dir, exist_ok=True)
-        open(os.path.join(args.out_dir, f"{args.id}.md"), "w", encoding="utf-8").write(spec_md)
-        open(os.path.join(args.out_dir, f"{args.id}.claims.yml"), "w", encoding="utf-8").write(claims_yaml)
+        Path(os.path.join(args.out_dir, f"{args.id}.md")).write_text(spec_md, encoding="utf-8")
+        Path(os.path.join(args.out_dir, f"{args.id}.claims.yml")).write_text(claims_yaml, encoding="utf-8")
         print(f"✅ wrote {args.out_dir}/{args.id}.md + .claims.yml "
               f"(required={len(claims['required_claims'])}, unresolved={len(claims['unresolved'])})")
         if args.register:

@@ -9,6 +9,7 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 
 from sage.commands import validate as V
 from sage.commands import review as R
@@ -64,7 +65,7 @@ def run(args):
         print("[sage change] TOOL ERROR: manifest 없음", file=sys.stderr)
         return 2
     try:
-        manifest = json.load(open(os.path.join(root, "docs", "sage_harness", ".manifest.json")))
+        manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
     except Exception as e:
         print(f"[sage change] TOOL ERROR: manifest 파싱 실패: {e}", file=sys.stderr)
         return 2

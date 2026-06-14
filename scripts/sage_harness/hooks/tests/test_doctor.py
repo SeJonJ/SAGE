@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -46,7 +47,7 @@ class TestDoctor(unittest.TestCase):
     def test_parse_error_fails(self):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "p.yaml")
-            open(p, "w").write("risk:\n  globs: [unclosed\n")   # 잘못된 flow sequence
+            Path(p).write_text("risk:\n  globs: [unclosed\n")   # 잘못된 flow sequence
             rc, out = run_doctor(p)
             self.assertEqual(rc, 1)            # 설정이 깨졌으면 FAIL
             self.assertIn("파싱 오류", out)
@@ -55,7 +56,7 @@ class TestDoctor(unittest.TestCase):
     def test_ok_profile_exit0(self):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "p.yaml")
-            open(p, "w").write("runtime: { host: codex }\noptions: { cross_model: false }\n")
+            Path(p).write_text("runtime: { host: codex }\noptions: { cross_model: false }\n")
             rc, out = run_doctor(p)
             self.assertEqual(rc, 0)
             self.assertEqual(doctor._load_profile(p)[1], "ok")

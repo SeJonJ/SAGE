@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -73,8 +74,8 @@ class TestDescriptiveUnresolved(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             sk = os.path.join(d, "docs", "sage_harness", "skills")
             os.makedirs(sk)
-            open(os.path.join(sk, "x.md"), "w").write("# x\n")
-            open(os.path.join(sk, "x.claims.yml"), "w").write(
+            Path(os.path.join(sk, "x.md")).write_text("# x\n")
+            Path(os.path.join(sk, "x.claims.yml")).write_text(
                 'required_claims:\n'
                 '  - { type: procedure_step, value: "a", confidence: unresolved }\n'
                 '  - { type: procedure_step, value: "b", confidence: unresolved }\n'

@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 SAGE_SCRIPTS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, SAGE_SCRIPTS)
@@ -20,8 +21,8 @@ def make_root(d):
         json.dump({"sage_version": "0.1.0", "host_runtime": "claude", "assets": {}}, f)
     # agent spec + claims
     ad = os.path.join(d, "docs", "sage_harness", "agents")
-    open(os.path.join(ad, "demo.md"), "w").write("# demo spec")
-    open(os.path.join(ad, "demo.claims.yml"), "w").write("required_claims: []\n")
+    Path(os.path.join(ad, "demo.md")).write_text("# demo spec")
+    Path(os.path.join(ad, "demo.claims.yml")).write_text("required_claims: []\n")
 
 
 class TestManifestUtil(unittest.TestCase):
@@ -38,7 +39,7 @@ class TestManifestUtil(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             make_root(d)
             # render 산출물(있으면 해시)
-            r = os.path.join(d, "render_claude.md"); open(r, "w").write("rendered")
+            r = os.path.join(d, "render_claude.md"); Path(r).write_text("rendered")
             entry = mu.upsert_agent(d, "demo", claude_render=r, codex_render="",
                                     test="scripts/sage_harness/hooks/tests/test_x.py", unresolved=["u1"])
             self.assertEqual(entry["form"], "interpretive")

@@ -12,6 +12,7 @@
 """
 import json
 import os
+from pathlib import Path
 
 from sage import _resources   # 번들 리소스 경로 단일 해석(env override + repo fallback — 재배치/설치 대비)
 
@@ -54,7 +55,7 @@ def _copy_file(src, dst, force, created, skipped):
     if not os.path.exists(src):
         return
     executable = src.endswith(".sh")
-    _write(dst, open(src, encoding="utf-8").read(), force, created, skipped, executable)
+    _write(dst, Path(src).read_text(encoding="utf-8"), force, created, skipped, executable)
 
 
 def _copy_tree(src_dir, dst_dir, force, created, skipped):
@@ -72,7 +73,7 @@ def _copy_tree(src_dir, dst_dir, force, created, skipped):
 def _profile_with_host(host, prefix):
     """templates/project-profile.yaml 을 읽어 host/prefix 만 치환(나머지는 빈 스키마 유지)."""
     src = os.path.join(_resources.templates_dir(), "project-profile.yaml")
-    text = open(src, encoding="utf-8").read()
+    text = Path(src).read_text(encoding="utf-8")
     out = []
     for line in text.splitlines():
         s = line.strip()

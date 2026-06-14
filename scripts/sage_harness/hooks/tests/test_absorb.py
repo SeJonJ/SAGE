@@ -2,7 +2,9 @@
 """sage absorb 검증 (중 등급 — 직접수정 → spec patch 제안).
 
 self-contained: 임시 SAGE 루트 + 합성 산출물로 claims diff 흡수 제안 확인.
+파일 IO 는 pathlib(write_text/read_bytes) — 핸들 누수(ResourceWarning) 없음.
 """
+import hashlib
 import io
 import json
 import os
@@ -10,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout, redirect_stderr
+from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -24,9 +27,14 @@ SKILL_C = ('---\nname: "demo"\ndescription: >\n  "데모 수행" 에 사용.\n--
            '## 목적\n검증.\n## 실행 방법\n`backend-convention-checker` 로 docs/demo_conv.md 기준 검증.\n')
 
 
+def _w(path, text):
+    """텍스트 쓰고 경로 반환(누수 없는 한 줄 헬퍼)."""
+    Path(path).write_text(text, encoding="utf-8")
+    return path
+
+
 def _sha(p):
-    import hashlib
-    return "sha256:" + hashlib.sha256(open(p, "rb").read()).hexdigest()
+    return "sha256:" + hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
 
 def setup_hook_root(d, edited=False):
@@ -34,27 +42,26 @@ def setup_hook_root(d, edited=False):
     H = os.path.join(d, "scripts", "sage_harness", "hooks")
     os.makedirs(H, exist_ok=True)
     os.makedirs(os.path.join(d, "docs", "sage_harness"), exist_ok=True)
-    native = os.path.join(H, "demo.sh")
-    open(native, "w").write("#!/bin/bash\necho ok\n")
+    native = _w(os.path.join(H, "demo.sh"), "#!/bin/bash\necho ok\n")
     h = _sha(native)
     if edited:
-        open(native, "w").write("#!/bin/bash\necho EDITED\n")   # 스탬프 후 직접수정
-    json.dump({"sage_version": "0.1.0", "host_runtime": "claude", "assets": {
-        "hooks/demo": {"form": "native", "canonical_hash": h, "render_hash": {"native": h}, "conformance": "PASS"}}},
-        open(os.path.join(d, "docs", "sage_harness", ".manifest.json"), "w"))
+        _w(native, "#!/bin/bash\necho EDITED\n")   # 스탬프 후 직접수정
+    _w(os.path.join(d, "docs", "sage_harness", ".manifest.json"),
+       json.dumps({"sage_version": "0.1.0", "host_runtime": "claude", "assets": {
+           "hooks/demo": {"form": "native", "canonical_hash": h, "render_hash": {"native": h}, "conformance": "PASS"}}}))
 
 
 def setup_root(d, claims_yaml):
     os.makedirs(os.path.join(d, "docs", "sage_harness", "agents"), exist_ok=True)
-    json.dump({"sage_version": "0.1.0", "host_runtime": "claude", "assets": {}},
-              open(os.path.join(d, "docs", "sage_harness", ".manifest.json"), "w"))
-    open(os.path.join(d, "docs", "sage_harness", "agents", "demo.claims.yml"), "w").write(claims_yaml)
+    _w(os.path.join(d, "docs", "sage_harness", ".manifest.json"),
+       json.dumps({"sage_version": "0.1.0", "host_runtime": "claude", "assets": {}}))
+    _w(os.path.join(d, "docs", "sage_harness", "agents", "demo.claims.yml"), claims_yaml)
     # config 모듈은 테스트 임시 root 에 쓴다(소스트리 오염 금지 — read-only 샌드박스 격리).
     # absorb 가 root/scripts/sage_harness 를 sys.path 에 추가하므로 거기서 import 됨.
     sh = os.path.join(d, "scripts", "sage_harness")
     os.makedirs(sh, exist_ok=True)
-    open(os.path.join(sh, "extract_config_demo_absorb.py"), "w").write(
-        'CFG = {"component_path_globs": [r"myapp/[\\w./-]+"], "guide_boundary_tokens": ["commit","push"], "signal_rules": []}\n')
+    _w(os.path.join(sh, "extract_config_demo_absorb.py"),
+       'CFG = {"component_path_globs": [r"myapp/[\\w./-]+"], "guide_boundary_tokens": ["commit","push"], "signal_rules": []}\n')
 
 
 class Args:
@@ -82,9 +89,9 @@ class TestAbsorb(unittest.TestCase):
             setup_root(d, 'required_claims:\n  - { type: owned_paths, value: "myapp/src/core", confidence: high }\n'
                           '  - { type: convention_doc, value: "docs/a.md", confidence: high }\n'
                           'forbidden_claims:\nruntime_delta_allowlist:\nunresolved: []\n')
-            g = os.path.join(d, "g.md"); open(g, "w").write(GUIDE)
-            c = os.path.join(d, "c.md"); open(c, "w").write(BASE)
-            x = os.path.join(d, "x.md"); open(x, "w").write(BASE)
+            g = _w(os.path.join(d, "g.md"), GUIDE)
+            c = _w(os.path.join(d, "c.md"), BASE)
+            x = _w(os.path.join(d, "x.md"), BASE)
             rc, out = run_absorb(Args(claude=c, codex=x, guide=g, root=d))
             self.assertEqual(rc, 0)
             self.assertIn("변경 없음", out)
@@ -93,11 +100,10 @@ class TestAbsorb(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             setup_root(d, 'required_claims:\n  - { type: owned_paths, value: "myapp/src/core", confidence: high }\n'
                           'forbidden_claims:\nruntime_delta_allowlist:\nunresolved: []\n')
-            g = os.path.join(d, "g.md"); open(g, "w").write(GUIDE)
+            g = _w(os.path.join(d, "g.md"), GUIDE)
             # 양쪽에 docs/a.md 추가 → +required 제안
-            mod = BASE
-            c = os.path.join(d, "c.md"); open(c, "w").write(mod)
-            x = os.path.join(d, "x.md"); open(x, "w").write(mod)
+            c = _w(os.path.join(d, "c.md"), BASE)
+            x = _w(os.path.join(d, "x.md"), BASE)
             rc, out = run_absorb(Args(claude=c, codex=x, guide=g, root=d))
             self.assertEqual(rc, 0)
             self.assertIn("+ required:   docs/a.md", out)
@@ -107,9 +113,9 @@ class TestAbsorb(unittest.TestCase):
             setup_root(d, 'required_claims:\n  - { type: owned_paths, value: "myapp/src/core", confidence: high }\n'
                           '  - { type: convention_doc, value: "docs/a.md", confidence: high }\n'
                           'forbidden_claims:\nruntime_delta_allowlist:\nunresolved: []\n')
-            g = os.path.join(d, "g.md"); open(g, "w").write(GUIDE)
-            c = os.path.join(d, "c.md"); open(c, "w").write(BASE + "소유: myapp/src/onlyc\n")
-            x = os.path.join(d, "x.md"); open(x, "w").write(BASE)
+            g = _w(os.path.join(d, "g.md"), GUIDE)
+            c = _w(os.path.join(d, "c.md"), BASE + "소유: myapp/src/onlyc\n")
+            x = _w(os.path.join(d, "x.md"), BASE)
             rc, out = run_absorb(Args(claude=c, codex=x, guide=g, root=d))
             self.assertIn("unresolved", out)
             self.assertIn("myapp/src/onlyc", out)
@@ -142,13 +148,13 @@ class TestAbsorb(unittest.TestCase):
         # skill(interpretive) — 빈 claims 에 수정 산출물의 convention doc 가 +required 제안
         with tempfile.TemporaryDirectory() as d:
             os.makedirs(os.path.join(d, "docs", "sage_harness", "skills"), exist_ok=True)
-            json.dump({"sage_version": "0.1.0", "host_runtime": "claude", "assets": {}},
-                      open(os.path.join(d, "docs", "sage_harness", ".manifest.json"), "w"))
-            open(os.path.join(d, "docs", "sage_harness", "skills", "demo.claims.yml"), "w").write(
-                "required_claims:\nforbidden_claims:\nruntime_delta_allowlist:\nunresolved: []\n")
-            g = os.path.join(d, "g.md"); open(g, "w").write(GUIDE)
-            c = os.path.join(d, "c.md"); open(c, "w").write(SKILL_C)
-            x = os.path.join(d, "x.md"); open(x, "w").write(SKILL_C)
+            _w(os.path.join(d, "docs", "sage_harness", ".manifest.json"),
+               json.dumps({"sage_version": "0.1.0", "host_runtime": "claude", "assets": {}}))
+            _w(os.path.join(d, "docs", "sage_harness", "skills", "demo.claims.yml"),
+               "required_claims:\nforbidden_claims:\nruntime_delta_allowlist:\nunresolved: []\n")
+            g = _w(os.path.join(d, "g.md"), GUIDE)
+            c = _w(os.path.join(d, "c.md"), SKILL_C)
+            x = _w(os.path.join(d, "x.md"), SKILL_C)
             rc, out = run_absorb(Args(kind="skill", id="demo", claude=c, codex=x, guide=g, config="", root=d))
             self.assertEqual(rc, 0)
             self.assertIn("docs/demo_conv.md", out)   # uses(convention doc) +required

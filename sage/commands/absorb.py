@@ -11,6 +11,7 @@ unresolved 처리: 새로 한쪽-only 가 된 claim 은 unresolved 로 플래그
 """
 import os
 import sys
+from pathlib import Path
 
 
 def register(sub):
@@ -69,9 +70,9 @@ def _absorb_interpretive(args, root, kind):
         print(f"[sage absorb] {kind} 는 --claude/--codex (수정된 산출물 경로) 필요", file=sys.stderr)
         return 2
     config = load_config(args.config) if args.config else None
-    guide = open(args.guide, encoding="utf-8").read() if args.guide and os.path.exists(args.guide) else ""
-    new = rx.extract_claims(open(args.claude, encoding="utf-8").read(),
-                            open(args.codex, encoding="utf-8").read(), guide, config)
+    guide = Path(args.guide).read_text(encoding="utf-8") if args.guide and os.path.exists(args.guide) else ""
+    new = rx.extract_claims(Path(args.claude).read_text(encoding="utf-8"),
+                            Path(args.codex).read_text(encoding="utf-8"), guide, config)
     new_req = {c["value"] for c in new["required_claims"]}
     new_fb = {c["value"] for c in new["forbidden_claims"] if "value" in c}
 
@@ -106,9 +107,9 @@ def _absorb_hook(args, root):
     import json
 
     def sha(p):
-        return ("sha256:" + hashlib.sha256(open(p, "rb").read()).hexdigest()) if os.path.exists(p) else None
+        return ("sha256:" + hashlib.sha256(Path(p).read_bytes()).hexdigest()) if os.path.exists(p) else None
 
-    manifest = json.load(open(os.path.join(root, "docs", "sage_harness", ".manifest.json")))
+    manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
     entry = manifest.get("assets", {}).get(f"hooks/{args.id}")
     if not entry:
         print(f"[sage absorb] manifest 에 hooks/{args.id} 없음", file=sys.stderr)

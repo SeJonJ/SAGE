@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))  # sage_project
 sys.path.insert(0, REPO)
@@ -85,11 +86,12 @@ class TestRunSelection(unittest.TestCase):
     """run() 자산 선택 — skill 이 --kind all / --kind skill 에 포함되는지(누락 회귀 가드)."""
     def _root(self, d):
         os.makedirs(os.path.join(d, "docs", "sage_harness"), exist_ok=True)
-        json.dump({"sage_version": "0.1.0", "host_runtime": "claude", "assets": {
-            "hooks/h": {"form": "native", "conformance": "PASS"},
-            "agents/a": {"form": "interpretive", "conformance": "PASS"},
-            "skills/s": {"form": "interpretive", "conformance": "PASS"},
-        }}, open(os.path.join(d, "docs", "sage_harness", ".manifest.json"), "w"))
+        Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).write_text(json.dumps({
+            "sage_version": "0.1.0", "host_runtime": "claude", "assets": {
+                "hooks/h": {"form": "native", "conformance": "PASS"},
+                "agents/a": {"form": "interpretive", "conformance": "PASS"},
+                "skills/s": {"form": "interpretive", "conformance": "PASS"},
+            }}))
 
     def test_all_includes_skill(self):
         with tempfile.TemporaryDirectory() as d:

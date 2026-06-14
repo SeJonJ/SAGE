@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 
 
 def register(sub):
@@ -40,7 +41,7 @@ def _parse_runtime_bindings(spec_path):
 
     형식: runtime_bindings:\n  claude: { event: X, matcher: "Y", timeout: N }\n  codex: {...}
     """
-    text = open(spec_path, encoding="utf-8").read()
+    text = Path(spec_path).read_text(encoding="utf-8")
     m = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
     if not m:
         return {}
@@ -144,7 +145,7 @@ def _write_hook_shims(args, root, manifest, hook_ids, target):
         if not os.path.exists(canon):
             continue
         p = os.path.join(hooks_dir, f"{hid}.sh")
-        open(p, "w", encoding="utf-8").write(_shim_body(target, hid, form))
+        Path(p).write_text(_shim_body(target, hid, form), encoding="utf-8")
         os.chmod(p, 0o755)
         written += 1
     print(f"   ↳ ({target}) hook shim {written}건: {os.path.relpath(hooks_dir, args.dest)}/*.sh")
@@ -164,7 +165,7 @@ def _compile_profile(root, dest):
         return "none"
     try:
         import yaml
-        data = yaml.safe_load(open(yml, encoding="utf-8")) or {}
+        data = yaml.safe_load(Path(yml).read_text(encoding="utf-8")) or {}
     except ImportError:
         print("   ❌ profile 컴파일 실패: pyyaml 미설치 (generate 빌드 의존성 — pip install pyyaml).", file=sys.stderr)
         return "fail"
@@ -173,13 +174,13 @@ def _compile_profile(root, dest):
         return "fail"
     outp = os.path.join(dest, "sage", "project-profile.json")
     os.makedirs(os.path.dirname(outp), exist_ok=True)
-    json.dump(data, open(outp, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    Path(outp).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"   ↳ profile 컴파일: {os.path.relpath(outp, dest)} (hook 런타임 입력)")
     return "ok"
 
 
 def _gen_hook(args, root):
-    manifest = json.load(open(os.path.join(root, "docs", "sage_harness", ".manifest.json")))
+    manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
     hook_ids = [k.split("/", 1)[1] for k in manifest["assets"] if k.startswith("hooks/")]
     if args.id:
         if args.id not in hook_ids:
@@ -215,12 +216,12 @@ def _gen_hook(args, root):
             # 기존 settings.json 에 hooks 키만 갱신(다른 설정 보존)
             if tgt == "claude" and os.path.exists(outp):
                 try:
-                    existing = json.load(open(outp))
+                    existing = json.loads(Path(outp).read_text())
                     existing["hooks"] = reg
                     body = json.dumps(existing, ensure_ascii=False, indent=2) + "\n"
                 except Exception:
                     pass
-            open(outp, "w", encoding="utf-8").write(body)
+            Path(outp).write_text(body, encoding="utf-8")
             print(f"✅ ({tgt}) 등록 생성: {os.path.relpath(outp, args.dest)} — {sum(len(v) for v in reg.values())} event 블록")
             # 등록만으로는 실행 불가 → hook 실행 shim 을 {host}/hooks/ 에 배치(P0-2)
             _write_hook_shims(args, root, manifest, hook_ids, tgt)
@@ -236,9 +237,9 @@ def _gen_hook(args, root):
 def _stamp_manifest(root, hook_ids):
     import hashlib
     def sha(p):
-        return "sha256:" + hashlib.sha256(open(p, "rb").read()).hexdigest()
+        return "sha256:" + hashlib.sha256(Path(p).read_bytes()).hexdigest()
     H = os.path.join(root, "scripts", "sage_harness", "hooks")
-    m = json.load(open(os.path.join(root, "docs", "sage_harness", ".manifest.json")))
+    m = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
     for hid in hook_ids:
         e = m["assets"].get(f"hooks/{hid}")
         if not e:
@@ -262,8 +263,8 @@ def _stamp_manifest(root, hook_ids):
                     ah[rt] = sha(ap)
             if ah:
                 e["adapter_hash"] = ah; e["render_hash"] = ah
-    json.dump(m, open(os.path.join(root, "docs", "sage_harness", ".manifest.json"), "w"),
-              ensure_ascii=False, indent=2)
+    Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).write_text(
+        json.dumps(m, ensure_ascii=False, indent=2))
     print("✅ manifest 스탬프 갱신")
 
 

@@ -7,6 +7,7 @@ import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 SAGE_SCRIPTS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # scripts/sage_harness
 sys.path.insert(0, SAGE_SCRIPTS)
@@ -27,9 +28,9 @@ DEMO_CONFIG = {
 class TestDriver(unittest.TestCase):
     def _write_inputs(self, d):
         cp = os.path.join(d, "c.md"); xp = os.path.join(d, "x.md"); gp = os.path.join(d, "g.md")
-        open(cp, "w", encoding="utf-8").write(CLAUDE)
-        open(xp, "w", encoding="utf-8").write(CODEX)
-        open(gp, "w", encoding="utf-8").write(GUIDE)
+        Path(cp).write_text(CLAUDE, encoding="utf-8")
+        Path(xp).write_text(CODEX, encoding="utf-8")
+        Path(gp).write_text(GUIDE, encoding="utf-8")
         return cp, xp, gp
 
     def test_extract_demo_config(self):

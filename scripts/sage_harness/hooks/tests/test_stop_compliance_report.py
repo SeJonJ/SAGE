@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOKS_DIR = os.path.dirname(HERE)
@@ -124,7 +125,7 @@ def run_adapter(runtime, root, entries):
     adapter = os.path.join(ADAPTERS, runtime, "stop-compliance-report.sh")
     p = subprocess.run(["bash", adapter], input="", capture_output=True, text=True, env=env)  # codex adapter stdin(transcript) 안전
     report = os.path.join(log_dir, f"compliance-{TODAY}.md")
-    return p, (open(report, encoding="utf-8").read() if os.path.exists(report) else "")
+    return p, (Path(report).read_text(encoding="utf-8") if os.path.exists(report) else "")
 
 
 class TestAdapters(unittest.TestCase):

@@ -3,10 +3,12 @@
 
 self-contained: 임시 dest 에 install 후 산출물/치환/멱등 확인.
 """
+import json
 import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -49,14 +51,13 @@ class TestInstall(unittest.TestCase):
     def test_host_prefix_substitution(self):
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("codex", d, prefix="myapp"))
-            prof = open(os.path.join(d, "sage", "project-profile.yaml"), encoding="utf-8").read()
+            prof = Path(os.path.join(d, "sage", "project-profile.yaml")).read_text(encoding="utf-8")
             self.assertIn("host: codex", prof)
             self.assertIn('prefix: "myapp"', prof)
             # codex host → CODEX.md wrapper (CLAUDE.md 아님)
             self.assertTrue(os.path.exists(os.path.join(d, "CODEX.md")))
             self.assertFalse(os.path.exists(os.path.join(d, "CLAUDE.md")))
-            import json
-            m = json.load(open(os.path.join(d, "docs", "sage_harness", ".manifest.json"), encoding="utf-8"))
+            m = json.loads(Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).read_text(encoding="utf-8"))
             self.assertEqual(m["host_runtime"], "codex")
             # manifest 는 CORE hook 6종 등록(빈 assets 아님) → generate 가 동작 가능
             self.assertEqual(len([k for k in m["assets"] if k.startswith("hooks/")]), 6)
@@ -92,16 +93,16 @@ class TestInstall(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("claude", d))
             # 재실행: profile 내용 안 바뀜(skip)
-            before = open(os.path.join(d, "sage", "project-profile.yaml"), encoding="utf-8").read()
+            before = Path(os.path.join(d, "sage", "project-profile.yaml")).read_text(encoding="utf-8")
             install.run(Args("codex", d))  # host 바꿔도 skip 이라 안 덮어씀
-            after = open(os.path.join(d, "sage", "project-profile.yaml"), encoding="utf-8").read()
+            after = Path(os.path.join(d, "sage", "project-profile.yaml")).read_text(encoding="utf-8")
             self.assertEqual(before, after)
 
     def test_force_overwrite(self):
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("claude", d))
             install.run(Args("codex", d, force=True))
-            prof = open(os.path.join(d, "sage", "project-profile.yaml"), encoding="utf-8").read()
+            prof = Path(os.path.join(d, "sage", "project-profile.yaml")).read_text(encoding="utf-8")
             self.assertIn("host: codex", prof)  # force 로 덮어써짐
 
 

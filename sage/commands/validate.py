@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 from sage.commands._common import not_implemented
 
@@ -73,7 +74,7 @@ def _schema_check(root, manifest):
     if not os.path.exists(sp):
         return "WARN", ["  WARN schema 파일 없음 — 구조검증 skip"]
     try:
-        schema = json.load(open(sp, encoding="utf-8"))
+        schema = json.loads(Path(sp).read_text(encoding="utf-8"))
         jsonschema.validate(manifest, schema)
         return "PASS", ["  ✅ manifest JSON Schema 구조검증 통과"]
     except jsonschema.ValidationError as e:
@@ -196,7 +197,8 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True):
     # 서술형(절차/when_to_use 등)은 게이팅 제외 설계지만 조용히 숨으면 PDCA 핵심 의미가 빠질 수 있어 INFO 로 가시화(sev 불변).
     if os.path.exists(claims):
         try:
-            total_unres = sum(1 for ln in open(claims, encoding="utf-8") if "confidence: unresolved" in ln)
+            total_unres = sum(1 for ln in Path(claims).read_text(encoding="utf-8").splitlines()
+                              if "confidence: unresolved" in ln)
         except Exception:
             total_unres = 0
         descriptive = total_unres - len(entry.get("unresolved", []))
@@ -223,7 +225,7 @@ def run(args):
         print("[sage validate] TOOL ERROR: docs/sage_harness/.manifest.json 을 찾을 수 없음", file=sys.stderr)
         return 2
     try:
-        manifest = json.load(open(os.path.join(root, "docs", "sage_harness", ".manifest.json")))
+        manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
     except Exception as e:
         print(f"[sage validate] TOOL ERROR: manifest 파싱 실패: {e}", file=sys.stderr)
         return 2

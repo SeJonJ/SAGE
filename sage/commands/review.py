@@ -11,6 +11,7 @@ exit: 기본 0(정보성) / --gate review>0 시 1 / tool err 2.
 import json
 import os
 import sys
+from pathlib import Path
 
 from sage.commands import validate as V
 
@@ -57,7 +58,7 @@ def run(args):
         print("[sage review] TOOL ERROR: manifest 없음", file=sys.stderr)
         return 2
     try:
-        manifest = json.load(open(os.path.join(root, "docs", "sage_harness", ".manifest.json")))
+        manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
     except Exception as e:
         print(f"[sage review] TOOL ERROR: manifest 파싱 실패: {e}", file=sys.stderr)
         return 2
