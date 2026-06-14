@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """extract_agent 드라이버 검증 (자가점검 R5 — 재현 가능 진입점).
 
-self-contained: 합성 입력 + config 로 결정론·구조 검증 (ChatForYou 파일 비의존 = 독립).
+self-contained: 합성 입력 + config 로 결정론·구조 검증 (특정 프로젝트 파일 비의존 = 독립).
 """
 import os
 import sys
@@ -17,7 +17,7 @@ CLAUDE = '---\nname: "x"\ndescription: "데모 전문가. 통합 테스트는 QA
 CODEX = CLAUDE
 GUIDE = "Do not run git commit or git push."
 
-# 가상 프로젝트 config (ChatForYou 아님 — 독립 입증)
+# 가상 프로젝트 config (특정 프로젝트 아님 — 독립 입증)
 DEMO_CONFIG = {
     "component_path_globs": [r"myapp/[\w./-]+"],
     "guide_boundary_tokens": ["commit", "push"],

@@ -74,10 +74,10 @@ class TestCore(unittest.TestCase):
         self.assertEqual(group_count(m, "Frontend JS/server"), 1)
 
     def test_independence_generic_grouping(self):
-        # 제약 #2: compliance config 없는 profile(비-ChatForYou) → raw type 별 generic 그룹
+        # 제약 #2: compliance config 없는 profile(특정 프로젝트 가정 없음) → raw type 별 generic 그룹
         m = core.decide({}, {"risk": {}}, snap([{"type": "python-main", "file": "app/views.py"}]))
         labels = [g["label"] for g in m["sections"]["activity_summary"]]
-        self.assertIn("python-main", labels)  # ChatForYou 타입 가정 없이 동작
+        self.assertIn("python-main", labels)  # 특정 프로젝트 타입 가정 없이 동작
         self.assertEqual(group_count(m, "python-main"), 1)
 
     def test_empty(self):

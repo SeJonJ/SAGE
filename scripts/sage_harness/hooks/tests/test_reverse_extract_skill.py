@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """reverse_extract_skill 검증 (상 등급 — skill typed claim 자동도출, Codex 2R 합의).
 
-self-contained: 합성 skill 입력 + config. ChatForYou 비의존(독립).
+self-contained: 합성 skill 입력 + config. 특정 프로젝트 비의존(독립).
 """
 import os
 import sys
@@ -73,7 +73,7 @@ class TestSkillExtract(unittest.TestCase):
         self.assertTrue(any("gstack" in v for v in vals))
 
     def test_independence_no_config(self):
-        # config 없으면 input_scope/owned 류 ChatForYou 가정 미추출 (엔진 도메인값 0)
+        # config 없으면 input_scope/owned 류 프로젝트 가정 미추출 (엔진 도메인값 0)
         c = rs.extract_claims(CLAUDE, CODEX, GUIDE)  # DEFAULT
         inp = [x for x in c["required_claims"] if x["type"] == "input_scope"]
         self.assertEqual(inp, [], "DEFAULT 는 input_scope_patterns 비어 미추출")

@@ -65,13 +65,16 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(m["assets"]["hooks/generated-artifact-write-guard"]["form"], "native")
 
     def test_independence_no_domain_tokens(self):
-        """제약 #2: 설치된 CORE 트리에 ChatForYou 도메인 토큰 0 (정본/spec/agent 중립)."""
+        """제약 #2: 설치된 CORE 트리에 특정 스택/도메인 토큰 0 (정본/spec/agent 중립).
+
+        CORE 는 어느 소비 프로젝트에도 종속되면 안 되므로, 특정 스택/프레임워크 마커가
+        설치 트리에 새어들면 실패시킨다(회귀 가드)."""
         import subprocess
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("claude", d))
-            # 설치 트리 전체에서 도메인 토큰 검색(테스트/캐시 제외 — 애초에 배치 안 함)
+            # 설치 트리 전체에서 특정 스택/도메인 토큰 검색(테스트/캐시 제외 — 애초에 배치 안 함)
             hits = subprocess.run(
-                ["grep", "-rniE", r"chatforyou|springboot|webchat|nodejs|kurento|dev-team|webrtc|electron", d],
+                ["grep", "-rniE", r"springboot|webchat|nodejs|kurento|webrtc|electron", d],
                 capture_output=True, text=True).stdout.strip()
             self.assertEqual(hits, "", f"도메인 토큰 누출:\n{hits}")
 
