@@ -61,8 +61,8 @@ class TestRun(unittest.TestCase):
         self.assertIn("신규 hook", out)
 
     def test_ambiguous(self):
-        # 'convention' 은 backend-convention/frontend-convention 동점 → 모호 (skill 등록 후 셋 반영)
-        rc, out = run_change("convention 수정")
+        # 'gate' 는 pre-implementation-gate / pre-phase4-checklist-gate 에 걸쳐 매칭 → 약한 점수(후보)
+        rc, out = run_change("gate 수정")
         self.assertEqual(rc, 0)
         self.assertIn("후보", out)
 
