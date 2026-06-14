@@ -18,7 +18,7 @@ from sage.commands import change as C  # noqa: E402
 class Args:
     def __init__(self, intent):
         self.intent = intent
-        self.root = None
+        self.root = REPO   # 외부 cwd 에서 실행해도 SAGE manifest 탐색(cwd 의존 제거)
 
 
 def run_change(intent):
