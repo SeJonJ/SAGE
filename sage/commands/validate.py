@@ -26,6 +26,7 @@ def register(sub):
     # 주: JSON Schema 검증이 아니라 hash 기반 drift/staleness + regression 검사다(schema 파일은 참조 문서).
     p = sub.add_parser("validate", help="drift/staleness + regression 결정론 검사 (읽기전용)")
     p.add_argument("--check", action="store_true", help="staleness 만 (regression 미실행, 빠른 CI/hook용)")
+    p.add_argument("--schema", action="store_true", help="manifest 를 JSON Schema 로 구조검증 (jsonschema 선택의존, 미설치 시 WARN skip)")
     p.add_argument("--kind", choices=["hook", "agent", "skill", "all"], default="hook")
     p.add_argument("--id", default=None, help="단일 자산 검사")
     p.add_argument("--root", default=None, help="SAGE 레포 루트 (기본: cwd 에서 탐색)")
@@ -53,6 +54,31 @@ def _safe_test_path(root, test):
     if not rp.startswith(root_rp + os.sep) or not rp.startswith(allowed + os.sep):
         return None
     return rp if os.path.exists(rp) else None
+
+
+def _schema_check(root, manifest):
+    """manifest 를 schema/manifest.schema.json 으로 구조검증 → (sev, [msgs]).
+
+    jsonschema 는 선택의존(미설치 시 WARN skip — 핵심 CLI 는 의존성 경량 유지). schema 파일은
+    target root/schema 우선, 없으면 SAGE 번들(_resources). README 의 "schema valid" 주장을 재현가능하게 함.
+    """
+    try:
+        import jsonschema
+    except ImportError:
+        return "WARN", ["  WARN jsonschema 미설치 — schema 구조검증 skip (pip install 'sage-harness[schema]')"]
+    sp = os.path.join(root, "schema", "manifest.schema.json")
+    if not os.path.exists(sp):
+        from sage import _resources
+        sp = os.path.join(_resources.schema_dir(), "manifest.schema.json")
+    if not os.path.exists(sp):
+        return "WARN", ["  WARN schema 파일 없음 — 구조검증 skip"]
+    try:
+        schema = json.load(open(sp, encoding="utf-8"))
+        jsonschema.validate(manifest, schema)
+        return "PASS", ["  ✅ manifest JSON Schema 구조검증 통과"]
+    except jsonschema.ValidationError as e:
+        loc = "/".join(str(p) for p in e.absolute_path) or "(root)"
+        return "FAIL", [f"  FAIL schema 위반 @ {loc}: {e.message}"]
 
 
 def _find_root(start):
@@ -229,6 +255,16 @@ def run(args):
                 if overall == "PASS":
                     overall = "WARN"
                 print(f"⚠️  WARN  orphan spec (manifest 미등록): hooks/{fn[:-3]}")
+
+    # JSON Schema 구조검증 (--schema, 선택)
+    if args.schema:
+        ssev, smsgs = _schema_check(root, manifest)
+        mark = {"PASS": "✅", "WARN": "⚠️ ", "FAIL": "❌"}[ssev]
+        print(f"{mark} SCHEMA {ssev}")
+        for m in smsgs:
+            print(m)
+        if _SEV_RANK[ssev] > _SEV_RANK[overall]:
+            overall = ssev
 
     print(f"---- 종합: {overall} (exit {_EXIT[overall]}) ----")
     return _EXIT[overall]

@@ -60,7 +60,7 @@ sage change "자연어 의도"   # (v1.1) 최소 라우터
   profile 없음=통과 / L2 WARN / L3·금지경로 BLOCK / 잘못된 YAML→generate fail-closed / 신규 install→validate STALE.
 - **독립성(제약 #2)**: 설치 트리 **도메인 토큰 0**(회귀 가드 테스트). 엔진/CORE 정본·중립 framework·roster agent 는 도메인값 0 —
   ChatForYou 패턴은 `extract_config_chatforyou.py`·profile·fixtures·`chatforyou-*` 인스턴스에만. 전략은 profile 확장형(`signals[generic_tokens/review_patterns]`).
-- **검증**: writable 환경 전체 테스트 PASS, `validate --kind all --check` 종합 PASS, manifest jsonschema valid, manifest unresolved 0(사람 결정 완료).
+- **검증**: writable 환경 전체 테스트 PASS, `validate --kind all --check` 종합 PASS, manifest 구조검증 `sage validate --schema`(jsonschema 설치 시 `pip install 'sage-harness[schema]'`) PASS, manifest unresolved 0(사람 결정 완료).
   Codex 다라운드 + 자가 다회 감사 반영(전문가 피드백으로 install/generate P0 2건 발견·수정 — 상세 vault `TECH - SAGE 구현 진행 로그`).
 - **배포(정직)**: 현재 git clone / `pip install -e .`(editable) / sdist(레포 레이아웃) 기준. 리소스 경로는 `sage/_resources.py`
   (`$SAGE_RESOURCE_ROOT` override + repo fallback)로 해석. 순수 PyPI wheel 단독 배포는 dual-use 인 `scripts/sage_harness` 의

@@ -79,7 +79,7 @@ class TestInstall(unittest.TestCase):
         from sage.commands import validate
 
         class VArgs:
-            kind = "hook"; check = True; id = None
+            kind = "hook"; check = True; id = None; schema = False
 
             def __init__(self, root):
                 self.root = root
