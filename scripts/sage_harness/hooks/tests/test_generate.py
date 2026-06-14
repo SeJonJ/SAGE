@@ -106,6 +106,30 @@ class TestGenerate(unittest.TestCase):
             cmd = x["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
             self.assertIn("CODEX_HOME", cmd)
 
+    def test_single_id_preserves_all_registrations(self):
+        # F6 회귀: generate --id <단일hook> 가 settings.json 을 그 hook 하나로 재생성하면 나머지
+        # hook 등록이 사라져 조용히 비활성화된다. --id 는 "스탬프 범위"만 좁히고, 등록(settings.json)/
+        # shim 은 항상 전체 hook 을 담아야 한다.
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as dest:
+            make_root(d)
+            os.makedirs(os.path.join(dest, ".claude"), exist_ok=True)
+            Path(os.path.join(dest, ".claude", "settings.json")).write_text(
+                json.dumps({"model": "opus", "hooks": {}}))   # 사용자 커스텀 설정(보존 대상)
+            rc = gen.run(Args(id="aaa-hook", target="claude", dest=dest, root=d, write=True))
+            self.assertEqual(rc, 0)
+            s = json.loads(Path(os.path.join(dest, ".claude", "settings.json")).read_text())
+            # 두 hook 등록 모두 유지(aaa=PreToolUse, bbb=Stop) — 단일 --id 가 클로버하지 않음
+            self.assertIn("PreToolUse", s["hooks"])
+            self.assertIn("Stop", s["hooks"])
+            self.assertEqual(s.get("model"), "opus")          # 비-hooks 사용자 설정 보존
+            # shim 도 전체 생성(등록과 일관)
+            self.assertTrue(os.path.exists(os.path.join(dest, ".claude", "hooks", "aaa-hook.sh")))
+            self.assertTrue(os.path.exists(os.path.join(dest, ".claude", "hooks", "bbb-hook.sh")))
+            # 스탬프는 --id 범위만: aaa 만 갱신, bbb 는 원본("x") 유지
+            m = json.loads(Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).read_text())
+            self.assertTrue(m["assets"]["hooks/aaa-hook"]["spec_hash"].startswith("sha256:"))
+            self.assertEqual(m["assets"]["hooks/bbb-hook"]["spec_hash"], "x")
+
     def test_root_defaults_to_dest(self):
         # Codex P1: --root 없이 --dest 만 → dest 의 manifest 를 stamp (cwd 의 다른 manifest 아님)
         with tempfile.TemporaryDirectory() as dest:

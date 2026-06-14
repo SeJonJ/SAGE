@@ -181,11 +181,16 @@ def _compile_profile(root, dest):
 
 def _gen_hook(args, root):
     manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
-    hook_ids = [k.split("/", 1)[1] for k in manifest["assets"] if k.startswith("hooks/")]
+    all_hook_ids = [k.split("/", 1)[1] for k in manifest["assets"] if k.startswith("hooks/")]
     if args.id:
-        if args.id not in hook_ids:
+        if args.id not in all_hook_ids:
             print(f"[sage generate] TOOL ERROR: manifest 에 hooks/{args.id} 없음", file=sys.stderr); return 2
-        hook_ids = [args.id]
+        stamp_ids = [args.id]
+    else:
+        stamp_ids = all_hook_ids
+    # F6: 등록(settings.json)/shim 은 항상 전체 hook 으로 구성한다. --id 로 좁히면 나머지 hook 의
+    # 등록이 settings.json 에서 사라져 조용히 비활성화되므로(register 클로버) — --id 는 "스탬프 범위"만 한정.
+    reg_ids = all_hook_ids
 
     # profile 컴파일 먼저(fail-closed): 실패면 산출물 쓰기 전에 중단 — hook risk gate 무력화 방지(Codex 2R)
     if args.write:
@@ -199,7 +204,7 @@ def _gen_hook(args, root):
     targets = ["claude", "codex"] if args.target == "both" else [args.target]
     rc = 0
     for tgt in targets:
-        reg, missing = _build_registration(root, tgt, hook_ids)
+        reg, missing = _build_registration(root, tgt, reg_ids)
         if missing:
             print(f"[sage generate] FAIL ({tgt}): 누락 — {', '.join(missing)} (adapter 는 reverse_extract 정본)", file=sys.stderr)
             rc = 1
@@ -224,13 +229,13 @@ def _gen_hook(args, root):
             Path(outp).write_text(body, encoding="utf-8")
             print(f"✅ ({tgt}) 등록 생성: {os.path.relpath(outp, args.dest)} — {sum(len(v) for v in reg.values())} event 블록")
             # 등록만으로는 실행 불가 → hook 실행 shim 을 {host}/hooks/ 에 배치(P0-2)
-            _write_hook_shims(args, root, manifest, hook_ids, tgt)
+            _write_hook_shims(args, root, manifest, reg_ids, tgt)
         else:
             print(f"== generate {tgt} (dry-run) ==\n{body}")
 
-    # manifest 스탬프 (--write) — profile 컴파일은 위에서 fail-closed 처리됨
+    # manifest 스탬프 (--write) — profile 컴파일은 위에서 fail-closed 처리됨. --id 면 그 hook 만 재스탬프.
     if args.write and rc == 0:
-        _stamp_manifest(root, hook_ids)
+        _stamp_manifest(root, stamp_ids)
     return rc
 
 
