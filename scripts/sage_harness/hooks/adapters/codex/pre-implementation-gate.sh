@@ -95,7 +95,11 @@ if strat:
                    "generic_tokens": rk.get("generic_tokens") or [],   # 전략 확장(profile 주입)
                    "review_patterns": rk.get("review_patterns") or []}
         strategy_result = smod.find_l3_review(signals, snapshot)
-    except Exception:
+    except Exception as e:
+        # F8b: 전략 크래시를 조용히 None 처리하면 block_l3_strategy_unresolved(="전략 미선택")로
+        # 둔갑해 진짜 원인(import 실패/패턴 오류 등)이 숨는다 → 에러를 surface 하고 fail-closed BLOCK 유지.
+        print(f"[pre-implementation-gate] L3 전략 '{strat}' 실행 오류 → fail-closed BLOCK: "
+              f"{type(e).__name__}: {e}", file=sys.stderr)
         strategy_result = None
 decision = core.decide(event, profile, snapshot, strategy_result)
 

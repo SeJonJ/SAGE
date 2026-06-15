@@ -62,13 +62,13 @@
       "spec_hash": "sha256:541b8659709e2e1dc141dc6ac833dade959c3dcf440e1924e16e97273fde98cd",
       "canonical_hash": "sha256:49826b3275a21ba4cedc5291fd0fc18c9d32a82c1cb3f13eb8b762f80475f205",
       "adapter_hash": {
-        "claude": "sha256:a98690effaa6c8ee45936d32f21f0a2bba390e992de79f595deacb085c34ee3a",
-        "codex": "sha256:ddf0dff24e521277b3520cbb1bb6f453700c7621e0effabab8bcef81ca09fa45"
+        "claude": "sha256:d5fa44078fff8caa5638bc222891c69b03f9542999512ca41c3adc59cc14e845",
+        "codex": "sha256:99487c6c9137804f60e2d809b452142b1403925599e9e4b9c5e5e651ee2c8009"
       },
       "adapter_contract_version": "1",
       "render_hash": {
-        "claude": "sha256:a98690effaa6c8ee45936d32f21f0a2bba390e992de79f595deacb085c34ee3a",
-        "codex": "sha256:ddf0dff24e521277b3520cbb1bb6f453700c7621e0effabab8bcef81ca09fa45"
+        "claude": "sha256:d5fa44078fff8caa5638bc222891c69b03f9542999512ca41c3adc59cc14e845",
+        "codex": "sha256:99487c6c9137804f60e2d809b452142b1403925599e9e4b9c5e5e651ee2c8009"
       },
       "conformance": "PASS",
       "safety_degraded": false,

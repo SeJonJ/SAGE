@@ -136,6 +136,21 @@ class TestStrategies(unittest.TestCase):
         self.assertTrue(r["found"])
         self.assertFalse(claude_grep_first.find_l3_review({}, snap(review=[{"path": "b.md", "content": "무관"}]))["found"])
 
+    def test_grep_first_inline_flag_patterns(self):
+        # F8a: profile review_patterns 에 인라인 (?i) 가 있어도 크래시 없이 매칭(개별 컴파일).
+        # 이전엔 join 후 단일 컴파일 → 중간 글로벌 플래그로 re.error → 전략 크래시 → L3 영구 BLOCK.
+        r = claude_grep_first.find_l3_review(
+            {"review_patterns": ["(?i)location", "(?i)api[_]?key"]},
+            snap(review=[{"path": "a.md", "content": "현재 LOCATION 처리 점검"}]))
+        self.assertTrue(r["found"])
+
+    def test_grep_first_malformed_pattern_skipped(self):
+        # F8a: 무효한 개별 패턴은 skip — default 마커로 여전히 매칭(한 패턴 오류가 게이트 전체를 죽이지 않음).
+        r = claude_grep_first.find_l3_review(
+            {"review_patterns": ["[unclosed"]},
+            snap(review=[{"path": "a.md", "content": "Round 1 review 완료"}]))
+        self.assertTrue(r["found"])
+
     def test_feature_signal(self):
         r = codex_feature_signal.find_l3_review(
             {"files": ["recording"]}, snap(review=[{"path": "recording_review.md", "content": "recording 기능 review"}]))
