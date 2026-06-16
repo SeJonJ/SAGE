@@ -108,9 +108,14 @@ def run(args) -> int:
     core = _resources.core_dir()
     fw = os.path.join(core, "framework")
 
-    # 1. profile (host/prefix 치환, 나머지 빈 스키마)
-    _write(os.path.join(dest, "sage", "project-profile.yaml"),
-           _profile_with_host(args.host, args.prefix), args.force, created, skipped)
+    # 1. profile — 인스턴스 커스터마이즈 SSOT(위험분류/pdca/team 등). F5: 엔진 자산이 아니므로
+    #    --force(엔진 업그레이드)여도 절대 덮어쓰지 않는다 — 덮으면 프로젝트 값 소실로 클린 업그레이드 불가.
+    #    create-only: 새 설치 때만 빈 스키마 배치. reset 필요 시 사용자가 수동 삭제 후 재설치.
+    prof_dst = os.path.join(dest, "sage", "project-profile.yaml")
+    if os.path.exists(prof_dst):
+        print("보존: sage/project-profile.yaml (인스턴스 profile — --force 라도 덮어쓰지 않음)")
+    else:
+        _write(prof_dst, _profile_with_host(args.host, args.prefix), args.force, created, skipped)
 
     # 2. framework 템플릿(중립): AGENT_GUIDE, {wrapper}, verification-protocol, verify-changes.sh, docs/agent/*
     _copy_file(os.path.join(fw, "AGENT_GUIDE.md"), os.path.join(dest, "AGENT_GUIDE.md"), args.force, created, skipped)

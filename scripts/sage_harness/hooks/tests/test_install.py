@@ -101,12 +101,18 @@ class TestInstall(unittest.TestCase):
             after = Path(os.path.join(d, "sage", "project-profile.yaml")).read_text(encoding="utf-8")
             self.assertEqual(before, after)
 
-    def test_force_overwrite(self):
+    def test_force_preserves_profile_updates_engine(self):
+        # F5: --force 는 엔진 자산을 갱신하되 인스턴스 profile(커스터마이즈 SSOT)은 보존한다.
+        # (이전 거동: force 가 profile 까지 덮어써 클린 엔진 업그레이드 불가 → 수정)
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("claude", d))
-            install.run(Args("codex", d, force=True))
-            prof = Path(os.path.join(d, "sage", "project-profile.yaml")).read_text(encoding="utf-8")
-            self.assertIn("host: codex", prof)  # force 로 덮어써짐
+            prof_path = os.path.join(d, "sage", "project-profile.yaml")
+            guide_path = os.path.join(d, "AGENT_GUIDE.md")
+            Path(prof_path).write_text("CUSTOM_PROFILE_MARKER\n", encoding="utf-8")   # 사용자 커스터마이즈
+            Path(guide_path).write_text("STALE_ENGINE\n", encoding="utf-8")           # 엔진 파일 훼손
+            install.run(Args("claude", d, force=True))
+            self.assertIn("CUSTOM_PROFILE_MARKER", Path(prof_path).read_text(encoding="utf-8"))     # profile 보존
+            self.assertNotIn("STALE_ENGINE", Path(guide_path).read_text(encoding="utf-8"))          # 엔진은 force 갱신
 
 
 if __name__ == "__main__":
