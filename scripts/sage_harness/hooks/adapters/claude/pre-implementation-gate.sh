@@ -18,14 +18,23 @@ import pre_implementation_gate_core as core
 
 try:
     raw = json.loads(os.environ.get("SAGE_HOOK_INPUT", "{}"))
-except Exception:
+except Exception as e:
+    # malformed 입력 = 신뢰 런타임의 transient 글리치 → fail-open(availability) 하되 silent 금지(surface).
+    print(f"[pre-implementation-gate] hook 입력 JSON 파싱 실패 → 이번 호출 게이트 skip: {type(e).__name__}", file=sys.stderr)
     sys.exit(0)
 
 prof_path = os.environ.get("SAGE_PROFILE", "")
 if not prof_path or not os.path.exists(prof_path):
     sys.exit(0)
-with open(prof_path, encoding="utf-8") as f:
-    profile = json.load(f)
+try:
+    with open(prof_path, encoding="utf-8") as f:
+        profile = json.load(f)
+except Exception as e:
+    # profile 파싱 실패 = 위험 게이트 무력화. fail-closed 면 profile 수정 Edit 도 차단되는 deadlock →
+    # fail-open(exit0) 하되 LOUD surface 로 무력화 상태 가시화(조용한 gate-disable = Pattern A 방지).
+    print(f"⛔ [pre-implementation-gate] profile 파싱 실패 → 위험 게이트 무력화(SAGE_PROFILE 수정 필요): "
+          f"{type(e).__name__}: {e}", file=sys.stderr)
+    sys.exit(0)
 
 def rel(p):
     if not p: return ""

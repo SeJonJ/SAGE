@@ -188,5 +188,37 @@ class TestPdcaDisabledBackwardCompatible(unittest.TestCase):
         both(self, check)
 
 
+class TestMalformedInputHardening(unittest.TestCase):
+    """malformed-JSON hardening — 게이트 무력화가 silent/크래시(exit1) 아닌 fail-open(exit0)+surface 인가.
+    fail-closed 는 profile 수정 Edit 자체를 막는 deadlock 이라 채택 안 함 → 무력화를 LOUD 하게 가시화."""
+
+    def _run_raw(self, runtime, raw_stdin, root, prof_path):
+        env_root = "CLAUDE_PROJECT_DIR" if runtime == "claude" else "CODEX_PROJECT_ROOT"
+        env = dict(os.environ, **{env_root: root, "SAGE_HOOK_CORE_DIR": HOOKS_DIR,
+                                  "SAGE_PROFILE": prof_path, "SAGE_GATE_BRANCH": "main"})
+        adapter = os.path.join(ADAPTERS, runtime, "pre-implementation-gate.sh")
+        return subprocess.run(["bash", adapter], input=raw_stdin, capture_output=True, text=True, env=env)
+
+    def test_malformed_profile_fails_open_with_surface(self):
+        def check(rt):
+            with tempfile.TemporaryDirectory() as root:
+                prof = os.path.join(root, "profile.json")
+                with open(prof, "w", encoding="utf-8") as f:
+                    f.write("{ this is not valid json ")   # 깨진 profile (이전엔 uncaught → exit1 크래시)
+                p = self._run_raw(rt, json.dumps(event(rt, L2_FILE)), root, prof)
+                self.assertEqual(p.returncode, 0, f"{rt} 깨진 profile → fail-open(exit0, not crash-exit1)\n{p.stderr}")
+                self.assertIn("profile 파싱 실패", p.stderr, f"{rt} 무력화 상태가 surface 돼야 함")
+        both(self, check)
+
+    def test_malformed_input_fails_open_with_surface(self):
+        def check(rt):
+            with tempfile.TemporaryDirectory() as root:
+                prof = write_instance(root, make_profile(), phases=("00", "01", "02"))
+                p = self._run_raw(rt, "{ not json at all ", root, prof)
+                self.assertEqual(p.returncode, 0, f"{rt} 깨진 입력 → fail-open(exit0)\n{p.stderr}")
+                self.assertIn("입력 JSON 파싱 실패", p.stderr, f"{rt} 입력 파싱 실패가 surface 돼야 함")
+        both(self, check)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
