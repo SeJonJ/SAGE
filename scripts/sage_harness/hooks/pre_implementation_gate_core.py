@@ -90,26 +90,101 @@ def classify_risk(event: dict, profile: dict) -> dict:
     return best
 
 
-def _plan_exists(event: dict, snapshot: dict) -> str:
-    """ticket(브랜치 숫자) 매칭 plan → 없으면 **최근(7일 이내) fallback**.
+def _doc_match(docs: list, event: dict) -> str:
+    """문서 목록에서 ticket(브랜치 숫자) 매칭 → 없으면 최근(recent=7일 이내) fallback.
 
-    원본 Claude 충실성(audit 1회차 P1): ticket 매칭은 전체 plan 대상, fallback 은 -mtime -7 제한.
-    snapshot.plan_files = [{path, content, recent}] (recent=adapter 가 mtime<7일 판정, 최근순).
+    plan/phase 문서 존재 판정의 공통 규칙. docs = [{path, content, recent}].
+    (원본 Claude 충실성: ticket 매칭은 전체 대상, fallback 은 -mtime -7 제한.)
     """
-    plan_files = snapshot.get("plan_files") or []
-    branch = event.get("branch") or ""
     import re
+    branch = event.get("branch") or ""
     m = re.search(r"[0-9]+", branch)
     ticket = m.group(0) if m else ""
     if ticket:
-        for pf in plan_files:
-            if ticket in (pf.get("content") or ""):
-                return pf.get("path", "")
-    # fallback: 7일 이내(recent) plan 만 인정 (오래된 plan 은 게이트 충족 안 됨)
-    for pf in plan_files:
-        if pf.get("recent"):
-            return pf.get("path", "")
+        for d in docs:
+            if ticket in (d.get("content") or ""):
+                return d.get("path", "")
+    for d in docs:
+        if d.get("recent"):
+            return d.get("path", "")
     return ""
+
+
+def _plan_exists(event: dict, snapshot: dict) -> str:
+    """snapshot.plan_files 에서 ticket→recent 매칭(기존 계약 유지)."""
+    return _doc_match(snapshot.get("plan_files") or [], event)
+
+
+def _pdca_cfg(profile: dict):
+    """PDCA phase 강제 설정. 비활성(enabled=false 또는 phases 없음)이면 None → 게이트는 기존 동작(하위호환)."""
+    p = profile.get("pdca") or {}
+    if not p.get("enabled"):
+        return None
+    if not p.get("phases"):
+        return None
+    return p
+
+
+def _missing_pre_impl_phases(event: dict, profile: dict, snapshot: dict, risk: str):
+    """구현 전 의무 phase 중 문서가 없는 것 목록. pdca 비활성이면 None(=강제 안 함).
+
+    빈 리스트 = 강제 활성이나 결핍 없음(또는 해당 레벨 요구 phase 없음). 비어있지 않으면 결핍.
+    phase 문서 존재는 _doc_match(ticket→recent) 규칙 — plan 존재 판정과 동일.
+    """
+    cfg = _pdca_cfg(profile)
+    if cfg is None:
+        return None
+    required = (cfg.get("pre_implementation_required") or {}).get(risk) or []
+    if not required:
+        return []
+    phase_docs = snapshot.get("phase_docs") or {}
+    return [pid for pid in required if not _doc_match(phase_docs.get(pid) or [], event)]
+
+
+def _glob_base(pattern: str) -> str:
+    """glob 메타문자(*?[]) 이전까지의 디렉토리 prefix. 예: plan_docs/06-report/**/*.md → plan_docs/06-report.
+
+    report-write 감지는 fnmatch(`**` 미지원, glob.glob 와 의미 불일치) 대신 base 디렉토리 prefix 로 판정한다.
+    """
+    parts = []
+    for seg in pattern.split("/"):
+        if any(ch in seg for ch in "*?[]"):
+            break
+        parts.append(seg)
+    return "/".join(parts)
+
+
+def _under_dir(path: str, base: str) -> bool:
+    p = (path or "").lower().lstrip("./")
+    b = (base or "").lower()
+    return bool(b) and (p == b or p.startswith(b + "/"))
+
+
+def _report_gate(event: dict, profile: dict, snapshot: dict):
+    """report phase 문서를 쓰는 변경이면 approve phase 의 승인 마커 존재 여부 판정.
+
+    반환: None(비활성/해당없음) | {"approved": bool, "report_phase", "approve_phase"}.
+    report/approve phase 미설정이면 None. 06(report) 작성 전 05(approve) APPROVED 강제용.
+    """
+    cfg = _pdca_cfg(profile)
+    if cfg is None:
+        return None
+    report_phase = cfg.get("report_phase") or ""
+    approve_phase = cfg.get("approve_phase") or ""
+    if not report_phase or not approve_phase:
+        return None
+    phases = {p.get("id"): p for p in (cfg.get("phases") or [])}
+    rglob = (phases.get(report_phase) or {}).get("glob") or ""
+    if not rglob:
+        return None
+    base = _glob_base(rglob)   # base 디렉토리 prefix(=glob.glob 스캔과 일치, fnmatch ** 불일치 회피)
+    writing_report = any(_under_dir(ch.get("path") or "", base) for ch in (event.get("changes") or []))
+    if not writing_report:
+        return None
+    marker = (cfg.get("approve_marker") or "APPROVED").lower()
+    approve_docs = (snapshot.get("phase_docs") or {}).get(approve_phase) or []
+    approved = any(marker in (d.get("content") or "").lower() for d in approve_docs)
+    return {"approved": approved, "report_phase": report_phase, "approve_phase": approve_phase}
 
 
 def decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:
@@ -120,8 +195,30 @@ def decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:
     if risk == "DESKTOP_BLOCK":
         return {"status": "block", "exit_code": 2, "risk": "DESKTOP",
                 "message_key": "block_desktop", "reason": c["reason"], "file_short": c["file_short"]}
+
+    # PDCA report←approve 게이트: report phase 문서 작성은 L0(plan_docs)이라 아래 단축 전에 검사.
+    # (pdca 비활성이거나 report/approve 미설정 → None → skip, 하위호환)
+    rg = _report_gate(event, profile, snapshot)
+    if rg is not None and not rg["approved"]:
+        return {"status": "block", "exit_code": 2, "risk": "PDCA",
+                "message_key": "block_report_without_approval",
+                "reason": f"{rg['report_phase']} 작성 전 {rg['approve_phase']} 승인(APPROVED) 필요",
+                "file_short": c["file_short"]}
+
     if risk in ("none", "L0"):
         return {"status": "ok", "exit_code": 0, "risk": risk, "message_key": None, "reason": c["reason"]}
+
+    # PDCA 의무 phase 강제: 구현 전 필수 phase 결핍 시 L2/L3 BLOCK, L1 WARN.
+    # missing=None(pdca 비활성) 또는 [](충족) → falsy → 기존 per-level 로직으로 (하위호환).
+    missing = _missing_pre_impl_phases(event, profile, snapshot, risk)
+    if missing:
+        if risk in ("L2", "L3"):
+            return {"status": "block", "exit_code": 2, "risk": risk,
+                    "message_key": "block_phase_incomplete", "missing_phases": missing,
+                    "reason": c["reason"], "file_short": c["file_short"]}
+        return {"status": "warn", "exit_code": 0, "risk": "L1",
+                "message_key": "warn_phase_incomplete", "missing_phases": missing,
+                "reason": c["reason"], "file_short": c["file_short"]}
 
     plan_exists = _plan_exists(event, snapshot)
 

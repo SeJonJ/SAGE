@@ -70,7 +70,23 @@ for p in paths:
     plan_files.append({"path": rel(p), "content": c, "recent": recent})
 # review_candidates: review 매칭 전략 입력(최근 30일 plan/review 문서)
 review_candidates = [pf for pf, p in zip(plan_files, paths) if (_now - os.path.getmtime(p)) <= 30 * 86400]
-snapshot = {"plan_files": plan_files, "review_candidates": review_candidates}
+
+# PDCA phase 문서 스캔(phase 강제용). profile.pdca.phases=[{id,glob}] — glob 은 root 상대(독립).
+phase_docs = {}
+_pdca = profile.get("pdca") or {}
+if _pdca.get("enabled"):
+    for ph in (_pdca.get("phases") or []):
+        pid, pglob = ph.get("id"), ph.get("glob") or ""
+        if not pid or not pglob or os.path.isabs(pglob) or ".." in pglob.split("/"):
+            continue   # root 밖/무효 glob 거부
+        docs = []
+        for p in glob.glob(os.path.join(root, pglob), recursive=True):
+            try:
+                with open(p, encoding="utf-8", errors="ignore") as f: cc = f.read()
+            except Exception: cc = ""
+            docs.append({"path": rel(p), "content": cc, "recent": (_now - os.path.getmtime(p)) <= 7 * 86400})
+        phase_docs[pid] = docs
+snapshot = {"plan_files": plan_files, "review_candidates": review_candidates, "phase_docs": phase_docs}
 
 # L3 review 매칭 전략: profile.risk.l3_review_strategy(독립 — 엔진 하드코딩 아님). 미설정 시 None(안전 BLOCK).
 strategy_result = None
@@ -113,6 +129,15 @@ def msg(d):
         return f"⚠️  [GATE WARN — L3] 2라운드 리뷰 문서 미확인. 파일: {fs} | 근거: {rs}"
     if k == "warn_l2_no_plan":
         return f"⚠️  [GATE WARN — L2] 소스/설정 변경인데 plan 문서 없음. 파일: {fs} | 근거: {rs}"
+    if k == "block_phase_incomplete":
+        miss = ", ".join(d.get("missing_phases") or [])
+        return (f"⛔ [GATE BLOCK — {d.get('risk')}] 의무 PDCA phase 미작성: [{miss}]. 파일: {fs} | 근거: {rs}\n"
+                f"  해당 phase 문서를 먼저 작성하세요 (docs/agent/pdca-templates.md)")
+    if k == "warn_phase_incomplete":
+        miss = ", ".join(d.get("missing_phases") or [])
+        return f"⚠️  [GATE WARN — L1] 권장 PDCA phase 미작성: [{miss}]. 파일: {fs}"
+    if k == "block_report_without_approval":
+        return f"⛔ [GATE BLOCK — PDCA] {rs}. 파일: {fs}\n  approve phase 문서에 APPROVED 기록 후 report 작성"
     if k == "ok_l3": return f"✅ [GATE OK — L3] review 확인됨 | {fs}"
     if k == "ok_l2": return f"✅ [GATE OK — L2] plan 확인 | {fs}"
     return ""

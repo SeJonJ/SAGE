@@ -49,6 +49,24 @@ compliance:                      # stop-compliance-report (전부 빈값=해당 
   plan_gate_text: ""             # code_without_plan WARN 메시지(빈값=기본)
   convention_reminder: {}        # 예: { types: [backend-main], text: "백엔드 컨벤션 검증 확인 권장" }
 
+pdca:                            # PDCA phase 의무구조 — pre-implementation-gate 가 강제(게이트 teeth). 상세: docs/agent/pdca-templates.md
+  enabled: true                  # SAGE 기본 ON. 비-PDCA 프로젝트는 false 로 끔(게이트는 risk/plan-doc 만 확인 — 하위호환)
+  phases:                        # 표준 00~06. id + glob(root 상대, 독립). 디렉토리명 변경 시 glob 만 교체
+    - { id: "00", glob: "plan_docs/00-base_plan/**/*.md" }   # CONTEXT: 전략·영향·사전지식·리스크
+    - { id: "01", glob: "plan_docs/01-plan/**/*.md" }        # CONTENT: 요구사항·데이터·API
+    - { id: "02", glob: "plan_docs/02-design/**/*.md" }      # 설계·시퀀스·에러코드
+    - { id: "03", glob: "plan_docs/03-implementation/**/*.md" }  # 구현·파일소유·체크리스트·빌드/테스트
+    - { id: "04", glob: "plan_docs/04-analyze/**/*.md" }     # 설계-구현 gap (판정 금지)
+    - { id: "05", glob: "plan_docs/05-expert-review/**/*.md" }   # 독립 종합 + 최종 판정(APPROVED/FAIL/BLOCKED)
+    - { id: "06", glob: "plan_docs/06-report/**/*.md" }      # 완료 보고(05 APPROVED 후에만)
+  pre_implementation_required:   # 코드 변경 전 존재해야 할 phase(위험 레벨별). 누락 시 L2/L3 BLOCK · L1 WARN
+    L1: ["00"]
+    L2: ["00", "01", "02"]
+    L3: ["00", "01", "02"]
+  report_phase: "06"             # 이 phase 문서 작성 시 approve_phase 승인 확인
+  approve_phase: "05"            # report 전 APPROVED 가 있어야 할 phase
+  approve_marker: "APPROVED"     # approve_phase 문서에서 찾을 승인 마커(대소문자 무시)
+
 conventions: []                  # 예: [{ scope: backend, stack: "<stack>", doc: sage/conventions/<name>.md, file_globs: ["**/*.<ext>"] }]
 
 verification:                    # 결정론 검증

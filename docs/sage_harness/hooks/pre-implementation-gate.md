@@ -8,6 +8,8 @@ runtime_bindings:
 ## intent
 소스/설정 변경 전 위험도(L0~L3)를 분류해 게이트를 적용한다. 동기화 산출물/금지 경로 직접수정 하드블록,
 L3(profile.risk 고위험 도메인) + plan 없음 하드블록, L3 review 확인, L2 plan 확인.
+PDCA phase 의무구조 강제(F9): profile.pdca 활성 시 구현 전 의무 phase 결핍이면 L2/L3 BLOCK·L1 WARN,
+report phase 작성 전 approve phase APPROVED 확인. pdca 비활성이면 None → 기존 risk/plan 동작(하위호환).
 
 ## runtime_bindings
 - claude: { event: PreToolUse, matcher: "Write|Edit|MultiEdit", input: file_path + content/new_string/edits }
@@ -35,6 +37,13 @@ profile.risk: { desktop_block_glob, l0_pass_globs, l3_filename_globs, l2_path_gl
                 l3_content_keywords, l2_content_keywords, plan_glob }
 - canonical 매칭 = **case-insensitive**(G2, 더 많은 L3 포착 = 안전). 키워드/파일패턴 lower 비교.
 
+## PDCA phase 강제 (F9, profile.pdca — 독립)
+profile.pdca: { enabled, phases[{id,glob}], pre_implementation_required{L1,L2,L3}, report_phase, approve_phase, approve_marker }
+- adapter 가 phase glob(root 상대, recursive) 스캔 → snapshot.phase_docs={id:[{path,content,recent}]}.
+- core `decide`: ① report←approve 게이트(L0 단축 전, report dir 작성 시 approve 에 APPROVED 없으면 block_report_without_approval)
+  ② 구현 전 의무 phase(`_missing_pre_impl_phases`, _doc_match=ticket→recent) — L2/L3 결핍=block_phase_incomplete, L1=warn_phase_incomplete.
+- enabled=false/phases 없음 → `_pdca_cfg`=None → 강제 skip(기존 동작 보존). report dir 감지는 glob base-dir prefix(fnmatch `**` 불일치 회피).
+
 ## reverse_extract 분류
 - 공유 core: 위험분류(경로/내용/declared), Desktop 블록, plan 존재 게이트, L2/L3 판정 구조
 - structural_io_adapter: file_path vs apply_patch 다중파일+content
@@ -46,5 +55,6 @@ profile.risk: { desktop_block_glob, l0_pass_globs, l3_filename_globs, l2_path_gl
     섞인 L3 키워드 문자열도 L3 로 올릴 수 있음. L0 문서(plan_docs/docs/*.md) pass 가 선행이라 문서 오탐은 제한됨.
 
 ## tests
-scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py (16 PASS)
-- classify(L0~L3/escalation/desktop/declared/case-insensitive) + decide(8분기) + 전략 후보 2종 + adapter(L3 block·L1 pass)
+scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py (28 PASS)
+- classify(L0~L3/escalation/desktop/declared/case-insensitive) + decide(분기) + 전략 후보 2종(인라인플래그/무효패턴 포함)
+  + PDCA 강제(의무 phase block/통과/L3 review 보존/report 게이트/비활성 하위호환) + adapter(L3 block·L1 pass)

@@ -14,23 +14,69 @@ Project-specific values (paths, risk triggers, conventions, team) live in
 3. Relevant plan doc under `{paths.plan_docs}`
 4. Relevant convention docs declared in `profile.conventions`
 
-## Workflow (PDCA)
+## Risk & Workflow Gate (PDCA)
 
-Plan → Do → Check → Act. Write a plan doc before non-trivial implementation.
-Implement against the plan. Verify with `scripts/verify-changes.sh`. Capture
-learnings.
+Every change is classified before implementation. Compound changes use the
+highest applicable level. Levels are classified from `profile.risk` (path globs +
+content keywords), not from hardcoded domain knowledge — see
+`docs/agent/risk-classification.md`.
 
-## Risk routing (L1/L2/L3)
+### PDCA phases
 
-Risk levels are classified from `profile.risk` (path globs + content keywords),
-not from hardcoded domain knowledge. See `docs/agent/risk-classification.md`.
+Work proceeds through numbered phase documents under `{paths.plan_docs}`. The
+phase set and per-level obligation are defined in `profile.pdca`; the standard
+set is:
 
-- **L1** — low blast radius (UI/markup). Advisory checks.
-- **L2** — source/config changes. Build + test + lint gate (block).
-- **L3** — high-risk domains declared in `profile.risk`. Requires a plan doc and
-  an independent review (see `docs/agent/review-protocol.md`).
+| Phase | Name | Nature |
+|:---:|:---|:---|
+| 00 | Base Plan | CONTEXT — why / what / impact / prior knowledge / risk |
+| 01 | Plan | CONTENT — requirements, data model, API spec |
+| 02 | Design | architecture, sequence, error codes |
+| 03 | Implementation | file ownership, checklist, build/test evidence |
+| 04 | Analyze | design↔implementation gap (no verdict here) |
+| 05 | Expert Review | independent synthesis + final APPROVED/FAIL/BLOCKED |
+| 06 | Report | completion report — only after 05 = APPROVED |
 
-The `pre-implementation-gate` hook enforces this from the profile.
+Phase definitions, separation rules (00 vs 01, 02 vs 03, 04 vs 05), templates,
+and component-level plan_docs are in `docs/agent/pdca-templates.md`.
+
+### Risk → mandatory phase range
+
+| Level | Category (from `profile.risk`) | Required phases | Gate |
+|:---:|:---|:---|:---|
+| **L0** | docs / text only | none | summary + skipped-validation reason |
+| **L1** | low blast radius (UI/markup) | 00–03 (lightweight note allowed) | advisory |
+| **L2** | source/config | 00–05 | build + test + lint (block) |
+| **L3** | high-risk domains | 00–06 | + independent review rounds before done |
+
+### Mandatory Writing Rule
+
+- The phase range for the level is **mandatory writing**, configured in
+  `profile.pdca.pre_implementation_required` (phases required *before* a code
+  change) and enforced by the `pre-implementation-gate` hook: a missing required
+  phase **blocks** L2/L3 implementation (warns at L1).
+- An empty `plan_docs/{phase}/` directory is **not** a convention — treat it as a
+  prior task's omission, never a precedent for skipping.
+- Skipping a mandatory phase requires an explicit reason in the plan and user approval.
+- Phase 06 (report) must not be written until the approve phase (05) records
+  `APPROVED` — enforced by the gate (`profile.pdca.report_phase`/`approve_phase`).
+
+### 3.0 Independent PDCA Cycle Rule (MANDATORY)
+
+When the user explicitly requests a new PDCA flow (or an L3-equivalent flow), the
+agent MUST start a new, independent `00-base_plan` — even if the change is
+technically adjacent to a recently completed cycle. "Technically adjacent" (same
+file / service / module) is never a reason to reuse or extend a prior cycle. A new
+cycle requires a new 00 base plan, new phase documents, and independent analysis.
+
+### Pre-implementation declaration
+
+Before writing implementation code, declare: risk level, compound rule applied,
+applicable phase range, plan/phase doc paths, independent-review status (L3),
+component impact, and reference docs read.
+
+If `profile.pdca.enabled` is false (non-PDCA project), the gate falls back to
+plan-doc + risk checks only; the phase machinery is inert.
 
 ## Non-negotiable safety boundaries
 

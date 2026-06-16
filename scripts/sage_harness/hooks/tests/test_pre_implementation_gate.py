@@ -130,6 +130,95 @@ class TestDecide(unittest.TestCase):
         self.assertEqual(core.decide(ev("frontend/static/js/x.js"), PROFILE, snap(), None)["status"], "ok")
 
 
+PDCA_PROFILE = {
+    "risk": {
+        "l0_pass_globs": ["*.md", "plan_docs/*"],
+        "l1_path_globs": ["*frontend*"],
+        "l2_path_globs": ["*backend*"],
+        "l3_filename_globs": ["*payment*"],
+    },
+    "pdca": {
+        "enabled": True,
+        "phases": [
+            {"id": "00", "glob": "plan_docs/00-base_plan/**/*.md"},
+            {"id": "01", "glob": "plan_docs/01-plan/**/*.md"},
+            {"id": "02", "glob": "plan_docs/02-design/**/*.md"},
+            {"id": "03", "glob": "plan_docs/03-implementation/**/*.md"},
+            {"id": "04", "glob": "plan_docs/04-analyze/**/*.md"},
+            {"id": "05", "glob": "plan_docs/05-expert-review/**/*.md"},
+            {"id": "06", "glob": "plan_docs/06-report/**/*.md"},
+        ],
+        "pre_implementation_required": {"L1": ["00"], "L2": ["00", "01", "02"], "L3": ["00", "01", "02"]},
+        "report_phase": "06", "approve_phase": "05", "approve_marker": "APPROVED",
+    },
+}
+
+
+def _pdoc(content="x", recent=True):
+    return {"path": "p.md", "content": content, "recent": recent}
+
+
+def snap_pdca(phase_docs=None, plan=None, review=None):
+    return {"plan_files": plan or [], "review_candidates": review or [], "phase_docs": phase_docs or {}}
+
+
+class TestPdcaEnforcement(unittest.TestCase):
+    def test_l2_missing_phases_blocks(self):
+        # 의무 phase(00/01/02) 중 01·02 결핍 → L2 BLOCK
+        d = core.decide(ev("backend/Svc.java"), PDCA_PROFILE,
+                        snap_pdca(phase_docs={"00": [_pdoc()]}), None)
+        self.assertEqual(d["message_key"], "block_phase_incomplete")
+        self.assertEqual(d["exit_code"], 2)
+        self.assertEqual(d["missing_phases"], ["01", "02"])
+
+    def test_l2_all_phases_present_falls_through(self):
+        # 00/01/02 충족 → phase 통과 → 기존 L2 로직(plan 있음 → ok_l2)
+        docs = {"00": [_pdoc()], "01": [_pdoc()], "02": [_pdoc()]}
+        d = core.decide(ev("backend/Svc.java"), PDCA_PROFILE,
+                        snap_pdca(phase_docs=docs, plan=[_pdoc()]), None)
+        self.assertEqual(d["message_key"], "ok_l2")
+
+    def test_l3_phases_present_then_review_logic_preserved(self):
+        # phase 충족이 L3 review 게이트를 단축하지 않는다 → 전략 미선택이면 여전히 BLOCK
+        docs = {"00": [_pdoc()], "01": [_pdoc()], "02": [_pdoc()]}
+        d = core.decide(ev("a/payment.java", branch="bug/127"), PDCA_PROFILE,
+                        snap_pdca(phase_docs=docs, plan=[{"path": "x", "content": "#127", "recent": True}]), None)
+        self.assertEqual(d["message_key"], "block_l3_strategy_unresolved")
+
+    def test_l3_missing_phases_blocks_before_review(self):
+        # phase 결핍이 우선 → review 전략 결과와 무관하게 phase BLOCK
+        d = core.decide(ev("a/payment.java"), PDCA_PROFILE,
+                        snap_pdca(phase_docs={"00": [_pdoc()]}), {"found": True})
+        self.assertEqual(d["message_key"], "block_phase_incomplete")
+        self.assertEqual(d["missing_phases"], ["01", "02"])
+
+    def test_l1_missing_phases_warns(self):
+        d = core.decide(ev("frontend/app.js"), PDCA_PROFILE, snap_pdca(phase_docs={}), None)
+        self.assertEqual(d["message_key"], "warn_phase_incomplete")
+        self.assertEqual(d["exit_code"], 0)
+        self.assertEqual(d["missing_phases"], ["00"])
+
+    def test_report_blocked_without_approval(self):
+        # 06-report 작성 + 05 에 APPROVED 없음 → BLOCK
+        d = core.decide(ev("plan_docs/06-report/feature.md"), PDCA_PROFILE,
+                        snap_pdca(phase_docs={"05": [_pdoc(content="Final Status: FAIL")]}), None)
+        self.assertEqual(d["message_key"], "block_report_without_approval")
+        self.assertEqual(d["exit_code"], 2)
+
+    def test_report_allowed_with_approval(self):
+        # 05 에 APPROVED → 06 작성 허용(L0 문서 → ok)
+        d = core.decide(ev("plan_docs/06-report/feature.md"), PDCA_PROFILE,
+                        snap_pdca(phase_docs={"05": [_pdoc(content="Final Status: APPROVED")]}), None)
+        self.assertEqual(d["status"], "ok")
+        self.assertNotEqual(d["message_key"], "block_report_without_approval")
+
+    def test_inactive_pdca_is_backward_compatible(self):
+        # pdca 미설정(기존 PROFILE) → phase 강제 None → 기존 동작(L2 no-plan → warn)
+        self.assertIsNone(core._missing_pre_impl_phases(ev("backend/src/main/java/F.java"), PROFILE, snap_pdca(), "L2"))
+        d = core.decide(ev("backend/src/main/java/Foo.java"), PROFILE, snap(plan=[]), None)
+        self.assertEqual(d["message_key"], "warn_l2_no_plan")
+
+
 class TestStrategies(unittest.TestCase):
     def test_grep_first(self):
         r = claude_grep_first.find_l3_review({}, snap(review=[{"path": "a.md", "content": "Round 1 review 완료"}]))

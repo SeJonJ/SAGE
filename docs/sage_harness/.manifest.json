@@ -59,16 +59,16 @@
       "test": "scripts/sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py"
     },
     "hooks/pre-implementation-gate": {
-      "spec_hash": "sha256:541b8659709e2e1dc141dc6ac833dade959c3dcf440e1924e16e97273fde98cd",
-      "canonical_hash": "sha256:49826b3275a21ba4cedc5291fd0fc18c9d32a82c1cb3f13eb8b762f80475f205",
+      "spec_hash": "sha256:1169b547b3ac05599c159b1b68f37dafa1cc23d568f40adc1ccae628f4176394",
+      "canonical_hash": "sha256:02fef8cb21e19e87cc41653b303059ea80d0d645f1583054e8861ea4293581a7",
       "adapter_hash": {
-        "claude": "sha256:d5fa44078fff8caa5638bc222891c69b03f9542999512ca41c3adc59cc14e845",
-        "codex": "sha256:99487c6c9137804f60e2d809b452142b1403925599e9e4b9c5e5e651ee2c8009"
+        "claude": "sha256:32da89351d4e6e83d8605054f8ad21492450d390b8493a8dfa8a18878b1697d3",
+        "codex": "sha256:b8e363c475a004f245a4dae1b62c26a816bf3cf40b69dcc60fc739b590a7fefa"
       },
       "adapter_contract_version": "1",
       "render_hash": {
-        "claude": "sha256:d5fa44078fff8caa5638bc222891c69b03f9542999512ca41c3adc59cc14e845",
-        "codex": "sha256:99487c6c9137804f60e2d809b452142b1403925599e9e4b9c5e5e651ee2c8009"
+        "claude": "sha256:32da89351d4e6e83d8605054f8ad21492450d390b8493a8dfa8a18878b1697d3",
+        "codex": "sha256:b8e363c475a004f245a4dae1b62c26a816bf3cf40b69dcc60fc739b590a7fefa"
       },
       "conformance": "PASS",
       "safety_degraded": false,
