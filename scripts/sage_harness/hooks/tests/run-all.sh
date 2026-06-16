@@ -84,5 +84,9 @@ echo "### 20. sage doctor (profile 로드 실패 원인 구분)"
 python3 "$HERE/test_doctor.py" || rc=1
 
 echo ""
+echo "### 21. 런타임 스모크 (어댑터 subprocess × 합성 인스턴스 — PDCA 강제 생존/예외 표면화, Pattern A 가드)"
+python3 "$HERE/test_runtime_smoke.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"
