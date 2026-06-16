@@ -82,12 +82,12 @@
       "spec_hash": "sha256:04cdde06cee3563754dc9cdb7e45cf3c01ca05b161885dec0c42155d5001c898",
       "canonical_hash": "sha256:9722b3c9694ea0649208fb0ae021467cd872ded6b4328794aa8b08dc5690fcb6",
       "adapter_hash": {
-        "claude": "sha256:1d5dce6b00ec9b68edf86a60ef86e7a43ea29f47b4dbe1a365c3057143143564",
+        "claude": "sha256:d5db6b2a72dded83b96898a546235d0c35c199c68c3e35c9ef8ce633fce91be5",
         "codex": "sha256:2855af33b2b6b42f98e081b73b200e462a3381a67f99de128086e2d919c8dade"
       },
       "adapter_contract_version": "1",
       "render_hash": {
-        "claude": "sha256:1d5dce6b00ec9b68edf86a60ef86e7a43ea29f47b4dbe1a365c3057143143564",
+        "claude": "sha256:d5db6b2a72dded83b96898a546235d0c35c199c68c3e35c9ef8ce633fce91be5",
         "codex": "sha256:2855af33b2b6b42f98e081b73b200e462a3381a67f99de128086e2d919c8dade"
       },
       "conformance": "PASS",

@@ -149,6 +149,33 @@ class TestAdapters(unittest.TestCase):
                 p = subprocess.run(["bash", adapter], capture_output=True, text=True, env=env)
                 self.assertEqual(p.returncode, 0, runtime)
 
+    def test_claude_wires_knowledge_capture(self):
+        # F7: claude adapter 도 knowledge_capture 를 policy_results 에 주입(이전엔 codex 만 = 갭).
+        # output_contract 는 claude 에 미적용(Codex-only 설계 + 마커 비독립) → 비대칭도 가드.
+        with tempfile.TemporaryDirectory() as root:
+            vault = os.path.join(root, "vault")
+            os.makedirs(os.path.join(vault, "wiki"), exist_ok=True)
+            Path(os.path.join(vault, "wiki", "log.md")).write_text("captured\n", encoding="utf-8")  # 코드변경 이후 mtime → OK
+            prof = os.path.join(root, "profile.json")
+            with open(prof, "w", encoding="utf-8") as f:
+                json.dump({"file_type_map": [{"glob": "*.src", "type": "src"}],
+                           "compliance": {"plan_gate_code_types": ["src"]},
+                           "knowledge_capture": {"vault_path": vault}}, f)
+            log_dir = os.path.join(root, ".claude", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            with open(os.path.join(log_dir, f"session-{TODAY}.jsonl"), "w", encoding="utf-8") as f:
+                f.write(json.dumps({"ts": f"{TODAY}T00:00:00Z", "tool": "Write",
+                                    "file": "a.src", "type": "src", "branch": "main"}) + "\n")
+            env = dict(os.environ, CLAUDE_PROJECT_DIR=root, SAGE_HOOK_CORE_DIR=HOOKS_DIR,
+                       SAGE_PROFILE=prof, SAGE_TODAY=TODAY, SAGE_GATE_BRANCH="main")
+            adapter = os.path.join(ADAPTERS, "claude", "stop-compliance-report.sh")
+            p = subprocess.run(["bash", adapter], input="", capture_output=True, text=True, env=env)
+            report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
+            self.assertEqual(p.returncode, 0)
+            self.assertIn("Policy Results", report)
+            self.assertIn("knowledge_capture", report)
+            self.assertNotIn("output_contract", report)  # claude 비대칭 가드
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

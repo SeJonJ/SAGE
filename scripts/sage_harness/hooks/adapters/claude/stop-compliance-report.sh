@@ -15,10 +15,12 @@ LOG_FILE="$LOG_DIR/session-$TODAY.jsonl"
 BRANCH=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null)
 
 SAGE_TODAY="$TODAY" SAGE_BRANCH="${SAGE_GATE_BRANCH:-$BRANCH}" python3 - "$LOG_FILE" "$LOG_DIR" "$CORE_DIR" <<'PYEOF'
-import sys, os, json
+import sys, os, json, time, calendar
 log_file, log_dir, core_dir = sys.argv[1], sys.argv[2], sys.argv[3]
 sys.path.insert(0, core_dir)
+sys.path.insert(0, os.path.join(core_dir, "policies"))
 import stop_compliance_report_core as core
+import knowledge_capture
 
 prof_path = os.environ.get("SAGE_PROFILE", "")
 if not prof_path or not os.path.exists(prof_path):
@@ -39,6 +41,29 @@ snapshot = {"entries": entries, "today": os.environ.get("SAGE_TODAY", ""),
 event = {"hook_id": "stop-compliance-report", "hook_event_name": "Stop", "runtime": "claude"}
 
 model = core.decide(event, profile, snapshot)
+
+# ── knowledge_capture 정책 주입(policy_results) — F7: claude adapter 도 OPTION 정책 배선 ──
+# code type·vault 는 profile 주입(독립). vault_path 비면 check 가 N/A 반환(graceful).
+# output_contract 는 미적용: Codex-only 설계(Claude 엔 대응 검사 없음) + 마커 비독립 → codex adapter 한정.
+_comp = profile.get("compliance", {}) or {}
+CODE_TYPES = set(_comp.get("plan_gate_code_types") or [])
+if not CODE_TYPES:
+    CODE_TYPES = {m.get("type") for m in (profile.get("file_type_map") or []) if m.get("type")}
+has_code = any(e.get("type") in CODE_TYPES for e in entries)
+
+def epoch_of_iso(s):
+    try:
+        return calendar.timegm(time.strptime(s, "%Y-%m-%dT%H:%M:%SZ"))
+    except Exception:
+        return None
+
+vault = (profile.get("knowledge_capture", {}) or {}).get("vault_path", "") or ""
+wiki_log = os.path.join(vault, "wiki", "log.md") if vault else ""
+wiki_mtime = os.path.getmtime(wiki_log) if (wiki_log and os.path.exists(wiki_log)) else None
+code_ts = [t for t in (epoch_of_iso(e.get("ts", "")) for e in entries if e.get("type") in CODE_TYPES) if t]
+earliest = min(code_ts) if code_ts else None
+model["sections"]["policy_results"].append(knowledge_capture.check(vault, has_code, wiki_mtime, earliest))
+
 md = core.render_markdown(model)
 report = os.path.join(log_dir, f"compliance-{snapshot['today']}.md")
 with open(report, "a", encoding="utf-8") as f:
