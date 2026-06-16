@@ -41,7 +41,7 @@ class TestInstall(unittest.TestCase):
                 "scripts/sage_harness/hooks/generated-artifact-write-guard.sh",
                 "scripts/sage_harness/hooks/strategies/pre_implementation_gate/codex_feature_signal.py",
                 # CORE roster agent(중립)
-                "docs/sage_harness/agents/leader.md", "docs/sage_harness/agents/backend.md",
+                "docs/sage_harness/agents/leader.md", "docs/sage_harness/agents/implementer-a.md",
                 "docs/sage_harness/agents/reviewer.md", "docs/sage_harness/agents/convention-checker.md",
             ):
                 self.assertTrue(os.path.exists(os.path.join(d, rel)), rel)

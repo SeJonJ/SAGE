@@ -48,7 +48,7 @@ sage install --host claude --prefix acme    # project.prefix = acme
 ```
 
 `project.prefix` 는 `sage/project-profile.yaml` 에 기록되어 문서 제목·knowledge-capture 파일명 등에 쓰인다.
-CORE roster agent 는 역할 기반 무접두(leader/backend/frontend/qa/reviewer/convention-checker)로 **브랜드 중립**이다.
+CORE roster agent 는 역할 기반 무접두(leader/implementer-a/implementer-b/qa/reviewer/convention-checker)로 **브랜드·스택 중립**이다(implementer-a/b 가 맡을 컴포넌트는 profile.team.core.*.owns 로 매핑).
 
 ## 예시: 프로젝트 적용 (worked example)
 
@@ -74,27 +74,27 @@ verification:
   commands: { build: "./gradlew build", test: "./gradlew test", lint: "ktlint" }
 ```
 
-2) agent spec (사람 수기 최소 = intent + advisory_scope) — `docs/sage_harness/agents/backend.md`:
+2) agent spec — CORE 기본은 중립(`docs/sage_harness/agents/implementer-a.md`), 인스턴스가 컴포넌트(예: core) 할당 후 채운 예:
 
 ```markdown
 ---
-id: backend
+id: implementer-a
 kind: agent
 ---
 ## intent
-백엔드 설계·구현·서비스 단위테스트.
+할당된 컴포넌트(core)의 설계·구현·컴포넌트 단위테스트.
 ## advisory_scope
-- owns: backend/src/main
+- owns: src/core
 - role_boundary: 통합/HTTP/경계값 테스트는 qa 영역
-- convention_doc: docs/backend.md
+- convention_doc: docs/core-conventions.md
 ```
 
-3) `sage generate` 후 자동도출 `backend.claims.yml` (발췌, reverse_extract):
+3) `sage generate` 후 자동도출 `implementer-a.claims.yml` (발췌, reverse_extract):
 
 ```yaml
 required_claims:
-  - { type: owned_paths,    value: "backend/src/main", confidence: high }
-  - { type: convention_doc, value: "docs/backend.md",  confidence: high }
+  - { type: owned_paths,    value: "src/core", confidence: high }
+  - { type: convention_doc, value: "docs/core-conventions.md",  confidence: high }
 forbidden_claims:
   - { type: safety_forbid,  value: "forbid:integration/http/boundary tests", confidence: high }
   - { inherited_forbidden_claims: "AGENT_GUIDE.non_negotiable_boundaries" }

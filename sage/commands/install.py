@@ -4,7 +4,7 @@
 - framework 템플릿(중립): AGENT_GUIDE.md, {wrapper}, verification-protocol.md,
   scripts/verify-changes.sh, docs/agent/*
 - CORE hook: spec(docs/sage_harness/hooks/*.md) + 정본(scripts/sage_harness/hooks: core+adapter+strategy+native)
-- CORE roster agent spec(중립): leader/backend/frontend/qa/reviewer/convention-checker
+- CORE roster agent spec(중립): leader/implementer-a/implementer-b/qa/reviewer/convention-checker
 - profile(빈 스키마, host/prefix 치환) + spec 템플릿 + schema + manifest(CORE hook 등록)
 배치 후: profile 값 채움 → `sage generate --kind hook --write`(등록 산출물 + manifest 스탬프).
 독립(제약 #2): 복사 리소스는 전부 도메인값 0(중립). 프로젝트 값은 profile 로만.
@@ -17,7 +17,7 @@ from pathlib import Path
 from sage import _resources   # 번들 리소스 경로 단일 해석(env override + repo fallback — 재배치/설치 대비)
 
 # CORE roster (중립 6인) + CORE hook 6종(form). 도메인값 아님 = framework 메타.
-_CORE_AGENTS = ["leader", "backend", "frontend", "qa", "reviewer", "convention-checker"]
+_CORE_AGENTS = ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]
 _CORE_HOOKS = [
     ("capture-declared-risk", "core_adapter"),
     ("post-tool-logger", "core_adapter"),
