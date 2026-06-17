@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from sage.asset_paths import AssetPaths
+from sage.commands._common import contract_version_of
 
 
 def register(sub):
@@ -256,6 +257,9 @@ def _stamp_manifest(root, hook_ids):
         else:
             if os.path.exists(paths.core):
                 e["canonical_hash"] = sha(paths.core)
+                cv = contract_version_of(paths.core)   # R3: core.CONTRACT_VERSION 스탬프(인터페이스 계약 드리프트 가드)
+                if cv:
+                    e["adapter_contract_version"] = cv
             ah = {}
             for rt in ("claude", "codex"):
                 adp = paths.adapter(rt)

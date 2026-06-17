@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 from sage.asset_paths import AssetPaths
-from sage.commands._common import not_implemented
+from sage.commands._common import contract_version_of, not_implemented
 
 # severity rank (exit code 매핑은 _exit_code)
 _SEV_RANK = {"PASS": 0, "WARN": 1, "STALE": 2, "FAIL": 3}
@@ -145,6 +145,14 @@ def _validate_hook(root, asset_id, entry, run_regression):
                 bump("FAIL"); msgs.append(f"  FAIL missing adapter[{rt}]: {p[key]}")
             elif ah and _sha(p[key]) != ah:
                 bump("STALE"); msgs.append(f"  STALE adapter_hash[{rt}] 불일치")
+
+    # 3b. 계약버전 (R3/P1-3): core.CONTRACT_VERSION 과 manifest 스탬프 대조.
+    #     hash(내용) 드리프트와 별개로 core.decide() 인터페이스 변경을 잡는 두 번째 방어선.
+    if form == "core_adapter" and os.path.exists(p["core_py"]):
+        want = contract_version_of(p["core_py"])
+        have = entry.get("adapter_contract_version")
+        if want and have and want != have:
+            bump("STALE"); msgs.append(f"  STALE 계약버전 불일치 ({have}→{want}) — sage generate 재스탬프 필요")
 
     # 4. WARN 정보 (exit 영향 없음)
     if entry.get("safety_degraded"):

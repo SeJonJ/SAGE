@@ -40,9 +40,11 @@
   - [x] adapter_hash 전 hook 재스탬프 → validate PASS. 변이 teeth: 공유 runtime 무력화→smoke 12 FAIL
   - 부수효과(문서화): post-tool-logger·pre-phase4·stop 도 malformed profile 시 pre-impl 과 동일 fail-open+surface(이전 crash/exit1) — 게이트 BLOCK(exit2) 계약 불변, 일관성+안전 개선
   - (refine 보류) messages.py 메시지 통일은 동작변경이라 별도(현재 io별 verbatim 보존)
-- [ ] **R3. adapter_contract_version 강제** (P1-3, 회귀안전망)
-  - [ ] `_stamp_manifest`가 core.CONTRACT_VERSION 스탬프 + validate 일치검사(STALE)
-  - [ ] test + 변이 teeth(core 버전 bump → STALE 검출)
+- [x] **R3. adapter_contract_version 강제** (P1-3, 회귀안전망) ✅
+  - [x] `_common.contract_version_of`(정규식, import 부작용 0) + generate `_stamp_manifest` core.CONTRACT_VERSION 스탬프
+  - [x] validate `_validate_hook` 3b: core 값 vs manifest 대조 → 불일치 STALE(hash 와 별개 인터페이스 드리프트 가드)
+  - [x] test_contract_version(run-all step25, 5케이스 incl. no-import-side-effect) + 변이 teeth(core 1→2 → validate STALE exit3)
+  - (잔여 follow-up) agents/skills 의 하드코딩 "1"(manifest_util) → reverse_extract CONTRACT_VERSION 파생은 R3 범위 밖(hook core 계약 우선)
 - [ ] **R2. profile 스키마 + 의미검증** (P0-2, 침묵 비활성 차단)
   - [ ] `schema/profile.schema.json`(additionalProperties:false) + `sage/profile_validate.py`
   - [ ] install/generate/doctor/validate 배선(FAIL이면 generate 중단)
