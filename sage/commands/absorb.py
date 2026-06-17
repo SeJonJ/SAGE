@@ -30,28 +30,16 @@ def register(sub):
     p.set_defaults(func=run)
 
 
-def _load_claims_yaml(path):
-    """{id}.claims.yml 의 required/forbidden/allowlist value 집합 추출 (간이 파서)."""
-    vals = {"required": set(), "forbidden": set(), "allowlist": set(), "unresolved": set()}
-    if not os.path.exists(path):
-        return vals
-    section = None
-    import re
-    for line in open(path, encoding="utf-8"):
-        s = line.strip()
-        if s.startswith("required_claims:"): section = "required"; continue
-        if s.startswith("forbidden_claims:"): section = "forbidden"; continue
-        if s.startswith("runtime_delta_allowlist:"): section = "allowlist"; continue
-        if s.startswith("unresolved:"):
-            m = re.search(r"\[(.*)\]", s)
-            if m and m.group(1).strip():
-                vals["unresolved"] = {x.strip().strip('"') for x in m.group(1).split(",")}
-            section = None; continue
-        if section and s.startswith("- "):
-            mv = re.search(r'value:\s*"([^"]*)"', s)
-            if mv:
-                vals[section].add(mv.group(1))
-    return vals
+def _claims_value_sets(path):
+    """{id}.claims.yml → required/forbidden/allowlist/unresolved value 집합 (absorb diff 용).
+
+    P2-7: 단일 canonical 리더(reverse_extract_common.load_claims_yaml) 경유 — 이전의 lossy 정규식
+    파서를 제거하고 emitter(claims_to_yaml)와 같은 코덱으로 통일. caller 가 sys.path 에 harness 추가 후 호출."""
+    import reverse_extract_common as rc
+    d = rc.load_claims_yaml(path)
+    pick = lambda key: {c["value"] for c in d.get(key, []) if isinstance(c, dict) and "value" in c}
+    return {"required": pick("required_claims"), "forbidden": pick("forbidden_claims"),
+            "allowlist": pick("runtime_delta_allowlist"), "unresolved": set(d.get("unresolved", []))}
 
 
 def _absorb_interpretive(args, root, kind):
@@ -78,7 +66,7 @@ def _absorb_interpretive(args, root, kind):
     new_req = {c["value"] for c in new["required_claims"]}
     new_fb = {c["value"] for c in new["forbidden_claims"] if "value" in c}
 
-    cur = _load_claims_yaml(os.path.join(root, "docs", "sage_harness", subdir, f"{args.id}.claims.yml"))
+    cur = _claims_value_sets(os.path.join(root, "docs", "sage_harness", subdir, f"{args.id}.claims.yml"))
     added_req = sorted(new_req - cur["required"])
     removed_req = sorted(cur["required"] - new_req)
     added_fb = sorted(new_fb - cur["forbidden"])

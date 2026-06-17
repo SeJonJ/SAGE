@@ -196,21 +196,18 @@ def _conformance_check(root, asset_id, claims_path):
     if not present or not os.path.exists(claims_path):
         return "PASS", []
     try:
-        import yaml
-    except ImportError:
-        return "PASS", ["  INFO conformance skip — pyyaml 미설치 (pip install pyyaml)"]
-    try:
-        claims = yaml.safe_load(Path(claims_path).read_text(encoding="utf-8")) or {}
-    except Exception as e:
-        return "PASS", [f"  INFO conformance skip — claims 파싱 실패: {e}"]
-    try:
         from sage import _resources
         harness = os.path.join(_resources.sage_root(), "scripts", "sage_harness")
         if harness not in sys.path:
             sys.path.insert(0, harness)
         import conformance as cf
+        import reverse_extract_common as rc   # P2-7: claims 단일 canonical 리더(pyyaml 우선+결정론 폴백)
     except Exception as e:
         return "PASS", [f"  INFO conformance skip — 모듈 로드 실패: {e}"]
+    try:
+        claims = rc.load_claims_yaml(claims_path)
+    except Exception as e:
+        return "PASS", [f"  INFO conformance skip — claims 파싱 실패: {e}"]
 
     bump = "PASS"
     msgs = []

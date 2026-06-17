@@ -4,6 +4,7 @@ agent(reverse_extract_agent)·skill(reverse_extract_skill) 둘 다 import. 상�
 범용 추출 패턴·persona 필터·confidence·교집합 머지·claims 직렬화를 단일화.
 소비 프로젝트 고유값은 caller 의 config 로만 주입(엔진 도메인값 0).
 """
+import os
 import re
 
 CONTRACT_VERSION = "1"
@@ -149,3 +150,70 @@ def claims_to_yaml(claims: dict, kind: str = None) -> str:
     import json
     L.append(f"unresolved: {json.dumps(claims['unresolved'], ensure_ascii=False)}")
     return "\n".join(L) + "\n"
+
+
+_FLOW_KV_RE = re.compile(r'(\w+):\s*("(?:[^"]*)"|[^,}]+)')
+_CLAIMS_SECTIONS = {"required_claims:": "required_claims",
+                    "forbidden_claims:": "forbidden_claims",
+                    "runtime_delta_allowlist:": "runtime_delta_allowlist"}
+
+
+def _parse_flow_entry(body):
+    """'type: x, value: "y", confidence: z' → dict. claims_to_yaml flow-entry 의 역."""
+    d = {}
+    for kv in _FLOW_KV_RE.finditer(body):
+        k, v = kv.group(1), kv.group(2).strip().strip('"')
+        if k == "order":
+            try:
+                v = int(v)
+            except ValueError:
+                pass
+        d[k] = v
+    return d
+
+
+def load_claims_yaml(path):
+    """{id}.claims.yml → dict (claims_to_yaml 의 역 — round-trip 짝, 단일 canonical 리더). P2-7.
+
+    pyyaml 있으면 safe_load(완전), 없거나 실패하면 결정론 폴백(claims.yml 은 기계생성 고정 flow-style
+    이라 의존성 없이 파싱 가능 — absorb·validate 가 같은 파서를 쓰게 통일). 부재/빈 → 빈 골격.
+    반환: {required_claims, forbidden_claims, runtime_delta_allowlist, unresolved}(+ 있으면 kind)."""
+    import json
+    skel = {"required_claims": [], "forbidden_claims": [], "runtime_delta_allowlist": [], "unresolved": []}
+    if not path or not os.path.exists(path):
+        return dict(skel)
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    try:
+        import yaml
+        data = yaml.safe_load(text)
+        if isinstance(data, dict):
+            for k in skel:
+                v = data.get(k)           # pyyaml 은 빈 섹션(`forbidden_claims:`)을 None 으로 파싱 → list 정규화
+                data[k] = v if isinstance(v, list) else []
+            return data
+    except ImportError:
+        pass
+    except Exception:
+        pass   # 파싱 실패 → 결정론 폴백 시도(기계생성 포맷)
+
+    out = dict(skel)
+    section = None
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if s.startswith("kind:"):
+            out["kind"] = s.split(":", 1)[1].strip(); section = None; continue
+        if s.startswith("unresolved:"):
+            m = re.search(r"unresolved:\s*(\[.*\])", s)
+            try:
+                out["unresolved"] = json.loads(m.group(1)) if m else []
+            except Exception:
+                out["unresolved"] = []
+            section = None; continue
+        if s in _CLAIMS_SECTIONS:
+            section = _CLAIMS_SECTIONS[s]; continue
+        if section and s.startswith("- {") and s.endswith("}"):
+            out[section].append(_parse_flow_entry(s[s.index("{") + 1:s.rindex("}")]))
+    return out

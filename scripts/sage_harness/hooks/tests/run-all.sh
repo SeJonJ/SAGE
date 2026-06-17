@@ -116,5 +116,9 @@ echo "### 28. override_audit (P1-5 게이트 BLOCK 합법 우회 — TTL 만료 
 python3 "$HERE/test_override_audit.py" || rc=1
 
 echo ""
+echo "### 29. claims_codec (P2-7 YAML 단일화 — claims_to_yaml↔load_claims_yaml round-trip, pyyaml 무관 동일)"
+python3 "$HERE/test_claims_codec.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"
