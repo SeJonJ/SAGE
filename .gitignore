@@ -16,3 +16,5 @@ venv/
 # prior bkit/claude local state (not part of SAGE)
 .bkit/
 .claude/settings.local.json
+.claude/settings.json
+.claude/hooks/
