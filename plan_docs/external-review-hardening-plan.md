@@ -31,11 +31,13 @@
   - [x] `sage/asset_paths.py` `AssetPaths(root, kind, id)` 신설 (spec/core/native/adapter(rt)/claims)
   - [x] generate `_gen_hook`·`_stamp_manifest`, validate `_hook_paths`, absorb 4사이트 수렴
   - [x] test_asset_paths.py(run-all step23) + 변이 teeth(core 규약 깨면 FAIL) + 전체 회귀 PASS + validate PASS
-- [ ] **R1. 어댑터 런타임 모듈 추출** (P0-1, 중심·점진)
-  - [ ] `hooks/runtime/{run_hook.py, hook_runtime.py, io_claude.py, io_codex.py, messages.py}` verbatim lift
-  - [ ] 단위테스트(extract/snapshot/strategy/render) 추가
-  - [ ] hook 1개(claude pre-impl)부터 thin launcher 전환 → smoke → 나머지 1개씩
-  - [ ] heredoc 제거 → `sage generate --write` 재스탬프 → validate PASS
+- [~] **R1. 어댑터 런타임 모듈 추출** (P0-1, 중심·점진) — 파일럿 완료, 잔여 4 hook 전환 중
+  - [x] `hooks/runtime/{run_hook.py, hook_runtime.py, io_claude.py, io_codex.py}` verbatim lift(pre-impl 본문)
+  - [x] 단위테스트 13(extract claude/codex·snapshot·전략F8b·렌더채널) — run-all step24
+  - [x] **pre-implementation-gate**(claude+codex) thin launcher 전환 → smoke+e2e PASS → adapter_hash 재스탬프 → validate PASS
+  - [x] 변이 teeth: 공유 runtime 무력화 시 smoke 12 FAIL(load-bearing 입증)
+  - [ ] 잔여 4 hook(stop-compliance-report·post-tool-logger·pre-phase4-checklist-gate·capture-declared-risk) 1개씩 전환
+  - [ ] (refine) messages.py 메시지 통일은 동작변경이라 별도(현재 io별 verbatim 보존)
 - [ ] **R3. adapter_contract_version 강제** (P1-3, 회귀안전망)
   - [ ] `_stamp_manifest`가 core.CONTRACT_VERSION 스탬프 + validate 일치검사(STALE)
   - [ ] test + 변이 teeth(core 버전 bump → STALE 검출)

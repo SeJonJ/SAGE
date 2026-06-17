@@ -96,5 +96,9 @@ echo "### 23. asset_paths 단일 로케이터 (generate/validate/absorb 경로 �
 python3 "$HERE/test_asset_paths.py" || rc=1
 
 echo ""
+echo "### 24. hook_runtime / io_* 단위 (R1 어댑터 런타임 추출 — 입력추출/snapshot/전략F8b/렌더채널)"
+python3 "$HERE/test_hook_runtime.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"
