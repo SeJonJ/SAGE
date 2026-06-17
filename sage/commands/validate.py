@@ -175,8 +175,65 @@ def _validate_hook(root, asset_id, entry, run_regression):
     return sev, msgs
 
 
+def _conformance_check(root, asset_id, claims_path):
+    """render(.md) 산출물을 claims 에 conformance_lint → (bump_sev, [msgs]).
+
+    P1-4(폐루프 비대칭 해소): hook 은 hash/contract_version 으로 generate↔validate 폐루프가 강제되나,
+    agent/skill 은 conformance_lint 가 존재하되 validate 에 배선되지 않아 강제되지 않았다. 여기서 배선해
+    "닫는 게이트=validate" 로 대칭화한다. render 는 여전히 interpretive(런타임 AI) — 결정론 생성은 하지 않음.
+    - render(.claude|.codex/<subdir>/<id>.md) 부재 = skip(미렌더, 강제 대상 아님).
+    - conformance FAIL(누락 required claim·금지위반) = validate FAIL(강제 — 비대칭의 본질).
+    - conformance WARN(금지주제 미언급·서술형 미검출 등 약신호) = INFO(비게이팅, sev 불변 —
+      validate 가 자체 descriptive unresolved 를 INFO 로 다루는 것과 동일 선. auto_approve 과민 회피).
+    - pyyaml/conformance 미가용 = INFO skip(validate 경량 유지, exit 불변).
+    conformance 모듈은 엔진 위치(_resources.sage_root)에서 로드 — validate 는 엔진 명령이므로
+    타깃 vendored 본이 아닌 엔진 결정론 로직이 권위. contradiction_patterns 는 엔진 기본(commit/push)만
+    (프로젝트 고유 패턴은 런타임 config 주입 영역)."""
+    subdir, aid = asset_id.split("/", 1)
+    renders = {rt: os.path.join(root, host, subdir, f"{aid}.md")
+               for rt, host in (("claude", ".claude"), ("codex", ".codex"))}
+    present = {rt: p for rt, p in renders.items() if os.path.exists(p)}
+    if not present or not os.path.exists(claims_path):
+        return "PASS", []
+    try:
+        import yaml
+    except ImportError:
+        return "PASS", ["  INFO conformance skip — pyyaml 미설치 (pip install pyyaml)"]
+    try:
+        claims = yaml.safe_load(Path(claims_path).read_text(encoding="utf-8")) or {}
+    except Exception as e:
+        return "PASS", [f"  INFO conformance skip — claims 파싱 실패: {e}"]
+    try:
+        from sage import _resources
+        harness = os.path.join(_resources.sage_root(), "scripts", "sage_harness")
+        if harness not in sys.path:
+            sys.path.insert(0, harness)
+        import conformance as cf
+    except Exception as e:
+        return "PASS", [f"  INFO conformance skip — 모듈 로드 실패: {e}"]
+
+    bump = "PASS"
+    msgs = []
+    for rt, p in sorted(present.items()):
+        try:
+            res = cf.conformance_lint(Path(p).read_text(encoding="utf-8"), claims)
+        except Exception as e:
+            msgs.append(f"  INFO conformance[{rt}] skip — lint 오류: {e}")
+            continue
+        st = res["status"]
+        if st == "FAIL":
+            bump = "FAIL"
+            mr = "; ".join(f"{m['type']}:{m['value']}" for m in res["missing_required"]) or "없음"
+            ct = "; ".join(m["value"] for m in res["forbidden_policy_contradictions"]) or "없음"
+            msgs.append(f"  FAIL conformance[{rt}] — 누락 required claim: {mr} | 금지위반: {ct}")
+        elif st == "WARN":
+            n_w = len(res["warnings"]); n_mp = len(res["forbidden_policy_missing"])
+            msgs.append(f"  INFO conformance[{rt}] WARN(비게이팅) — 미검출 {n_w}건, 금지주제 미언급 {n_mp}건")
+    return bump, msgs
+
+
 def _validate_interpretive(root, asset_id, entry, run_regression=True):
-    """interpretive 자산(agent/skill) → spec_hash + claims_hash staleness + (선택)regression.
+    """interpretive 자산(agent/skill) → spec_hash + claims_hash staleness + conformance(P1-4) + (선택)regression.
 
     asset_id 'agents/<id>' 또는 'skills/<id>' — prefix 에서 디렉토리 결정(독립: 하드코딩 아님)."""
     msgs = []
@@ -211,6 +268,11 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True):
         descriptive = total_unres - len(entry.get("unresolved", []))
         if descriptive > 0:
             msgs.append(f"  INFO descriptive unresolved {descriptive}건 (비게이팅 — 절차/서술 의미 누락 주의, {os.path.basename(claims)} 확인)")
+    # conformance lint (P1-4): render(.md) 가 존재하면 claim 부합을 강제 — hook hash/contract 강제와 대칭.
+    #   --check(빠른 모드)에서도 실행(정규식·subprocess 없음 → cheap). FAIL=게이팅, WARN=INFO(비게이팅).
+    csev, cmsgs = _conformance_check(root, asset_id, claims)
+    bump(csev)
+    msgs.extend(cmsgs)
     # render_hash 는 interpretive/외부 산출물이라 v1 staleness 재계산 제외(정보성)
     test = entry.get("test")
     if run_regression and test and sev in ("PASS", "WARN"):

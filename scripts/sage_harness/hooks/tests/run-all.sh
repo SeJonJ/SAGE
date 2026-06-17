@@ -108,5 +108,9 @@ echo "### 26. profile_validate (R2 profile 스키마+의미검증 — 오타키 
 python3 "$HERE/test_profile_validate.py" || rc=1
 
 echo ""
+echo "### 27. validate conformance 배선 (P1-4 agent/skill 폐루프 — render 누락 required claim/금지위반 → validate FAIL)"
+python3 "$HERE/test_validate_conformance.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"
