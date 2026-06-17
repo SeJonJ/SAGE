@@ -19,13 +19,18 @@ def register(sub):
 def reviewer_resolution(profile: dict, caps: dict) -> dict:
     """Phase 05 reviewer 해석 (순수). caps={'gstack':bool} 는 doctor 가 주입.
 
-    결정표(Codex 2R 합의 + audit 3회차 주석정합):
-    - cross_model off                     → clean_context_same_runtime (의도적, degraded=false)
-    - cross on, claude-host, gstack 가용    → opposite_runtime(codex)
-    - cross on, claude-host, gstack 불가    → clean_context fallback (degraded, gstack_unavailable)
-    - cross on, codex-host, codex_host 설정 → opposite_runtime(claude) (forward-compat: 경로 명시 시 허용)
-    - cross on, codex-host, codex_host 미설정 → clean_context fallback (degraded, codex_host_claude_invocation_unresolved, §12)
-    """
+    결정표(Codex 2R 합의 + P2-8 대칭 능력게이팅):
+    - cross_model off                              → clean_context_same_runtime (의도적, degraded=false)
+    - cross on, claude-host, claude_host설정 + gstack가용 → opposite_runtime(codex)
+    - cross on, claude-host, gstack 불가            → clean_context fallback (degraded, gstack_unavailable)
+    - cross on, codex-host, codex_host설정 + claude가용  → opposite_runtime(claude)
+    - cross on, codex-host, codex_host설정 + claude불가  → clean_context fallback (degraded, claude_cli_unavailable, §12)
+    - cross on, codex-host, codex_host 미설정        → clean_context fallback (degraded, codex_host_claude_invocation_unresolved, §12)
+
+    P2-8(역방향 스텁 제거): 이전엔 codex-host 가 codex_host 필드만 있으면 능력검증 없이 opposite 를
+    맹신했다(claude-host 는 gstack 능력을 요구하는데 비대칭). codex-host→Claude 도 claude CLI 능력
+    (caps.claude)을 요구해 대칭화 — 경로 설정 + 실제 호출가능성 둘 다 확인. 실행 명령 자체는 런타임
+    config(invocation.codex_host)가 정의(doctor 는 진단만)."""
     runtime = profile.get("runtime", {}) or {}
     host = runtime.get("host", "claude")
     cross = bool((profile.get("options", {}) or {}).get("cross_model", False))
@@ -46,7 +51,11 @@ def reviewer_resolution(profile: dict, caps: dict) -> dict:
                    "cross_model on 이나 gstack 미가용 → clean-context fallback (모델편향 못없애는 최소안전선)")
     # host == codex
     if invocation.get("codex_host"):
-        return res("opposite_runtime", "claude", False, False, None, "codex-host → Claude (경로 설정됨)")
+        if caps.get("claude"):
+            return res("opposite_runtime", "claude", False, False, None,
+                       "codex-host → Claude (경로 설정 + claude CLI 가용)")
+        return res("clean_context_same_runtime", "codex", True, True, "claude_cli_unavailable",
+                   "codex-host→Claude 경로 설정됐으나 claude CLI 미가용 → clean-context fallback (§12)")
     return res("clean_context_same_runtime", "codex", True, True, "codex_host_claude_invocation_unresolved",
                "codex-host→Claude 호출 경로 미확정(§12) → v1 fallback")
 
@@ -92,17 +101,21 @@ def run(args):
         profile = dict(_DEFAULT_PROFILE)
 
     # 옵션 의존성
-    gstack_avail = bool(shutil.which("gstack")) or bool((profile.get("capabilities", {}) or {}).get("gstack"))
+    caps_prof = profile.get("capabilities", {}) or {}
+    gstack_avail = bool(shutil.which("gstack")) or bool(caps_prof.get("gstack"))
+    claude_avail = bool(shutil.which("claude")) or bool(caps_prof.get("claude"))   # P2-8: 역방향 능력 검증
     opts = profile.get("options", {}) or {}
     vault = (profile.get("knowledge_capture", {}) or {}).get("vault_path", "")
     print("## 옵션 의존성")
     print(f"  cross_model : {opts.get('cross_model', False)}")
     print(f"  gstack      : {'available' if gstack_avail else 'unavailable'} (PATH which gstack | capabilities.gstack)")
+    if (profile.get("runtime", {}) or {}).get("host") == "codex":   # 역방향(codex→claude) 진단 시에만 노출
+        print(f"  claude CLI  : {'available' if claude_avail else 'unavailable'} (PATH which claude | capabilities.claude)")
     print(f"  codegraph   : {opts.get('codegraph', 'optional')} (MCP 필요 — 미연결 시 rg/read degrade)")
     print(f"  obsidian    : vault_path={'set' if vault else 'empty → 기능 OFF(N/A)'}")
 
     # reviewer resolution
-    rr = reviewer_resolution(profile, {"gstack": gstack_avail})
+    rr = reviewer_resolution(profile, {"gstack": gstack_avail, "claude": claude_avail})
     print("## Phase 05 reviewer")
     print(f"  mode    : {rr['reviewer_mode']} (runtime={rr['reviewer_runtime']})")
     print(f"  notice  : {rr['notice']}")
