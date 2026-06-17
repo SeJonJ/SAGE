@@ -5,6 +5,9 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+# 빌드 산출물(P2-10 sdist/wheel — CI 에서 생성, 커밋 금지)
+dist/
+build/
 
 # SAGE runtime temp + override 감사로그(P1-5, 프로젝트 로컬 운영 상태 — 커밋 금지)
 .sage/tmp/

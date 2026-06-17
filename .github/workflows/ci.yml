@@ -1,0 +1,45 @@
+name: CI
+
+# 외부검토 P2-10: 자기 도그푸딩(CI 부재) 해소 — push/PR 마다 hook 회귀 전체 + sage validate 자가검증 +
+# sdist 패키징 리소스 가드를 실행한다.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: hook regression + self-validate (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install (editable + schema extra)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[schema]"
+      - name: Hook regression suite (run-all.sh)
+        run: bash scripts/sage_harness/hooks/tests/run-all.sh
+      - name: sage validate (self — drift/staleness + manifest schema)
+        run: python -m sage validate --check --schema
+
+  packaging:
+    name: sdist build + resource bundle guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build sdist
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --sdist
+      - name: Assert engine resources bundled (MANIFEST.in 회귀 가드)
+        run: python scripts/ci/check_sdist_resources.py dist
