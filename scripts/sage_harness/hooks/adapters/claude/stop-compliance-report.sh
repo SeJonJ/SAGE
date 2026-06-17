@@ -1,74 +1,10 @@
 #!/bin/bash
-# stop-compliance-report — Claude adapter (rendered)
-# SSOT: scripts/sage_harness/hooks/stop_compliance_report_core.py
-# adapter: session JSONL 읽기 → snapshot / 경로·env 바인딩 / report 파일쓰기 / report path 출력. 집계는 core.
-# policy_delta(output_contract/knowledge_capture)는 미병합(정책모듈 보존). (직접수정 금지)
-# profile 외부주입 필수($SAGE_PROFILE) — 없으면 통과.
-
+# stop-compliance-report — Claude thin adapter (R1: 본문은 runtime/run_hook.py 단일소스)
+# SSOT: scripts/sage_harness/hooks/stop_compliance_report_core.py (집계/렌더)
+#       scripts/sage_harness/hooks/runtime/{hook_runtime,io_claude}.py (IO 오케스트레이션)
+# knowledge_capture 정책은 양 런타임 공유(F7), output_contract 는 codex 전용.
+# profile 외부주입 필수($SAGE_PROFILE) — 없으면 통과. (generated artifact — 직접수정 금지)
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}"
-LOG_DIR="$PROJECT_ROOT/.claude/logs"
 CORE_DIR="${SAGE_HOOK_CORE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-TODAY="${SAGE_TODAY:-$(date +%Y-%m-%d)}"
-LOG_FILE="$LOG_DIR/session-$TODAY.jsonl"
-[ -f "$LOG_FILE" ] || exit 0   # 로그 없으면 리포트 생략
-
-BRANCH=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null)
-
-SAGE_TODAY="$TODAY" SAGE_BRANCH="${SAGE_GATE_BRANCH:-$BRANCH}" python3 - "$LOG_FILE" "$LOG_DIR" "$CORE_DIR" <<'PYEOF'
-import sys, os, json, time, calendar
-log_file, log_dir, core_dir = sys.argv[1], sys.argv[2], sys.argv[3]
-sys.path.insert(0, core_dir)
-sys.path.insert(0, os.path.join(core_dir, "policies"))
-import stop_compliance_report_core as core
-import knowledge_capture
-
-prof_path = os.environ.get("SAGE_PROFILE", "")
-if not prof_path or not os.path.exists(prof_path):
-    sys.exit(0)
-with open(prof_path, encoding="utf-8") as f:
-    profile = json.load(f)
-
-entries = []
-with open(log_file, encoding="utf-8") as f:
-    for line in f:
-        line = line.strip()
-        if line:
-            try: entries.append(json.loads(line))
-            except Exception: pass
-
-snapshot = {"entries": entries, "today": os.environ.get("SAGE_TODAY", ""),
-            "branch": os.environ.get("SAGE_BRANCH", ""), "runtime": "claude"}
-event = {"hook_id": "stop-compliance-report", "hook_event_name": "Stop", "runtime": "claude"}
-
-model = core.decide(event, profile, snapshot)
-
-# ── knowledge_capture 정책 주입(policy_results) — F7: claude adapter 도 OPTION 정책 배선 ──
-# code type·vault 는 profile 주입(독립). vault_path 비면 check 가 N/A 반환(graceful).
-# output_contract 는 미적용: Codex-only 설계(Claude 엔 대응 검사 없음) + 마커 비독립 → codex adapter 한정.
-_comp = profile.get("compliance", {}) or {}
-CODE_TYPES = set(_comp.get("plan_gate_code_types") or [])
-if not CODE_TYPES:
-    CODE_TYPES = {m.get("type") for m in (profile.get("file_type_map") or []) if m.get("type")}
-has_code = any(e.get("type") in CODE_TYPES for e in entries)
-
-def epoch_of_iso(s):
-    try:
-        return calendar.timegm(time.strptime(s, "%Y-%m-%dT%H:%M:%SZ"))
-    except Exception:
-        return None
-
-vault = (profile.get("knowledge_capture", {}) or {}).get("vault_path", "") or ""
-wiki_log = os.path.join(vault, "wiki", "log.md") if vault else ""
-wiki_mtime = os.path.getmtime(wiki_log) if (wiki_log and os.path.exists(wiki_log)) else None
-code_ts = [t for t in (epoch_of_iso(e.get("ts", "")) for e in entries if e.get("type") in CODE_TYPES) if t]
-earliest = min(code_ts) if code_ts else None
-model["sections"]["policy_results"].append(knowledge_capture.check(vault, has_code, wiki_mtime, earliest))
-
-md = core.render_markdown(model)
-report = os.path.join(log_dir, f"compliance-{snapshot['today']}.md")
-with open(report, "a", encoding="utf-8") as f:
-    f.write(md)
-print(f"📋 Compliance report saved: .claude/logs/compliance-{snapshot['today']}.md")
-sys.exit(model["exit_code"])
-PYEOF
-exit 0
+exec python3 "$CORE_DIR/runtime/run_hook.py" \
+  --runtime claude --hook stop-compliance-report --root "$PROJECT_ROOT" --core-dir "$CORE_DIR"

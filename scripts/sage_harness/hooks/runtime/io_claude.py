@@ -70,3 +70,61 @@ def render_gate(decision, profile):
     if m:
         print(m)
     return d["exit_code"]
+
+
+def render_declared_capture(level):
+    # Claude 출력 프로토콜: plain text (stdout = additionalContext)
+    print(f"ℹ️  [Risk 선언 포착] 이번 세션 작업 레벨: {level} — 소스 수정 시 해당 레벨 게이트가 적용됩니다.")
+
+
+# --- post-tool-logger IO (Claude: tool_input.file_path 단일) ---
+def logger_tool_name(raw):
+    return raw.get("tool_name", "") or ""
+
+
+def extract_logged_changes(raw, rel):
+    fp = (raw.get("tool_input") or {}).get("file_path") or ""
+    return [{"path": rel(fp), "op": "write"}] if fp else []
+
+
+# --- pre-phase4-checklist-gate IO (Claude) ---
+def extract_phase4_changes(raw, rel):
+    fp = (raw.get("tool_input") or {}).get("file_path") or ""
+    return [{"path": rel(fp), "op": "write"}] if fp else []
+
+
+def render_phase4(decision):
+    dec = decision
+    s = dec["status"]
+    if s == "block":
+        lines = [f"⛔ [GATE BLOCK — Phase 3→4] 체크리스트 미완료 {dec['total_unchecked']}건",
+                 f"  기능: {dec['base']}",
+                 "  04-analyze 작성 전 아래 항목을 완료(또는 N/A 사유와 함께 [x])하세요:"]
+        for ev in dec["evidence"]:
+            lines.append(f"  ▸ {ev['label']}: {ev['file']} ({len(ev['unchecked'])}건 미완료)")
+            for it in ev["unchecked"][:6]:
+                t = it["text"]
+                lines.append(f"      L{it['line']}: {t if len(t) <= 90 else t[:87] + '...'}")
+            extra = len(ev["unchecked"]) - 6
+            if extra > 0:
+                lines.append(f"      ... 외 {extra}건")
+        msg = "\n".join(lines)
+    elif s == "warn":
+        msg = f"⚠️  [GATE WARN — Phase 3→4] '{dec['base']}' 의 03-implementation 문서를 찾지 못했습니다."
+    elif s == "ok":
+        msg = f"✅ [GATE OK — Phase 3→4] '{dec['base']}' 체크리스트 완료 확인"
+    else:
+        msg = ""
+    if msg:
+        print(msg)
+    return dec["exit_code"]
+
+
+# --- stop-compliance-report IO (Claude) ---
+def attach_policy_results(model, profile, entries, raw_text, kc_result):
+    # F7: claude 도 knowledge_capture 주입. output_contract 는 미적용(Codex-only 설계 + 마커 비독립).
+    model["sections"]["policy_results"].append(kc_result)
+
+
+def render_report_saved(today):
+    print(f"📋 Compliance report saved: .claude/logs/compliance-{today}.md")

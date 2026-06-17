@@ -31,13 +31,15 @@
   - [x] `sage/asset_paths.py` `AssetPaths(root, kind, id)` 신설 (spec/core/native/adapter(rt)/claims)
   - [x] generate `_gen_hook`·`_stamp_manifest`, validate `_hook_paths`, absorb 4사이트 수렴
   - [x] test_asset_paths.py(run-all step23) + 변이 teeth(core 규약 깨면 FAIL) + 전체 회귀 PASS + validate PASS
-- [~] **R1. 어댑터 런타임 모듈 추출** (P0-1, 중심·점진) — 파일럿 완료, 잔여 4 hook 전환 중
-  - [x] `hooks/runtime/{run_hook.py, hook_runtime.py, io_claude.py, io_codex.py}` verbatim lift(pre-impl 본문)
-  - [x] 단위테스트 13(extract claude/codex·snapshot·전략F8b·렌더채널) — run-all step24
-  - [x] **pre-implementation-gate**(claude+codex) thin launcher 전환 → smoke+e2e PASS → adapter_hash 재스탬프 → validate PASS
-  - [x] 변이 teeth: 공유 runtime 무력화 시 smoke 12 FAIL(load-bearing 입증)
-  - [ ] 잔여 4 hook(stop-compliance-report·post-tool-logger·pre-phase4-checklist-gate·capture-declared-risk) 1개씩 전환
-  - [ ] (refine) messages.py 메시지 통일은 동작변경이라 별도(현재 io별 verbatim 보존)
+- [x] **R1. 어댑터 런타임 모듈 추출** (P0-1, 중심·점진) ✅ — 전 5 hook × 2 런타임 전환 완료
+  - [x] `hooks/runtime/{run_hook.py, hook_runtime.py, io_claude.py, io_codex.py}` verbatim lift(공유 단일소스 719L)
+  - [x] 단위테스트 18(extract·snapshot·전략F8b·렌더채널·logger/phase4 추출·stop 정책순서) — run-all step24
+  - [x] **5 hook 전부**(pre-impl·capture-declared-risk·post-tool-logger·pre-phase4·stop-compliance-report) claude+codex thin launcher 전환
+  - [x] 임베드 Python(heredoc) 잔존 0 — claude 어댑터 5종 합계 451L→46L
+  - [x] 기능검증: capture/post-tool-logger 양 런타임 수동 e2e + 기존 reverse_extract 폐루프·smoke·golden-e2e·stop adapter e2e(F7 비대칭 포함) 무회귀
+  - [x] adapter_hash 전 hook 재스탬프 → validate PASS. 변이 teeth: 공유 runtime 무력화→smoke 12 FAIL
+  - 부수효과(문서화): post-tool-logger·pre-phase4·stop 도 malformed profile 시 pre-impl 과 동일 fail-open+surface(이전 crash/exit1) — 게이트 BLOCK(exit2) 계약 불변, 일관성+안전 개선
+  - (refine 보류) messages.py 메시지 통일은 동작변경이라 별도(현재 io별 verbatim 보존)
 - [ ] **R3. adapter_contract_version 강제** (P1-3, 회귀안전망)
   - [ ] `_stamp_manifest`가 core.CONTRACT_VERSION 스탬프 + validate 일치검사(STALE)
   - [ ] test + 변이 teeth(core 버전 bump → STALE 검출)

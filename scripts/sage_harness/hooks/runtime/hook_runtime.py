@@ -9,13 +9,31 @@ core.decide 호출을 여기로 1회만 들어올린다(verbatim lift — 동작
 - profile 파싱 실패 = 게이트 무력화 → fail-open 하되 LOUD surface(조용한 gate-disable = Pattern A 방지).
 - root 밖/절대경로 glob 거부(독립성). L3 전략 크래시는 surface + fail-closed(None → core BLOCK 유지, F8b).
 """
+import calendar
 import glob
 import importlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
+
+
+def resolve_branch(root, default=""):
+    """현재 브랜치. SAGE_GATE_BRANCH 우선, 없으면 root 기준 git. git 실패 → default.
+
+    default 는 hook 별 원본 fallback 보존용(pre-impl="" / post-tool-logger="unknown").
+    git 성공 시 stdout 그대로(분리HEAD 등 빈 문자열 가능 — 원본 충실).
+    """
+    b = os.environ.get("SAGE_GATE_BRANCH")
+    if b:
+        return b
+    try:
+        return subprocess.run(["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
+                              capture_output=True, text=True, check=True).stdout.strip()
+    except Exception:
+        return default
 
 
 def load_profile_fail_open(hook_id):
@@ -32,13 +50,18 @@ def load_profile_fail_open(hook_id):
         return None
 
 
-def parse_input_fail_open(hook_id, raw_text):
-    """stdin raw → dict. 실패 → None(호출자가 exit0) + stderr surface."""
+def parse_input_fail_open(hook_id, raw_text, surface=True):
+    """stdin raw → dict. 실패 → None(호출자가 exit0).
+
+    surface=True(게이트 hook): malformed 입력을 stderr surface(silent 금지 — Pattern A 방지).
+    surface=False(비게이트 hook, 예: capture-declared-risk): 원본 어댑터가 silent exit0 이었으므로 보존.
+    """
     try:
         return json.loads(raw_text or "{}")
     except Exception as e:
-        print(f"[{hook_id}] hook 입력 JSON 파싱 실패 → 이번 호출 게이트 skip: {type(e).__name__}",
-              file=sys.stderr)
+        if surface:
+            print(f"[{hook_id}] hook 입력 JSON 파싱 실패 → 이번 호출 게이트 skip: {type(e).__name__}",
+                  file=sys.stderr)
         return None
 
 
@@ -121,7 +144,7 @@ def run_strategy(hook_id, profile, core_dir, changes, event, snapshot):
         return None
 
 
-def run_pre_implementation_gate(io, root, core_dir, branch, raw_text):
+def run_pre_implementation_gate(io, root, core_dir, raw_text):
     """pre-implementation-gate 오케스트레이터. io = io_claude | io_codex (런타임별 IO만 위임)."""
     hid = "pre-implementation-gate"
     raw = parse_input_fail_open(hid, raw_text)
@@ -137,7 +160,7 @@ def run_pre_implementation_gate(io, root, core_dir, branch, raw_text):
     changes = io.extract_changes(raw, rel)       # ← 런타임별 (file_path vs apply_patch)
     declared = io.read_declared_level(raw, root)  # ← 런타임별 ($host/logs)
     event = {"hook_id": hid, "hook_event_name": "PreToolUse", "runtime": io.RUNTIME,
-             "session_id": raw.get("session_id", "") or "", "branch": branch,
+             "session_id": raw.get("session_id", "") or "", "branch": resolve_branch(root, ""),
              "declared_max": declared, "changes": changes}
     snapshot = build_snapshot(profile, root, rel)
     strategy_result = run_strategy(hid, profile, core_dir, changes, event, snapshot)
@@ -146,3 +169,185 @@ def run_pre_implementation_gate(io, root, core_dir, branch, raw_text):
     import pre_implementation_gate_core as core
     decision = core.decide(event, profile, snapshot, strategy_result)
     return io.render_gate(decision, profile)     # ← 런타임별 채널/포맷/exit
+
+
+def run_capture_declared_risk(io, root, core_dir, raw_text):
+    """capture-declared-risk 오케스트레이터(UserPromptSubmit). 게이트 아님 → parse 실패 silent(원본 보존).
+
+    cleanup(만료 state 삭제)·state write 는 런타임 무관 공유. 포착 메시지 렌더만 io 위임.
+    """
+    hid = "capture-declared-risk"
+    raw = parse_input_fail_open(hid, raw_text, surface=False)
+    if raw is None:
+        return 0
+    log_dir = os.path.join(root, io.HOST_DIR, "logs")
+    os.makedirs(log_dir, exist_ok=True)
+
+    sys.path.insert(0, core_dir)
+    import capture_declared_risk_core as core
+    event = {"hook_id": hid, "hook_event_name": "UserPromptSubmit", "runtime": io.RUNTIME,
+             "session_id": raw.get("session_id", "") or "", "prompt": raw.get("prompt", "") or "",
+             "now_utc": os.environ.get("SAGE_NOW_UTC") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    decision = core.decide(event)
+
+    c = decision["cleanup"]
+    now = time.time()
+    for f in glob.glob(os.path.join(log_dir, c["pattern"])):
+        try:
+            if now - os.path.getmtime(f) > c["older_than_seconds"]:
+                os.remove(f)
+        except Exception:
+            pass
+
+    if decision["action"] == "capture":
+        path = os.path.join(log_dir, decision["state_file"])
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(decision["state"], fh, ensure_ascii=False)
+            io.render_declared_capture(decision["level"])
+        except Exception:
+            pass
+    return decision["exit_code"]
+
+
+def run_post_tool_logger(io, root, core_dir, raw_text):
+    """post-tool-logger 오케스트레이터(PostToolUse). 변경 분류 JSONL append. 게이트 아님(parse silent)."""
+    hid = "post-tool-logger"
+    raw = parse_input_fail_open(hid, raw_text, surface=False)
+    if raw is None:
+        return 0
+    if io.should_skip(raw):
+        return 0
+    profile = load_profile_fail_open(hid)
+    if profile is None:                          # profile 외부주입 필수 — 없으면 noop
+        return 0
+    log_dir = os.path.join(root, io.HOST_DIR, "logs")
+    os.makedirs(log_dir, exist_ok=True)
+
+    rel = make_rel(root)
+    event = {"hook_id": hid, "hook_event_name": "PostToolUse", "runtime": io.RUNTIME,
+             "session_id": raw.get("session_id", "") or "", "tool": io.logger_tool_name(raw),
+             "branch": resolve_branch(root, "unknown"),
+             "now_utc": os.environ.get("SAGE_NOW_UTC") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+             "changes": io.extract_logged_changes(raw, rel)}
+
+    sys.path.insert(0, core_dir)
+    import post_tool_logger_core as core
+    decision = core.decide(event, profile)
+    if decision["action"] == "log":
+        out = os.path.join(log_dir, decision["log_file"])
+        with open(out, "a", encoding="utf-8") as fh:
+            for e in decision["log_entries"]:
+                fh.write(json.dumps(e, ensure_ascii=False) + "\n")
+    return decision["exit_code"]
+
+
+def build_checklist_snapshot(core, event, profile, root):
+    """pre-phase4 fs_adapter: core.plan_reads 가 요구한 glob 을 읽어 snapshot 구성(런타임 무관)."""
+    reads = core.plan_reads(event, profile)
+    glob_results, files = {}, {}
+    for g in reads["globs"]:
+        matches = sorted(os.path.relpath(p, root) for p in glob.glob(os.path.join(root, g)))
+        glob_results[g] = matches
+        for rp in matches:
+            try:
+                with open(os.path.join(root, rp), encoding="utf-8") as fh:
+                    files[rp] = fh.read()
+            except Exception:
+                files[rp] = None
+    return {"glob_results": glob_results, "files": files}
+
+
+def run_pre_phase4_checklist_gate(io, root, core_dir, raw_text):
+    """pre-phase4-checklist-gate 오케스트레이터(PreToolUse). 03→04 전환 시 체크리스트 완료 강제."""
+    hid = "pre-phase4-checklist-gate"
+    raw = parse_input_fail_open(hid, raw_text, surface=False)
+    if raw is None:
+        return 0
+    if io.should_skip(raw):
+        return 0
+    profile = load_profile_fail_open(hid)
+    if profile is None:
+        return 0
+
+    rel = make_rel(root)
+    event = {"hook_id": hid, "hook_event_name": "PreToolUse", "runtime": io.RUNTIME,
+             "session_id": raw.get("session_id", "") or "", "changes": io.extract_phase4_changes(raw, rel)}
+    sys.path.insert(0, core_dir)
+    import pre_phase4_checklist_gate_core as core
+    snapshot = build_checklist_snapshot(core, event, profile, root)
+    decision = core.decide(event, profile, snapshot)
+    return io.render_phase4(decision)
+
+
+def code_types_of(profile):
+    """코드 타입 집합 — plan_gate_code_types 우선, 없으면 file_type_map 의 type 전체(도메인 하드코딩 금지)."""
+    comp = profile.get("compliance", {}) or {}
+    ct = set(comp.get("plan_gate_code_types") or [])
+    if not ct:
+        ct = {m.get("type") for m in (profile.get("file_type_map") or []) if m.get("type")}
+    return ct
+
+
+def _epoch_of_iso(s):
+    try:
+        return calendar.timegm(time.strptime(s, "%Y-%m-%dT%H:%M:%SZ"))
+    except Exception:
+        return None
+
+
+def knowledge_capture_result(profile, entries):
+    """knowledge_capture 정책 결과(양 런타임 공유 — F7). policies 는 호출 전 sys.path 에 있어야 함."""
+    import knowledge_capture
+    ct = code_types_of(profile)
+    has_code = any(e.get("type") in ct for e in entries)
+    vault = (profile.get("knowledge_capture", {}) or {}).get("vault_path", "") or ""
+    wiki_log = os.path.join(vault, "wiki", "log.md") if vault else ""
+    wiki_mtime = os.path.getmtime(wiki_log) if (wiki_log and os.path.exists(wiki_log)) else None
+    code_ts = [t for t in (_epoch_of_iso(e.get("ts", "")) for e in entries if e.get("type") in ct) if t]
+    earliest = min(code_ts) if code_ts else None
+    return knowledge_capture.check(vault, has_code, wiki_mtime, earliest)
+
+
+def run_stop_compliance_report(io, root, core_dir, raw_text):
+    """stop-compliance-report 오케스트레이터(Stop). session JSONL → report.md.
+
+    knowledge_capture 는 양 런타임 공유(F7). output_contract 는 codex 전용 → io.attach_policy_results 가
+    런타임별로 policy_results 순서까지 결정(codex: [output_contract, knowledge_capture] / claude: [knowledge_capture]).
+    """
+    hid = "stop-compliance-report"
+    today = os.environ.get("SAGE_TODAY") or time.strftime("%Y-%m-%d", time.localtime())
+    log_dir = os.path.join(root, io.HOST_DIR, "logs")
+    log_file = os.path.join(log_dir, f"session-{today}.jsonl")
+    if not os.path.exists(log_file):
+        return 0   # 로그 없으면 리포트 생략
+    profile = load_profile_fail_open(hid)
+    if profile is None:
+        return 0
+
+    entries = []
+    with open(log_file, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    entries.append(json.loads(line))
+                except Exception:
+                    pass
+
+    snapshot = {"entries": entries, "today": today, "branch": resolve_branch(root, ""), "runtime": io.RUNTIME}
+    event = {"hook_id": hid, "hook_event_name": "Stop", "runtime": io.RUNTIME}
+    sys.path.insert(0, core_dir)
+    sys.path.insert(0, os.path.join(core_dir, "policies"))
+    import stop_compliance_report_core as core
+    model = core.decide(event, profile, snapshot)
+
+    kc_result = knowledge_capture_result(profile, entries)   # 공유(F7)
+    io.attach_policy_results(model, profile, entries, raw_text, kc_result)  # 런타임별 정책+순서
+
+    md = core.render_markdown(model)
+    report = os.path.join(log_dir, f"compliance-{today}.md")
+    with open(report, "a", encoding="utf-8") as f:
+        f.write(md)
+    io.render_report_saved(today)
+    return model["exit_code"]

@@ -12,8 +12,10 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-RUNTIME_DIR = os.path.join(REPO, "scripts", "sage_harness", "hooks", "runtime")
+HOOKS_DIR = os.path.join(REPO, "scripts", "sage_harness", "hooks")
+RUNTIME_DIR = os.path.join(HOOKS_DIR, "runtime")
 sys.path.insert(0, RUNTIME_DIR)
+sys.path.insert(0, os.path.join(HOOKS_DIR, "policies"))   # output_contract_check / knowledge_capture
 import hook_runtime as hr   # noqa: E402
 import io_claude            # noqa: E402
 import io_codex             # noqa: E402
@@ -121,6 +123,50 @@ class TestRenderChannels(unittest.TestCase):
             rc = io_claude.render_gate(d, {})
         self.assertEqual(rc, 2)
         self.assertIn("PDCA phase 미작성", out.getvalue())   # 게이트 출력 문자열 계약 보존
+
+
+class TestLoggerExtraction(unittest.TestCase):
+    def test_claude_single_file_write(self):
+        ch = io_claude.extract_logged_changes({"tool_input": {"file_path": "a.src"}}, _ID)
+        self.assertEqual(ch, [{"path": "a.src", "op": "write"}])
+
+    def test_codex_add_update_delete_move(self):
+        cmd = ("*** Add File: a.src\n+x\n*** Update File: b.src\n+y\n"
+               "*** Delete File: c.src\n*** Move to: d.src")
+        ch = io_codex.extract_logged_changes({"tool_input": {"command": cmd}}, _ID)
+        ops = {(c["path"], c["op"]) for c in ch}
+        self.assertEqual(ops, {("a.src", "add"), ("b.src", "update"), ("c.src", "delete"), ("d.src", "move")})
+
+
+class TestPhase4Extraction(unittest.TestCase):
+    def test_codex_only_add_update_not_delete(self):
+        cmd = "*** Add File: a.src\n*** Update File: b.src\n*** Delete File: c.src"
+        ch = io_codex.extract_phase4_changes({"tool_input": {"command": cmd}}, _ID)
+        paths = {c["path"] for c in ch}
+        self.assertEqual(paths, {"a.src", "b.src"})    # Delete 는 phase4 추출 대상 아님(원본 충실)
+
+
+class TestStopPolicyOrder(unittest.TestCase):
+    """stop-compliance-report: claude=[knowledge_capture] / codex=[output_contract, knowledge_capture] 순서 보존."""
+
+    def _model(self):
+        return {"sections": {"policy_results": []}}
+
+    def test_claude_only_knowledge_capture(self):
+        m = self._model()
+        io_claude.attach_policy_results(m, {}, [], "{}", {"check": "kc"})
+        res = m["sections"]["policy_results"]
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0], {"check": "kc"})
+
+    def test_codex_output_contract_then_knowledge_capture(self):
+        m = self._model()
+        profile = {"compliance": {"plan_gate_code_types": ["src"]}}
+        io_codex.attach_policy_results(m, profile, [], "{}", {"check": "kc"})
+        res = m["sections"]["policy_results"]
+        self.assertEqual(len(res), 2)
+        self.assertEqual(res[0].get("name"), "output_contract")    # codex 는 output_contract 먼저
+        self.assertEqual(res[1], {"check": "kc"})                  # 그 다음 공유 knowledge_capture(sentinel)
 
 
 if __name__ == "__main__":
