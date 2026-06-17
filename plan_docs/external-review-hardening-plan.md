@@ -53,11 +53,27 @@
   - (잔여 follow-up) install/doctor advisory 배선은 빈 템플릿이라 가치 낮음 — generate/validate 우선 적용
 
 
-## 중 — 설계결정·기능 (상 완료 후)
-- [ ] P1-4 hook vs agent/skill 폐루프 비대칭 해소(scaffold vs subcommand 분리 결정)
-- [ ] P1-5 `sage override --reason --ttl` + append-only JSONL 감사 스키마
-- [ ] P2-7 YAML 처리 단일화(pyyaml 통일 또는 claims 기계전용 정책)
-- [ ] P2-10 패키징(importlib.resources) + 최소 GitHub Actions
+## 중 — 설계결정·기능 (상 완료 후) ✅ 전부 완료
+- [x] **P1-4 폐루프 비대칭 해소** — 유저결정: conformance_lint 를 validate 에 배선(scaffold 아님). ✅
+  - [x] `validate._conformance_check`: render(.claude|.codex/<subdir>/<id>.md) 존재 시 conformance_lint 강제.
+        FAIL(누락 required claim·금지위반)=validate FAIL(hook hash/contract 강제와 대칭), WARN=INFO 비게이팅.
+  - [x] 엔진 위치(_resources.sage_root)에서 conformance 로드. render 부재/pyyaml 미가용=INFO skip.
+  - [x] test_validate_conformance(step27, 6) + 변이 teeth(bump 무력화→FAIL 3건). 커밋 486be20.
+- [x] **P1-5 override + 감사** — 유저결정: 파일기반 TTL 토큰 + 감사 JSONL. ✅
+  - [x] `override_audit`(runtime 공유): .sage/override.jsonl append-only, 상태=감사 단일소스, TTL 만료 자동회수, gate 스코프.
+  - [x] `hook_runtime._maybe_override`(순수코어 IO 0 불변): 양 게이트 block→활성 override 면 통과+bypass 감사.
+  - [x] `sage override --reason --ttl [--gate] / --list` CLI. test_override_audit(step28, 12) + 변이 teeth(만료체크 무력화→FAIL)
+        + 런타임 e2e(어댑터 subprocess 양런타임 BLOCK→통과+감사·스코프격리). 커밋 fc1676c.
+- [x] **P2-7 YAML 단일화** — claims.yml 단일 canonical 코덱. ✅
+  - [x] `reverse_extract_common.load_claims_yaml`(emitter 짝, pyyaml 우선+결정론 폴백, 빈섹션 None→list).
+        absorb(lossy 정규식 제거)·validate 둘 다 경유. test_claims_codec(step29, 6) + 변이 teeth. 커밋 b987104.
+  - profile.yaml(pyyaml 빌드티어)·frontmatter(전용 단일 사용처)는 유지(3-way 아님).
+- [x] **P2-10 CI + 패키징 가드** — GitHub Actions + sdist 리소스 가드. ✅
+  - [x] `.github/workflows/ci.yml`: test(py3.10/3.11/3.12: editable install→run-all→validate) + packaging(build sdist→가드).
+  - [x] `scripts/ci/check_sdist_resources.py`: sdist 가 엔진 리소스 번들하는지 검증(MANIFEST.in 회귀). 변이 teeth(schema 제거→exit1).
+  - [x] CI 첫 실행 GitHub green(전 잡 ✓). actions v6 핀. 커밋 4192473·07379f2.
+  - (후속) 순수 PyPI wheel 단독배포(scripts/sage_harness 패키지 이전 + importlib.resources)는 blast radius 큰
+    별도 아키텍처 과제 — _resources/pyproject 가 이미 추적(공개 전 과제). 현 라운드는 CI + sdist/editable 보존까지.
 
 ## 하 — 안전·이식성 보강
 - [ ] P2-9 L0 통과 후에도 l3_content_keywords 스캔(문서도 L3키워드면 WARN)
@@ -68,3 +84,7 @@
 - 2026-06-17: 코드 재검증 완료, 상/중/하 확정. R4 착수.
 - 2026-06-17: **상 블록 전부 완료** — R4(dba1e9a)·R1 파일럿(e9eda01)·R1 완료(33699bc)·R3(1c5047a)·R2.
   각 단계 변이 teeth + 전체 회귀(run-all 26 step) + validate PASS. 다음 라운드: 중(P1-4/P1-5/P2-7/P2-10).
+- 2026-06-18: **중 블록 전부 완료** — P1-4 conformance→validate 배선(486be20)·P1-5 override+감사(fc1676c)·
+  P2-7 claims 단일코덱(b987104)·P2-10 CI+패키징가드(4192473, actions v6 07379f2). P1-4/P1-5 는 유저 설계결정
+  반영(conformance 배선 / 파일기반 TTL+감사). 각 단계 변이 teeth + 전체 회귀(run-all 29 step) + validate PASS +
+  **CI GitHub 첫 실행 green**. 다음 라운드: 하(P2-9 L0스캔·P2-8 codex-host→Claude·P3-11 Windows) → 그 후 weatherapp 2차.
