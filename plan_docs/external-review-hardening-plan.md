@@ -45,10 +45,13 @@
   - [x] validate `_validate_hook` 3b: core 값 vs manifest 대조 → 불일치 STALE(hash 와 별개 인터페이스 드리프트 가드)
   - [x] test_contract_version(run-all step25, 5케이스 incl. no-import-side-effect) + 변이 teeth(core 1→2 → validate STALE exit3)
   - (잔여 follow-up) agents/skills 의 하드코딩 "1"(manifest_util) → reverse_extract CONTRACT_VERSION 파생은 R3 범위 밖(hook core 계약 우선)
-- [ ] **R2. profile 스키마 + 의미검증** (P0-2, 침묵 비활성 차단)
-  - [ ] `schema/profile.schema.json`(additionalProperties:false) + `sage/profile_validate.py`
-  - [ ] install/generate/doctor/validate 배선(FAIL이면 generate 중단)
-  - [ ] test + 변이 teeth(오타 키 → FAIL 검출)
+- [x] **R2. profile 스키마 + 의미검증** (P0-2, 침묵 비활성 차단) ✅
+  - [x] `schema/profile.schema.json` — top-level + risk(12키) + pdca(6키) additionalProperties:false(타입은 느슨, 부분 profile 허용)
+  - [x] `sage/profile_validate.py` — schema(jsonschema 선택의존) + 의미검증(전략 모듈 존재·phase 참조·글롭 전무 INFO)
+  - [x] generate 배선: 컴파일 후 검증, FAIL이면 산출물 쓰기 전 중단(fail-closed). validate --schema 배선(PROFILE 판정)
+  - [x] test_profile_validate(run-all step26, 7케이스) + 통합 teeth: 단수 오타 profile→generate exit1, settings.json 미생성
+  - (잔여 follow-up) install/doctor advisory 배선은 빈 템플릿이라 가치 낮음 — generate/validate 우선 적용
+
 
 ## 중 — 설계결정·기능 (상 완료 후)
 - [ ] P1-4 hook vs agent/skill 폐루프 비대칭 해소(scaffold vs subcommand 분리 결정)
@@ -63,3 +66,5 @@
 
 ## 진행 로그
 - 2026-06-17: 코드 재검증 완료, 상/중/하 확정. R4 착수.
+- 2026-06-17: **상 블록 전부 완료** — R4(dba1e9a)·R1 파일럿(e9eda01)·R1 완료(33699bc)·R3(1c5047a)·R2.
+  각 단계 변이 teeth + 전체 회귀(run-all 26 step) + validate PASS. 다음 라운드: 중(P1-4/P1-5/P2-7/P2-10).

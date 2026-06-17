@@ -1,0 +1,79 @@
+"""profile_validate — project-profile 구조(스키마) + 의미 검증 (외부검토 R2/P0-2).
+
+배경: 가장 자주 손대는 project-profile.yaml 에 검증이 없어, `l3_filename_globs`→`l3_filename_glob`
+같은 오타가 유효한 YAML 로 통과한 뒤 core 의 `.get("l3_filename_globs", [])` 가 조용히 빈 리스트를
+받아 **L3 게이트가 침묵 비활성**된다(거버넌스 최악 실패 모드). 이를 설치/생성 시점에 차단한다.
+
+- 구조검증: schema/profile.schema.json (risk/pdca additionalProperties:false 가 오타 키 적발).
+  jsonschema 는 선택의존(미설치 시 WARN skip — 핵심 CLI 경량 유지).
+- 의미검증(스키마로 못 잡는 것): 전략 모듈 존재? pre_implementation_required 가 정의된 phase 만 참조?
+  위험 글롭 전부 비었나(무동작 INFO)?
+
+반환: [(severity, message)] — severity ∈ {FAIL, WARN, INFO}. FAIL 이 있으면 호출측이 fail-closed.
+"""
+import json
+import os
+from pathlib import Path
+
+_RANK = {"INFO": 0, "WARN": 1, "FAIL": 2}
+
+
+def _schema_issues(profile, root):
+    try:
+        import jsonschema
+    except ImportError:
+        return [("WARN", "jsonschema 미설치 — profile 구조검증 skip (pip install 'sage-harness[schema]')")]
+    sp = os.path.join(root, "schema", "profile.schema.json")
+    if not os.path.exists(sp):
+        try:
+            from sage import _resources
+            sp = os.path.join(_resources.schema_dir(), "profile.schema.json")
+        except Exception:
+            sp = ""
+    if not sp or not os.path.exists(sp):
+        return [("WARN", "profile.schema.json 없음 — 구조검증 skip")]
+    try:
+        schema = json.loads(Path(sp).read_text(encoding="utf-8"))
+        jsonschema.validate(profile, schema)
+        return []
+    except jsonschema.ValidationError as e:
+        loc = "/".join(str(x) for x in e.absolute_path) or "(root)"
+        return [("FAIL", f"profile 스키마 위반 @ {loc}: {e.message}")]
+
+
+def _semantic_issues(profile, root):
+    issues = []
+    risk = profile.get("risk") or {}
+
+    # 1. L3 review 전략 모듈 존재 — 없으면 전략 미선택과 동일(L3 BLOCK). 오타/미배치 적발.
+    strat = risk.get("l3_review_strategy") or ""
+    if strat:
+        mp = os.path.join(root, "scripts", "sage_harness", "hooks", "strategies",
+                          "pre_implementation_gate", f"{strat}.py")
+        if not os.path.exists(mp):
+            issues.append(("FAIL", f"risk.l3_review_strategy '{strat}' 모듈 없음 → L3 게이트 영구 BLOCK. "
+                                   f"경로: {os.path.relpath(mp, root)}"))
+
+    # 2. pre_implementation_required 가 pdca.phases 에 정의된 id 만 참조하는지.
+    pdca = profile.get("pdca") or {}
+    phase_ids = {p.get("id") for p in (pdca.get("phases") or []) if p.get("id")}
+    for lvl, req in (pdca.get("pre_implementation_required") or {}).items():
+        unknown = [r for r in (req or []) if r not in phase_ids]
+        if unknown:
+            issues.append(("FAIL", f"pdca.pre_implementation_required[{lvl}] 미정의 phase 참조 {unknown} "
+                                   f"(정의된 phase: {sorted(phase_ids)})"))
+
+    # 3. 위험 분류 글롭이 전부 비면 게이트가 사실상 무동작(의도일 수 있어 INFO).
+    if not any(risk.get(k) for k in ("l1_path_globs", "l2_path_globs", "l3_filename_globs")):
+        issues.append(("INFO", "risk 의 l1/l2/l3 글롭이 모두 비어 있음 — 위험 게이트 사실상 무동작(의도면 무시)"))
+    return issues
+
+
+def validate_profile(profile, root):
+    """구조 + 의미 검증 결과 [(severity, message)]."""
+    return _schema_issues(profile, root) + _semantic_issues(profile, root)
+
+
+def severity_of(issues):
+    """집계 severity. 비면 PASS."""
+    return max((s for s, _ in issues), key=lambda s: _RANK[s], default="PASS")

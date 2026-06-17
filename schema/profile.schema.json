@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SAGE project-profile (compiled)",
+  "description": "project-profile.yaml→json 구조검증. 외부검토 R2/P0-2: risk/pdca 의 additionalProperties:false 가 'l3_filename_globs→l3_filename_glob' 류 오타(게이트 침묵 비활성)를 적발. 타입은 느슨(빈 프로파일/부분 작성 허용), 미지정 키만 차단.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "project": { "type": "object" },
+    "options": { "type": "object" },
+    "paths": { "type": "object" },
+    "components": { "type": "array" },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "pre-implementation-gate 위험 분류 입력. 알 수 없는 키 = 오타로 간주(게이트 침묵 비활성 방지).",
+      "properties": {
+        "l0_pass_globs": { "type": "array" },
+        "l1_path_globs": { "type": "array" },
+        "l2_path_globs": { "type": "array" },
+        "l3_filename_globs": { "type": "array" },
+        "l2_content_keywords": { "type": "array" },
+        "l3_content_keywords": { "type": "array" },
+        "generic_tokens": { "type": "array" },
+        "review_patterns": { "type": "array" },
+        "desktop_block_glob": { "type": "string" },
+        "desktop_block_hint": { "type": "string" },
+        "plan_glob": { "type": "string" },
+        "l3_review_strategy": { "type": "string" }
+      }
+    },
+    "file_type_map": { "type": "array" },
+    "skip_untyped": { "type": "boolean" },
+    "phase4_trigger_glob": { "type": "string" },
+    "suffixes": { "type": "array" },
+    "checklist_scan_targets": { "type": "array" },
+    "compliance": { "type": "object" },
+    "pdca": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "PDCA phase 의무구조. 알 수 없는 키 = 오타로 간주(phase 강제 침묵 약화 방지).",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "phases": { "type": "array" },
+        "pre_implementation_required": { "type": "object" },
+        "report_phase": { "type": "string" },
+        "approve_phase": { "type": "string" },
+        "approve_marker": { "type": "string" }
+      }
+    },
+    "conventions": { "type": "array" },
+    "verification": { "type": "object" },
+    "runtime": { "type": "object" },
+    "team": { "type": "object" },
+    "cross_model": { "type": "object" },
+    "capabilities": { "type": "object" },
+    "hooks": { "type": "object" },
+    "codegraph": { "type": "object" },
+    "knowledge_capture": { "type": "object" },
+    "context_management": { "type": "object" }
+  }
+}

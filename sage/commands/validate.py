@@ -285,5 +285,26 @@ def run(args):
         if _SEV_RANK[ssev] > _SEV_RANK[overall]:
             overall = ssev
 
+        # profile 구조+의미 검증 (R2/P0-2): 오타 키·전략 부재·미정의 phase = 게이트 침묵 비활성.
+        prof_path = os.path.join(root, "sage", "project-profile.json")
+        if os.path.exists(prof_path):
+            from sage.profile_validate import validate_profile
+            try:
+                prof = json.loads(Path(prof_path).read_text(encoding="utf-8"))
+            except Exception:
+                prof = None
+            if prof is not None:
+                _map = {"FAIL": "FAIL", "WARN": "WARN", "INFO": "PASS"}   # INFO 는 exit 무영향
+                psev = "PASS"
+                for sev, msg in validate_profile(prof, root):
+                    mk = {"FAIL": "❌", "WARN": "⚠️ ", "INFO": "ℹ️ "}.get(sev, "")
+                    print(f"  {mk} profile {sev}: {msg}")
+                    if _SEV_RANK[_map[sev]] > _SEV_RANK[psev]:
+                        psev = _map[sev]
+                pmark = {"PASS": "✅", "WARN": "⚠️ ", "FAIL": "❌"}[psev]
+                print(f"{pmark} PROFILE {psev}")
+                if _SEV_RANK[psev] > _SEV_RANK[overall]:
+                    overall = psev
+
     print(f"---- 종합: {overall} (exit {_EXIT[overall]}) ----")
     return _EXIT[overall]

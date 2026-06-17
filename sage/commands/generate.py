@@ -200,6 +200,24 @@ def _gen_hook(args, root):
                   "pyyaml 설치 또는 YAML 수정 후 재실행(profile 없는 프로젝트면 sage/project-profile.yaml 제거).",
                   file=sys.stderr)
             return 1
+        # R2/P0-2: 컴파일된 profile 구조+의미 검증. FAIL(오타 키·전략 모듈 부재·미정의 phase 참조)이면
+        # 산출물 쓰기 전 중단 — "유효 YAML 이지만 게이트가 침묵 비활성되는" profile 의 배포 차단.
+        if status == "ok":
+            from sage.profile_validate import severity_of, validate_profile
+            compiled = os.path.join(args.dest, "sage", "project-profile.json")
+            try:
+                prof = json.loads(Path(compiled).read_text(encoding="utf-8"))
+            except Exception:
+                prof = None
+            if prof is not None:
+                issues = validate_profile(prof, root)
+                for sev, msg in issues:
+                    mark = {"FAIL": "❌", "WARN": "⚠️ ", "INFO": "ℹ️ "}.get(sev, "")
+                    print(f"   {mark} profile {sev}: {msg}", file=sys.stderr if sev == "FAIL" else sys.stdout)
+                if severity_of(issues) == "FAIL":
+                    print("[sage generate] FAIL: profile 검증 실패 → 게이트 침묵 비활성 위험. "
+                          "위 항목 수정 후 재실행.", file=sys.stderr)
+                    return 1
 
     targets = ["claude", "codex"] if args.target == "both" else [args.target]
     rc = 0
