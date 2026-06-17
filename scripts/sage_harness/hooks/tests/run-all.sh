@@ -112,5 +112,9 @@ echo "### 27. validate conformance 배선 (P1-4 agent/skill 폐루프 — render
 python3 "$HERE/test_validate_conformance.py" || rc=1
 
 echo ""
+echo "### 28. override_audit (P1-5 게이트 BLOCK 합법 우회 — TTL 만료 자동회수/게이트스코프/append-only 감사)"
+python3 "$HERE/test_override_audit.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

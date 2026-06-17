@@ -144,6 +144,32 @@ def run_strategy(hook_id, profile, core_dir, changes, event, snapshot):
         return None
 
 
+def _maybe_override(hook_id, root, decision, changes):
+    """게이트 BLOCK 을 활성 override(미만료)로 합법 우회 → 통과(True) 전 bypass 를 감사로그에 기록 (P1-5).
+
+    순수 코어(IO 0)는 정책만 판정하고, 우회는 런타임/운영 관심사이므로 여기서 처리(코어 불변).
+    안전: 정확히 이 게이트(또는 'all') 대상 미만료 grant 가 있을 때만 우회하며, 무엇을(message_key)
+    어느 파일에 적용했는지 .sage/override.jsonl 에 남긴다. override_audit 미가용/비-block → False(원래 흐름).
+    """
+    if (decision or {}).get("status") != "block":
+        return False
+    try:
+        import override_audit as ov
+    except Exception:
+        return False
+    grants = ov.active_grants(root, gate=hook_id)
+    if not grants:
+        return False
+    files = [c.get("path") for c in (changes or []) if c.get("path")]
+    g = grants[0]
+    ov.record_bypass(root, hook_id, files, decision.get("message_key"), g)
+    print(f"⚠️  [{hook_id}] GATE BLOCK override 적용 — 사유: {g.get('reason')} "
+          f"(만료 {g.get('expires_at')}, .sage/override.jsonl 감사). "
+          f"우회: {decision.get('message_key')} | 파일: {', '.join(files) or '(미상)'}",
+          file=sys.stderr)
+    return True
+
+
 def run_pre_implementation_gate(io, root, core_dir, raw_text):
     """pre-implementation-gate 오케스트레이터. io = io_claude | io_codex (런타임별 IO만 위임)."""
     hid = "pre-implementation-gate"
@@ -168,6 +194,8 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
     sys.path.insert(0, core_dir)
     import pre_implementation_gate_core as core
     decision = core.decide(event, profile, snapshot, strategy_result)
+    if _maybe_override(hid, root, decision, changes):   # P1-5: 활성 override 면 BLOCK 우회(감사 기록)
+        return 0
     return io.render_gate(decision, profile)     # ← 런타임별 채널/포맷/exit
 
 
@@ -277,6 +305,8 @@ def run_pre_phase4_checklist_gate(io, root, core_dir, raw_text):
     import pre_phase4_checklist_gate_core as core
     snapshot = build_checklist_snapshot(core, event, profile, root)
     decision = core.decide(event, profile, snapshot)
+    if _maybe_override(hid, root, decision, event["changes"]):   # P1-5: 활성 override 면 BLOCK 우회(감사 기록)
+        return 0
     return io.render_phase4(decision)
 
 

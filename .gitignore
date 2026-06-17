@@ -6,8 +6,9 @@ __pycache__/
 venv/
 .pytest_cache/
 
-# SAGE runtime temp
+# SAGE runtime temp + override 감사로그(P1-5, 프로젝트 로컬 운영 상태 — 커밋 금지)
 .sage/tmp/
+.sage/override.jsonl
 
 # editor / OS
 .DS_Store

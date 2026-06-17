@@ -14,6 +14,7 @@ profile 은 도메인 토큰 0 의 중립 합성(독립성 유지). 단일 hook 
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -217,6 +218,43 @@ class TestMalformedInputHardening(unittest.TestCase):
                 p = self._run_raw(rt, "{ not json at all ", root, prof)
                 self.assertEqual(p.returncode, 0, f"{rt} 깨진 입력 → fail-open(exit0)\n{p.stderr}")
                 self.assertIn("입력 JSON 파싱 실패", p.stderr, f"{rt} 입력 파싱 실패가 surface 돼야 함")
+        both(self, check)
+
+
+class TestOverrideBypassAtRuntime(unittest.TestCase):
+    """P1-5 런타임 가드 — 활성 override(.sage/override.jsonl)가 실제 어댑터 subprocess 의 BLOCK 을
+    통과시키고 bypass 를 감사에 남기는가. 게이트 스코프 불일치면 그대로 BLOCK(우회 격리)."""
+
+    def _grant(self, root, gate, ttl=10000):
+        rt = os.path.join(HOOKS_DIR, "runtime")
+        if rt not in sys.path:
+            sys.path.insert(0, rt)
+        import override_audit as ov
+        ov.grant(root, "smoke 우회", ttl, gate=gate)
+        return ov
+
+    def test_block_then_override_passes_and_audits(self):
+        def check(rt):
+            with tempfile.TemporaryDirectory() as root:
+                prof = write_instance(root, make_profile(), phases=())   # phase 0 → L2 BLOCK
+                base = run_adapter(rt, event(rt, L2_FILE), root, prof)
+                self.assertEqual(base.returncode, 2, f"{rt} 기준 BLOCK 기대\n{base.stdout}\n{base.stderr}")
+                ov = self._grant(root, "pre-implementation-gate")
+                p = run_adapter(rt, event(rt, L2_FILE), root, prof)
+                self.assertEqual(p.returncode, 0, f"{rt} override 후 통과 기대\n{p.stdout}\n{p.stderr}")
+                self.assertIn("override 적용", p.stderr, f"{rt} 우회 통지 surface")
+                byp = [r for r in ov.read_records(root) if r.get("event") == "bypass"]
+                self.assertEqual(len(byp), 1, f"{rt} bypass 1건 감사 기대")
+        both(self, check)
+
+    def test_override_gate_mismatch_still_blocks(self):
+        # phase4 게이트용 override 는 pre-implementation-gate BLOCK 을 우회하지 못함(스코프 격리).
+        def check(rt):
+            with tempfile.TemporaryDirectory() as root:
+                prof = write_instance(root, make_profile(), phases=())
+                self._grant(root, "pre-phase4-checklist-gate")
+                p = run_adapter(rt, event(rt, L2_FILE), root, prof)
+                self.assertEqual(p.returncode, 2, f"{rt} 게이트 불일치 override → 여전히 BLOCK\n{p.stderr}")
         both(self, check)
 
 
