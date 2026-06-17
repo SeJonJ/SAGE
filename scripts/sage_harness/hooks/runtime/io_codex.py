@@ -54,6 +54,7 @@ def render_gate(decision, profile):
         "block_l3_strategy_unresolved": f"[GATE BLOCK - L3] L3 review 전략 미선택(unresolved) → 리뷰 확인 불가. 파일: {fs} (override required)",
         "warn_l3_no_review": f"[GATE WARN - L3] 2라운드 리뷰 문서 미확인. 파일: {fs} | 근거: {rs}",
         "warn_l2_no_plan": f"[GATE WARN - L2] 소스/설정 변경인데 plan 문서 없음. 파일: {fs} | 근거: {rs}",
+        "warn_l0_l3_content": f"[GATE WARN - L0] 문서/plan 에 L3 내용 키워드 감지 — 민감정보 노출 점검. 파일: {fs}",
         "block_phase_incomplete": f"[GATE BLOCK - {d.get('risk')}] 의무 PDCA phase 미작성: [{', '.join(d.get('missing_phases') or [])}]. 파일: {fs} | 근거: {rs} (docs/agent/pdca-templates.md)",
         "warn_phase_incomplete": f"[GATE WARN - L1] 권장 PDCA phase 미작성: [{', '.join(d.get('missing_phases') or [])}]. 파일: {fs}",
         "block_report_without_approval": f"[GATE BLOCK - PDCA] {rs}. 파일: {fs}",

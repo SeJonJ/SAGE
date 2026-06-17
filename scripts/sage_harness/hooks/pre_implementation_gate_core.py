@@ -70,15 +70,23 @@ def classify_risk(event: dict, profile: dict) -> dict:
     desktop_glob = r.get("desktop_block_glob", "")
     changes = event.get("changes") or []
 
+    l3_kw = r.get("l3_content_keywords", [])
+    l0_l3_file = ""   # P2-9: L0 즉시통과 파일이 L3 내용 키워드를 담은 경우(비차단 WARN — 민감정보 점검)
+
     best = {"risk": "none", "reason": "", "is_l3_filename": False, "file_short": ""}
     for ch in changes:
         path = ch.get("path") or ""
         if desktop_glob and _imatch(path, desktop_glob):
             return {"risk": "DESKTOP_BLOCK", "reason": f"동기화 산출물/금지 경로 직접수정 금지: {path}",
                     "is_l3_filename": False, "declared_l3": False, "file_short": path}
-        risk, reason, is_l3 = _classify_one(path, ch.get("content") or "", profile)
+        content = ch.get("content") or ""
+        risk, reason, is_l3 = _classify_one(path, content, profile)
+        # L0 는 내용 escalation 을 안 거치므로(즉시통과) 문서에 숨은 L3 키워드를 놓친다 → 별도 비차단 스캔.
+        if risk == "L0" and not l0_l3_file and _has_kw(content, l3_kw):
+            l0_l3_file = path
         if _RANK.get(risk, -1) > _RANK.get(best["risk"], -1):
             best = {"risk": risk, "reason": reason, "is_l3_filename": is_l3, "file_short": path}
+    best["l0_l3_file"] = l0_l3_file
 
     # 유저 선언 레벨 반영 (effective = max(감지, 선언), 상향만)
     declared = event.get("declared_max")  # "L0".."L3" or None
@@ -206,6 +214,11 @@ def decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:
                 "file_short": c["file_short"]}
 
     if risk in ("none", "L0"):
+        if c.get("l0_l3_file"):   # P2-9: L0 문서에 L3 내용 키워드 — 비차단 WARN(exit0, 민감정보 노출 점검)
+            return {"status": "warn", "exit_code": 0, "risk": risk,
+                    "message_key": "warn_l0_l3_content",
+                    "reason": "L0 문서/plan 에 L3 내용 키워드 — 민감정보 노출 여부 점검",
+                    "file_short": c["l0_l3_file"]}
         return {"status": "ok", "exit_code": 0, "risk": risk, "message_key": None, "reason": c["reason"]}
 
     # PDCA 의무 phase 강제: 구현 전 필수 phase 결핍 시 L2/L3 BLOCK, L1 WARN.

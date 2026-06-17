@@ -50,6 +50,14 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(core.classify_risk(ev("frontend/static/js/x.js", "encrypt()"), PROFILE)["risk"], "L3")
         self.assertEqual(core.classify_risk(ev("frontend/static/js/x.js", "Repository"), PROFILE)["risk"], "L2")
 
+    def test_l0_content_l3_flagged(self):
+        # P2-9: L0 즉시통과 문서(.md)에 L3 키워드 포함 → 위험은 L0 유지(비차단)하되 l0_l3_file 플래그.
+        c = core.classify_risk(ev("docs/x.md", "encrypt()"), PROFILE)
+        self.assertEqual(c["risk"], "L0")
+        self.assertEqual(c["l0_l3_file"], "docs/x.md")
+        # L3 키워드 없는 L0 문서 → 플래그 없음
+        self.assertEqual(core.classify_risk(ev("docs/x.md", "just docs"), PROFILE)["l0_l3_file"], "")
+
     def test_case_insensitive(self):
         # 소문자 키워드도 잡혀야(canonical=case-insensitive, 더 안전)
         self.assertEqual(core.classify_risk(ev("backend/src/main/java/F.java", "privatekey"), PROFILE)["risk"], "L3")
@@ -128,6 +136,15 @@ class TestDecide(unittest.TestCase):
 
     def test_l1_ok(self):
         self.assertEqual(core.decide(ev("frontend/static/js/x.js"), PROFILE, snap(), None)["status"], "ok")
+
+    def test_l0_l3_content_warns(self):
+        # P2-9: L0 문서에 L3 키워드 → 비차단 WARN(exit0). 차단 아님(문서 대상, 저위험).
+        d = core.decide(ev("docs/x.md", "encrypt()"), PROFILE, snap(), None)
+        self.assertEqual(d["status"], "warn")
+        self.assertEqual(d["message_key"], "warn_l0_l3_content")
+        self.assertEqual(d["exit_code"], 0)
+        # 깨끗한 L0 문서는 ok(message_key 없음) — WARN 오발 없음
+        self.assertEqual(core.decide(ev("docs/x.md", "plain"), PROFILE, snap(), None)["message_key"], None)
 
 
 PDCA_PROFILE = {

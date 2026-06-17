@@ -52,6 +52,8 @@ def render_gate(decision, profile):
         m = f"⚠️  [GATE WARN — L3] 2라운드 리뷰 문서 미확인. 파일: {fs} | 근거: {rs}"
     elif k == "warn_l2_no_plan":
         m = f"⚠️  [GATE WARN — L2] 소스/설정 변경인데 plan 문서 없음. 파일: {fs} | 근거: {rs}"
+    elif k == "warn_l0_l3_content":
+        m = f"⚠️  [GATE WARN — L0] 문서/plan 에 L3 내용 키워드 감지 — 민감정보 노출 점검. 파일: {fs}"
     elif k == "block_phase_incomplete":
         miss = ", ".join(d.get("missing_phases") or [])
         m = (f"⛔ [GATE BLOCK — {d.get('risk')}] 의무 PDCA phase 미작성: [{miss}]. 파일: {fs} | 근거: {rs}\n"
