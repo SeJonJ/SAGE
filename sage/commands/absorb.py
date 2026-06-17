@@ -13,6 +13,8 @@ import os
 import sys
 from pathlib import Path
 
+from sage.asset_paths import AssetPaths
+
 
 def register(sub):
     p = sub.add_parser("absorb", help="직접수정 diff → spec patch 제안 (자동반영 없음)")
@@ -115,12 +117,11 @@ def _absorb_hook(args, root):
         print(f"[sage absorb] manifest 에 hooks/{args.id} 없음", file=sys.stderr)
         return 2
 
-    H = os.path.join(root, "scripts", "sage_harness", "hooks")
-    snake = args.id.replace("-", "_")
+    paths = AssetPaths(root, "hook", args.id)   # 경로 규약 단일소스(P2-6)
     form = entry.get("form", "core_adapter")
     diverged, unstamped = [], []
 
-    canon = os.path.join(H, f"{args.id}.sh") if form == "native" else os.path.join(H, f"{snake}_core.py")
+    canon = paths.native if form == "native" else paths.core
     rec = entry.get("canonical_hash")
     if os.path.exists(canon):
         if not rec:
@@ -129,7 +130,7 @@ def _absorb_hook(args, root):
             diverged.append(("canonical", os.path.relpath(canon, root)))
     if form == "core_adapter":
         for rt in ("claude", "codex"):
-            ap = os.path.join(H, "adapters", rt, f"{args.id}.sh")
+            ap = paths.adapter(rt)
             arec = (entry.get("adapter_hash") or {}).get(rt)
             if os.path.exists(ap):
                 if not arec:

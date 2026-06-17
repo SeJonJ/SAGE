@@ -12,6 +12,8 @@ import re
 import sys
 from pathlib import Path
 
+from sage.asset_paths import AssetPaths
+
 
 def register(sub):
     p = sub.add_parser("generate", help="spec → 등록 산출물(settings.json/hooks.json) + manifest 스탬프")
@@ -83,17 +85,14 @@ def _build_registration(root, target, hook_ids):
     # event → matcher → [command블록]  (matcher 안정 정렬)
     by_event = {}
     for hid in sorted(hook_ids):   # lexicographic 정렬(결정론)
-        spec = os.path.join(root, "docs", "sage_harness", "hooks", f"{hid}.md")
-        if not os.path.exists(spec):
+        ap = AssetPaths(root, "hook", hid)
+        if not os.path.exists(ap.spec):
             missing.append(f"spec:{hid}"); continue
-        rb = _parse_runtime_bindings(spec)
+        rb = _parse_runtime_bindings(ap.spec)
         if target not in rb:
             continue
-        # adapter/native 파일 존재 확인
-        snake = hid.replace("-", "_")
-        adapter = os.path.join(root, "scripts", "sage_harness", "hooks", "adapters", target, f"{hid}.sh")
-        native = os.path.join(root, "scripts", "sage_harness", "hooks", f"{hid}.sh")
-        if not (os.path.exists(adapter) or os.path.exists(native)):
+        # adapter/native 파일 존재 확인 (경로 규약 AssetPaths 단일소스 — P2-6)
+        if not (os.path.exists(ap.adapter(target)) or os.path.exists(ap.native)):
             missing.append(f"adapter:{target}:{hid}")
             continue
         ev = rb[target].get("event", "PreToolUse")
@@ -243,29 +242,25 @@ def _stamp_manifest(root, hook_ids):
     import hashlib
     def sha(p):
         return "sha256:" + hashlib.sha256(Path(p).read_bytes()).hexdigest()
-    H = os.path.join(root, "scripts", "sage_harness", "hooks")
     m = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
     for hid in hook_ids:
         e = m["assets"].get(f"hooks/{hid}")
         if not e:
             continue
-        spec = os.path.join(root, "docs", "sage_harness", "hooks", f"{hid}.md")
-        if os.path.exists(spec):
-            e["spec_hash"] = sha(spec)
-        snake = hid.replace("-", "_")
+        paths = AssetPaths(root, "hook", hid)   # 경로 규약 단일소스(P2-6)
+        if os.path.exists(paths.spec):
+            e["spec_hash"] = sha(paths.spec)
         if e.get("form") == "native":
-            nat = os.path.join(H, f"{hid}.sh")
-            if os.path.exists(nat):
-                e["canonical_hash"] = sha(nat); e["render_hash"] = {"native": sha(nat)}
+            if os.path.exists(paths.native):
+                e["canonical_hash"] = sha(paths.native); e["render_hash"] = {"native": sha(paths.native)}
         else:
-            core = os.path.join(H, f"{snake}_core.py")
-            if os.path.exists(core):
-                e["canonical_hash"] = sha(core)
+            if os.path.exists(paths.core):
+                e["canonical_hash"] = sha(paths.core)
             ah = {}
             for rt in ("claude", "codex"):
-                ap = os.path.join(H, "adapters", rt, f"{hid}.sh")
-                if os.path.exists(ap):
-                    ah[rt] = sha(ap)
+                adp = paths.adapter(rt)
+                if os.path.exists(adp):
+                    ah[rt] = sha(adp)
             if ah:
                 e["adapter_hash"] = ah; e["render_hash"] = ah
     Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).write_text(

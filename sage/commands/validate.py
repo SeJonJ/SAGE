@@ -16,6 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from sage.asset_paths import AssetPaths
 from sage.commands._common import not_implemented
 
 # severity rank (exit code 매핑은 _exit_code)
@@ -94,16 +95,14 @@ def _find_root(start):
 
 
 def _hook_paths(root, asset_id):
-    """asset_id 'hooks/<id>' → 검사할 파일 경로 후보."""
-    hid = asset_id.split("/", 1)[1]
-    snake = hid.replace("-", "_")
-    H = os.path.join(root, "scripts", "sage_harness", "hooks")
+    """asset_id 'hooks/<id>' → 검사할 파일 경로 후보. 경로 규약은 AssetPaths 단일소스(P2-6)."""
+    ap = AssetPaths(root, "hook", asset_id.split("/", 1)[1])
     return {
-        "spec": os.path.join(root, "docs", "sage_harness", "hooks", f"{hid}.md"),
-        "core_py": os.path.join(H, f"{snake}_core.py"),
-        "native_sh": os.path.join(H, f"{hid}.sh"),
-        "adapter_claude": os.path.join(H, "adapters", "claude", f"{hid}.sh"),
-        "adapter_codex": os.path.join(H, "adapters", "codex", f"{hid}.sh"),
+        "spec": ap.spec,
+        "core_py": ap.core,
+        "native_sh": ap.native,
+        "adapter_claude": ap.adapter("claude"),
+        "adapter_codex": ap.adapter("codex"),
     }
 
 
