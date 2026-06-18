@@ -96,12 +96,25 @@ class TestCore(unittest.TestCase):
 
 class TestPolicyModulesPreserved(unittest.TestCase):
     def test_output_contract(self):
-        # 원본 충실: 5마커 hit>=4 → OK
+        # 5마커 hit>=4 → OK (중립 기본값에서도 동일 — full 은 impact/검증 test 로 매칭)
         self.assertEqual(output_contract_check.check("", False)["severity"], "INFO")  # 코드변경 없음 N/A
         self.assertEqual(output_contract_check.check("", True)["severity"], "INFO")    # transcript 없음 N/A
         full = "작업 요약. risk level L2. impact backend. 변경 파일 목록. 검증 test 통과."
         self.assertEqual(output_contract_check.check(full, True)["severity"], "OK")
         self.assertEqual(output_contract_check.check("요약만 있음", True)["severity"], "WARN")
+
+    def test_output_contract_markers_neutral_and_injectable(self):
+        # EH-2(제약#2): 기본 마커에 스택/빌드툴 토큰 0
+        flat = [t for v in output_contract_check._DEFAULT_MARKERS.values() for t in v]
+        for stack_tok in ("backend", "frontend", "desktop", "gradlew"):
+            self.assertNotIn(stack_tok, flat, f"중립 기본값에 스택토큰 '{stack_tok}' 잔존")
+        # profile.output_contract.markers 주입 시 그 마커 사용(임계 = 마커수-1 일반화)
+        custom = {"A": ["alpha"], "B": ["beta"], "C": ["gamma"]}
+        self.assertEqual(output_contract_check.check("alpha beta only", True, custom)["severity"], "OK")   # 2/3 ≥ max(1,2)
+        self.assertEqual(output_contract_check.check("alpha only", True, custom)["severity"], "WARN")      # 1/3 < 2
+        # 빈/None markers → 중립 기본값 폴백
+        self.assertEqual(output_contract_check.check("alpha", True, {})["severity"],
+                         output_contract_check.check("alpha", True, None)["severity"])
 
     def test_knowledge_capture(self):
         # 새 시그니처: check(vault_root, has_code, wiki_log_mtime, earliest_code_ts)

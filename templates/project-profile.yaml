@@ -54,6 +54,10 @@ compliance:                      # stop-compliance-report (전부 빈값=해당 
   plan_gate_text: ""             # code_without_plan WARN 메시지(빈값=기본)
   convention_reminder: {}        # 예: { types: [backend-main], text: "백엔드 컨벤션 검증 확인 권장" }
 
+output_contract:                 # (codex-only) stop 리포트 Output Contract 섹션 마커. 빈값=중립 기본(EH-2)
+  markers: {}                    # 예: { Impact: [impact, 영향, backend, frontend], Validation: [검증, build, test, gradlew] }
+                                 #     채우면 프로젝트 고유 토큰으로 검사(엔진 기본은 스택 토큰 0=중립). hit≥(마커수-1) → OK
+
 pdca:                            # PDCA phase 의무구조 — pre-implementation-gate 가 강제(게이트 teeth). 상세: docs/agent/pdca-templates.md
   enabled: true                  # SAGE 기본 ON. 비-PDCA 프로젝트는 false 로 끔(게이트는 risk/plan-doc 만 확인 — 하위호환)
   phases:                        # 표준 00~06. id + glob(root 상대, 독립). 디렉토리명 변경 시 glob 만 교체

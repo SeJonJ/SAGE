@@ -177,7 +177,8 @@ def attach_policy_results(model, profile, entries, raw_text, kc_result):
         raw = {}
     transcript = raw.get("transcript_path", "") or ""
     has_code = any(e.get("type") in hr.code_types_of(profile) for e in entries)
-    oc = output_contract_check.check(_last_assistant_text(transcript), has_code)
+    markers = (profile.get("output_contract") or {}).get("markers")   # EH-2: 프로젝트 고유 마커 주입(없으면 중립 기본)
+    oc = output_contract_check.check(_last_assistant_text(transcript), has_code, markers)
     model["sections"]["policy_results"].append(oc)
     model["sections"]["policy_results"].append(kc_result)
 
