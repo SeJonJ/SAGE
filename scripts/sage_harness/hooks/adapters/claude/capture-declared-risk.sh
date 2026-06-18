@@ -5,5 +5,7 @@
 # log_dir 는 run_hook 이 root/.claude/logs 로 해석. (generated artifact — 직접수정 금지)
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 CORE_DIR="${SAGE_HOOK_CORE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-exec python3 "$CORE_DIR/runtime/run_hook.py" \
+# Python 해석(P3-11 이식성): SAGE_PYTHON override → python3 → python 폴백(Windows/Git Bash 대응)
+PY="${SAGE_PYTHON:-python3}"; command -v "$PY" >/dev/null 2>&1 || PY=python
+exec "$PY" "$CORE_DIR/runtime/run_hook.py" \
   --runtime claude --hook capture-declared-risk --root "$PROJECT_ROOT" --core-dir "$CORE_DIR"

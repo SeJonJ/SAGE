@@ -78,6 +78,8 @@ class TestDoctorOutput(unittest.TestCase):
             rc = D.run(Args())
         out = buf.getvalue()
         self.assertEqual(rc, 0)
+        self.assertIn("실행 환경", out)   # P3-11: OS/python/bash 진단 섹션
+        self.assertIn("bash", out)
         self.assertIn("옵션 의존성", out)
         self.assertIn("Phase 05 reviewer", out)
 

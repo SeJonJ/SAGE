@@ -7,7 +7,9 @@ exit: 정상/degraded/의존성미설치 = 0, profile YAML 파싱 오류(설정 
 """
 
 import os
+import platform
 import shutil
+import sys
 
 
 def register(sub):
@@ -99,6 +101,16 @@ def run(args):
         print(f"  ❌ FAIL profile YAML 파싱 오류({status.split(':', 1)[1]}): {prof_path}")
         print(f"        → 선언한 설정이 무시됩니다. YAML 수정 필요.")
         profile = dict(_DEFAULT_PROFILE)
+
+    # 실행 환경(P3-11 이식성): OS / python / bash 점검. 어댑터는 bash + python3(SAGE_PYTHON override)이라
+    # Windows 네이티브는 Git Bash/WSL + python(3) 필요 → 가시화. bash 부재 = 어댑터 구동 불가(치명).
+    bash_path = shutil.which("bash")
+    print("## 실행 환경")
+    print(f"  OS       : {platform.system()} ({os.name})")
+    print(f"  python   : {platform.python_version()} (sys.executable={sys.executable})")
+    print(f"  bash     : {bash_path or 'NOT FOUND'}" + ("" if bash_path else "  ⚠️  어댑터(.sh) 구동 불가 — Git Bash/WSL 필요"))
+    if os.name == "nt" or platform.system() == "Windows":
+        print("  ⚠️  Windows 네이티브: 어댑터는 Git Bash/WSL 에서만 동작. python3 부재 시 SAGE_PYTHON=python 설정.")
 
     # 옵션 의존성
     caps_prof = profile.get("capabilities", {}) or {}

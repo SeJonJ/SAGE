@@ -168,7 +168,7 @@ def _validate_hook(root, asset_id, entry, run_regression):
             if tpath is None:
                 bump("FAIL"); msgs.append(f"  FAIL unsafe/missing test path: {test}")
             else:
-                runner = ["python3", tpath] if tpath.endswith(".py") else ["bash", tpath]
+                runner = [sys.executable, tpath] if tpath.endswith(".py") else ["bash", tpath]  # P3-11: sys.executable(venv/이식성)
                 r = subprocess.run(runner, cwd=root, capture_output=True, text=True)
                 if r.returncode != 0:
                     bump("FAIL"); msgs.append(f"  FAIL regression 실패: {test}")
@@ -277,7 +277,7 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True):
         if tpath is None:
             bump("FAIL"); msgs.append(f"  FAIL unsafe/missing test path: {test}")
         else:
-            r = subprocess.run(["python3", tpath], cwd=root, capture_output=True, text=True)
+            r = subprocess.run([sys.executable, tpath], cwd=root, capture_output=True, text=True)  # P3-11: sys.executable
             if r.returncode != 0:
                 bump("FAIL"); msgs.append(f"  FAIL regression 실패: {test}")
     return sev, msgs
