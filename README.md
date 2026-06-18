@@ -200,7 +200,9 @@ forbidden_claims:
 확정된 진행 순서는 vault `TECH - SAGE 앞으로 개발할 내용`에 있습니다. 요약:
 
 1. **잔여 open 엔진 항목** — EH-1 동적 roster → EH-2 output_contract 독립화 → wheel 패키징(독립 게이팅 마일스톤)
-2. **weatherapp 2차** — F9 게이트 강제 하의 첫 정상 Tier 2 실세계 골든 인스턴스(wheel 설치 경로 실증)
+2. **weatherapp 2차 = 대화형 부트스트랩 저작 흐름 구축 + Tier 2 재구축** — 유저가 대화로 의도를 주면 AI가
+   SAGE 규칙대로 profile/spec을 작성하고(설계 §2.3·§13의 "AI 대화로 값 채움"), 유저 승인 후 결정론 `generate`/`validate`로
+   핸드오프하는 저작 레이어를 **인터뷰 skill/agent + 프로토콜**로 구축. weatherapp이 그 첫 실증 케이스이자 Tier 2 골든 인스턴스.
 3. **MCP 개발** — MCP 서버를 4번째 거버넌스 자산 종류로 편입(Enhancement는 ChatForYou 선반영 → SAGE Standalone 승격)
 4. **weatherapp 3차** — MCP 자산 클래스 포함 end-to-end 실증
 
