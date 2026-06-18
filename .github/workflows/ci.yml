@@ -43,3 +43,5 @@ jobs:
           python -m build --sdist
       - name: Assert engine resources bundled (MANIFEST.in 회귀 가드)
         run: python scripts/ci/check_sdist_resources.py dist
+      - name: 순수 wheel 단독배포 게이트 (clean venv install→generate→validate, 번들만)
+        run: bash scripts/ci/wheel_smoke.sh

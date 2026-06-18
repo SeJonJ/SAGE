@@ -5,12 +5,12 @@ install 이 대상 프로젝트로 복사하는 번들 리소스(templates/, sch
 
 해석 우선순위:
 1. 환경변수 $SAGE_RESOURCE_ROOT (설치/배포/재배치 override — 디렉토리면 사용)
-2. 레포 루트 (이 파일 기준 ../.. — git clone / editable install / sdist 레이아웃)
+2. 번들 sage/_bundle/ (순수 wheel — setup.py BundleResources 가 빌드 시 복사. 마커=_bundle/templates)
+3. 레포 루트 (이 파일 기준 ../.. — git clone / editable install / sdist 레이아웃)
 
-배포 모델(정직): 현재는 git clone / `pip install -e .`(editable) / sdist(레포 레이아웃 보존) 기준이며,
-어느 경우든 위 해석이 동작한다. 순수 PyPI wheel 단독 배포는 dual-use 인 scripts/sage_harness 를
-sage 패키지로 이전(importlib.resources)해야 완전해진다 — 공개 전 과제(README/진행로그 참조).
-그때까지 재배치 설치는 $SAGE_RESOURCE_ROOT 로 명시 가능.
+배포 모델: git clone / `pip install -e .`(editable) 는 레포 fallback(3), 순수 PyPI wheel 은 번들(2)로 동작한다.
+wheel 은 빌드 시 install/validate 가 읽는 트리(templates·schema·scripts/sage_harness·docs/sage_harness)를
+sage/_bundle/ 로 번들하므로 단독 배포 가능(소스 트리는 불변 — dual-use scripts/sage_harness 이전 회피).
 """
 import os
 
@@ -19,8 +19,12 @@ def sage_root() -> str:
     env = os.environ.get("SAGE_RESOURCE_ROOT")
     if env and os.path.isdir(env):
         return os.path.abspath(env)
-    # sage/_resources.py → 레포 루트 = ../.. (이 파일이 sage/ 바로 아래이므로 dirname 2회)
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    here = os.path.dirname(os.path.abspath(__file__))   # .../sage
+    bundle = os.path.join(here, "_bundle")              # wheel 번들(setup.py 가 빌드 시 생성)
+    if os.path.isdir(os.path.join(bundle, "templates")):
+        return bundle
+    # repo / editable / sdist: 레포 루트 = ../.. (이 파일이 sage/ 바로 아래이므로 dirname 2회)
+    return os.path.dirname(here)
 
 
 def templates_dir() -> str:

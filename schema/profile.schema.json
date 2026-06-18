@@ -34,6 +34,14 @@
     "suffixes": { "type": "array" },
     "checklist_scan_targets": { "type": "array" },
     "compliance": { "type": "object" },
+    "output_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "EH-2: stop 리포트 Output Contract 섹션 마커(codex-only). markers 빈값=중립 기본.",
+      "properties": {
+        "markers": { "type": "object" }
+      }
+    },
     "pdca": {
       "type": "object",
       "additionalProperties": false,

@@ -72,8 +72,10 @@
   - [x] `.github/workflows/ci.yml`: test(py3.10/3.11/3.12: editable install→run-all→validate) + packaging(build sdist→가드).
   - [x] `scripts/ci/check_sdist_resources.py`: sdist 가 엔진 리소스 번들하는지 검증(MANIFEST.in 회귀). 변이 teeth(schema 제거→exit1).
   - [x] CI 첫 실행 GitHub green(전 잡 ✓). actions v6 핀. 커밋 4192473·07379f2.
-  - (후속) 순수 PyPI wheel 단독배포(scripts/sage_harness 패키지 이전 + importlib.resources)는 blast radius 큰
-    별도 아키텍처 과제 — _resources/pyproject 가 이미 추적(공개 전 과제). 현 라운드는 CI + sdist/editable 보존까지.
+  - ✅ **순수 PyPI wheel 단독배포 완료**(2026-06-18, 로드맵 1단계③): setup.py BundleResources(build_py)가 빌드 시
+    엔진 트리를 `sage/_bundle/`로 번들, `_resources` 가 번들 감지(env>번들>repo). **소스 트리 불변**(dual-use scripts/sage_harness
+    이전 회피 — catastrophic blast radius 회피). 게이트 `scripts/ci/wheel_smoke.sh`(clean venv wheel-only → install→generate→validate PASS, CI 강제).
+    EH-2 회귀(profile.output_contract 스키마 미허용)를 이 게이트가 적발·수정.
 
 ## 하 — 안전·이식성 보강 ✅ 전부 완료
 - [x] **P2-9 L0 통과 문서 L3 키워드 스캔** — classify_risk 가 L0 파일 content 를 l3_content_keywords 로 스캔,
@@ -85,9 +87,9 @@
 
 ## ✅ 외부검토 1차 하드닝 전체 완료 (2026-06-18)
 상(R4·R1·R3·R2) + 중(P1-4·P1-5·P2-7·P2-10) + 하(P2-9·P2-8·P3-11) 11항목 전부 코드 재검증→구현→
-변이 teeth+전체 회귀(run-all 29 step)+validate PASS+**CI GitHub green**. 후속 추적 1건: 순수 PyPI wheel
-단독배포(scripts/sage_harness 패키지 이전 + importlib.resources, blast radius 큰 별도 아키텍처 과제).
-**weatherapp 2차 재구축 착수 가능.**
+변이 teeth+전체 회귀(run-all 30 step)+validate PASS+**CI GitHub green**.
+**로드맵 1단계(잔여 open) 완료**(2026-06-18): EH-1 동적 roster · EH-2 output_contract 독립화 · wheel 순수 단독배포.
+→ 후속 추적 없음. **다음=weatherapp 2차(대화형 저작 흐름 + Tier2 재구축).**
 
 ## 진행 로그
 - 2026-06-17: 코드 재검증 완료, 상/중/하 확정. R4 착수.

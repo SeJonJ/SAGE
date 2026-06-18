@@ -187,11 +187,14 @@ forbidden_claims:
 - **문서 속 민감정보 경고** (P2-9) · **cross-model 역방향 능력 검증**(P2-8) · **Windows 이식성**(P3-11, `sys.executable` +
   어댑터 `SAGE_PYTHON` 폴백 + doctor 환경 진단)까지 보강.
 
-### 정직하게 — 아직 안 된 것
+### 배포 (정직하게)
 
-- **순수 PyPI wheel 단독 배포**는 아직입니다. 현재 동작하는 설치 경로는 **git clone / `pip install -e .`(editable) / sdist**이며,
-  리소스 경로는 `sage/_resources.py`(`$SAGE_RESOURCE_ROOT` override + repo fallback)로 해석합니다.
-  순수 wheel은 dual-use인 `scripts/sage_harness`의 패키지 이전(`importlib.resources`)이 필요 — 별도 마일스톤으로 예정.
+- **순수 PyPI wheel 단독 배포 동작**(P2-10 완료). wheel 빌드 시 `setup.py`의 `BundleResources`가 install/validate가
+  읽는 엔진 트리(templates·schema·scripts/sage_harness·docs/sage_harness)를 `sage/_bundle/`로 번들하고,
+  런타임은 `sage/_resources.py`가 번들을 감지합니다(우선순위: `$SAGE_RESOURCE_ROOT` > `sage/_bundle` > repo fallback).
+  dual-use인 `scripts/sage_harness`의 **소스 트리는 이전하지 않고**(테스트 colocated) 빌드 시점에만 번들 → catastrophic 변경 회피.
+  지원 경로: clean-venv `pip install <wheel>` / git clone / `pip install -e .`(editable, repo fallback) / sdist.
+  회귀 가드: `scripts/ci/wheel_smoke.sh`(clean venv 에 wheel 만 설치 → install→generate→validate 폐루프 PASS, CI 강제).
 - `pyyaml`은 `generate`(빌드) 의존성입니다. **hook 런타임은 의존성 0**(순수 JSON)으로 가볍게 유지합니다.
 
 ---
@@ -200,8 +203,8 @@ forbidden_claims:
 
 확정된 진행 순서는 vault `TECH - SAGE 앞으로 개발할 내용`에 있습니다. 요약:
 
-1. **잔여 open 엔진 항목** — EH-1 동적 roster → EH-2 output_contract 독립화 → wheel 패키징(독립 게이팅 마일스톤)
-2. **weatherapp 2차 = 대화형 부트스트랩 저작 흐름 구축 + Tier 2 재구축** — 유저가 대화로 의도를 주면 AI가
+1. ✅ **잔여 open 엔진 항목 완료** — EH-1 동적 roster · EH-2 output_contract 독립화 · wheel 패키징(순수 wheel 단독배포)
+2. **(다음) weatherapp 2차 = 대화형 부트스트랩 저작 흐름 구축 + Tier 2 재구축** — 유저가 대화로 의도를 주면 AI가
    SAGE 규칙대로 profile/spec을 작성하고(설계 §2.3·§13의 "AI 대화로 값 채움"), 유저 승인 후 결정론 `generate`/`validate`로
    핸드오프하는 저작 레이어를 **인터뷰 skill/agent + 프로토콜**로 구축. weatherapp이 그 첫 실증 케이스이자 Tier 2 골든 인스턴스.
 3. **MCP 개발** — MCP 서버를 4번째 거버넌스 자산 종류로 편입(Enhancement는 ChatForYou 선반영 → SAGE Standalone 승격)
