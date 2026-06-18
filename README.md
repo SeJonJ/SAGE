@@ -65,6 +65,7 @@ docs/.../{id}.md (spec)     등록 산출물 + manifest    .claude/.codex/...   
 ```
 sage install    # 런타임 택1 + CORE 하네스 배치(framework + CORE hook 정본/spec/어댑터 + roster agent + manifest)
 sage generate   # spec → 등록 산출물(settings.json/hooks.json) + {host}/hooks shim + profile 컴파일 + manifest 스탬프
+                # --kind roster: profile.components → implementer-<comp> 에이전트 spec 동적 파생(EH-1)
 sage validate   # drift · staleness · conformance · regression 결정론 검사 (읽기전용). --check(빠름) / --schema
 sage review     # auto_approve_safe_default — 통과는 자동승인, 사람은 예외(review)만
 sage absorb     # 직접수정 diff → spec patch 제안 (자동 반영 없음)

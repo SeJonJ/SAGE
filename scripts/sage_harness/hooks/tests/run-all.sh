@@ -120,5 +120,9 @@ echo "### 29. claims_codec (P2-7 YAML 단일화 — claims_to_yaml↔load_claims
 python3 "$HERE/test_claims_codec.py" || rc=1
 
 echo ""
+echo "### 30. gen_roster (EH-1 동적 컴포넌트 파생 — profile.components→implementer-<comp> spec, 폴백/create-only/dry-run)"
+python3 "$HERE/test_gen_roster.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

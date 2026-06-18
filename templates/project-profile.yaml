@@ -19,7 +19,9 @@ paths:
   component_plan_docs: "{component}/plan_docs"
   # 고정(이동 불가): .claude/ · .codex/ · 루트 CLAUDE.md/CODEX.md
 
-components: []                    # 예: [{ id: backend, paths: ["src/backend/**"] }]
+components: []                    # 예: [{ id: backend, paths: ["src/backend/**"], model: opus }]
+                                  # 채우면 `sage generate --kind roster` 가 컴포넌트당 implementer-<id> 에이전트 spec 동적 생성(EH-1).
+                                  # 비우면 team.core 의 고정 implementer-a/b 폴백(하위호환).
 
 risk:                            # pre-implementation-gate / stop-compliance 가 읽는 위험 분류(flat 계약)
   # 경로 글롭(L0 통과 / L1·L2·L3 분류). 빈 리스트 = 해당 레벨 미적용
