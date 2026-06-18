@@ -75,10 +75,19 @@
   - (후속) 순수 PyPI wheel 단독배포(scripts/sage_harness 패키지 이전 + importlib.resources)는 blast radius 큰
     별도 아키텍처 과제 — _resources/pyproject 가 이미 추적(공개 전 과제). 현 라운드는 CI + sdist/editable 보존까지.
 
-## 하 — 안전·이식성 보강
-- [ ] P2-9 L0 통과 후에도 l3_content_keywords 스캔(문서도 L3키워드면 WARN)
-- [ ] P2-8 codex-host→Claude 호출 경로(§12)
-- [ ] P3-11 sys.executable/탐지 + doctor OS·bash·python 점검
+## 하 — 안전·이식성 보강 ✅ 전부 완료
+- [x] **P2-9 L0 통과 문서 L3 키워드 스캔** — classify_risk 가 L0 파일 content 를 l3_content_keywords 로 스캔,
+      decide 가 비차단 WARN(warn_l0_l3_content, exit0). 양 io render. manifest 재스탬프. 변이 teeth. 커밋 5c50dcb.
+- [x] **P2-8 codex-host→Claude 역방향(§12 스텁 제거)** — doctor.reviewer_resolution 대칭 능력게이팅:
+      codex-host 도 claude CLI(caps.claude) 요구(claude-host 의 gstack 요구와 대칭). 맹신 스텁 제거. 변이 teeth. 커밋 d346240.
+- [x] **P3-11 Windows 이식성** — validate subprocess sys.executable, 어댑터 10종 SAGE_PYTHON→python3→python 폴백,
+      doctor '실행 환경'(OS/python/bash) 진단. manifest 재스탬프. 기능 teeth(SAGE_PYTHON override). 커밋 ab5ffdd.
+
+## ✅ 외부검토 1차 하드닝 전체 완료 (2026-06-18)
+상(R4·R1·R3·R2) + 중(P1-4·P1-5·P2-7·P2-10) + 하(P2-9·P2-8·P3-11) 11항목 전부 코드 재검증→구현→
+변이 teeth+전체 회귀(run-all 29 step)+validate PASS+**CI GitHub green**. 후속 추적 1건: 순수 PyPI wheel
+단독배포(scripts/sage_harness 패키지 이전 + importlib.resources, blast radius 큰 별도 아키텍처 과제).
+**weatherapp 2차 재구축 착수 가능.**
 
 ## 진행 로그
 - 2026-06-17: 코드 재검증 완료, 상/중/하 확정. R4 착수.
@@ -87,4 +96,7 @@
 - 2026-06-18: **중 블록 전부 완료** — P1-4 conformance→validate 배선(486be20)·P1-5 override+감사(fc1676c)·
   P2-7 claims 단일코덱(b987104)·P2-10 CI+패키징가드(4192473, actions v6 07379f2). P1-4/P1-5 는 유저 설계결정
   반영(conformance 배선 / 파일기반 TTL+감사). 각 단계 변이 teeth + 전체 회귀(run-all 29 step) + validate PASS +
-  **CI GitHub 첫 실행 green**. 다음 라운드: 하(P2-9 L0스캔·P2-8 codex-host→Claude·P3-11 Windows) → 그 후 weatherapp 2차.
+  **CI GitHub 첫 실행 green**.
+- 2026-06-18: **하 블록 전부 완료** — P2-9 L0 L3키워드 WARN(5c50dcb)·P2-8 codex-host→Claude 대칭 능력게이팅(d346240)·
+  P3-11 sys.executable+어댑터 PY폴백+doctor 환경진단(ab5ffdd). 각 변이/기능 teeth + run-all PASS + validate PASS + CI green.
+  **→ 외부검토 1차 하드닝(상+중+하 11항목) 전체 완료. weatherapp 2차 착수 가능.**
