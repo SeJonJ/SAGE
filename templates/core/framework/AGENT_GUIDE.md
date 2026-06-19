@@ -14,6 +14,19 @@ Project-specific values (paths, risk triggers, conventions, team) live in
 3. Relevant plan doc under `{paths.plan_docs}`
 4. Relevant convention docs declared in `profile.conventions`
 
+## Project Bootstrap (conversational authoring)
+
+Profile values, specs, and plan docs are **authored by the agent through
+conversation, not hand-written by the user** — the user supplies intent and
+approves; `sage generate` / `sage validate` then register and verify
+deterministically (some assets, e.g. agent/skill renders, still need an
+interpretive runtime render step). The profile schema is a guardrail (strict on
+top-level + selected sections), not a total type-checker. When a project is first
+set up, or a new component/asset is introduced, follow
+`docs/agent/bootstrap-authoring.md`: interview → fill profile values → handoff
+(`generate` + `validate`) → phase-first plan docs before any code. Never add
+schema keys, never edit generated artifacts, never bypass a `validate` FAIL.
+
 ## Risk & Workflow Gate (PDCA)
 
 Every change is classified before implementation. Compound changes use the
