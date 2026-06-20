@@ -16,8 +16,9 @@ from sage.commands import install  # noqa: E402
 
 
 class Args:
-    def __init__(self, host, dest, prefix="sage", force=False):
+    def __init__(self, host, dest, prefix="sage", force=False, no_global_skill=False):
         self.host = host; self.dest = dest; self.prefix = prefix; self.force = force
+        self.no_global_skill = no_global_skill
 
 
 class TestInstall(unittest.TestCase):
@@ -90,6 +91,88 @@ class TestInstall(unittest.TestCase):
             Path(agents).write_text("USER_AGENTS_MARKER\n", encoding="utf-8")
             install.run(Args("codex", d))
             self.assertIn("USER_AGENTS_MARKER", Path(agents).read_text(encoding="utf-8"))
+
+    def test_codex_host_installs_global_skill(self):
+        # codex 는 repo-스코프 스킬 자동발견 불가 → $sage-init 을 $CODEX_HOME/skills 전역 설치
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                install.run(Args("codex", d))
+            skill = os.path.join(codex_home, "skills", "sage-init", "SKILL.md")
+            self.assertTrue(os.path.exists(skill))
+            self.assertIn("sage-init", Path(skill).read_text(encoding="utf-8"))
+
+    def test_codex_global_skill_create_only_then_force(self):
+        # create-only: 기존 전역 스킬 보존. --force 면 갱신.
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            skill = os.path.join(codex_home, "skills", "sage-init", "SKILL.md")
+            os.makedirs(os.path.dirname(skill))
+            Path(skill).write_text("USER_SKILL_MARKER\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                install.run(Args("codex", d))                 # create-only → 보존
+                self.assertIn("USER_SKILL_MARKER", Path(skill).read_text(encoding="utf-8"))
+                install.run(Args("codex", d, force=True))      # --force → 갱신
+                self.assertNotIn("USER_SKILL_MARKER", Path(skill).read_text(encoding="utf-8"))
+
+    def test_claude_host_no_global_codex_skill(self):
+        # claude host 는 codex 전역 스킬을 건드리지 않는다
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                install.run(Args("claude", d))
+            self.assertFalse(os.path.exists(os.path.join(codex_home, "skills", "sage-init")))
+
+    def test_no_global_skill_optout(self):
+        # codex R1-P1: --no-global-skill 이면 전역 스킬 미설치(AGENTS.md 라우터만)
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                install.run(Args("codex", d, no_global_skill=True))
+            self.assertFalse(os.path.exists(os.path.join(codex_home, "skills", "sage-init")))
+            self.assertTrue(os.path.exists(os.path.join(d, "AGENTS.md")))   # 라우터는 여전히 배치
+
+    def test_global_skill_stale_detection(self):
+        # codex R1-P1: 기존 전역 스킬이 번들과 다르면 stale, force 없이는 보존
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as codex_home:
+            src = os.path.join(codex_home, "src_SKILL.md")
+            Path(src).write_text("CANON\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                dst = os.path.join(install._codex_skills_root(), "sage-init", "SKILL.md")
+                os.makedirs(os.path.dirname(dst))
+                Path(dst).write_text("OLD_DIFFERENT\n", encoding="utf-8")
+                status, _ = install._install_codex_global_skill(src, force=False)
+                self.assertEqual(status, "stale")
+                self.assertEqual(Path(dst).read_text(encoding="utf-8"), "OLD_DIFFERENT\n")  # 보존
+                status2, _ = install._install_codex_global_skill(src, force=True)
+                self.assertEqual(status2, "installed")
+                self.assertEqual(Path(dst).read_text(encoding="utf-8"), "CANON\n")  # 갱신
+
+    def test_global_skill_write_error_nonfatal(self):
+        # codex R1-P0: 전역 쓰기 실패는 install 을 깨지 않고 error 상태 반환
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as codex_home:
+            src = os.path.join(codex_home, "src_SKILL.md")
+            Path(src).write_text("CANON\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}), \
+                 mock.patch("os.makedirs", side_effect=OSError("read-only")):
+                status, info = install._install_codex_global_skill(src, force=False)
+            self.assertEqual(status, "error")
+
+    def test_global_skill_non_utf8_existing_nonfatal(self):
+        # codex R2-P1: 기존 전역 스킬이 비-UTF-8 이면 UnicodeError → 비치명적 error
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as codex_home:
+            src = os.path.join(codex_home, "src_SKILL.md")
+            Path(src).write_text("CANON\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                dst = os.path.join(install._codex_skills_root(), "sage-init", "SKILL.md")
+                os.makedirs(os.path.dirname(dst))
+                with open(dst, "wb") as f:
+                    f.write(b"\xff\xfe\x00invalid")   # 비-UTF-8
+                status, _ = install._install_codex_global_skill(src, force=False)
+            self.assertEqual(status, "error")
 
     def test_independence_no_domain_tokens(self):
         """제약 #2: 설치된 CORE 트리에 특정 스택/도메인 토큰 0 (정본/spec/agent 중립).

@@ -1,24 +1,30 @@
 ---
 name: sage-init
-description: Use at the start of a SAGE project (right after `sage install`) to fill `sage/project-profile.yaml` through a conversation, then hand off to `sage generate`/`sage validate`. Invoke when the user says "/sage-init", "bootstrap SAGE", "set up the profile", "SAGE 부트스트랩", or when the profile's project.name is empty.
+description: Use at the start of a SAGE project (right after `sage install`) to fill `sage/project-profile.yaml` through a conversation, then hand off to `sage generate`/`sage validate`. Invoke when the user says "/sage-init" (Claude) or "$sage-init" (Codex), "bootstrap SAGE", "set up the profile", "SAGE 부트스트랩", or when the profile's project.name is empty.
 ---
 
-# /sage-init — Conversational SAGE Bootstrap
+# sage-init — Conversational SAGE Bootstrap
+
+Invoke as `/sage-init` (Claude) or `$sage-init` (Codex).
 
 This skill turns user intent into a SAGE-conformant `sage/project-profile.yaml`
 **through conversation**, then hands off to the deterministic backend
 (`sage generate` / `sage validate`). The user supplies intent and approves; you
 author the profile values to the schema. This is the designed entry point — the
 governance gate is inert until the profile is bootstrapped, and `sage generate`
-is BLOCKED while `project.name` is empty.
+is BLOCKED while the profile is unbootstrapped (`project.name` empty, or
+`risk`/`components` unset).
 
 Authoritative protocol: `docs/agent/bootstrap-authoring.md`. Rules: `AGENT_GUIDE.md`.
 This skill is the active driver of that protocol.
 
-> This skill is a **CORE framework bootstrap asset**: hand-shipped by `sage install`
-> (like `AGENT_GUIDE.md` and `docs/agent/*`), NOT a spec-generated skill. It has no
-> `docs/sage_harness/skills/` spec and is not manifest-tracked; the write-guard
-> exempts its path. To change it, edit the framework template, not a spec.
+> This skill is a **CORE framework bootstrap asset**: hand-shipped by `sage install`,
+> NOT a spec-generated skill (no `docs/sage_harness/skills/` spec, not manifest-tracked).
+> Deploy location is runtime-specific: Claude reads it from the repo
+> (`.claude/skills/sage-init/`, write-guard exempt); Codex auto-discovers it from the
+> user-global skills dir (`$CODEX_HOME/skills/sage-init/`, default `~/.codex/skills/`)
+> because Codex does not auto-discover repo-scoped skills. To change it, edit the
+> framework template, not a spec.
 
 ## Hard rules
 
@@ -100,9 +106,10 @@ Call out anything you inferred rather than were told, so the user can correct it
 
 After approval, ask the user how to generate the registration artifacts:
 
-**Auto** — you run the handoff now:
+**Auto** — you run the handoff now (`--target` = this project's host runtime; use
+`--target both` for cross-model):
 ```
-sage generate --kind hook --write --target claude     # or --target both for cross_model
+sage generate --kind hook --write --target <claude|codex|both>
 sage generate --kind roster --write                   # only if components[] is set
 sage validate --check --schema --kind all
 ```
@@ -110,7 +117,8 @@ sage validate --check --schema --kind all
 **Manual** — you print the exact commands and let the user/agent run them.
 
 Notes that matter (from bootstrap-authoring.md):
-- `--kind hook` default `--target claude`; cross-model projects use `--target both`.
+- `--kind hook` default `--target claude`; match it to the host (`--target codex`
+  on a Codex project), and use `--target both` for cross-model projects.
 - `--kind roster` only **scaffolds** `implementer-<id>` specs; they still need a
   runtime AI render + `extract_agent --register` before they are manifest-registered.
 - `sage validate` defaults to `--kind hook`; pass `--kind all` to also check

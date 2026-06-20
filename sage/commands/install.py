@@ -34,7 +34,7 @@ def register(sub):
         "install",
         help="현재 프로젝트에 SAGE 기본 파일을 설치합니다",
         add_help=False,
-        usage="sage install --host {claude,codex} [--prefix PREFIX] [--dest DEST] [--force] [--help]",
+        usage="sage install --host {claude,codex} [--prefix PREFIX] [--dest DEST] [--force] [--no-global-skill] [--help]",
     )
     p.add_argument("--help", action="help", help="도움말을 보여주고 종료합니다")
     p.add_argument("--host", choices=["claude", "codex"], required=True,
@@ -42,6 +42,8 @@ def register(sub):
     p.add_argument("--prefix", default="sage", help="자산 네이밍 prefix (선택, 기본값: sage)")
     p.add_argument("--dest", default=".", help="설치 대상 프로젝트 루트 (선택, 기본값: 현재 디렉토리)")
     p.add_argument("--force", action="store_true", help="기존 파일 덮어쓰기 (기본: skip)")
+    p.add_argument("--no-global-skill", action="store_true",
+                   help="codex host: $sage-init 스킬의 전역(~/.codex/skills) 설치를 건너뜁니다 (CI/샌드박스용)")
     p._optionals.title = "옵션"
     p.set_defaults(func=run)
 
@@ -75,6 +77,39 @@ def _copy_tree(src_dir, dst_dir, force, created, skipped):
             s = os.path.join(root, fn)
             d = os.path.join(dst_dir, os.path.relpath(s, src_dir))
             _copy_file(s, d, force, created, skipped)
+
+
+def _codex_skills_root():
+    """codex 스킬 전역 루트 = $CODEX_HOME/skills (미설정 시 ~/.codex/skills). codex 바이너리 규약.
+
+    codex 는 repo-스코프 스킬을 자동발견하지 않고 이 전역 디렉토리만 스캔하므로(codex 협의 실증),
+    codex host 의 $sage-init 스킬은 여기로 설치한다(claude 의 repo .claude/skills 와 비대칭)."""
+    base = os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
+    return os.path.join(base, "skills")
+
+
+def _install_codex_global_skill(src_skill_md, force):
+    """codex $sage-init 스킬을 $CODEX_HOME/skills/sage-init/SKILL.md 에 전역 설치.
+
+    반환: (status, dst) — status ∈ {installed, skipped, stale, missing, error}. create-only(force 면 덮어쓰기).
+    repo-스코프(--dest) 밖 전역 쓰기이므로 created/skipped 리스트가 아닌 별도 상태로 보고한다.
+    - 비치명적(codex R1-P0): 전역 home 쓰기 실패(read-only/정책잠금)는 install 을 깨지 않고 error 반환
+      → 호출부가 경고+수동 폴백(AGENTS.md) 안내. repo-로컬 산출물은 정상 배치된다.
+    - drift 경고(codex R1-P1): 기존 파일이 현재 번들과 다르면(구버전/로컬수정) stale 반환 → --force 안내."""
+    if not os.path.exists(src_skill_md):
+        return ("missing", None)
+    dst = os.path.join(_codex_skills_root(), "sage-init", "SKILL.md")
+    try:
+        src_text = Path(src_skill_md).read_text(encoding="utf-8")
+        if os.path.exists(dst) and not force:
+            cur = Path(dst).read_text(encoding="utf-8")
+            return ("skipped" if cur == src_text else "stale", dst)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        Path(dst).write_text(src_text, encoding="utf-8")
+        return ("installed", dst)
+    except (OSError, UnicodeError) as e:
+        # 비치명적: 권한/읽기전용(OSError) + 비-UTF-8 기존 전역 스킬(UnicodeError, codex R2-P1).
+        return ("error", f"{dst} ({e})")
 
 
 def _profile_with_host(host, prefix):
@@ -138,14 +173,21 @@ def run(args) -> int:
 
     # 2b. 대화형 부트스트랩 트리거 — profile 을 대화로 채우는 설계상 진입점(런타임별 발견 메커니즘 상이).
     agents_md_collision = False
+    codex_skill_status = None   # (status, dst) — codex host 전역 스킬 설치 결과
+    skill_src_md = os.path.join(fw, ".claude", "skills", "sage-init", "SKILL.md")   # 단일 소스(중립 내용)
     if args.host == "claude":
-        # claude: .claude/skills/ 자동발견 → /sage-init 스킬 배치.
+        # claude: repo .claude/skills/ 자동발견 → /sage-init 스킬 배치.
         _copy_tree(os.path.join(fw, ".claude", "skills", "sage-init"),
                    os.path.join(dest, ".claude", "skills", "sage-init"), args.force, created, skipped)
     else:
-        # codex: 포터블 repo-스코프 스킬 메커니즘 부재(codex 협의 검증) → codex 가 auto-read 하는
-        # AGENTS.md 라우터로 부트스트랩 안내(CODEX.md 는 codex auto-read 아님). create-only:
-        # 기존 AGENTS.md 가 있으면 덮어쓰지 않고 경고(사용자 수동 머지 — codex 협의 R4 권고).
+        # codex: ① repo-스코프 스킬 자동발견 불가 → $sage-init 스킬을 전역($CODEX_HOME/skills)에 설치
+        #           (--no-global-skill 로 opt-out — CI/샌드박스/타repo 검사용, codex R1-P1).
+        #        ② codex 가 auto-read 하는 AGENTS.md 라우터(세션 시작 시 부트스트랩 안내, CODEX.md 는
+        #           codex auto-read 아님). create-only: 기존 AGENTS.md 보존+경고(codex 협의 R4).
+        if not getattr(args, "no_global_skill", False):
+            codex_skill_status = _install_codex_global_skill(skill_src_md, args.force)
+        else:
+            codex_skill_status = ("disabled", None)
         agents_dst = os.path.join(dest, "AGENTS.md")
         if os.path.exists(agents_dst) and not args.force:
             agents_md_collision = True
@@ -201,9 +243,26 @@ def run(args) -> int:
         print("  2) `/sage-init` 입력 → AI 가 인터뷰로 sage/project-profile.yaml 을 채움")
         print("  3) 승인 후 핸드오프: `sage generate --kind hook --write` → `sage validate --check --schema`")
     else:
-        print("  1) 이 디렉토리에서 codex 를 실행 (codex 가 AGENTS.md 를 자동으로 읽어 부트스트랩을 안내)")
-        print("  2) AI 와 대화하며 profile 작성 — 프로토콜: `docs/agent/bootstrap-authoring.md`")
-        print("  3) 승인 후 핸드오프: `sage generate --kind hook --write` → `sage validate --check --schema`")
+        print("  1) 이 디렉토리에서 codex 를 실행")
+        print("  2) `$sage-init` 입력 → AI 가 인터뷰로 sage/project-profile.yaml 을 채움")
+        print("     (codex 가 AGENTS.md 를 자동으로 읽어 부트스트랩을 안내하기도 함)")
+        print("  3) 승인 후 핸드오프: `sage generate --kind hook --write --target codex` → `sage validate --check --schema`")
+        if codex_skill_status:
+            status, dst = codex_skill_status
+            if status == "installed":
+                print(f"  ✅ 전역 $sage-init 스킬 설치: {dst}")
+            elif status == "skipped":
+                print(f"  = 전역 $sage-init 스킬 최신(동일 내용): {dst}")
+            elif status == "stale":
+                print(f"  ⚠️  전역 $sage-init 스킬이 현재 SAGE 버전과 다릅니다(구버전 또는 로컬수정): {dst}")
+                print("     최신으로 갱신하려면 `sage install --host codex --force` (로컬수정은 덮어써짐).")
+            elif status == "error":
+                print(f"  ⚠️  전역 $sage-init 스킬 설치 실패(권한/읽기전용 home?): {dst}")
+                print("     codex 에서 `$sage-init` 미동작 시 AGENTS.md/bootstrap-authoring.md 프로토콜을 수동 사용하세요.")
+            elif status == "missing":
+                print("  ⚠️  $sage-init 스킬 소스를 찾지 못해 전역 설치를 건너뜀(번들 손상?).")
+            elif status == "disabled":
+                print("  = 전역 $sage-init 스킬 설치 생략(--no-global-skill). codex 부트스트랩은 AGENTS.md 라우터로 안내됩니다.")
         if agents_md_collision:
             print("  ⚠️  기존 AGENTS.md 가 있어 codex 부트스트랩 라우터를 자동 배치하지 못했습니다.")
             print("     templates 의 AGENTS.md 부트스트랩 섹션을 수동 병합하거나 --force 로 교체하세요.")
