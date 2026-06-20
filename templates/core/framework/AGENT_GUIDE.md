@@ -27,6 +27,16 @@ set up, or a new component/asset is introduced, follow
 (`generate` + `validate`) → phase-first plan docs before any code. Never add
 schema keys, never edit generated artifacts, never bypass a `validate` FAIL.
 
+The conversational entry point is the **`/sage-init` skill** (Claude:
+`.claude/skills/sage-init/`). It is a **CORE framework bootstrap asset** —
+hand-shipped by `sage install` like this guide and `docs/agent/*`, NOT a
+spec-generated skill (no `docs/sage_harness/skills/` spec, not manifest-tracked),
+and the write-guard exempts its path. Until the profile is bootstrapped
+(`project.name` set + `risk`/`components` configured), `sage generate` is BLOCKED
+and `sage validate` WARNs — by design, so an empty profile cannot silently
+disable the governance gate. Codex has no skill mechanism; codex users follow
+`docs/agent/bootstrap-authoring.md` (see `CODEX.md`).
+
 ## Risk & Workflow Gate (PDCA)
 
 Every change is classified before implementation. Compound changes use the

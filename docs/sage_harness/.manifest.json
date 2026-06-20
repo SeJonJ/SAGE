@@ -98,9 +98,9 @@
     },
     "hooks/generated-artifact-write-guard": {
       "spec_hash": "sha256:918c8c54d3fa7c5c061d959acde1b3dd1fd390cea8b6e992356070d7d2a25cf6",
-      "canonical_hash": "sha256:1ebcce5a698ee64bced65849aa865cdb0d9cf3c43772481bd095d9a37f403628",
+      "canonical_hash": "sha256:98b590b30105ab088740110765cb6bf713247df1eefba129fb826547239b54c5",
       "render_hash": {
-        "native": "sha256:1ebcce5a698ee64bced65849aa865cdb0d9cf3c43772481bd095d9a37f403628"
+        "native": "sha256:98b590b30105ab088740110765cb6bf713247df1eefba129fb826547239b54c5"
       },
       "adapter_contract_version": "1",
       "conformance": "PASS",

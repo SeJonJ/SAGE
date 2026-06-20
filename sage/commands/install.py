@@ -104,7 +104,10 @@ def _manifest(host):
         }
     return {
         "sage_version": "0.1.0", "generator_version": "0.1.0", "template_version": "0.1.0",
-        "host_runtime": host, "assets": assets,
+        "host_runtime": host,
+        # 설치 인스턴스 마커(다중 신호) — 부트스트랩 게이트가 AGENT_GUIDE 분실 시에도 설치를 인식(codex R2-P0).
+        "installed_instance": True,
+        "assets": assets,
     }
 
 
@@ -132,6 +135,22 @@ def run(args) -> int:
     _copy_file(os.path.join(fw, "scripts", "verify-changes.sh"),
                os.path.join(dest, "scripts", "verify-changes.sh"), args.force, created, skipped)
     _copy_tree(os.path.join(fw, "docs", "agent"), os.path.join(dest, "docs", "agent"), args.force, created, skipped)
+
+    # 2b. 대화형 부트스트랩 트리거 — profile 을 대화로 채우는 설계상 진입점(런타임별 발견 메커니즘 상이).
+    agents_md_collision = False
+    if args.host == "claude":
+        # claude: .claude/skills/ 자동발견 → /sage-init 스킬 배치.
+        _copy_tree(os.path.join(fw, ".claude", "skills", "sage-init"),
+                   os.path.join(dest, ".claude", "skills", "sage-init"), args.force, created, skipped)
+    else:
+        # codex: 포터블 repo-스코프 스킬 메커니즘 부재(codex 협의 검증) → codex 가 auto-read 하는
+        # AGENTS.md 라우터로 부트스트랩 안내(CODEX.md 는 codex auto-read 아님). create-only:
+        # 기존 AGENTS.md 가 있으면 덮어쓰지 않고 경고(사용자 수동 머지 — codex 협의 R4 권고).
+        agents_dst = os.path.join(dest, "AGENTS.md")
+        if os.path.exists(agents_dst) and not args.force:
+            agents_md_collision = True
+        else:
+            _copy_file(os.path.join(fw, "AGENTS.md"), agents_dst, args.force, created, skipped)
 
     # 3. CORE hook spec(중립 6종) → docs/sage_harness/hooks/
     specs = _resources.hook_specs_dir()
@@ -173,5 +192,21 @@ def run(args) -> int:
         print(f"skip {len(skipped)}건 (이미 존재 — --force 로 덮어쓰기):")
         for p in sorted(skipped):
             print(f"  = {os.path.relpath(p, dest)}")
-    print("다음: sage/project-profile.yaml 값 채움 → `sage generate --kind hook --write` (등록 산출물 + manifest 스탬프).")
+    # 다음 단계 안내 — 설계상 진입점은 "AI 대화로 profile 채우기"다(직접 편집 아님).
+    # profile 미부트스트랩(project.name 빈값) 상태에선 sage generate 가 BLOCK 된다(강제 게이트).
+    print("")
+    print("다음 단계 (대화형 부트스트랩 — 설계상 진입점):")
+    if args.host == "claude":
+        print("  1) 이 디렉토리에서 claude 를 실행")
+        print("  2) `/sage-init` 입력 → AI 가 인터뷰로 sage/project-profile.yaml 을 채움")
+        print("  3) 승인 후 핸드오프: `sage generate --kind hook --write` → `sage validate --check --schema`")
+    else:
+        print("  1) 이 디렉토리에서 codex 를 실행 (codex 가 AGENTS.md 를 자동으로 읽어 부트스트랩을 안내)")
+        print("  2) AI 와 대화하며 profile 작성 — 프로토콜: `docs/agent/bootstrap-authoring.md`")
+        print("  3) 승인 후 핸드오프: `sage generate --kind hook --write` → `sage validate --check --schema`")
+        if agents_md_collision:
+            print("  ⚠️  기존 AGENTS.md 가 있어 codex 부트스트랩 라우터를 자동 배치하지 못했습니다.")
+            print("     templates 의 AGENTS.md 부트스트랩 섹션을 수동 병합하거나 --force 로 교체하세요.")
+    print("")
+    print("⚠️  부트스트랩 전(project.name + risk/components 미설정)에는 `sage generate` 가 차단됩니다 — 거버넌스 게이트가 무력화되지 않도록 강제.")
     return 0

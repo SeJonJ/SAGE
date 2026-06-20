@@ -43,6 +43,8 @@ class TestInstall(unittest.TestCase):
                 # CORE roster agent(중립)
                 "docs/sage_harness/agents/leader.md", "docs/sage_harness/agents/implementer-a.md",
                 "docs/sage_harness/agents/reviewer.md", "docs/sage_harness/agents/convention-checker.md",
+                # 대화형 부트스트랩 트리거(claude) — 설계상 진입점
+                ".claude/skills/sage-init/SKILL.md",
             ):
                 self.assertTrue(os.path.exists(os.path.join(d, rel)), rel)
             # tests/ 는 배치하지 않음(런타임 불필요)
@@ -63,6 +65,31 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(len([k for k in m["assets"] if k.startswith("hooks/")]), 6)
             self.assertEqual(m["assets"]["hooks/pre-implementation-gate"]["form"], "core_adapter")
             self.assertEqual(m["assets"]["hooks/generated-artifact-write-guard"]["form"], "native")
+
+    def test_codex_host_deploys_agents_md(self):
+        # codex 부트스트랩 라우터: codex 가 auto-read 하는 AGENTS.md 배치(codex 협의 c+).
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("codex", d))
+            agents = os.path.join(d, "AGENTS.md")
+            self.assertTrue(os.path.exists(agents))
+            body = Path(agents).read_text(encoding="utf-8")
+            self.assertIn("bootstrap-authoring.md", body)
+            self.assertIn("AGENT_GUIDE.md", body)
+
+    def test_claude_host_no_agents_md(self):
+        # claude 는 /sage-init 스킬 사용 → AGENTS.md 미배치(스킬만)
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            self.assertFalse(os.path.exists(os.path.join(d, "AGENTS.md")))
+            self.assertTrue(os.path.exists(os.path.join(d, ".claude", "skills", "sage-init", "SKILL.md")))
+
+    def test_codex_agents_md_collision_preserved(self):
+        # 기존 AGENTS.md 는 create-only 로 보존(codex 협의 R4: 자동 덮어쓰기 금지)
+        with tempfile.TemporaryDirectory() as d:
+            agents = os.path.join(d, "AGENTS.md")
+            Path(agents).write_text("USER_AGENTS_MARKER\n", encoding="utf-8")
+            install.run(Args("codex", d))
+            self.assertIn("USER_AGENTS_MARKER", Path(agents).read_text(encoding="utf-8"))
 
     def test_independence_no_domain_tokens(self):
         """제약 #2: 설치된 CORE 트리에 특정 스택/도메인 토큰 0 (정본/spec/agent 중립).
@@ -100,6 +127,25 @@ class TestInstall(unittest.TestCase):
             install.run(Args("codex", d))  # host 바꿔도 skip 이라 안 덮어씀
             after = Path(os.path.join(d, "sage", "project-profile.yaml")).read_text(encoding="utf-8")
             self.assertEqual(before, after)
+
+    def test_manifest_stamps_installed_instance(self):
+        # 부트스트랩 게이트 다중 신호(codex R2-P0): install 이 manifest.installed_instance 를 스탬프.
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            m = json.loads(Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).read_text(encoding="utf-8"))
+            self.assertIs(m.get("installed_instance"), True)
+
+    def test_force_restamps_legacy_manifest(self):
+        # codex R3-P2: 레거시 manifest(installed_instance 없음)는 install --force 로 재스탬프되어 복구.
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            mp = os.path.join(d, "docs", "sage_harness", ".manifest.json")
+            m = json.loads(Path(mp).read_text(encoding="utf-8"))
+            del m["installed_instance"]   # 레거시 상태 모사
+            Path(mp).write_text(json.dumps(m), encoding="utf-8")
+            install.run(Args("claude", d, force=True))
+            m2 = json.loads(Path(mp).read_text(encoding="utf-8"))
+            self.assertIs(m2.get("installed_instance"), True)
 
     def test_force_preserves_profile_updates_engine(self):
         # F5: --force 는 엔진 자산을 갱신하되 인스턴스 profile(커스터마이즈 SSOT)은 보존한다.

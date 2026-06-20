@@ -47,6 +47,11 @@ for p in out:
 #  소유하고 비-MCP 설정 공존이라 파일 통째 가드 안 함 — staleness+소유권 검사로 보호. MCP plan §2.3 비대칭.)
 is_guarded() {
   local p; p="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  # 예외: sage-init 은 CORE 프레임워크 부트스트랩 자산(install 이 hand-ship — AGENT_GUIDE/docs/agent 와 동류).
+  # spec→generate 산출물이 아니므로 가드 대상에서 면제(spec 없는 막다른 redirect 방지, codex 리뷰 P1-2).
+  case "$p" in
+    *.claude/skills/sage-init/*) return 1 ;;
+  esac
   case "$p" in
     *.claude/agents/*|*.claude/hooks/*|*.claude/skills/*) return 0 ;;
     *.codex/agents/*|*.codex/hooks/*|*.codex/skills/*)    return 0 ;;
