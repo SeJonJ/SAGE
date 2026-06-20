@@ -7,6 +7,7 @@
 
 import argparse
 import sys
+import textwrap
 
 from sage import __version__
 from sage.commands import install, generate, validate, review, absorb, doctor, change, override
@@ -17,9 +18,23 @@ _COMMANDS = [install, generate, validate, review, absorb, doctor, change, overri
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sage",
-        description="System for Agentic Governance & Engineering",
+        description="SAGE는 Claude/Codex 프로젝트에 규칙 파일, hook, agent spec을 설치하고 검증하는 CLI입니다.",
+        epilog=textwrap.dedent("""\
+            기본 사용 순서:
+              1. sage install --host codex      # 현재 프로젝트에 SAGE 기본 파일 설치
+              2. sage generate --kind hook --write
+              3. sage validate
+
+            각 명령의 자세한 옵션:
+              sage <command> --help
+            """),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=False,
     )
-    parser.add_argument("--version", action="version", version=f"sage {__version__}")
+    parser.add_argument("-h", "--help", action="help", help="도움말을 보여주고 종료합니다")
+    parser.add_argument("--version", action="version", version=f"sage {__version__}", help="설치된 SAGE 버전을 보여줍니다")
+    parser._positionals.title = "명령어"
+    parser._optionals.title = "옵션"
     sub = parser.add_subparsers(dest="command", metavar="<command>")
     sub.required = True
     for mod in _COMMANDS:

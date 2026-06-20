@@ -20,7 +20,7 @@ _KIND_HINT = {"hook": "hook", "hooks": "hook", "agent": "agent", "agents": "agen
 
 
 def register(sub):
-    p = sub.add_parser("change", help='자연어 의도 → generate/absorb 라우팅 안내 (v1)')
+    p = sub.add_parser("change", help="하고 싶은 변경을 어떤 SAGE 명령으로 처리할지 안내합니다")
     p.add_argument("intent", help='예: "capture-declared-risk hook 고쳐줘"')
     p.add_argument("--root", default=None)
     p.set_defaults(func=run)

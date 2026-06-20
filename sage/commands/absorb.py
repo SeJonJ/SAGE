@@ -17,7 +17,7 @@ from sage.asset_paths import AssetPaths
 
 
 def register(sub):
-    p = sub.add_parser("absorb", help="직접수정 diff → spec patch 제안 (자동반영 없음)")
+    p = sub.add_parser("absorb", help="직접 고친 생성 파일을 spec 수정안으로 되돌려 제안합니다")
     p.add_argument("--kind", choices=["hook", "agent", "skill"], required=True)
     p.add_argument("--id", required=True)
     p.add_argument("--from-blocked-diff", action="store_true",

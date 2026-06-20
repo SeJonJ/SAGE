@@ -26,7 +26,7 @@ _EXIT = {"PASS": 0, "WARN": 0, "FAIL": 1, "STALE": 3}
 
 def register(sub):
     # 주: JSON Schema 검증이 아니라 hash 기반 drift/staleness + regression 검사다(schema 파일은 참조 문서).
-    p = sub.add_parser("validate", help="drift/staleness + regression 결정론 검사 (읽기전용)")
+    p = sub.add_parser("validate", help="spec과 생성 파일이 서로 어긋났는지 검사합니다")
     p.add_argument("--check", action="store_true", help="staleness 만 (regression 미실행, 빠른 CI/hook용)")
     p.add_argument("--schema", action="store_true", help="manifest 를 JSON Schema 로 구조검증 (jsonschema 선택의존, 미설치 시 WARN skip)")
     p.add_argument("--kind", choices=["hook", "agent", "skill", "mcp", "all"], default="hook")

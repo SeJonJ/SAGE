@@ -17,7 +17,7 @@ from sage.commands._common import contract_version_of
 
 
 def register(sub):
-    p = sub.add_parser("generate", help="spec → 등록 산출물(settings.json/hooks.json) + manifest 스탬프")
+    p = sub.add_parser("generate", help="spec 파일을 읽어 Claude/Codex용 설정 파일을 생성합니다")
     p.add_argument("--kind", choices=["hook", "agent", "skill", "roster", "mcp"], required=True)
     p.add_argument("--id", default=None, help="단일 자산 (없으면 kind 전체; roster 는 profile.components 에서 파생)")
     p.add_argument("--write", action="store_true", help="파일 기록 (없으면 dry-run 미리보기)")

@@ -30,12 +30,19 @@ _SKIP_DIRS = {"tests", "__pycache__"}
 
 
 def register(sub):
-    p = sub.add_parser("install", help="SAGE CORE 하네스 설치 (host 택1 + framework/hook/agent 배치)")
+    p = sub.add_parser(
+        "install",
+        help="현재 프로젝트에 SAGE 기본 파일을 설치합니다",
+        add_help=False,
+        usage="sage install --host {claude,codex} [--prefix PREFIX] [--dest DEST] [--force] [--help]",
+    )
+    p.add_argument("--help", action="help", help="도움말을 보여주고 종료합니다")
     p.add_argument("--host", choices=["claude", "codex"], required=True,
-                   help="host_runtime — PDCA를 실행하는 주 런타임 (Claude 특권화 금지)")
-    p.add_argument("--prefix", default="sage", help="자산 네이밍 prefix")
-    p.add_argument("--dest", default=".", help="설치 대상 프로젝트 루트")
+                   help="SAGE를 설치할 AI 도구를 선택합니다: claude 또는 codex (필수)")
+    p.add_argument("--prefix", default="sage", help="자산 네이밍 prefix (선택, 기본값: sage)")
+    p.add_argument("--dest", default=".", help="설치 대상 프로젝트 루트 (선택, 기본값: 현재 디렉토리)")
     p.add_argument("--force", action="store_true", help="기존 파일 덮어쓰기 (기본: skip)")
+    p._optionals.title = "옵션"
     p.set_defaults(func=run)
 
 

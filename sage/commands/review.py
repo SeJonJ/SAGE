@@ -17,7 +17,7 @@ from sage.commands import validate as V
 
 
 def register(sub):
-    p = sub.add_parser("review", help="자동승인(auto)/사람검토(review) 분류 — auto_approve_safe_default")
+    p = sub.add_parser("review", help="자동 통과 가능한 변경과 사람이 확인할 변경을 나눕니다")
     p.add_argument("--kind", choices=["hook", "agent", "skill", "mcp", "all"], default="all")
     p.add_argument("--batch", action="store_true", help="auto 버킷을 1줄 요약")
     p.add_argument("--gate", action="store_true", help="review 버킷 있으면 exit 1 (CI 게이트)")

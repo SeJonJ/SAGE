@@ -17,7 +17,7 @@ _GATES = ["pre-implementation-gate", "pre-phase4-checklist-gate", "all"]
 
 
 def register(sub):
-    p = sub.add_parser("override", help="게이트 BLOCK 시한부 우회 grant + 감사 (.sage/override.jsonl)")
+    p = sub.add_parser("override", help="막힌 작업을 사유와 시간 제한을 남기고 임시로 허용합니다")
     p.add_argument("--reason", help="우회 사유 (grant 시 필수 — 감사 기록)")
     p.add_argument("--ttl", help="유효기간: 30m | 2h | 1d | 90s | 1800(초)")
     p.add_argument("--gate", default="all", help=f"대상 게이트 ({' | '.join(_GATES)}). 기본 all")
