@@ -44,17 +44,29 @@ neutral docs (this file included), and an **empty** `sage/project-profile.yaml`
 
 ### 2. Interview → profile authoring
 The agent interviews the user for intent, then fills `project-profile.yaml`
-**values** (never adds/removes schema keys — determinism constraint). Surface the
+**values** (never adds/removes schema keys — determinism constraint).
+
+This is a **progressive conversation, not a form**: the agent takes one topic per
+turn — proposing concrete values inferred from a repo scan, showing the signal it
+inferred from, and asking a single focused confirm/correct question — rather than
+dumping the whole list for the user to fill. The agent only asks open-endedly when
+the repo gives nothing to infer (e.g. which domains are security-sensitive). This
+keeps authoring on the agent; the user supplies intent and approves. Surface the
 decisions that genuinely need user intent; author the rest from them:
 
 - `project.name` / `project.prefix`
 - `components[]` — component boundaries (id + path globs + model). Filling this
   enables `sage generate --kind roster` to scaffold `implementer-<id>` specs.
 - `risk.*` — derived from the stack and the high-risk domains the user names
-  (e.g. secrets, auth, payments → `l3_*`). For L3 to be reviewable rather than
-  hard-blocked, also set `risk.l3_review_strategy` (e.g. `claude_grep_first` |
-  `codex_feature_signal`) — the review protocol blocks L3 until one is selected.
+  (e.g. secrets, auth, payments → `l3_*`). Cover the tier globs
+  (`l0_pass_globs` / `l1_path_globs` / `l2_path_globs` /
+  `l3_filename_globs` + `l3_content_keywords`), the `plan_glob`, and the
+  `desktop_block_glob` / `desktop_block_hint` for generated/sync outputs. For L3 to
+  be reviewable rather than hard-blocked, also set `risk.l3_review_strategy` (e.g.
+  `claude_grep_first` | `codex_feature_signal`) — the review protocol blocks L3
+  until one is selected.
 - `verification.commands` — the deterministic build/test/lint commands for the stack.
+- `file_type_map` — `{ glob, type }` first-match classification used for logging.
 - `options.cross_model` — when true, Phase 05 review is opposite-runtime **only
   when reachable**; `sage doctor` resolves it from `options.cross_model` +
   `cross_model.invocation` + `capabilities` (e.g. gstack), and falls back to

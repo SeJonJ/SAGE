@@ -51,38 +51,72 @@ Read, in order, before asking anything:
 If `project.name` is already non-empty, the project is bootstrapped — stop and ask
 whether the user wants to add a component/asset (Step 5) instead of re-running setup.
 
-## Step 1 — Interview (fill profile values thoroughly)
+## Step 1 — Interview (progressive conversation, one topic at a time)
 
-Interview for intent, then author the values. Be **thorough and specific** — a
-sparse profile means a weak gate. Propose concrete values from your repo scan and
-let the user correct them. Cover at minimum:
+**This is a conversation, not a form.** Do NOT dump every question at once and ask
+the user to answer a numbered list — that pushes the authoring work back onto the
+user, which is exactly what this skill exists to avoid. Instead, walk one topic at
+a time and drive each turn yourself.
 
-- **`project.name` / `project.prefix`** — name is the bootstrap signal; set it first.
-- **`components[]`** — component boundaries: `{ id, paths: [globs], model }`.
-  Filling this enables `sage generate --kind roster` to scaffold `implementer-<id>`
-  agent specs. Ask how the codebase is partitioned (e.g. backend / frontend).
-- **`risk.*`** — the heart of the gate. Derive from the stack and the high-risk
-  domains the user names:
-  - `l0_pass_globs` (docs/plan → instant pass)
-  - `l1_path_globs` (low risk: UI/markup)
-  - `l2_path_globs` (source/config → build+test+lint)
-  - `l3_filename_globs` + `l3_content_keywords` (high-risk domains: auth, payment,
-    crypto, secrets → plan + review required)
-  - `desktop_block_glob` / `desktop_block_hint` (generated/sync outputs to block)
-  - `plan_glob` (e.g. `plan_docs/**/*.md`)
-  - **`l3_review_strategy`** — REQUIRED for L3 to be reviewable rather than
-    hard-blocked. Pick `claude_grep_first` or `codex_feature_signal` (or a module
-    name). The review protocol blocks L3 until this is set.
-- **`verification.commands`** — the real deterministic `build` / `test` / `lint`
-  (and `syntax` for L1) commands for this stack. Empty = that check is skipped, so
-  fill what genuinely exists.
-- **`file_type_map`** — `{ glob, type }` first-match classification for logging.
+### Interview style (mandatory)
 
-Keep `pdca.*` at the standard 00–06 unless the user runs a different phase set.
+For **each** topic below, in order, take a single conversational turn:
+
+1. **Propose, don't ask blind.** From your Step 0 repo scan, infer concrete values
+   and state them as a proposal (e.g. "I see `build.gradle` and `src/main/java` —
+   I'll set `verification.commands.build` to `./gradlew build`. Sound right?").
+2. **Show the signal.** Name the file/evidence you inferred from in one short
+   clause, so the user can judge the inference.
+3. **Ask one focused question about *this topic only*.** The test is the user's
+   *burden*, not the field count: a turn may present several **inferred** values at
+   once for a single confirm (e.g. "here are the three risk globs I derived —
+   correct?"), because the user only has to confirm. But never ask the user to
+   *produce* more than one unknown per turn — when a value can't be inferred and
+   the user must supply it (e.g. which domains are security-sensitive), that is its
+   own turn with one open question. Batched *proposals* are fine; batched *demands*
+   are the form-dump this skill forbids.
+4. **Acknowledge and record**, then move to the next topic. Do not advance while
+   the current topic is unsettled, and do not look ahead to later topics in the
+   same turn.
+
+Only when the repo scan gives you nothing to infer (e.g. which domains are
+security-sensitive) do you ask open-endedly — and even then, one topic per turn.
+Every 2–3 topics, briefly echo the profile-so-far so the user sees it taking shape.
+Be thorough across the full topic list — a sparse profile means a weak gate — but
+reach thoroughness through the back-and-forth, not a wall of questions.
+
+### Topic order (one turn each)
+
+1. **`project.name` / `project.prefix`** — propose from the dir name / package
+   metadata. Name is the bootstrap signal; settle it first.
+2. **`components[]`** — propose the partition from top-level dirs (e.g. backend /
+   frontend) as `{ id, paths: [globs], model }`. Filling this enables
+   `sage generate --kind roster` to scaffold `implementer-<id>` specs.
+3. **`verification.commands`** — propose the real `build` / `test` / `lint` (and
+   `syntax` for L1) from the build files you found. Empty = that check is skipped,
+   so confirm only commands that genuinely exist.
+4. **`risk` tiers L0–L2** — propose from file types:
+   - `l0_pass_globs` (docs/plan → instant pass)
+   - `l1_path_globs` (low risk: UI/markup) + `plan_glob` (e.g. `plan_docs/**/*.md`)
+   - `l2_path_globs` (source/config → build+test+lint)
+5. **`risk` L3 (high-risk domains)** — here you usually must *ask*, not infer:
+   which areas are security-sensitive (auth, payment, crypto, secrets)? From the
+   answer set `l3_filename_globs` + `l3_content_keywords`, and the
+   `desktop_block_glob` / `desktop_block_hint` for generated/sync outputs.
+   - **`l3_review_strategy`** — REQUIRED for L3 to be reviewable rather than
+     hard-blocked. Confirm `claude_grep_first` or `codex_feature_signal` (or a
+     module name). The review protocol blocks L3 until this is set.
+6. **`file_type_map`** — propose `{ glob, type }` first-match classification for
+   logging from the stack you've established.
+
+Keep `pdca.*` at the standard 00–06 unless the user runs a different phase set
+(don't raise it as a question unless they bring it up).
 
 ## Step 2 — Options
 
-Walk the user through `options` and the matching sections:
+Same one-topic-per-turn style as Step 1: raise each toggle on its own turn, propose
+a default, and only dive into the matching section if the user enables it. Skip a
+toggle's detail entirely when it stays off.
 
 - **`options.cross_model`** — when true, Phase 05 review runs opposite-runtime
   **only when reachable**. `sage doctor` resolves it from `options.cross_model` +
