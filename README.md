@@ -25,13 +25,14 @@ AI 에이전트는 빠르지만 규칙을 조용히 어깁니다:
 ## 빠른 시작 (30초)
 
 ```bash
-pip install sage-harness
+pipx install sage-harness
 
 cd your-project
-sage install          # 런타임 선택: claude 또는 codex
-                      # hook·에이전트 spec·AGENT_GUIDE·manifest 자동 배치
+sage install --host codex   # 또는 --host claude
+                            # hook·에이전트 spec·AGENT_GUIDE·manifest 자동 배치
 
-sage generate         # spec md → .claude/.codex 산출물 + manifest 스탬프
+sage generate --kind hook --write
+                      # spec md → .claude/.codex 산출물 + manifest 스탬프
 sage validate         # drift · staleness · conformance 검사 (읽기 전용)
 ```
 
@@ -86,18 +87,145 @@ Hook은 **순수 코어 + 어댑터** 구조입니다 — 정책 판정(`{id}_co
 
 ## CLI 참조
 
-| 명령 | 역할 |
-|---|---|
-| `sage install` | 런타임 선택 (claude/codex) · CORE 하네스 배치 (hook·에이전트 spec·AGENT_GUIDE·manifest) |
-| `sage generate` | spec md → 등록 산출물 + `{host}/hooks` shim + profile 컴파일 + manifest 스탬프 |
-| `sage generate --kind roster` | `profile.components` → `implementer-<comp>` 에이전트 spec 결정론 scaffold |
-| `sage generate --kind mcp` | `docs/sage_harness/mcps/{id}.md` → `.mcp.json` (claude) / `config.toml` managed-block (codex) |
-| `sage validate` | drift · staleness · conformance · regression 검사. `--check` (빠름) / `--schema` (JSON Schema) |
-| `sage review` | `auto_approve_safe_default` — 통과는 자동승인, 사람은 예외만 검토 |
-| `sage absorb` | 직접수정 diff → spec patch 제안 (자동 반영 없음) |
-| `sage doctor` | 옵션 의존성 점검 · 실행 환경 진단 · cross-model reviewer fallback 노출 |
-| `sage change` | 자연어 의도 → generate/absorb 라우팅 안내 (v1) |
-| `sage override` | 게이트 BLOCK 시한부 합법 우회 + append-only 감사 로그 (`.sage/override.jsonl`) |
+전체 도움말은 `sage --help`, 서브커맨드별 도움말은 `sage <command> --help`로 확인할 수 있습니다.
+
+| 명령 | 필수 옵션 | 주요 옵션 | 역할 / 예시 |
+|---|---|---|---|
+| `sage install` | `--host {claude,codex}` | `--prefix PREFIX`, `--dest DEST`, `--force` | 대상 프로젝트에 CORE 하네스를 설치합니다. 예: `sage install --host codex --dest .` |
+| `sage generate` | `--kind {hook,agent,skill,roster,mcp}` | `--id ID`, `--write`, `--target {claude,codex,both}`, `--dest DEST`, `--root ROOT` | spec md를 런타임 산출물과 manifest 스탬프로 변환합니다. `--write`가 없으면 dry-run입니다. 예: `sage generate --kind agent --id backend-expert --target codex --write` |
+| `sage generate --kind roster` | `--kind roster` | `--write`, `--dest DEST`, `--root ROOT` | `profile.components` 기반으로 `implementer-<component>` 에이전트 spec을 결정론적으로 scaffold합니다. |
+| `sage generate --kind mcp` | `--kind mcp` | `--id ID`, `--write`, `--target {claude,codex,both}` | `docs/sage_harness/mcps/{id}.md`를 Claude `.mcp.json` 또는 Codex `config.toml` managed-block으로 생성합니다. |
+| `sage validate` | 없음 | `--check`, `--schema`, `--kind {hook,agent,skill,mcp,all}`, `--id ID`, `--root ROOT` | drift, staleness, conformance, regression을 읽기 전용으로 검사합니다. 빠른 검사: `sage validate --check`; schema 검사: `sage validate --schema`. |
+| `sage review` | 없음 | `--kind {hook,agent,skill,mcp,all}`, `--batch`, `--gate`, `--root ROOT` | `auto_approve_safe_default` 기준으로 자동승인과 사람검토 대상을 분류합니다. CI 게이트: `sage review --gate`. |
+| `sage absorb` | `--kind {hook,agent,skill}`, `--id ID` | `--from-blocked-diff`, `--claude PATH`, `--codex PATH`, `--guide PATH`, `--config CONFIG`, `--root ROOT` | 직접 수정된 런타임 산출물이나 write-guard에 막힌 diff를 spec patch 후보로 역추출합니다. 자동 반영은 하지 않습니다. |
+| `sage doctor` | 없음 | `--profile PROFILE` | 옵션 의존성, 실행 환경, reviewer fallback 설정을 진단합니다. 예: `sage doctor --profile sage/project-profile.yaml`. |
+| `sage change` | `intent` | `--root ROOT` | 자연어 의도를 `generate` 또는 `absorb` 흐름으로 라우팅합니다. 예: `sage change "backend-expert agent 고쳐줘"`. |
+| `sage override` | grant 시 `--reason REASON` | `--ttl TTL`, `--gate GATE`, `--list`, `--root ROOT` | 게이트 BLOCK을 시한부로 우회하고 `.sage/override.jsonl`에 append-only 감사 로그를 남깁니다. 예: `sage override --reason "hotfix" --ttl 30m --gate pre-implementation-gate`. |
+
+### CLI 오류 메시지 해설
+
+SAGE CLI는 위험한 추측을 피하기 위해 일부 값을 필수 옵션으로 요구합니다. 아래 오류는 설치 실패가 아니라, 필요한 인자를 빠뜨렸다는 뜻입니다.
+
+#### `sage install`: `--host` 누락
+
+```text
+usage: sage install [-h] --host {claude,codex} [--prefix PREFIX] [--dest DEST] [--force]
+sage install: error: the following arguments are required: --host
+```
+
+원인: SAGE는 Claude와 Codex 중 어느 런타임을 주 실행 환경으로 쓸지 자동으로 추측하지 않습니다.
+
+해결:
+
+```bash
+sage install --host codex
+# 또는
+sage install --host claude
+```
+
+다른 프로젝트 경로에 설치하려면:
+
+```bash
+sage install --host codex --dest /path/to/your-project
+```
+
+이미 파일이 있을 때 덮어쓰려면:
+
+```bash
+sage install --host codex --force
+```
+
+#### `sage generate`: `--kind` 누락
+
+```text
+usage: sage generate [-h] --kind {hook,agent,skill,roster,mcp} [--id ID] [--write] [--target {claude,codex,both}] [--dest DEST] [--root ROOT]
+sage generate: error: the following arguments are required: --kind
+```
+
+원인: 어떤 종류의 spec을 생성할지 지정하지 않았습니다.
+
+해결:
+
+```bash
+sage generate --kind hook --write
+sage generate --kind agent --id backend-expert --target codex --write
+sage generate --kind skill --id backend-convention --target both --write
+sage generate --kind roster --write
+sage generate --kind mcp --id codegraph --target codex --write
+```
+
+주의: `--write`를 빼면 파일을 쓰지 않고 dry-run 미리보기만 수행합니다.
+
+#### `sage absorb`: `--kind`, `--id` 누락
+
+```text
+usage: sage absorb [-h] --kind {hook,agent,skill} --id ID [--from-blocked-diff] [--claude CLAUDE] [--codex CODEX] [--guide GUIDE] [--config CONFIG] [--root ROOT]
+sage absorb: error: the following arguments are required: --kind, --id
+```
+
+원인: 어떤 런타임 산출물을 어떤 spec으로 되돌려 흡수할지 지정하지 않았습니다.
+
+해결:
+
+```bash
+sage absorb --kind agent --id backend-expert --codex .codex/agents/backend-expert.md
+sage absorb --kind skill --id backend-convention --claude .claude/skills/backend-convention.md
+sage absorb --kind hook --id pre-implementation-gate --from-blocked-diff
+```
+
+`absorb`는 spec patch 후보만 제안합니다. 보안을 위해 자동 반영하지 않습니다.
+
+#### `sage override`: `--reason`, `--ttl` 누락
+
+```text
+[sage override] grant 에는 --reason 과 --ttl 둘 다 필요 (또는 --list)
+```
+
+원인: 게이트 우회는 감사 대상이므로 사유와 유효기간이 반드시 필요합니다.
+
+해결:
+
+```bash
+sage override --reason "urgent production hotfix" --ttl 30m --gate pre-implementation-gate
+sage override --reason "manual reviewer approved" --ttl 2h --gate all
+sage override --list
+```
+
+`--ttl`은 `90s`, `30m`, `2h`, `1d`, 또는 초 단위 숫자를 사용할 수 있습니다.
+
+#### `sage: command not found`
+
+```text
+zsh: command not found: sage
+```
+
+원인: 패키지는 설치됐지만 `sage` 실행 파일이 있는 Python user script 경로가 PATH에 없을 수 있습니다. 특히 `pip install --user` 또는 권한 문제로 user install이 된 macOS/Linux에서 자주 발생합니다.
+
+권장 해결:
+
+```bash
+pipx install sage-harness
+sage --help
+```
+
+`pip`로 설치했다면 fallback으로 실행할 수 있습니다:
+
+```bash
+python3 -m sage --help
+python3 -m sage install --host codex
+```
+
+macOS/Linux에서 PATH를 직접 추가하려면:
+
+```bash
+export PATH="$(python3 -m site --user-base)/bin:$PATH"
+```
+
+Windows PowerShell에서는:
+
+```powershell
+py -m sage --help
+```
 
 ---
 
@@ -124,16 +252,36 @@ cross_model:
 
 ## 설치
 
-**PyPI (권장):**
+SAGE는 `sage` 명령을 제공하는 CLI 도구이므로 `pipx` 설치를 권장합니다. `pipx`는 패키지를 독립 가상환경에 설치하고 `sage` 실행 파일만 PATH에 노출합니다.
+
+**PyPI CLI 설치 (권장):**
 
 ```bash
-pip install sage-harness
+pipx install sage-harness
+sage --help
+```
+
+`pipx`가 없다면 먼저 설치합니다:
+
+| OS | pipx 설치 |
+|---|---|
+| macOS | `brew install pipx && pipx ensurepath` |
+| Linux | `python3 -m pip install --user pipx && python3 -m pipx ensurepath` |
+| Windows | `py -m pip install --user pipx` 후 `py -m pipx ensurepath` |
+
+`ensurepath` 이후 새 터미널을 열거나 shell 설정을 다시 로드하세요.
+
+**pip fallback:**
+
+```bash
+python3 -m pip install --user sage-harness
+python3 -m sage --help
 ```
 
 **JSON Schema 검증 포함:**
 
 ```bash
-pip install "sage-harness[schema]"
+pipx install "sage-harness[schema]"
 ```
 
 **소스에서 설치 (editable):**
@@ -141,7 +289,7 @@ pip install "sage-harness[schema]"
 ```bash
 git clone https://github.com/SeJonJ/SAGE.git
 cd SAGE
-pip install -e .
+python3 -m pip install -e .
 ```
 
 요구사항: Python 3.10+, bash, git.
