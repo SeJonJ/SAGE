@@ -5,6 +5,7 @@ description = "System for Agentic Governance & Engineering — runtime-selectabl
 requires-python = ">=3.10"
 dependencies = [
   "pyyaml>=6.0",
+  "tomli>=2.0; python_version < '3.11'",   # MCP generate: config.toml 검증(py3.11+ 는 표준 tomllib). 없으면 best-effort skip
 ]
 
 [project.optional-dependencies]

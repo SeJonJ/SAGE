@@ -22,3 +22,6 @@ build/
 .claude/settings.local.json
 .claude/settings.json
 .claude/hooks/
+# generated runtime artifacts (sage generate --write at repo root) — 프레임워크 repo 는 산출물 비보유
+.codex/
+.mcp.json

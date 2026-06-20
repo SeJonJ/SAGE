@@ -124,5 +124,13 @@ echo "### 30. gen_roster (EH-1 동적 컴포넌트 파생 — profile.components
 python3 "$HERE/test_gen_roster.py" || rc=1
 
 echo ""
+echo "### 31. gen_mcp (MCP 4번째 kind — spec md→.mcp.json+config.toml managed-block, 시크릿 거부/staleness/소유권/단일-target)"
+python3 "$HERE/test_gen_mcp.py" || rc=1
+
+echo ""
+echo "### 32. mcp shadow pilot (ChatForYou 실 codegraph+obsidian fixture e2e — 라이브 무변경)"
+python3 "$HERE/test_mcp_shadow_pilot.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

@@ -40,14 +40,17 @@ for p in out:
 ' 2>/dev/null || true
 }
 
-# guarded = .claude/.codex 의 agents/hooks/skills 산출물. (source/spec 경로는 여기 매칭 안 됨 → 자연 통과)
+# guarded = .claude/.codex 의 agents/hooks/skills 산출물 + .mcp.json(SAGE 소유 생성물). (source/spec 경로는 여기 매칭 안 됨 → 자연 통과)
 # audit 4회차 P1: 소문자 정규화로 대소문자 우회(.CODEX 등, macOS case-insensitive fs) 차단.
 # (symlink 기반 우회는 §5.6 원칙상 범위 밖 — adversarial 은 OS 권한/CI 영역. 본 가드는 drift 방지용)
+# .mcp.json: claude MCP 생성물(SAGE 전적 소유, repo 루트) → 직접수정 차단. (.codex/config.toml 은 managed-block 만
+#  소유하고 비-MCP 설정 공존이라 파일 통째 가드 안 함 — staleness+소유권 검사로 보호. MCP plan §2.3 비대칭.)
 is_guarded() {
   local p; p="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
   case "$p" in
     *.claude/agents/*|*.claude/hooks/*|*.claude/skills/*) return 0 ;;
     *.codex/agents/*|*.codex/hooks/*|*.codex/skills/*)    return 0 ;;
+    .mcp.json|*/.mcp.json)                                 return 0 ;;
   esac
   return 1
 }

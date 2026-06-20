@@ -29,7 +29,7 @@ def register(sub):
     p = sub.add_parser("validate", help="drift/staleness + regression 결정론 검사 (읽기전용)")
     p.add_argument("--check", action="store_true", help="staleness 만 (regression 미실행, 빠른 CI/hook용)")
     p.add_argument("--schema", action="store_true", help="manifest 를 JSON Schema 로 구조검증 (jsonschema 선택의존, 미설치 시 WARN skip)")
-    p.add_argument("--kind", choices=["hook", "agent", "skill", "all"], default="hook")
+    p.add_argument("--kind", choices=["hook", "agent", "skill", "mcp", "all"], default="hook")
     p.add_argument("--id", default=None, help="단일 자산 검사")
     p.add_argument("--root", default=None, help="SAGE 레포 루트 (기본: cwd 에서 탐색)")
     p.set_defaults(func=run)
@@ -283,8 +283,117 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True):
     return sev, msgs
 
 
+def _validate_mcp(root, asset_id, entry):
+    """MCP(declarative) → 결정론 schema check. spec frontmatter 재파싱 → 시크릿·구조·staleness.
+
+    LLM judge 미사용. spec_hash staleness + render_hash(per-target canonical) staleness +
+    시크릿 거부(FAIL/WARN) + 생성물 소유권(.mcp.json unmanaged 서버 / config.toml managed-block).
+    """
+    from sage import mcp_common as M
+    msgs = []
+    sev = "PASS"
+    sid = asset_id.split("/", 1)[1]
+    spec_path = os.path.join(root, "docs", "sage_harness", "mcps", f"{sid}.md")
+
+    def bump(s):
+        nonlocal sev
+        if _SEV_RANK[s] > _SEV_RANK[sev]:
+            sev = s
+
+    if not os.path.exists(spec_path):
+        bump("FAIL"); msgs.append(f"  FAIL missing spec: {spec_path}")
+        return sev, msgs
+    # 미스탬프 감지
+    if not (entry.get("spec_hash") and entry.get("render_hash")):
+        bump("STALE"); msgs.append("  STALE 미스탬프 — sage generate --kind mcp --write 필요")
+    # spec staleness
+    if entry.get("spec_hash") and _sha(spec_path) != entry["spec_hash"]:
+        bump("STALE"); msgs.append("  STALE spec_hash 불일치 (spec 변경 → 재생성 필요)")
+    # 파싱 + 시크릿
+    try:
+        mdl = M.parse_mcp_spec(spec_path)
+    except M.MCPSpecError as e:
+        bump("FAIL"); msgs.append(f"  FAIL spec 구조 오류: {e}")
+        return sev, msgs
+    for ssev, smsg in M.check_secrets(mdl):
+        if ssev == "FAIL":
+            bump("FAIL"); msgs.append(f"  FAIL {smsg}")
+        else:
+            bump("WARN"); msgs.append(f"  WARN {smsg}")
+    # render_hash staleness (spec→manifest 스탬프 대조) — 무관 서버/블록밖 편집에 흔들리지 않음
+    rh = entry.get("render_hash") or {}
+    for tgt in mdl["runtime_targets"]:
+        want = "sha256:" + hashlib.sha256(M.canonical_render(mdl, tgt).encode("utf-8")).hexdigest()
+        have = rh.get(tgt)
+        if have and have != want:
+            bump("STALE"); msgs.append(f"  STALE render_hash[{tgt}] 불일치 (spec 변경 → 재생성 필요)")
+        elif not have:
+            bump("STALE"); msgs.append(f"  STALE render_hash[{tgt}] 미스탬프")
+    # ★ 실제 산출물 드리프트 (codex R3 P0): manifest 가 아니라 '현재 파일'을 spec 기대값과 대조.
+    #   .mcp.json/.codex managed-block 직접편집(command 변조 등)을 잡는다(write-guard 보완·.codex 는 가드 없음).
+    if "claude" in mdl["runtime_targets"]:
+        mcp_json = os.path.join(root, ".mcp.json")
+        if not os.path.exists(mcp_json):
+            bump("STALE"); msgs.append("  STALE .mcp.json 부재 (claude target 인데 미생성 — 재생성 필요)")
+        else:
+            actual = M.actual_claude_canonical(Path(mcp_json).read_text(encoding="utf-8"), sid)
+            if actual is None:
+                bump("STALE"); msgs.append("  STALE .mcp.json 에 서버 엔트리 없음 (재생성 필요)")
+            elif actual != M.canonical_render(mdl, "claude"):
+                bump("STALE"); msgs.append("  STALE .mcp.json 산출물 드리프트 (직접편집? spec 과 불일치 — 재생성 필요)")
+    if "codex" in mdl["runtime_targets"]:
+        cfg = os.path.join(root, ".codex", "config.toml")
+        if not os.path.exists(cfg):
+            bump("STALE"); msgs.append("  STALE .codex/config.toml 부재 (codex target 인데 미생성 — 재생성 필요)")
+        else:
+            cfg_text = Path(cfg).read_text(encoding="utf-8")
+            # 소유권: managed-block 밖 동명 서버
+            if sid in M.codex_servers_outside_block(cfg_text):
+                bump("FAIL"); msgs.append(f"  FAIL config.toml managed-block 밖에 [mcp_servers.{sid}] 중복(소유권 충돌)")
+            # 산출물 드리프트: managed-block 부재 또는 spec 기대 조각 변조
+            block = M.extract_codex_block(cfg_text)
+            if block is None or not M.codex_block_has_server(block, mdl):
+                bump("STALE"); msgs.append("  STALE config.toml managed-block 부재/드리프트 (직접편집? spec 과 불일치 — 재생성 필요)")
+    return sev, msgs
+
+
+def _mcp_ownership_check(root, mcp_ids, codex_ids):
+    """전체 mcp 자산 대상 소유권 검사 → (sev, [msgs]). 자산 루프 밖 1회.
+
+    (a) .mcp.json 의 manifest 밖 서버 = WARN(수동/absorb 대상).
+    (b) .codex managed-block '안'의 manifest 밖 서버 = FAIL(SAGE 소유 영역 주입/변조 — codex R5 P1).
+    """
+    msgs = []
+    sev = "PASS"
+
+    def bump(s):
+        nonlocal sev
+        if _SEV_RANK[s] > _SEV_RANK[sev]:
+            sev = s
+
+    mcp_json = os.path.join(root, ".mcp.json")
+    if os.path.exists(mcp_json):
+        try:
+            doc = json.loads(Path(mcp_json).read_text(encoding="utf-8"))
+            extra = sorted(set((doc.get("mcpServers") or {}).keys()) - set(mcp_ids))
+            if extra:
+                bump("WARN"); msgs.append(f"⚠️  WARN  .mcp.json 에 manifest 밖 서버 {len(extra)}건: {', '.join(extra)} (absorb 대상 또는 수동 추가)")
+        except Exception as e:
+            bump("FAIL"); msgs.append(f"❌ FAIL  .mcp.json 파싱 실패: {e}")
+
+    cfg = os.path.join(root, ".codex", "config.toml")
+    if os.path.exists(cfg):
+        from sage import mcp_common as M
+        inside = M.codex_servers_inside_block(Path(cfg).read_text(encoding="utf-8"))
+        extra = sorted(set(inside) - set(codex_ids))
+        if extra:
+            bump("FAIL"); msgs.append(f"❌ FAIL  config.toml managed-block 안에 미선언 서버 {len(extra)}건: {', '.join(extra)} "
+                                      "(SAGE 소유 영역 주입/변조 — 제거 후 재생성)")
+    return sev, msgs
+
+
 def run(args):
-    # hook/agent/skill/all 전부 지원 (skill = interpretive, agent 와 동일 경로)
+    # hook/agent/skill/mcp/all 전부 지원 (skill = interpretive, agent 와 동일 경로)
 
     root = _find_root(args.root)
     if not root:
@@ -304,6 +413,8 @@ def run(args):
         prefixes.append("agents/")
     if args.kind in ("skill", "all"):
         prefixes.append("skills/")
+    if args.kind in ("mcp", "all"):
+        prefixes.append("mcps/")
     target_ids = [k for k in assets if any(k.startswith(p) for p in prefixes)]
     if args.id:
         target_ids = [k for k in target_ids if k.split("/", 1)[1] == args.id or k == args.id]
@@ -316,6 +427,8 @@ def run(args):
     for aid in sorted(target_ids):
         if aid.startswith("hooks/"):
             sev, msgs = _validate_hook(root, aid, assets[aid], run_regression=not args.check)
+        elif aid.startswith("mcps/"):
+            sev, msgs = _validate_mcp(root, aid, assets[aid])
         else:  # agents/ or skills/ — interpretive
             sev, msgs = _validate_interpretive(root, aid, assets[aid], run_regression=not args.check)
         if _SEV_RANK[sev] > _SEV_RANK[overall]:
@@ -325,14 +438,31 @@ def run(args):
         for m in msgs:
             print(m)
 
-    # orphan: spec 있는데 manifest 없음 → WARN
-    spec_dir = os.path.join(root, "docs", "sage_harness", "hooks")
-    if os.path.isdir(spec_dir):
-        for fn in sorted(os.listdir(spec_dir)):
-            if fn.endswith(".md") and f"hooks/{fn[:-3]}" not in assets:
-                if overall == "PASS":
-                    overall = "WARN"
-                print(f"⚠️  WARN  orphan spec (manifest 미등록): hooks/{fn[:-3]}")
+    # orphan: spec 있는데 manifest 없음 → WARN (kind 별로 일반화 — hook/mcp 둘 다 spec md 가 SSOT)
+    _orphan_kinds = []
+    if args.kind in ("hook", "all"):
+        _orphan_kinds.append("hooks")
+    if args.kind in ("mcp", "all"):
+        _orphan_kinds.append("mcps")
+    for subdir in _orphan_kinds:
+        spec_dir = os.path.join(root, "docs", "sage_harness", subdir)
+        if os.path.isdir(spec_dir):
+            for fn in sorted(os.listdir(spec_dir)):
+                if fn.endswith(".md") and not fn.endswith(".claims.yml") and f"{subdir}/{fn[:-3]}" not in assets:
+                    if overall == "PASS":
+                        overall = "WARN"
+                    print(f"⚠️  WARN  orphan spec (manifest 미등록): {subdir}/{fn[:-3]}")
+
+    # MCP 소유권: .mcp.json/.codex managed-block 의 manifest 밖 서버 표면화 (mcp/all 대상)
+    if args.kind in ("mcp", "all"):
+        mcp_ids = [k.split("/", 1)[1] for k in assets if k.startswith("mcps/")]
+        codex_ids = [k.split("/", 1)[1] for k in assets if k.startswith("mcps/")
+                     and "codex" in (assets[k].get("runtime_targets") or [])]
+        osev, omsgs = _mcp_ownership_check(root, mcp_ids, codex_ids)
+        for m in omsgs:
+            print(m)
+        if _SEV_RANK[osev] > _SEV_RANK[overall]:
+            overall = osev
 
     # JSON Schema 구조검증 (--schema, 선택)
     if args.schema:

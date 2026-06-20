@@ -16,7 +16,9 @@ _DOCS_REL = os.path.join("docs", "sage_harness")
 
 @dataclass(frozen=True)
 class AssetPaths:
-    """단일 자산의 표준 경로 집합. kind ∈ {"hook","agent","skill"}."""
+    """단일 자산의 표준 경로 집합. kind ∈ {"hook","agent","skill","mcp"}.
+
+    mcp 는 spec(docs/sage_harness/mcps/{id}.md)만 사용(core/native/adapter/claims 무관)."""
     root: str
     kind: str
     id: str

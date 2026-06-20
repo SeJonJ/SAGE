@@ -18,7 +18,7 @@ from sage.commands import validate as V
 
 def register(sub):
     p = sub.add_parser("review", help="자동승인(auto)/사람검토(review) 분류 — auto_approve_safe_default")
-    p.add_argument("--kind", choices=["hook", "agent", "skill", "all"], default="all")
+    p.add_argument("--kind", choices=["hook", "agent", "skill", "mcp", "all"], default="all")
     p.add_argument("--batch", action="store_true", help="auto 버킷을 1줄 요약")
     p.add_argument("--gate", action="store_true", help="review 버킷 있으면 exit 1 (CI 게이트)")
     p.add_argument("--root", default=None)
@@ -33,6 +33,10 @@ def _render_current(entry):
         return "claude" in rh and "codex" in rh
     if form == "native":
         return "native" in rh
+    if form == "declarative":
+        # mcp: spec.runtime_targets 가 선언한 target 만 stamp 요구(단일-target 을 미완으로 오분류 방지).
+        targets = entry.get("runtime_targets") or list(rh.keys())
+        return bool(targets) and all(t in rh for t in targets)
     return "claude" in rh or "codex" in rh
 
 
@@ -71,13 +75,30 @@ def run(args):
         prefixes.append("agents/")
     if args.kind in ("skill", "all"):
         prefixes.append("skills/")   # skill(interpretive) 도 승인 UX 대상 (누락 수정)
+    if args.kind in ("mcp", "all"):
+        prefixes.append("mcps/")     # mcp(declarative) 도 승인 UX 대상
     ids = sorted(k for k in assets if any(k.startswith(p) for p in prefixes))
+
+    # MCP managed-block/.mcp.json 무결성은 자산 횡단(run-level) 검사라 per-asset _validate_mcp 가 못 본다.
+    # review 가 이를 안 거치면 블록 안 주입 서버가 auto-approve 된다(codex R6) → 여기서 1회 검사해 반영.
+    mcp_tamper = False
+    if args.kind in ("mcp", "all"):
+        _mcp_ids = [k.split("/", 1)[1] for k in assets if k.startswith("mcps/")]
+        _codex_ids = [k.split("/", 1)[1] for k in assets if k.startswith("mcps/")
+                      and "codex" in (assets[k].get("runtime_targets") or [])]
+        _osev, _ = V._mcp_ownership_check(root, _mcp_ids, _codex_ids)
+        mcp_tamper = (_osev == "FAIL")
 
     auto, review = [], []
     for aid in ids:
         entry = assets[aid]
         if aid.startswith("hooks/"):
             sev, _ = V._validate_hook(root, aid, entry, run_regression=False)
+        elif aid.startswith("mcps/"):
+            sev, _ = V._validate_mcp(root, aid, entry)
+            # 블록 무결성 위반(미선언 서버 주입 등) → 해당 codex-target 자산 자동승인 차단(end-to-end 폐쇄)
+            if mcp_tamper and "codex" in (entry.get("runtime_targets") or []) and sev == "PASS":
+                sev = "FAIL"
         else:
             sev, _ = V._validate_interpretive(root, aid, entry, run_regression=False)
         d = auto_approve_decision(aid, sev, entry)

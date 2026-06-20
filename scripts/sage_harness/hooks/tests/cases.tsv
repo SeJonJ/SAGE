@@ -18,3 +18,8 @@ README.md	0	루트 문서 통과
 .claude/agents/scripts/sage_harness/y.md	2	agents 하위 source-like 경로도 차단(P1)
 .CODEX/agents/x.md	2	대소문자 우회(.CODEX) 차단(audit4 P1-2)
 .Claude/Hooks/y.sh	2	대소문자 우회(.Claude/Hooks) 차단
+.mcp.json	2	MCP claude 생성물(SAGE 소유, repo 루트) 직접수정 차단
+/home/user/proj/.mcp.json	2	절대경로 .mcp.json 도 차단
+sub/.mcp.json	2	하위경로 .mcp.json 도 차단
+.codex/config.toml	0	codex config.toml 은 managed-block 만 소유 → 파일 통째 가드 안 함(통과)
+mcp.json	0	managed 아닌 일반 mcp.json(점 없음) 통과

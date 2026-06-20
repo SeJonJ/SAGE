@@ -65,8 +65,13 @@
         },
         "conformance": { "enum": ["PASS", "FAIL", "STALE", "UNKNOWN"] },
         "form": {
-          "enum": ["native", "core_adapter", "interpretive"],
-          "description": "native=단일 canonical .sh / core_adapter=core+런타임 adapter(hook) / interpretive=spec+claims→런타임 렌더(agent/skill, canonical parity 불가)"
+          "enum": ["native", "core_adapter", "interpretive", "declarative"],
+          "description": "native=단일 canonical .sh / core_adapter=core+런타임 adapter(hook) / interpretive=spec+claims→런타임 렌더(agent/skill) / declarative=선언 데이터→config 직렬화(mcp, 결정론)"
+        },
+        "runtime_targets": {
+          "type": "array",
+          "items": { "enum": ["claude", "codex"] },
+          "description": "mcp(declarative) 전용 — spec 이 선언한 생성 대상 런타임. review 가 단일-target currentness 판정에 사용"
         },
         "test": {
           "type": "string",

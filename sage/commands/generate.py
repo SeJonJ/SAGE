@@ -18,7 +18,7 @@ from sage.commands._common import contract_version_of
 
 def register(sub):
     p = sub.add_parser("generate", help="spec → 등록 산출물(settings.json/hooks.json) + manifest 스탬프")
-    p.add_argument("--kind", choices=["hook", "agent", "skill", "roster"], required=True)
+    p.add_argument("--kind", choices=["hook", "agent", "skill", "roster", "mcp"], required=True)
     p.add_argument("--id", default=None, help="단일 자산 (없으면 kind 전체; roster 는 profile.components 에서 파생)")
     p.add_argument("--write", action="store_true", help="파일 기록 (없으면 dry-run 미리보기)")
     p.add_argument("--target", choices=["claude", "codex", "both"], default="claude",
@@ -379,6 +379,137 @@ def _gen_roster(args, root):
     return 0
 
 
+def _gen_mcp(args, root):
+    """MCP(4번째 kind): spec md(payload SSOT) → .mcp.json(claude) + config.toml managed-block(codex) + manifest 스탬프.
+
+    대상 id: --id 단일 / profile.mcp.enabled 목록 / 둘 다 없으면 mcps/ 전체(default-on, hook 과 동형).
+    시크릿 FAIL 은 산출 전 중단(fail-closed). claude=SAGE 전용 .mcp.json 전체 쓰기, codex=공유 config.toml managed-block 교체.
+    """
+    from sage import mcp_common as M
+    manifest_path = os.path.join(root, "docs", "sage_harness", ".manifest.json")
+    manifest = json.loads(Path(manifest_path).read_text())
+    all_spec_ids = M.list_mcp_specs(args.dest if os.path.isdir(os.path.join(args.dest, "docs", "sage_harness", "mcps")) else root)
+    spec_root = args.dest if os.path.isdir(os.path.join(args.dest, "docs", "sage_harness", "mcps")) else root
+
+    if args.id:
+        if args.id not in all_spec_ids:
+            print(f"[sage generate] TOOL ERROR: docs/sage_harness/mcps/{args.id}.md 없음", file=sys.stderr)
+            return 2
+        target_ids = [args.id]
+    else:
+        prof = _load_profile_dict(root, args.dest)
+        enabled = ((prof or {}).get("mcp") or {}).get("enabled")
+        if enabled is not None:
+            missing = [e for e in enabled if e not in all_spec_ids]
+            if missing:
+                print(f"[sage generate] FAIL: profile.mcp.enabled 가 없는 spec 참조: {', '.join(missing)}", file=sys.stderr)
+                return 1
+            target_ids = sorted(enabled)
+        else:
+            target_ids = all_spec_ids
+
+    print(f"== sage generate (mcp) — {len(target_ids)} spec ==")
+    if not target_ids:
+        print("  ℹ️  mcp spec 0건 (docs/sage_harness/mcps/ 비어있음 또는 enabled 빈값) — 생성 없음.")
+        return 0
+
+    # 1. 파싱 + 시크릿 거부(fail-closed): FAIL 하나라도 있으면 산출 전 중단
+    models, had_fail = [], False
+    for sid in target_ids:
+        spec_path = os.path.join(spec_root, "docs", "sage_harness", "mcps", f"{sid}.md")
+        try:
+            mdl = M.parse_mcp_spec(spec_path)
+        except M.MCPSpecError as e:
+            print(f"  ❌ {sid}: spec 오류 — {e}", file=sys.stderr); had_fail = True; continue
+        for sev, msg in M.check_secrets(mdl):
+            mark = "❌" if sev == "FAIL" else "⚠️ "
+            print(f"  {mark} {sid}: {msg}", file=sys.stderr if sev == "FAIL" else sys.stdout)
+            if sev == "FAIL":
+                had_fail = True
+        models.append(mdl)
+    if had_fail:
+        print("[sage generate] FAIL: spec 오류/시크릿 위반 → 산출 전 중단(fail-closed).", file=sys.stderr)
+        return 1
+
+    targets = ["claude", "codex"] if args.target == "both" else [args.target]
+    # 2. 전 target 직렬화 + 사전검증을 '쓰기 전'에 모두 수행(원자성 — codex R3 P1: 부분상태 방지).
+    #    하나라도 FAIL 이면 아무 파일도 안 쓴다.
+    plan = []  # [(label, outp, body, dry_preview)]
+    if "claude" in targets and any("claude" in m["runtime_targets"] for m in models):
+        body = M.serialize_claude(models)
+        plan.append(("claude", os.path.join(args.dest, ".mcp.json"), body, None))
+    if "codex" in targets and any("codex" in m["runtime_targets"] for m in models):
+        block = M.serialize_codex_block(models)
+        outp = os.path.join(args.dest, ".codex", "config.toml")
+        existing = Path(outp).read_text(encoding="utf-8") if os.path.exists(outp) else ""
+        managed_names = {m["id"] for m in models if "codex" in m["runtime_targets"]}
+        collide = sorted(managed_names & set(M.codex_servers_outside_block(existing)))
+        if collide:
+            print(f"[sage generate] FAIL (codex): managed-block 밖에 [mcp_servers.{', '.join(collide)}] 가 이미 선언됨 "
+                  "→ SAGE 가 소유하려면 수동 정의를 제거하세요(소유권 충돌). 산출 없음.", file=sys.stderr)
+            return 1
+        new_text, err = M.replace_codex_block(existing, block)
+        if err:
+            print(f"[sage generate] FAIL (codex): {err} 산출 없음.", file=sys.stderr); return 1
+        ok, note = M.verify_toml(new_text)
+        if not ok:
+            print(f"[sage generate] FAIL (codex): 생성 TOML 무효 — {note} 산출 없음.", file=sys.stderr); return 1
+        if note:
+            print(f"   ↳ (codex) {note}")
+        plan.append(("codex", outp, new_text, block))
+
+    # 3. 쓰기(전 target 검증 통과 후에만) 또는 dry-run.
+    #    ★ codex R4 P1: temp 파일에 전부 쓴 뒤 os.replace 로 일괄 승격(all-or-nothing). 중간 OSError 시
+    #    기존 파일 무손상(temp 만 정리) — 부분상태 방지.
+    if args.write:
+        staged = []  # [(tmp, final, label)]
+        try:
+            for label, outp, body, _dry in plan:
+                d = os.path.dirname(outp)
+                if d:
+                    os.makedirs(d, exist_ok=True)
+                tmp = outp + ".sage-tmp"
+                Path(tmp).write_text(body, encoding="utf-8")
+                staged.append((tmp, outp, label))
+            for tmp, outp, label in staged:
+                os.replace(tmp, outp)
+                owner = "SAGE 소유(write-guard 대상)" if label == "claude" else "managed-block 교체(블록 밖 보존)"
+                print(f"✅ ({label}) {os.path.relpath(outp, args.dest)} — {owner}")
+        except OSError as e:
+            for tmp, _o, _l in staged:
+                try:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                except OSError:
+                    pass
+            print(f"[sage generate] FAIL: 산출물 쓰기 실패 — {e} (기존 파일 무손상).", file=sys.stderr)
+            return 1
+    else:
+        for label, _outp, body, dry in plan:
+            print(f"== generate {label} (dry-run) ==\n{dry if dry is not None else body}")
+
+    # 4. manifest 스탬프 (--write)
+    if args.write:
+        import hashlib
+        def sha(s):
+            return "sha256:" + hashlib.sha256(s.encode("utf-8")).hexdigest()
+        for mdl in models:
+            key = f"mcps/{mdl['id']}"
+            e = manifest["assets"].setdefault(key, {"conformance": "PASS", "form": "declarative"})
+            e["form"] = "declarative"
+            e["runtime_targets"] = list(mdl["runtime_targets"])
+            spec_path = os.path.join(spec_root, "docs", "sage_harness", "mcps", f"{mdl['id']}.md")
+            e["spec_hash"] = "sha256:" + hashlib.sha256(Path(spec_path).read_bytes()).hexdigest()
+            rh = {}
+            for tgt in mdl["runtime_targets"]:
+                rh[tgt] = sha(M.canonical_render(mdl, tgt))
+            e["render_hash"] = rh
+            e["conformance"] = "PASS"
+        Path(manifest_path).write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
+        print("✅ manifest 스탬프 갱신 (mcps/)")
+    return 0
+
+
 def run(args) -> int:
     root = _find_root(args.root or args.dest)   # --dest 프로젝트의 manifest 를 우선(Codex P1: dest 무시 버그)
     if not root:
@@ -388,6 +519,8 @@ def run(args) -> int:
         return _gen_hook(args, root)
     if args.kind == "roster":
         return _gen_roster(args, root)   # EH-1: profile.components → 동적 implementer spec
+    if args.kind == "mcp":
+        return _gen_mcp(args, root)   # MCP 4번째 kind: spec md → .mcp.json + config.toml managed-block
     # agent/skill: render 는 interpretive(런타임 AI). generate 는 안내만.
     drv = "extract_agent.py" if args.kind == "agent" else "extract_skill.py"
     print(f"== sage generate ({args.kind}) ==")
