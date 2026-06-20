@@ -515,6 +515,12 @@ def run(args) -> int:
     if not root:
         print("[sage generate] TOOL ERROR: manifest 미발견", file=sys.stderr)
         return 2
+    # 강제 게이트(C): 미부트스트랩/미설치/손상 profile 이면 전 kind 차단(거버넌스 무력화 방지).
+    from sage.commands._common import bootstrap_block_text, bootstrap_gate_reason
+    reason = bootstrap_gate_reason(root, args.dest)
+    if reason:
+        print(bootstrap_block_text(reason), file=sys.stderr)
+        return 2
     if args.kind == "hook":
         return _gen_hook(args, root)
     if args.kind == "roster":

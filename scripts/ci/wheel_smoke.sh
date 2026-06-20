@@ -44,7 +44,26 @@ env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$PROJ" >/dev/nul
 test -f "$PROJ/docs/sage_harness/.manifest.json" || { echo "❌ manifest 미생성"; exit 1; }
 test -f "$PROJ/scripts/sage_harness/hooks/pre_implementation_gate_core.py" || { echo "❌ hook 정본 미복사"; exit 1; }
 test -f "$PROJ/sage/project-profile.yaml" || { echo "❌ profile 미복사"; exit 1; }
-echo "   install OK (manifest + hook 정본 + profile 복사)"
+test -f "$PROJ/.claude/skills/sage-init/SKILL.md" || { echo "❌ /sage-init 부트스트랩 스킬 미복사"; exit 1; }
+echo "   install OK (manifest + hook 정본 + profile + /sage-init 스킬 복사)"
+
+# 강제 게이트 검증: 부트스트랩 전(project.name 빈값)엔 generate 가 BLOCK(exit 2) 돼야 한다.
+echo "== [4b/6] 부트스트랩 게이트 (빈 profile → generate BLOCK 기대) =="
+if env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --write --dest "$PROJ" >/dev/null 2>&1; then
+  echo "❌ 미부트스트랩 profile 인데 generate 가 통과함 (게이트 미작동)"; exit 1
+fi
+echo "   gate OK (미부트스트랩 generate 차단)"
+
+# 부트스트랩 시뮬레이션: /sage-init 인터뷰가 채울 값(project.name + risk glob)을 설정.
+# 설치 인스턴스는 강한 신호(name + risk/components) 필요 — name 만으론 게이트 미통과.
+python3 - "$PROJ/sage/project-profile.yaml" <<'PY'
+import sys
+p = sys.argv[1]
+t = open(p, encoding="utf-8").read()
+t = t.replace('name: ""', 'name: "smoke"')
+t = t.replace('l2_path_globs: []', 'l2_path_globs: ["src/**"]')
+open(p, "w", encoding="utf-8").write(t)
+PY
 
 echo "== [5/6] sage generate --kind hook --write (등록 산출물 + manifest 스탬프) =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --write --dest "$PROJ" >/dev/null

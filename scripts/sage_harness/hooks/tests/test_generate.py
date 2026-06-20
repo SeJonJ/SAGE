@@ -141,13 +141,14 @@ class TestGenerate(unittest.TestCase):
             self.assertTrue(m["assets"]["hooks/aaa-hook"]["spec_hash"].startswith("sha256:"))
 
     def test_profile_compile_failclosed(self):
-        # Codex P1: profile.yaml 존재 + 컴파일 실패(잘못된 YAML) → generate --write FAIL(rc 1), profile.json 미생성
+        # 손상 profile(잘못된 YAML)은 부트스트랩 게이트가 먼저 차단(rc 2) → profile.json 미생성.
+        # (게이트가 compile-failclosed 보다 바깥 방어선 — 손상 profile 로 산출물 생성 봉쇄)
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as dest:
             make_root(d)
             os.makedirs(os.path.join(dest, "sage"), exist_ok=True)
             Path(os.path.join(dest, "sage", "project-profile.yaml")).write_text("risk:\n  l3_filename_globs: [unclosed\n")
             rc = gen.run(Args(target="claude", dest=dest, root=d, write=True))
-            self.assertEqual(rc, 1)
+            self.assertEqual(rc, 2)
             self.assertFalse(os.path.exists(os.path.join(dest, "sage", "project-profile.json")))
 
     @unittest.skipUnless(_HAS_YAML, "pyyaml 필요(generate 빌드 의존성)")
@@ -157,7 +158,7 @@ class TestGenerate(unittest.TestCase):
             make_root(d)
             os.makedirs(os.path.join(dest, "sage"), exist_ok=True)
             Path(os.path.join(dest, "sage", "project-profile.yaml")).write_text(
-                "risk:\n  l3_filename_globs: ['*payment*']\n  l2_path_globs: ['src/*']\n")
+                "project: { name: t }\nrisk:\n  l3_filename_globs: ['*payment*']\n  l2_path_globs: ['src/*']\n")
             rc = gen.run(Args(target="claude", dest=dest, root=d, write=True))
             self.assertEqual(rc, 0)
             prof = json.loads(Path(os.path.join(dest, "sage", "project-profile.json")).read_text())

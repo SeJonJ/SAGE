@@ -175,7 +175,7 @@ class TestGenerate(unittest.TestCase):
             _inst(t); _spec(t, "codegraph", _CODEGRAPH)
             _spec(t, "obsidian", "---\nid: obsidian\nkind: mcp\ntransport: stdio\nruntime_targets: [claude]\nserver_binding: { command: npx }\n---\n")
             os.makedirs(os.path.join(t, "sage"))
-            open(os.path.join(t, "sage", "project-profile.yaml"), "w").write("mcp:\n  enabled: [codegraph]\n")
+            open(os.path.join(t, "sage", "project-profile.yaml"), "w").write("project: { name: t }\nmcp:\n  enabled: [codegraph]\n")
             G.run(GArgs(t, target="claude"))
             doc = json.loads(open(os.path.join(t, ".mcp.json")).read())
             self.assertEqual(sorted(doc["mcpServers"].keys()), ["codegraph"])   # obsidian 제외
@@ -184,7 +184,7 @@ class TestGenerate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             _inst(t); _spec(t, "codegraph", _CODEGRAPH)
             os.makedirs(os.path.join(t, "sage"))
-            open(os.path.join(t, "sage", "project-profile.yaml"), "w").write("mcp:\n  enabled: [nonexistent]\n")
+            open(os.path.join(t, "sage", "project-profile.yaml"), "w").write("project: { name: t }\nmcp:\n  enabled: [nonexistent]\n")
             self.assertEqual(G.run(GArgs(t)), 1)
 
 
