@@ -178,7 +178,7 @@ git push origin v0.2.0
 
 ## 검증 이력
 
-- **외부검토 1차 하드닝 11항목** 완료 (전문가 1차 평가 6.5/10 → 코드 레벨 재검증 → 전 항목 SHIP)
+- **외부검토 1차 하드닝 11항목** 완료
 - **Weatherapp Tier 2** 골든 인스턴스: `install → 대화형 부트스트랩 → generate → validate → PDCA phases → cross-model review → 수정 → report` 전체 파이프라인 실세계 실증
 - **MCP kind**: codex 6라운드 cross-model 리뷰, P0×3 + P1×8 + P2×2 전부 해소, 엔진 도메인 토큰 0
 - **CI** wheel smoke test 강제 (clean venv wheel-only 설치 → generate → validate PASS)
