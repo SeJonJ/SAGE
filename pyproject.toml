@@ -1,8 +1,28 @@
 [project]
 name = "sage-harness"
 version = "0.1.0"
-description = "System for Agentic Governance & Engineering — runtime-selectable AI harness framework"
+description = "Governance harness for AI coding agents — spec-SSOT closed loop for Claude Code and Codex"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "SeJonJ", email = "wkdtpwhs@gmail.com" }]
 requires-python = ">=3.10"
+keywords = [
+  "ai", "agent", "governance", "claude", "codex", "harness",
+  "hooks", "spec", "ssot", "llm", "automation",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: Software Development :: Libraries :: Application Frameworks",
+  "Topic :: Utilities",
+]
 dependencies = [
   "pyyaml>=6.0",
   "tomli>=2.0; python_version < '3.11'",   # MCP generate: config.toml 검증(py3.11+ 는 표준 tomllib). 없으면 best-effort skip
@@ -10,6 +30,12 @@ dependencies = [
 
 [project.optional-dependencies]
 schema = ["jsonschema>=4.0"]   # sage validate --schema (manifest JSON Schema 구조검증)
+
+[project.urls]
+Homepage = "https://github.com/SeJonJ/SAGE"
+Repository = "https://github.com/SeJonJ/SAGE"
+Issues = "https://github.com/SeJonJ/SAGE/issues"
+Changelog = "https://github.com/SeJonJ/SAGE/releases"
 
 [project.scripts]
 sage = "sage.cli:main"
