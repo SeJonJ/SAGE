@@ -14,6 +14,8 @@ import json
 import os
 from pathlib import Path
 
+from sage import __version__
+
 from sage import _resources   # 번들 리소스 경로 단일 해석(env override + repo fallback — 재배치/설치 대비)
 
 # CORE roster (중립 6인) + CORE hook 6종(form). 도메인값 아님 = framework 메타.
@@ -138,7 +140,9 @@ def _manifest(host):
             "form": form, "conformance": "UNKNOWN", "risk": [], "unresolved": [],
         }
     return {
-        "sage_version": "0.1.0", "generator_version": "0.1.0", "template_version": "0.1.0",
+        # 설치를 만든 SAGE 패키지 버전을 그대로 스탬프(sage --version 과 일치).
+        # template_version 은 manifest 포맷 버전이라 패키지 버전과 독립적으로 고정.
+        "sage_version": __version__, "generator_version": __version__, "template_version": "1",
         "host_runtime": host,
         # 설치 인스턴스 마커(다중 신호) — 부트스트랩 게이트가 AGENT_GUIDE 분실 시에도 설치를 인식(codex R2-P0).
         "installed_instance": True,
