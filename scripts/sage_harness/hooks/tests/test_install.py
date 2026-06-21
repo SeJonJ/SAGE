@@ -109,11 +109,19 @@ class TestInstall(unittest.TestCase):
                 self.assertIn(f"name: {aid}", body, f"{aid}.md frontmatter name 누락")
                 self.assertIn("description:", body, f"{aid}.md frontmatter description 누락")
 
-    def test_codex_host_no_claude_agent_renders(self):
-        """codex host 는 .claude/agents/ 를 배치하지 않는다 (Claude Code 전용)."""
+    def test_codex_host_deploys_codex_agent_renders(self):
+        """사용자 지침: codex install 도 CORE 6인 에이전트 렌더를 받는다(리소스 생성 시 codex 누락 금지).
+
+        host 택1이라 codex 는 .claude/agents/ 는 두지 않고(.claude 는 Claude Code 전용), 동일 소스를
+        repo .codex/agents/<id>.md 로 배포한다(SAGE 설계 정본 — write-guard·reverse_extract)."""
+        _CORE_AGENTS = ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("codex", d, no_global_skill=True))
-            self.assertFalse(os.path.exists(os.path.join(d, ".claude", "agents")))
+            self.assertFalse(os.path.exists(os.path.join(d, ".claude", "agents")))  # claude 전용 경로는 미배치
+            for aid in _CORE_AGENTS:
+                path = os.path.join(d, ".codex", "agents", f"{aid}.md")
+                self.assertTrue(os.path.exists(path), f".codex/agents/{aid}.md 미배치")
+                self.assertIn(f"name: {aid}", Path(path).read_text(encoding="utf-8"))
 
     def test_deploys_core_skill_specs(self):
         """Gap-2 mutation teeth: CORE skill spec 2종이 docs/sage_harness/skills/ 에 배치된다."""

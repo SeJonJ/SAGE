@@ -41,11 +41,16 @@ specs are not manifest-registered. Until the profile is bootstrapped
 and `sage validate` WARNs — by design, so an empty profile cannot silently
 disable the governance gate.
 
-Runtime discovery differs by host: Claude auto-discovers repo-scoped skills and
-agents under `.claude/`; Codex does not auto-discover repo-scoped skills, so CORE
-skills install to the user-global `$CODEX_HOME/skills/` instead (`$sage-init`,
-`$pdca-start`, `$sage-review`). Codex users also follow
-`docs/agent/bootstrap-authoring.md` (see `CODEX.md`).
+Runtime discovery differs by host, and `sage install` picks one host (claude OR
+codex), so each install deploys only that host's copies. On a **claude** host,
+Claude auto-discovers repo-scoped skills and agents under `.claude/` (CORE skills →
+`.claude/skills/`, CORE agents → `.claude/agents/`). On a **codex** host, Codex does
+not auto-discover repo-scoped skills, so CORE skills install to the user-global
+`$CODEX_HOME/skills/` (`$sage-init`, `$pdca-start`, `$sage-review`); and since Codex
+has no native subagent auto-discovery either, the CORE roster agent renders install
+to repo `.codex/agents/<id>.md` (the SAGE-canonical asset path), which the Codex AI
+references as role definitions via the `AGENTS.md` router rather than native
+invocation. Codex users also follow `docs/agent/bootstrap-authoring.md` (see `CODEX.md`).
 
 ## Risk & Workflow Gate (PDCA)
 

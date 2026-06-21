@@ -17,3 +17,7 @@ output contract are governed solely by `AGENT_GUIDE.md`.
   `sage generate`. (The hand-shipped CORE bootstrap skills — `sage-init`,
   `pdca-start`, `sage-review` — install to the user-global `$CODEX_HOME/skills/`,
   not the repo, so they are not generated artifacts; update them via reinstall.)
+- The CORE roster agent renders (`leader`, `implementer-a`, `implementer-b`, `qa`,
+  `reviewer`, `convention-checker`) are hand-shipped to repo `.codex/agents/<id>.md`
+  (write-guard exempt, not generated). Codex has no native subagent invocation, so
+  reference them as role definitions via this router; update them via reinstall.

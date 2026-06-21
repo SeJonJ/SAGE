@@ -12,6 +12,9 @@
 .claude/agents/leader.md	0	CORE 로스터 에이전트 렌더(leader) 면제
 .claude/agents/convention-checker.md	0	CORE 로스터 에이전트 렌더(convention-checker) 면제
 .claude/agents/implementer-backend.md	2	프로젝트 에이전트(비-CORE 이름)는 계속 차단
+.codex/agents/leader.md	0	codex CORE 로스터 에이전트 렌더(leader) 면제 — claude 와 함께 배포
+.codex/agents/reviewer.md	0	codex CORE 로스터 에이전트 렌더(reviewer) 면제
+.codex/agents/implementer-backend.md	2	codex 프로젝트 에이전트(비-CORE 이름)는 계속 차단
 /home/user/myproject/.claude/agents/x.md	2	절대경로 산출물도 block (범용 경로 — 작성자 fs 비의존)
 ./.codex/agents/y.md	2	상대 ./ prefix 정규화 후 block
 docs/sage_harness/agents/backend.md	0	spec(소스)은 허용

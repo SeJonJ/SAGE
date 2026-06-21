@@ -202,6 +202,13 @@ def run(args) -> int:
             agents_md_collision = True
         else:
             _copy_file(os.path.join(fw, "AGENTS.md"), agents_dst, args.force, created, skipped)
+        # codex: CORE 6인 에이전트 렌더 → repo .codex/agents/ (claude host 가 .claude/agents/ 받듯
+        #   codex host 도 자기 렌더를 받음 — 리소스 생성 시 codex 누락 금지, 사용자 지침).
+        #   codex 는 에이전트 네이티브 자동발견이 없으나 SAGE 설계상 .codex/agents/<id>.md 가 자산 정본
+        #   (write-guard·reverse_extract·CODEX.md). codex AI 는 AGENTS.md 라우팅으로 역할 정의를 참조.
+        #   claude 렌더와 동일 소스 재사용(skill 전역배포와 같은 단일소스 패턴).
+        _copy_tree(os.path.join(fw, ".claude", "agents"),
+                   os.path.join(dest, ".codex", "agents"), args.force, created, skipped)
 
     # 3. CORE hook spec(중립 6종) → docs/sage_harness/hooks/
     specs = _resources.hook_specs_dir()
@@ -251,7 +258,7 @@ def run(args) -> int:
 
     # 보고
     print(f"== sage install (host={args.host}, prefix={args.prefix}) → {dest} ==")
-    print(f"생성 {len(created)}건 (framework + CORE hook {len(_CORE_HOOKS)} + roster agent {len(_CORE_AGENTS)} + CORE agent render {len(_CORE_AGENTS) if args.host == 'claude' else 0} + CORE skill {len(_CORE_SKILLS)}):")
+    print(f"생성 {len(created)}건 (framework + CORE hook {len(_CORE_HOOKS)} + roster agent {len(_CORE_AGENTS)} + CORE agent render {len(_CORE_AGENTS)} + CORE skill {len(_CORE_SKILLS)}):")
     for p in sorted(created):
         print(f"  + {os.path.relpath(p, dest)}")
     if skipped:
