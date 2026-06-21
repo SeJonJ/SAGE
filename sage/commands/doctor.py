@@ -82,6 +82,73 @@ def _load_profile(path):
         return None, f"parse_error:{type(e).__name__}"
 
 
+def _sha256_file(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _check_codex_skill_deployment(prof_path, profile):
+    """manifest-추적 skill 의 codex 전역 배포 상태 점검(Part C). 환경 부수상태라 WARN 만(FAIL 아님).
+
+    repo .codex/skills/<id>/SKILL.md(정본) 대비 $CODEX_HOME/skills/<prefix>-<id>/SKILL.md(배포 캐시):
+    미배포/내용불일치 → WARN + `sage generate --kind skill --deploy-codex` 안내. 정본 부재 skill 은 N/A(스킵).
+    """
+    import json
+    # codex 전역 skill 발견은 codex-host 에서만 의미(claude-host 는 codex skill 미사용 → N/A 스킵).
+    # 전역 배포는 opt-in(--deploy-codex)이므로 claude-host 에 거짓 WARN 을 내지 않는다(codex 리뷰 P1).
+    if (profile.get("runtime") or {}).get("host") != "codex":
+        return
+    # root 파생: 실제 프로젝트 profile(<root>/sage/project-profile.yaml)에서만. templates 기본은 스킵.
+    # realpath 정규화(상대 --profile·심링크도 cwd 무관하게 올바른 root 파생 — codex 리뷰 P2).
+    norm = os.path.normpath(os.path.realpath(prof_path))
+    if not norm.endswith(os.path.join("sage", "project-profile.yaml")):
+        return
+    root = os.path.dirname(os.path.dirname(norm))
+    manifest_path = os.path.join(root, "docs", "sage_harness", ".manifest.json")
+    if not os.path.exists(manifest_path):
+        return
+    try:
+        assets = (json.loads(open(manifest_path, encoding="utf-8").read()) or {}).get("assets", {})
+    except Exception:
+        return
+    skill_ids = [k.split("/", 1)[1] for k in assets if k.startswith("skills/")]
+    if not skill_ids:
+        return
+    from sage.commands.install import _codex_skills_root
+    prefix = str((profile.get("project") or {}).get("prefix") or "").strip()
+    g_root = _codex_skills_root()
+    print("## codex skill 전역 배포 (Part C — repo 정본 대비 발견용 캐시)")
+    if not prefix:
+        # generate --deploy-codex 가 prefix 없이는 fail-closed(전역 네임스페이스 충돌 방지) → doctor 도 bare-id 점검 금지.
+        print("  ⚠️  project.prefix 미설정 → codex 전역 배포 불가(네임스페이스 충돌 방지). profile 의 project.prefix 설정 필요.")
+        return
+    import re as _re
+    if not _re.match(r"^[A-Za-z0-9_-]+$", prefix):
+        # generate 와 동일 검증(경로 탈출 방지) — 안전치 않은 prefix 는 점검 불가.
+        print(f"  ⚠️  project.prefix 가 안전하지 않음('{prefix}') — [A-Za-z0-9_-] 만 허용. 점검 생략.")
+        return
+    for sid in sorted(skill_ids):
+        if not _re.match(r"^[A-Za-z0-9_-]+$", sid):
+            print(f"  ⚠️  {sid}: 안전하지 않은 skill id — 점검 생략(경로 탈출 방지).")
+            continue
+        canon = os.path.join(root, ".codex", "skills", sid, "SKILL.md")
+        if not os.path.exists(canon):
+            print(f"  ℹ️  {sid}: repo .codex/skills 정본 없음 → 전역 배포 N/A (claude 전용 skill?)")
+            continue
+        gid = f"{prefix}-{sid}"
+        gdst = os.path.join(g_root, gid, "SKILL.md")
+        if not os.path.exists(gdst):
+            print(f"  ⚠️  {sid}: codex 전역 미배포 ({gdst}) → `sage generate --kind skill --id {sid} --deploy-codex`")
+        elif _sha256_file(gdst) != _sha256_file(canon):
+            print(f"  ⚠️  {sid}: 전역 캐시가 정본과 다름(stale) → `sage generate --kind skill --id {sid} --deploy-codex` 로 갱신")
+        else:
+            print(f"  ✅ {sid}: 전역 배포 최신 (${gid})")
+
+
 def run(args):
     from sage import _resources
     prof_path = args.profile or os.path.join(_resources.templates_dir(), "project-profile.yaml")
@@ -125,6 +192,11 @@ def run(args):
         print(f"  claude CLI  : {'available' if claude_avail else 'unavailable'} (PATH which claude | capabilities.claude)")
     print(f"  codegraph   : {opts.get('codegraph', 'optional')} (MCP 필요 — 미연결 시 rg/read degrade)")
     print(f"  obsidian    : vault_path={'set' if vault else 'empty → 기능 OFF(N/A)'}")
+
+    # codex skill 전역 배포 점검(Part C) — manifest-추적 프로젝트 skill 이 codex 전역에 배포됐는지.
+    #   정본 = repo .codex/skills/<id>/SKILL.md (manifest 추적), 전역 = $CODEX_HOME/skills/<prefix>-<id> (발견용 캐시).
+    #   validate 는 전역을 무시(clone-stable repo 정본만) → 전역 staleness 는 여기(환경 진단)에서 WARN.
+    _check_codex_skill_deployment(prof_path, profile)
 
     # reviewer resolution
     rr = reviewer_resolution(profile, {"gstack": gstack_avail, "claude": claude_avail})

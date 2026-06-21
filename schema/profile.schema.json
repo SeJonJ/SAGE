@@ -5,7 +5,13 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "project": { "type": "object" },
+    "project": {
+      "type": "object",
+      "description": "prefix 는 codex 전역 skill 네임스페이스($CODEX_HOME/skills/<prefix>-<id>)에 쓰이므로 경로 안전 토큰만 허용(경로 탈출 방지). 그 외 키는 느슨.",
+      "properties": {
+        "prefix": { "type": "string", "pattern": "^[A-Za-z0-9_-]*$" }
+      }
+    },
     "options": { "type": "object" },
     "paths": { "type": "object" },
     "components": { "type": "array" },

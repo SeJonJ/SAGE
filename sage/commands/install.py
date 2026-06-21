@@ -101,6 +101,11 @@ def _install_codex_global_skill(src_skill_md, force, skill_id="sage-init"):
     - drift 경고(codex R1-P1): 기존 파일이 현재 번들과 다르면(구버전/로컬수정) stale 반환 → --force 안내."""
     if not os.path.exists(src_skill_md):
         return ("missing", None)
+    # defense-in-depth(codex 리뷰 P2): skill_id 가 전역 경로에 직접 조립되므로 경로 안전 토큰만 허용.
+    # 호출부(generate)가 이미 검증하지만 helper 자체도 / · .. 등을 차단(독립 안전).
+    import re as _re
+    if not _re.match(r"^[A-Za-z0-9_-]+$", skill_id):
+        return ("error", f"unsafe skill_id: {skill_id!r}")
     dst = os.path.join(_codex_skills_root(), skill_id, "SKILL.md")
     try:
         src_text = Path(src_skill_md).read_text(encoding="utf-8")
