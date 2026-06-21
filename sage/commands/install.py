@@ -183,6 +183,9 @@ def run(args) -> int:
         # claude: repo .claude/skills/ 자동발견 → /sage-init 스킬 배치.
         _copy_tree(os.path.join(fw, ".claude", "skills", "sage-init"),
                    os.path.join(dest, ".claude", "skills", "sage-init"), args.force, created, skipped)
+        # claude: CORE 6인 에이전트 렌더 → .claude/agents/ (Claude Code 자동발견 경로)
+        _copy_tree(os.path.join(fw, ".claude", "agents"),
+                   os.path.join(dest, ".claude", "agents"), args.force, created, skipped)
     else:
         # codex: ① repo-스코프 스킬 자동발견 불가 → $sage-init 스킬을 전역($CODEX_HOME/skills)에 설치
         #           (--no-global-skill 로 opt-out — CI/샌드박스/타repo 검사용, codex R1-P1).
@@ -234,7 +237,7 @@ def run(args) -> int:
 
     # 보고
     print(f"== sage install (host={args.host}, prefix={args.prefix}) → {dest} ==")
-    print(f"생성 {len(created)}건 (framework + CORE hook {len(_CORE_HOOKS)} + roster agent {len(_CORE_AGENTS)}):")
+    print(f"생성 {len(created)}건 (framework + CORE hook {len(_CORE_HOOKS)} + roster agent {len(_CORE_AGENTS)} + CORE agent render {len(_CORE_AGENTS) if args.host == 'claude' else 0}):")
     for p in sorted(created):
         print(f"  + {os.path.relpath(p, dest)}")
     if skipped:

@@ -46,6 +46,13 @@ class TestInstall(unittest.TestCase):
                 "docs/sage_harness/agents/reviewer.md", "docs/sage_harness/agents/convention-checker.md",
                 # 대화형 부트스트랩 트리거(claude) — 설계상 진입점
                 ".claude/skills/sage-init/SKILL.md",
+                # CORE 6인 에이전트 렌더 (Claude Code .claude/agents/ 자동발견)
+                ".claude/agents/leader.md",
+                ".claude/agents/implementer-a.md",
+                ".claude/agents/implementer-b.md",
+                ".claude/agents/qa.md",
+                ".claude/agents/reviewer.md",
+                ".claude/agents/convention-checker.md",
             ):
                 self.assertTrue(os.path.exists(os.path.join(d, rel)), rel)
             # tests/ 는 배치하지 않음(런타임 불필요)
@@ -83,6 +90,36 @@ class TestInstall(unittest.TestCase):
             install.run(Args("claude", d))
             self.assertFalse(os.path.exists(os.path.join(d, "AGENTS.md")))
             self.assertTrue(os.path.exists(os.path.join(d, ".claude", "skills", "sage-init", "SKILL.md")))
+
+    def test_claude_host_deploys_core_agent_renders(self):
+        """Gap-1 mutation teeth: claude install 시 6인 에이전트 렌더가 .claude/agents/ 에 배치된다."""
+        _CORE_AGENTS = ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            for aid in _CORE_AGENTS:
+                path = os.path.join(d, ".claude", "agents", f"{aid}.md")
+                self.assertTrue(os.path.exists(path), f".claude/agents/{aid}.md 미배치")
+                body = Path(path).read_text(encoding="utf-8")
+                self.assertIn(f"name: {aid}", body, f"{aid}.md frontmatter name 누락")
+                self.assertIn("description:", body, f"{aid}.md frontmatter description 누락")
+
+    def test_codex_host_no_claude_agent_renders(self):
+        """codex host 는 .claude/agents/ 를 배치하지 않는다 (Claude Code 전용)."""
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("codex", d, no_global_skill=True))
+            self.assertFalse(os.path.exists(os.path.join(d, ".claude", "agents")))
+
+    def test_claude_agent_renders_create_only(self):
+        """Gap-1 create-only 안전성: 사용자 커스터마이즈 렌더는 --force 없이 보존된다."""
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            leader_path = os.path.join(d, ".claude", "agents", "leader.md")
+            # 사용자가 렌더를 수정했다고 가정
+            Path(leader_path).write_text("USER_CUSTOM_RENDER\n", encoding="utf-8")
+            install.run(Args("claude", d))  # --force 없이 재설치
+            self.assertIn("USER_CUSTOM_RENDER", Path(leader_path).read_text(encoding="utf-8"))
+            install.run(Args("claude", d, force=True))  # --force 는 갱신
+            self.assertNotIn("USER_CUSTOM_RENDER", Path(leader_path).read_text(encoding="utf-8"))
 
     def test_codex_agents_md_collision_preserved(self):
         # 기존 AGENTS.md 는 create-only 로 보존(codex 협의 R4: 자동 덮어쓰기 금지)
