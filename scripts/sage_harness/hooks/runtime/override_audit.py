@@ -16,6 +16,7 @@
 import json
 import os
 import time
+import uuid
 
 AUDIT_REL = os.path.join(".sage", "override.jsonl")        # 커밋되는 감사 이력
 GRANTS_REL = os.path.join(".sage", "tmp", "grants.jsonl")  # 로컬 전용 활성 권한 캐시
@@ -88,7 +89,7 @@ def grant(root, reason, ttl_seconds, gate="all", user=None, now=None):
     if int(ttl_seconds) > MAX_TTL_SECONDS:
         raise ValueError(f"TTL {int(ttl_seconds)}s 가 상한 {MAX_TTL_SECONDS}s(24h) 초과 — 더 짧게 발급하거나 만료 후 재발급")
     t = time.time() if now is None else now
-    rec = {"event": "grant", "ts": _iso(t), "epoch": int(t),
+    rec = {"event": "grant", "grant_id": uuid.uuid4().hex[:12], "ts": _iso(t), "epoch": int(t),
            "expires_epoch": int(t) + int(ttl_seconds), "expires_at": _iso(t + ttl_seconds),
            "ttl_seconds": int(ttl_seconds), "gate": gate, "reason": reason,
            "user": user or os.environ.get("USER") or "unknown"}
@@ -97,13 +98,37 @@ def grant(root, reason, ttl_seconds, gate="all", user=None, now=None):
     return rec
 
 
+def revoke(root, grant_id, reason=None, user=None, now=None):
+    """활성 grant 를 만료 전에 회수한다 → revoke 레코드 반환, 대상이 없으면 None.
+
+    append-only 를 유지하며 revoke 이벤트를 감사 로그와 권한 캐시 양쪽에 남긴다 — 이후
+    active_grants 가 같은 grant_id 를 제외한다. 미존재/이미 만료/이미 회수된 id 는 무효(None)."""
+    t = time.time() if now is None else now
+    target = next((g for g in active_grants(root, now=t) if g.get("grant_id") == grant_id), None)
+    if target is None:
+        return None
+    rec = {"event": "revoke", "ts": _iso(t), "epoch": int(t), "grant_id": grant_id,
+           "gate": target.get("gate"), "reason": reason or "(no reason)",
+           "user": user or os.environ.get("USER") or "unknown"}
+    # 집행 캐시를 먼저 쓴다 — 이게 실패하면 권한이 그대로 살아 있으므로 예외로 알려야 한다.
+    # (반대로 grant 는 집행 캐시를 마지막에 써서, 실패 시 권한이 안 생기는 안전한 방향이 된다.)
+    # 여기서 감사부터 쓰면 "감사엔 회수, 집행엔 활성"인 상태가 생겨 회수가 무력화될 수 있다.
+    _append(grants_path(root), rec)   # 집행(실패 시 권한 유지 — 예외 전파로 운영자 인지)
+    _append(audit_path(root), rec)    # 추적(집행 성공 후 기록)
+    return rec
+
+
 def active_grants(root, gate=None, now=None):
-    """미만료 grant 레코드. 권한 캐시(로컬)만 읽어 판정하므로 clone 시 남의 권한은 비활성이다.
+    """미만료·미회수 grant 레코드. 권한 캐시(로컬)만 읽어 판정하므로 clone 시 남의 권한은 비활성이다.
     gate 지정 시 grant.gate ∈ {gate, 'all'} 만. 최신순."""
     t = time.time() if now is None else now
+    records = _read_jsonl(grants_path(root))
+    revoked = {r.get("grant_id") for r in records if r.get("event") == "revoke"}
     out = []
-    for r in _read_jsonl(grants_path(root)):
+    for r in records:
         if r.get("event") != "grant":
+            continue
+        if r.get("grant_id") in revoked:
             continue
         if r.get("expires_epoch", 0) <= t:
             continue
@@ -123,5 +148,6 @@ def record_bypass(root, gate, files, message_key, grant_rec, now=None):
     t = time.time() if now is None else now
     _append(audit_path(root), {"event": "bypass", "ts": _iso(t), "epoch": int(t), "gate": gate,
                                "message_key": message_key, "files": files or [],
+                               "grant_id": (grant_rec or {}).get("grant_id"),
                                "grant_ts": (grant_rec or {}).get("ts"),
                                "reason": (grant_rec or {}).get("reason")})

@@ -114,6 +114,57 @@ class TestAuditPermissionSplit(unittest.TestCase):
             self.assertFalse(ov.is_override_active(dst, GATE, now=1500))
 
 
+class TestRevoke(unittest.TestCase):
+    """만료 전 회수 — 오발급한 우회 권한을 즉시 무효화."""
+
+    def test_revoke_deactivates_grant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            g = ov.grant(tmp, "실수 발급", 10000, gate=GATE, now=1000)
+            self.assertTrue(ov.is_override_active(tmp, GATE, now=1100))
+            rec = ov.revoke(tmp, g["grant_id"], reason="회수", now=1200)
+            self.assertIsNotNone(rec)
+            self.assertFalse(ov.is_override_active(tmp, GATE, now=1300))   # 만료(11000) 한참 전인데 비활성
+
+    def test_revoke_unknown_id_returns_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ov.grant(tmp, "r", 10000, gate=GATE, now=1000)
+            self.assertIsNone(ov.revoke(tmp, "nonexistent", now=1100))
+
+    def test_revoke_recorded_in_audit_append_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            g = ov.grant(tmp, "r", 10000, gate=GATE, now=1000)
+            ov.revoke(tmp, g["grant_id"], reason="오발급 회수", now=1200)
+            events = [r["event"] for r in ov.read_records(tmp)]
+            self.assertEqual(sorted(events), ["grant", "revoke"])   # grant 삭제 없이 revoke 추가
+
+    def test_double_revoke_is_noop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            g = ov.grant(tmp, "r", 10000, gate=GATE, now=1000)
+            self.assertIsNotNone(ov.revoke(tmp, g["grant_id"], now=1100))
+            self.assertIsNone(ov.revoke(tmp, g["grant_id"], now=1200))   # 이미 회수 → 대상 없음
+
+    def test_revoke_writes_enforcement_before_audit(self):
+        # 회수는 집행 캐시를 먼저 써야 한다 — 감사부터 쓰면 감사 append 실패 시
+        # "감사엔 회수, 집행엔 활성"인 무력화 상태가 생긴다. audit append 가 깨져도
+        # 권한은 이미 비활성이어야 함을 보장.
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as tmp:
+            g = ov.grant(tmp, "r", 10000, gate=GATE, now=1000)
+            orig = ov._append
+            audit = ov.audit_path(tmp)
+
+            def flaky(path, record):
+                if path == audit and record.get("event") == "revoke":
+                    raise OSError("감사 디스크 실패 모사")
+                return orig(path, record)
+
+            with mock.patch.object(ov, "_append", flaky):
+                with self.assertRaises(OSError):
+                    ov.revoke(tmp, g["grant_id"], now=1100)
+            # 감사 기록은 실패했어도 집행 캐시엔 회수가 반영돼 권한이 죽어 있어야 한다(fail-closed).
+            self.assertFalse(ov.is_override_active(tmp, GATE, now=1200))
+
+
 class TestMaybeOverrideWiring(unittest.TestCase):
     def test_block_with_active_override_passes_and_audits(self):
         with tempfile.TemporaryDirectory() as tmp:
