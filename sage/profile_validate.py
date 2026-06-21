@@ -28,6 +28,7 @@ _CLOSED_SECTION_FALLBACK = {
              "pre_implementation_required", "report_phase"},
     "output_contract": {"markers"},
     "mcp": {"enabled"},
+    "extraction": {"config"},
 }
 
 

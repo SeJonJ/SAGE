@@ -200,8 +200,14 @@ def _conformance_check(root, asset_id, claims_path):
     타깃 vendored 본이 아닌 엔진 결정론 로직이 권위. contradiction_patterns 는 엔진 기본(commit/push)만
     (프로젝트 고유 패턴은 런타임 config 주입 영역)."""
     subdir, aid = asset_id.split("/", 1)
-    renders = {rt: os.path.join(root, host, subdir, f"{aid}.md")
-               for rt, host in (("claude", ".claude"), ("codex", ".codex"))}
+    # 렌더 경로는 kind 별로 다르다: agent=<host>/agents/<id>.md(flat), skill=<host>/skills/<id>/SKILL.md(dir).
+    # 이전엔 skill 도 flat 으로 조립해 렌더를 못 찾고 conformance 가 조용히 skip 됐다(codex 리뷰 P2).
+    if subdir == "skills":
+        renders = {rt: os.path.join(root, host, "skills", aid, "SKILL.md")
+                   for rt, host in (("claude", ".claude"), ("codex", ".codex"))}
+    else:
+        renders = {rt: os.path.join(root, host, subdir, f"{aid}.md")
+                   for rt, host in (("claude", ".claude"), ("codex", ".codex"))}
     present = {rt: p for rt, p in renders.items() if os.path.exists(p)}
     if not present or not os.path.exists(claims_path):
         return "PASS", []

@@ -9,6 +9,14 @@
     "options": { "type": "object" },
     "paths": { "type": "object" },
     "components": { "type": "array" },
+    "extraction": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "interpretive 자산 추출 시그널(선택). config: module:VAR | repo-상대 *.json — input_scope_patterns/signal_rules 등 프로젝트 고유 ExtractConfig 를 sage generate --kind agent/skill 에 주입. 닫힌 섹션(오타 적발).",
+      "properties": {
+        "config": { "type": "string" }
+      }
+    },
     "risk": {
       "type": "object",
       "additionalProperties": false,

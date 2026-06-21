@@ -49,9 +49,16 @@ def _mk_instance(tmp, asset_id, claims_text, render_text):
     with open(os.path.join(docs, f"{aid}.claims.yml"), "w", encoding="utf-8") as f:
         f.write(claims_text)
     if render_text is not None:
-        host = os.path.join(tmp, ".claude", subdir)
-        os.makedirs(host, exist_ok=True)
-        with open(os.path.join(host, f"{aid}.md"), "w", encoding="utf-8") as f:
+        # 렌더 경로는 kind 별로 다르다: agent=.claude/agents/<id>.md(flat), skill=.claude/skills/<id>/SKILL.md(dir).
+        if subdir == "skills":
+            host = os.path.join(tmp, ".claude", "skills", aid)
+            os.makedirs(host, exist_ok=True)
+            render_file = os.path.join(host, "SKILL.md")
+        else:
+            host = os.path.join(tmp, ".claude", subdir)
+            os.makedirs(host, exist_ok=True)
+            render_file = os.path.join(host, f"{aid}.md")
+        with open(render_file, "w", encoding="utf-8") as f:
             f.write(render_text)
     return tmp
 
@@ -92,7 +99,7 @@ class TestConformanceWiring(unittest.TestCase):
             self.assertTrue(any("금지위반" in m for m in msgs), msgs)
 
     def test_skill_subdir_resolves(self):
-        # skills/ prefix → .claude/skills/<id>.md 경로 해석(하드코딩 agents 아님).
+        # skills/ prefix → .claude/skills/<id>/SKILL.md 경로 해석(dir 기반, flat 아님 — codex 리뷰 P2).
         bad = "A skill that does things without declaring its owned paths."
         with tempfile.TemporaryDirectory() as tmp:
             root = _mk_instance(tmp, "skills/y", _CLAIMS, render_text=bad)

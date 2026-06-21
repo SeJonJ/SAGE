@@ -63,7 +63,199 @@ class Args:
     def __init__(self, **kw):
         self.kind = "hook"; self.id = None; self.write = False
         self.target = "claude"; self.dest = "."; self.root = None
+        self.deploy_codex = False
         self.__dict__.update(kw)
+
+
+def _render_md(name):
+    return (f"---\nname: {name}\n"
+            f"description: \"Test {name} asset. Invoke for {name}.\"\n---\n"
+            f"# {name}\n## procedure\n1. step one\n2. step two\n## Role\nDoes {name} work.\n")
+
+
+def make_interpretive_root(d):
+    """agent/skill 추출+등록 테스트용 최소 루트 — manifest + AGENT_GUIDE."""
+    os.makedirs(os.path.join(d, "docs", "sage_harness", "skills"), exist_ok=True)
+    os.makedirs(os.path.join(d, "docs", "sage_harness", "agents"), exist_ok=True)
+    Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).write_text(json.dumps({
+        "sage_version": "0.1.0", "host_runtime": "claude", "assets": {}}))
+    Path(os.path.join(d, "AGENT_GUIDE.md")).write_text("# guide\n")
+
+
+class TestGenerateInterpretive(unittest.TestCase):
+    """Gap-3: generate --kind agent/skill extract+register (Part B) + codex 전역화(Part C)."""
+
+    def test_agent_extract_register_both_renders(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_interpretive_root(d)
+            os.makedirs(os.path.join(d, ".claude", "agents"))
+            os.makedirs(os.path.join(d, ".codex", "agents"))
+            Path(os.path.join(d, ".claude", "agents", "payment.md")).write_text(_render_md("payment"))
+            Path(os.path.join(d, ".codex", "agents", "payment.md")).write_text(_render_md("payment"))
+            rc = gen._gen_interpretive(Args(kind="agent", id="payment", write=True, dest=d, root=d), d, "agent")
+            self.assertEqual(rc, 0)
+            self.assertTrue(os.path.exists(os.path.join(d, "docs", "sage_harness", "agents", "payment.md")))
+            self.assertTrue(os.path.exists(os.path.join(d, "docs", "sage_harness", "agents", "payment.claims.yml")))
+            m = json.loads(Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).read_text())
+            self.assertIn("agents/payment", m["assets"])
+            rh = m["assets"]["agents/payment"]["render_hash"]
+            self.assertIn("claude", rh); self.assertIn("codex", rh)
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요(profile.components 판독)")
+    def test_owned_paths_extracted_from_profile_components(self):
+        # Part B P1: profile.components 에서 component_path_globs 파생 → owned_paths claim 추출(config=None 약화 방지)
+        with tempfile.TemporaryDirectory() as d:
+            make_interpretive_root(d)
+            os.makedirs(os.path.join(d, "sage"))
+            Path(os.path.join(d, "sage", "project-profile.yaml")).write_text(
+                'project: { name: "t" }\ncomponents:\n  - { id: backend, paths: ["src/backend/**"] }\n')
+            os.makedirs(os.path.join(d, ".claude", "agents"))
+            os.makedirs(os.path.join(d, ".codex", "agents"))
+            # 양 렌더가 컴포넌트 경로를 언급 → owned_paths 교집합 required claim 기대
+            rtxt = ("---\nname: be\ndescription: \"x\"\n---\n# be\n"
+                    "Owns src/backend/service paths. Follows docs/backend.md conventions.\n")
+            Path(os.path.join(d, ".claude", "agents", "be.md")).write_text(rtxt)
+            Path(os.path.join(d, ".codex", "agents", "be.md")).write_text(rtxt)
+            rc = gen._gen_interpretive(Args(kind="agent", id="be", write=True, dest=d, root=d), d, "agent")
+            self.assertEqual(rc, 0)
+            claims = Path(os.path.join(d, "docs", "sage_harness", "agents", "be.claims.yml")).read_text()
+            self.assertIn("owned_paths", claims)
+            self.assertIn("src/backend", claims)
+
+    def test_extract_config_from_profile_derives_globs(self):
+        # 단위: 컴포넌트 글롭의 리터럴 디렉토리 prefix → owned_paths 인식 regex 파생
+        cfg = gen._extract_config_from_profile(
+            {"components": [{"id": "be", "paths": ["src/backend/**", "**/skip"]}]}, ".", ".")
+        self.assertIsNotNone(cfg)
+        self.assertTrue(any("src/backend" in g for g in cfg["component_path_globs"]))
+        # 빈 components → None(엔진 DEFAULT graceful)
+        self.assertIsNone(gen._extract_config_from_profile({}, ".", "."))
+
+    def test_extract_config_skips_overmatch_globs(self):
+        # 과매칭 위험 글롭 전부 제외(codex 리뷰 P2): 중간 와일드카드 / 선행 와일드카드 / 세그먼트 내 와일드카드
+        for bad in ("src/*/service/**", "**/skip", "src/foo*.py", "src/[ab]/**"):
+            self.assertIsNone(
+                gen._extract_config_from_profile({"components": [{"id": "z", "paths": [bad]}]}, ".", "."),
+                f"{bad} 는 과매칭이라 파생 제외돼야 함")
+        # 안전 케이스는 파생됨
+        self.assertIsNotNone(
+            gen._extract_config_from_profile({"components": [{"id": "z", "paths": ["a/b/*"]}]}, ".", "."))
+
+    def test_component_glob_token_boundaries(self):
+        # codex 리뷰 P2: 좌/우 경계 — substring 과매칭 차단
+        import re as _re
+        g = gen._component_path_glob("src/backend/**")
+        self.assertIsNotNone(_re.search(g, "owns src/backend/svc.py here"))   # 정상 매칭
+        self.assertIsNone(_re.search(g, "asrc/backend/svc.py"))               # 좌 경계(앞 글자)
+        self.assertIsNotNone(_re.search(g, "owns ./src/backend/svc.py"))     # 앵커 ./ 허용
+        self.assertIsNotNone(_re.search(g, "at /src/backend/svc.py"))        # 앵커 / 허용
+        g2 = gen._component_path_glob("src/x/util.py")
+        self.assertIsNone(_re.search(g2, "src/x/util.py2"))                   # 우 경계(뒤 글자)
+        self.assertIsNotNone(_re.search(g2, "see src/x/util.py."))            # 정상(뒤 마침표)
+
+    def test_extract_config_explicit_json_merge(self):
+        # extraction.config(repo-상대 json) 로드 → 파생값 위에 병합(명시 우선), 루트 기준 해석
+        import json as _json
+        with tempfile.TemporaryDirectory() as d:
+            Path(os.path.join(d, "ec.json")).write_text(_json.dumps({"input_scope_patterns": ["git diff"]}))
+            cfg = gen._extract_config_from_profile(
+                {"components": [{"id": "be", "paths": ["src/be/**"]}], "extraction": {"config": "ec.json"}},
+                d, d)
+            self.assertIn("component_path_globs", cfg)        # 파생
+            self.assertEqual(cfg["input_scope_patterns"], ["git diff"])   # 명시 병합
+
+    def test_fail_closed_missing_codex_render(self):
+        # Part B: 한쪽 렌더만 있으면 fail-closed(부분등록 금지)
+        with tempfile.TemporaryDirectory() as d:
+            make_interpretive_root(d)
+            os.makedirs(os.path.join(d, ".claude", "agents"))
+            Path(os.path.join(d, ".claude", "agents", "solo.md")).write_text(_render_md("solo"))
+            rc = gen._gen_interpretive(Args(kind="agent", id="solo", write=True, dest=d, root=d), d, "agent")
+            self.assertEqual(rc, 1)
+            m = json.loads(Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).read_text())
+            self.assertNotIn("agents/solo", m["assets"])
+
+    def test_scan_excludes_core_bootstrap(self):
+        # --id 없이 스캔 시 CORE 부트스트랩 렌더(leader 등)는 제외(manifest 비추적)
+        with tempfile.TemporaryDirectory() as d:
+            make_interpretive_root(d)
+            os.makedirs(os.path.join(d, ".claude", "agents"))
+            os.makedirs(os.path.join(d, ".codex", "agents"))
+            for nm in ("leader", "qa", "myproj-agent"):
+                Path(os.path.join(d, ".claude", "agents", f"{nm}.md")).write_text(_render_md(nm))
+                Path(os.path.join(d, ".codex", "agents", f"{nm}.md")).write_text(_render_md(nm))
+            rc = gen._gen_interpretive(Args(kind="agent", write=True, dest=d, root=d), d, "agent")
+            self.assertEqual(rc, 0)
+            m = json.loads(Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).read_text())
+            self.assertIn("agents/myproj-agent", m["assets"])     # 프로젝트 자산만 등록
+            self.assertNotIn("agents/leader", m["assets"])         # CORE 부트스트랩 제외
+            self.assertNotIn("agents/qa", m["assets"])
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요(deploy 는 profile.runtime.host 판독)")
+    def test_skill_deploy_codex_global(self):
+        # Part C: --deploy-codex → repo .codex/skills 정본을 $CODEX_HOME/skills/<prefix>-<id> 전역 배포
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as ch:
+            make_interpretive_root(d)
+            os.makedirs(os.path.join(d, "sage"))
+            Path(os.path.join(d, "sage", "project-profile.yaml")).write_text(
+                'project:\n  name: "t"\n  prefix: "px"\nruntime:\n  host: codex\n')
+            os.makedirs(os.path.join(d, ".claude", "skills", "deployer"))
+            os.makedirs(os.path.join(d, ".codex", "skills", "deployer"))
+            Path(os.path.join(d, ".claude", "skills", "deployer", "SKILL.md")).write_text(_render_md("deployer"))
+            Path(os.path.join(d, ".codex", "skills", "deployer", "SKILL.md")).write_text(_render_md("deployer"))
+            with mock.patch.dict(os.environ, {"CODEX_HOME": ch}):
+                rc = gen._gen_interpretive(
+                    Args(kind="skill", id="deployer", write=True, deploy_codex=True, dest=d, root=d), d, "skill")
+            self.assertEqual(rc, 0)
+            # 전역 배포(prefix 네임스페이스)
+            self.assertTrue(os.path.exists(os.path.join(ch, "skills", "px-deployer", "SKILL.md")))
+            # manifest 는 repo 정본만 추적(전역 경로 아님)
+            m = json.loads(Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).read_text())
+            self.assertIn("skills/deployer", m["assets"])
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요(deploy 는 profile.runtime.host 판독)")
+    def test_deploy_codex_empty_prefix_fail_closed(self):
+        # Part C P1: 빈 prefix 로 --deploy-codex → 전역 네임스페이스 충돌 위험 → fail-closed(rc=1, 미배포)
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as ch:
+            make_interpretive_root(d)
+            os.makedirs(os.path.join(d, "sage"))
+            Path(os.path.join(d, "sage", "project-profile.yaml")).write_text(
+                'project:\n  name: "t"\n  prefix: ""\nruntime:\n  host: codex\n')   # prefix 빈값, codex-host
+            os.makedirs(os.path.join(d, ".claude", "skills", "sk1"))
+            os.makedirs(os.path.join(d, ".codex", "skills", "sk1"))
+            Path(os.path.join(d, ".claude", "skills", "sk1", "SKILL.md")).write_text(_render_md("sk1"))
+            Path(os.path.join(d, ".codex", "skills", "sk1", "SKILL.md")).write_text(_render_md("sk1"))
+            with mock.patch.dict(os.environ, {"CODEX_HOME": ch}):
+                rc = gen._gen_interpretive(
+                    Args(kind="skill", id="sk1", write=True, deploy_codex=True, dest=d, root=d), d, "skill")
+            self.assertEqual(rc, 1)                                          # fail-closed
+            self.assertFalse(os.path.isdir(os.path.join(ch, "skills")))      # 전역 배포 없음(충돌 방지)
+
+    def test_unsafe_id_rejected_before_path_build(self):
+        # Part C P2: 경로탈출 id 는 렌더/spec/claims 경로 조립 전에 거부(fail, repo-local 쓰기 차단)
+        with tempfile.TemporaryDirectory() as d:
+            make_interpretive_root(d)
+            rc = gen._gen_interpretive(Args(kind="skill", id="../../escape", write=True, dest=d, root=d), d, "skill")
+            self.assertEqual(rc, 1)
+            # docs/sage_harness 밖으로 spec 이 새지 않았는지 — 상위 경로에 파일 미생성
+            self.assertFalse(os.path.exists(os.path.join(os.path.dirname(d), "escape.md")))
+
+    def test_deploy_codex_ignored_for_agent(self):
+        # --deploy-codex 는 skill 전용 — agent 엔 무시(전역 배포 없음)
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as ch:
+            make_interpretive_root(d)
+            os.makedirs(os.path.join(d, ".claude", "agents"))
+            os.makedirs(os.path.join(d, ".codex", "agents"))
+            Path(os.path.join(d, ".claude", "agents", "a1.md")).write_text(_render_md("a1"))
+            Path(os.path.join(d, ".codex", "agents", "a1.md")).write_text(_render_md("a1"))
+            with mock.patch.dict(os.environ, {"CODEX_HOME": ch}):
+                rc = gen._gen_interpretive(
+                    Args(kind="agent", id="a1", write=True, deploy_codex=True, dest=d, root=d), d, "agent")
+            self.assertEqual(rc, 0)
+            self.assertFalse(os.path.isdir(os.path.join(ch, "skills")))   # agent 는 전역 배포 안 함
 
 
 class TestGenerate(unittest.TestCase):

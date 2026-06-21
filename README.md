@@ -202,12 +202,14 @@ sage generate: error: the following arguments are required: --kind
 해결:
 
 ```bash
-sage generate --kind hook --write
-sage generate --kind agent --id backend-expert --target codex --write
-sage generate --kind skill --id backend-convention --target both --write
+sage generate --kind hook --write                              # --target claude|codex|both
+sage generate --kind agent --id backend-expert --write          # 양 런타임 렌더(.claude+.codex)에서 추출+등록
+sage generate --kind skill --id backend-convention --write      # 〃 (codex 발견 필요 시 --deploy-codex 추가)
 sage generate --kind roster --write
 sage generate --kind mcp --id codegraph --target codex --write
 ```
+
+> `agent`/`skill` 의 렌더는 interpretive(런타임 AI 저작) 입니다. `.claude/...` 와 `.codex/...` 양쪽 렌더를 저작한 뒤 `sage generate --kind <agent|skill> --id <id> --write` 로 spec+claims 추출 + manifest 등록(양 render_hash)합니다. codex 는 repo-스코프 skill 을 자동발견하지 않으므로, codex-host 에서 skill 을 호출하려면 `--deploy-codex` 로 전역 `$CODEX_HOME/skills/<prefix>-<id>` 에 배포합니다(정본은 repo, 전역은 발견용 캐시). 대화형으로는 `/sage-asset` 스킬이 이 흐름 전체를 안내합니다.
 
 주의: `--write`를 빼면 파일을 쓰지 않고 dry-run 미리보기만 수행합니다.
 

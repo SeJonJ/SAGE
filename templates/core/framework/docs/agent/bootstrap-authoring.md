@@ -98,9 +98,11 @@ Notes that matter:
   `--target both`; `hooks.register` in the profile is documentation, not a
   generate input.
 - `sage generate --kind roster` only **scaffolds** `docs/sage_harness/agents/
-  implementer-<id>.md`. Those specs still need a runtime AI render and
-  `extract_agent --register` (the existing interpretive agent pipeline) before
-  they are manifest-registered — roster alone does not complete them.
+  implementer-<id>.md`. Those specs still need a runtime AI render (both
+  `.claude/agents/<id>.md` and `.codex/agents/<id>.md`), then
+  `sage generate --kind agent --id <id> --write` reverse-extracts spec+claims and
+  registers them in the manifest (render_hash for both runtimes) — roster alone
+  does not complete them.
 - `sage validate` defaults to `--kind hook`; pass `--kind all` to also validate
   agent/skill renders (only meaningful once they are registered).
 
@@ -124,12 +126,18 @@ the required phases exist does the gate admit implementation; the cycle then
 continues 03 → 04 → 05 (review, cross-model when enabled) → 06.
 
 ### 5. Asset additions later
-The same loop applies to introducing a new hook/agent/skill after bootstrap:
-interview → author the spec under `docs/sage_harness/` → register. Hooks register
-deterministically via `sage generate`; agent/skill specs need an interpretive
-runtime render plus extraction/registration (they are not a pure deterministic
-render). Never edit a generated artifact directly (see AGENT_GUIDE safety
-boundaries).
+The same loop applies to introducing a new hook/agent/skill after bootstrap, and
+the **`/sage-asset` skill** drives it conversationally:
+- **hook**: author the spec under `docs/sage_harness/hooks/<id>.md` + the canonical
+  `scripts/sage_harness/hooks/<id>_core.py`, then `sage generate --kind hook --write`.
+- **agent/skill** (interpretive): author BOTH runtime renders (`.claude/...` and
+  `.codex/...` — codex 함께), then `sage generate --kind <agent|skill> --id <id>
+  --write` reverse-extracts spec+claims and registers them (render_hash for both
+  runtimes). It fails closed if either render is missing.
+  - For a skill codex must discover, add `--deploy-codex` (copies the repo-canonical
+    `.codex/skills/<id>/SKILL.md` to `$CODEX_HOME/skills/<prefix>-<id>/`; the manifest
+    still tracks only the repo canonical). codex-host + non-empty `project.prefix` required.
+Never edit a generated artifact directly (see AGENT_GUIDE safety boundaries).
 
 ---
 

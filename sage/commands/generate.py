@@ -25,6 +25,9 @@ def register(sub):
                    help="등록 대상 런타임 (both 는 cross_model on)")
     p.add_argument("--dest", default=".", help="등록 산출물 기록 루트 (기본 cwd)")
     p.add_argument("--root", default=None, help="SAGE 루트 (manifest 탐색)")
+    p.add_argument("--deploy-codex", action="store_true",
+                   help="(--kind skill) repo .codex/skills 정본을 codex 전역 $CODEX_HOME/skills 에 배포(prefix 네임스페이스). "
+                        "codex 는 repo-스코프 skill 미자동발견 → 전역 배포해야 호출 가능. 명시적 opt-in(환경 부작용 분리).")
     p.set_defaults(func=run)
 
 
@@ -342,7 +345,7 @@ def _gen_roster(args, root):
     - 비어있지 않으면 컴포넌트당 `implementer-<id>.md` spec 을 중립 템플릿에서 결정론 scaffold.
       naming = implementer-<comp>(접두 — 함수역할 leader/qa/reviewer/convention-checker 와 충돌 회피).
     - create-only: 기존 spec(손편집 가능) 은 보존(skip). --write 없으면 dry-run 미리보기.
-    - claims/render/manifest 등록은 기존 interpretive agent 파이프라인(extract_agent --register)이 처리
+    - claims/render/manifest 등록은 interpretive agent 파이프라인(`sage generate --kind agent`)이 처리
       → "중대" cross-cutting(manifest/conformance/reverse_extract) 재작성 회피, 잘 격리된 추가 경로."""
     prof = _load_profile_dict(root, args.dest)
     print("== sage generate (roster) — 동적 implementer 파생 (EH-1) ==")
@@ -375,7 +378,8 @@ def _gen_roster(args, root):
         print(f"  skip(기존 보존): {len(skipped)}건 — {', '.join(skipped)}")
     if bad:
         print(f"  ⚠️  id 없는 component {len(bad)}건 무시: {', '.join(bad)}")
-    print("  다음: 런타임 AI 가 spec 렌더 → extract_agent --register 로 claims/manifest 등록(기존 agent 파이프라인).")
+    print("  다음: 런타임 AI 가 양 host 렌더(.claude/.codex/agents) 저작 → `sage generate --kind agent --id <id> --write` "
+          "로 spec+claims 추출 + manifest 등록.")
     return 0
 
 
@@ -511,6 +515,223 @@ def _gen_mcp(args, root):
     return 0
 
 
+def _interpretive_render_paths(dest, kind, aid):
+    """agent/skill 의 claude·codex 렌더 경로(repo 정본). codex skill 정본도 repo .codex/skills/(전역은 배포 캐시)."""
+    if kind == "agent":
+        return (os.path.join(dest, ".claude", "agents", f"{aid}.md"),
+                os.path.join(dest, ".codex", "agents", f"{aid}.md"))
+    return (os.path.join(dest, ".claude", "skills", aid, "SKILL.md"),
+            os.path.join(dest, ".codex", "skills", aid, "SKILL.md"))
+
+
+def _scan_interpretive_ids(dest, kind):
+    """렌더 디렉토리(claude+codex)에서 자산 id 수집 — --id 미지정 시 일괄 처리 대상."""
+    ids = set()
+    if kind == "agent":
+        for rt in (".claude", ".codex"):
+            d = os.path.join(dest, rt, "agents")
+            if os.path.isdir(d):
+                ids.update(f[:-3] for f in os.listdir(d) if f.endswith(".md"))
+    else:  # skill: <rt>/skills/<id>/SKILL.md
+        for rt in (".claude", ".codex"):
+            d = os.path.join(dest, rt, "skills")
+            if os.path.isdir(d):
+                ids.update(sub for sub in os.listdir(d)
+                           if os.path.exists(os.path.join(d, sub, "SKILL.md")))
+    return ids
+
+
+def _component_path_glob(p):
+    """컴포넌트 경로 글롭 1개 → owned_paths 인식 regex (과매칭 방지). 안전치 않으면 None.
+
+    안전 케이스만 파생: (1) 완전 리터럴(`src/x/util.py`) → 정확/하위 매칭, (2) 리터럴 디렉토리 prefix +
+    순수 와일드카드 세그먼트(`src/backend/**`, `src/backend/*`) → 하위 매칭.
+    제외(과매칭 위험): 선행 와일드카드(`**/x`), 세그먼트 내 와일드카드(`src/foo*.py`·`src/[ab]/**` → prefix
+    가 디렉토리 경계 아님), 중간 와일드카드 뒤 리터럴(`src/*/service` → prefix `src` 과소). (codex 리뷰 P2)
+    """
+    if not isinstance(p, str) or not p:
+        return None
+    segs = p.split("/")
+    wi = next((i for i, s in enumerate(segs) if re.search(r"[*?\[]", s)), len(segs))
+    literal = segs[:wi]
+    if not literal:
+        return None                              # 선행 와일드카드 — 쓸 prefix 없음
+    prefix = "/".join(literal)
+    # 토큰 경계(codex 리뷰 P2): 좌=앞에 단어/대시 없음(`asrc`·`my-src` 차단하되 경로 앵커 `./src`·`/src`·
+    #   `../src` 와 공백은 허용), 우=뒤에 단어문자 없음(`util.py2` 차단, 문장끝 `util.py.` 허용).
+    #   단일문자 lookbehind 한계로 `lib/src`(중간경로) 류는 관대 매칭될 수 있으나 owned_paths 는 advisory
+    #   휴리스틱 claim 이라 수용(렌더가 실제로 경로를 언급한다는 사실은 유지).
+    lb, rb = r"(?<![\w\-])", r"(?![\w])"
+    if wi == len(segs):
+        return lb + re.escape(prefix) + r"(?:/[\w.\-]+)*" + rb   # 완전 리터럴 — 정확 + 하위
+    if segs[wi] not in ("*", "**"):
+        return None                              # 세그먼트 내 와일드카드 — prefix 가 디렉토리 경계 아님
+    if any(not re.search(r"[*?\[]", s) for s in segs[wi + 1:]):
+        return None                              # 중간 와일드카드 뒤 리터럴 — prefix 과소
+    return lb + re.escape(prefix) + r"/[\w.\-]+(?:/[\w.\-]+)*" + rb   # 디렉토리 prefix + 하위 경로
+
+
+def _extract_config_from_profile(prof, root, dest):
+    """profile → ExtractConfig (프로젝트 시그널 주입 — 엔진 도메인-0, 프로젝트값은 profile 에서).
+
+    reverse_extract 의 DEFAULT(config=None)는 owned_paths/input_scope 등 프로젝트 claim 을 미추출한다.
+    (1) components[].paths → component_path_globs(owned_paths 인식, 과매칭 방지 — _component_path_glob).
+    (2) profile.extraction.config(module:VAR | repo-상대 *.json) → input_scope_patterns/signal_rules 등
+        풍부한 시그널을 명시 주입(파생값 위에 병합, 명시 우선). json 은 프로젝트 루트 기준 해석(cwd 비의존).
+    반환: dict(시그널 있음) | None(시그널 0 — 엔진 DEFAULT graceful).
+    """
+    cfg = {}
+    comp_globs = [g for comp in (prof.get("components") or [])
+                  for g in (_component_path_glob(p) for p in (comp.get("paths") or [])) if g]
+    if comp_globs:
+        cfg["component_path_globs"] = comp_globs
+    ref = ((prof.get("extraction") or {}).get("config") or "").strip()
+    if ref:
+        try:
+            if ref.endswith(".json"):
+                path = ref if os.path.isabs(ref) else os.path.join(dest, ref)
+                if not os.path.exists(path):
+                    path = os.path.join(root, ref)   # dest 에 없으면 SAGE 루트 기준(cwd 비의존)
+                import json as _json
+                with open(path, encoding="utf-8") as f:
+                    loaded = _json.load(f)
+            else:
+                import importlib
+                mod, _, var = ref.partition(":")
+                m = importlib.import_module(mod)
+                loaded = getattr(m, var) if var else getattr(m, "CONFIG")
+            cfg.update(loaded or {})   # 명시 config 가 파생값을 덮어씀(프로젝트 의도 우선)
+        except Exception as e:
+            print(f"  ⚠️ extraction.config 로드 실패('{ref}'): {type(e).__name__}: {e} — 파생 config 만 사용", file=sys.stderr)
+    return cfg or None
+
+
+def _gen_interpretive(args, root, kind):
+    """agent/skill(interpretive): 런타임 AI 가 저작한 렌더(claude+codex) → spec+claims 추출 + manifest 등록 (Gap-3).
+
+    드라이버(extract_agent/extract_skill)의 extract() 를 래핑 — 사용자가 다인자 수동 실행하던 등록을 자동화
+    (드라이버 help 가 명시: "manifest 등록은 sage generate 흐름에서"). reverse_extract 가 두 렌더의
+    교집합으로 required claims 를 도출하므로 양 host 렌더가 모두 있어야 한다(fail-closed, 부분등록 금지).
+    CORE 부트스트랩 렌더(roster/CORE skill)는 manifest 비추적 → --id 없이 스캔 시 제외(직접 지정만 허용).
+    """
+    import importlib
+    from sage import _resources
+    from sage.commands.install import _CORE_AGENTS, _CORE_SKILLS
+
+    dest = os.path.abspath(args.dest)
+    scripts_dir = os.path.dirname(_resources.hooks_src_dir())   # scripts/sage_harness (드라이버 위치)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    drv = importlib.import_module("extract_agent" if kind == "agent" else "extract_skill")
+    import manifest_util as mu
+    upsert = mu.upsert_agent if kind == "agent" else mu.upsert_skill
+    core_names = set(_CORE_AGENTS if kind == "agent" else _CORE_SKILLS)
+
+    if args.id:
+        ids = [args.id]
+    else:
+        ids = sorted(_scan_interpretive_ids(dest, kind) - core_names)
+
+    print(f"== sage generate ({kind}) — {len(ids)} 자산 (interpretive 추출+등록) ==")
+    if not ids:
+        print(f"  ℹ️  대상 {kind} 0건 (렌더 없음 또는 전부 CORE 부트스트랩). 단일은 --id 로 지정.")
+        return 0
+
+    # profile 1회 로드 — 추출 config 파생(P1) + deploy host/prefix 양쪽에서 재사용.
+    prof = _load_profile_dict(root, args.dest) or {}
+    config = _extract_config_from_profile(prof, root, dest)
+    if config is None:
+        print("  ℹ️  추출 config 시그널 0(profile.components/extraction.config 미설정) — owned_paths 등 "
+              "프로젝트 claim 이 추출되지 않을 수 있음(엔진 DEFAULT). components 를 채우면 owned_paths 가 게이트됨.")
+
+    # Part C: codex 전역 배포는 skill 전용(codex 가 자동발견하는 건 전역 skill 뿐 — agent 는 .codex/agents repo 정본).
+    deploy_codex = getattr(args, "deploy_codex", False)
+    if deploy_codex and kind != "skill":
+        print("  ⚠️  --deploy-codex 는 --kind skill 전용입니다(agent 는 repo .codex/agents 정본, 전역 배포 없음). 무시.", file=sys.stderr)
+        deploy_codex = False
+    prefix = ""
+    if deploy_codex:
+        host = str((prof.get("runtime") or {}).get("host") or "").strip()
+        if host != "codex":
+            # codex 전역 skill 발견은 codex-host 에서만 의미(claude-host 는 codex skill 미사용) — doctor 점검과 일관.
+            # claude-host 가 전역에 orphan 배포를 만들지 않도록 배포 생략(등록은 진행, codex 리뷰 P2).
+            print("  ⚠️  --deploy-codex 는 codex-host 프로젝트에서만 유효(claude-host 는 codex skill 미사용) → 배포 생략, 등록만 진행.",
+                  file=sys.stderr)
+            deploy_codex = False
+        else:
+            prefix = str((prof.get("project") or {}).get("prefix") or "").strip()
+            if not prefix:
+                # 전역 $CODEX_HOME/skills 는 공유 네임스페이스 — prefix 없이 bare id 로 배포하면
+                # 타 프로젝트와 충돌(clobber). prefix 필수(fail-closed, 충돌 방지 — codex 리뷰 P1).
+                print("  ❌ --deploy-codex 에는 project.prefix 가 필요합니다 "
+                      "(전역 $CODEX_HOME/skills 공유 네임스페이스 충돌 방지). profile 의 project.prefix 를 설정 후 재실행.",
+                      file=sys.stderr)
+                return 1
+            if not re.match(r"^[A-Za-z0-9_-]+$", prefix):
+                # 경로 탈출 방어(codex 리뷰 P2): prefix 가 전역 경로 조립에 들어가므로 / · .. 등 차단.
+                print(f"  ❌ project.prefix 가 안전하지 않습니다('{prefix}') — [A-Za-z0-9_-] 만 허용(전역 경로 탈출 방지).",
+                      file=sys.stderr)
+                return 1
+
+    guide = os.path.join(dest, "AGENT_GUIDE.md")
+    out_dir = docs_dir(root, kind)
+    test_path = f"scripts/sage_harness/hooks/tests/test_reverse_extract_{kind}.py"
+    written, failed, deployed = [], [], []
+    for aid in ids:
+        if aid in core_names:
+            print(f"  ⏭️  {aid}: CORE 부트스트랩 자산 — manifest 비추적(스킵). 직접편집 자산이라 generate 대상 아님.")
+            continue
+        if not re.match(r"^[A-Za-z0-9_-]+$", aid):
+            # id 는 렌더/spec/claims/전역경로 조립에 모두 들어가므로 가장 먼저 검증(경로 탈출 방지 — codex 리뷰 P2).
+            print(f"  ❌ {aid}: 안전하지 않은 자산 id — [A-Za-z0-9_-] 만 허용(경로 탈출 방지)", file=sys.stderr)
+            failed.append(aid); continue
+        claude_r, codex_r = _interpretive_render_paths(dest, kind, aid)
+        missing = [os.path.relpath(p, dest) for p in (claude_r, codex_r) if not os.path.exists(p)]
+        if missing:
+            print(f"  ❌ {aid}: 렌더 누락 — {', '.join(missing)} "
+                  f"(codex 함께: 양 host 렌더 필요 — reverse_extract 가 교집합으로 claims 도출)", file=sys.stderr)
+            failed.append(aid); continue
+        try:
+            spec_md, claims_yaml, claims = drv.extract(aid, claude_r, codex_r, guide, config)
+        except Exception as e:
+            print(f"  ❌ {aid}: 추출 실패 — {type(e).__name__}: {e}", file=sys.stderr)
+            failed.append(aid); continue
+        if args.write:
+            os.makedirs(out_dir, exist_ok=True)
+            Path(os.path.join(out_dir, f"{aid}.md")).write_text(spec_md, encoding="utf-8")
+            Path(os.path.join(out_dir, f"{aid}.claims.yml")).write_text(claims_yaml, encoding="utf-8")
+            upsert(root, aid, claude_render=claude_r, codex_render=codex_r,
+                   test=test_path, unresolved=claims["unresolved"])
+            print(f"  ✅ {aid}: spec+claims 기록 + manifest 등록 "
+                  f"(required={len(claims['required_claims'])}, unresolved={len(claims['unresolved'])})")
+            # Part C: codex 전역 배포(opt-in) — repo 정본(codex_r)을 $CODEX_HOME/skills/<prefix>-<id> 로 복사.
+            #   manifest 는 repo 정본만 추적(clone-stable); 전역은 codex 자동발견용 배포 캐시(force 갱신).
+            if deploy_codex:
+                from sage.commands.install import _install_codex_global_skill
+                gid = f"{prefix}-{aid}"   # prefix·aid 안전(위에서 검증) — 전역 공유 네임스페이스 충돌/경로탈출 방지
+                status, gdst = _install_codex_global_skill(codex_r, force=True, skill_id=gid)
+                if status == "installed":
+                    print(f"     ↳ codex 전역 배포: {gdst}")
+                    deployed.append(aid)
+                elif status == "missing":
+                    print(f"     ⚠️ codex 전역 배포 실패 — 정본 {os.path.relpath(codex_r, dest)} 없음", file=sys.stderr)
+                else:
+                    print(f"     ⚠️ codex 전역 배포 {status}: {gdst}", file=sys.stderr)
+        else:
+            print(f"  (dry-run) {aid}: 추출 OK — --write 로 기록+등록 "
+                  f"(required={len(claims['required_claims'])}, unresolved={len(claims['unresolved'])})"
+                  + ("  [+codex 전역 배포 예정]" if deploy_codex else ""))
+        written.append(aid)
+
+    if deployed:
+        print(f"  codex 전역 배포 {len(deployed)}건 — codex 에서 호출명 ${prefix}-<id> "
+              f"(repo .codex/skills 정본은 manifest 추적, 전역은 발견용 캐시).")
+    if failed:
+        print(f"  실패 {len(failed)}건: {', '.join(failed)} — 렌더 저작 후 재실행", file=sys.stderr)
+        return 1
+    return 0
+
+
 def run(args) -> int:
     root = _find_root(args.root or args.dest)   # --dest 프로젝트의 manifest 를 우선(Codex P1: dest 무시 버그)
     if not root:
@@ -528,10 +749,7 @@ def run(args) -> int:
         return _gen_roster(args, root)   # EH-1: profile.components → 동적 implementer spec
     if args.kind == "mcp":
         return _gen_mcp(args, root)   # MCP 4번째 kind: spec md → .mcp.json + config.toml managed-block
-    # agent/skill: render 는 interpretive(런타임 AI). generate 는 안내만.
-    drv = "extract_agent.py" if args.kind == "agent" else "extract_skill.py"
-    print(f"== sage generate ({args.kind}) ==")
-    print(f"{args.kind} render 는 interpretive(런타임 AI 영역) — generate 가 결정론 생성하지 않음.")
-    print(f"→ 스펙/claims 산출은 scripts/sage_harness/{drv} 드라이버 사용(--write --register).")
-    print(f"→ 런타임 산출물(.claude/.codex agents/skills 의 .md)은 런타임 AI 가 spec+claims 로 렌더.")
+    # agent/skill: render 는 interpretive(런타임 AI 저작) → generate 가 spec+claims 추출 + manifest 등록 (Gap-3).
+    if args.kind in ("agent", "skill"):
+        return _gen_interpretive(args, root, args.kind)
     return 0
