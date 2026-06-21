@@ -64,6 +64,26 @@ class TestProfileSemantic(unittest.TestCase):
         # 위험 글롭 전무 → INFO(의도일 수 있음). FAIL/WARN 아님.
         self.assertEqual(severity_of(sevs({"risk": {}})), "INFO")
 
+    # --- N-R1/P0-2: 오타 방어를 선택의존성(jsonschema)에서 떼어내기 — 의미검증은 항상 동작 ---
+    def test_singular_typo_caught_without_jsonschema(self):
+        # 핵심: l3_filename_globs→l3_filename_glob 오타가 jsonschema 미설치 환경에서도
+        # 의미검증(known-keys)으로 FAIL. 메시지에 "미지 키" 가 있어야 의미검증 경로가 탔음을 보장.
+        issues = sevs({"risk": {"l3_filename_glob": ["*secret*"]}})
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("미지 키" in m and "l3_filename_glob" in m for _, m in issues))
+
+    def test_pdca_typo_caught_without_jsonschema(self):
+        # pdca 폐쇄 섹션 오타(enabld)도 의미검증으로 항상 FAIL.
+        issues = sevs({"pdca": {"enabld": True}})
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("미지 키" in m and "enabld" in m for _, m in issues))
+
+    def test_known_keys_no_false_positive(self):
+        # 허용 키만 있으면 known-keys 검사가 오탐(미지 키 FAIL)을 내지 않는다.
+        prof = {"risk": {"l3_review_strategy": "claude_grep_first", "l3_filename_globs": ["*x*"],
+                         "l2_path_globs": ["*.py"], "plan_glob": "plan_docs/**/*.md"}}
+        self.assertFalse(any("미지 키" in m for _, m in sevs(prof)))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

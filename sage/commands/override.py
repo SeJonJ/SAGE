@@ -64,6 +64,9 @@ def run(args):
     if ttl is None:
         print(f"[sage override] --ttl 형식 오류: '{args.ttl}' (예: 30m, 2h, 1d, 90s, 1800)", file=sys.stderr)
         return 2
+    if ttl > ov.MAX_TTL_SECONDS:   # N-R3: 시한부 보장 — 상한 초과는 거부(친절 메시지, 라이브러리도 ValueError 로 이중방어)
+        print(f"[sage override] --ttl {ttl}s 가 상한 {ov.MAX_TTL_SECONDS}s(24h) 초과 — 더 짧게 grant 하거나 만료 후 재grant", file=sys.stderr)
+        return 2
 
     rec = ov.grant(root, args.reason, ttl, gate=args.gate)
     print(f"✅ override grant — gate={rec['gate']} | 만료 {rec['expires_at']} (TTL {rec['ttl_seconds']}s)")

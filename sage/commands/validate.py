@@ -303,7 +303,7 @@ def _validate_mcp(root, asset_id, entry):
     msgs = []
     sev = "PASS"
     sid = asset_id.split("/", 1)[1]
-    spec_path = os.path.join(root, "docs", "sage_harness", "mcps", f"{sid}.md")
+    spec_path = AssetPaths(root, "mcp", sid).spec   # 경로 규약 단일소스(N-R2/P2-6)
 
     def bump(s):
         nonlocal sev
@@ -316,6 +316,16 @@ def _validate_mcp(root, asset_id, entry):
     # 미스탬프 감지
     if not (entry.get("spec_hash") and entry.get("render_hash")):
         bump("STALE"); msgs.append("  STALE 미스탬프 — sage generate --kind mcp --write 필요")
+    # 계약버전 (N-R2/P1-3): MCP 직렬화 계약(M.CONTRACT_VERSION)과 manifest 스탬프 대조.
+    #   다른 kind(hook 3b)와 대칭 — 죽은 계약버전 클래스가 새 표면에서 부활하지 않도록 박제.
+    have_cv = entry.get("adapter_contract_version")
+    if have_cv is None:
+        # legacy 미스탬프(spec/render 는 있으나 계약버전 없음) → 재스탬프 강제. spec/render 자체가
+        # 미스탬프인 신규 케이스는 위 블록이 이미 STALE 로 잡으므로 중복을 피해 그때만 보강.
+        if entry.get("spec_hash") and entry.get("render_hash"):
+            bump("STALE"); msgs.append("  STALE MCP 계약버전 미스탬프(legacy) — sage generate 재스탬프 필요")
+    elif have_cv != M.CONTRACT_VERSION:
+        bump("STALE"); msgs.append(f"  STALE MCP 계약버전 불일치 ({have_cv}→{M.CONTRACT_VERSION}) — sage generate 재스탬프 필요")
     # spec staleness
     if entry.get("spec_hash") and _sha(spec_path) != entry["spec_hash"]:
         bump("STALE"); msgs.append("  STALE spec_hash 불일치 (spec 변경 → 재생성 필요)")

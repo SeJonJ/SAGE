@@ -132,5 +132,9 @@ echo "### 32. mcp shadow pilot (ChatForYou 실 codegraph+obsidian fixture e2e �
 python3 "$HERE/test_mcp_shadow_pilot.py" || rc=1
 
 echo ""
+echo "### 33. kind invariants (N-R2 메타 박제 — mcps 경로 손조립 0/계약버전 스탬프·STALE/스키마 닫힘)"
+python3 "$HERE/test_kind_invariants.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

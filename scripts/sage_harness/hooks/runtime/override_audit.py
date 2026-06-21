@@ -20,6 +20,10 @@ import time
 AUDIT_REL = os.path.join(".sage", "override.jsonl")
 _UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
+# TTL 상한(N-R3): "시한부 우회"가 임의로 길어지면 사실상 상시 우회(Pattern A)다. 24h 로 캡해
+# 초과 grant 를 거부 → 길게 필요하면 재grant 를 강제(만료-재확인 루프 유지). 상수로 둬 조정 용이.
+MAX_TTL_SECONDS = 24 * 3600
+
 
 def audit_path(root):
     return os.path.join(root, AUDIT_REL)
@@ -70,7 +74,12 @@ def read_records(root):
 
 
 def grant(root, reason, ttl_seconds, gate="all", user=None, now=None):
-    """override grant 1건 기록 → 레코드 반환. reason·ttl 필수(상위에서 검증)."""
+    """override grant 1건 기록 → 레코드 반환. reason·ttl 필수(상위에서 검증).
+
+    TTL 상한(MAX_TTL_SECONDS) 초과는 거부(ValueError) — 라이브러리 레벨 불변식이라
+    CLI 우회 호출에도 "시한부" 보장이 깨지지 않는다(N-R3)."""
+    if int(ttl_seconds) > MAX_TTL_SECONDS:
+        raise ValueError(f"TTL {int(ttl_seconds)}s 가 상한 {MAX_TTL_SECONDS}s(24h) 초과 — 더 짧게 grant 하거나 만료 후 재grant")
     t = time.time() if now is None else now
     rec = {"event": "grant", "ts": _iso(t), "epoch": int(t),
            "expires_epoch": int(t) + int(ttl_seconds), "expires_at": _iso(t + ttl_seconds),

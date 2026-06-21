@@ -68,6 +68,7 @@
     "mcp": {
       "type": "object",
       "description": "MCP 자산(4번째 kind) enable 토글. payload 아님 — payload SSOT 는 docs/sage_harness/mcps/{id}.md spec. enabled 없으면 mcps/ 전체 생성(default-on).",
+      "additionalProperties": false,
       "properties": {
         "enabled": { "type": "array", "items": { "type": "string" } }
       }

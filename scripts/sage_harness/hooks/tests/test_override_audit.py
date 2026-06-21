@@ -37,6 +37,25 @@ class TestParseTtl(unittest.TestCase):
             self.assertIsNone(ov.parse_ttl(bad), bad)
 
 
+class TestTtlCap(unittest.TestCase):
+    """N-R3: TTL 상한 — '시한부' 우회가 임의로 길어지면 사실상 상시 우회다."""
+
+    def test_parse_does_not_cap(self):
+        # parse 는 정책이 아니라 파싱만 — 큰 값도 그대로 반환(거부는 grant 에서).
+        self.assertEqual(ov.parse_ttl("3650d"), 3650 * 86400)
+
+    def test_grant_over_cap_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError):
+                ov.grant(tmp, "10년 우회 시도", ov.MAX_TTL_SECONDS + 1, gate=GATE, now=1000)
+            self.assertEqual(ov.read_records(tmp), [])   # 거부 → 기록 없음
+
+    def test_grant_at_cap_ok(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rec = ov.grant(tmp, "상한 정확히", ov.MAX_TTL_SECONDS, gate=GATE, now=1000)
+            self.assertEqual(rec["ttl_seconds"], ov.MAX_TTL_SECONDS)
+
+
 class TestActiveGrants(unittest.TestCase):
     def test_unexpired_is_active(self):
         with tempfile.TemporaryDirectory() as tmp:

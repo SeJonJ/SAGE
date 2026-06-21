@@ -14,6 +14,12 @@ _HOOKS_REL = os.path.join("scripts", "sage_harness", "hooks")
 _DOCS_REL = os.path.join("docs", "sage_harness")
 
 
+def docs_dir(root: str, kind: str) -> str:
+    """kind 별 spec 디렉토리 (docs/sage_harness/{kind}s). spec 파일 없이 디렉토리만 필요할 때
+    (존재 확인·목록화) 손조립을 피하기 위한 단일소스(N-R2: 경로 규약을 1파일로)."""
+    return os.path.join(root, _DOCS_REL, f"{kind}s")
+
+
 @dataclass(frozen=True)
 class AssetPaths:
     """단일 자산의 표준 경로 집합. kind ∈ {"hook","agent","skill","mcp"}.
@@ -29,8 +35,8 @@ class AssetPaths:
 
     @property
     def _docs_dir(self) -> str:
-        # docs/sage_harness/{hooks|agents|skills}
-        return os.path.join(self.root, _DOCS_REL, f"{self.kind}s")
+        # docs/sage_harness/{hooks|agents|skills|mcps}
+        return docs_dir(self.root, self.kind)
 
     @property
     def spec(self) -> str:

@@ -12,7 +12,7 @@ import re
 import sys
 from pathlib import Path
 
-from sage.asset_paths import AssetPaths
+from sage.asset_paths import AssetPaths, docs_dir
 from sage.commands._common import contract_version_of
 
 
@@ -388,8 +388,8 @@ def _gen_mcp(args, root):
     from sage import mcp_common as M
     manifest_path = os.path.join(root, "docs", "sage_harness", ".manifest.json")
     manifest = json.loads(Path(manifest_path).read_text())
-    all_spec_ids = M.list_mcp_specs(args.dest if os.path.isdir(os.path.join(args.dest, "docs", "sage_harness", "mcps")) else root)
-    spec_root = args.dest if os.path.isdir(os.path.join(args.dest, "docs", "sage_harness", "mcps")) else root
+    spec_root = args.dest if os.path.isdir(docs_dir(args.dest, "mcp")) else root  # 경로 규약 단일소스(N-R2/P2-6)
+    all_spec_ids = M.list_mcp_specs(spec_root)
 
     if args.id:
         if args.id not in all_spec_ids:
@@ -416,7 +416,7 @@ def _gen_mcp(args, root):
     # 1. 파싱 + 시크릿 거부(fail-closed): FAIL 하나라도 있으면 산출 전 중단
     models, had_fail = [], False
     for sid in target_ids:
-        spec_path = os.path.join(spec_root, "docs", "sage_harness", "mcps", f"{sid}.md")
+        spec_path = AssetPaths(spec_root, "mcp", sid).spec   # 경로 규약 단일소스(N-R2/P2-6)
         try:
             mdl = M.parse_mcp_spec(spec_path)
         except M.MCPSpecError as e:
@@ -498,7 +498,8 @@ def _gen_mcp(args, root):
             e = manifest["assets"].setdefault(key, {"conformance": "PASS", "form": "declarative"})
             e["form"] = "declarative"
             e["runtime_targets"] = list(mdl["runtime_targets"])
-            spec_path = os.path.join(spec_root, "docs", "sage_harness", "mcps", f"{mdl['id']}.md")
+            e["adapter_contract_version"] = M.CONTRACT_VERSION   # N-R2/P1-3: MCP 직렬화 계약버전 스탬프(다른 kind 와 대칭)
+            spec_path = AssetPaths(spec_root, "mcp", mdl["id"]).spec   # 경로 규약 단일소스(N-R2/P2-6)
             e["spec_hash"] = "sha256:" + hashlib.sha256(Path(spec_path).read_bytes()).hexdigest()
             rh = {}
             for tgt in mdl["runtime_targets"]:

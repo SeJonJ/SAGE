@@ -332,7 +332,8 @@ def codex_block_has_server(block_text, model):
 
 def list_mcp_specs(root):
     """docs/sage_harness/mcps/*.md 의 id 목록 (orphan 탐지·전체생성용)."""
-    d = os.path.join(root, "docs", "sage_harness", "mcps")
+    from sage.asset_paths import docs_dir
+    d = docs_dir(root, "mcp")   # 경로 규약 단일소스(N-R2/P2-6)
     if not os.path.isdir(d):
         return []
     return sorted(fn[:-3] for fn in os.listdir(d) if fn.endswith(".md"))
