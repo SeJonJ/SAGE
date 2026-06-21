@@ -54,6 +54,21 @@ class TestRoundTrip(unittest.TestCase):
         finally:
             os.unlink(p)
 
+    def test_special_chars_in_value_roundtrip(self):
+        # 따옴표/역슬래시/콤마/중괄호가 든 value 도 깨지지 않고 round-trip 해야 한다(이스케이프).
+        tricky = 'weird "quoted", back\\slash, {brace}, 줄바꿈\nและ유니코드 ✓'
+        c = {"required_claims": [{"type": "owned_paths", "value": tricky, "confidence": "high"}],
+             "forbidden_claims": [], "runtime_delta_allowlist": [], "unresolved": []}
+        p = _write(rc.claims_to_yaml(c))
+        try:
+            with_yaml = rc.load_claims_yaml(p)
+            with mock.patch.dict(sys.modules, {"yaml": None}):   # 폴백 파서도 동일하게 복원해야
+                fallback = rc.load_claims_yaml(p)
+            self.assertEqual(_vals(with_yaml, "required_claims"), [tricky])
+            self.assertEqual(_vals(fallback, "required_claims"), [tricky])
+        finally:
+            os.unlink(p)
+
     def test_confidence_and_type_preserved(self):
         p = _write(rc.claims_to_yaml(_CLAIMS))
         try:

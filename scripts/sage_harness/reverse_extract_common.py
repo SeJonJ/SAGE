@@ -4,6 +4,7 @@ agent(reverse_extract_agent)·skill(reverse_extract_skill) 둘 다 import. 상�
 범용 추출 패턴·persona 필터·confidence·교집합 머지·claims 직렬화를 단일화.
 소비 프로젝트 고유값은 caller 의 config 로만 주입(엔진 도메인값 0).
 """
+import json
 import os
 import re
 
@@ -134,25 +135,27 @@ def claims_to_yaml(claims: dict, kind: str = None) -> str:
          "# confidence: high | source_supported | runtime_allowed | unresolved"]
     if kind:
         L.append(f"kind: {kind}")
+    # value 는 json.dumps 로 직렬화 — 따옴표/역슬래시/개행이 들어가도 깨지지 않는 따옴표 스칼라가 되고,
+    # 같은 형식이 아래 폴백 리더(_parse_flow_entry)와 pyyaml 양쪽에서 그대로 역파싱된다.
     L.append("required_claims:")
     for x in claims["required_claims"]:
         order = f", order: {x['order']}" if "order" in x else ""
-        L.append(f'  - {{ type: {x["type"]}, value: "{x["value"]}", confidence: {x["confidence"]}{order} }}')
+        L.append(f'  - {{ type: {x["type"]}, value: {json.dumps(x["value"], ensure_ascii=False)}, confidence: {x["confidence"]}{order} }}')
     L.append("forbidden_claims:")
     for x in claims["forbidden_claims"]:
         if "inherited_forbidden_claims" in x:
-            L.append(f'  - {{ inherited_forbidden_claims: "{x["inherited_forbidden_claims"]}" }}')
+            L.append(f'  - {{ inherited_forbidden_claims: {json.dumps(x["inherited_forbidden_claims"], ensure_ascii=False)} }}')
         else:
-            L.append(f'  - {{ type: {x["type"]}, value: "{x["value"]}", confidence: {x["confidence"]} }}')
+            L.append(f'  - {{ type: {x["type"]}, value: {json.dumps(x["value"], ensure_ascii=False)}, confidence: {x["confidence"]} }}')
     L.append("runtime_delta_allowlist:")
     for x in claims["runtime_delta_allowlist"]:
-        L.append(f'  - {{ type: {x["type"]}, value: "{x["value"]}", confidence: {x["confidence"]} }}')
-    import json
+        L.append(f'  - {{ type: {x["type"]}, value: {json.dumps(x["value"], ensure_ascii=False)}, confidence: {x["confidence"]} }}')
     L.append(f"unresolved: {json.dumps(claims['unresolved'], ensure_ascii=False)}")
     return "\n".join(L) + "\n"
 
 
-_FLOW_KV_RE = re.compile(r'(\w+):\s*("(?:[^"]*)"|[^,}]+)')
+# 값은 json.dumps 로 쓰인 따옴표 스칼라(이스케이프된 따옴표 \" 포함) 또는 따옴표 없는 토큰.
+_FLOW_KV_RE = re.compile(r'(\w+):\s*("(?:[^"\\]|\\.)*"|[^,}]+)')
 _CLAIMS_SECTIONS = {"required_claims:": "required_claims",
                     "forbidden_claims:": "forbidden_claims",
                     "runtime_delta_allowlist:": "runtime_delta_allowlist"}
@@ -162,23 +165,29 @@ def _parse_flow_entry(body):
     """'type: x, value: "y", confidence: z' → dict. claims_to_yaml flow-entry 의 역."""
     d = {}
     for kv in _FLOW_KV_RE.finditer(body):
-        k, v = kv.group(1), kv.group(2).strip().strip('"')
+        k, raw = kv.group(1), kv.group(2).strip()
+        if raw[:1] == '"':
+            try:
+                v = json.loads(raw)          # 이스케이프(\" \\ \n) 복원
+            except ValueError:
+                v = raw.strip('"')
+        else:
+            v = raw
         if k == "order":
             try:
                 v = int(v)
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
         d[k] = v
     return d
 
 
 def load_claims_yaml(path):
-    """{id}.claims.yml → dict (claims_to_yaml 의 역 — round-trip 짝, 단일 canonical 리더). P2-7.
+    """{id}.claims.yml → dict (claims_to_yaml 의 역 — round-trip 짝, 단일 canonical 리더).
 
     pyyaml 있으면 safe_load(완전), 없거나 실패하면 결정론 폴백(claims.yml 은 기계생성 고정 flow-style
     이라 의존성 없이 파싱 가능 — absorb·validate 가 같은 파서를 쓰게 통일). 부재/빈 → 빈 골격.
     반환: {required_claims, forbidden_claims, runtime_delta_allowlist, unresolved}(+ 있으면 kind)."""
-    import json
     skel = {"required_claims": [], "forbidden_claims": [], "runtime_delta_allowlist": [], "unresolved": []}
     if not path or not os.path.exists(path):
         return dict(skel)
