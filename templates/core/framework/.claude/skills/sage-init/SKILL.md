@@ -58,6 +58,17 @@ the user to answer a numbered list — that pushes the authoring work back onto 
 user, which is exactly what this skill exists to avoid. Instead, walk one topic at
 a time and drive each turn yourself.
 
+### Language (mandatory)
+
+Conduct the entire interview **in Korean** — every proposal, question,
+acknowledgement, and progress summary. (English support is planned but not yet
+active; default to Korean.) Only the **conversation** is Korean: the **machine** values you
+write into `project-profile.yaml` stay language-neutral as-is — paths, globs,
+command strings, component ids, strategy enums, and the fixed schema keys are
+never translated. The one exception is **human-facing message values** such as
+`desktop_block_hint` (a notice shown to the developer): write those in Korean too,
+matching the conversation — they are prose, not machine tokens.
+
 ### Interview style (mandatory)
 
 For **each** topic below, in order, take a single conversational turn:

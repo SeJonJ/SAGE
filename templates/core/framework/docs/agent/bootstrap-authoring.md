@@ -49,7 +49,11 @@ The agent interviews the user for intent, then fills `project-profile.yaml`
 This is a **progressive conversation, not a form**: the agent takes one topic per
 turn — proposing concrete values inferred from a repo scan, showing the signal it
 inferred from, and asking a single focused confirm/correct question — rather than
-dumping the whole list for the user to fill. The agent only asks open-endedly when
+dumping the whole list for the user to fill. Conduct the conversation **in Korean**
+(English support is planned, not yet active); only the conversation is localized —
+the **machine** profile values (paths, globs, commands, ids, schema keys) stay
+language-neutral, while human-facing message values (e.g. `desktop_block_hint`)
+are written in Korean too, matching the conversation. The agent only asks open-endedly when
 the repo gives nothing to infer (e.g. which domains are security-sensitive). This
 keeps authoring on the agent; the user supplies intent and approves. Surface the
 decisions that genuinely need user intent; author the rest from them:
