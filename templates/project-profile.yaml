@@ -109,10 +109,11 @@ team:                            # CORE 5인(team.core). 역할명은 스택 중
 
 cross_model:                     # opposite-runtime 무상관 검증. 권장 optional
   peer: opposite_runtime         # host=claude → codex / host=codex → claude (하드코딩 금지)
-  requires: [gstack]             # claude-host opposite 전제(§3.2.1). doctor 가 가용성 판정
+  requires: [gstack]             # claude-host opposite 전제. doctor 가 가용성 판정
   invocation:
     claude_host: "/codex consult (gstack)"   # requires: gstack
-    codex_host:  ""              # Claude 호출 경로 — v1 설계 미해결 (§12) → fallback
+    codex_host:  ""              # host=codex 일 때 Claude 실행 명령 — 기본 미제공. 채우면 동작,
+                                 # 비우면 doctor 가 clean_context_same_runtime 으로 fallback
   on_unavailable: clean_context_same_runtime
 
 capabilities: {}                 # 선택: { gstack: true } 로 가용성 선언(PATH which 보강)

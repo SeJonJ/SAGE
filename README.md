@@ -373,7 +373,9 @@ capabilities:
 sage doctor --profile sage/project-profile.yaml
 ```
 
-현재 v1에서 `sage doctor`는 cross-model reviewer가 실제로 가능한지 판정하고, 불가능하면 `clean_context_same_runtime` fallback을 표시합니다. 특히 `host=codex`에서 Claude 호출은 `cross_model.invocation.codex_host`와 `capabilities.claude`가 필요합니다.
+현재 v1에서 `sage doctor`는 cross-model reviewer가 실제로 가능한지 판정하고, 불가능하면 `clean_context_same_runtime` fallback을 표시합니다. 특히 `host=codex`에서 Claude 호출은 `cross_model.invocation.codex_host`와, Claude 가용성 신호(`PATH` 의 실제 `claude` 실행파일 또는 `capabilities.claude: true`)가 필요합니다.
+
+> **기대치 안내(v1):** Claude를 host로 두고 Codex에 리뷰를 보내는 경로는 1급으로 검증돼 있습니다. 반대 방향(host=codex → Claude 호출)은 **호출 레시피를 SAGE가 기본 제공하지 않습니다** — 위 `cross_model.invocation.codex_host`에 본인 환경의 Claude 실행 명령을 직접 채워야 동작하고, 비워 두면 `sage doctor`가 이를 감지해 `clean_context_same_runtime`으로 fallback합니다. 즉 cross-model은 현재 claude-host가 1급 시민이고, codex-host opposite는 사용자가 레시피를 제공해야 하는 상태입니다.
 
 ### Profile 예시
 

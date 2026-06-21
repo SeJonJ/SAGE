@@ -222,8 +222,11 @@ def run(args) -> int:
     templates = _resources.templates_dir()
     for t in ("agent.spec.md", "hook.spec.md", "skill.spec.md", "claims.yml"):
         _copy_file(os.path.join(templates, t), os.path.join(dest, "sage", "templates", t), args.force, created, skipped)
-    _copy_file(os.path.join(_resources.schema_dir(), "manifest.schema.json"),
-               os.path.join(dest, "schema", "manifest.schema.json"), args.force, created, skipped)
+    # manifest + profile 스키마 모두 vendor — profile 스키마는 project-profile 구조검증과
+    # 오타 키 방어가 번들 폴백에 의존하지 않고 프로젝트 안에서 자립하도록.
+    for s in ("manifest.schema.json", "profile.schema.json"):
+        _copy_file(os.path.join(_resources.schema_dir(), s),
+                   os.path.join(dest, "schema", s), args.force, created, skipped)
 
     # 보고
     print(f"== sage install (host={args.host}, prefix={args.prefix}) → {dest} ==")
