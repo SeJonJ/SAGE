@@ -28,9 +28,9 @@ set up, or a new component/asset is introduced, follow
 schema keys, never edit generated artifacts, never bypass a `validate` FAIL.
 
 The conversational entry point is the **`/sage-init` skill**. It and the other
-**CORE framework bootstrap assets** — the `pdca-start` / `sage-review` skills and
-the six CORE roster agent renders (`leader`, `implementer-a`, `implementer-b`,
-`qa`, `reviewer`, `convention-checker`) — are hand-shipped by `sage install` like
+**CORE framework bootstrap assets** — the `pdca-start` / `sage-review` / `sage-asset`
+skills and the six CORE roster agent renders (`leader`, `implementer-a`,
+`implementer-b`, `qa`, `reviewer`, `convention-checker`) — are hand-shipped by `sage install` like
 this guide and `docs/agent/*`. They are NOT manifest-tracked: the
 manifest/claims/`validate` loop is reserved for project-authored assets created
 via `generate`/`extract`. The write-guard exempts their paths (editing them
@@ -46,7 +46,7 @@ codex), so each install deploys only that host's copies. On a **claude** host,
 Claude auto-discovers repo-scoped skills and agents under `.claude/` (CORE skills →
 `.claude/skills/`, CORE agents → `.claude/agents/`). On a **codex** host, Codex does
 not auto-discover repo-scoped skills, so CORE skills install to the user-global
-`$CODEX_HOME/skills/` (`$sage-init`, `$pdca-start`, `$sage-review`); and since Codex
+`$CODEX_HOME/skills/` (`$sage-init`, `$pdca-start`, `$sage-review`, `$sage-asset`); and since Codex
 has no native subagent auto-discovery either, the CORE roster agent renders install
 to repo `.codex/agents/<id>.md` (the SAGE-canonical asset path), which the Codex AI
 references as role definitions via the `AGENTS.md` router rather than native

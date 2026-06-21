@@ -3,7 +3,7 @@
 SAGE 자산(hook/agent/skill)의 **의도(intent) 단일 진실원**. `.claude/.codex` 산출물은 여기서
 생성되는 generated artifact이며 **직접수정 금지(write guard로 block)**.
 예외: hand-shipped CORE 부트스트랩 렌더는 spec→generate 산출물이 아니라 write guard 면제 — 직접편집 허용.
-host 택1이라 호스트별 위치가 다름: claude=repo `.claude/skills/{sage-init,pdca-start,sage-review}` +
+host 택1이라 호스트별 위치가 다름: claude=repo `.claude/skills/{sage-init,pdca-start,sage-review,sage-asset}` +
 `.claude/agents/{CORE 6인}`; codex=전역 `$CODEX_HOME/skills/{...}`(repo 아님, 가드 무관) + repo
 `.codex/agents/{CORE 6인}`(by-name 면제). (AGENT_GUIDE.md 부트스트랩 절 참조.)
 

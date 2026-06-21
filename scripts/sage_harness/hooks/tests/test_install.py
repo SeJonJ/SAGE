@@ -53,12 +53,14 @@ class TestInstall(unittest.TestCase):
                 ".claude/agents/qa.md",
                 ".claude/agents/reviewer.md",
                 ".claude/agents/convention-checker.md",
-                # CORE skill spec 2종 → docs/sage_harness/skills/
+                # CORE skill spec 3종 → docs/sage_harness/skills/
                 "docs/sage_harness/skills/pdca-start.md",
                 "docs/sage_harness/skills/sage-review.md",
+                "docs/sage_harness/skills/sage-asset.md",
                 # CORE skill 렌더 (Claude Code .claude/skills/ 자동발견)
                 ".claude/skills/pdca-start/SKILL.md",
                 ".claude/skills/sage-review/SKILL.md",
+                ".claude/skills/sage-asset/SKILL.md",
             ):
                 self.assertTrue(os.path.exists(os.path.join(d, rel)), rel)
             # tests/ 는 배치하지 않음(런타임 불필요)
@@ -125,7 +127,7 @@ class TestInstall(unittest.TestCase):
 
     def test_deploys_core_skill_specs(self):
         """Gap-2 mutation teeth: CORE skill spec 2종이 docs/sage_harness/skills/ 에 배치된다."""
-        _CORE_SKILLS = ["pdca-start", "sage-review"]
+        _CORE_SKILLS = ["pdca-start", "sage-review", "sage-asset"]
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("claude", d))
             for sid in _CORE_SKILLS:
@@ -138,7 +140,7 @@ class TestInstall(unittest.TestCase):
 
     def test_claude_host_deploys_core_skill_renders(self):
         """Gap-2 mutation teeth: claude install 시 CORE skill 렌더가 .claude/skills/ 에 배치된다."""
-        _CORE_SKILLS = ["pdca-start", "sage-review"]
+        _CORE_SKILLS = ["pdca-start", "sage-review", "sage-asset"]
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("claude", d))
             for sid in _CORE_SKILLS:
@@ -153,7 +155,7 @@ class TestInstall(unittest.TestCase):
         codex 는 repo-스코프 스킬을 자동발견하지 않으므로(sage-init 과 동일 비대칭),
         CORE skill 도 전역 설치되어야 codex 프로젝트에서 호출 가능하다."""
         import unittest.mock as mock
-        _CORE_SKILLS = ["pdca-start", "sage-review"]
+        _CORE_SKILLS = ["pdca-start", "sage-review", "sage-asset"]
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
             with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
                 install.run(Args("codex", d))

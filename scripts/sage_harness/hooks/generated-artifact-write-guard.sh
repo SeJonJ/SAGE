@@ -57,7 +57,7 @@ is_guarded() {
   #   agent: claude=.claude/agents/, codex=.codex/agents/ 둘 다 repo CORE 렌더(install hand-ship) → 둘 다 by-name 면제.
   #     프로젝트 에이전트(비-CORE 이름)는 계속 가드.
   case "$p" in
-    *.claude/skills/sage-init/*|*.claude/skills/pdca-start/*|*.claude/skills/sage-review/*) return 1 ;;
+    *.claude/skills/sage-init/*|*.claude/skills/pdca-start/*|*.claude/skills/sage-review/*|*.claude/skills/sage-asset/*) return 1 ;;
     *.claude/agents/leader.md|*.claude/agents/implementer-a.md|*.claude/agents/implementer-b.md) return 1 ;;
     *.claude/agents/qa.md|*.claude/agents/reviewer.md|*.claude/agents/convention-checker.md)     return 1 ;;
     *.codex/agents/leader.md|*.codex/agents/implementer-a.md|*.codex/agents/implementer-b.md)     return 1 ;;

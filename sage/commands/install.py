@@ -20,7 +20,7 @@ from sage import _resources   # 번들 리소스 경로 단일 해석(env overri
 
 # CORE roster (중립 6인) + CORE hook 6종(form) + CORE skill 2종. 도메인값 아님 = framework 메타.
 _CORE_AGENTS = ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]
-_CORE_SKILLS = ["pdca-start", "sage-review"]
+_CORE_SKILLS = ["pdca-start", "sage-review", "sage-asset"]
 _CORE_HOOKS = [
     ("capture-declared-risk", "core_adapter"),
     ("post-tool-logger", "core_adapter"),
@@ -46,7 +46,7 @@ def register(sub):
     p.add_argument("--dest", default=".", help="설치 대상 프로젝트 루트 (선택, 기본값: 현재 디렉토리)")
     p.add_argument("--force", action="store_true", help="기존 파일 덮어쓰기 (기본: skip)")
     p.add_argument("--no-global-skill", action="store_true",
-                   help="codex host: CORE 스킬($sage-init/$pdca-start/$sage-review)의 전역(~/.codex/skills) 설치를 건너뜁니다 (CI/샌드박스용)")
+                   help="codex host: CORE 스킬($sage-init/$pdca-start/$sage-review/$sage-asset)의 전역(~/.codex/skills) 설치를 건너뜁니다 (CI/샌드박스용)")
     p._optionals.title = "옵션"
     p.set_defaults(func=run)
 

@@ -119,7 +119,7 @@ docs/.../mcps/{id}.md               .mcp.json                           │
 
 > **MCP 거버넌스**: 시크릿은 env 변수명만 허용 (`${VAR}` placeholder). 리터럴 시크릿 값이 spec에 있으면 generate 전 FAIL (fail-closed). `.mcp.json`은 SAGE 소유(write-guard), `config.toml`의 비-MCP 설정은 보존합니다.
 
-> **위 산출물 경로는 프로젝트 자산(generate/extract)** 기준입니다. **CORE 부트스트랩 자산**(hand-shipped: `sage-init`/`pdca-start`/`sage-review` skill, CORE 로스터 6인 agent)은 별도이며, `sage install` 은 host 택1(claude **또는** codex)이라 호스트별로 다른 위치에 설치됩니다 — **claude host**: skill → repo `.claude/skills/`, agent → repo `.claude/agents/`. **codex host**: skill → 전역 `$CODEX_HOME/skills/`(codex 는 repo-스코프 skill 미자동발견), agent → repo `.codex/agents/`. 이들은 generated artifact 가 아니라 write-guard 면제입니다(`AGENT_GUIDE.md` 부트스트랩 절).
+> **위 산출물 경로는 프로젝트 자산(generate/extract)** 기준입니다. **CORE 부트스트랩 자산**(hand-shipped: `sage-init`/`pdca-start`/`sage-review`/`sage-asset` skill, CORE 로스터 6인 agent)은 별도이며, `sage install` 은 host 택1(claude **또는** codex)이라 호스트별로 다른 위치에 설치됩니다 — **claude host**: skill → repo `.claude/skills/`, agent → repo `.claude/agents/`. **codex host**: skill → 전역 `$CODEX_HOME/skills/`(codex 는 repo-스코프 skill 미자동발견), agent → repo `.codex/agents/`. 이들은 generated artifact 가 아니라 write-guard 면제입니다(`AGENT_GUIDE.md` 부트스트랩 절).
 
 ---
 

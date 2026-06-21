@@ -15,7 +15,7 @@ output contract are governed solely by `AGENT_GUIDE.md`.
   `.codex/hooks`) which are generated from `docs/sage_harness/` specs.
 - Do not modify generated artifacts directly — edit the spec and run
   `sage generate`. (The hand-shipped CORE bootstrap skills — `sage-init`,
-  `pdca-start`, `sage-review` — install to the user-global `$CODEX_HOME/skills/`,
+  `pdca-start`, `sage-review`, `sage-asset` — install to the user-global `$CODEX_HOME/skills/`,
   not the repo, so they are not generated artifacts; update them via reinstall.)
 - The CORE roster agent renders (`leader`, `implementer-a`, `implementer-b`, `qa`,
   `reviewer`, `convention-checker`) are hand-shipped to repo `.codex/agents/<id>.md`
