@@ -106,14 +106,26 @@ reach thoroughness through the back-and-forth, not a wall of questions.
 3. **`verification.commands`** — propose the real `build` / `test` / `lint` (and
    `syntax` for L1) from the build files you found. Empty = that check is skipped,
    so confirm only commands that genuinely exist.
-4. **`risk` tiers L0–L2** — propose from file types:
-   - `l0_pass_globs` (docs/plan → instant pass)
-   - `l1_path_globs` (low risk: UI/markup) + `plan_glob` (e.g. `plan_docs/**/*.md`)
-   - `l2_path_globs` (source/config → build+test+lint)
-5. **`risk` L3 (high-risk domains)** — here you usually must *ask*, not infer:
-   which areas are security-sensitive (auth, payment, crypto, secrets)? From the
-   answer set `l3_filename_globs` + `l3_content_keywords`, and the
-   `desktop_block_glob` / `desktop_block_hint` for generated/sync outputs.
+4. **`risk` tiers L0–L2** — propose from file types. **Briefly explain what the
+   levels mean as you set them**, since the user is choosing how strict each kind
+   of file is gated. The levels are a blast-radius ladder — the gate enforces more
+   the higher you go:
+   - **L0** `l0_pass_globs` — docs / plan files. Passes instantly, no checks.
+   - **L1** `l1_path_globs` — low blast radius (e.g. UI/markup). Light checks only.
+     Also set `plan_glob` here (e.g. `plan_docs/**/*.md`) — where plan docs live.
+   - **L2** `l2_path_globs` — source / config. Requires build + test + lint to pass.
+5. **`risk` L3 (high-risk domains)** — the top of the ladder, reserved for areas
+   where a mistake is costly. **Explain that L3 is the strictest tier: the gate
+   requires the plan phases to exist before you may edit, and the change also needs
+   independent review later in the workflow before it's considered done.** Here you
+   usually must *ask*, not infer: which areas are
+   security-sensitive (auth, payment, crypto, secrets)? From the answer set
+   `l3_filename_globs` + `l3_content_keywords`, and the `desktop_block_glob` /
+   `desktop_block_hint` for generated/sync outputs that must never be hand-edited.
+   - Mention the **escalation rule** so the user understands the tiers interact:
+     an L1/L2 file whose content matches `l3_content_keywords` is treated as L3,
+     and the effective level is `max(detected, what the user declared)` — i.e. the
+     gate always picks the stricter of the two.
    - **`l3_review_strategy`** — REQUIRED for L3 to be reviewable rather than
      hard-blocked. Confirm `claude_grep_first` or `codex_feature_signal` (or a
      module name). The review protocol blocks L3 until this is set.
@@ -134,6 +146,23 @@ toggle's detail entirely when it stays off.
   `cross_model.invocation` + `capabilities` (e.g. gstack), falling back to
   clean-context same-runtime. If enabling, confirm the `capabilities` (e.g.
   `{ gstack: true }`) and that `hooks.register` should be `[claude, codex]`.
+  - **If the user enables cross_model but gstack is not installed**, don't just
+    record `gstack: false` — explain and offer to guide. *Why it's needed:* on a
+    claude-host project, gstack supplies the `/codex consult` invocation that lets
+    Phase 05 actually reach the opposite model; without it `sage doctor` resolves
+    to `clean_context_same_runtime` (same model, fresh context) instead of a true
+    cross-model review. `sage doctor` treats gstack as available only via `gstack`
+    on `PATH` (a `which gstack` check) or an explicit `capabilities.gstack: true` —
+    it does not probe the install folder. *How to install* (Claude Code skill pack,
+    needs git + Bun):
+    ```
+    git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git \
+      ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup
+    ```
+    After install, if `gstack` is on `PATH` that's enough — `sage doctor` detects
+    it. Only set `capabilities.gstack: true` if it isn't visible on `PATH`. If the
+    user prefers not to install it, that's fine — leave cross_model on with the
+    same-runtime fallback, and say so.
 - **`options.obsidian` / `knowledge_capture`** — if used, set
   `knowledge_capture.vault_path` (empty path = vault features fully OFF) and the
   note convention.

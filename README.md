@@ -467,6 +467,16 @@ git push origin v0.2.0
 
 ---
 
+## 관련 프로젝트
+
+SAGE의 선택 기능이 연동하는 외부 도구들입니다.
+
+- **[Obsidian LLM Wiki (Local)](https://github.com/kytmanov/obsidian-llm-wiki-local)** — 로컬 LLM 기반 Obsidian vault. SAGE의 지식 캡처(`options.obsidian` 의도 플래그 + `knowledge_capture.vault_path` 활성화)가 PDCA 산출 지식을 적재하는 대상입니다.
+- **[CodeGraph](https://github.com/colbymchenry/codegraph)** — 심볼·호출 관계를 인덱싱하는 코드 지식 그래프. SAGE에서는 `options.codegraph` 의도 플래그로 표시하고 `mcp.enabled` 에 codegraph를 넣어 MCP 자산으로 통치합니다.
+- **[gstack](https://github.com/garrytan/gstack)** — Cross-Model Review에 쓰이는 Claude Code 스킬 팩. claude-host에서 `/codex consult` 기능을 제공합니다. 실제 호출 문자열은 `cross_model.invocation.claude_host` 에 두고, `capabilities.gstack` 은 가용성 신호로만 씁니다(`sage doctor` 가 `PATH` 의 `gstack` 또는 이 플래그로 판정).
+
+---
+
 ## 라이선스
 
 MIT — [LICENSE](LICENSE) 참조.
