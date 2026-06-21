@@ -83,6 +83,37 @@ class TestActiveGrants(unittest.TestCase):
             self.assertFalse(ov.is_override_active(tmp, GATE))
 
 
+class TestAuditPermissionSplit(unittest.TestCase):
+    """감사 로그(커밋)와 권한 캐시(로컬)를 분리 — clone 시 권한 비전파, 감사는 추적 가능."""
+
+    def test_grant_writes_both_audit_and_local(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ov.grant(tmp, "r", 1000, gate=GATE, now=1000)
+            self.assertTrue(os.path.exists(ov.audit_path(tmp)))    # 커밋용
+            self.assertTrue(os.path.exists(ov.grants_path(tmp)))   # 로컬 집행용
+
+    def test_bypass_only_in_audit_not_local(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            g = ov.grant(tmp, "r", 10000, gate=GATE)
+            ov.record_bypass(tmp, GATE, ["src/x.py"], "block_l3_strategy_unresolved", g)
+            local = ov._read_jsonl(ov.grants_path(tmp))
+            self.assertEqual([r["event"] for r in local], ["grant"])   # bypass 는 권한 캐시에 없음
+            audit = ov.read_records(tmp)
+            self.assertEqual(sorted(r["event"] for r in audit), ["bypass", "grant"])
+
+    def test_clone_inherits_audit_not_active_permission(self):
+        # clone 모사: 감사 로그만 새 트리에 복사(.sage/tmp 권한 캐시는 비커밋이라 안 옴).
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as dst:
+            ov.grant(src, "원격 우회", 50000, gate=GATE, now=1000)
+            os.makedirs(os.path.dirname(ov.audit_path(dst)), exist_ok=True)
+            with open(ov.audit_path(dst), "w", encoding="utf-8") as f:
+                f.write(open(ov.audit_path(src), encoding="utf-8").read())
+            # 감사 이력은 보이지만(추적 가능)
+            self.assertTrue(any(r["event"] == "grant" for r in ov.read_records(dst)))
+            # 활성 권한은 전파되지 않는다
+            self.assertFalse(ov.is_override_active(dst, GATE, now=1500))
+
+
 class TestMaybeOverrideWiring(unittest.TestCase):
     def test_block_with_active_override_passes_and_audits(self):
         with tempfile.TemporaryDirectory() as tmp:

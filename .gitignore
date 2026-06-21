@@ -5,13 +5,13 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
-# 빌드 산출물(P2-10 sdist/wheel — CI 에서 생성, 커밋 금지)
+# 빌드 산출물(sdist/wheel — CI 에서 생성, 커밋 금지)
 dist/
 build/
 
-# SAGE runtime temp + override 감사로그(P1-5, 프로젝트 로컬 운영 상태 — 커밋 금지)
+# SAGE 로컬 런타임 캐시(활성 우회 권한 등) — 머신 전용이라 커밋 금지.
+# 감사 로그(.sage/override.jsonl)는 우회 이력을 추적·공유하려고 일부러 커밋한다.
 .sage/tmp/
-.sage/override.jsonl
 
 # editor / OS
 .DS_Store

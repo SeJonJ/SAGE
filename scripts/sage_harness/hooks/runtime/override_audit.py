@@ -1,32 +1,37 @@
-"""override_audit — 게이트 BLOCK 합법 우회 + append-only 감사 (외부검토 P1-5).
+"""override_audit — 게이트 BLOCK 의 합법적 우회 + 감사 추적.
 
-게이트(pre-implementation-gate · pre-phase4-checklist-gate)의 BLOCK 을 운영자가 사유·기한과 함께
-명시적으로 우회한다. 이전엔 메시지에 "(override required)" 문구만 있고 실제 우회 수단이 없었다(P1-5).
+게이트(pre-implementation-gate · pre-phase4-checklist-gate)가 BLOCK 을 걸면, 운영자가 사유·기한과
+함께 명시적으로 우회한다. 권한과 감사를 두 저장소로 분리한다:
 
-설계:
-- 상태=감사로그 단일소스: 활성 override = .sage/override.jsonl 의 grant 레코드 중 미만료분.
-  별도 토큰 파일 없음 → grant 기록이 곧 권한이고 곧 감사. append-only(수정/삭제 안 함).
-- grant 와 그 권한이 실제로 막힌 BLOCK 을 통과시킨 bypass 를 모두 기록 → 사후 추적 가능
-  ("override X 가 게이트 Y 의 파일 Z 수정을 통과시킴").
-- TTL 만료로 권한 자동 회수(상시 우회 = Pattern A 방지). wall-clock 기준이라 세션 교차에도 일관.
-- gate 스코프: 특정 게이트 id 또는 "all". 우회는 grant.gate ∈ {요청 gate, "all"} 일 때만.
+- 감사 로그 `.sage/override.jsonl` — grant·bypass 전 이력(append-only). 커밋 대상이라
+  "누가 언제 왜 무엇을 우회했는지"를 동료·CI·리뷰어가 clone 후에도 추적할 수 있다.
+- 권한 캐시 `.sage/tmp/grants.jsonl` — 이 머신에서 활성인 grant. 로컬 전용(.gitignore)이라
+  레포를 clone/pull 해도 남이 발급한 우회 권한이 자동으로 활성화되지 않는다.
 
-엔진 모듈(도메인값 0): 게이트 id 는 호출자가 주입, 경로/시간만 여기서 결정.
+활성 여부는 권한 캐시만으로 판정한다. TTL 만료 시 자동 회수되어 상시 우회를 막는다(wall-clock 기준,
+세션 교차에도 일관). gate 스코프는 특정 게이트 id 또는 "all" — 우회는 grant.gate ∈ {요청 gate, "all"}.
+
+엔진 모듈(도메인값 0): 게이트 id 는 호출자가 주입하고, 경로/시간만 여기서 결정한다.
 """
 import json
 import os
 import time
 
-AUDIT_REL = os.path.join(".sage", "override.jsonl")
+AUDIT_REL = os.path.join(".sage", "override.jsonl")        # 커밋되는 감사 이력
+GRANTS_REL = os.path.join(".sage", "tmp", "grants.jsonl")  # 로컬 전용 활성 권한 캐시
 _UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
-# TTL 상한(N-R3): "시한부 우회"가 임의로 길어지면 사실상 상시 우회(Pattern A)다. 24h 로 캡해
-# 초과 grant 를 거부 → 길게 필요하면 재grant 를 강제(만료-재확인 루프 유지). 상수로 둬 조정 용이.
+# TTL 상한. "시한부 우회"가 임의로 길어지면 사실상 상시 우회가 되므로 24h 로 캡한다. 초과 grant 는
+# 거부하고, 더 길게 필요하면 만료 후 재발급하게 강제한다.
 MAX_TTL_SECONDS = 24 * 3600
 
 
 def audit_path(root):
     return os.path.join(root, AUDIT_REL)
+
+
+def grants_path(root):
+    return os.path.join(root, GRANTS_REL)
 
 
 def parse_ttl(s):
@@ -48,20 +53,17 @@ def _iso(epoch):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
 
 
-def _append(root, record):
-    p = audit_path(root)
-    os.makedirs(os.path.dirname(p), exist_ok=True)
-    with open(p, "a", encoding="utf-8") as f:
+def _append(path, record):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def read_records(root):
-    """감사로그 전 레코드(파싱 실패 줄 skip). 부재 → []."""
-    p = audit_path(root)
-    if not os.path.exists(p):
+def _read_jsonl(path):
+    if not os.path.exists(path):
         return []
     out = []
-    with open(p, encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -73,27 +75,34 @@ def read_records(root):
     return out
 
 
-def grant(root, reason, ttl_seconds, gate="all", user=None, now=None):
-    """override grant 1건 기록 → 레코드 반환. reason·ttl 필수(상위에서 검증).
+def read_records(root):
+    """감사 로그 전 레코드(파싱 실패 줄 skip). 부재 → []."""
+    return _read_jsonl(audit_path(root))
 
-    TTL 상한(MAX_TTL_SECONDS) 초과는 거부(ValueError) — 라이브러리 레벨 불변식이라
-    CLI 우회 호출에도 "시한부" 보장이 깨지지 않는다(N-R3)."""
+
+def grant(root, reason, ttl_seconds, gate="all", user=None, now=None):
+    """override grant 1건 발급 → 레코드 반환. reason·ttl 필수(상위에서 검증).
+
+    감사 로그(커밋·영속)와 권한 캐시(로컬·집행) 양쪽에 기록한다. TTL 상한 초과는 거부(ValueError):
+    라이브러리 레벨 불변식이라 CLI 를 우회해 직접 호출해도 시한부 보장이 깨지지 않는다."""
     if int(ttl_seconds) > MAX_TTL_SECONDS:
-        raise ValueError(f"TTL {int(ttl_seconds)}s 가 상한 {MAX_TTL_SECONDS}s(24h) 초과 — 더 짧게 grant 하거나 만료 후 재grant")
+        raise ValueError(f"TTL {int(ttl_seconds)}s 가 상한 {MAX_TTL_SECONDS}s(24h) 초과 — 더 짧게 발급하거나 만료 후 재발급")
     t = time.time() if now is None else now
     rec = {"event": "grant", "ts": _iso(t), "epoch": int(t),
            "expires_epoch": int(t) + int(ttl_seconds), "expires_at": _iso(t + ttl_seconds),
            "ttl_seconds": int(ttl_seconds), "gate": gate, "reason": reason,
            "user": user or os.environ.get("USER") or "unknown"}
-    _append(root, rec)
+    _append(audit_path(root), rec)    # 추적용(커밋)
+    _append(grants_path(root), rec)   # 집행용(로컬)
     return rec
 
 
 def active_grants(root, gate=None, now=None):
-    """미만료 grant 레코드. gate 지정 시 grant.gate ∈ {gate, 'all'} 만. 최신순."""
+    """미만료 grant 레코드. 권한 캐시(로컬)만 읽어 판정하므로 clone 시 남의 권한은 비활성이다.
+    gate 지정 시 grant.gate ∈ {gate, 'all'} 만. 최신순."""
     t = time.time() if now is None else now
     out = []
-    for r in read_records(root):
+    for r in _read_jsonl(grants_path(root)):
         if r.get("event") != "grant":
             continue
         if r.get("expires_epoch", 0) <= t:
@@ -109,9 +118,10 @@ def is_override_active(root, gate, now=None):
 
 
 def record_bypass(root, gate, files, message_key, grant_rec, now=None):
-    """grant 가 실제로 BLOCK 을 통과시킨 사실 기록 — 무엇을(message_key) 어느 파일에 적용했는지 추적."""
+    """grant 가 실제로 BLOCK 을 통과시킨 사실을 감사 로그에 기록 — 무엇을(message_key) 어느 파일에
+    적용했는지 추적. 권한이 아니라 사후 추적이므로 감사 로그에만 남긴다."""
     t = time.time() if now is None else now
-    _append(root, {"event": "bypass", "ts": _iso(t), "epoch": int(t), "gate": gate,
-                   "message_key": message_key, "files": files or [],
-                   "grant_ts": (grant_rec or {}).get("ts"),
-                   "reason": (grant_rec or {}).get("reason")})
+    _append(audit_path(root), {"event": "bypass", "ts": _iso(t), "epoch": int(t), "gate": gate,
+                               "message_key": message_key, "files": files or [],
+                               "grant_ts": (grant_rec or {}).get("ts"),
+                               "reason": (grant_rec or {}).get("reason")})
