@@ -27,6 +27,16 @@ scripts/sage_harness/hooks/generated-artifact-write-guard.sh
 - 예외 처리 불필요: `sage generate` CLI 는 편집도구(Write/Edit/apply_patch)를 거치지 않으므로
   애초에 이 PreToolUse 가드에 걸리지 않는다 (설계 §5.6 G3)
 
+## CORE 부트스트랩 자산 면제 (exit 0)
+spec→generate 산출물이 아닌 hand-shipped CORE 자산은 block 에서 면제한다(없는 spec 으로 보내는
+막다른 redirect 방지). 면제 경로:
+- `*.claude/skills/{sage-init,pdca-start,sage-review}/*` — CORE skill 렌더
+- `*.claude/agents/{leader,implementer-a,implementer-b,qa,reviewer,convention-checker}.md` — CORE 로스터 렌더
+면제는 `.claude/` CORE 렌더 패턴에만 적용한다. 패턴은 가드의 다른 패턴과 동일하게 path-global 이며,
+런타임 어댑터(`hook_runtime.make_rel`)가 절대경로를 root 상대로 먼저 정규화한다. codex CORE skill 은
+전역 `$CODEX_HOME/skills` 에 설치되어 repo 산출물이 아니고, repo `.codex/skills/` 는 프로젝트 skill
+영역(generate/extract)이라 동명이라도 계속 가드한다.
+
 ## scope 메모 (v1)
 - 가드 범위 = agents/hooks/skills 디렉토리 (설계 §5.6 다이어그램 명시 범위)
 - settings.json / hooks.json(등록 산출물) 가드는 부트스트랩 중 직접편집 필요성 때문에 v1 보류 — 후속 결정

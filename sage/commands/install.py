@@ -18,8 +18,9 @@ from sage import __version__
 
 from sage import _resources   # 번들 리소스 경로 단일 해석(env override + repo fallback — 재배치/설치 대비)
 
-# CORE roster (중립 6인) + CORE hook 6종(form). 도메인값 아님 = framework 메타.
+# CORE roster (중립 6인) + CORE hook 6종(form) + CORE skill 2종. 도메인값 아님 = framework 메타.
 _CORE_AGENTS = ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]
+_CORE_SKILLS = ["pdca-start", "sage-review"]
 _CORE_HOOKS = [
     ("capture-declared-risk", "core_adapter"),
     ("post-tool-logger", "core_adapter"),
@@ -45,7 +46,7 @@ def register(sub):
     p.add_argument("--dest", default=".", help="설치 대상 프로젝트 루트 (선택, 기본값: 현재 디렉토리)")
     p.add_argument("--force", action="store_true", help="기존 파일 덮어쓰기 (기본: skip)")
     p.add_argument("--no-global-skill", action="store_true",
-                   help="codex host: $sage-init 스킬의 전역(~/.codex/skills) 설치를 건너뜁니다 (CI/샌드박스용)")
+                   help="codex host: CORE 스킬($sage-init/$pdca-start/$sage-review)의 전역(~/.codex/skills) 설치를 건너뜁니다 (CI/샌드박스용)")
     p._optionals.title = "옵션"
     p.set_defaults(func=run)
 
@@ -90,8 +91,8 @@ def _codex_skills_root():
     return os.path.join(base, "skills")
 
 
-def _install_codex_global_skill(src_skill_md, force):
-    """codex $sage-init 스킬을 $CODEX_HOME/skills/sage-init/SKILL.md 에 전역 설치.
+def _install_codex_global_skill(src_skill_md, force, skill_id="sage-init"):
+    """codex 스킬을 $CODEX_HOME/skills/{skill_id}/SKILL.md 에 전역 설치.
 
     반환: (status, dst) — status ∈ {installed, skipped, stale, missing, error}. create-only(force 면 덮어쓰기).
     repo-스코프(--dest) 밖 전역 쓰기이므로 created/skipped 리스트가 아닌 별도 상태로 보고한다.
@@ -100,7 +101,7 @@ def _install_codex_global_skill(src_skill_md, force):
     - drift 경고(codex R1-P1): 기존 파일이 현재 번들과 다르면(구버전/로컬수정) stale 반환 → --force 안내."""
     if not os.path.exists(src_skill_md):
         return ("missing", None)
-    dst = os.path.join(_codex_skills_root(), "sage-init", "SKILL.md")
+    dst = os.path.join(_codex_skills_root(), skill_id, "SKILL.md")
     try:
         src_text = Path(src_skill_md).read_text(encoding="utf-8")
         if os.path.exists(dst) and not force:
@@ -177,7 +178,8 @@ def run(args) -> int:
 
     # 2b. 대화형 부트스트랩 트리거 — profile 을 대화로 채우는 설계상 진입점(런타임별 발견 메커니즘 상이).
     agents_md_collision = False
-    codex_skill_status = None   # (status, dst) — codex host 전역 스킬 설치 결과
+    codex_skill_status = None   # (status, dst) — codex host 전역 $sage-init 설치 결과
+    core_skill_status = []      # [(id, (status, dst))] — codex host 전역 CORE skill 설치 결과(5c)
     skill_src_md = os.path.join(fw, ".claude", "skills", "sage-init", "SKILL.md")   # 단일 소스(중립 내용)
     if args.host == "claude":
         # claude: repo .claude/skills/ 자동발견 → /sage-init 스킬 배치.
@@ -214,12 +216,24 @@ def run(args) -> int:
     for aid in _CORE_AGENTS:
         _copy_file(os.path.join(core, "agents", f"{aid}.md"),
                    os.path.join(dest, "docs", "sage_harness", "agents", f"{aid}.md"), args.force, created, skipped)
-    for sub in ("skills",):   # 빈 자산 디렉토리(프로젝트별 skill 은 추후)
-        d = os.path.join(dest, "docs", "sage_harness", sub)
-        os.makedirs(d, exist_ok=True)
-        gk = os.path.join(d, ".gitkeep")
-        if not os.path.exists(gk):
-            open(gk, "w").close(); created.append(gk)
+
+    # 5b. CORE skill spec(중립 2종) → docs/sage_harness/skills/ (host 무관 — CORE agent spec 과 대칭).
+    #     CORE 부트스트랩 자산이라 sage-init/CORE agent spec 과 동일하게 manifest 비추적(reference spec).
+    #     manifest 추적 skill(spec+claims+render hash)은 generate/extract 흐름이 소유한다.
+    for sid in _CORE_SKILLS:
+        _copy_file(os.path.join(core, "skills", f"{sid}.md"),
+                   os.path.join(dest, "docs", "sage_harness", "skills", f"{sid}.md"), args.force, created, skipped)
+
+    # 5c. CORE skill 렌더 — 런타임별 발견 메커니즘(sage-init 과 동일 비대칭):
+    #     claude=repo .claude/skills/ 자동발견, codex=전역 $CODEX_HOME/skills (repo-스코프 미발견).
+    if args.host == "claude":
+        for sid in _CORE_SKILLS:
+            _copy_tree(os.path.join(fw, ".claude", "skills", sid),
+                       os.path.join(dest, ".claude", "skills", sid), args.force, created, skipped)
+    elif not getattr(args, "no_global_skill", False):
+        for sid in _CORE_SKILLS:
+            src_md = os.path.join(fw, ".claude", "skills", sid, "SKILL.md")
+            core_skill_status.append((sid, _install_codex_global_skill(src_md, args.force, skill_id=sid)))
 
     # 6. manifest (CORE hook 등록 — generate 가 hash 스탬프)
     _write(os.path.join(dest, "docs", "sage_harness", ".manifest.json"),
@@ -237,7 +251,7 @@ def run(args) -> int:
 
     # 보고
     print(f"== sage install (host={args.host}, prefix={args.prefix}) → {dest} ==")
-    print(f"생성 {len(created)}건 (framework + CORE hook {len(_CORE_HOOKS)} + roster agent {len(_CORE_AGENTS)} + CORE agent render {len(_CORE_AGENTS) if args.host == 'claude' else 0}):")
+    print(f"생성 {len(created)}건 (framework + CORE hook {len(_CORE_HOOKS)} + roster agent {len(_CORE_AGENTS)} + CORE agent render {len(_CORE_AGENTS) if args.host == 'claude' else 0} + CORE skill {len(_CORE_SKILLS)}):")
     for p in sorted(created):
         print(f"  + {os.path.relpath(p, dest)}")
     if skipped:
@@ -273,6 +287,20 @@ def run(args) -> int:
                 print("  ⚠️  $sage-init 스킬 소스를 찾지 못해 전역 설치를 건너뜀(번들 손상?).")
             elif status == "disabled":
                 print("  = 전역 $sage-init 스킬 설치 생략(--no-global-skill). codex 부트스트랩은 AGENTS.md 라우터로 안내됩니다.")
+        for sid, (status, dst) in core_skill_status:
+            if status == "installed":
+                print(f"  ✅ 전역 ${sid} 스킬 설치: {dst}")
+            elif status == "skipped":
+                print(f"  = 전역 ${sid} 스킬 최신(동일 내용): {dst}")
+            elif status == "stale":
+                print(f"  ⚠️  전역 ${sid} 스킬이 현재 SAGE 버전과 다릅니다(구버전 또는 로컬수정): {dst}")
+                print("     최신으로 갱신하려면 `sage install --host codex --force`.")
+            elif status == "error":
+                print(f"  ⚠️  전역 ${sid} 스킬 설치 실패(권한/읽기전용 home?): {dst}")
+            elif status == "missing":
+                print(f"  ⚠️  ${sid} 스킬 소스를 찾지 못해 전역 설치를 건너뜀(번들 손상?).")
+        if not core_skill_status and getattr(args, "no_global_skill", False):
+            print(f"  = 전역 CORE 스킬({', '.join(_CORE_SKILLS)}) 설치 생략(--no-global-skill).")
         if agents_md_collision:
             print("  ⚠️  기존 AGENTS.md 가 있어 codex 부트스트랩 라우터를 자동 배치하지 못했습니다.")
             print("     templates 의 AGENTS.md 부트스트랩 섹션을 수동 병합하거나 --force 로 교체하세요.")

@@ -2,6 +2,9 @@
 
 SAGE 자산(hook/agent/skill)의 **의도(intent) 단일 진실원**. `.claude/.codex` 산출물은 여기서
 생성되는 generated artifact이며 **직접수정 금지(write guard로 block)**.
+예외: hand-shipped CORE 부트스트랩 렌더(`.claude/skills/{sage-init,pdca-start,sage-review}`,
+`.claude/agents/{CORE 로스터 6인}`)는 spec→generate 산출물이 아니라 write guard 면제 — 직접편집 허용
+(AGENT_GUIDE.md 부트스트랩 절 참조).
 
 > [!important] 프레임워크 ↔ 인스턴스 경계 (제약 #2: SAGE 독립)
 > **이 레포는 프레임워크(엔진 + CORE)만 담는다 — 특정 소비 프로젝트 인스턴스는 두지 않는다.**

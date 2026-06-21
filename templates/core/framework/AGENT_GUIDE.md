@@ -27,14 +27,24 @@ set up, or a new component/asset is introduced, follow
 (`generate` + `validate`) → phase-first plan docs before any code. Never add
 schema keys, never edit generated artifacts, never bypass a `validate` FAIL.
 
-The conversational entry point is the **`/sage-init` skill** (Claude:
-`.claude/skills/sage-init/`). It is a **CORE framework bootstrap asset** —
-hand-shipped by `sage install` like this guide and `docs/agent/*`, NOT a
-spec-generated skill (no `docs/sage_harness/skills/` spec, not manifest-tracked),
-and the write-guard exempts its path. Until the profile is bootstrapped
+The conversational entry point is the **`/sage-init` skill**. It and the other
+**CORE framework bootstrap assets** — the `pdca-start` / `sage-review` skills and
+the six CORE roster agent renders (`leader`, `implementer-a`, `implementer-b`,
+`qa`, `reviewer`, `convention-checker`) — are hand-shipped by `sage install` like
+this guide and `docs/agent/*`. They are NOT manifest-tracked: the
+manifest/claims/`validate` loop is reserved for project-authored assets created
+via `generate`/`extract`. The write-guard exempts their paths (editing them
+directly is allowed — there is no spec→generate redirect). The CORE skills ship
+reference specs under `docs/sage_harness/skills/` (sage-init has none), but those
+specs are not manifest-registered. Until the profile is bootstrapped
 (`project.name` set + `risk`/`components` configured), `sage generate` is BLOCKED
 and `sage validate` WARNs — by design, so an empty profile cannot silently
-disable the governance gate. Codex has no skill mechanism; codex users follow
+disable the governance gate.
+
+Runtime discovery differs by host: Claude auto-discovers repo-scoped skills and
+agents under `.claude/`; Codex does not auto-discover repo-scoped skills, so CORE
+skills install to the user-global `$CODEX_HOME/skills/` instead (`$sage-init`,
+`$pdca-start`, `$sage-review`). Codex users also follow
 `docs/agent/bootstrap-authoring.md` (see `CODEX.md`).
 
 ## Risk & Workflow Gate (PDCA)
@@ -107,6 +117,9 @@ plan-doc + risk checks only; the phase machinery is inert.
 - Do not perform destructive or outward-facing actions without confirmation.
 - Do not directly edit generated artifacts (`{host}/agents`, `{host}/skills`,
   `{host}/hooks`) — edit the spec under `docs/sage_harness/` and regenerate.
+  (Exception: the hand-shipped CORE bootstrap renders — `sage-init`/`pdca-start`/
+  `sage-review` skills and the six CORE roster agent renders — are not generated
+  and are write-guard exempt; edit them directly. See the bootstrap section above.)
 - Report outcomes faithfully: if tests fail, say so with the output.
 
 These are inherited by every agent/skill claim set as

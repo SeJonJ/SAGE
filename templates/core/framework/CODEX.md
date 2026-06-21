@@ -14,4 +14,6 @@ output contract are governed solely by `AGENT_GUIDE.md`.
 - Use the Codex runtime asset ecosystem (`.codex/agents`, `.codex/skills`,
   `.codex/hooks`) which are generated from `docs/sage_harness/` specs.
 - Do not modify generated artifacts directly — edit the spec and run
-  `sage generate`.
+  `sage generate`. (The hand-shipped CORE bootstrap skills — `sage-init`,
+  `pdca-start`, `sage-review` — install to the user-global `$CODEX_HOME/skills/`,
+  not the repo, so they are not generated artifacts; update them via reinstall.)

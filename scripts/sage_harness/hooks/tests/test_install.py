@@ -53,6 +53,12 @@ class TestInstall(unittest.TestCase):
                 ".claude/agents/qa.md",
                 ".claude/agents/reviewer.md",
                 ".claude/agents/convention-checker.md",
+                # CORE skill spec 2종 → docs/sage_harness/skills/
+                "docs/sage_harness/skills/pdca-start.md",
+                "docs/sage_harness/skills/sage-review.md",
+                # CORE skill 렌더 (Claude Code .claude/skills/ 자동발견)
+                ".claude/skills/pdca-start/SKILL.md",
+                ".claude/skills/sage-review/SKILL.md",
             ):
                 self.assertTrue(os.path.exists(os.path.join(d, rel)), rel)
             # tests/ 는 배치하지 않음(런타임 불필요)
@@ -108,6 +114,58 @@ class TestInstall(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("codex", d, no_global_skill=True))
             self.assertFalse(os.path.exists(os.path.join(d, ".claude", "agents")))
+
+    def test_deploys_core_skill_specs(self):
+        """Gap-2 mutation teeth: CORE skill spec 2종이 docs/sage_harness/skills/ 에 배치된다."""
+        _CORE_SKILLS = ["pdca-start", "sage-review"]
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            for sid in _CORE_SKILLS:
+                path = os.path.join(d, "docs", "sage_harness", "skills", f"{sid}.md")
+                self.assertTrue(os.path.exists(path), f"docs/sage_harness/skills/{sid}.md 미배치")
+                body = Path(path).read_text(encoding="utf-8")
+                self.assertIn(f"id: {sid}", body, f"{sid}.md spec id 누락")
+                self.assertIn("kind: skill", body, f"{sid}.md spec kind 누락")
+                self.assertIn("## procedure", body, f"{sid}.md procedure 누락")
+
+    def test_claude_host_deploys_core_skill_renders(self):
+        """Gap-2 mutation teeth: claude install 시 CORE skill 렌더가 .claude/skills/ 에 배치된다."""
+        _CORE_SKILLS = ["pdca-start", "sage-review"]
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            for sid in _CORE_SKILLS:
+                path = os.path.join(d, ".claude", "skills", sid, "SKILL.md")
+                self.assertTrue(os.path.exists(path), f".claude/skills/{sid}/SKILL.md 미배치")
+                body = Path(path).read_text(encoding="utf-8")
+                self.assertIn(f"name: {sid}", body, f"{sid} SKILL.md name 누락")
+
+    def test_codex_host_installs_core_skills_globally(self):
+        """Gap-2 P1.2: codex host 는 CORE skill 렌더를 $CODEX_HOME/skills 전역에 설치한다.
+
+        codex 는 repo-스코프 스킬을 자동발견하지 않으므로(sage-init 과 동일 비대칭),
+        CORE skill 도 전역 설치되어야 codex 프로젝트에서 호출 가능하다."""
+        import unittest.mock as mock
+        _CORE_SKILLS = ["pdca-start", "sage-review"]
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                install.run(Args("codex", d))
+            for sid in _CORE_SKILLS:
+                path = os.path.join(codex_home, "skills", sid, "SKILL.md")
+                self.assertTrue(os.path.exists(path), f"전역 codex CORE skill {sid} 미설치")
+                self.assertIn(f"name: {sid}", Path(path).read_text(encoding="utf-8"))
+            # codex host 는 repo .claude/skills/ 에 CORE skill 렌더를 두지 않는다
+            self.assertFalse(os.path.exists(os.path.join(d, ".claude", "skills", "pdca-start")))
+
+    def test_codex_no_global_skill_skips_core_skills(self):
+        """--no-global-skill 이면 CORE skill 전역 설치도 생략(CI/샌드박스)."""
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                install.run(Args("codex", d, no_global_skill=True))
+            self.assertFalse(os.path.exists(os.path.join(codex_home, "skills", "pdca-start")))
+            self.assertFalse(os.path.exists(os.path.join(codex_home, "skills", "sage-review")))
+            # spec 은 host 무관이라 codex host 에도 docs/ 에 배치된다
+            self.assertTrue(os.path.exists(os.path.join(d, "docs", "sage_harness", "skills", "pdca-start.md")))
 
     def test_claude_agent_renders_create_only(self):
         """Gap-1 create-only 안전성: 사용자 커스터마이즈 렌더는 --force 없이 보존된다."""

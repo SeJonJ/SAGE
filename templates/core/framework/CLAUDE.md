@@ -14,4 +14,6 @@ output contract are governed solely by `AGENT_GUIDE.md`.
 - Use the Claude runtime asset ecosystem (`.claude/agents`, `.claude/skills`,
   `.claude/hooks`) which are generated from `docs/sage_harness/` specs.
 - Do not modify generated artifacts directly — edit the spec and run
-  `sage generate`.
+  `sage generate`. (Exception: hand-shipped CORE bootstrap renders under
+  `.claude/skills/{sage-init,pdca-start,sage-review}` and `.claude/agents/`
+  CORE roster are not generated and are write-guard exempt — edit directly.)

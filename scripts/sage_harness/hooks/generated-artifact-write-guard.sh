@@ -47,10 +47,17 @@ for p in out:
 #  소유하고 비-MCP 설정 공존이라 파일 통째 가드 안 함 — staleness+소유권 검사로 보호. MCP plan §2.3 비대칭.)
 is_guarded() {
   local p; p="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
-  # 예외: sage-init 은 CORE 프레임워크 부트스트랩 자산(install 이 hand-ship — AGENT_GUIDE/docs/agent 와 동류).
-  # spec→generate 산출물이 아니므로 가드 대상에서 면제(spec 없는 막다른 redirect 방지, codex 리뷰 P1-2).
+  # 예외: CORE 프레임워크 부트스트랩 자산(install 이 hand-ship — AGENT_GUIDE/docs/agent 와 동류).
+  #   CORE skill(sage-init/pdca-start/sage-review) 렌더 + CORE 로스터 6인 에이전트 렌더.
+  #   spec→generate 산출물이 아니므로 가드 면제 — 없는 spec 으로 보내는 막다른 redirect 방지(codex 리뷰 P1-2/P2).
+  #   면제는 .claude/ CORE 렌더 패턴만(claude 자산). 패턴은 가드의 다른 패턴과 동일하게 path-global —
+  #   런타임 어댑터(hook_runtime.make_rel)가 절대경로를 root 상대로 먼저 정규화한다.
+  #   codex CORE skill 은 전역 $CODEX_HOME/skills 설치라 repo 산출물이 아니고(install.py 5c),
+  #   repo .codex/skills/ 는 프로젝트 skill 영역(generate/extract)이라 동명이라도 계속 가드한다(과잉면제 방지).
   case "$p" in
-    *.claude/skills/sage-init/*) return 1 ;;
+    *.claude/skills/sage-init/*|*.claude/skills/pdca-start/*|*.claude/skills/sage-review/*) return 1 ;;
+    *.claude/agents/leader.md|*.claude/agents/implementer-a.md|*.claude/agents/implementer-b.md) return 1 ;;
+    *.claude/agents/qa.md|*.claude/agents/reviewer.md|*.claude/agents/convention-checker.md)     return 1 ;;
   esac
   case "$p" in
     *.claude/agents/*|*.claude/hooks/*|*.claude/skills/*) return 0 ;;
