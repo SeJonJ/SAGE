@@ -75,6 +75,17 @@ pdca:                            # PDCA phase 의무구조 — pre-implementatio
   report_phase: "06"             # 이 phase 문서 작성 시 approve_phase 승인 확인
   approve_phase: "05"            # report 전 APPROVED 가 있어야 할 phase
   approve_marker: "APPROVED"     # approve_phase 문서에서 찾을 승인 마커(대소문자 무시)
+  review_loop:                   # Loop A — Phase 05 적대적 review-rework(찾기→반박→분류→수정→종료). 본문은 sage-review 스킬이 host 에서 실행, 여긴 게이트값만(결정론). 상세: docs/agent/review-protocol.md
+    enabled: false               # 기본 OFF — 켜면 sage-review 가 단발 리뷰 대신 적대적 루프로 동작(advisory 먼저 권장)
+    lenses: [correctness, security, concurrency, convention, lifecycle]  # FIND 렌즈(엔진 어휘). enabled 면 비울 수 없음
+    refuters: 2                  # finding 당 반박자 수. 생존 = 반증표 < ⌈refuters/2⌉(보수적 false-positive 필터)
+    refute_threshold: majority   # v1=majority 고정
+    max_iterations: { L2: 1, L3: 3 }      # risk-tier 비례 반복 상한. 초과 미수렴 → BLOCKED
+    dry_rounds: 1                # K라운드 연속 신규 0 → 수렴(APPROVED)
+    budget_tokens: { L2: 150000, L3: 600000 }   # loop-until-budget. 초과 → BLOCKED
+    cross_model: from_options.cross_model        # 반박자 1명을 opposite-runtime 로(options.cross_model 연동)
+    severity_block: [P0, P1]     # 미해결 시 APPROVED 불가한 심각도
+    architecture_escalation: from_risk.l3        # arch 변경 finding → BLOCKED(사람). risk.l3_* 재사용(중복정의 금지)
 
 conventions: []                  # 예: [{ scope: backend, stack: "<stack>", doc: sage/conventions/<name>.md, file_globs: ["**/*.<ext>"] }]
 

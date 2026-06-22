@@ -66,7 +66,24 @@
         "pre_implementation_required": { "type": "object" },
         "report_phase": { "type": "string" },
         "approve_phase": { "type": "string" },
-        "approve_marker": { "type": "string" }
+        "approve_marker": { "type": "string" },
+        "review_loop": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Loop A: Phase 05 적대적 review-rework 설정(찾기→반박→분류→수정→종료). 빈 lenses/0 예산 등 '유효 YAML 이지만 루프 침묵' 은 profile_validate 가 fail-closed(R2/P0-2 패턴). 판단 본문은 sage-review 스킬이 host 에서 실행 — 여긴 횟수·예산·종료 게이트만(결정론).",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "lenses": { "type": "array", "items": { "type": "string" } },
+            "refuters": { "type": "integer", "minimum": 1 },
+            "refute_threshold": { "type": "string" },
+            "max_iterations": { "type": "object" },
+            "dry_rounds": { "type": "integer", "minimum": 1 },
+            "budget_tokens": { "type": "object" },
+            "cross_model": { "oneOf": [ { "type": "boolean" }, { "enum": ["from_options.cross_model"] } ] },
+            "severity_block": { "type": "array", "items": { "enum": ["P0", "P1", "P2", "P3"] } },
+            "architecture_escalation": { "oneOf": [ { "type": "boolean" }, { "enum": ["from_risk.l3"] } ] }
+          }
+        }
       }
     },
     "conventions": { "type": "array" },

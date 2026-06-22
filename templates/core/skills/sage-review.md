@@ -18,25 +18,30 @@ a structured review report for the current implementation cycle.
   or "cross-model review"
 
 ## procedure
-1. Read `sage/project-profile.yaml` — check `options.cross_model` and
-   `cross_model.invocation` to determine the review mode:
-   - `cross_model: true` + invocation reachable → opposite-runtime review
-   - Otherwise → clean-context same-runtime review
-2. Read `docs/agent/review-protocol.md` — the authoritative review output format.
-3. Invoke the `reviewer` agent in the resolved mode:
-   a. Pass the plan doc path(s) for the current cycle.
-   b. Pass the implementer output summary (file paths changed, unit test results).
-   c. Pass the qa findings summary.
-4. The reviewer produces a structured report per `docs/agent/review-protocol.md`.
-   Do not intervene in the reviewer's findings — report them verbatim.
-5. If the reviewer issues a BLOCK on an L3 change, record the block in the plan
-   doc and stop — do not proceed to release until the reviewer clears it.
-6. Record the review outcome in the plan doc under a `## Phase-05 Review` section.
+1. Read `sage/project-profile.yaml` — `options.cross_model` + `cross_model.invocation`
+   resolve the review mode (cross_model:true + reachable → opposite-runtime; else
+   clean-context same-runtime); `pdca.review_loop` resolves pass vs loop.
+2. Read `docs/agent/review-protocol.md` — the authoritative output format + loop contract.
+3. Choose pass vs loop:
+   - `review_loop.enabled` false/absent, or risk L0/L1 → single-pass reviewer invocation.
+   - `review_loop.enabled: true` + risk L2/L3 → adversarial review-rework loop (Loop A).
+4. Single-pass: invoke the `reviewer` agent in the resolved mode with plan doc path(s),
+   implementer summary (changed files, unit tests), qa findings. Report findings verbatim.
+5. Loop A (find→refute→triage→rework→terminate): drive rounds per review-protocol.md;
+   record each boundary with `sage review-loop` (open/round/close). Counters, budget, and
+   termination are SAGE-owned (deterministic); judgement (find/refute/rework) runs in-host.
+   architecture_change at L3 → BLOCKED_ARCH (human escalation), never auto-reworked.
+6. BLOCK / BLOCKED on an L3 change → record in the plan doc and stop (no release until cleared).
+   The report←approve hook (06←05 APPROVED) is the deterministic backstop — never bypass it.
+7. Record the outcome under `## Phase-05 Review` (Loop A: include Review Loop Iterations
+   table + audit run_id).
 
 ## advisory_scope
-- role_boundary: does not implement or modify code; orchestrates reviewer only
-- uses: reviewer agent, project-profile.yaml, review-protocol.md
+- role_boundary: does not implement or modify code; orchestrates reviewer/implementer only
+- uses: reviewer agent, project-profile.yaml, review-protocol.md, `sage review-loop` CLI
 - cross_model: resolved by sage doctor; falls back to clean-context same-runtime
+- review_loop: deterministic gates (counters/budget/termination/audit) SAGE-owned; the loop
+  never bypasses the report←approve (06←05) backstop
 - convention_doc: docs/agent/review-protocol.md
 
 ## runtime_bindings
@@ -44,4 +49,5 @@ a structured review report for the current implementation cycle.
 - codex:  $CODEX_HOME/skills/sage-review/SKILL.md (global — codex does not auto-discover repo-scoped skills)
 
 ## drift_checks
-- conformance: procedure step 1 (profile check) and step 3 (reviewer invocation) must be present
+- conformance: procedure step 1 (profile check incl. review_loop) and step 4/5 (reviewer
+  invocation / Loop A drive) must be present

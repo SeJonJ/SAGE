@@ -205,4 +205,27 @@ def run(args):
     print(f"  notice  : {rr['notice']}")
     if rr["reviewer_degraded"]:
         print(f"  ⚠️  L3 REVIEW DEGRADED: {rr['reviewer_degrade_reason']}")
+
+    # Loop A (review_loop) — 켜졌는지 + 설정 유효성(profile_validate 의 review_loop 발 이슈만 표면화).
+    # 환경 진단이라 정보성. 강제(fail-closed)는 generate/validate 가 담당(같은 validate_profile 경유).
+    _report_review_loop(profile)
     return rc
+
+
+def _report_review_loop(profile):
+    rl = ((profile.get("pdca") or {}).get("review_loop")) or {}
+    print("## Loop A (Phase 05 review_loop)")
+    if not rl:
+        print("  enabled : (미선언) — 단발 리뷰(sage-review 단일 패스). 적대적 루프 미사용")
+        return
+    enabled = rl.get("enabled") is True
+    print(f"  enabled : {enabled} (lenses {len(rl.get('lenses') or [])}, refuters {rl.get('refuters')}, "
+          f"max_iter {rl.get('max_iterations')})")
+    # review_loop 발 검증 이슈만 추려 표면화(전체 profile 검증은 sage validate 담당).
+    try:
+        from sage.profile_validate import _review_loop_issues
+        for sev, msg in _review_loop_issues(profile):
+            if sev in ("FAIL", "WARN"):
+                print(f"  {'❌' if sev == 'FAIL' else '⚠️ '} {sev} {msg}")
+    except Exception:
+        pass
