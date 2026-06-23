@@ -119,6 +119,15 @@ sage review-loop round --run-id $RUN_ID --iteration <n> \
   --found <N> --survived <N> --accepted <N> --arch <N> --tokens <cumulative>
 ```
 
+### After close — Obsidian dashboard (optional)
+If `knowledge_capture.loop_audit_dashboard` is true and `knowledge_capture.vault_path` is set,
+refresh the vault dashboard after closing the loop:
+```
+sage review-loop show --vault
+```
+This writes `<vault>/<folder>/SAGE-loop-audit.md` (plain table of all runs). Skip it when the
+flag is off or no vault is configured — it is a side artifact, never a gate.
+
 ### Advisory-first rollout
 Until the loop is trusted on this project, run it in **advisory mode**: drive the rounds and
 record the audit trail, but keep the report←approve sign-off manual (the human/leader confirms

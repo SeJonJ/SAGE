@@ -31,6 +31,11 @@ class TestVaultHelper(unittest.TestCase):
         prof = {"knowledge_capture": {"vault_path": "/profile"}}
         self.assertEqual(_vault.vault_target(prof, override="/cli")[0], "/cli")
 
+    def test_non_str_vault_path_no_crash(self):
+        # vault_path 가 비-str(123)이어도 .strip() 크래시 없이 (None,None)=비활성(codex A).
+        self.assertEqual(_vault.vault_target({"knowledge_capture": {"vault_path": 123}}), (None, None))
+        self.assertEqual(_vault.vault_target("not a dict"), (None, None))
+
     def test_fm_value_types(self):
         self.assertEqual(_vault._fm_value(False), "false")
         self.assertEqual(_vault._fm_value(True), "true")
@@ -139,14 +144,16 @@ class TestVaultHelper(unittest.TestCase):
             self.assertEqual(parsed, val.replace("\n", " "))
 
 
-def _profile(tmp, vault):
+def _profile(tmp, vault, retro_note=False, loop_audit_dashboard=False):
     os.makedirs(os.path.join(tmp, "sage"), exist_ok=True)
     with open(os.path.join(tmp, "sage", "project-profile.yaml"), "w", encoding="utf-8") as f:
         f.write("pdca:\n  approve_phase: \"05\"\n  phases:\n"
                 "    - { id: \"05\", glob: \"plan_docs/05-expert-review/**/*.md\" }\n"
                 "  review_loop: { enabled: true, lenses: [security], refuters: 2 }\n")
         if vault:
-            f.write(f"knowledge_capture:\n  vault_path: \"{vault}\"\n  note_convention: {{ folder: wiki }}\n")
+            f.write(f"knowledge_capture:\n  vault_path: \"{vault}\"\n  note_convention: {{ folder: wiki }}\n"
+                    f"  loop_audit_dashboard: {str(loop_audit_dashboard).lower()}\n"
+                    f"  retro_note: {str(retro_note).lower()}\n")
 
 
 def _sage(*args, root):
@@ -265,6 +272,42 @@ class TestVaultRetro(unittest.TestCase):
         notes = [f for f in os.listdir(wiki) if f.startswith("sage-retro-")] if os.path.isdir(wiki) else []
         self.assertTrue(notes and all("/" not in n and ".." not in n for n in notes))
         self.assertFalse(os.path.exists(os.path.join(os.path.dirname(vault), "etc", "evil")))
+
+    # --- 7.5단계 A: retro_note 플래그 자동 활성(--vault 없이도) ---
+    def test_retro_note_flag_auto_vault(self):
+        # knowledge_capture.retro_note:true → --vault 없이도 노트 자동 작성.
+        tmp, vault = tempfile.mkdtemp(), tempfile.mkdtemp()
+        _profile(tmp, vault, retro_note=True)
+        _run_loop(tmp)
+        self._add_05(tmp)
+        r = _sage("retro", "--feature", "loop-engineering", root=tmp)   # --vault 없음
+        self.assertEqual(r.returncode, 0, r.stderr)
+        notes = [f for f in os.listdir(os.path.join(vault, "wiki")) if f.startswith("sage-retro-")]
+        self.assertEqual(len(notes), 1, "retro_note 플래그로 자동 작성됐어야")
+
+    def test_retro_note_flag_off_no_auto_vault(self):
+        # retro_note:false(기본) → --vault 없으면 노트 없음.
+        tmp, vault = tempfile.mkdtemp(), tempfile.mkdtemp()
+        _profile(tmp, vault, retro_note=False)
+        _run_loop(tmp)
+        self._add_05(tmp)
+        r = _sage("retro", "--feature", "loop-engineering", root=tmp)   # --vault 없음
+        self.assertEqual(r.returncode, 0, r.stderr)
+        wiki = os.path.join(vault, "wiki")
+        notes = [f for f in os.listdir(wiki) if f.startswith("sage-retro-")] if os.path.isdir(wiki) else []
+        self.assertEqual(len(notes), 0, "플래그 off 인데 자동 작성됨")
+
+    def test_no_vault_overrides_retro_note_flag(self):
+        # codex A: --no-vault 는 retro_note:true 여도 이번 실행만 vault 생략(명시 off, 최우선).
+        tmp, vault = tempfile.mkdtemp(), tempfile.mkdtemp()
+        _profile(tmp, vault, retro_note=True)
+        _run_loop(tmp)
+        self._add_05(tmp)
+        r = _sage("retro", "--feature", "loop-engineering", "--no-vault", root=tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        wiki = os.path.join(vault, "wiki")
+        notes = [f for f in os.listdir(wiki) if f.startswith("sage-retro-")] if os.path.isdir(wiki) else []
+        self.assertEqual(len(notes), 0, "--no-vault 인데 자동 작성됨")
 
 
 if __name__ == "__main__":

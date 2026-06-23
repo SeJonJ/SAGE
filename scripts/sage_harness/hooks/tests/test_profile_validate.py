@@ -337,5 +337,41 @@ class TestReviewLoop(unittest.TestCase):
                              f"backstop fired on valid profile: {[m for _, m in issues]}")
 
 
+class TestKnowledgeCaptureVault(unittest.TestCase):
+    """7.5단계 A — vault-output 플래그(loop_audit_dashboard/retro_note) 의존 검증."""
+
+    def test_flag_on_without_vault_path_warn(self):
+        for key in ("loop_audit_dashboard", "retro_note"):
+            issues = sevs({"knowledge_capture": {"vault_path": "", key: True}})
+            self.assertNotIn("FAIL", [s for s, _ in issues])
+            self.assertTrue(any(key in m and "vault_path" in m for _, m in issues), key)
+
+    def test_flag_on_with_vault_path_ok(self):
+        prof = {"knowledge_capture": {"vault_path": "/v", "loop_audit_dashboard": True, "retro_note": True}}
+        self.assertFalse(any("loop_audit_dashboard" in m or "retro_note" in m for _, m in sevs(prof)))
+
+    def test_flag_off_no_issue(self):
+        prof = {"knowledge_capture": {"vault_path": "", "loop_audit_dashboard": False, "retro_note": False}}
+        self.assertFalse(any("loop_audit_dashboard" in m or "retro_note" in m for _, m in sevs(prof)))
+
+    def test_flag_non_bool_warn(self):
+        # 비-bool 은 `is True` 로 침묵 off → 타입 WARN.
+        issues = sevs({"knowledge_capture": {"vault_path": "/v", "retro_note": "yes"}})
+        self.assertNotIn("FAIL", [s for s, _ in issues])
+        self.assertTrue(any("retro_note" in m and "bool" in m for _, m in issues))
+
+    def test_kc_non_dict_fail_not_crash(self):
+        # 비-dict knowledge_capture → 섹션 가드가 FAIL(런타임 .get 크래시 방지, codex A).
+        issues = validate_profile({"knowledge_capture": "oops"}, REPO)
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("knowledge_capture" in m and "매핑" in m for _, m in issues))
+
+    def test_vault_path_non_string_warn(self):
+        # vault_path 비-str(123) → WARN(런타임 .strip() 크래시 예방, codex A).
+        issues = sevs({"knowledge_capture": {"vault_path": 123, "retro_note": True}})
+        self.assertNotIn("FAIL", [s for s, _ in issues])
+        self.assertTrue(any("vault_path" in m and "문자열" in m for _, m in issues))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

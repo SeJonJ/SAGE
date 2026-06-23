@@ -9,6 +9,7 @@
 .claude/skills/pdca-start/SKILL.md	0	CORE 부트스트랩 skill(pdca-start) 면제
 .claude/skills/sage-review/SKILL.md	0	CORE 부트스트랩 skill(sage-review) 면제
 .claude/skills/sage-asset/SKILL.md	0	CORE 부트스트랩 skill(sage-asset) 면제
+.claude/skills/sage-profile-modify/SKILL.md	0	CORE 부트스트랩 skill(sage-profile-modify) 면제
 .codex/skills/pdca-start/SKILL.md	2	repo-local .codex/skills 는 프로젝트 영역 → 동명이라도 차단(과잉면제 방지)
 .claude/agents/leader.md	0	CORE 로스터 에이전트 렌더(leader) 면제
 .claude/agents/convention-checker.md	0	CORE 로스터 에이전트 렌더(convention-checker) 면제

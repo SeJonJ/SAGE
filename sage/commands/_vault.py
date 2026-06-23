@@ -24,8 +24,11 @@ def vault_target(profile, override=None):
     - `--vault`(경로 생략): profile.knowledge_capture.vault_path 마스터 게이트 — 비면 OFF.
     - `--vault PATH`: **명시적 opt-in 오버라이드** — profile 게이트와 무관하게 PATH 에 쓴다(테스트/1회 내보내기).
       사용자가 직접 경로를 타이핑한 것이 곧 opt-in 이므로 의도된 동작이다."""
-    kc = (profile.get("knowledge_capture") or {}) if isinstance(profile, dict) else {}
-    vault = (override or kc.get("vault_path") or "").strip()
+    kc = profile.get("knowledge_capture") if isinstance(profile, dict) else {}
+    kc = kc if isinstance(kc, dict) else {}
+    raw = override if override is not None else kc.get("vault_path")
+    # 비-str vault_path/override(예: 123)는 .strip() 크래시 → 미설정으로 취급(codex A). 검증이 별도 WARN.
+    vault = raw.strip() if isinstance(raw, str) else ""
     if not vault:
         return None, None
     folder = _safe_rel(((kc.get("note_convention") or {}).get("folder")) or "wiki")

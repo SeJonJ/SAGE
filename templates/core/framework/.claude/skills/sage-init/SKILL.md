@@ -166,6 +166,17 @@ toggle's detail entirely when it stays off.
 - **`options.obsidian` / `knowledge_capture`** — if used, set
   `knowledge_capture.vault_path` (empty path = vault features fully OFF) and the
   note convention.
+- **Review loop (`pdca.review_loop`)** — the optional Phase 05 adversarial loop.
+  Raise it as its own toggle (default off). Drive it with the **shared interview set**
+  in `docs/agent/bootstrap-authoring.md` (§ Review loop + vault interview set) so this
+  skill and `sage-profile-modify` never diverge: loop on/off → if on, author
+  `lenses` / `max_iterations` / `budget_tokens` / `refuters` / `dry_rounds` /
+  `severity_block` / `cross_model` (reuse the `options.cross_model` value already
+  settled above — do not re-ask). Each value gets its one-line meaning, per that set.
+  - **Vault outputs (conditional)**: only when the loop is **on AND
+    `knowledge_capture.vault_path` is set**, ask the one vault turn from the shared set —
+    `loop_audit_dashboard` (감사 대시보드) and/or `retro_note` (회고 human-gate 노트).
+    Skip this turn entirely when the loop is off or no vault is configured.
 - **`options.codegraph` / `codegraph`** — toggle and MCP name.
 
 MCP servers themselves are governed as the `mcp` asset kind

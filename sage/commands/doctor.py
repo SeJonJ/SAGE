@@ -184,7 +184,8 @@ def run(args):
     gstack_avail = bool(shutil.which("gstack")) or bool(caps_prof.get("gstack"))
     claude_avail = bool(shutil.which("claude")) or bool(caps_prof.get("claude"))   # P2-8: 역방향 능력 검증
     opts = profile.get("options", {}) or {}
-    vault = (profile.get("knowledge_capture", {}) or {}).get("vault_path", "")
+    _kc = profile.get("knowledge_capture")
+    vault = _kc.get("vault_path", "") if isinstance(_kc, dict) else ""   # 비-dict kc 방어(codex A)
     print("## 옵션 의존성")
     print(f"  cross_model : {opts.get('cross_model', False)}")
     print(f"  gstack      : {'available' if gstack_avail else 'unavailable'} (PATH which gstack | capabilities.gstack)")

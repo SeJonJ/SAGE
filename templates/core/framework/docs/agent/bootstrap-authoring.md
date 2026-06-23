@@ -77,8 +77,44 @@ decisions that genuinely need user intent; author the rest from them:
   clean-context same-runtime when the invocation path or capability is
   unavailable. It is **not** resolved from `runtime.external_reviewer` (which
   records the intended preference only).
+- **Review loop (Phase 05)** — the optional adversarial review-rework loop. Use the
+  shared interview set below (§ Review loop + vault interview set). Both `sage-init`
+  (first authoring) and `sage-profile-modify` (later editing) drive the *same* set.
 
 Present the filled profile (or the consequential choices) for user approval.
+
+#### Review loop + vault interview set (shared by sage-init and sage-profile-modify)
+
+Single source of the loop questions so the two skills never drift. Every toggle gets
+a one-line plain explanation (same style as the L0–L3 explanation). One topic per turn.
+
+**Loop toggle** (default off — `pdca.review_loop.enabled`):
+> "Phase 05 리뷰를 적대적 루프로 돌릴까요? (기본: 단발 리뷰)"
+> · 단발(off) — reviewer 1회. 가볍고 빠름.
+> · 루프(on) — 찾기→반박→수정을 수렴까지 반복(L2/L3만). 거짓양성 거르고 누락 줄이나 비쌈.
+
+If **off**, leave `review_loop.enabled: false` and skip the rest. If **on**, author
+`pdca.review_loop` (each value with its one-line meaning):
+
+| ask | key | one-line meaning |
+|---|---|---|
+| 어떤 관점? (스택 기반 제안) | `lenses` | FIND 렌즈(엔진 어휘: correctness/security/concurrency/convention/lifecycle/performance/error_handling/data_integrity/api_contract) |
+| L2·L3 최대 라운드? | `max_iterations` | 수렴 못 하면 이 횟수에서 BLOCKED (기본 L2:1·L3:3) |
+| 토큰 예산? | `budget_tokens` | 누적 초과 시 BLOCKED (기본 L2:150k·L3:600k) |
+| 반박자 수? | `refuters` | finding당 반증 시도. 생존=반증표 < 과반 (기본 2) |
+| 연속 dry 라운드? | `dry_rounds` | K라운드 연속 신규 0 → 수렴 (기본 1) |
+| 승인 불가 심각도? | `severity_block` | 미해결 시 APPROVED 차단 (기본 [P0,P1]) |
+| cross-model 반박? | `cross_model` | `options.cross_model` 연동 — 이미 물었으면 그 값 재사용(새로 묻지 않음) |
+
+**Vault outputs** — ask **only if the loop is on AND `knowledge_capture.vault_path` is set**
+(one turn; otherwise skip entirely):
+> "루프 산출물을 Obsidian vault 에도 남길까요? (vault_path 감지됨)"
+> · 감사 대시보드 — 라운드별 발견/채택/수렴 추이를 vault 노트로 (plain 테이블, 플러그인 무관) → `knowledge_capture.loop_audit_dashboard`
+> · 회고 노트 — `sage retro` 결과를 approved:false 노트로, vault 에서 검토·승인(human-gate) → `knowledge_capture.retro_note`
+> · [둘 다 / 대시보드만 / 회고만 / 안 함]
+
+These flags require `vault_path` (the master gate); `sage validate` WARNs if a flag is
+true while `vault_path` is empty.
 
 ### 3. Handoff to the deterministic backend
 On approval, hand off — do not keep authoring registration artifacts by hand:

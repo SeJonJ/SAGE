@@ -22,6 +22,8 @@ def register(sub):
     p.add_argument("--feature", default=None, help="05 문서 경로 필터(스템). 예: loop-engineering")
     p.add_argument("--vault", nargs="?", const="", default=None,
                    help="Obsidian vault 에 human-gate 노트(approved:false) 작성. 경로 생략 시 profile.knowledge_capture.vault_path")
+    p.add_argument("--no-vault", action="store_true",
+                   help="이번 실행만 vault 노트 생략(retro_note 플래그가 켜져 있어도). --vault 보다 우선")
     p.add_argument("--root", default=None)
     p.set_defaults(func=run)
 
@@ -48,23 +50,28 @@ def _find_project_root(start):
         cur = parent
 
 
-def _approve_glob(root):
-    """05(approve) phase 글롭 — profile.pdca.phases 에서 approve_phase id 의 glob 을 읽어 도메인값 0.
-    실패 시 표준 기본값(plan_docs/05-expert-review/**/*.md)."""
-    default = os.path.join("plan_docs", "05-expert-review", "**", "*.md")
+def _load_profile(root):
+    """<root>/sage/project-profile.yaml → dict. 없음/실패 → {}. (run 에서 1회 로드해 재사용)"""
     ppath = os.path.join(root, "sage", "project-profile.yaml")
     if not os.path.exists(ppath):
-        return default
+        return {}
     try:
         import yaml
         prof = yaml.safe_load(open(ppath, encoding="utf-8")) or {}
-        pdca = prof.get("pdca") or {}
-        approve_id = pdca.get("approve_phase", "05")
-        for ph in (pdca.get("phases") or []):
-            if isinstance(ph, dict) and ph.get("id") == approve_id and ph.get("glob"):
-                return ph["glob"]
+        return prof if isinstance(prof, dict) else {}
     except Exception:
-        pass
+        return {}
+
+
+def _approve_glob(profile):
+    """05(approve) phase 글롭 — profile.pdca.phases 에서 approve_phase id 의 glob 을 읽어 도메인값 0.
+    실패/미설정 시 표준 기본값(plan_docs/05-expert-review/**/*.md)."""
+    default = os.path.join("plan_docs", "05-expert-review", "**", "*.md")
+    pdca = profile.get("pdca") or {}
+    approve_id = pdca.get("approve_phase", "05")
+    for ph in (pdca.get("phases") or []):
+        if isinstance(ph, dict) and ph.get("id") == approve_id and ph.get("glob"):
+            return ph["glob"]
     return default
 
 
@@ -117,12 +124,13 @@ _APPLY_PATH = (
 
 def run(args):
     root = os.path.abspath(args.root) if args.root else _find_project_root(os.getcwd())
+    profile = _load_profile(root)
     la = _load_loop_audit(root)
 
     rid, audit_lines = _fmt_audit(la, root, args.run_id)
 
     # 05 리뷰 문서 수집(finding 텍스트 원천) — approve phase 글롭. --feature 로 경로 필터.
-    pattern = os.path.join(root, _approve_glob(root))
+    pattern = os.path.join(root, _approve_glob(profile))
     docs = sorted(glob.glob(pattern, recursive=True))
     if args.feature:
         # 파일명(basename)에서 -/_/. 로 구분된 토큰 경계 매치(codex S4 P3). raw 부분문자열은
@@ -146,22 +154,23 @@ def run(args):
 
     print("\n".join(out))
 
-    if args.vault is not None:
-        _write_vault_note(root, rid, args.feature, out, args.vault or None)
+    # vault 결정 우선순위: --no-vault(명시 off) > --vault PATH(명시 경로) > --vault(bare)/retro_note(profile 경로) > 없음.
+    kc = profile.get("knowledge_capture")
+    kc = kc if isinstance(kc, dict) else {}   # 비-dict 방어(codex A — .get 크래시 방지)
+    if args.no_vault:
+        vault_arg = None
+    else:
+        vault_arg = args.vault
+        if vault_arg is None and kc.get("retro_note") is True:
+            vault_arg = ""   # profile vault_path 사용(자동 활성)
+    if vault_arg is not None:
+        _write_vault_note(profile, root, rid, args.feature, out, vault_arg or None)
     return 0
 
 
-def _write_vault_note(root, rid, feature, out_lines, override):
+def _write_vault_note(profile, root, rid, feature, out_lines, override):
     """retro 패킷을 vault 에 human-gate 노트(approved:false)로 작성. 사람이 Obsidian 에서 검토·승인."""
     from sage.commands import _vault
-    ppath = os.path.join(root, "sage", "project-profile.yaml")
-    profile = {}
-    if os.path.exists(ppath):
-        try:
-            import yaml
-            profile = yaml.safe_load(open(ppath, encoding="utf-8")) or {}
-        except Exception:
-            profile = {}
     vault, folder = _vault.vault_target(profile, override)
     if not vault:
         print("  ℹ️  vault 비활성(knowledge_capture.vault_path 미설정, --vault 경로도 없음) → 노트 생략", file=sys.stderr)

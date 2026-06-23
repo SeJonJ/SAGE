@@ -253,9 +253,9 @@ def _schema_issues(profile, root):
 def _semantic_issues(profile, root):
     issues = []
 
-    # 섹션 타입 가드(codex 재리뷰) — risk/pdca/options 가 truthy 비-dict 면 이후 .get() 크래시.
-    #   jsonschema 없어도 제어된 FAIL 을 단일 출처로 발행(_review_loop_issues 는 coerce 만, 중복 회피).
-    for section in ("risk", "pdca", "options"):
+    # 섹션 타입 가드(codex 재리뷰) — risk/pdca/options/knowledge_capture 가 truthy 비-dict 면 이후
+    #   .get() 크래시(retro 등 런타임 읽기 포함). jsonschema 없어도 제어된 FAIL 을 단일 출처로 발행.
+    for section in ("risk", "pdca", "options", "knowledge_capture"):
         v = profile.get(section)
         if v is not None and not isinstance(v, dict):
             issues.append(("FAIL", f"{section} 섹션은 매핑(object)이어야 함(받음: {type(v).__name__})"))
@@ -300,6 +300,32 @@ def _semantic_issues(profile, root):
     return issues
 
 
+def _knowledge_capture_issues(profile):
+    """knowledge_capture vault-output 플래그(loop_audit_dashboard/retro_note) 의존 검증.
+    vault 출력은 부가 기능(거버넌스 게이트 아님)이라 WARN 수준: 켰는데 vault_path 비면 무동작(OFF) 알림,
+    비-bool 이면 `is True` 로 침묵 off 되니 타입 WARN. knowledge_capture 는 open object 라 키 오타는
+    스키마/여기서 강제 안 함(freeform 키 보존) — 이 둘만 점검."""
+    kc = profile.get("knowledge_capture")
+    if not isinstance(kc, dict):
+        return []   # 비-dict 는 _semantic_issues 섹션 가드가 FAIL 로 발행(중복 회피)
+    issues = []
+    vp = kc.get("vault_path")
+    # vault_path 는 문자열이어야 함 — 비-str(예: 123)이면 vault_target 의 .strip() 이 런타임 크래시(codex A).
+    if vp is not None and not isinstance(vp, str):
+        issues.append(("WARN", f"knowledge_capture.vault_path={vp!r} 는 문자열이어야 함(경로). 비-str 은 vault 출력 시 무시/오류"))
+    vault = (vp or "").strip() if isinstance(vp, str) else ""
+    for key in ("loop_audit_dashboard", "retro_note"):
+        v = kc.get(key)
+        if v is None:
+            continue
+        if not isinstance(v, bool):
+            issues.append(("WARN", f"knowledge_capture.{key}={v!r} 는 bool 이어야 함(true/false). 비-bool 은 침묵 off 됨"))
+        elif v is True and not vault:
+            issues.append(("WARN", f"knowledge_capture.{key}=true 이나 vault_path 비어 있음 → vault 출력 OFF. "
+                                   f"vault_path 설정해야 동작"))
+    return issues
+
+
 def validate_profile(profile, root):
     """구조 + 의미 검증 결과 [(severity, message)]. 어떤 입력에도 예외를 던지지 않는다(totality 계약).
 
@@ -317,7 +343,8 @@ def validate_profile(profile, root):
         return [("FAIL", f"profile 은 매핑(object)이어야 함 — 최상위가 key:value 구조여야 함(받음: {type(profile).__name__})")]
     issues = _schema_issues(profile, root)
     try:
-        issues = issues + _semantic_issues(profile, root) + _review_loop_issues(profile)
+        issues = issues + _semantic_issues(profile, root) + _review_loop_issues(profile) \
+            + _knowledge_capture_issues(profile)
     except Exception as e:
         issues.append(("FAIL", f"profile 의미검증 중 예외 — malformed profile 추정({type(e).__name__}). "
                                f"구조(중첩 값 타입) 점검 필요"))

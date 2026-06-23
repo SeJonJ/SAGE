@@ -147,6 +147,8 @@ knowledge_capture:               # obsidian
   scan_before_dev: true
   update_after_dev: true
   note_convention: { folder: "wiki", filename_pattern: "{prefix} - {title}.md", prefixes: [], flat: true }
+  loop_audit_dashboard: false    # 루프 종료 시 vault 에 Loop A 감사 대시보드 자동 갱신(sage review-loop show --vault). vault_path 필요
+  retro_note: false              # sage retro 시 vault 에 human-gate 회고 노트 자동 작성(--vault). vault_path 필요
 
 context_management:
   compaction:
