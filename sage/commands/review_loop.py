@@ -167,6 +167,74 @@ def _run_round(args):
     return 0
 
 
+def _run_risk(la, root, run_id):
+    """run_id 의 loop_open 에 기록된 risk (없으면 None)."""
+    for r in la.read_records(root):
+        if r.get("event") == "loop_open" and r.get("run_id") == run_id:
+            return r.get("risk")
+    return None
+
+
+def _termination_discrepancies(la, root, run_id, result, reason, iterations, cfg, risk):
+    """기록된 라운드 + cfg(review_loop)로 close 의 result/reason 일관성 검산 → [(kind, msg)].
+    kind: 'mismatch'(사실과 모순 — enforce 가 거부) | 'skip'(cfg/데이터 부족으로 검증 불가 — 항상 WARN, 차단 안 함).
+    7.8단계 A. 결정론(LLM 0, audit 사실 vs cfg 산술 비교만, codex 리뷰 A 반영)."""
+    out = []
+    rounds = la.rounds_of(root, run_id)
+    if not rounds:
+        # 라운드 0 — 수렴/승인을 뒷받침할 증거 없음(codex P1). BLOCKED 는 즉시차단 가능하므로 미해당.
+        if result == "APPROVED" or reason in ("CONVERGED", "DRY"):
+            out.append(("mismatch", "라운드 기록 0 — 루프가 돈 증거 없는데 수렴/승인 주장"))
+        else:
+            out.append(("skip", "라운드 기록 0 — 검산할 사실 없음"))
+        return out
+    last_survived = int(rounds[-1].get("survived", 0) or 0)
+    total_tokens = max((int(r.get("tokens", 0) or 0) for r in rounds), default=0)  # tokens=누적 → max=총량
+    any_arch = any(int(r.get("arch", 0) or 0) > 0 for r in rounds)
+
+    def _tier_int(section):
+        m = cfg.get(section) if isinstance(cfg.get(section), dict) else {}
+        v = m.get(risk)
+        return v if isinstance(v, int) and not isinstance(v, bool) else None
+    budget = _tier_int("budget_tokens")
+    max_iter = _tier_int("max_iterations")
+    dry = cfg.get("dry_rounds") if isinstance(cfg.get("dry_rounds"), int) and not isinstance(cfg.get("dry_rounds"), bool) else None
+
+    # APPROVED/CONVERGED 는 미해결(survived>0)과 공존 불가 (cfg 불요)
+    if result == "APPROVED" and last_survived > 0:
+        out.append(("mismatch", f"APPROVED 인데 마지막 라운드 survived={last_survived}(미해결 남음) — 수렴 아님"))
+    if reason == "CONVERGED" and last_survived > 0:
+        out.append(("mismatch", f"CONVERGED 인데 마지막 라운드 survived={last_survived}(0 이어야)"))
+    # 예산(cfg 필요): APPROVED 면 미초과, BUDGET_TOK 면 초과여야. budget 미설정 → skip+WARN
+    if reason == "BUDGET_TOK" or (result == "APPROVED"):
+        if budget is None:
+            out.append(("skip", f"budget_tokens[{risk}] 미설정 — 예산 검산 skip"))
+        else:
+            if result == "APPROVED" and total_tokens >= budget:
+                out.append(("mismatch", f"APPROVED 인데 누적 tokens={total_tokens} ≥ budget={budget} — BUDGET_TOK/BLOCKED 여야"))
+            if reason == "BUDGET_TOK" and total_tokens < budget:
+                out.append(("mismatch", f"BUDGET_TOK 인데 누적 tokens={total_tokens} < budget={budget}(초과 아님)"))
+    # 반복 상한(cfg 필요): BUDGET_ITER 면 상한 도달 AND 미수렴(survived>0). max 미설정 → skip
+    if reason == "BUDGET_ITER":
+        if max_iter is None:
+            out.append(("skip", f"max_iterations[{risk}] 미설정 — 반복상한 검산 skip"))
+        else:
+            if int(iterations) < max_iter:
+                out.append(("mismatch", f"BUDGET_ITER 인데 iterations={iterations} < max[{risk}]={max_iter}(상한 미도달)"))
+            if last_survived == 0:
+                out.append(("mismatch", "BUDGET_ITER 인데 마지막 survived=0(수렴함 — CONVERGED 여야)"))
+    # 아키텍처 에스컬레이션(cfg 불요)
+    if reason == "BLOCKED_ARCH" and not any_arch:
+        out.append(("mismatch", "BLOCKED_ARCH 인데 arch>0 인 라운드 없음"))
+    # dry 수렴(cfg 필요): 마지막 dry 라운드가 각각 found==0. dry 미설정 → skip
+    if reason == "DRY":
+        if dry is None:
+            out.append(("skip", "dry_rounds 미설정 — dry 검산 skip"))
+        elif len(rounds) < dry or any(int(r.get("found", 0) or 0) > 0 for r in rounds[-dry:]):
+            out.append(("mismatch", f"DRY 인데 마지막 {dry} 라운드에 found>0(신규 있음) 또는 라운드 부족"))
+    return out
+
+
 def _run_close(args):
     # result↔reason 의미 짝 강제(감사 트레일 일관성). 라이브러리는 permissive 이므로 여기서 게이트.
     if args.result == "APPROVED" and args.reason not in _APPROVED_REASONS:
@@ -183,6 +251,34 @@ def _run_close(args):
     if _is_closed(la, root, args.run_id):
         print(f"[sage review-loop] run_id '{args.run_id}' 이미 종료됨 — 중복 close 거부", file=sys.stderr)
         return 2
+
+    # 7.8단계 A — 종료 결정론 검산: 기록된 라운드 + cfg 로 close 가 사실과 일관한지 검산(codex 리뷰 A 반영).
+    cfg = ((_load_profile(root).get("pdca") or {}).get("review_loop")) or {}
+    cfg = cfg if isinstance(cfg, dict) else {}
+    raw_mode = cfg.get("termination_enforce", "advisory")
+    mode = raw_mode if raw_mode in ("advisory", "enforce") else "advisory"
+    if raw_mode != mode:   # 미지 mode 는 침묵 말고 알림(런타임 fail-open 방지)
+        print(f"[sage review-loop] termination_enforce='{raw_mode}' 미지원 → advisory 로 처리(profile 점검)", file=sys.stderr)
+    # audit 무결성 경고(손상/orphan) 있으면 라운드 사실을 못 믿으므로 enforce 라도 advisory 로 degrade(§2).
+    integ = la.integrity_issues(root)
+    if integ and mode == "enforce":
+        print(f"[sage review-loop] audit 무결성 경고 {len(integ)}건 — 검산 신뢰 불가 → 이번 close 는 advisory 로 degrade", file=sys.stderr)
+        mode = "advisory"
+    risk = _run_risk(la, root, args.run_id)
+    checks = _termination_discrepancies(la, root, args.run_id, args.result, args.reason, args.iterations, cfg, risk)
+    mismatches = [m for k, m in checks if k == "mismatch"]
+    for _, m in [(k, m) for k, m in checks if k == "skip"]:
+        print(f"[sage review-loop] 종료 검산 skip(데이터 부족): {m}", file=sys.stderr)
+    if mismatches:
+        for m in mismatches:
+            print(f"[sage review-loop] 종료 검산 불일치: {m}", file=sys.stderr)
+        if mode == "enforce":
+            print("[sage review-loop] termination_enforce=enforce → close 거부. 일관된 result/reason 으로 "
+                  "재close 하거나 BLOCKED 로 닫으세요.", file=sys.stderr)
+            return 2
+        print("[sage review-loop] (advisory — 기록은 진행. profile 의 review_loop.termination_enforce=enforce 로 강제 가능)",
+              file=sys.stderr)
+
     la.close_loop(root, args.run_id, args.result, args.reason, args.iterations)
     print(f"[sage review-loop] close run_id={args.run_id} {args.result}/{args.reason} iterations={args.iterations}", file=sys.stderr)
     return 0

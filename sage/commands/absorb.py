@@ -9,6 +9,7 @@
 
 unresolved 처리: 새로 한쪽-only 가 된 claim 은 unresolved 로 플래그(hard block 금지).
 """
+import json
 import os
 import sys
 from pathlib import Path
@@ -18,10 +19,13 @@ from sage.asset_paths import AssetPaths
 
 def register(sub):
     p = sub.add_parser("absorb", help="직접 고친 생성 파일을 spec 수정안으로 되돌려 제안합니다")
-    p.add_argument("--kind", choices=["hook", "agent", "skill"], required=True)
-    p.add_argument("--id", required=True)
+    # --kind/--id 는 기본 absorb 에 필수, --from-retro 모드에선 불요(아래 run 에서 검증).
+    p.add_argument("--kind", choices=["hook", "agent", "skill"])
+    p.add_argument("--id")
     p.add_argument("--from-blocked-diff", action="store_true",
                    help="write guard 에 막힌 diff 를 재입력 없이 바로 patch 후보로 변환")
+    p.add_argument("--from-retro", default=None, metavar="NOTE",
+                   help="승인된(approved:true) retro human-gate 노트를 읽어 제안→자산 patch 후보로 변환(Loop C)")
     p.add_argument("--claude", default="", help="(agent/skill) 수정된 .claude 산출물 경로")
     p.add_argument("--codex", default="", help="(agent/skill) 수정된 .codex 산출물 경로")
     p.add_argument("--guide", default="", help="(agent/skill) AGENT_GUIDE 경로")
@@ -145,7 +149,124 @@ def _absorb_hook(args, root):
     return 0
 
 
+_RETRO_MECHANICAL = {"profile", "hook"}   # 결정론 강제 — profile 키 / hook spec
+_RETRO_SEMANTIC = {"agent", "skill"}      # interpretive — spec intent/advisory_scope 보강
+
+
+def _parse_frontmatter_approved(text):
+    """노트 frontmatter 의 approved 값 → True/False/None(없음). 의존성 0(미니 파서)."""
+    if not text.startswith("---"):
+        return None
+    end = text.find("\n---", 3)
+    if end == -1:
+        return None
+    fm = text[3:end]
+    for line in fm.splitlines():
+        s = line.strip()
+        if s.startswith("approved:"):
+            v = s.split(":", 1)[1].strip().strip('"').strip("'").lower()
+            return v == "true"
+    return None
+
+
+def _extract_proposals(text):
+    """`## 제안` 섹션 이후의 펜스 코드블록들을 순서대로 시도 → 첫 'JSON 배열' 블록 채택 → (list, None).
+    설명용 비-json 블록이 앞서거나 fence 언어가 달라도 견고(codex B P2). 없음/실패 → (None, 사유)."""
+    import re
+    sec = re.split(r"##\s*제안", text, maxsplit=1)
+    if len(sec) < 2:
+        return None, "## 제안 섹션을 찾지 못함"
+    blocks = re.findall(r"```[a-zA-Z]*\n(.*?)\n```", sec[1], re.S)
+    if not blocks:
+        return None, "## 제안 섹션에 코드블록이 없음"
+    last_err = "유효한 JSON 배열 블록 없음"
+    for raw in blocks:
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except Exception as e:
+            last_err = f"제안 JSON 파싱 실패: {e}"
+            continue
+        if isinstance(data, list):
+            return data, None
+        last_err = "제안 블록이 JSON 배열이 아님"
+    return None, last_err
+
+
+def _absorb_from_retro(args) -> int:
+    """승인된 retro 노트(Loop C)의 제안을 target 별 자산 patch *후보*로 변환(자동반영 없음, absorb 철학)."""
+    path = args.from_retro
+    if not os.path.exists(path):
+        print(f"[sage absorb] retro 노트 없음: {path}", file=sys.stderr)
+        return 2
+    text = Path(path).read_text(encoding="utf-8")
+    approved = _parse_frontmatter_approved(text)
+    if approved is not True:
+        print(f"[sage absorb] retro 노트가 승인되지 않음(frontmatter approved={approved}) — "
+              f"사람이 검토 후 approved: true 로 바꿔야 반영 후보를 출력합니다(human gate)", file=sys.stderr)
+        return 2
+    proposals, err = _extract_proposals(text)
+    if err:
+        print(f"[sage absorb] {err}", file=sys.stderr)
+        return 2
+
+    print(f"== sage absorb --from-retro ({os.path.basename(path)}) — 자산 patch 후보 (자동반영 없음) ==")
+    # target 이 str 일 때만 분류 — list/dict 등 unhashable target 의 set membership 크래시 방지(codex B).
+    def _bucket(p):
+        if not isinstance(p, dict) or not isinstance(p.get("target"), str):
+            return "skip"
+        t = p["target"]
+        return "mech" if t in _RETRO_MECHANICAL else "sem" if t in _RETRO_SEMANTIC else "skip"
+    mech = [p for p in proposals if _bucket(p) == "mech"]
+    sem = [p for p in proposals if _bucket(p) == "sem"]
+    skipped = [p for p in proposals if _bucket(p) == "skip"]
+
+    if not proposals:
+        print("제안 없음(빈 배열) — distill 결과가 비어 있습니다.")
+        return 0
+
+    def _show(p):
+        ev = p.get("evidence") or []
+        ev_s = ("; ".join(map(str, ev)) if isinstance(ev, list) else str(ev))
+        print(f"  · [{p.get('target')}] {p.get('proposed_change', '(변경안 없음)')} "
+              f"(confidence={p.get('confidence', '?')})")
+        if p.get("pattern"):
+            print(f"      패턴: {p['pattern']}")
+        if ev_s:
+            print(f"      근거: {ev_s}")
+
+    if mech:
+        print("\n【 기계적 누락 → profile / hook (결정론 강제) 】")
+        for p in mech:
+            _show(p)
+        print("  적용: profile 키 수정(/sage-profile-modify) 또는 hook spec 수정 → sage generate → sage validate")
+    if sem:
+        print("\n【 의미적 누락 → agent / skill (interpretive 보강) 】")
+        for p in sem:
+            _show(p)
+        print("  적용: spec(intent/advisory_scope) 보강 → sage generate --kind agent|skill → sage validate")
+    if skipped:
+        print(f"\n⚠️  target 미지/누락 {len(skipped)}건 — target ∈ {{profile,hook,agent,skill}} 이어야 분류됨:")
+        for p in skipped:
+            if isinstance(p, dict):   # 비-dict 항목(예: 숫자)도 크래시 없이 표시(codex B P1)
+                print(f"  · {p.get('proposed_change', '(변경안 없음)')!r} (target={p.get('target')})")
+            else:
+                print(f"  · {p!r} (dict 아님 — 제안 항목은 객체여야)")
+
+    print("\n자동 반영하지 않음(SSOT 보호). 위 후보를 사람이 검토·적용 후 generate/validate 로 닫으세요.")
+    return 0
+
+
 def run(args) -> int:
+    # --from-retro 모드: 승인 노트 → patch 후보(--kind/--id 불요).
+    if args.from_retro:
+        return _absorb_from_retro(args)
+    if not args.kind or not args.id:
+        print("[sage absorb] --kind 와 --id 가 필요합니다 (또는 --from-retro <노트>)", file=sys.stderr)
+        return 2
+
     root = args.root or os.getcwd()
     # SAGE 루트 탐색
     cur = os.path.abspath(root)

@@ -182,9 +182,12 @@ def _write_vault_note(profile, root, rid, feature, out_lines, override):
     fname = f"sage-retro-{stem}-{datetime.date.today().isoformat()}.md"
     fm = {"tags": ["sage", "retro", "loop-c"], "approved": False, "run_id": rid or "",
           "date": datetime.date.today().isoformat(), "status": "pending-review"}
-    body = ("> **Loop C retro — human gate.** 아래 증거로 패턴을 distill 해 제안을 채우고, 검토 후\n"
-            "> frontmatter `approved: true` 로 승인하세요. 자동 반영되지 않습니다(SSOT 보호).\n\n"
-            "```\n" + "\n".join(out_lines) + "\n```\n")
+    body = ("> **Loop C retro — human gate.** 아래 증거로 패턴을 distill 해 `## 제안` 블록을 채우고, 검토 후\n"
+            "> frontmatter `approved: true` 로 승인하세요. 그 다음 `sage absorb --from-retro <이 노트>` 로\n"
+            "> 자산 patch 후보를 받습니다. 자동 반영되지 않습니다(SSOT 보호).\n\n"
+            "## 증거\n```\n" + "\n".join(out_lines) + "\n```\n\n"
+            "## 제안 (proposals) — distill 결과를 JSON 배열로 채우세요. target ∈ {profile,hook,agent,skill}\n"
+            "```json\n[]\n```\n")
     # create-only: 같은 날 재실행이 사람이 검토/승인(approved:true)한 노트를 덮어쓰지 않게(codex S5 P2).
     path = _vault.write_note(vault, folder, fname, fm, body, create_only=True)
     if path is None:

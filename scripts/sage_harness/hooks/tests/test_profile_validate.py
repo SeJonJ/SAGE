@@ -182,6 +182,15 @@ class TestReviewLoop(unittest.TestCase):
         self.assertNotIn("FAIL", [s for s, _ in issues])
         self.assertTrue(any("refute_threshold" in m for _, m in issues))
 
+    def test_termination_enforce_valid_ok(self):
+        for mode in ("advisory", "enforce"):
+            self.assertNotIn("FAIL", [s for s, _ in sevs(self._prof(_valid_rl(termination_enforce=mode)))], mode)
+
+    def test_termination_enforce_invalid_fail(self):
+        issues = sevs(self._prof(_valid_rl(termination_enforce="strict")))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("termination_enforce" in m for _, m in issues))
+
     # --- codex 리뷰 #1 후속: jsonschema 없어도 닫혀야 할 fail-open 갭 (순수파이썬 강제) ---
     def test_enabled_non_bool_fail(self):
         # P0: enabled:1 은 `is True`=False → 침묵 비활성. bool 아니면 FAIL.

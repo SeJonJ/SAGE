@@ -39,7 +39,8 @@ _KNOWN_SEVERITY = {"P0", "P1", "P2", "P3"}
 _LOOP_TIERS = {"L2", "L3"}   # L0/L1 은 루프 없음(risk → mandatory phase 표)
 _REVIEW_LOOP_KEYS = {"enabled", "lenses", "refuters", "refute_threshold", "max_iterations",
                      "dry_rounds", "budget_tokens", "cross_model", "severity_block",
-                     "architecture_escalation"}
+                     "architecture_escalation", "termination_enforce"}
+_TERMINATION_MODES = {"advisory", "enforce"}   # 종료 검산 모드(기본 advisory)
 
 
 def _review_loop_issues(profile):
@@ -127,6 +128,12 @@ def _review_loop_issues(profile):
     if bad_sev:
         issues.append(("FAIL", f"pdca.review_loop.severity_block 에 미지 심각도(오타 추정) {bad_sev}. "
                                f"허용: {sorted(_KNOWN_SEVERITY)}"))
+
+    # 4b. termination_enforce — 종료 검산 모드. advisory|enforce 만(오타 시 침묵 무효 방지). 비문자열 FAIL.
+    te = rl.get("termination_enforce")
+    if te is not None:
+        if not isinstance(te, str) or te not in _TERMINATION_MODES:
+            issues.append(("FAIL", f"pdca.review_loop.termination_enforce={te!r} → {sorted(_TERMINATION_MODES)} 중 하나만"))
 
     # 5. refute_threshold — 비문자열(true/1)은 FAIL(schema type:string 과 일치), 미지원 문자열은 WARN(전방호환).
     thr = rl.get("refute_threshold")

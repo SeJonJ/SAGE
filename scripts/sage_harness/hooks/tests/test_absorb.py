@@ -66,7 +66,7 @@ def setup_root(d, claims_yaml):
 
 class Args:
     def __init__(self, **kw):
-        self.kind = "agent"; self.id = "demo"; self.from_blocked_diff = False
+        self.kind = "agent"; self.id = "demo"; self.from_blocked_diff = False; self.from_retro = None
         self.claude = ""; self.codex = ""; self.guide = ""; self.config = DEMO_CONFIG; self.root = None
         self.__dict__.update(kw)
 
@@ -165,6 +165,117 @@ class TestAbsorb(unittest.TestCase):
             setup_root(d, "required_claims:\nforbidden_claims:\nruntime_delta_allowlist:\nunresolved: []\n")
             rc, out = run_absorb(Args(root=d))  # claude/codex 없음
             self.assertEqual(rc, 2)
+
+    def test_missing_kind_id_without_retro(self):
+        # --from-retro 없이 --kind/--id 누락 → 안내(exit 2).
+        rc, out = run_absorb(Args(kind=None, id=None))
+        self.assertEqual(rc, 2)
+        self.assertIn("--kind", out)
+
+
+# --- 7.8단계 B: absorb --from-retro (승인 retro 노트 → 자산 patch 후보) ---
+_RETRO_NOTE = ('---\napproved: {approved}\nstatus: "pending-review"\n---\n'
+               '## 증거\n```\naccepted=3\n```\n'
+               '## 제안 (proposals)\n```json\n{proposals}\n```\n')
+
+
+def _retro_note(d, approved="true", proposals=None):
+    if proposals is None:
+        proposals = ('[{"pattern":"payment null 누락","target":"profile",'
+                     '"proposed_change":"risk.l3_content_keywords += payment","confidence":"high","evidence":["f-1"]},'
+                     '{"target":"agent","proposed_change":"reviewer 경계값 체크리스트","confidence":"med"}]')
+    p = os.path.join(d, "sage-retro-x.md")
+    Path(p).write_text(_RETRO_NOTE.format(approved=approved, proposals=proposals), encoding="utf-8")
+    return p
+
+
+class TestAbsorbFromRetro(unittest.TestCase):
+    def test_approved_emits_grouped_proposals(self):
+        with tempfile.TemporaryDirectory() as d:
+            rc, out = run_absorb(Args(from_retro=_retro_note(d, "true")))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("기계적 누락 → profile / hook", out)
+            self.assertIn("risk.l3_content_keywords", out)
+            self.assertIn("의미적 누락 → agent / skill", out)
+            self.assertIn("자동 반영하지 않음", out)
+
+    def test_unapproved_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            rc, out = run_absorb(Args(from_retro=_retro_note(d, "false")))
+            self.assertEqual(rc, 2)
+            self.assertIn("승인되지 않음", out)
+
+    def test_missing_note(self):
+        rc, out = run_absorb(Args(from_retro="/no/such/note.md"))
+        self.assertEqual(rc, 2)
+        self.assertIn("없음", out)
+
+    def test_no_proposals_block(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "n.md")
+            Path(p).write_text('---\napproved: true\n---\n## 증거\n```\nx\n```\n', encoding="utf-8")
+            rc, out = run_absorb(Args(from_retro=p))
+            self.assertEqual(rc, 2)
+            self.assertIn("제안", out)
+
+    def test_invalid_json(self):
+        with tempfile.TemporaryDirectory() as d:
+            rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals="[not json")))
+            self.assertEqual(rc, 2)
+            self.assertIn("파싱 실패", out)
+
+    def test_unknown_target_flagged(self):
+        with tempfile.TemporaryDirectory() as d:
+            props = '[{"target":"weird","proposed_change":"x"}]'
+            rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals=props)))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("target 미지", out)
+
+    def test_empty_proposals(self):
+        with tempfile.TemporaryDirectory() as d:
+            rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals="[]")))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("제안 없음", out)
+
+    # --- codex B 후속 ---
+    def test_non_dict_item_no_crash(self):
+        # P1: 배열에 비-dict 항목(숫자) 섞여도 크래시 없이 처리(skipped 로 표시).
+        with tempfile.TemporaryDirectory() as d:
+            props = '[1, {"target":"profile","proposed_change":"x"}]'
+            rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals=props)))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("dict 아님", out)
+            self.assertIn("risk", out) if "risk" in out else None   # profile 제안은 정상 표시
+
+    def test_unhashable_target_no_crash(self):
+        # codex B: target 이 list(unhashable)여도 set membership 크래시 없이 skipped 처리.
+        with tempfile.TemporaryDirectory() as d:
+            props = '[{"target":["profile"],"proposed_change":"x"}, {"target":"profile","proposed_change":"y"}]'
+            rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals=props)))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("target 미지", out)   # 비-str target → skipped
+            self.assertIn("y", out)              # 정상 proposal 은 분류됨
+
+    def test_explanatory_block_before_json(self):
+        # P2: ## 제안 뒤 설명용 비-json 블록이 먼저 와도 뒤의 JSON 배열 블록을 찾음.
+        note = ('---\napproved: true\n---\n## 증거\n```\nx\n```\n'
+                '## 제안 (proposals)\n```text\n여기에 설명\n```\n'
+                '```json\n[{"target":"profile","proposed_change":"risk += y"}]\n```\n')
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "n.md"); Path(p).write_text(note, encoding="utf-8")
+            rc, out = run_absorb(Args(from_retro=p))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("risk += y", out)
+
+    def test_no_auto_apply_writes_nothing(self):
+        # 자동반영 금지: --from-retro 가 어떤 파일도 생성/수정하지 않음.
+        with tempfile.TemporaryDirectory() as d:
+            note = _retro_note(d, "true")
+            before = {p: os.path.getmtime(p) for p in [note]}
+            files_before = set(os.listdir(d))
+            run_absorb(Args(from_retro=note))
+            self.assertEqual(set(os.listdir(d)), files_before)   # 새 파일 없음
+            self.assertEqual(os.path.getmtime(note), before[note])  # 노트 불변
 
 
 if __name__ == "__main__":

@@ -86,6 +86,7 @@ pdca:                            # PDCA phase 의무구조 — pre-implementatio
     cross_model: from_options.cross_model        # 반박자 1명을 opposite-runtime 로(options.cross_model 연동)
     severity_block: [P0, P1]     # 미해결 시 APPROVED 불가한 심각도
     architecture_escalation: from_risk.l3        # arch 변경 finding → BLOCKED(사람). risk.l3_* 재사용(중복정의 금지)
+    termination_enforce: advisory                # 종료 검산 모드: advisory(불일치 경고만, 측정용) | enforce(불일치 close 거부). 수렴률 측정 후 enforce 전환 권장
 
 conventions: []                  # 예: [{ scope: backend, stack: "<stack>", doc: sage/conventions/<name>.md, file_globs: ["**/*.<ext>"] }]
 
