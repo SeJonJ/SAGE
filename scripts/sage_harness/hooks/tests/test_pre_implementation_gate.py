@@ -236,6 +236,125 @@ class TestPdcaEnforcement(unittest.TestCase):
         self.assertEqual(d["message_key"], "warn_l2_no_plan")
 
 
+def _audit_profile(mode="advisory", enabled=True):
+    import copy
+    p = copy.deepcopy(PDCA_PROFILE)
+    p["pdca"]["review_loop"] = {"enabled": enabled, "report_gate_enforce": mode}
+    return p
+
+
+def snap_audit(docs05, runs=None, has_any=None):
+    """06 작성 시나리오: 05 phase_docs + 주입된 loop_audit."""
+    return {"plan_files": [], "review_candidates": [], "phase_docs": {"05": docs05},
+            "loop_audit": {"runs": runs or {}, "has_any_records": runs is not None if has_any is None else has_any}}
+
+
+_REPORT_EV = ev("plan_docs/06-report/feature.md")
+
+
+class TestReportAuditGate(unittest.TestCase):
+    """9.5 — 06←05 가 cycle 05 가 가리키는 loop run 의 closed+APPROVED 를 검사(run_id 바인딩)."""
+
+    def _doc(self, content, recent=True, path="p.md"):
+        return {"path": path, "content": content, "recent": recent}
+
+    def test_off_is_marker_only(self):
+        # report_gate_enforce off → audit 미검사. APPROVED 있으면 통과(ok), Loop-Run 없어도 무관.
+        d = core.decide(_REPORT_EV, _audit_profile(mode="off"),
+                        snap_audit([self._doc("Final Status: APPROVED")]), None)
+        self.assertEqual(d["status"], "ok")
+
+    def test_loop_disabled_skips(self):
+        # review_loop.enabled=false → flag advisory 여도 audit skip(마커만).
+        d = core.decide(_REPORT_EV, _audit_profile(mode="advisory", enabled=False),
+                        snap_audit([self._doc("Final Status: APPROVED")]), None)
+        self.assertEqual(d["status"], "ok")
+
+    def test_advisory_warns_without_loop_run(self):
+        # APPROVED 있으나 Loop-Run 미기재 → advisory WARN(exit0, 진행).
+        d = core.decide(_REPORT_EV, _audit_profile(mode="advisory"),
+                        snap_audit([self._doc("Final Status: APPROVED")], runs={}), None)
+        self.assertEqual(d["message_key"], "warn_report_without_audit")
+        self.assertEqual(d["exit_code"], 0)
+
+    def test_enforce_blocks_without_loop_run(self):
+        d = core.decide(_REPORT_EV, _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("Final Status: APPROVED")], runs={}), None)
+        self.assertEqual(d["message_key"], "block_report_without_audit")
+        self.assertEqual(d["exit_code"], 2)
+
+    def test_enforce_blocks_run_absent_from_audit(self):
+        d = core.decide(_REPORT_EV, _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("APPROVED\nLoop-Run: run-x1")], runs={}), None)
+        self.assertEqual(d["message_key"], "block_report_without_audit")
+
+    def test_enforce_blocks_run_open(self):
+        d = core.decide(_REPORT_EV, _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": False, "result": None}}), None)
+        self.assertEqual(d["message_key"], "block_report_without_audit")
+
+    def test_enforce_blocks_run_closed_nonapproved(self):
+        d = core.decide(_REPORT_EV, _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": True, "result": "BLOCKED"}}), None)
+        self.assertEqual(d["message_key"], "block_report_without_audit")
+
+    def test_pass_closed_approved_run(self):
+        # APPROVED 마커 + Loop-Run + run closed APPROVED → 통과(L0 ok).
+        d = core.decide(_REPORT_EV, _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": True, "result": "APPROVED"}}), None)
+        self.assertEqual(d["status"], "ok")
+        self.assertNotIn(d["message_key"], ("block_report_without_audit", "warn_report_without_audit"))
+
+    def test_marker_on_other_doc_not_selected_fails(self):
+        # codex 회귀: ticket 으로 선택된 05 문서엔 APPROVED 없고, 다른 05 에만 APPROVED+Loop-Run.
+        # 마커 게이트(any)는 통과하지만 audit 은 selected 문서에 APPROVED 가 없어 fail 해야 한다.
+        selected = self._doc("리뷰 진행 #127 ...", path="a.md")              # ticket 매칭 대상, APPROVED 없음
+        other = self._doc("Final Status: APPROVED\nLoop-Run: run-x1", path="b.md")
+        runs = {"run-x1": {"closed": True, "result": "APPROVED"}}
+        d = core.decide(ev("plan_docs/06-report/feature.md", branch="bug/127"),
+                        _audit_profile(mode="enforce"),
+                        snap_audit([selected, other], runs=runs), None)
+        self.assertEqual(d["message_key"], "block_report_without_audit")
+
+    def test_missing_approval_marker_still_blocks_first(self):
+        # 마커 전무 → 기존 block_report_without_approval 가 audit 전에 BLOCK(flag 무관).
+        d = core.decide(_REPORT_EV, _audit_profile(mode="advisory"),
+                        snap_audit([self._doc("Final Status: FAIL")], runs={}), None)
+        self.assertEqual(d["message_key"], "block_report_without_approval")
+
+    def test_enforce_blocks_when_no_cycle_05_doc_selected(self):
+        # 05 문서가 없어 _doc_match 가 빈값 → sel None → enforce BLOCK(마커 게이트는 빈 05 라 통과 못하므로
+        # 마커가 있는 05 를 두되 recent=False·ticket 불일치로 selection 을 비운다).
+        d = core.decide(ev("plan_docs/06-report/feature.md", branch="main"),
+                        _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("Final Status: APPROVED", recent=False)], runs={}), None)
+        self.assertEqual(d["message_key"], "block_report_without_audit")
+
+    def test_run_id_with_nonword_chars_matches(self):
+        # codex R1-P1: rev:123 / run/1 같은 비-word run_id 도 게이트가 인식(verbatim).
+        d = core.decide(_REPORT_EV, _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: rev:123")],
+                                   runs={"rev:123": {"closed": True, "result": "APPROVED"}}), None)
+        self.assertEqual(d["status"], "ok")
+
+    def test_enforce_blocks_ambiguous_reused_run(self):
+        # codex R2-P1: 재사용/중복으로 clean=False 인 run 은 closed+APPROVED 여도 증거 모호 → BLOCK.
+        d = core.decide(_REPORT_EV, _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-dup")],
+                                   runs={"run-dup": {"closed": True, "result": "APPROVED", "clean": False}}), None)
+        self.assertEqual(d["message_key"], "block_report_without_audit")
+
+    def test_advisory_no_audit_records_diagnostic(self):
+        # has_any_records=False 일 때 사유에 "audit 기록 자체가 없음" 신호가 들어간다(진단 구분).
+        d = core.decide(_REPORT_EV, _audit_profile(mode="advisory"),
+                        snap_audit([self._doc("Final Status: APPROVED")], runs={}, has_any=False), None)
+        self.assertEqual(d["message_key"], "warn_report_without_audit")
+        self.assertIn("audit 기록 자체가 없음", d["reason"])
+
+
 class TestStrategies(unittest.TestCase):
     def test_grep_first(self):
         r = claude_grep_first.find_l3_review({}, snap(review=[{"path": "a.md", "content": "Round 1 review 완료"}]))

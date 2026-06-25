@@ -59,8 +59,8 @@
       "test": "scripts/sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py"
     },
     "hooks/pre-implementation-gate": {
-      "spec_hash": "sha256:1169b547b3ac05599c159b1b68f37dafa1cc23d568f40adc1ccae628f4176394",
-      "canonical_hash": "sha256:8dbbd5a8614ebe1b6abb3b768d2723ca158926a451870f51a0f8f488e3b8e4b7",
+      "spec_hash": "sha256:06e42e859c079fe11a95dee8586a8d967e135a3bedd11fb49bc1131668b27fe4",
+      "canonical_hash": "sha256:ebf5bf41d5d6fcbe28bcf5c98a732832432030dcee07493d5440ed99a3a57e90",
       "adapter_hash": {
         "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
         "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"

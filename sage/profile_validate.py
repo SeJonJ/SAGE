@@ -39,8 +39,9 @@ _KNOWN_SEVERITY = {"P0", "P1", "P2", "P3"}
 _LOOP_TIERS = {"L2", "L3"}   # L0/L1 은 루프 없음(risk → mandatory phase 표)
 _REVIEW_LOOP_KEYS = {"enabled", "lenses", "refuters", "refute_threshold", "max_iterations",
                      "dry_rounds", "budget_tokens", "cross_model", "severity_block",
-                     "architecture_escalation", "termination_enforce"}
+                     "architecture_escalation", "termination_enforce", "report_gate_enforce"}
 _TERMINATION_MODES = {"advisory", "enforce"}   # 종료 검산 모드(기본 advisory)
+_REPORT_GATE_MODES = {"off", "advisory", "enforce"}   # 06←05 audit 게이트 모드(기본 advisory)
 
 
 def _review_loop_issues(profile):
@@ -134,6 +135,15 @@ def _review_loop_issues(profile):
     if te is not None:
         if not isinstance(te, str) or te not in _TERMINATION_MODES:
             issues.append(("FAIL", f"pdca.review_loop.termination_enforce={te!r} → {sorted(_TERMINATION_MODES)} 중 하나만"))
+
+    # 4c. report_gate_enforce — 06←05 audit 게이트 모드. off|advisory|enforce 만(오타 침묵 무효 방지). 비문자열 FAIL.
+    rge = rl.get("report_gate_enforce")
+    if rge is not None:
+        if not isinstance(rge, str) or rge not in _REPORT_GATE_MODES:
+            issues.append(("FAIL", f"pdca.review_loop.report_gate_enforce={rge!r} → {sorted(_REPORT_GATE_MODES)} 중 하나만"))
+        elif rge == "enforce":
+            issues.append(("WARN", "pdca.review_loop.report_gate_enforce=enforce — 모든 Phase 05 가 리뷰 루프를 "
+                                   "돌(Loop-Run 기록) 때만 안전. L1-only cycle 이 섞이면 06 오차단 위험(advisory 로 측정 후 전환 권장)"))
 
     # 5. refute_threshold — 비문자열(true/1)은 FAIL(schema type:string 과 일치), 미지원 문자열은 WARN(전방호환).
     thr = rl.get("refute_threshold")

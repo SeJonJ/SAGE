@@ -87,6 +87,7 @@ pdca:                            # PDCA phase 의무구조 — pre-implementatio
     severity_block: [P0, P1]     # 미해결 시 APPROVED 불가한 심각도
     architecture_escalation: from_risk.l3        # arch 변경 finding → BLOCKED(사람). risk.l3_* 재사용(중복정의 금지)
     termination_enforce: advisory                # 종료 검산 모드: advisory(불일치 경고만, 측정용) | enforce(불일치 close 거부). 수렴률 측정 후 enforce 전환 권장
+    report_gate_enforce: advisory                # 06←05 audit 게이트: off(마커만) | advisory(WARN) | enforce(BLOCK). 05 가 가리키는 loop run 이 closed+APPROVED 인지 검사. enforce 는 모든 05 가 루프 돌 때만 안전
 
 conventions: []                  # 예: [{ scope: backend, stack: "<stack>", doc: sage/conventions/<name>.md, file_globs: ["**/*.<ext>"] }]
 

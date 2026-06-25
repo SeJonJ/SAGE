@@ -127,6 +127,33 @@ def close_of(root, run_id):
     return closes[-1] if closes else None
 
 
+def audit_summary(root):
+    """게이트 주입용 결정론 요약(2층 불변식: adapter 가 fs 읽고 core 는 이 dict 만 소비).
+    {runs: {run_id: {closed, result, clean}}, has_any_records}.
+    `clean`(codex 코드 R2-P1): run_id 가 정확히 1회 open + 최대 1회 close 일 때만 True. 재사용/중복 open·
+    close 나 고아 close(open 0)는 clean=False → 게이트가 stale/모호 증거로 통과되는 것을 차단(integrity_issues
+    와 동일 판정을 run 단위로 노출 — 전역 블로커 아님). 다중 close 면 마지막 결과가 entry 에 남되 clean=False."""
+    recs = read_records(root)
+    summary = {}
+    for r in recs:
+        rid = r.get("run_id")
+        if not rid:
+            continue
+        ev = r.get("event")
+        if ev == "loop_open":
+            e = summary.setdefault(rid, {"closed": False, "result": None, "opens": 0, "closes": 0})
+            e["opens"] += 1
+        elif ev == "loop_close":
+            e = summary.setdefault(rid, {"closed": False, "result": None, "opens": 0, "closes": 0})
+            e["closed"] = True
+            e["result"] = r.get("result")
+            e["closes"] += 1
+    for e in summary.values():
+        e["clean"] = (e["opens"] == 1 and e["closes"] <= 1)
+        del e["opens"]; del e["closes"]
+    return {"runs": summary, "has_any_records": bool(recs)}
+
+
 def integrity_issues(root):
     """감사 트레일 구조 무결성 검사 → [문자열] (비면 정상). run_id 는 join key 이므로 무결성이 깨지면
     트레일 자체가 malformed(codex S2 P2). write-시 읽기강제는 append-only 패턴(override_audit 가 uuid4 를

@@ -59,6 +59,40 @@ class TestLoopAudit(unittest.TestCase):
         self.assertIsNotNone(c)
         self.assertEqual((c["result"], c["reason"], c["iterations"]), ("APPROVED", "CONVERGED", 2))
 
+    def test_audit_summary_empty(self):
+        s = la.audit_summary(self.tmp)
+        self.assertEqual(s, {"runs": {}, "has_any_records": False})
+
+    def test_audit_summary_open_then_closed(self):
+        r1 = la.open_loop(self.tmp, "L3", run_id="run-a", now=0)
+        la.open_loop(self.tmp, "L2", run_id="run-b", now=1)   # open, not closed
+        la.close_loop(self.tmp, r1, result="APPROVED", reason="CONVERGED", iterations=1, now=2)
+        s = la.audit_summary(self.tmp)
+        self.assertTrue(s["has_any_records"])
+        self.assertEqual(s["runs"]["run-a"], {"closed": True, "result": "APPROVED", "clean": True})
+        self.assertEqual(s["runs"]["run-b"], {"closed": False, "result": None, "clean": True})
+
+    def test_audit_summary_blocked_result(self):
+        r = la.open_loop(self.tmp, "L3", run_id="run-x", now=0)
+        la.close_loop(self.tmp, r, result="BLOCKED", reason="BUDGET_ITER", iterations=3, now=1)
+        self.assertEqual(la.audit_summary(self.tmp)["runs"]["run-x"],
+                         {"closed": True, "result": "BLOCKED", "clean": True})
+
+    def test_audit_summary_reused_run_id_not_clean(self):
+        # 재사용 run_id(중복 open+close) → clean=False (게이트가 stale 증거로 통과되는 것 차단).
+        la.open_loop(self.tmp, "L3", run_id="dup", now=0)
+        la.close_loop(self.tmp, "dup", result="BLOCKED", reason="BUDGET_ITER", iterations=1, now=1)
+        la.open_loop(self.tmp, "L3", run_id="dup", now=2)
+        la.close_loop(self.tmp, "dup", result="APPROVED", reason="CONVERGED", iterations=1, now=3)
+        run = la.audit_summary(self.tmp)["runs"]["dup"]
+        self.assertFalse(run["clean"])
+        self.assertEqual(run["result"], "APPROVED")   # 마지막 결과는 남되 clean=False 로 신뢰 불가 표시
+
+    def test_audit_summary_orphan_close_not_clean(self):
+        # loop_open 없는 close → opens==0 → clean=False.
+        la.close_loop(self.tmp, "orphan", result="APPROVED", reason="CONVERGED", iterations=1, now=0)
+        self.assertFalse(la.audit_summary(self.tmp)["runs"]["orphan"]["clean"])
+
     def test_full_cycle_append_only(self):
         rid = la.open_loop(self.tmp, "L3", now=0)
         la.record_round(self.tmp, rid, 1, 5, 2, 2, 0, 1000, now=1)

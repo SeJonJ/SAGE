@@ -107,6 +107,12 @@ On any terminal state, record the round then close:
 sage review-loop close --run-id $RUN_ID --result <APPROVED|BLOCKED> --reason <REASON> --iterations <n>
 ```
 
+**Record the run id in the Phase-05 doc** — add a line `Loop-Run: $RUN_ID` to this cycle's
+Phase-05 document. The 06←05 audit gate (`pdca.review_loop.report_gate_enforce`) binds the
+report to this exact run: it reads `Loop-Run` + the `APPROVED` marker from the *same* 05 doc
+and confirms the run closed APPROVED. Without this line the gate cannot bind the report to a
+loop and (in advisory) warns or (in enforce) blocks.
+
 ### 5. REWORK + re-validate (only `within_design` survivors)
 Hand the accepted findings to the relevant implementer with the **REWORK prompt** (do not
 exceed the approved design in `02-design`). Then **re-validate** before the next round:

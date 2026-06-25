@@ -58,6 +58,8 @@ def render_gate(decision, profile):
         "block_phase_incomplete": f"[GATE BLOCK - {d.get('risk')}] 의무 PDCA phase 미작성: [{', '.join(d.get('missing_phases') or [])}]. 파일: {fs} | 근거: {rs} (docs/agent/pdca-templates.md)",
         "warn_phase_incomplete": f"[GATE WARN - L1] 권장 PDCA phase 미작성: [{', '.join(d.get('missing_phases') or [])}]. 파일: {fs}",
         "block_report_without_approval": f"[GATE BLOCK - PDCA] {rs}. 파일: {fs}",
+        "block_report_without_audit": f"[GATE BLOCK - PDCA] {rs}. 파일: {fs} | $sage-review 로 loop 닫고(APPROVED) 05 에 'Loop-Run: <run_id>' 기록",
+        "warn_report_without_audit": f"[GATE WARN - PDCA] {rs}. 파일: {fs} | (advisory) $sage-review loop audit 권장 + 05 에 'Loop-Run: <run_id>'",
         "ok_l3": f"[GATE OK - L3] review 확인됨 | {fs}",
         "ok_l2": f"[GATE OK - L2] plan 확인 | {fs}",
     }

@@ -80,6 +80,24 @@ class TestBuildSnapshot(unittest.TestCase):
             snap = hr.build_snapshot({"risk": {"plan_glob": "/abs/evil/**"}}, root, hr.make_rel(root))
             self.assertEqual(snap["plan_files"], [])
 
+    def test_loop_audit_injected(self):
+        # 9.5: build_snapshot 이 .sage/loop_audit.jsonl 요약을 snapshot 에 주입한다.
+        import loop_audit as la
+        with tempfile.TemporaryDirectory() as root:
+            rid = la.open_loop(root, "L3", run_id="run-z", now=0)
+            la.close_loop(root, rid, result="APPROVED", reason="CONVERGED", iterations=1, now=2)
+            snap = hr.build_snapshot({"risk": {}, "pdca": {}}, root, hr.make_rel(root))
+            self.assertIn("loop_audit", snap)
+            self.assertTrue(snap["loop_audit"]["has_any_records"])
+            self.assertEqual(snap["loop_audit"]["runs"]["run-z"],
+                             {"closed": True, "result": "APPROVED", "clean": True})
+
+    def test_loop_audit_fail_open_no_sage_dir(self):
+        # .sage 부재 → fail-open 빈 요약(snapshot 빌드는 안 깨짐).
+        with tempfile.TemporaryDirectory() as root:
+            snap = hr.build_snapshot({"risk": {}, "pdca": {}}, root, hr.make_rel(root))
+            self.assertEqual(snap["loop_audit"], {"runs": {}, "has_any_records": False})
+
 
 class TestRunStrategyF8b(unittest.TestCase):
     def test_crash_surfaces_and_fails_closed(self):

@@ -44,6 +44,14 @@ profile.pdca: { enabled, phases[{id,glob}], pre_implementation_required{L1,L2,L3
   ② 구현 전 의무 phase(`_missing_pre_impl_phases`, _doc_match=ticket→recent) — L2/L3 결핍=block_phase_incomplete, L1=warn_phase_incomplete.
 - enabled=false/phases 없음 → `_pdca_cfg`=None → 강제 skip(기존 동작 보존). report dir 감지는 glob base-dir prefix(fnmatch `**` 불일치 회피).
 
+## report←approve audit 게이트 (9.5, profile.pdca.review_loop.report_gate_enforce — F-5)
+review_loop.enabled + report_gate_enforce ∈ {advisory, enforce} 일 때, 마커 검사에 더해 06 작성 시
+`_audit_gate` 가: cycle 05 문서 1개를 `_doc_match`(ticket→recent)로 선택 → 그 동일 문서에서 APPROVED 마커
++ `Loop-Run: <run_id>` 를 함께 읽고, 주입된 `snapshot.loop_audit.runs[run_id]` 가 closed+APPROVED 인지 검사.
+위반 시 advisory=warn_report_without_audit(exit0) / enforce=block_report_without_audit(exit2). off·루프
+비활성 → skip(하위호환). loop_audit 주입은 adapter(`hook_runtime.build_snapshot` → `loop_audit.audit_summary`)
+가 담당(core 는 순수). stale 결합 차단: 마커와 Loop-Run 을 *같은* selected 문서에서 읽는다.
+
 ## reverse_extract 분류
 - 공유 core: 위험분류(경로/내용/declared), Desktop 블록, plan 존재 게이트, L2/L3 판정 구조
 - structural_io_adapter: file_path vs apply_patch 다중파일+content

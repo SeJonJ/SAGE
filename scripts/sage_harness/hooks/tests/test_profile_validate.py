@@ -191,6 +191,22 @@ class TestReviewLoop(unittest.TestCase):
         self.assertEqual(severity_of(issues), "FAIL")
         self.assertTrue(any("termination_enforce" in m for _, m in issues))
 
+    def test_report_gate_enforce_valid_ok(self):
+        for mode in ("off", "advisory", "enforce"):
+            sev = [s for s, _ in sevs(self._prof(_valid_rl(report_gate_enforce=mode)))]
+            self.assertNotIn("FAIL", sev, mode)
+
+    def test_report_gate_enforce_invalid_fail(self):
+        issues = sevs(self._prof(_valid_rl(report_gate_enforce="block")))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("report_gate_enforce" in m for _, m in issues))
+
+    def test_report_gate_enforce_enforce_warns(self):
+        # enforce 는 유효하지만 "모든 05 가 루프 돌 때만 안전" WARN 을 동반(L1-only 오차단 주의 환기).
+        issues = sevs(self._prof(_valid_rl(report_gate_enforce="enforce")))
+        self.assertNotEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any(s == "WARN" and "report_gate_enforce" in m for s, m in issues))
+
     # --- codex 리뷰 #1 후속: jsonschema 없어도 닫혀야 할 fail-open 갭 (순수파이썬 강제) ---
     def test_enabled_non_bool_fail(self):
         # P0: enabled:1 은 `is True`=False → 침묵 비활성. bool 아니면 FAIL.

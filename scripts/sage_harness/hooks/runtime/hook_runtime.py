@@ -113,7 +113,16 @@ def build_snapshot(profile, root, rel):
                     cc = ""
                 docs.append({"path": rel(p), "content": cc, "recent": (now - os.path.getmtime(p)) <= 7 * 86400})
             phase_docs[pid] = docs
-    return {"plan_files": plan_files, "review_candidates": review_candidates, "phase_docs": phase_docs}
+
+    # 9.5 report←approve audit 증거: loop_audit 요약을 core 에 주입(2층 — adapter 가 .sage 읽기, core 순수).
+    # fail-open: audit 없음/손상이어도 빈 요약(게이트가 advisory/enforce 로 처리, snapshot 빌드는 안 깸).
+    try:
+        import loop_audit
+        la = loop_audit.audit_summary(root)
+    except Exception:
+        la = {"runs": {}, "has_any_records": False}
+    return {"plan_files": plan_files, "review_candidates": review_candidates,
+            "phase_docs": phase_docs, "loop_audit": la}
 
 
 def run_strategy(hook_id, profile, core_dir, changes, event, snapshot):

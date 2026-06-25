@@ -34,7 +34,8 @@ a structured review report for the current implementation cycle.
 6. BLOCK / BLOCKED on an L3 change → record in the plan doc and stop (no release until cleared).
    The report←approve hook (06←05 APPROVED) is the deterministic backstop — never bypass it.
 7. Record the outcome under `## Phase-05 Review` (Loop A: include Review Loop Iterations
-   table + audit run_id).
+   table + audit run_id). Write a `Loop-Run: <run_id>` line in the Phase-05 doc so the
+   06←05 audit gate (report_gate_enforce) can bind the report to this closed APPROVED run.
 
 ## advisory_scope
 - role_boundary: does not implement or modify code; orchestrates reviewer/implementer only

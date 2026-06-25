@@ -195,6 +195,71 @@ def _report_gate(event: dict, profile: dict, snapshot: dict):
     return {"approved": approved, "report_phase": report_phase, "approve_phase": approve_phase}
 
 
+def _audit_gate(event, profile, snapshot):
+    """9.5 — report←approve 에 loop_audit 증거 요건을 더한다(advisory-first, run_id 바인딩).
+
+    반환: None(skip) | {"ok": bool, "mode": "advisory"|"enforce", "detail": str}.
+    skip 조건: pdca/review_loop 비활성, flag off/미설정, 또는 06 작성이 아님.
+    검사: cycle 05 문서 1개를 _doc_match 로 선택 → 그 동일 문서에서 APPROVED 마커 + `Loop-Run: <id>` 를
+    함께 읽고, 주입된 loop_audit.runs[id] 가 closed+APPROVED 인지. (codex 설계 R1~R4: stale 결합 차단.)
+    """
+    import re
+    cfg = _pdca_cfg(profile)
+    if cfg is None:
+        return None
+    rl = cfg.get("review_loop") or {}
+    if not rl.get("enabled"):
+        return None   # 루프 미기대 → 현행 마커-only (오차단 방지)
+    mode = rl.get("report_gate_enforce") or "off"
+    if mode not in ("advisory", "enforce"):
+        return None   # off/미설정/무효 → skip
+    report_phase = cfg.get("report_phase") or ""
+    approve_phase = cfg.get("approve_phase") or ""
+    if not report_phase or not approve_phase:
+        return None
+    phases = {p.get("id"): p for p in (cfg.get("phases") or [])}
+    rglob = (phases.get(report_phase) or {}).get("glob") or ""
+    if not rglob or not any(_under_dir(ch.get("path") or "", _glob_base(rglob))
+                            for ch in (event.get("changes") or [])):
+        return None   # 06 작성이 아님
+
+    # cycle-관련 05 문서 1개 선택(기존 _doc_match: ticket→recent). APPROVED 와 Loop-Run 을 같은 문서에서 읽는다.
+    approve_docs = (snapshot.get("phase_docs") or {}).get(approve_phase) or []
+    sel_path = _doc_match(approve_docs, event)
+    sel = next((d for d in approve_docs if d.get("path") == sel_path), None) if sel_path else None
+    la = snapshot.get("loop_audit") or {}
+    has_any = bool(la.get("has_any_records"))
+
+    def fail(detail):
+        return {"ok": False, "mode": mode, "detail": detail}
+
+    if sel is None:
+        return fail("cycle 에 해당하는 05 문서를 특정할 수 없음(ticket/recent 미매칭)")
+    content = sel.get("content") or ""
+    marker = (cfg.get("approve_marker") or "APPROVED")
+    if marker.lower() not in content.lower():
+        return fail(f"선택된 05 문서({sel_path})에 {marker} 마커 없음")
+    # run_id 는 `review-loop` 가 verbatim 저장(커스텀 --run-id 포함) → 게이트도 비공백 토큰을 그대로 받는다
+    # (codex 코드 R1-P1: 협소 charset 이면 rev:123·run/1 같은 합법 run 을 오차단).
+    m = re.search(r"(?im)^\s*Loop-Run:\s*(\S+)\s*$", content)
+    if not m:
+        hint = "audit 기록 자체가 없음 — 루프 미실행 의심" if not has_any else "05 문서에 Loop-Run 미기재"
+        return fail(f"선택된 05 문서({sel_path})에 Loop-Run 미기재 ({hint})")
+    run_id = m.group(1)
+    runs = la.get("runs") or {}
+    run = runs.get(run_id)
+    if run is None:
+        return fail(f"05 가 가리키는 run {run_id!r} 가 audit 에 없음(loop open/close 미기록)")
+    if not run.get("clean", True):
+        # 재사용/중복 open·close·고아 → 증거 모호(stale 결과로 통과 차단, codex 코드 R2-P1)
+        return fail(f"run {run_id!r} 의 audit 이력이 모호(중복/재사용 open·close) — 증거 신뢰 불가")
+    if not run.get("closed"):
+        return fail(f"run {run_id!r} 가 닫히지 않음(루프 미종료)")
+    if (run.get("result") or "").upper() != "APPROVED":
+        return fail(f"run {run_id!r} 가 result={run.get('result')!r} 로 종료(APPROVED 아님)")
+    return {"ok": True, "mode": mode, "detail": run_id}
+
+
 def decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:
     """risk-gate 판정. strategy_result: None=미선택 / {found:bool, path?} = 선택된 전략 실행결과."""
     c = classify_risk(event, profile)
@@ -211,6 +276,20 @@ def decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:
         return {"status": "block", "exit_code": 2, "risk": "PDCA",
                 "message_key": "block_report_without_approval",
                 "reason": f"{rg['report_phase']} 작성 전 {rg['approve_phase']} 승인(APPROVED) 필요",
+                "file_short": c["file_short"]}
+
+    # 9.5 report←approve audit 증거(F-5): 마커는 있으나 cycle 05 가 가리키는 loop run 이 closed+APPROVED 가
+    # 아니면 advisory=WARN / enforce=BLOCK. review_loop 비활성·flag off 면 ag=None → skip(하위호환).
+    ag = _audit_gate(event, profile, snapshot)
+    if ag is not None and not ag["ok"]:
+        if ag["mode"] == "enforce":
+            return {"status": "block", "exit_code": 2, "risk": "PDCA",
+                    "message_key": "block_report_without_audit",
+                    "reason": f"리뷰 루프 audit 증거 미충족(enforce): {ag['detail']}",
+                    "file_short": c["file_short"]}
+        return {"status": "warn", "exit_code": 0, "risk": "PDCA",
+                "message_key": "warn_report_without_audit",
+                "reason": f"리뷰 루프 audit 증거 미충족(advisory): {ag['detail']}",
                 "file_short": c["file_short"]}
 
     if risk in ("none", "L0"):

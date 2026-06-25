@@ -82,7 +82,8 @@
             "cross_model": { "oneOf": [ { "type": "boolean" }, { "enum": ["from_options.cross_model"] } ] },
             "severity_block": { "type": "array", "items": { "enum": ["P0", "P1", "P2", "P3"] } },
             "architecture_escalation": { "oneOf": [ { "type": "boolean" }, { "enum": ["from_risk.l3"] } ] },
-            "termination_enforce": { "enum": ["advisory", "enforce"] }
+            "termination_enforce": { "enum": ["advisory", "enforce"] },
+            "report_gate_enforce": { "enum": ["off", "advisory", "enforce"] }
           }
         }
       }

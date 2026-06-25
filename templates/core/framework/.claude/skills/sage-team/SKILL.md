@@ -104,6 +104,9 @@ adversarial find→refute→triage→rework loop, recording every round to
   recorded outcome.
 - The verdict maps to the 05 doc's Final Status (`APPROVED | FAIL | BLOCKED`). On BLOCKED,
   STOP — no completion until cleared.
+- Ensure the 05 doc carries a `Loop-Run: <run_id>` line (sage-review writes it). The 06←05
+  audit gate (`pdca.review_loop.report_gate_enforce`) binds the report to that closed
+  APPROVED run; without it, Step 5 is blocked (enforce) or warned (advisory).
 
 ## Step 5 — Completion (Phase 06)
 
