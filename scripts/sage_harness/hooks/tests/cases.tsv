@@ -6,11 +6,11 @@
 .codex/hooks/pre-gate.sh	2	codex hook 산출물 block
 .codex/skills/backend-convention/SKILL.md	2	codex skill 산출물 block
 .claude/skills/sage-init/SKILL.md	0	CORE 부트스트랩 자산(sage-init) 면제 — spec→generate 산출물 아님
-.claude/skills/pdca-start/SKILL.md	0	CORE 부트스트랩 skill(pdca-start) 면제
+.claude/skills/sage-pdca-start/SKILL.md	0	CORE 부트스트랩 skill(sage-pdca-start) 면제
 .claude/skills/sage-review/SKILL.md	0	CORE 부트스트랩 skill(sage-review) 면제
 .claude/skills/sage-asset/SKILL.md	0	CORE 부트스트랩 skill(sage-asset) 면제
 .claude/skills/sage-profile-modify/SKILL.md	0	CORE 부트스트랩 skill(sage-profile-modify) 면제
-.codex/skills/pdca-start/SKILL.md	2	repo-local .codex/skills 는 프로젝트 영역 → 동명이라도 차단(과잉면제 방지)
+.codex/skills/sage-pdca-start/SKILL.md	2	repo-local .codex/skills 는 프로젝트 영역 → 동명이라도 차단(과잉면제 방지)
 .claude/agents/leader.md	0	CORE 로스터 에이전트 렌더(leader) 면제
 .claude/agents/convention-checker.md	0	CORE 로스터 에이전트 렌더(convention-checker) 면제
 .claude/agents/implementer-backend.md	2	프로젝트 에이전트(비-CORE 이름)는 계속 차단

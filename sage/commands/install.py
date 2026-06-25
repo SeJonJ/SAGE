@@ -12,6 +12,7 @@
 """
 import json
 import os
+import shutil
 from pathlib import Path
 
 from sage import __version__
@@ -20,7 +21,12 @@ from sage import _resources   # 번들 리소스 경로 단일 해석(env overri
 
 # CORE roster (중립 6인) + CORE hook 6종(form) + CORE skill 2종. 도메인값 아님 = framework 메타.
 _CORE_AGENTS = ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]
-_CORE_SKILLS = ["pdca-start", "sage-review", "sage-asset", "sage-profile-modify"]
+_CORE_SKILLS = ["sage-pdca-start", "sage-review", "sage-asset", "sage-profile-modify"]
+# 은퇴한 CORE skill 이름 — install 시 잔존 사본을 정리(rename 수렴). 이름이 바뀌면 옛 이름을 여기 추가.
+_LEGACY_CORE_SKILLS = ["pdca-start"]
+# SAGE 가 hand-ship 하는 모든 CORE skill SKILL.md 에 들어있는 마커. 정리 전 SAGE 자산 확인용
+# (codex 전역처럼 공유 공간에서 동명의 사용자 skill 을 오삭제하지 않도록).
+_LEGACY_SKILL_SIGNATURE = "CORE framework bootstrap asset"
 _CORE_HOOKS = [
     ("capture-declared-risk", "core_adapter"),
     ("post-tool-logger", "core_adapter"),
@@ -46,7 +52,7 @@ def register(sub):
     p.add_argument("--dest", default=".", help="설치 대상 프로젝트 루트 (선택, 기본값: 현재 디렉토리)")
     p.add_argument("--force", action="store_true", help="기존 파일 덮어쓰기 (기본: skip)")
     p.add_argument("--no-global-skill", action="store_true",
-                   help="codex host: CORE 스킬($sage-init/$pdca-start/$sage-review/$sage-asset/$sage-profile-modify)의 전역(~/.codex/skills) 설치를 건너뜁니다 (CI/샌드박스용)")
+                   help="codex host: CORE 스킬($sage-init/$sage-pdca-start/$sage-review/$sage-asset/$sage-profile-modify)의 전역(~/.codex/skills) 설치를 건너뜁니다 (CI/샌드박스용)")
     p._optionals.title = "옵션"
     p.set_defaults(func=run)
 
@@ -68,6 +74,22 @@ def _copy_file(src, dst, force, created, skipped):
         return
     executable = src.endswith(".sh")
     _write(dst, Path(src).read_text(encoding="utf-8"), force, created, skipped, executable)
+
+
+def _prune_legacy_skill(skill_dir, pruned):
+    """은퇴한 CORE skill 사본을 제거(rename 수렴). codex 전역 $CODEX_HOME/skills 는 공유 공간이라
+    SKILL.md 에 SAGE hand-ship 시그니처가 있을 때만 삭제 — 같은 이름의 사용자 skill 오삭제 방지(codex R2-P2).
+    비치명적: 권한/읽기전용/비-UTF-8 실패는 install 을 깨지 않는다(전역 home 쓰기와 동일 철학)."""
+    skill_md = os.path.join(skill_dir, "SKILL.md")
+    if not os.path.isfile(skill_md):
+        return
+    try:
+        if _LEGACY_SKILL_SIGNATURE not in Path(skill_md).read_text(encoding="utf-8"):
+            return   # SAGE 가 ship 한 자산 아님 → 사용자 skill 로 보고 보존
+        shutil.rmtree(skill_dir)
+        pruned.append(skill_dir)
+    except (OSError, UnicodeError):
+        pass
 
 
 def _copy_tree(src_dir, dst_dir, force, created, skipped):
@@ -159,6 +181,7 @@ def _manifest(host):
 def run(args) -> int:
     dest = os.path.abspath(args.dest)
     created, skipped = [], []
+    pruned = []                 # 은퇴한 CORE skill 잔존 사본 정리 결과(5d)
     wrapper = "CLAUDE.md" if args.host == "claude" else "CODEX.md"
     core = _resources.core_dir()
     fw = os.path.join(core, "framework")
@@ -247,6 +270,14 @@ def run(args) -> int:
             src_md = os.path.join(fw, ".claude", "skills", sid, "SKILL.md")
             core_skill_status.append((sid, _install_codex_global_skill(src_md, args.force, skill_id=sid)))
 
+    # 5d. 은퇴한 CORE skill 잔존 사본 정리 — 옛 이름이 새 이름과 함께 남아 호출되는 혼선 방지.
+    #     설치한 host 의 발견 경로만 정리(claude=repo .claude/skills, codex=전역 $CODEX_HOME/skills).
+    for legacy in _LEGACY_CORE_SKILLS:
+        if args.host == "claude":
+            _prune_legacy_skill(os.path.join(dest, ".claude", "skills", legacy), pruned)
+        elif not getattr(args, "no_global_skill", False):
+            _prune_legacy_skill(os.path.join(_codex_skills_root(), legacy), pruned)
+
     # 6. manifest (CORE hook 등록 — generate 가 hash 스탬프)
     _write(os.path.join(dest, "docs", "sage_harness", ".manifest.json"),
            json.dumps(_manifest(args.host), ensure_ascii=False, indent=2) + "\n", args.force, created, skipped)
@@ -270,6 +301,10 @@ def run(args) -> int:
         print(f"skip {len(skipped)}건 (이미 존재 — --force 로 덮어쓰기):")
         for p in sorted(skipped):
             print(f"  = {os.path.relpath(p, dest)}")
+    if pruned:
+        print(f"정리 {len(pruned)}건 (은퇴한 CORE skill 잔존 사본 제거):")
+        for p in sorted(pruned):
+            print(f"  - {p}")
     # 다음 단계 안내 — 설계상 진입점은 "AI 대화로 profile 채우기"다(직접 편집 아님).
     # profile 미부트스트랩(project.name 빈값) 상태에선 sage generate 가 BLOCK 된다(강제 게이트).
     print("")

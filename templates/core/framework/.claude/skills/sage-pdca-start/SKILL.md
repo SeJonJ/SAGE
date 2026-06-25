@@ -1,13 +1,15 @@
 ---
-name: pdca-start
-description: "Start a SAGE PDCA cycle for a new feature or change — verifies gate conditions, invokes the leader to author plan docs, and distributes file ownership before any implementation begins. Invoke when the user says /pdca-start, PDCA 시작, 새 기능 시작, or wants to begin a development cycle."
+name: sage-pdca-start
+description: "Start a SAGE PDCA cycle for a new feature or change — verifies gate conditions, invokes the leader to author plan docs, and distributes file ownership before any implementation begins. Invoke when the user says /sage-pdca-start (Claude) or $sage-pdca-start (Codex), PDCA 시작, 새 기능 시작, or wants to begin a development cycle."
 ---
 
-# pdca-start — SAGE PDCA Cycle Start
+# sage-pdca-start — SAGE PDCA Cycle Start
+
+Invoke as `/sage-pdca-start` (Claude) or `$sage-pdca-start` (Codex).
 
 ## Read these first (mandatory, in order)
 
-1. `docs/sage_harness/skills/pdca-start.md` — authoritative spec: intent, procedure, drift_checks
+1. `docs/sage_harness/skills/sage-pdca-start.md` — authoritative spec: intent, procedure, drift_checks
 2. `AGENT_GUIDE.md` — PDCA phases, risk gate, phase-first rule
 3. `sage/project-profile.yaml` — project.name, components, paths.plan_docs
 
@@ -56,12 +58,30 @@ Integration point: [where the two connect]
 
 Confirm the user is ready to proceed to implementation.
 
+## Step 5 — State the phase flow (so the user knows what comes next)
+
+Before handing back, tell the user the phase order and what each phase is *for*,
+because 03/04 are easy to misorder. This skill produces 00–02; the rest follow:
+
+- **00–02** (now, by leader) — base plan / requirements / design. Must exist
+  before any L2/L3 code edit (`pre-implementation-gate` blocks otherwise).
+- **03 Implementation** — write the code **and the unit tests**, then record file
+  ownership, the checklist, and build/test results. 03 is filled *during/after*
+  implementation, not before — it is evidence, not a pre-plan. Do not author 03
+  ahead of the code.
+- **04 Analyze** — leader + qa review the result: design↔implementation gap +
+  **test coverage** (qa). No verdict here. (Writing tests is 03's job; 04 judges
+  their sufficiency.)
+- **05 Expert Review** — independent reviewer (cross-model when enabled) issues
+  the verdict (APPROVED/FAIL/BLOCKED). Run `/sage-review` here.
+- **06 Report** — only after 05 records APPROVED.
+
 ---
 
 > This skill is a **CORE framework bootstrap asset**: hand-shipped by `sage install`,
 > NOT a manifest-tracked skill (no claims file, no render hash, not gated by
 > `sage validate`/`sage review`). Its reference spec lives at
-> `docs/sage_harness/skills/pdca-start.md`. To change it, edit the framework
+> `docs/sage_harness/skills/sage-pdca-start.md`. To change it, edit the framework
 > template, not via `sage generate`. Deploy location is runtime-specific: Claude
-> reads it from the repo (`.claude/skills/pdca-start/`); Codex reads it from the
-> user-global skills dir (`$CODEX_HOME/skills/pdca-start/`).
+> reads it from the repo (`.claude/skills/sage-pdca-start/`); Codex reads it from the
+> user-global skills dir (`$CODEX_HOME/skills/sage-pdca-start/`).

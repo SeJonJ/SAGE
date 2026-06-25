@@ -378,8 +378,11 @@ def _gen_roster(args, root):
         print(f"  skip(기존 보존): {len(skipped)}건 — {', '.join(skipped)}")
     if bad:
         print(f"  ⚠️  id 없는 component {len(bad)}건 무시: {', '.join(bad)}")
-    print("  다음: 런타임 AI 가 양 host 렌더(.claude/.codex/agents) 저작 → `sage generate --kind agent --id <id> --write` "
-          "로 spec+claims 추출 + manifest 등록.")
+    print("  다음(2단계): 이 명령은 spec 만 scaffold 합니다. 렌더는 런타임 AI 가 저작합니다 —")
+    print("    1) `/sage-asset`(claude) 또는 `$sage-asset`(codex)로 각 implementer 의 양 host 렌더")
+    print("       (.claude/agents/<id>.md + .codex/agents/<id>.md)를 저작하고,")
+    print("    2) 저작 후 `sage generate --kind agent --id <id> --write` 로 spec+claims 추출 + manifest 등록.")
+    print("    (1 없이 2 를 먼저 실행하면 '렌더 누락' 으로 실패합니다 — 이 명령은 렌더를 만들지 않습니다.)")
     return 0
 
 
@@ -689,7 +692,9 @@ def _gen_interpretive(args, root, kind):
         missing = [os.path.relpath(p, dest) for p in (claude_r, codex_r) if not os.path.exists(p)]
         if missing:
             print(f"  ❌ {aid}: 렌더 누락 — {', '.join(missing)} "
-                  f"(codex 함께: 양 host 렌더 필요 — reverse_extract 가 교집합으로 claims 도출)", file=sys.stderr)
+                  f"(양 host 렌더 필요 — reverse_extract 가 교집합으로 claims 도출)", file=sys.stderr)
+            print(f"     이 명령은 렌더를 만들지 않습니다(추출+등록 전용). 먼저 `/sage-asset`(claude) 또는 "
+                  f"`$sage-asset`(codex)로 {aid} 의 렌더를 저작한 뒤 재실행하세요.", file=sys.stderr)
             failed.append(aid); continue
         try:
             spec_md, claims_yaml, claims = drv.extract(aid, claude_r, codex_r, guide, config)
@@ -727,7 +732,8 @@ def _gen_interpretive(args, root, kind):
         print(f"  codex 전역 배포 {len(deployed)}건 — codex 에서 호출명 ${prefix}-<id> "
               f"(repo .codex/skills 정본은 manifest 추적, 전역은 발견용 캐시).")
     if failed:
-        print(f"  실패 {len(failed)}건: {', '.join(failed)} — 렌더 저작 후 재실행", file=sys.stderr)
+        print(f"  실패 {len(failed)}건: {', '.join(failed)} — `/sage-asset`(claude)/`$sage-asset`(codex)로 "
+              f"렌더 저작 후 재실행", file=sys.stderr)
         return 1
     return 0
 

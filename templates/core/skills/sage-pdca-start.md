@@ -1,5 +1,5 @@
 ---
-id: pdca-start
+id: sage-pdca-start
 kind: skill
 # CORE skill (neutral). Project specifics come from profile, not this spec.
 # CORE framework bootstrap asset: hand-shipped by `sage install`, NOT manifest-tracked.
@@ -13,8 +13,8 @@ author plan docs, and distribute file ownership before any L2/L3 code is written
 ## when_to_use
 - At the beginning of a new feature or change cycle (before implementation)
 - When the leader needs to bootstrap plan docs for a task
-- When the user says "/pdca-start", "start PDCA", "PDCA 시작", "새 기능 시작",
-  or asks to begin a new development cycle
+- When the user says "/sage-pdca-start" (Claude), "$sage-pdca-start" (Codex),
+  "start PDCA", "PDCA 시작", "새 기능 시작", or asks to begin a new development cycle
 
 ## procedure
 1. Read `sage/project-profile.yaml` — confirm the project is bootstrapped
@@ -33,6 +33,11 @@ author plan docs, and distribute file ownership before any L2/L3 code is written
    the feature scope.
 6. Report the ownership map to the user and confirm they are ready to proceed
    to implementation.
+7. State the phase flow so the user does not misorder 03/04: 00–02 now (leader);
+   03 = implementation **plus unit tests**, recorded after the code (evidence, not
+   a pre-plan); 04 = leader + qa judge the design↔implementation gap and test
+   coverage (no verdict); 05 = independent reviewer verdict via `/sage-review`;
+   06 = report only after 05 records APPROVED.
 
 ## advisory_scope
 - role_boundary: does not implement code; invokes leader only
@@ -40,8 +45,8 @@ author plan docs, and distribute file ownership before any L2/L3 code is written
 - convention_doc: AGENT_GUIDE.md
 
 ## runtime_bindings
-- claude: .claude/skills/pdca-start/SKILL.md (repo — Claude Code auto-discovers)
-- codex:  $CODEX_HOME/skills/pdca-start/SKILL.md (global — codex does not auto-discover repo-scoped skills)
+- claude: .claude/skills/sage-pdca-start/SKILL.md (repo — Claude Code auto-discovers)
+- codex:  $CODEX_HOME/skills/sage-pdca-start/SKILL.md (global — codex does not auto-discover repo-scoped skills)
 
 ## drift_checks
 - conformance: procedure step 1 (gate check) and step 4 (leader invocation) must be present
