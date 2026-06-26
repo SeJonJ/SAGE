@@ -102,6 +102,12 @@ verification:                    # 결정론 검증 — scripts/verify-changes.s
     test:   ""
     lint:   ""
     # review = 셸 명령 아님 → L3 독립 리뷰 프로토콜(profile.risk.l3_review_strategy). verify-changes.sh 미실행
+  acceptance:                    # 사용자 요구사항별 수용증거. 빌드/테스트가 "요건 만족"을 자동 증명하지 않는 갭 보강.
+    enabled: true                 # 01 acceptance matrix → 04 PASS/FAIL/NOT TESTED evidence → 05/06 gate
+    require_for_risk: [L2, L3]    # 기본: 의미있는 개발 사이클에서 요구사항별 증거 필요
+    statuses: [PASS, FAIL, NOT TESTED, N/A]
+    unresolved_statuses: [FAIL, NOT TESTED]
+    report_gate_enforce: advisory # off | advisory | enforce. 안정화 전 기본은 WARN, 팀 합의 후 enforce 전환
 
 runtime:                         # host runtime 모델 (§2.2). Claude 특권화 금지
   host: claude                   # claude | codex — 설치 시 택1

@@ -69,6 +69,12 @@ def render_gate(decision, profile):
     elif k == "warn_report_without_audit":
         m = (f"⚠️  [GATE WARN — PDCA] {rs}. 파일: {fs}\n"
              f"  (advisory) Phase 05 리뷰 루프 audit 증거 권장 — /sage-review 로 loop 실행 + 05 에 'Loop-Run: <run_id>' 기록")
+    elif k == "block_report_without_acceptance":
+        m = (f"⛔ [GATE BLOCK — PDCA] {rs}. 파일: {fs}\n"
+             f"  04-analyze 에 acceptance evidence(PASS/FAIL/NOT TESTED/N/A)를 기록하고 05 를 다시 검토하세요")
+    elif k == "warn_report_without_acceptance":
+        m = (f"⚠️  [GATE WARN — PDCA] {rs}. 파일: {fs}\n"
+             f"  (advisory) 04-analyze 의 acceptance evidence 를 보강하세요")
     elif k == "ok_l3":
         m = f"✅ [GATE OK — L3] review 확인됨 | {fs}"
     elif k == "ok_l2":

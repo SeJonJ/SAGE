@@ -42,18 +42,22 @@ that gate.
 1. Plan doc path(s) for the current PDCA cycle (from `paths.plan_docs`)
 2. Changed files + unit test results (from implementers)
 3. QA findings summary (from qa agent)
+4. Phase 01 acceptance matrix + Phase 04 acceptance evidence table
 
 If any input is missing, block and request it.
 
 ### Invoke the reviewer
 Hand off to the `reviewer` agent with: review mode, plan doc path, implementation
-summary (changed files + test status), QA summary. Instruct it to produce a report
-per `docs/agent/review-protocol.md`. Present findings verbatim — do not filter.
+summary (changed files + test status), QA summary, and acceptance evidence. Instruct it
+to produce a report per `docs/agent/review-protocol.md`. Present findings verbatim — do
+not filter.
 
 ### Handle the verdict
 The reviewer's verdict maps to the **Final Status marker the gate reads** (the report←approve
 hook looks for the literal `APPROVED`; `Final Status: CLEAR` would be rejected). Always record
 one of `APPROVED | FAIL | BLOCKED`:
+- Required acceptance items marked `FAIL` or `NOT TESTED` in Phase 04 block `APPROVED`.
+  Use `N/A` only with explicit out-of-scope/deferred/user-approved reasoning.
 - **CLEAR** → record `Final Status: APPROVED` (reason note: `CLEAR`), proceed
 - **BLOCK on L3** → record `Final Status: BLOCKED` (reason: `BLOCK`), STOP (no release/merge until cleared)
 - **ADVISORY** → present to the leader; if they accept the result, record `Final Status: APPROVED`
@@ -117,7 +121,8 @@ loop and (in advisory) warns or (in enforce) blocks.
 Hand the accepted findings to the relevant implementer with the **REWORK prompt** (do not
 exceed the approved design in `02-design`). Then **re-validate** before the next round:
 `scripts/verify-changes.sh` (build/test/lint at the risk gate) and `sage validate` must
-PASS; if either fails, retry the round (within the iteration cap).
+PASS; if either fails, retry the round (within the iteration cap). If the rework changes
+acceptance coverage, update Phase 03 and Phase 04 before the next review pass.
 
 ### Record the round (every iteration)
 ```
@@ -196,6 +201,7 @@ Mode: [clean-context same-runtime | opposite-runtime cross-model]
 Loop: [enabled | disabled]
 Final Status: [APPROVED | FAIL | BLOCKED]    # the gate reads the literal APPROVED marker
 Reason: [CONVERGED | DRY | BUDGET_ITER | BUDGET_TOK | BLOCKED_ARCH | (single-pass: CLEAR | BLOCK | ADVISORY)]
+Acceptance Gate: [PASS | FAIL | NOT TESTED items unresolved | N/A with reason]
 Review Loop Iterations:
 | iter | found | survived | accepted | arch | tokens |
 |-----:|------:|---------:|---------:|-----:|-------:|

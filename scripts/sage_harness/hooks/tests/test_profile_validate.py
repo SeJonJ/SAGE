@@ -362,6 +362,55 @@ class TestReviewLoop(unittest.TestCase):
                              f"backstop fired on valid profile: {[m for _, m in issues]}")
 
 
+def _valid_acceptance(**over):
+    ac = {"enabled": True, "require_for_risk": ["L2", "L3"],
+          "statuses": ["PASS", "FAIL", "NOT TESTED", "N/A"],
+          "unresolved_statuses": ["FAIL", "NOT TESTED"],
+          "report_gate_enforce": "advisory"}
+    ac.update(over)
+    return ac
+
+
+class TestAcceptanceValidation(unittest.TestCase):
+    """verification.acceptance 의미검증 — 요구사항별 수용증거 gate 의 침묵 비활성 방지."""
+
+    def _prof(self, ac):
+        return {"verification": {"acceptance": ac}, "risk": {"l2_path_globs": ["*.py"]}}
+
+    def test_clean_acceptance_no_fail(self):
+        self.assertNotIn("FAIL", [s for s, _ in sevs(self._prof(_valid_acceptance()))])
+
+    def test_unknown_acceptance_key_fail(self):
+        issues = sevs(self._prof(_valid_acceptance(unresolved_status=["FAIL"])))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("미지 키" in m and "unresolved_status" in m for _, m in issues))
+
+    def test_enabled_non_bool_fail(self):
+        issues = sevs(self._prof(_valid_acceptance(enabled="true")))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("acceptance.enabled" in m for _, m in issues))
+
+    def test_missing_not_tested_unresolved_fail(self):
+        issues = sevs(self._prof(_valid_acceptance(unresolved_statuses=["FAIL"])))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("NOT TESTED" in m for _, m in issues))
+
+    def test_missing_canonical_status_fail(self):
+        issues = sevs(self._prof(_valid_acceptance(statuses=["PASS", "FAIL"])))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("NOT TESTED" in m and "N/A" in m for _, m in issues))
+
+    def test_invalid_report_gate_mode_fail(self):
+        issues = sevs(self._prof(_valid_acceptance(report_gate_enforce="block")))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("report_gate_enforce" in m for _, m in issues))
+
+    def test_enforce_warns_for_migration_risk(self):
+        issues = sevs(self._prof(_valid_acceptance(report_gate_enforce="enforce")))
+        self.assertNotIn("FAIL", [s for s, _ in issues])
+        self.assertTrue(any(s == "WARN" and "acceptance.report_gate_enforce" in m for s, m in issues))
+
+
 class TestKnowledgeCaptureVault(unittest.TestCase):
     """7.5단계 A — vault-output 플래그(loop_audit_dashboard/retro_note) 의존 검증."""
 

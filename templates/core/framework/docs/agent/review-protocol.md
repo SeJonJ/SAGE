@@ -9,6 +9,18 @@ L3 changes require an independent review before they are considered done.
    - opposite-runtime review (cross_model on + reachable).
 3. The review outcome is recorded in a review/plan document.
 
+## Acceptance evidence gate
+
+Review is not only a code-quality check. It must verify whether explicit user
+requirements were converted into evidence:
+
+1. Read the Phase 01 acceptance matrix.
+2. Read the Phase 04 acceptance evidence table.
+3. Treat required items marked `FAIL` or `NOT TESTED` as blocking findings.
+4. Allow `N/A` only with an explicit out-of-scope/deferred/user-approved reason.
+5. Do not record `Final Status: APPROVED` while required acceptance evidence is
+   missing or unresolved.
+
 How a change is matched to its review document is a project policy
 (`profile.risk.l3_review_strategy`). Strategy candidates are preserved under
 `scripts/sage_harness/hooks/strategies/`; until one is selected, L3 changes are
@@ -36,6 +48,8 @@ Per round (up to `review_loop.max_iterations[risk]`):
    token budget hit → BLOCKED(BUDGET_TOK); architecture escalation → BLOCKED(BLOCKED_ARCH).
 5. **REWORK + re-validate** — `within_design` survivors are reworked within the approved
    design; `verify-changes.sh` and `sage validate` must PASS before the next round.
+   If rework changes acceptance coverage, update Phase 03 and Phase 04 before
+   the next review pass.
 
 Determinism boundary: the loop *body* (find/refute/rework) is judgement and runs in the
 host runtime. SAGE owns the deterministic gates only — round counters, budget, termination,
@@ -44,3 +58,8 @@ The hard backstop is unchanged: the report←approve hook blocks Phase 06 until 
 records `APPROVED`. The loop never relaxes that gate; it adds audited find→refute→rework
 rounds in front of it. Configuration values live only in `profile.pdca.review_loop`
 (validated fail-closed by `sage doctor`/`sage validate`).
+
+When `profile.verification.acceptance.enabled` is true, the report gate can also
+warn or block Phase 06 if Phase 04 has no acceptance evidence table or contains
+unresolved required statuses (`FAIL`, `NOT TESTED`). This gate is deterministic:
+it reads recorded status markers; it does not infer product quality by itself.

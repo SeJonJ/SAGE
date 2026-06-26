@@ -65,15 +65,16 @@ because 03/04 are easy to misorder. This skill produces 00–02; the rest follow
 
 - **00–02** (now, by leader) — base plan / requirements / design. Must exist
   before any L2/L3 code edit (`pre-implementation-gate` blocks otherwise).
-- **03 Implementation** — write the code **and the unit tests**, then record file
-  ownership, the checklist, and build/test results. 03 is filled *during/after*
-  implementation, not before — it is evidence, not a pre-plan. Do not author 03
-  ahead of the code.
+- **03 Implementation** — open/update the 03 document **before source edits** with
+  file ownership, implementation checklist, verification plan, and Phase-01
+  acceptance IDs. Then write the code **and the unit tests**, and complete 03 with
+  changed files, acceptance trace, and build/test results.
 - **04 Analyze** — leader + qa review the result: design↔implementation gap +
-  **test coverage** (qa). No verdict here. (Writing tests is 03's job; 04 judges
-  their sufficiency.)
+  **test coverage** (qa) + acceptance evidence (`PASS`/`FAIL`/`NOT TESTED`/`N/A`).
+  No verdict here. (Writing tests is 03's job; 04 judges their sufficiency.)
 - **05 Expert Review** — independent reviewer (cross-model when enabled) issues
-  the verdict (APPROVED/FAIL/BLOCKED). Run `/sage-review` here.
+  the verdict (APPROVED/FAIL/BLOCKED). Required acceptance items marked `FAIL` or
+  `NOT TESTED` block APPROVED. Run `/sage-review` here.
 - **06 Report** — only after 05 records APPROVED.
 
 ---

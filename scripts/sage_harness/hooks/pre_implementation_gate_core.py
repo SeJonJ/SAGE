@@ -14,6 +14,7 @@ risk trigger(글롭/키워드)는 profile_bound(G3) — core 에 도메인값 0.
 """
 
 import fnmatch
+import re
 
 CONTRACT_VERSION = "1"
 _RANK = {"none": -1, "L0": 0, "L1": 1, "L2": 2, "L3": 3}
@@ -195,6 +196,181 @@ def _report_gate(event: dict, profile: dict, snapshot: dict):
     return {"approved": approved, "report_phase": report_phase, "approve_phase": approve_phase}
 
 
+def _is_writing_report(event, cfg):
+    report_phase = cfg.get("report_phase") or ""
+    if not report_phase:
+        return False
+    phases = {p.get("id"): p for p in (cfg.get("phases") or [])}
+    rglob = (phases.get(report_phase) or {}).get("glob") or ""
+    return bool(rglob) and any(_under_dir(ch.get("path") or "", _glob_base(rglob))
+                               for ch in (event.get("changes") or []))
+
+
+def _acceptance_status_match(line, status):
+    needle = re.escape(status.upper())
+    return re.search(rf"(?<![A-Z0-9]){needle}(?![A-Z0-9])", line.upper()) is not None
+
+
+def _cycle_risk(event, profile, snapshot, cfg):
+    """06 report event 자체는 L0 문서 변경이라, acceptance 대상 risk 는 cycle 문서에서 보수적으로 추정한다.
+
+    명시 risk 를 찾으면 require_for_risk 에 적용하고, 못 찾으면 unknown 으로 둔다. unknown 은 skip 하지 않는다:
+    기존 문서가 risk 라벨을 안 썼다는 이유로 acceptance gate 가 조용히 꺼지는 것을 피하기 위해서다.
+    """
+    declared = event.get("declared_max")
+    if declared in ("L1", "L2", "L3"):
+        return declared
+    injected = snapshot.get("cycle_risk")
+    if injected in ("L1", "L2", "L3"):
+        return injected
+    phase_docs = snapshot.get("phase_docs") or {}
+    for phase in ("00", "01", "02", "03", "04", "05"):
+        sel_path = _doc_match(phase_docs.get(phase) or [], event)
+        doc = next((d for d in (phase_docs.get(phase) or []) if d.get("path") == sel_path), None) if sel_path else None
+        content = (doc or {}).get("content") or ""
+        for line in content.splitlines():
+            m = re.search(r"(?i)(risk\s*level|risk|위험도)\s*[:：]\s*(L[123])\b", line)
+            if m:
+                return m.group(2).upper()
+    return "unknown"
+
+
+def _section_table_lines(content, heading_words):
+    """주어진 heading 아래의 markdown table line 만 반환. 다음 heading 에서 종료."""
+    lines, in_section = [], False
+    for raw in (content or "").splitlines():
+        stripped = raw.strip()
+        if re.match(r"^#{1,6}\s+", stripped):
+            title = stripped.lstrip("#").strip().lower()
+            if in_section:
+                break
+            if any(word.lower() in title for word in heading_words):
+                in_section = True
+            continue
+        if in_section and "|" in stripped:
+            lines.append(stripped)
+    return lines
+
+
+def _split_md_row(line):
+    cells = [c.strip() for c in line.strip().strip("|").split("|")]
+    if not cells or all(not c for c in cells):
+        return []
+    if all(re.fullmatch(r":?-{3,}:?", c.replace(" ", "")) for c in cells):
+        return []
+    return cells
+
+
+def _table_dicts(lines):
+    header = None
+    rows = []
+    for line in lines:
+        cells = _split_md_row(line)
+        if not cells:
+            continue
+        if header is None:
+            header = [c.lower() for c in cells]
+            continue
+        row = {header[i]: cells[i] for i in range(min(len(header), len(cells)))}
+        row["_raw"] = line
+        rows.append(row)
+    return rows
+
+
+def _first_cell(row, names):
+    for name in names:
+        for key, val in row.items():
+            if key != "_raw" and name in key:
+                return val
+    return ""
+
+
+def _acceptance_matrix_ids(content):
+    rows = _table_dicts(_section_table_lines(content, ["acceptance matrix", "수용", "인수"]))
+    ids = []
+    for row in rows:
+        rid = _first_cell(row, ["id", "acceptance"])
+        required = (_first_cell(row, ["required", "필수"]) or "yes").strip().lower()
+        if rid and required not in ("no", "false", "n", "optional", "n/a"):
+            ids.append(rid.strip())
+    return ids
+
+
+def _acceptance_evidence_rows(content):
+    rows = _table_dicts(_section_table_lines(content, ["acceptance evidence", "acceptance evidence review", "수용", "인수"]))
+    out = []
+    for row in rows:
+        rid = _first_cell(row, ["id", "acceptance"])
+        status = _first_cell(row, ["status", "상태"])
+        if rid or status:
+            out.append({"id": rid.strip(), "status": status.strip(), "raw": row.get("_raw", "")})
+    return out
+
+
+def _acceptance_gate(event, profile, snapshot):
+    """06 작성 시 04 acceptance evidence 를 검사한다(advisory-first).
+
+    SAGE 의 실패 모드: build/test/review 는 통과했지만 명시 요구사항이 미검증/미구현. 이 gate 는
+    판단 자체를 하지 않고 04 문서의 구조화된 상태(PASS/FAIL/NOT TESTED/N/A)만 확인한다.
+    """
+    cfg = _pdca_cfg(profile)
+    if cfg is None or not _is_writing_report(event, cfg):
+        return None
+    verification = profile.get("verification") or {}
+    ac = verification.get("acceptance") if isinstance(verification, dict) else None
+    if not isinstance(ac, dict) or not ac.get("enabled"):
+        return None
+    mode = ac.get("report_gate_enforce") or "off"
+    if mode not in ("advisory", "enforce"):
+        return None
+    required_risks = set(ac.get("require_for_risk") or ["L2", "L3"])
+    cycle_risk = _cycle_risk(event, profile, snapshot, cfg)
+    if cycle_risk != "unknown" and cycle_risk not in required_risks:
+        return None
+
+    statuses = [str(s).upper() for s in (ac.get("statuses") or ["PASS", "FAIL", "NOT TESTED", "N/A"])]
+    unresolved = [str(s).upper() for s in (ac.get("unresolved_statuses") or ["FAIL", "NOT TESTED"])]
+    phase_docs = snapshot.get("phase_docs") or {}
+    docs01 = phase_docs.get("01") or []
+    docs04 = phase_docs.get("04") or []
+    plan_path = _doc_match(docs01, event)
+    plan_doc = next((d for d in docs01 if d.get("path") == plan_path), None) if plan_path else None
+    sel_path = _doc_match(docs04, event)
+    sel = next((d for d in docs04 if d.get("path") == sel_path), None) if sel_path else None
+
+    def fail(detail):
+        return {"ok": False, "mode": mode, "detail": detail}
+
+    if sel is None:
+        return fail("cycle 에 해당하는 04 문서를 특정할 수 없음(ticket/recent 미매칭)")
+    required_ids = _acceptance_matrix_ids((plan_doc or {}).get("content") or "")
+    evidence_rows = _acceptance_evidence_rows(sel.get("content") or "")
+    if not required_ids:
+        return fail(f"선택된 01 문서({plan_path or '미선택'})에 acceptance matrix ID 없음")
+    if not evidence_rows:
+        return fail(f"선택된 04 문서({sel_path})에 acceptance evidence table 없음(PASS/FAIL/NOT TESTED/N/A 필요)")
+    known_statuses = set(statuses)
+    unresolved_lines = []
+    seen_ids = set()
+    for row in evidence_rows:
+        rid = row.get("id") or ""
+        status = (row.get("status") or "").upper()
+        if rid:
+            seen_ids.add(rid)
+        if not status or status not in known_statuses:
+            unresolved_lines.append(f"{row.get('raw')} (상태값 미인식: {row.get('status')!r})")
+        elif status in unresolved:
+            unresolved_lines.append(row.get("raw") or f"{rid}: {status}")
+    missing_ids = [rid for rid in required_ids if rid not in seen_ids]
+    if missing_ids:
+        return fail(f"04 acceptance evidence 에 01 matrix required ID 누락: {missing_ids}")
+    if unresolved_lines:
+        preview = "; ".join(unresolved_lines[:3])
+        more = "" if len(unresolved_lines) <= 3 else f"; ... 외 {len(unresolved_lines) - 3}건"
+        return fail(f"선택된 04 문서({sel_path})에 미해결 acceptance 존재: {preview}{more}")
+    return {"ok": True, "mode": mode, "detail": sel_path}
+
+
 def _audit_gate(event, profile, snapshot):
     """9.5 — report←approve 에 loop_audit 증거 요건을 더한다(advisory-first, run_id 바인딩).
 
@@ -203,7 +379,6 @@ def _audit_gate(event, profile, snapshot):
     검사: cycle 05 문서 1개를 _doc_match 로 선택 → 그 동일 문서에서 APPROVED 마커 + `Loop-Run: <id>` 를
     함께 읽고, 주입된 loop_audit.runs[id] 가 closed+APPROVED 인지. (codex 설계 R1~R4: stale 결합 차단.)
     """
-    import re
     cfg = _pdca_cfg(profile)
     if cfg is None:
         return None
@@ -217,10 +392,7 @@ def _audit_gate(event, profile, snapshot):
     approve_phase = cfg.get("approve_phase") or ""
     if not report_phase or not approve_phase:
         return None
-    phases = {p.get("id"): p for p in (cfg.get("phases") or [])}
-    rglob = (phases.get(report_phase) or {}).get("glob") or ""
-    if not rglob or not any(_under_dir(ch.get("path") or "", _glob_base(rglob))
-                            for ch in (event.get("changes") or [])):
+    if not _is_writing_report(event, cfg):
         return None   # 06 작성이 아님
 
     # cycle-관련 05 문서 1개 선택(기존 _doc_match: ticket→recent). APPROVED 와 Loop-Run 을 같은 문서에서 읽는다.
@@ -276,6 +448,20 @@ def decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:
         return {"status": "block", "exit_code": 2, "risk": "PDCA",
                 "message_key": "block_report_without_approval",
                 "reason": f"{rg['report_phase']} 작성 전 {rg['approve_phase']} 승인(APPROVED) 필요",
+                "file_short": c["file_short"]}
+
+    # Acceptance evidence gate: 04 가 요구사항별 PASS/FAIL/NOT TESTED 를 기록했는지 확인.
+    # build/test/lint 통과가 사용자 요구사항 충족을 자동 증명하지 않는 갭을 advisory-first 로 닫는다.
+    acg = _acceptance_gate(event, profile, snapshot)
+    if acg is not None and not acg["ok"]:
+        if acg["mode"] == "enforce":
+            return {"status": "block", "exit_code": 2, "risk": "PDCA",
+                    "message_key": "block_report_without_acceptance",
+                    "reason": f"acceptance evidence 미충족(enforce): {acg['detail']}",
+                    "file_short": c["file_short"]}
+        return {"status": "warn", "exit_code": 0, "risk": "PDCA",
+                "message_key": "warn_report_without_acceptance",
+                "reason": f"acceptance evidence 미충족(advisory): {acg['detail']}",
                 "file_short": c["file_short"]}
 
     # 9.5 report←approve audit 증거(F-5): 마커는 있으나 cycle 05 가 가리키는 loop run 이 closed+APPROVED 가

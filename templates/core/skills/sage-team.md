@@ -21,19 +21,23 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
    00–02) for this cycle exists. If not bootstrapped → direct to `/sage-init`; if no plan
    → direct to `/sage-pdca-start` (do not author the plan here).
 2. Resolve the cycle by its plan-doc stem and find the resume point by evidence anchors,
-   not file presence: 03 complete = impl + recorded verify evidence; 04 complete = gap +
-   qa coverage context; 05 state ∈ {started (open run), closed-nonapproved, approved
+   not file presence: 03 complete = pre-code checklist + impl + recorded verify evidence;
+   04 complete = gap + qa coverage + acceptance evidence context; 05 state ∈ {started (open run), closed-nonapproved, approved
    (APPROVED marker + matching closed APPROVED run, audit integrity clean)}. Only
    `05_approved` permits Phase 06. Start at the first stage whose anchor is absent.
-3. Implementation (03): dispatch implementers by ownership (Claude = parallel subagents,
-   Codex = sequential, semantics preserved). Each edits only its component paths and
-   records files, checklist, and unit tests into 03.
+3. Implementation (03): before source edits, open/update the 03 doc with ownership,
+   checklist, and Phase-01 acceptance IDs. Then dispatch implementers by ownership
+   (Claude = parallel subagents, Codex = sequential, semantics preserved). Each edits
+   only its component paths and records files, checklist, acceptance trace, and unit
+   tests into 03.
 4. Verification: invoke `scripts/verify-changes.sh` per `profile.verification` at the risk
    gate. SAGE owns policy/gates/result format; this skill only triggers the run
    (pre-implementation-gate is not the executor). Record results in 03; stop if red.
-5. QA (04): invoke the qa agent for design↔implementation gap + test coverage. No verdict.
+5. QA (04): invoke the qa agent for design↔implementation gap + test coverage +
+   acceptance evidence (`PASS`/`FAIL`/`NOT TESTED`/`N/A`). No verdict.
 6. Review (05): hand off to `/sage-review` (never hand-write 05). It records the loop to
-   `.sage/loop_audit.jsonl` and resolves cross-model. On BLOCKED, stop.
+   `.sage/loop_audit.jsonl`, resolves cross-model, and blocks APPROVED when required
+   acceptance evidence is `FAIL` or `NOT TESTED`. On BLOCKED, stop.
 7. Completion (06): only when `05_approved`, the leader writes 06. The 06←05 gate enforces
    this deterministically.
 

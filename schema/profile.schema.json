@@ -89,7 +89,33 @@
       }
     },
     "conventions": { "type": "array" },
-    "verification": { "type": "object" },
+    "verification": {
+      "type": "object",
+      "description": "결정론 검증 + acceptance evidence 게이트. verification 자체는 확장 허용, acceptance 는 닫힌 섹션.",
+      "properties": {
+        "acceptance": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "사용자 요구사항별 수용증거. 01 matrix → 04 PASS/FAIL/NOT TESTED → 05/06 gate.",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "require_for_risk": {
+              "type": "array",
+              "items": { "enum": ["L1", "L2", "L3"] }
+            },
+            "statuses": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "unresolved_statuses": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "report_gate_enforce": { "enum": ["off", "advisory", "enforce"] }
+          }
+        }
+      }
+    },
     "runtime": { "type": "object" },
     "team": { "type": "object" },
     "cross_model": { "type": "object" },

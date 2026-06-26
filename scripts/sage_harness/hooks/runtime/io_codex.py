@@ -60,6 +60,8 @@ def render_gate(decision, profile):
         "block_report_without_approval": f"[GATE BLOCK - PDCA] {rs}. 파일: {fs}",
         "block_report_without_audit": f"[GATE BLOCK - PDCA] {rs}. 파일: {fs} | $sage-review 로 loop 닫고(APPROVED) 05 에 'Loop-Run: <run_id>' 기록",
         "warn_report_without_audit": f"[GATE WARN - PDCA] {rs}. 파일: {fs} | (advisory) $sage-review loop audit 권장 + 05 에 'Loop-Run: <run_id>'",
+        "block_report_without_acceptance": f"[GATE BLOCK - PDCA] {rs}. 파일: {fs} | 04-analyze 에 acceptance evidence(PASS/FAIL/NOT TESTED/N/A) 기록 후 05 재검토",
+        "warn_report_without_acceptance": f"[GATE WARN - PDCA] {rs}. 파일: {fs} | (advisory) 04-analyze acceptance evidence 보강 권장",
         "ok_l3": f"[GATE OK - L3] review 확인됨 | {fs}",
         "ok_l2": f"[GATE OK - L2] plan 확인 | {fs}",
     }

@@ -243,6 +243,20 @@ def _audit_profile(mode="advisory", enabled=True):
     return p
 
 
+def _acceptance_profile(mode="advisory", enabled=True):
+    import copy
+    p = copy.deepcopy(PDCA_PROFILE)
+    p["verification"] = {
+        "acceptance": {
+            "enabled": enabled,
+            "statuses": ["PASS", "FAIL", "NOT TESTED", "N/A"],
+            "unresolved_statuses": ["FAIL", "NOT TESTED"],
+            "report_gate_enforce": mode,
+        }
+    }
+    return p
+
+
 def snap_audit(docs05, runs=None, has_any=None):
     """06 작성 시나리오: 05 phase_docs + 주입된 loop_audit."""
     return {"plan_files": [], "review_candidates": [], "phase_docs": {"05": docs05},
@@ -353,6 +367,120 @@ class TestReportAuditGate(unittest.TestCase):
                         snap_audit([self._doc("Final Status: APPROVED")], runs={}, has_any=False), None)
         self.assertEqual(d["message_key"], "warn_report_without_audit")
         self.assertIn("audit 기록 자체가 없음", d["reason"])
+
+
+class TestReportAcceptanceGate(unittest.TestCase):
+    """06←04 acceptance evidence gate — 명시 요구사항별 미구현/미검증 상태를 report 전에 드러낸다."""
+
+    def _matrix(self, rows=None):
+        rows = rows or [("| A1 | Korean city search | test | qa | yes |"),
+                        ("| A2 | notification | test | qa | yes |")]
+        return "\n".join([
+            "## Acceptance Matrix",
+            "| ID | User Requirement | Required Evidence | Owner | Required? |",
+            "|---|---|---|---|---|",
+            *rows,
+        ])
+
+    def _snap(self, content04, content05="Final Status: APPROVED", recent04=True, content01=None):
+        return {
+            "plan_files": [],
+            "review_candidates": [],
+            "phase_docs": {
+                "01": [{"path": "01.md", "content": content01 or self._matrix(), "recent": True}],
+                "04": [{"path": "04.md", "content": content04, "recent": recent04}],
+                "05": [{"path": "05.md", "content": content05, "recent": True}],
+            },
+        }
+
+    def test_disabled_is_marker_only(self):
+        d = core.decide(_REPORT_EV, _acceptance_profile(enabled=False),
+                        self._snap("no acceptance table"), None)
+        self.assertEqual(d["status"], "ok")
+
+    def test_advisory_warns_when_acceptance_table_missing(self):
+        d = core.decide(_REPORT_EV, _acceptance_profile(mode="advisory"),
+                        self._snap("## Coverage\nno table"), None)
+        self.assertEqual(d["message_key"], "warn_report_without_acceptance")
+        self.assertEqual(d["exit_code"], 0)
+
+    def test_enforce_blocks_when_acceptance_table_missing(self):
+        d = core.decide(_REPORT_EV, _acceptance_profile(mode="enforce"),
+                        self._snap("## Coverage\nno table"), None)
+        self.assertEqual(d["message_key"], "block_report_without_acceptance")
+        self.assertEqual(d["exit_code"], 2)
+
+    def test_enforce_blocks_unresolved_acceptance(self):
+        content04 = """## Acceptance Evidence
+| ID | Requirement | Status | Evidence |
+|---|---|---|---|
+| A1 | Korean city search | NOT TESTED | no e2e |
+| A2 | notification | FAIL | manual smoke failed |
+"""
+        d = core.decide(_REPORT_EV, _acceptance_profile(mode="enforce"),
+                        self._snap(content04), None)
+        self.assertEqual(d["message_key"], "block_report_without_acceptance")
+        self.assertIn("NOT TESTED", d["reason"])
+        self.assertIn("FAIL", d["reason"])
+
+    def test_passes_when_all_required_acceptance_resolved(self):
+        content04 = """## Acceptance Evidence
+| ID | Requirement | Status | Evidence |
+|---|---|---|---|
+| A1 | Korean city search must not fail | PASS | test + manual smoke |
+| A2 | notification | PASS | worker test |
+"""
+        d = core.decide(_REPORT_EV, _acceptance_profile(mode="enforce"),
+                        self._snap(content04), None)
+        self.assertEqual(d["status"], "ok")
+        self.assertNotIn(d["message_key"], ("block_report_without_acceptance", "warn_report_without_acceptance"))
+
+    def test_acceptance_enforce_precedes_audit_advisory(self):
+        # acceptance enforce 가 audit advisory warning 에 가려지면 핵심 요구사항 실패가 report 로 통과한다.
+        p = _acceptance_profile(mode="enforce")
+        p["pdca"]["review_loop"] = {"enabled": True, "report_gate_enforce": "advisory"}
+        snap = self._snap("## Acceptance Evidence\n| ID | Status |\n|---|---|\n| A1 | FAIL |\n| A2 | PASS |")
+        snap["loop_audit"] = {"runs": {}, "has_any_records": False}
+        d = core.decide(_REPORT_EV, p, snap, None)
+        self.assertEqual(d["message_key"], "block_report_without_acceptance")
+
+    def test_ignores_unrelated_tables_and_free_text_fail(self):
+        # status 컬럼이 아니라 요구사항/증거 문장의 "fail" 을 잡으면 false positive.
+        content04 = """## Coverage Verification
+| Check | Status |
+|---|---|
+| build | FAIL |
+
+## Acceptance Evidence
+| ID | Requirement | Status | Evidence |
+|---|---|---|---|
+| A1 | Korean city search must not fail | PASS | manual smoke says no fail wording matters |
+| A2 | notification | PASS | worker test |
+"""
+        d = core.decide(_REPORT_EV, _acceptance_profile(mode="enforce"),
+                        self._snap(content04), None)
+        self.assertEqual(d["status"], "ok")
+
+    def test_enforce_blocks_missing_matrix_id_in_04(self):
+        content04 = """## Acceptance Evidence
+| ID | Requirement | Status | Evidence |
+|---|---|---|---|
+| A1 | Korean city search | PASS | manual smoke |
+"""
+        d = core.decide(_REPORT_EV, _acceptance_profile(mode="enforce"),
+                        self._snap(content04), None)
+        self.assertEqual(d["message_key"], "block_report_without_acceptance")
+        self.assertIn("A2", d["reason"])
+
+    def test_require_for_risk_skips_known_l1_cycle(self):
+        content04 = """## Acceptance Evidence
+| ID | Status |
+|---|---|
+| A1 | FAIL |
+"""
+        d = core.decide(ev("plan_docs/06-report/feature.md", declared="L1"),
+                        _acceptance_profile(mode="enforce"), self._snap(content04), None)
+        self.assertNotIn(d["message_key"], ("block_report_without_acceptance", "warn_report_without_acceptance"))
 
 
 class TestStrategies(unittest.TestCase):

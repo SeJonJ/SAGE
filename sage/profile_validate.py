@@ -42,6 +42,9 @@ _REVIEW_LOOP_KEYS = {"enabled", "lenses", "refuters", "refute_threshold", "max_i
                      "architecture_escalation", "termination_enforce", "report_gate_enforce"}
 _TERMINATION_MODES = {"advisory", "enforce"}   # 종료 검산 모드(기본 advisory)
 _REPORT_GATE_MODES = {"off", "advisory", "enforce"}   # 06←05 audit 게이트 모드(기본 advisory)
+_ACCEPTANCE_KEYS = {"enabled", "require_for_risk", "statuses", "unresolved_statuses", "report_gate_enforce"}
+_ACCEPTANCE_TIERS = {"L1", "L2", "L3"}
+_CANONICAL_ACCEPTANCE_STATUSES = {"PASS", "FAIL", "NOT TESTED", "N/A"}
 
 
 def _review_loop_issues(profile):
@@ -272,7 +275,7 @@ def _semantic_issues(profile, root):
 
     # 섹션 타입 가드(codex 재리뷰) — risk/pdca/options/knowledge_capture 가 truthy 비-dict 면 이후
     #   .get() 크래시(retro 등 런타임 읽기 포함). jsonschema 없어도 제어된 FAIL 을 단일 출처로 발행.
-    for section in ("risk", "pdca", "options", "knowledge_capture"):
+    for section in ("risk", "pdca", "options", "knowledge_capture", "verification"):
         v = profile.get(section)
         if v is not None and not isinstance(v, dict):
             issues.append(("FAIL", f"{section} 섹션은 매핑(object)이어야 함(받음: {type(v).__name__})"))
@@ -314,6 +317,86 @@ def _semantic_issues(profile, root):
     # 3. 위험 분류 글롭이 전부 비면 게이트가 사실상 무동작(의도일 수 있어 INFO).
     if not any(risk.get(k) for k in ("l1_path_globs", "l2_path_globs", "l3_filename_globs")):
         issues.append(("INFO", "risk 의 l1/l2/l3 글롭이 모두 비어 있음 — 위험 게이트 사실상 무동작(의도면 무시)"))
+    return issues
+
+
+def _acceptance_issues(profile):
+    """verification.acceptance 의미검증.
+
+    acceptance 는 '빌드/테스트 통과 != 사용자 요구사항 충족' 갭을 닫는 게이트다. 오타/타입 오류가
+    있으면 04/05/06 수용증거 확인이 침묵 비활성될 수 있으므로 review_loop 처럼 fail-closed 로 본다.
+    """
+    verification = profile.get("verification")
+    if verification is not None and not isinstance(verification, dict):
+        return []   # _semantic_issues 의 섹션 타입 가드가 단일 FAIL 출처
+    ac = (verification or {}).get("acceptance")
+    if ac is None:
+        return []
+    if not isinstance(ac, dict):
+        return [("FAIL", "verification.acceptance 는 매핑(object)이어야 함")]
+
+    issues = []
+    unknown = sorted(set(ac.keys()) - _ACCEPTANCE_KEYS, key=str)
+    if unknown:
+        issues.append(("FAIL", f"verification.acceptance 에 미지 키(오타 추정) {unknown} → acceptance gate 침묵 무시 위험. "
+                               f"허용 키: {sorted(_ACCEPTANCE_KEYS)}"))
+
+    enabled_raw = ac.get("enabled")
+    if enabled_raw is not None and not isinstance(enabled_raw, bool):
+        issues.append(("FAIL", f"verification.acceptance.enabled={enabled_raw!r} 는 bool(true/false)이어야 함"))
+    enabled = enabled_raw is True
+
+    tiers = ac.get("require_for_risk")
+    if tiers is not None:
+        if not isinstance(tiers, list):
+            issues.append(("FAIL", "verification.acceptance.require_for_risk 는 리스트여야 함"))
+        else:
+            bad = sorted({x for x in tiers if x not in _ACCEPTANCE_TIERS}, key=str)
+            if bad:
+                issues.append(("FAIL", f"verification.acceptance.require_for_risk 에 미지 risk {bad}. "
+                                       f"허용: {sorted(_ACCEPTANCE_TIERS)}"))
+            if enabled and not tiers:
+                issues.append(("WARN", "verification.acceptance.enabled=true 이나 require_for_risk 가 비어 있음 "
+                                       "→ 어떤 위험도에서도 acceptance evidence 기대가 불명확"))
+
+    statuses = ac.get("statuses")
+    if statuses is None:
+        statuses = []
+    elif not isinstance(statuses, list) or not all(isinstance(x, str) and x.strip() for x in statuses):
+        issues.append(("FAIL", "verification.acceptance.statuses 는 비어있지 않은 문자열 리스트여야 함"))
+        statuses = []
+    normalized_statuses = {s.upper() for s in statuses}
+    if enabled and not statuses:
+        issues.append(("FAIL", "verification.acceptance.enabled=true 인데 statuses 가 비어 있음"))
+    missing_canonical = sorted(_CANONICAL_ACCEPTANCE_STATUSES - normalized_statuses)
+    if enabled and missing_canonical:
+        issues.append(("FAIL", f"verification.acceptance.statuses 에 표준 상태 {missing_canonical} 누락. "
+                               "PASS/FAIL/NOT TESTED/N/A 를 명시해야 04/05 해석이 갈리지 않음"))
+
+    unresolved = ac.get("unresolved_statuses")
+    if unresolved is None:
+        unresolved = []
+    elif not isinstance(unresolved, list) or not all(isinstance(x, str) and x.strip() for x in unresolved):
+        issues.append(("FAIL", "verification.acceptance.unresolved_statuses 는 비어있지 않은 문자열 리스트여야 함"))
+        unresolved = []
+    normalized_unresolved = {s.upper() for s in unresolved}
+    unknown_unresolved = sorted(normalized_unresolved - normalized_statuses)
+    if unknown_unresolved and normalized_statuses:
+        issues.append(("FAIL", f"verification.acceptance.unresolved_statuses {unknown_unresolved} 가 statuses 에 없음"))
+    if enabled and not {"FAIL", "NOT TESTED"}.issubset(normalized_unresolved):
+        issues.append(("FAIL", "verification.acceptance.unresolved_statuses 는 FAIL 과 NOT TESTED 를 포함해야 함 "
+                               "— 미구현/미검증 요구사항이 APPROVED 로 통과하는 것 방지"))
+
+    mode = ac.get("report_gate_enforce")
+    if mode is not None and (not isinstance(mode, str) or mode not in _REPORT_GATE_MODES):
+        issues.append(("FAIL", f"verification.acceptance.report_gate_enforce={mode!r} → {sorted(_REPORT_GATE_MODES)} 중 하나만"))
+    elif enabled and (mode or "off") == "off":
+        issues.append(("WARN", "verification.acceptance.enabled=true 이나 report_gate_enforce=off "
+                               "→ 06 report gate 에서 acceptance evidence 를 확인하지 않음"))
+    elif mode == "enforce":
+        issues.append(("WARN", "verification.acceptance.report_gate_enforce=enforce — 기존 프로젝트는 04 acceptance table "
+                               "없으면 06 오차단 가능. advisory 로 측정 후 전환 권장"))
+
     return issues
 
 
@@ -361,7 +444,7 @@ def validate_profile(profile, root):
     issues = _schema_issues(profile, root)
     try:
         issues = issues + _semantic_issues(profile, root) + _review_loop_issues(profile) \
-            + _knowledge_capture_issues(profile)
+            + _acceptance_issues(profile) + _knowledge_capture_issues(profile)
     except Exception as e:
         issues.append(("FAIL", f"profile 의미검증 중 예외 — malformed profile 추정({type(e).__name__}). "
                                f"구조(중첩 값 타입) 점검 필요"))

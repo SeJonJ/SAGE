@@ -13,11 +13,11 @@ component names) come from the profile, never from this file.
 | Phase | Name | Key Tasks | Deliverable |
 |:---:|:---|:---|:---|
 | 00 | Base Plan | Strategy, impact analysis, prior knowledge, technical risk | `plan_docs/00-base_plan/.../[feature]_plan.md` |
-| 01 | Plan | Requirements, data model, API specifications | `plan_docs/01-plan/[feature].md` |
+| 01 | Plan | Requirements, data model, API specifications, acceptance matrix | `plan_docs/01-plan/[feature].md` |
 | 02 | Design | Class/interface design, sequence diagrams, error codes | `plan_docs/02-design/[feature].md` |
-| 03 | Implementation | Implementation, unit testing, checklist updates | `plan_docs/03-implementation/[feature].md` |
-| 04 | Analyze | Design vs implementation gap analysis by **leader** + **qa** (coverage). No single verdict here. | `plan_docs/04-analyze/[feature].md` |
-| 05 | Expert Review | Independent synthesis by **reviewer** (+ cross-model reviewer when enabled). Final APPROVED/FAIL/BLOCKED issued here. | `plan_docs/05-expert-review/[feature].md` |
+| 03 | Implementation | Pre-code ownership/checklist skeleton, implementation, unit testing, verification evidence | `plan_docs/03-implementation/[feature].md` |
+| 04 | Analyze | Design vs implementation gap analysis by **leader** + **qa** (coverage + acceptance evidence). No single verdict here. | `plan_docs/04-analyze/[feature].md` |
+| 05 | Expert Review | Independent synthesis by **reviewer** (+ cross-model reviewer when enabled). Acceptance unresolved items block APPROVED. Final APPROVED/FAIL/BLOCKED issued here. | `plan_docs/05-expert-review/[feature].md` |
 | 06 | Report | Final completion report by **leader**. **Written only after Phase 05 = APPROVED.** If 05 = FAIL/BLOCKED → rework → re-review → APPROVED → then 06. | `plan_docs/06-report/[feature].md` |
 
 Roles (`leader` / `reviewer` / `qa`) are the neutral CORE roster — map to your
@@ -45,7 +45,7 @@ team in `profile.team`.
 | Length | 1–2 page context | Proportional to feature scope |
 
 ### Other boundaries
-- **02 Design vs 03 Implementation**: 02 = architecture / sequence / error codes / interface design; 03 = file ownership / implementation checklist / build & test results.
+- **02 Design vs 03 Implementation**: 02 = architecture / sequence / error codes / interface design; 03 = file ownership / implementation checklist / acceptance trace / build & test results. 03 is opened before source edits with ownership and checklist, then completed after code with evidence.
 - **04 Analyze vs 05 Expert Review**: 04 = leader (responsible) + qa (coverage) — gap (match rate) + missing items + coverage. **No standalone verdict.** 05 = reviewer (+ cross-model when enabled) — independent synthesis + cross-check; final verdict (APPROVED/FAIL/BLOCKED) issued here. Cross-model review is recorded in **05, not 04**.
 
 ### Signals of incorrect separation
@@ -69,9 +69,10 @@ A project may run **two parallel plan_docs trees** (configured via
 2. Root `01-plan/` — feature requirements + data schema + API (cross-component contract)
 3. Root `02-design/` — architecture + sequence + error codes
 4. Component `{component}/plan_docs/` — code-level design (free format)
-5. Root `03-implementation/` — file ownership, checklist, build/test results
-6. Implementation
-7. Root `04-analyze/`, `05-expert-review/`, `06-report/` — gap + review + report
+5. Root `03-implementation/` — pre-code ownership/checklist skeleton + acceptance trace
+6. Implementation + tests
+7. Update root `03-implementation/` — files changed, checklist results, build/test evidence
+8. Root `04-analyze/`, `05-expert-review/`, `06-report/` — gap + acceptance evidence + review + report
 
 ### Conventions
 - Root tree is the **single source of truth for the cross-component contract** (DTO fields, event names, error codes).
@@ -102,11 +103,12 @@ is on and reachable — `docs/agent/review-protocol.md`).
 2. Review from an independent perspective: design intent vs implementation, stack fitness, lifecycle/edge-case/security/test/UX risk.
 3. **High-risk architecture gate**: before a review-rework loop, check whether findings change a high-risk domain declared in `profile.risk` (L3). If a new architecture change is detected, stop automatic rework and get user approval. Local fixes inside the approved design are not blocked.
 4. **Cross-model invocation** (when enabled): invoke the peer runtime per `profile.cross_model.invocation` with all phase documents + implementation files. Request context-based external review (not a plain diff review) and a final recommendation: APPROVED / FAIL / BLOCKED.
-5. **Review-rework loop**: L3 = mandatory iterations (default 3) in Phase 05; L2 = recommended (ask first); L1/L0 = none. One iteration = review → faithful findings record → triage → accepted rework → update 03/04.
-6. **Stop rule**: if after the final L3 iteration the status is not APPROVED, record `Final Status: BLOCKED`, do not write 06, and report to the user.
-7. **Fallback**: retry the peer path or a fresh session; if context is too large, retry with 04 Review Context + 01/02/03 + core files; if a mandatory L3 review cannot complete, record BLOCKED in 05 and do not write 06.
-8. Identify the reviewer: `Reviewer: [tool] via [host]`. Record the opinion under `## External / Cross-model Review` in the **Phase 05** document — **faithful, no summarization**.
-9. Cross-model agreement is a recommendation, not a decision — final verdict is reviewer + user.
+5. **Acceptance gate**: read the Phase 01 acceptance matrix and Phase 04 evidence table. Required items with `FAIL` or `NOT TESTED` block `APPROVED`; use `N/A` only with an explicit out-of-scope/deferred reason.
+6. **Review-rework loop**: L3 = mandatory iterations (default 3) in Phase 05; L2 = recommended (ask first); L1/L0 = none. One iteration = review → faithful findings record → triage → accepted rework → update 03/04.
+7. **Stop rule**: if after the final L3 iteration the status is not APPROVED, record `Final Status: BLOCKED`, do not write 06, and report to the user.
+8. **Fallback**: retry the peer path or a fresh session; if context is too large, retry with 04 Review Context + 01/02/03 + core files; if a mandatory L3 review cannot complete, record BLOCKED in 05 and do not write 06.
+9. Identify the reviewer: `Reviewer: [tool] via [host]`. Record the opinion under `## External / Cross-model Review` in the **Phase 05** document — **faithful, no summarization**.
+10. Cross-model agreement is a recommendation, not a decision — final verdict is reviewer + user.
 
 ---
 
@@ -144,6 +146,11 @@ is on and reachable — `docs/agent/review-protocol.md`).
 ## 2. Data Schema (Entities, DTOs)
 
 ## 3. API / Interface Specifications
+
+## 4. Acceptance Matrix
+| ID | User Requirement | Required Evidence | Owner | Required? |
+|---|---|---|---|---|
+| A1 | | test / manual smoke / screenshot / log / N/A reason | | yes |
 ```
 
 ---
@@ -167,6 +174,11 @@ is on and reachable — `docs/agent/review-protocol.md`).
 ```markdown
 # [Implementation] {Feature Name}
 
+## 0. Pre-Implementation Checklist
+- [ ] File ownership assigned before source edits
+- [ ] Acceptance IDs from Phase 01 mapped to implementation tasks
+- [ ] Verification command plan recorded
+
 ## 1. File Ownership (Modified Files)
 
 ## 2. Implementation Checklists
@@ -174,7 +186,11 @@ is on and reachable — `docs/agent/review-protocol.md`).
 - [ ] Test scenarios and validation method
 - [ ] Code conventions
 
-## 3. Build & Test Results
+## 3. Acceptance Implementation Trace
+| Acceptance ID | Implementation Task | Test / Manual Evidence Planned | Status |
+|---|---|---|---|
+
+## 4. Build & Test Results
 ```
 
 ---
@@ -196,7 +212,11 @@ is on and reachable — `docs/agent/review-protocol.md`).
 - covered / not covered / intentionally excluded cases
 - sufficiency vs design requirements; recommended additional scenarios
 
-## 4. Review Context for External Model
+## 4. Acceptance Evidence Review
+| Acceptance ID | User Requirement | Status (PASS/FAIL/NOT TESTED/N/A) | Evidence | Notes |
+|---|---|---|---|---|
+
+## 5. Review Context for External Model
 ### Original User Intent
 ### Key Decisions During Implementation
 ### Scope Changes / Deferred Items
@@ -231,6 +251,13 @@ is on and reachable — `docs/agent/review-protocol.md`).
 
 ### Reviewer Interpretation
 - accepted / disputed (already-intended decisions) / deferred
+
+### Acceptance Gate
+| Acceptance ID | 04 Status | Reviewer Finding | Decision |
+|---|---|---|---|
+
+Required acceptance items with `FAIL` or `NOT TESTED` block `APPROVED`. Use `N/A`
+only when the item was explicitly out of scope, deferred, or user-approved.
 
 ### Needs User Approval
 | Item | Reason | Owner | Status |

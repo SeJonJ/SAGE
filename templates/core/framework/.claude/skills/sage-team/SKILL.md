@@ -43,9 +43,10 @@ used). Match every phase doc and audit run to that one stem — ignore stale doc
 other cycles. Then find the first incomplete stage using **evidence anchors**, not bare
 file existence:
 
-- **03 complete** = implementation files exist for the owned components AND
-  `verify-changes` evidence (build/test results) is recorded in the 03 doc.
-- **04 complete** = gap + qa coverage context recorded in the 04 doc.
+- **03 complete** = pre-code ownership/checklist exists, implementation files exist for
+  the owned components, acceptance trace is recorded, AND `verify-changes` evidence
+  (build/test results) is recorded in the 03 doc.
+- **04 complete** = gap + qa coverage + acceptance evidence context recorded in the 04 doc.
 - **05 state machine** (resolve from the 05 doc + `sage review-loop` audit for this cycle):
   - `05_started` — 05 doc records a `run_id` and `.sage/loop_audit.jsonl` has that run
     **open (not closed)** → resume by re-entering the review loop (do not restart it).
@@ -61,9 +62,11 @@ anchor is treated as incomplete (conservative).
 
 ## Step 1 — Implementation (Phase 03)
 
-Dispatch implementers by ownership from `profile.components` / `team.core`. Each
-implementer edits ONLY its component's paths (file-ownership boundary; the integration
-point is stated in the plan doc).
+Before source edits, open/update the 03 doc with file ownership, implementation
+checklist, verification plan, and Phase-01 acceptance IDs. Then dispatch implementers by
+ownership from `profile.components` / `team.core`. Each implementer edits ONLY its
+component's paths (file-ownership boundary; the integration point is stated in the plan
+doc).
 
 - **Claude host**: spawn implementers as **parallel subagents** (one per component).
 - **Codex host**: **sequential** delegation (no parallel-subagent model) — same ownership
@@ -71,7 +74,8 @@ point is stated in the plan doc).
   procedure, artifacts, and boundaries are identical. State "sequentialized execution,
   semantics preserved."
 
-Each implementer records its files, checklist, and **unit tests** into the 03 doc.
+Each implementer records its files, checklist, acceptance trace, and **unit tests** into
+the 03 doc.
 
 ## Step 2 — Deterministic verification
 
@@ -87,8 +91,9 @@ If the gate is red, STOP — do not advance to review on a failing build/test/li
 ## Step 3 — QA (Phase 04)
 
 Invoke the `qa` agent: assess design↔implementation gap + **test coverage** (covered /
-not covered / intentionally excluded; recommended additional scenarios). Record in the
-04 doc. **No verdict here** — that belongs to Phase 05.
+not covered / intentionally excluded; recommended additional scenarios) + acceptance
+evidence (`PASS`/`FAIL`/`NOT TESTED`/`N/A`). Record in the 04 doc. **No verdict here** —
+that belongs to Phase 05.
 
 ## Step 4 — Review (Phase 05) — via /sage-review (mandatory)
 
@@ -102,8 +107,9 @@ adversarial find→refute→triage→rework loop, recording every round to
   same lenses, same artifacts, same audit; mark "sequentialized execution, semantics
   preserved." Sequentialization must not change ownership, review independence, or the
   recorded outcome.
-- The verdict maps to the 05 doc's Final Status (`APPROVED | FAIL | BLOCKED`). On BLOCKED,
-  STOP — no completion until cleared.
+- The verdict maps to the 05 doc's Final Status (`APPROVED | FAIL | BLOCKED`). Required
+  acceptance items marked `FAIL` or `NOT TESTED` block APPROVED. On BLOCKED, STOP — no
+  completion until cleared.
 - Ensure the 05 doc carries a `Loop-Run: <run_id>` line (sage-review writes it). The 06←05
   audit gate (`pdca.review_loop.report_gate_enforce`) binds the report to that closed
   APPROVED run; without it, Step 5 is blocked (enforce) or warned (advisory).
@@ -111,8 +117,9 @@ adversarial find→refute→triage→rework loop, recording every round to
 ## Step 5 — Completion (Phase 06)
 
 Only when the cycle is `05_approved` (see resume state machine), the `leader` writes the
-06 completion report. The existing 06←05 gate enforces this deterministically — never
-bypass it.
+06 completion report. The existing 06←05 gate enforces this deterministically, and
+`verification.acceptance.report_gate_enforce` can warn/block if 04 acceptance evidence is
+missing or unresolved — never bypass it.
 
 ## Done
 

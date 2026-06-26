@@ -26,14 +26,17 @@ a structured review report for the current implementation cycle.
    - `review_loop.enabled` false/absent, or risk L0/L1 → single-pass reviewer invocation.
    - `review_loop.enabled: true` + risk L2/L3 → adversarial review-rework loop (Loop A).
 4. Single-pass: invoke the `reviewer` agent in the resolved mode with plan doc path(s),
-   implementer summary (changed files, unit tests), qa findings. Report findings verbatim.
+   implementer summary (changed files, unit tests), qa findings, and the Phase 01/04
+   acceptance matrix/evidence. Report findings verbatim.
 5. Loop A (find→refute→triage→rework→terminate): drive rounds per review-protocol.md;
    record each boundary with `sage review-loop` (open/round/close). Counters, budget, and
    termination are SAGE-owned (deterministic); judgement (find/refute/rework) runs in-host.
    architecture_change at L3 → BLOCKED_ARCH (human escalation), never auto-reworked.
-6. BLOCK / BLOCKED on an L3 change → record in the plan doc and stop (no release until cleared).
+6. Required acceptance items marked `FAIL` or `NOT TESTED` in Phase 04 block `APPROVED`.
+   Use `N/A` only with explicit out-of-scope/deferred/user-approved reasoning.
+7. BLOCK / BLOCKED on an L3 change → record in the plan doc and stop (no release until cleared).
    The report←approve hook (06←05 APPROVED) is the deterministic backstop — never bypass it.
-7. Record the outcome under `## Phase-05 Review` (Loop A: include Review Loop Iterations
+8. Record the outcome under `## Phase-05 Review` (Loop A: include Review Loop Iterations
    table + audit run_id). Write a `Loop-Run: <run_id>` line in the Phase-05 doc so the
    06←05 audit gate (report_gate_enforce) can bind the report to this closed APPROVED run.
 

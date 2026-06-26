@@ -23,3 +23,17 @@ resolved by `sage doctor` from `profile.options.cross_model`:
 How an L3 change is matched to its review document is a project decision
 (`profile.risk.l3_review_strategy`). Until selected, `pre-implementation-gate`
 blocks L3 changes (safe default).
+
+## Acceptance evidence
+
+Deterministic commands prove that configured checks ran; they do not prove every
+explicit user requirement was satisfied. When `profile.verification.acceptance`
+is enabled:
+
+- Phase 01 must define an acceptance matrix for explicit user requirements.
+- Phase 03 maps implementation and tests to those acceptance IDs.
+- Phase 04 records `PASS`, `FAIL`, `NOT TESTED`, or `N/A` for each item with
+  concrete evidence.
+- Phase 05 treats required `FAIL` or `NOT TESTED` items as blocking.
+- Phase 06 may warn or block, depending on `report_gate_enforce`, if Phase 04
+  evidence is missing or unresolved.

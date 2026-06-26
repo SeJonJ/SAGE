@@ -34,10 +34,12 @@ author plan docs, and distribute file ownership before any L2/L3 code is written
 6. Report the ownership map to the user and confirm they are ready to proceed
    to implementation.
 7. State the phase flow so the user does not misorder 03/04: 00–02 now (leader);
-   03 = implementation **plus unit tests**, recorded after the code (evidence, not
-   a pre-plan); 04 = leader + qa judge the design↔implementation gap and test
-   coverage (no verdict); 05 = independent reviewer verdict via `/sage-review`;
-   06 = report only after 05 records APPROVED.
+   03 is opened before source edits with file ownership, implementation checklist,
+   and Phase-01 acceptance IDs, then completed after code with implementation,
+   unit-test, and verification evidence; 04 = leader + qa judge the
+   design↔implementation gap, test coverage, and acceptance evidence (no verdict);
+   05 = independent reviewer verdict via `/sage-review`; 06 = report only after
+   05 records APPROVED.
 
 ## advisory_scope
 - role_boundary: does not implement code; invokes leader only
