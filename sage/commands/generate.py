@@ -14,6 +14,7 @@ from pathlib import Path
 
 from sage.asset_paths import AssetPaths, docs_dir
 from sage.commands._common import contract_version_of
+from sage.hook_runtime_hash import calculate_hook_runtime_hash
 
 
 def register(sub):
@@ -221,6 +222,13 @@ def _gen_hook(args, root):
                     print("[sage generate] FAIL: profile 검증 실패 → 게이트 침묵 비활성 위험. "
                           "위 항목 수정 후 재실행.", file=sys.stderr)
                     return 1
+        # hook 공용 런타임이 없으면 registration/settings 를 먼저 쓰고 manifest 에서 실패하는
+        # 부분 산출물이 생긴다. 산출 전 preflight 로 닫는다.
+        runtime_hash, missing_runtime = calculate_hook_runtime_hash(root)
+        if missing_runtime:
+            print("[sage generate] FAIL: hook_runtime_hash 스탬프 불가 — runtime 파일 누락: " +
+                  ", ".join(os.path.relpath(p, root) for p in missing_runtime), file=sys.stderr)
+            return 1
 
     targets = ["claude", "codex"] if args.target == "both" else [args.target]
     rc = 0
@@ -256,15 +264,23 @@ def _gen_hook(args, root):
 
     # manifest 스탬프 (--write) — profile 컴파일은 위에서 fail-closed 처리됨. --id 면 그 hook 만 재스탬프.
     if args.write and rc == 0:
-        _stamp_manifest(root, stamp_ids)
+        if not _stamp_manifest(root, stamp_ids, runtime_hash=runtime_hash):
+            return 1
     return rc
 
 
-def _stamp_manifest(root, hook_ids):
+def _stamp_manifest(root, hook_ids, runtime_hash=None):
     import hashlib
     def sha(p):
         return "sha256:" + hashlib.sha256(Path(p).read_bytes()).hexdigest()
     m = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
+    if runtime_hash is None:
+        runtime_hash, missing_runtime = calculate_hook_runtime_hash(root)
+        if missing_runtime:
+            print("[sage generate] FAIL: hook_runtime_hash 스탬프 불가 — runtime 파일 누락: " +
+                  ", ".join(os.path.relpath(p, root) for p in missing_runtime), file=sys.stderr)
+            return False
+    m["hook_runtime_hash"] = runtime_hash
     for hid in hook_ids:
         e = m["assets"].get(f"hooks/{hid}")
         if not e:
@@ -289,8 +305,9 @@ def _stamp_manifest(root, hook_ids):
             if ah:
                 e["adapter_hash"] = ah; e["render_hash"] = ah
     Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).write_text(
-        json.dumps(m, ensure_ascii=False, indent=2))
+        json.dumps(m, ensure_ascii=False, indent=2) + "\n")
     print("✅ manifest 스탬프 갱신")
+    return True
 
 
 def _load_profile_dict(root, dest):

@@ -109,5 +109,10 @@
       "risk": [],
       "unresolved": []
     }
+  },
+  "hook_runtime_hash": {
+    "shared": "sha256:2a358f1c41637eef0c2e5f3d2d769e409ae15fed52dc1d839f265482e8caead6",
+    "claude": "sha256:768da72fbd608768bb1819a8c6129f1e6944ded8c214a208be5fc6e993f30c02",
+    "codex": "sha256:7c54fb557f3aec0608977a11cc1af5cb4cfc8b67542f57b025e1b1fb39e0bfb1"
   }
 }

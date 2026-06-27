@@ -18,6 +18,7 @@ from pathlib import Path
 
 from sage.asset_paths import AssetPaths
 from sage.commands._common import contract_version_of, not_implemented
+from sage.hook_runtime_hash import calculate_hook_runtime_hash
 
 # severity rank (exit code 매핑은 _exit_code)
 _SEV_RANK = {"PASS": 0, "WARN": 1, "STALE": 2, "FAIL": 3}
@@ -182,6 +183,33 @@ def _validate_hook(root, asset_id, entry, run_regression):
                 r = subprocess.run(runner, cwd=root, capture_output=True, text=True)
                 if r.returncode != 0:
                     bump("FAIL"); msgs.append(f"  FAIL regression 실패: {test}")
+    return sev, msgs
+
+
+def _validate_hook_runtime_hash(root, manifest):
+    """Top-level hook runtime drift check.
+
+    run_hook.py/hook_runtime.py/io_claude.py/io_codex.py are shared by all hooks, so their hashes
+    live once at manifest root instead of being duplicated in every hook entry.
+    """
+    msgs = []
+    stamped = manifest.get("hook_runtime_hash")
+    if not stamped:
+        return "STALE", ["  STALE hook_runtime_hash 미스탬프 — sage generate --kind hook --write 필요"]
+    if not isinstance(stamped, dict):
+        return "FAIL", ["  FAIL hook_runtime_hash 구조 오류 — object 여야 함"]
+    current, missing = calculate_hook_runtime_hash(root)
+    if missing:
+        return "FAIL", [f"  FAIL missing hook runtime: {os.path.relpath(p, root)}" for p in missing]
+    sev = "PASS"
+    for key in ("shared", "claude", "codex"):
+        have = stamped.get(key)
+        if not have:
+            sev = "STALE"
+            msgs.append(f"  STALE hook_runtime_hash[{key}] 미스탬프")
+        elif have != current[key]:
+            sev = "STALE"
+            msgs.append(f"  STALE hook_runtime_hash[{key}] 불일치")
     return sev, msgs
 
 
@@ -456,6 +484,15 @@ def run(args):
         print(bw)
         overall = "WARN"
     print(f"== sage validate ({args.kind}{', --check' if args.check else ''}) — {len(target_ids)} assets ==")
+    if args.kind in ("hook", "all"):
+        rsev, rmsgs = _validate_hook_runtime_hash(root, manifest)
+        if _SEV_RANK[rsev] > _SEV_RANK[overall]:
+            overall = rsev
+        mark = {"PASS": "✅", "WARN": "⚠️ ", "STALE": "🔶", "FAIL": "❌"}[rsev]
+        print(f"{mark} {rsev:5} hook_runtime_hash")
+        for m in rmsgs:
+            print(m)
+
     for aid in sorted(target_ids):
         if aid.startswith("hooks/"):
             sev, msgs = _validate_hook(root, aid, assets[aid], run_regression=not args.check)

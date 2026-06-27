@@ -14,6 +14,22 @@ _HOOKS_REL = os.path.join("scripts", "sage_harness", "hooks")
 _DOCS_REL = os.path.join("docs", "sage_harness")
 
 
+def hook_runtime_files(root: str) -> dict[str, list[str]]:
+    """hook 공용 런타임 파일 그룹.
+
+    manifest 에 per-hook 으로 중복 스탬프하지 않고 top-level hook_runtime_hash 로 한 번만 추적한다.
+    """
+    runtime = os.path.join(root, _HOOKS_REL, "runtime")
+    return {
+        "shared": [
+            os.path.join(runtime, "run_hook.py"),
+            os.path.join(runtime, "hook_runtime.py"),
+        ],
+        "claude": [os.path.join(runtime, "io_claude.py")],
+        "codex": [os.path.join(runtime, "io_codex.py")],
+    }
+
+
 def docs_dir(root: str, kind: str) -> str:
     """kind 별 spec 디렉토리 (docs/sage_harness/{kind}s). spec 파일 없이 디렉토리만 필요할 때
     (존재 확인·목록화) 손조립을 피하기 위한 단일소스(N-R2: 경로 규약을 1파일로)."""

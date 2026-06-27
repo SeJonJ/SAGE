@@ -5,6 +5,7 @@ self-contained: 임시 SAGE 루트(hook spec frontmatter + adapter stub + manife
 """
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -46,8 +47,11 @@ def make_root(d, with_adapter=True):
     os.makedirs(os.path.join(d, "docs", "sage_harness", "hooks"), exist_ok=True)
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", "claude"), exist_ok=True)
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", "codex"), exist_ok=True)
+    os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime"), exist_ok=True)
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "aaa-hook.md")).write_text(SPEC_A)
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "bbb-hook.md")).write_text(SPEC_B)
+    for fn in ("run_hook.py", "hook_runtime.py", "io_claude.py", "io_codex.py"):
+        Path(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
     Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).write_text(json.dumps({
         "sage_version": "0.1.0", "host_runtime": "claude", "assets": {
             "hooks/aaa-hook": {"form": "core_adapter", "spec_hash": "x", "render_hash": {"claude": "x"}, "conformance": "PASS"},
@@ -321,6 +325,8 @@ class TestGenerate(unittest.TestCase):
             m = json.loads(Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).read_text())
             self.assertTrue(m["assets"]["hooks/aaa-hook"]["spec_hash"].startswith("sha256:"))
             self.assertEqual(m["assets"]["hooks/bbb-hook"]["spec_hash"], "x")
+            self.assertEqual(set(m["hook_runtime_hash"]), {"shared", "claude", "codex"})
+            self.assertTrue(m["hook_runtime_hash"]["shared"].startswith("sha256:"))
 
     def test_root_defaults_to_dest(self):
         # Codex P1: --root 없이 --dest 만 → dest 의 manifest 를 stamp (cwd 의 다른 manifest 아님)
@@ -331,6 +337,19 @@ class TestGenerate(unittest.TestCase):
             m = json.loads(Path(os.path.join(dest, "docs", "sage_harness", ".manifest.json")).read_text())
             # make_root 가 둔 "x" 가 실제 sha 로 스탬프됨 → dest manifest 가 갱신됐다는 증거
             self.assertTrue(m["assets"]["hooks/aaa-hook"]["spec_hash"].startswith("sha256:"))
+            self.assertIn("hook_runtime_hash", m)
+
+    def test_missing_runtime_files_fail_closed(self):
+        # runtime/run_hook.py 등 공용 실행층이 없으면 registration 만 생성하고 manifest 미스탬프로
+        # 남기면 안 된다. generate 는 비정상 종료를 반환해 CI/호출자가 즉시 알 수 있어야 한다.
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as dest:
+            make_root(d)
+            shutil.rmtree(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime"))
+            rc = gen.run(Args(target="claude", dest=dest, root=d, write=True))
+            self.assertEqual(rc, 1)
+            self.assertFalse(os.path.exists(os.path.join(dest, ".claude", "settings.json")))
+            m = json.loads(Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).read_text())
+            self.assertNotIn("hook_runtime_hash", m)
 
     def test_profile_compile_failclosed(self):
         # 손상 profile(잘못된 YAML)은 부트스트랩 게이트가 먼저 차단(rc 2) → profile.json 미생성.

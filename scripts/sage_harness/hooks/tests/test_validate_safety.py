@@ -8,7 +8,8 @@ from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
-from sage.commands.validate import _safe_test_path, _schema_check, _validate_interpretive  # noqa: E402
+from sage.commands.validate import _safe_test_path, _schema_check, _validate_hook_runtime_hash, _validate_interpretive  # noqa: E402
+from sage.hook_runtime_hash import calculate_hook_runtime_hash  # noqa: E402
 
 ROOT = REPO  # sage_project (실제 구조 사용)
 
@@ -66,6 +67,58 @@ class TestSchemaCheck(unittest.TestCase):
             m = {"sage_version": "0.1.0", "host_runtime": "claude",
                  "assets": {"hooks/x": {"conformance": "BOGUS", "form": "native"}}}  # enum 위반
             self.assertEqual(_schema_check(d, m)[0], "FAIL")
+
+    @unittest.skipUnless(_HAS_JSONSCHEMA, "jsonschema 필요")
+    def test_manifest_accepts_hook_runtime_hash(self):
+        with tempfile.TemporaryDirectory() as d:
+            sha = "sha256:" + ("a" * 64)
+            m = {"sage_version": "0.1.0", "host_runtime": "claude",
+                 "hook_runtime_hash": {"shared": sha, "claude": sha, "codex": sha},
+                 "assets": {"hooks/x": {"conformance": "PASS", "form": "native"}}}
+            self.assertEqual(_schema_check(d, m)[0], "PASS")
+
+
+def _runtime_root(d):
+    runtime = os.path.join(d, "scripts", "sage_harness", "hooks", "runtime")
+    os.makedirs(runtime, exist_ok=True)
+    for fn in ("run_hook.py", "hook_runtime.py", "io_claude.py", "io_codex.py"):
+        Path(os.path.join(runtime, fn)).write_text(f"# {fn}\n", encoding="utf-8")
+
+
+class TestHookRuntimeHash(unittest.TestCase):
+    def test_missing_stamp_is_stale(self):
+        with tempfile.TemporaryDirectory() as d:
+            _runtime_root(d)
+            sev, msgs = _validate_hook_runtime_hash(d, {"assets": {}})
+            self.assertEqual(sev, "STALE")
+            self.assertTrue(any("미스탬프" in m for m in msgs))
+
+    def test_runtime_file_drift_is_stale(self):
+        with tempfile.TemporaryDirectory() as d:
+            _runtime_root(d)
+            hashes, missing = calculate_hook_runtime_hash(d)
+            self.assertEqual(missing, [])
+            Path(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", "io_codex.py")).write_text(
+                "# changed\n", encoding="utf-8")
+            sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
+            self.assertEqual(sev, "STALE")
+            self.assertTrue(any("codex" in m for m in msgs))
+
+    def test_runtime_missing_file_is_fail(self):
+        with tempfile.TemporaryDirectory() as d:
+            _runtime_root(d)
+            hashes, _missing = calculate_hook_runtime_hash(d)
+            os.remove(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", "run_hook.py"))
+            sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
+            self.assertEqual(sev, "FAIL")
+            self.assertTrue(any("run_hook.py" in m for m in msgs))
+
+    def test_non_dict_stamp_is_stale(self):
+        with tempfile.TemporaryDirectory() as d:
+            _runtime_root(d)
+            sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": "bad", "assets": {}})
+            self.assertEqual(sev, "FAIL")
+            self.assertTrue(any("구조 오류" in m for m in msgs))
 
 
 class TestDescriptiveUnresolved(unittest.TestCase):

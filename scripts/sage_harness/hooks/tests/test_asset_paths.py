@@ -11,7 +11,7 @@ import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
-from sage.asset_paths import AssetPaths  # noqa: E402
+from sage.asset_paths import AssetPaths, hook_runtime_files  # noqa: E402
 
 ROOT = "/tmp/sage-fake-root"
 
@@ -75,6 +75,18 @@ class TestAssetPathsKinds(unittest.TestCase):
         ap = AssetPaths(ROOT, "hook", "h")
         with self.assertRaises(Exception):
             ap.id = "x"  # frozen dataclass
+
+    def test_hook_runtime_files_grouped(self):
+        groups = hook_runtime_files(ROOT)
+        self.assertEqual(
+            [os.path.relpath(p, ROOT) for p in groups["shared"]],
+            [
+                os.path.join("scripts", "sage_harness", "hooks", "runtime", "run_hook.py"),
+                os.path.join("scripts", "sage_harness", "hooks", "runtime", "hook_runtime.py"),
+            ],
+        )
+        self.assertEqual(os.path.basename(groups["claude"][0]), "io_claude.py")
+        self.assertEqual(os.path.basename(groups["codex"][0]), "io_codex.py")
 
 
 if __name__ == "__main__":

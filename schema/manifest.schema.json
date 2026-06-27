@@ -10,6 +10,17 @@
     "generator_version": { "type": "string" },
     "template_version": { "type": "string" },
     "host_runtime": { "enum": ["claude", "codex"] },
+    "hook_runtime_hash": {
+      "type": "object",
+      "description": "hook 공용 런타임(run_hook.py/hook_runtime.py/io_*.py) top-level drift 추적. per-hook 중복 금지.",
+      "properties": {
+        "shared": { "$ref": "#/$defs/sha" },
+        "claude": { "$ref": "#/$defs/sha" },
+        "codex": { "$ref": "#/$defs/sha" }
+      },
+      "required": ["shared", "claude", "codex"],
+      "additionalProperties": false
+    },
     "assets": {
       "type": "object",
       "description": "키 = '<kind>s/<id>' (예: agents/backend, hooks/pre-phase4-checklist-gate)",
