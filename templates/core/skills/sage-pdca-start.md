@@ -24,16 +24,22 @@ author plan docs, and distribute file ownership before any L2/L3 code is written
    phase-first rule for L2/L3 files.
 3. Determine the task scope: ask the user for a one-sentence description of the
    feature or change if not already provided.
-4. Invoke the `leader` agent to:
+4. If `knowledge_capture.scan_before_dev: true` and `knowledge_capture.vault_path`
+   is set, write the task scope to `.sage/knowledge_query.txt` and run
+   `python -m sage knowledge scan --query-file .sage/knowledge_query.txt`. The
+   command always refreshes `.sage/knowledge_scan.md` with `status: ran|n/a|error`;
+   pass that file to the leader and treat non-`ran` status as "no usable prior
+   vault context", not as a blocker.
+5. Invoke the `leader` agent to:
    a. Author a plan doc under `paths.plan_docs` that covers the task scope.
    b. Distribute file ownership to implementer-a / implementer-b by component.
    c. State the integration point where the two implementers connect.
-5. Verify the plan doc exists before handing off:
+6. Verify the plan doc exists before handing off:
    check that the file under `paths.plan_docs` is non-empty and references
    the feature scope.
-6. Report the ownership map to the user and confirm they are ready to proceed
+7. Report the ownership map to the user and confirm they are ready to proceed
    to implementation.
-7. State the phase flow so the user does not misorder 03/04: 00–02 now (leader);
+8. State the phase flow so the user does not misorder 03/04: 00–02 now (leader);
    03 is opened before source edits with file ownership, implementation checklist,
    and Phase-01 acceptance IDs, then completed after code with implementation,
    unit-test, and verification evidence; 04 = leader + qa judge the

@@ -22,6 +22,7 @@ from sage import _resources   # 번들 리소스 경로 단일 해석(env overri
 # CORE roster (중립 6인) + CORE hook 6종(form) + CORE skill 5종. 도메인값 아님 = framework 메타.
 _CORE_AGENTS = ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]
 _CORE_SKILLS = ["sage-pdca-start", "sage-team", "sage-review", "sage-asset", "sage-profile-modify"]
+_CORE_BOOTSTRAP_SKILL = "sage-init"
 # 은퇴한 CORE skill 이름 — install 시 잔존 사본을 정리(rename 수렴). 이름이 바뀌면 옛 이름을 여기 추가.
 _LEGACY_CORE_SKILLS = ["pdca-start"]
 # SAGE 가 hand-ship 하는 모든 CORE skill SKILL.md 에 들어있는 마커. 정리 전 SAGE 자산 확인용
@@ -113,6 +114,45 @@ def _codex_skills_root():
     return os.path.join(base, "skills")
 
 
+def _codex_global_skill_path(skill_id):
+    return os.path.join(_codex_skills_root(), skill_id, "SKILL.md")
+
+
+def _core_skill_source(skill_id):
+    """hand-shipped CORE skill render source. The same source is used for Claude repo skills
+    and Codex global skills, so install/doctor must compare against this exact artifact."""
+    return os.path.join(_resources.core_dir(), "framework", ".claude", "skills", skill_id, "SKILL.md")
+
+
+def core_skill_ids():
+    """CORE skill ids that `sage install --host codex` installs into the Codex global skill dir."""
+    return [_CORE_BOOTSTRAP_SKILL, *_CORE_SKILLS]
+
+
+def codex_core_skill_status(skill_id):
+    """Read-only status for a hand-shipped Codex CORE skill.
+
+    status ∈ {ok, missing, stale, source_missing, error}. This intentionally mirrors the
+    comparison used by `_install_codex_global_skill` so `sage doctor` cannot drift from
+    install's stale detection semantics.
+    """
+    import re as _re
+    if not _re.match(r"^[A-Za-z0-9_-]+$", skill_id):
+        return ("error", f"unsafe skill_id: {skill_id!r}")
+    src = _core_skill_source(skill_id)
+    if not os.path.exists(src):
+        return ("source_missing", None)
+    dst = _codex_global_skill_path(skill_id)
+    if not os.path.exists(dst):
+        return ("missing", dst)
+    try:
+        src_text = Path(src).read_text(encoding="utf-8")
+        cur = Path(dst).read_text(encoding="utf-8")
+        return ("ok" if cur == src_text else "stale", dst)
+    except (OSError, UnicodeError) as e:
+        return ("error", f"{dst} ({e})")
+
+
 def _install_codex_global_skill(src_skill_md, force, skill_id="sage-init"):
     """codex 스킬을 $CODEX_HOME/skills/{skill_id}/SKILL.md 에 전역 설치.
 
@@ -128,7 +168,7 @@ def _install_codex_global_skill(src_skill_md, force, skill_id="sage-init"):
     import re as _re
     if not _re.match(r"^[A-Za-z0-9_-]+$", skill_id):
         return ("error", f"unsafe skill_id: {skill_id!r}")
-    dst = os.path.join(_codex_skills_root(), skill_id, "SKILL.md")
+    dst = _codex_global_skill_path(skill_id)
     try:
         src_text = Path(src_skill_md).read_text(encoding="utf-8")
         if os.path.exists(dst) and not force:
@@ -208,7 +248,7 @@ def run(args) -> int:
     agents_md_collision = False
     codex_skill_status = None   # (status, dst) — codex host 전역 $sage-init 설치 결과
     core_skill_status = []      # [(id, (status, dst))] — codex host 전역 CORE skill 설치 결과(5c)
-    skill_src_md = os.path.join(fw, ".claude", "skills", "sage-init", "SKILL.md")   # 단일 소스(중립 내용)
+    skill_src_md = _core_skill_source(_CORE_BOOTSTRAP_SKILL)   # 단일 소스(중립 내용)
     if args.host == "claude":
         # claude: repo .claude/skills/ 자동발견 → /sage-init 스킬 배치.
         _copy_tree(os.path.join(fw, ".claude", "skills", "sage-init"),

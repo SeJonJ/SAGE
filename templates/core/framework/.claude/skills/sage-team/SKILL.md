@@ -121,11 +121,24 @@ Only when the cycle is `05_approved` (see resume state machine), the `leader` wr
 `verification.acceptance.report_gate_enforce` can warn/block if 04 acceptance evidence is
 missing or unresolved — never bypass it.
 
+After 06 is written, run the configured knowledge write-back when it is enabled:
+
+1. If `knowledge_capture.update_after_dev: true` and `knowledge_capture.vault_path`
+   is set, create `.sage/knowledge_writeback_summary.md` from the 06 completion
+   summary, changed files, verification evidence, and remaining risks.
+2. Run:
+   ```bash
+   python -m sage knowledge write-back --title "[cycle stem]" --summary-file .sage/knowledge_writeback_summary.md --append-log
+   ```
+3. Record the command output in 06. If it reports `N/A` or fails, record the exact
+   skipped/failed reason; do not claim vault capture completed.
+
 ## Done
 
 The cycle is complete when 06 exists and reflects an APPROVED Phase 05 with a clean,
-closed loop-audit run for this cycle. Report the per-phase outcome + the recorded
-`run_id` to the user.
+closed loop-audit run for this cycle, and the knowledge write-back step has either
+completed or recorded a concrete skipped/failed reason. Report the per-phase outcome +
+the recorded `run_id` to the user.
 
 ---
 

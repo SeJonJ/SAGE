@@ -32,10 +32,25 @@ Record the task scope. Do not proceed to leader handoff until scope is confirmed
 
 ## Step 2 — Invoke the leader
 
+Before leader handoff, run the configured knowledge scan when it is enabled:
+
+1. If `knowledge_capture.scan_before_dev: true` and `knowledge_capture.vault_path`
+   is set, create `.sage/knowledge_query.txt` containing the task scope.
+2. Run:
+   ```bash
+   python -m sage knowledge scan --query-file .sage/knowledge_query.txt
+   ```
+3. Read `.sage/knowledge_scan.md`. It is refreshed on every run and starts with
+   `status: ran`, `status: n/a`, or `status: error`.
+   - `ran`: pass the matched context to the leader.
+   - `n/a` or `error`: tell the leader no usable vault context was available and
+     continue; do not read a previous cycle's scan as current context.
+
 Hand off to the `leader` agent with this briefing:
 - Task scope: (the one-sentence description from Step 1)
 - Profile location: `sage/project-profile.yaml`
 - Plan docs directory: the `paths.plan_docs` value from the profile
+- Knowledge scan: `.sage/knowledge_scan.md` status and matches, if `status: ran`
 - Required: author a plan doc covering the task scope, distribute file ownership
   to `implementer-a` and `implementer-b` by component, and state the integration
   point

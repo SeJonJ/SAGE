@@ -10,9 +10,9 @@ import sys
 import textwrap
 
 from sage import __version__
-from sage.commands import install, generate, validate, review, absorb, doctor, change, override, review_loop, retro
+from sage.commands import install, generate, validate, review, absorb, doctor, change, override, review_loop, retro, knowledge
 
-_COMMANDS = [install, generate, validate, review, absorb, doctor, change, override, review_loop, retro]
+_COMMANDS = [install, generate, validate, review, absorb, doctor, change, override, review_loop, retro, knowledge]
 
 
 def build_parser() -> argparse.ArgumentParser:

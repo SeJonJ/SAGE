@@ -414,7 +414,7 @@ def _knowledge_capture_issues(profile):
     if vp is not None and not isinstance(vp, str):
         issues.append(("WARN", f"knowledge_capture.vault_path={vp!r} 는 문자열이어야 함(경로). 비-str 은 vault 출력 시 무시/오류"))
     vault = (vp or "").strip() if isinstance(vp, str) else ""
-    for key in ("loop_audit_dashboard", "retro_note"):
+    for key in ("scan_before_dev", "update_after_dev", "loop_audit_dashboard", "retro_note"):
         v = kc.get(key)
         if v is None:
             continue

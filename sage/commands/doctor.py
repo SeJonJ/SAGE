@@ -112,7 +112,8 @@ def _check_codex_skill_deployment(prof_path, profile):
     if not os.path.exists(manifest_path):
         return
     try:
-        assets = (json.loads(open(manifest_path, encoding="utf-8").read()) or {}).get("assets", {})
+        with open(manifest_path, encoding="utf-8") as f:
+            assets = (json.loads(f.read()) or {}).get("assets", {})
     except Exception:
         return
     skill_ids = [k.split("/", 1)[1] for k in assets if k.startswith("skills/")]
@@ -147,6 +148,30 @@ def _check_codex_skill_deployment(prof_path, profile):
             print(f"  ⚠️  {sid}: 전역 캐시가 정본과 다름(stale) → `sage generate --kind skill --id {sid} --deploy-codex` 로 갱신")
         else:
             print(f"  ✅ {sid}: 전역 배포 최신 (${gid})")
+
+
+def _check_codex_core_skill_drift(profile):
+    """Hand-shipped CORE skills are not manifest-tracked, but Codex discovers them from
+    the user-global skill dir. Diagnose stale/missing global copies so a stale
+    `$sage-init`/`$sage-team` cannot silently bypass current profile/review-loop rules."""
+    if (profile.get("runtime") or {}).get("host") != "codex":
+        return
+    from sage.commands import install
+    print("## codex CORE skill 전역 설치 상태")
+    print("  기준: `sage install --host codex` 가 설치하는 unprefixed CORE skills")
+    for sid in install.core_skill_ids():
+        status, dst = install.codex_core_skill_status(sid)
+        if status == "ok":
+            print(f"  ✅ {sid}: 최신 ({dst})")
+        elif status == "missing":
+            print(f"  ⚠️  {sid}: 전역 CORE skill 없음 ({dst}) → `sage install --host codex --force`")
+        elif status == "stale":
+            print(f"  ⚠️  {sid}: 전역 CORE skill 이 현재 SAGE 번들과 다름(stale) ({dst}) → `sage install --host codex --force`")
+        elif status == "source_missing":
+            print(f"  ⚠️  {sid}: 번들 CORE skill 소스 없음 → 설치 패키지 손상 가능")
+        else:
+            print(f"  ⚠️  {sid}: 전역 CORE skill 점검 실패({dst})")
+    print("  ℹ️  Claude host 는 repo `.claude/skills/` 사본을 프로젝트별로 설치하므로 Codex 전역 drift 점검 대상이 아닙니다.")
 
 
 def run(args):
@@ -197,6 +222,7 @@ def run(args):
     # codex skill 전역 배포 점검(Part C) — manifest-추적 프로젝트 skill 이 codex 전역에 배포됐는지.
     #   정본 = repo .codex/skills/<id>/SKILL.md (manifest 추적), 전역 = $CODEX_HOME/skills/<prefix>-<id> (발견용 캐시).
     #   validate 는 전역을 무시(clone-stable repo 정본만) → 전역 staleness 는 여기(환경 진단)에서 WARN.
+    _check_codex_core_skill_drift(profile)
     _check_codex_skill_deployment(prof_path, profile)
 
     # reviewer resolution

@@ -13,7 +13,7 @@ from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
-from sage.commands import doctor  # noqa: E402
+from sage.commands import doctor, install  # noqa: E402
 
 try:
     import yaml  # noqa: F401
@@ -116,6 +116,65 @@ class TestDoctor(unittest.TestCase):
             Path(prof).write_text('project: { name: "t", prefix: "px" }\nruntime: { host: claude }\n')
             rc, out = run_doctor(prof)
             self.assertNotIn("codex skill 전역 배포", out)
+            self.assertNotIn("codex CORE skill 전역 설치 상태", out)
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
+    def test_codex_core_skill_drift_warns_when_stale(self):
+        # 5차 root cause: manifest 추적 skill 이 아니라 hand-shipped CORE skill($sage-init 등)이 stale 이어도
+        # doctor 가 직접 보여줘야 한다.
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as ch:
+            os.makedirs(os.path.join(root, "sage"))
+            prof = os.path.join(root, "sage", "project-profile.yaml")
+            Path(prof).write_text('project: { name: "t", prefix: "px" }\nruntime: { host: codex }\n')
+            stale = os.path.join(ch, "skills", "sage-init")
+            os.makedirs(stale)
+            Path(os.path.join(stale, "SKILL.md")).write_text("OLD_STALE\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"CODEX_HOME": ch}):
+                rc, out = run_doctor(prof)
+            self.assertEqual(rc, 0)
+            self.assertIn("codex CORE skill 전역 설치 상태", out)
+            self.assertIn("sage-init", out)
+            self.assertIn("stale", out)
+            self.assertIn("sage install --host codex --force", out)
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
+    def test_codex_core_skill_doctor_agrees_with_install_status(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as ch:
+            class IArgs:
+                host = "codex"; dest = root; prefix = "px"; force = True; no_global_skill = False
+            os.makedirs(os.path.join(root, "sage"))
+            prof = os.path.join(root, "sage", "project-profile.yaml")
+            Path(prof).write_text('project: { name: "t", prefix: "px" }\nruntime: { host: codex }\n')
+            with mock.patch.dict(os.environ, {"CODEX_HOME": ch}):
+                install.run(IArgs())
+                for sid in install.core_skill_ids():
+                    self.assertEqual(install.codex_core_skill_status(sid)[0], "ok", sid)
+                rc, out = run_doctor(prof)
+            self.assertEqual(rc, 0)
+            for sid in install.core_skill_ids():
+                self.assertIn(f"{sid}: 최신", out)
+
+    def test_codex_core_skill_status_rejects_unsafe_id(self):
+        status, info = install.codex_core_skill_status("../escape")
+        self.assertEqual(status, "error")
+        self.assertIn("unsafe", info)
+
+    def test_codex_core_skill_status_missing(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as ch:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": ch}):
+                status, dst = install.codex_core_skill_status("sage-init")
+            self.assertEqual(status, "missing")
+            self.assertIn("sage-init", dst)
+
+    def test_codex_core_skill_status_source_missing(self):
+        import unittest.mock as mock
+        with mock.patch("sage.commands.install._core_skill_source", return_value="/no/such/SKILL.md"):
+            status, dst = install.codex_core_skill_status("sage-init")
+        self.assertEqual(status, "source_missing")
+        self.assertIsNone(dst)
 
 
 if __name__ == "__main__":

@@ -165,7 +165,14 @@ toggle's detail entirely when it stays off.
     same-runtime fallback, and say so.
 - **`options.obsidian` / `knowledge_capture`** — if used, set
   `knowledge_capture.vault_path` (empty path = vault features fully OFF) and the
-  note convention.
+  note convention. If a vault path is set, explicitly confirm the PDCA boundary
+  automation flags:
+  - `knowledge_capture.scan_before_dev` — `/sage-pdca-start` runs `sage knowledge scan`
+    before leader planning and refreshes `.sage/knowledge_scan.md`.
+  - `knowledge_capture.update_after_dev` — `/sage-team` runs `sage knowledge write-back`
+    after 06 completion to create/update the vault note and `wiki/log.md`.
+  Default to both on unless the user declines; these are explicit host-side steps,
+  not hidden background writes.
 - **Review loop (`pdca.review_loop`)** — the optional Phase 05 adversarial loop.
   Raise it as its own toggle (default off). Drive it with the **shared interview set**
   in `docs/agent/bootstrap-authoring.md` (§ Review loop + vault interview set) so this
