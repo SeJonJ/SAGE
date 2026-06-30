@@ -15,6 +15,17 @@ def sha256_of(path: str) -> str:
         return "sha256:" + hashlib.sha256(f.read()).hexdigest()
 
 
+def _derived_contract_version(module_name: str) -> str:
+    """interpretive(agent/skill) adapter_contract_version 을 reverse_extract 모듈의 CONTRACT_VERSION 에서
+    파생한다(하드코딩 '1' 제거 — R3 잔여 5-2). hook 의 contract_version_of(core) 와 같은 취지: 추출 계약이
+    바뀌면 스탬프가 따라가 drift 를 표면화. import 실패(경로 격리) 시 '1' 폴백(현행값과 동일 — 안전)."""
+    import importlib
+    try:
+        return str(getattr(importlib.import_module(module_name), "CONTRACT_VERSION", "1"))
+    except Exception:
+        return "1"
+
+
 def find_root(start: str = None) -> str | None:
     """가장 가까운 상위에서 .manifest.json 보유 디렉토리(SAGE 루트) 탐색."""
     cur = os.path.abspath(start or os.getcwd())
@@ -56,7 +67,7 @@ def upsert_agent(root: str, agent_id: str, *, claude_render: str, codex_render: 
     entry.update({
         "spec_hash": sha256_of(spec),
         "claims_hash": sha256_of(claims),
-        "adapter_contract_version": "1",
+        "adapter_contract_version": _derived_contract_version("reverse_extract_agent"),
         "conformance": "PASS",
         "form": "interpretive",
         "test": test,
@@ -87,7 +98,7 @@ def upsert_skill(root: str, skill_id: str, *, claude_render: str, codex_render: 
     entry.update({
         "spec_hash": sha256_of(spec),
         "claims_hash": sha256_of(claims),
-        "adapter_contract_version": "1",
+        "adapter_contract_version": _derived_contract_version("reverse_extract_skill"),
         "conformance": "PASS",
         "form": "interpretive",
         "test": test,
