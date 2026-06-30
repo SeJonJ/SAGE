@@ -80,12 +80,14 @@ def _parse_codex_jsonl(text):
 
 def _parse_claude_json(text):
     """claude -p --output-format json stdout → 최종 결과 텍스트(없으면 None).
-    표준 형태는 {..., "result": "<text>"}; 비표준이면 raw 반환 회피하고 None."""
+    표준 형태는 {"is_error": bool, "result": "<text>", ...}.
+    is_error=true(에러 응답)면 result 가 에러 메시지이므로 리뷰로 오인하지 않고 None(codex 배치2 R5 P1:
+    에러 JSON 을 성공 cross-model 리뷰로 잘못 보고하면 degraded 게이트를 우회)."""
     try:
         o = json.loads(text)
     except Exception:
         return None
-    if isinstance(o, dict):
+    if isinstance(o, dict) and not o.get("is_error"):
         r = o.get("result")
         if isinstance(r, str) and r.strip():
             return r

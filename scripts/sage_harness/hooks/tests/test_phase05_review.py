@@ -51,6 +51,11 @@ class TestParsers(unittest.TestCase):
         self.assertIsNone(RV._parse_claude_json('{"x":1}'))
         self.assertIsNone(RV._parse_claude_json("not json"))
 
+    def test_claude_json_error_not_accepted(self):
+        # is_error:true 응답의 result(에러 메시지)를 성공 리뷰로 오인하면 안 됨(codex 배치2 R5 P1).
+        self.assertIsNone(RV._parse_claude_json('{"is_error":true,"result":"rate limit exceeded"}'))
+        self.assertEqual(RV._parse_claude_json('{"is_error":false,"result":"VERDICT: SHIP"}'), "VERDICT: SHIP")
+
     def test_peer_command_codex_no_prompt_arg(self):
         # 프롬프트는 stdin 으로 — argv 에 포함되면 안 됨(ARG_MAX 회피, codex R1 P1).
         cmd = RV._peer_command("codex")
