@@ -168,8 +168,10 @@ def run_review(args):
         print("[sage review] ⚠️  profile.options.cross_model=true 이고 peer 가용 — cross-model 의도인데 "
               "same-runtime `sage review` 가 호출됨. cross_model=true 면 `sage cross-check` 를 사용하라.",
               file=sys.stderr)
-    print("[sage review] same-runtime Phase 05 — host 가 clean-context 로 FIND/REFUTE/TRIAGE/REWORK 수행.",
-          file=sys.stderr)
+    # bare `sage review` 는 옛 자산분류가 아니라 Phase 05 same-runtime 리뷰임을 명시(codex 배치2 R4 P1:
+    # 무플래그 호출의 의미 변경을 silent 로 두지 않음. 자산분류는 sage asset-check 로 이전).
+    print("[sage review] Phase 05 same-runtime 리뷰 — host 가 clean-context 로 FIND/REFUTE/TRIAGE/REWORK 수행. "
+          "(자산 자동승인 분류는 `sage asset-check` 로 이전됨)", file=sys.stderr)
     print("REVIEWER_ACTUAL: same_runtime")
     return 0
 
