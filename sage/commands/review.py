@@ -98,8 +98,10 @@ def _invoke_peer(peer, prompt, timeout):
     cmd = _peer_command(peer)
     try:
         # 프롬프트는 stdin 으로(ARG_MAX 회피, codex R1 P1). codex exec/claude -p 가 stdin 을 프롬프트로 읽음.
+        # encoding 명시(codex R2 P2): text=True 만 두면 locale 인코딩 사용 → C-locale 호스트에서 한글
+        # 패킷이 UnicodeEncodeError 로 매번 degrade. 패킷 파일도 utf-8 로 읽으므로 대칭 맞춤.
         r = subprocess.run(cmd, input=prompt, capture_output=True,
-                           text=True, timeout=timeout)
+                           text=True, encoding="utf-8", timeout=timeout)
     except subprocess.TimeoutExpired:
         return False, None, f"{peer} 호출 timeout({timeout}s)"
     except Exception as e:
