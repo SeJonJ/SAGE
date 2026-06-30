@@ -1,7 +1,25 @@
-# 7차 전 개발 — 배치2: cross-model 결정론 invocation
+# 7차 전 개발 — 진행 현황 + 배치2 설계
 
-상태: 2-1(rename) 완료·커밋(8beb744). 2-2~2-5 구현 중.
-정본 범위: vault `TECH - SAGE 7차 전 개발 범위 (피드백 통합)`.
+> **진행 요약(2026-07-01)** — feature 브랜치 `feat/7th-prep-batch3-loop-audit-integrity`, 12 커밋, 전부 green(run-all PASS·validate PASS).
+> 정본 범위: vault `TECH - SAGE 7차 전 개발 범위 (피드백 통합)`.
+>
+> **✅ 상 tier 완료 (codex 9라운드)**
+> - 배치3 loop_audit 무결성 (seq sanity·reviewer degraded·게이트·advisory 기본): codex 4회(R1 BLOCK→R4 SHIP). `49e766d`
+> - 배치2 cross-model 결정론: codex 5회(R1~R5 BLOCK→해소). `8beb744 cce918b 80d148c 863d93c ca17e34 aaab271 780ff2c ef817f7`
+>   - asset-check rename / sage review(same-runtime) / sage cross-check(peer 직접 호출 codex exec·claude -p) / reviewer_resolution gstack→peer CLI / 진단정정
+>   - codex 수정: stdin 전송(ARG_MAX)·utf-8·is_error 가드·strict·마이그레이션 shim 수용 / 해시체인·old시맨틱·symlink abort 는 reasoned 비수용
+>
+> **🟡 중 tier 일부 완료**
+> - 4-2/4-3 note_convention(tags_style·index): codex 3회(R1·R2 BLOCK→R3 SHIP). `0333107 064feb4 fb05287`
+> - **미완(다음 세션)**: 배치1 — 스킬 3분할(sage-cycle/plan/team) + docs/sage_harness/skills 스펙 8종 + review_loop 항목별 인터뷰 + sage-init enforce/vault조사 + 1-7 단일경로 지시 + 4-1 vault 단일경로(스킬). codex 2~3회.
+>
+> **🟢 하 tier 미착수(다음 세션)**: 배치5 — malformed JSON fail-open·하드코딩"1"→manifest 파생·messages.py 통일. codex 1~3회.
+>
+> **그 후**: 7차 weatherapp e2e (양 host).
+
+---
+
+## (이하 배치2 설계 — 완료, 참고)
 
 ## 핵심 결정 (피드백 1 확정)
 gstack `/codex` 스킬 의존을 폐기하고 **SAGE 자체 결정론 invocation**으로 cross-model 리뷰 수행.
