@@ -14,8 +14,8 @@ from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))  # sage_project
 sys.path.insert(0, REPO)
-from sage.commands import review as R  # noqa: E402
-from sage.commands.review import auto_approve_decision, _render_current  # noqa: E402
+from sage.commands import asset_check as R  # noqa: E402
+from sage.commands.asset_check import auto_approve_decision, _render_current  # noqa: E402
 
 
 def hook_entry(**over):

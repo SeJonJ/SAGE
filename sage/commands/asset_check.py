@@ -1,4 +1,8 @@
-"""sage review — auto_approve_safe_default 분류 UX (step8).
+"""sage asset-check — auto_approve_safe_default 분류 UX (step8).
+
+명령명 변경(7차 배치2): `sage review` → `sage asset-check`. `review` 이름은 Phase-05 리뷰 명령
+(`sage review`=same-runtime / `sage cross-check`=cross-model)에 양보. 이 명령은 프레임워크 *자산*
+(hook/agent/skill/mcp)의 auto-approve 분류로, 모델/리뷰 호출과 무관한 결정론 게이트다.
 
 최종검증 §3 합의: 사람 diff 승인을 기본→예외로 강등. validate 결과 위에서 자산을
 auto(자동승인 후보) / review(사람 검토 예외)로 분류·리포트. v1 은 분류만(승인 상태변경 X — generate 폐루프 후속).
@@ -17,7 +21,7 @@ from sage.commands import validate as V
 
 
 def register(sub):
-    p = sub.add_parser("review", help="자동 통과 가능한 변경과 사람이 확인할 변경을 나눕니다")
+    p = sub.add_parser("asset-check", help="프레임워크 자산 중 자동 통과 가능/사람 확인 필요를 나눕니다(구 sage review)")
     p.add_argument("--kind", choices=["hook", "agent", "skill", "mcp", "all"], default="all")
     p.add_argument("--batch", action="store_true", help="auto 버킷을 1줄 요약")
     p.add_argument("--gate", action="store_true", help="review 버킷 있으면 exit 1 (CI 게이트)")
@@ -59,12 +63,12 @@ def auto_approve_decision(asset_id, validate_sev, entry):
 def run(args):
     root = V._find_root(args.root)
     if not root:
-        print("[sage review] TOOL ERROR: manifest 없음", file=sys.stderr)
+        print("[sage asset-check] TOOL ERROR: manifest 없음", file=sys.stderr)
         return 2
     try:
         manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
     except Exception as e:
-        print(f"[sage review] TOOL ERROR: manifest 파싱 실패: {e}", file=sys.stderr)
+        print(f"[sage asset-check] TOOL ERROR: manifest 파싱 실패: {e}", file=sys.stderr)
         return 2
 
     assets = manifest.get("assets", {})
@@ -104,7 +108,7 @@ def run(args):
         d = auto_approve_decision(aid, sev, entry)
         (auto if d["decision"] == "auto" else review).append((aid, d["reasons"]))
 
-    print(f"== sage review ({args.kind}) — auto_approve_safe_default ==")
+    print(f"== sage asset-check ({args.kind}) — auto_approve_safe_default ==")
     if args.batch:
         print(f"✅ auto-approved (batch): {len(auto)}건 — {', '.join(a for a, _ in auto) or '없음'}")
     else:

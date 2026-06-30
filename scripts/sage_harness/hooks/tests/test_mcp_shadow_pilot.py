@@ -18,7 +18,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(HERE))))
 sys.path.insert(0, REPO)
-from sage.commands import generate as G, validate as V, review as R  # noqa: E402
+from sage.commands import generate as G, validate as V, asset_check as R  # noqa: E402
 
 _FIXTURE = os.path.join(HERE, "fixtures", "mcp_chatforyou")
 

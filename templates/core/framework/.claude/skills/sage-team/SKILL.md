@@ -144,7 +144,7 @@ the recorded `run_id` to the user.
 
 > This skill is a **CORE framework bootstrap asset**: hand-shipped by `sage install`,
 > NOT a manifest-tracked skill (no claims file, no render hash, not gated by
-> `sage validate`/`sage review`). Its reference spec lives at
+> `sage validate`/`sage asset-check`). Its reference spec lives at
 > `docs/sage_harness/skills/sage-team.md`. To change it, edit the framework template,
 > not via `sage generate`. Deploy location is runtime-specific: Claude reads it from the
 > repo (`.claude/skills/sage-team/`); Codex reads it from the user-global skills dir

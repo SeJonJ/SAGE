@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from sage.commands import validate as V
-from sage.commands import review as R
+from sage.commands import asset_check as R
 
 # action 분류 — absorb 를 generate 보다 먼저 판정(이미 고친 산출물 흡수 우선). 그 외는 generate (default).
 _ABSORB_KW = ["이미 고쳤", "이미 수정", "직접 수정", "직접수정", "생성물", "산출물", "blocked", "되돌려", "흡수"]

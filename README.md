@@ -211,7 +211,7 @@ Hook은 **순수 코어 + 어댑터** 구조입니다 — 정책 판정(`{id}_co
 | `sage generate --kind roster` | `--kind roster` | `--write`, `--dest DEST`, `--root ROOT` | 프로젝트 컴포넌트 목록을 보고 기본 구현 담당 agent spec을 만듭니다. |
 | `sage generate --kind mcp` | `--kind mcp` | `--id ID`, `--write`, `--target {claude,codex,both}` | MCP spec을 읽어 Claude 또는 Codex가 사용할 MCP 설정 파일을 생성합니다. |
 | `sage validate` | 없음 | `--check`, `--schema`, `--kind {hook,agent,skill,mcp,all}`, `--id ID`, `--root ROOT` | spec과 생성 파일이 서로 어긋났는지 검사합니다. 빠른 검사: `sage validate --check`; schema 검사: `sage validate --schema`. |
-| `sage review` | 없음 | `--kind {hook,agent,skill,mcp,all}`, `--batch`, `--gate`, `--root ROOT` | 자동 통과 가능한 변경과 사람이 확인할 변경을 나눕니다. CI에서 실패시키려면 `sage review --gate`를 사용합니다. |
+| `sage asset-check` | 없음 | `--kind {hook,agent,skill,mcp,all}`, `--batch`, `--gate`, `--root ROOT` | 프레임워크 자산 중 자동 통과 가능/사람 확인 필요를 나눕니다(구 `sage review`). CI에서 실패시키려면 `sage asset-check --gate`. |
 | `sage absorb` | `--kind {hook,agent,skill}`, `--id ID` | `--from-blocked-diff`, `--claude PATH`, `--codex PATH`, `--guide PATH`, `--config CONFIG`, `--root ROOT` | 직접 고친 생성 파일을 spec 수정안으로 되돌려 제안합니다. 자동 반영은 하지 않습니다. |
 | `sage review-loop` | `<action> {open,round,close,show}` | open: `--risk {L2,L3}`; round: `--found/--survived/--accepted` 등; close: `--result/--reason/--iterations`; show: `--vault [PATH]` | Loop A(Phase 05 적대적 review-rework) 라운드 감사를 기록·조회합니다(sage-review 스킬이 호출). `show --vault`는 Obsidian 대시보드도 작성. 예: `sage review-loop open --risk L3` |
 | `sage retro` | 없음 | `--run-id ID`, `--feature STEM`, `--vault [PATH]`, `--root ROOT` | Loop C(Act→Plan): 리뷰 사이클 학습(loop_audit + 05 문서)을 모아 개선 제안용 distiller 프롬프트를 제시합니다. 자동 반영 없음(absorb 철학). `--vault`로 Obsidian human-gate 노트 작성. |

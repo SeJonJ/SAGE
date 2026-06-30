@@ -36,8 +36,8 @@ echo "### 8. conformance_lint (agent/skill 렌더 부합 결정론 검사)"
 python3 "$HERE/test_conformance.py" || rc=1
 
 echo ""
-echo "### 9. auto_approve_decision (승인 UX — auto_approve_safe_default)"
-python3 "$HERE/test_review.py" || rc=1
+echo "### 9. auto_approve_decision (sage asset-check 승인 UX — auto_approve_safe_default)"
+python3 "$HERE/test_asset_check.py" || rc=1
 
 echo ""
 echo "### 10. sage change 라우터 (자연어 의도 → generate/absorb)"
