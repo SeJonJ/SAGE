@@ -84,29 +84,53 @@ def new_run_id():
     return "rl-" + uuid.uuid4().hex[:12]
 
 
-def open_loop(root, risk, cfg=None, run_id=None, now=None):
-    """루프 시작 기록 → run_id 반환. risk ∈ {L2,L3}(호출자 검증). cfg=적용 설정 스냅샷(profile.pdca.review_loop)."""
+def _next_seq(root, run_id):
+    """run_id 의 다음 시퀀스 번호 = 현재 기록된 레코드 수(open=0, 이후 append 순 단조 +1).
+    라이브러리가 직접 stamp 한다(7차 배치3): 게이트가 seq 연속성을 검산하므로, CLI/라이브러리를 거치지
+    않고 JSONL 에 손으로 append 한 레코드는 seq 누락/불연속으로 걸린다.
+    **범위 명확화(codex R1b P1)**: 이건 *수기/우회 기록·순서 뒤바뀜·누락* 같은 게으른 우회를 잡는
+    **sanity 검사**이지 위변조 방지(tamper-resistance)가 아니다 — seq=레코드 수이므로 파일을 읽어 다음
+    정수를 추측해 append 하면 통과한다. 진짜 위변조 내성은 해시체인(7차 이후 하드닝 과제). read-before-write
+    지만 CLI 가 이미 orphan 체크로 읽으므로 같은 레이어 비용. 루프당 레코드 수는 작아 O(n) 무시 가능."""
+    return sum(1 for r in read_records(root) if r.get("run_id") == run_id)
+
+
+def open_loop(root, risk, cfg=None, run_id=None, now=None, reviewer_requested=None):
+    """루프 시작 기록 → run_id 반환. risk ∈ {L2,L3}(호출자 검증). cfg=적용 설정 스냅샷(profile.pdca.review_loop).
+    reviewer_requested=profile 이 의도한 리뷰어 모드(예: cross_model/same_runtime) — 실제값은 close 에 기록,
+    불일치(degraded)는 audit_summary 가 파생(7차 배치3)."""
     t = time.time() if now is None else now
     rid = run_id or new_run_id()
-    _append(audit_path(root), {"event": "loop_open", "run_id": rid, "ts": _iso(t), "epoch": int(t),
-                               "risk": risk, "cfg": cfg or {}})
+    rec = {"event": "loop_open", "run_id": rid, "ts": _iso(t), "epoch": int(t),
+           "seq": _next_seq(root, rid), "risk": risk, "cfg": cfg or {}}
+    if reviewer_requested is not None:
+        rec["reviewer_requested"] = reviewer_requested
+    _append(audit_path(root), rec)
     return rid
 
 
 def record_round(root, run_id, iteration, found, survived, accepted, arch=0, tokens=0, now=None):
     """라운드 1건 기록.
-    found=FIND 발견수, survived=REFUTE 생존수, accepted=REWORK 채택수, arch=아키텍처 에스컬레이션수, tokens=누적 토큰."""
+    found=FIND 발견수, survived=REFUTE 생존수, accepted=REWORK 채택수, arch=아키텍처 에스컬레이션수, tokens=누적 토큰.
+    seq=append 순 단조 번호(라이브러리 stamp, 수기 위조·순서조작 탐지용 — 7차 배치3)."""
     t = time.time() if now is None else now
     _append(audit_path(root), {"event": "round", "run_id": run_id, "ts": _iso(t), "epoch": int(t),
+                               "seq": _next_seq(root, run_id),
                                "iteration": int(iteration), "found": int(found), "survived": int(survived),
                                "accepted": int(accepted), "arch": int(arch), "tokens": int(tokens)})
 
 
-def close_loop(root, run_id, result, reason, iterations, now=None):
-    """루프 종료 기록. result ∈ CLOSE_RESULTS, reason ∈ CLOSE_REASONS(호출 레이어가 강제)."""
+def close_loop(root, run_id, result, reason, iterations, now=None, reviewer_actual=None):
+    """루프 종료 기록. result ∈ CLOSE_RESULTS, reason ∈ CLOSE_REASONS(호출 레이어가 강제).
+    reviewer_actual=실제 수행된 리뷰어 모드(예: cross_model/same_runtime) — open 의 reviewer_requested 와
+    비교해 audit_summary 가 degraded 를 파생(7차 배치3: cross-model 폴백 침묵 차단)."""
     t = time.time() if now is None else now
-    _append(audit_path(root), {"event": "loop_close", "run_id": run_id, "ts": _iso(t), "epoch": int(t),
-                               "result": result, "reason": reason, "iterations": int(iterations)})
+    rec = {"event": "loop_close", "run_id": run_id, "ts": _iso(t), "epoch": int(t),
+           "seq": _next_seq(root, run_id),
+           "result": result, "reason": reason, "iterations": int(iterations)}
+    if reviewer_actual is not None:
+        rec["reviewer_actual"] = reviewer_actual
+    _append(audit_path(root), rec)
 
 
 def runs(root):
@@ -127,31 +151,60 @@ def close_of(root, run_id):
     return closes[-1] if closes else None
 
 
+def _seq_ok(seq_list):
+    """run 의 레코드 seq 값(append 순) sanity 검산 → True/False/None.
+    None = 모두 seq 부재(레거시/구버전 기록) → 검사 skip(하위호환). 일부라도 seq 가 있으면
+    정확히 [0,1,...,n-1] 연속이어야 True. 누락(수기 append)·중복·순서조작(재정렬)·레거시+신규 혼합은 False.
+    위변조 방지가 아닌 게으른 우회 탐지임(다음 정수 추측 append 는 통과 — 해시체인은 7차후, 배치3)."""
+    if not seq_list or all(s is None for s in seq_list):
+        return None
+    return seq_list == list(range(len(seq_list)))
+
+
 def audit_summary(root):
     """게이트 주입용 결정론 요약(2층 불변식: adapter 가 fs 읽고 core 는 이 dict 만 소비).
-    {runs: {run_id: {closed, result, clean}}, has_any_records}.
+    {runs: {run_id: {closed, result, clean, seq_ok, reviewer_requested, reviewer_actual, degraded}}, has_any_records}.
     `clean`(codex 코드 R2-P1): run_id 가 정확히 1회 open + 최대 1회 close 일 때만 True. 재사용/중복 open·
-    close 나 고아 close(open 0)는 clean=False → 게이트가 stale/모호 증거로 통과되는 것을 차단(integrity_issues
-    와 동일 판정을 run 단위로 노출 — 전역 블로커 아님). 다중 close 면 마지막 결과가 entry 에 남되 clean=False."""
+    close 나 고아 close(open 0)는 clean=False → 게이트가 stale/모호 증거로 통과되는 것을 차단.
+    `seq_ok`(7차 배치3): 라운드 seq 연속성(False=수기/순서조작, None=레거시 skip). `degraded`: 의도한
+    reviewer(open) ≠ 실제 reviewer(close) → cross-model 폴백 침묵 차단."""
     recs = read_records(root)
     summary = {}
+    seqs = {}   # rid -> [seq, ...] (append 순, 모든 이벤트 포함 — seq 연속성 검산용)
     for r in recs:
         rid = r.get("run_id")
         if not rid:
             continue
+        seqs.setdefault(rid, []).append(r.get("seq"))
         ev = r.get("event")
         if ev == "loop_open":
-            e = summary.setdefault(rid, {"closed": False, "result": None, "opens": 0, "closes": 0})
+            e = summary.setdefault(rid, _new_summary_entry())
             e["opens"] += 1
+            if r.get("reviewer_requested") is not None:
+                e["reviewer_requested"] = r.get("reviewer_requested")
         elif ev == "loop_close":
-            e = summary.setdefault(rid, {"closed": False, "result": None, "opens": 0, "closes": 0})
+            e = summary.setdefault(rid, _new_summary_entry())
             e["closed"] = True
             e["result"] = r.get("result")
             e["closes"] += 1
-    for e in summary.values():
+            if r.get("reviewer_actual") is not None:
+                e["reviewer_actual"] = r.get("reviewer_actual")
+    for rid, e in summary.items():
         e["clean"] = (e["opens"] == 1 and e["closes"] <= 1)
+        e["seq_ok"] = _seq_ok(seqs.get(rid) or [])
+        req, act = e["reviewer_requested"], e["reviewer_actual"]
+        # degraded(7차 배치3, codex R1b P1 반영): 의도한 reviewer 가 명시됐는데 실제가 *다르거나*
+        # close 시점에 *기록조차 안 됨*(act is None)이면 degraded. 후자 = cross-model 요청이 실제
+        # 수행을 확인받지 못한 정황(폴백 의심) → 침묵 통과 차단. closed 인 run 에만 적용(진행중 run 은
+        # 아직 actual 미확정이 정상). req 미설정(legacy/미사용)이면 False(오탐 없음).
+        e["degraded"] = bool(e["closed"] and req is not None and (act is None or req != act))
         del e["opens"]; del e["closes"]
     return {"runs": summary, "has_any_records": bool(recs)}
+
+
+def _new_summary_entry():
+    return {"closed": False, "result": None, "opens": 0, "closes": 0,
+            "reviewer_requested": None, "reviewer_actual": None}
 
 
 def integrity_issues(root):
@@ -188,4 +241,14 @@ def integrity_issues(root):
             closes[rid] = closes.get(rid, 0) + 1
             if closes[rid] > 1:
                 issues.append(f"run_id {rid!r} loop_close {closes[rid]}회 중복")
+    # ⑥ 시퀀스 무결성(7차 배치3): seq 누락/불연속/순서조작 — 수기 JSONL append·재정렬 탐지.
+    #    라이브러리가 seq 를 stamp 하므로(open=0, append 순 +1), CLI/lib 우회 기록은 seq 부재/불연속으로 걸린다.
+    seqs = {}
+    for r in recs:
+        rid = r.get("run_id")
+        if rid:
+            seqs.setdefault(rid, []).append(r.get("seq"))
+    for rid, sl in seqs.items():
+        if _seq_ok(sl) is False:
+            issues.append(f"run_id {rid!r} 시퀀스 불연속/누락 {sl} — 수기 기록 또는 순서 조작 의심")
     return issues

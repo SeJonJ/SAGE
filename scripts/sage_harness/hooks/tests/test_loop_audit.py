@@ -69,14 +69,19 @@ class TestLoopAudit(unittest.TestCase):
         la.close_loop(self.tmp, r1, result="APPROVED", reason="CONVERGED", iterations=1, now=2)
         s = la.audit_summary(self.tmp)
         self.assertTrue(s["has_any_records"])
-        self.assertEqual(s["runs"]["run-a"], {"closed": True, "result": "APPROVED", "clean": True})
-        self.assertEqual(s["runs"]["run-b"], {"closed": False, "result": None, "clean": True})
+        self.assertEqual(s["runs"]["run-a"], {"closed": True, "result": "APPROVED", "clean": True,
+                                              "seq_ok": True, "reviewer_requested": None,
+                                              "reviewer_actual": None, "degraded": False})
+        self.assertEqual(s["runs"]["run-b"], {"closed": False, "result": None, "clean": True,
+                                              "seq_ok": True, "reviewer_requested": None,
+                                              "reviewer_actual": None, "degraded": False})
 
     def test_audit_summary_blocked_result(self):
         r = la.open_loop(self.tmp, "L3", run_id="run-x", now=0)
         la.close_loop(self.tmp, r, result="BLOCKED", reason="BUDGET_ITER", iterations=3, now=1)
         self.assertEqual(la.audit_summary(self.tmp)["runs"]["run-x"],
-                         {"closed": True, "result": "BLOCKED", "clean": True})
+                         {"closed": True, "result": "BLOCKED", "clean": True, "seq_ok": True,
+                          "reviewer_requested": None, "reviewer_actual": None, "degraded": False})
 
     def test_audit_summary_reused_run_id_not_clean(self):
         # 재사용 run_id(중복 open+close) → clean=False (게이트가 stale 증거로 통과되는 것 차단).
@@ -178,6 +183,64 @@ class TestLoopAudit(unittest.TestCase):
         la.record_round(self.tmp, rid, 2, 1, 0, 0, 0, 10, now=2)   # 종료 후 round
         issues = la.integrity_issues(self.tmp)
         self.assertTrue(any("after loop_close" in i for i in issues))
+
+    # --- 7차 배치3: seq 무결성 (수기 위조·순서조작 탐지) ---
+    def test_seq_stamped_monotonic(self):
+        # 라이브러리가 open=0, round=1.., close=last 로 seq 자동 stamp.
+        rid = la.open_loop(self.tmp, "L3", now=0)
+        la.record_round(self.tmp, rid, 1, 2, 1, 1, 0, 10, now=1)
+        la.record_round(self.tmp, rid, 2, 0, 0, 0, 0, 20, now=2)
+        la.close_loop(self.tmp, rid, "APPROVED", "CONVERGED", 2, now=3)
+        seqs = [r["seq"] for r in la.read_records(self.tmp)]
+        self.assertEqual(seqs, [0, 1, 2, 3])
+        run = la.audit_summary(self.tmp)["runs"][rid]
+        self.assertTrue(run["seq_ok"])
+        self.assertEqual(la.integrity_issues(self.tmp), [])
+
+    def test_seq_handwritten_round_detected(self):
+        # CLI/라이브러리 우회한 수기 round(seq 없음) → seq_ok False + integrity 위반.
+        rid = la.open_loop(self.tmp, "L3", run_id="rl-forge", now=0)
+        with open(la.audit_path(self.tmp), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"event": "round", "run_id": "rl-forge", "iteration": 1,
+                                "found": 9, "survived": 9, "accepted": 9}) + "\n")   # seq 누락
+        la.close_loop(self.tmp, "rl-forge", "APPROVED", "CONVERGED", 1, now=2)
+        run = la.audit_summary(self.tmp)["runs"]["rl-forge"]
+        self.assertFalse(run["seq_ok"])
+        self.assertTrue(any("시퀀스" in i and "rl-forge" in i for i in la.integrity_issues(self.tmp)))
+
+    def test_seq_legacy_no_seq_skips(self):
+        # 구버전 기록(seq 전무) → seq_ok None(검사 skip, 하위호환).
+        path = la.audit_path(self.tmp)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"event": "loop_open", "run_id": "rl-old", "risk": "L3"}) + "\n")
+            f.write(json.dumps({"event": "loop_close", "run_id": "rl-old", "result": "APPROVED",
+                                "reason": "CONVERGED", "iterations": 1}) + "\n")
+        run = la.audit_summary(self.tmp)["runs"]["rl-old"]
+        self.assertIsNone(run["seq_ok"])
+        self.assertEqual(la.integrity_issues(self.tmp), [])
+
+    # --- 7차 배치3: reviewer degraded (cross-model 폴백 침묵 차단) ---
+    def test_reviewer_degraded_on_mismatch(self):
+        rid = la.open_loop(self.tmp, "L3", run_id="rl-x", now=0, reviewer_requested="cross_model")
+        la.close_loop(self.tmp, "rl-x", "APPROVED", "CONVERGED", 1, now=1,
+                      reviewer_actual="same_runtime")
+        run = la.audit_summary(self.tmp)["runs"]["rl-x"]
+        self.assertEqual(run["reviewer_requested"], "cross_model")
+        self.assertEqual(run["reviewer_actual"], "same_runtime")
+        self.assertTrue(run["degraded"])
+
+    def test_reviewer_not_degraded_when_match(self):
+        rid = la.open_loop(self.tmp, "L3", run_id="rl-y", now=0, reviewer_requested="cross_model")
+        la.close_loop(self.tmp, "rl-y", "APPROVED", "CONVERGED", 1, now=1,
+                      reviewer_actual="cross_model")
+        self.assertFalse(la.audit_summary(self.tmp)["runs"]["rl-y"]["degraded"])
+
+    def test_reviewer_absent_not_degraded(self):
+        # reviewer 미기록(legacy/미사용) → degraded False(오탐 방지).
+        rid = la.open_loop(self.tmp, "L3", run_id="rl-z", now=0)
+        la.close_loop(self.tmp, "rl-z", "APPROVED", "CONVERGED", 1, now=1)
+        self.assertFalse(la.audit_summary(self.tmp)["runs"]["rl-z"]["degraded"])
 
 
 if __name__ == "__main__":

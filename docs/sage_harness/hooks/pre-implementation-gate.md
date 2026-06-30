@@ -47,10 +47,28 @@ profile.pdca: { enabled, phases[{id,glob}], pre_implementation_required{L1,L2,L3
 ## report←approve audit 게이트 (9.5, profile.pdca.review_loop.report_gate_enforce — F-5)
 review_loop.enabled + report_gate_enforce ∈ {advisory, enforce} 일 때, 마커 검사에 더해 06 작성 시
 `_audit_gate` 가: cycle 05 문서 1개를 `_doc_match`(ticket→recent)로 선택 → 그 동일 문서에서 APPROVED 마커
-+ `Loop-Run: <run_id>` 를 함께 읽고, 주입된 `snapshot.loop_audit.runs[run_id]` 가 closed+APPROVED 인지 검사.
-위반 시 advisory=warn_report_without_audit(exit0) / enforce=block_report_without_audit(exit2). off·루프
-비활성 → skip(하위호환). loop_audit 주입은 adapter(`hook_runtime.build_snapshot` → `loop_audit.audit_summary`)
-가 담당(core 는 순수). stale 결합 차단: 마커와 Loop-Run 을 *같은* selected 문서에서 읽는다.
++ `Loop-Run: <run_id>` 를 함께 읽고, 주입된 `snapshot.loop_audit.runs[run_id]` 가 다음을 모두 만족하는지 검사:
+clean(open 1회 + close 최대 1회 — 고아 close·중복/재사용 open·close 아님; open-only run 은 clean=True 이며 별도
+`closed` 체크가 거른다) · seq_ok≠False(라운드 seq 연속 — 7차 배치3) · closed · result=APPROVED ·
+degraded 아님(reviewer 의도=실제 — 7차 배치3). 위반 시 advisory=warn_report_without_audit(exit0) /
+enforce=block_report_without_audit(exit2). report_gate_enforce 기본=advisory(키 부재 시 — 7차 배치3-5,
+루프 켠 프로젝트는 최소 WARN); 명시 off·루프 비활성 → skip(하위호환). loop_audit 주입은 adapter
+(`hook_runtime.build_snapshot` → `loop_audit.audit_summary`)가 담당(core 는 순수). stale 결합 차단: 마커와
+Loop-Run 을 *같은* selected 문서에서 읽는다.
+- **seq sanity(배치3-3)**: `loop_audit` 라이브러리가 open=0·round/close append 순 +1 로 seq 를 stamp →
+  `audit_summary.seq_ok` 가 [0..n-1] 연속을 검산. **seq 를 생략했거나 순서를 틀린** 순진한/우회 수기 append 는
+  seq 불연속(False)으로 탐지·차단되지만, **파일을 읽어 다음 정수를 추측해 맞춰 쓰면 통과한다**.
+  **범위(codex R1b P1·R2 P2)**: 위변조 방지가 아닌 *게으른 우회/순서* 탐지 — 진짜 tamper-resistance 는
+  해시체인(7차 이후 과제).
+  구버전 기록(seq 전무)은 None=skip(하위호환). **레거시+신규 혼합**(같은 run_id 에 seq 없는 구레코드 +
+  seq 있는 신규)은 의도적으로 False — 그 run 이력은 더 이상 신뢰 불가하므로 차단/경고(codex R1b P2, intentional).
+- **reviewer degraded(배치3-4)**: open 의 reviewer_requested 가 명시됐는데 close 의 reviewer_actual 이
+  *다르거나 기록 안 됨*(closed run 한정)이면 degraded → cross-model 요청이 same-runtime 으로 폴백/미확인된
+  정황을 침묵 통과시키지 않음(codex R1b P1: actual 미기록도 fail-closed). reviewer_actual 자동 기록은 배치2
+  (cross-model invocation)가 배선 — 그 전까지 req 미설정이면 degraded=False(오탐 없음).
+- **report_gate_enforce 기본 advisory(배치3-5, 의도적 변경)**: 키 부재 시 off→advisory 는 *비차단 WARN*
+  (exit0)이므로 hard break 아님 — 루프 켠 기존 프로젝트에 새 경고가 뜨는 것은 의도된 advisory-first 거동
+  (codex R1b P2: 명시 off 는 여전히 skip, 마이그레이션은 advisory 관찰 후 enforce 전환).
 
 ## acceptance evidence 게이트 (verification.acceptance.report_gate_enforce)
 build/test/lint 통과가 "사용자 요구사항 충족"을 자동 증명하지 않는 갭을 advisory-first 로 닫는다.
@@ -75,7 +93,8 @@ core 는 판단하지 않고 04 의 구조화된 상태(PASS/FAIL/NOT TESTED/N/A
     섞인 L3 키워드 문자열도 L3 로 올릴 수 있음. L0 문서(plan_docs/docs/*.md) pass 가 선행이라 문서 오탐은 제한됨.
 
 ## tests
-scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py (53 PASS)
+scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py (59 PASS)
 - classify(L0~L3/escalation/desktop/declared/case-insensitive) + decide(분기) + 전략 후보 2종(인라인플래그/무효패턴 포함)
   + PDCA 강제(의무 phase block/통과/L3 review 보존/report 게이트/비활성 하위호환) + adapter(L3 block·L1 pass)
+  + audit 게이트 seq_ok/degraded 분기 + report_gate_enforce 기본 advisory(7차 배치3)
   + acceptance evidence 게이트(matrix↔evidence 대조/미해결 block·warn/risk 미해당 skip)

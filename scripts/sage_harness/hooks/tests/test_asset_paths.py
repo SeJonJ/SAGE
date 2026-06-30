@@ -83,6 +83,7 @@ class TestAssetPathsKinds(unittest.TestCase):
             [
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "run_hook.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "hook_runtime.py"),
+                os.path.join("scripts", "sage_harness", "hooks", "runtime", "loop_audit.py"),
             ],
         )
         self.assertEqual(os.path.basename(groups["claude"][0]), "io_claude.py")

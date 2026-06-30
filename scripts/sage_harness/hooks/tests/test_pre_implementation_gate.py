@@ -322,6 +322,57 @@ class TestReportAuditGate(unittest.TestCase):
         self.assertEqual(d["status"], "ok")
         self.assertNotIn(d["message_key"], ("block_report_without_audit", "warn_report_without_audit"))
 
+    # --- 7차 배치3-5: report_gate_enforce 키 부재 → 기본 advisory ---
+    def test_default_advisory_when_key_absent(self):
+        import copy
+        p = copy.deepcopy(PDCA_PROFILE)
+        p["pdca"]["review_loop"] = {"enabled": True}   # report_gate_enforce 미설정
+        d = core.decide(_REPORT_EV, p,
+                        snap_audit([self._doc("Final Status: APPROVED")], runs={}), None)
+        self.assertEqual(d["message_key"], "warn_report_without_audit")   # off 가 아니라 advisory WARN
+        self.assertEqual(d["exit_code"], 0)
+
+    # --- 7차 배치3-3: seq 불연속(수기/순서조작) → advisory WARN / enforce BLOCK ---
+    def test_seq_ok_false_blocks_enforce(self):
+        d = core.decide(_REPORT_EV, _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": True, "result": "APPROVED", "seq_ok": False}}), None)
+        self.assertEqual(d["message_key"], "block_report_without_audit")
+        self.assertEqual(d["exit_code"], 2)
+
+    def test_seq_ok_false_warns_advisory(self):
+        d = core.decide(_REPORT_EV, _audit_profile(mode="advisory"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": True, "result": "APPROVED", "seq_ok": False}}), None)
+        self.assertEqual(d["message_key"], "warn_report_without_audit")
+        self.assertEqual(d["exit_code"], 0)
+
+    def test_seq_ok_none_legacy_passes(self):
+        # seq_ok None(레거시) → seq 검사 skip, 나머지 정상이면 통과.
+        d = core.decide(_REPORT_EV, _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": True, "result": "APPROVED", "seq_ok": None}}), None)
+        self.assertEqual(d["status"], "ok")
+
+    # --- 7차 배치3-4: reviewer degraded(cross-model 폴백) → advisory WARN / enforce BLOCK ---
+    def test_degraded_blocks_enforce(self):
+        d = core.decide(_REPORT_EV, _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": True, "result": "APPROVED",
+                                                    "degraded": True, "reviewer_requested": "cross_model",
+                                                    "reviewer_actual": "same_runtime"}}), None)
+        self.assertEqual(d["message_key"], "block_report_without_audit")
+        self.assertEqual(d["exit_code"], 2)
+
+    def test_degraded_warns_advisory(self):
+        d = core.decide(_REPORT_EV, _audit_profile(mode="advisory"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": True, "result": "APPROVED",
+                                                    "degraded": True, "reviewer_requested": "cross_model",
+                                                    "reviewer_actual": "same_runtime"}}), None)
+        self.assertEqual(d["message_key"], "warn_report_without_audit")
+        self.assertEqual(d["exit_code"], 0)
+
     def test_marker_on_other_doc_not_selected_fails(self):
         # codex 회귀: ticket 으로 선택된 05 문서엔 APPROVED 없고, 다른 05 에만 APPROVED+Loop-Run.
         # 마커 게이트(any)는 통과하지만 audit 은 selected 문서에 APPROVED 가 없어 fail 해야 한다.

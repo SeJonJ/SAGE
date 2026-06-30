@@ -46,6 +46,8 @@ def register(sub):
     po = sp.add_parser("open", help="루프 시작 기록 → run_id 출력")
     po.add_argument("--risk", required=True, choices=["L2", "L3"], help="위험 tier(루프는 L2/L3 만)")
     po.add_argument("--run-id", default=None, help="명시 run_id(기본: 자동 발급)")
+    po.add_argument("--reviewer-requested", default=None,
+                    help="의도한 리뷰어 모드(예: cross_model|same_runtime). close 의 --reviewer-actual 와 비교해 degraded 판정")
     po.add_argument("--root", default=None)
     po.set_defaults(func=_run_open)
 
@@ -66,6 +68,8 @@ def register(sub):
     pc.add_argument("--reason", required=True,
                     choices=sorted(_APPROVED_REASONS | _BLOCKED_REASONS))
     pc.add_argument("--iterations", required=True, type=_nonneg)
+    pc.add_argument("--reviewer-actual", default=None,
+                    help="실제 수행된 리뷰어 모드(예: cross_model|same_runtime). open 의 --reviewer-requested 와 다르면 degraded")
     pc.add_argument("--root", default=None)
     pc.set_defaults(func=_run_close)
 
@@ -133,7 +137,8 @@ def _run_open(args):
     if args.run_id and _is_open(la, root, args.run_id):
         print(f"[sage review-loop] run_id '{args.run_id}' 이미 open 됨 — 중복 open 거부(integrity)", file=sys.stderr)
         return 2
-    rid = la.open_loop(root, args.risk, cfg=_cfg_snapshot(root), run_id=args.run_id)
+    rid = la.open_loop(root, args.risk, cfg=_cfg_snapshot(root), run_id=args.run_id,
+                       reviewer_requested=args.reviewer_requested)
     print(rid)   # stdout = run_id 만(스킬이 캡처해 후속 round/close 에 전달)
     print(f"[sage review-loop] open run_id={rid} risk={args.risk} → {la.audit_path(root)}", file=sys.stderr)
     return 0
@@ -279,7 +284,8 @@ def _run_close(args):
         print("[sage review-loop] (advisory — 기록은 진행. profile 의 review_loop.termination_enforce=enforce 로 강제 가능)",
               file=sys.stderr)
 
-    la.close_loop(root, args.run_id, args.result, args.reason, args.iterations)
+    la.close_loop(root, args.run_id, args.result, args.reason, args.iterations,
+                  reviewer_actual=args.reviewer_actual)
     print(f"[sage review-loop] close run_id={args.run_id} {args.result}/{args.reason} iterations={args.iterations}", file=sys.stderr)
     return 0
 

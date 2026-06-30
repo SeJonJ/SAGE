@@ -90,7 +90,8 @@ class TestBuildSnapshot(unittest.TestCase):
             self.assertIn("loop_audit", snap)
             self.assertTrue(snap["loop_audit"]["has_any_records"])
             self.assertEqual(snap["loop_audit"]["runs"]["run-z"],
-                             {"closed": True, "result": "APPROVED", "clean": True})
+                             {"closed": True, "result": "APPROVED", "clean": True, "seq_ok": True,
+                              "reviewer_requested": None, "reviewer_actual": None, "degraded": False})
 
     def test_loop_audit_fail_open_no_sage_dir(self):
         # .sage 부재 → fail-open 빈 요약(snapshot 빌드는 안 깨짐).

@@ -385,9 +385,9 @@ def _audit_gate(event, profile, snapshot):
     rl = cfg.get("review_loop") or {}
     if not rl.get("enabled"):
         return None   # 루프 미기대 → 현행 마커-only (오차단 방지)
-    mode = rl.get("report_gate_enforce") or "off"
+    mode = rl.get("report_gate_enforce") or "advisory"   # 7차 배치3-5: 기본 off→advisory(루프 켠 프로젝트는 최소 WARN)
     if mode not in ("advisory", "enforce"):
-        return None   # off/미설정/무효 → skip
+        return None   # 명시 off/무효 → skip(하위호환)
     report_phase = cfg.get("report_phase") or ""
     approve_phase = cfg.get("approve_phase") or ""
     if not report_phase or not approve_phase:
@@ -425,10 +425,17 @@ def _audit_gate(event, profile, snapshot):
     if not run.get("clean", True):
         # 재사용/중복 open·close·고아 → 증거 모호(stale 결과로 통과 차단, codex 코드 R2-P1)
         return fail(f"run {run_id!r} 의 audit 이력이 모호(중복/재사용 open·close) — 증거 신뢰 불가")
+    if run.get("seq_ok") is False:
+        # 7차 배치3-3: seq 불연속/누락 = CLI/라이브러리 우회한 수기 JSONL append 또는 순서 조작.
+        return fail(f"run {run_id!r} 의 라운드 seq 불연속/누락 — 수기 기록 또는 순서 조작 의심(감사 증거 신뢰 불가)")
     if not run.get("closed"):
         return fail(f"run {run_id!r} 가 닫히지 않음(루프 미종료)")
     if (run.get("result") or "").upper() != "APPROVED":
         return fail(f"run {run_id!r} 가 result={run.get('result')!r} 로 종료(APPROVED 아님)")
+    if run.get("degraded"):
+        # 7차 배치3-4: 의도한 reviewer(open) ≠ 실제(close) — cross-model 요청이 same-runtime 으로 폴백된 정황.
+        return fail(f"run {run_id!r} reviewer 불일치: 의도={run.get('reviewer_requested')!r} "
+                    f"실제={run.get('reviewer_actual')!r} (cross-model 의도 검토 미수행 의심)")
     return {"ok": True, "mode": mode, "detail": run_id}
 
 
