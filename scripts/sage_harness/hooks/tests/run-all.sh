@@ -44,8 +44,12 @@ echo "### 10. sage change 라우터 (자연어 의도 → generate/absorb)"
 python3 "$HERE/test_change_router.py" || rc=1
 
 echo ""
-echo "### 11. reviewer_resolution (codex-host opposite reviewer fallback)"
+echo "### 11. reviewer_resolution (cross-model peer CLI 직접 탐지)"
 python3 "$HERE/test_reviewer_resolution.py" || rc=1
+
+echo ""
+echo "### 11b. sage review / cross-check (Phase 05 same-runtime / cross-model 직접 호출)"
+python3 "$HERE/test_phase05_review.py" || rc=1
 
 echo ""
 echo "### 12. validate 안전성 (오염 manifest test 경로 차단)"

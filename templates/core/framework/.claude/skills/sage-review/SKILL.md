@@ -14,12 +14,20 @@ description: "Run SAGE Phase-05 independent review. Single-pass clean-context/cr
 
 ## Resolve review mode
 
-From `sage/project-profile.yaml`:
-- If `options.cross_model: true` AND `cross_model.invocation` path is reachable
-  → **opposite-runtime review** (cross-model, removes model bias)
-- Otherwise → **clean-context same-runtime review** (fresh context, same model)
+`sage doctor` resolves it from `options.cross_model` + peer CLI availability (no gstack):
+- `options.cross_model: true` AND the peer runtime CLI is available
+  (claude-host→`codex`, codex-host→`claude`) → **opposite-runtime review** (cross-model, removes model bias).
+  SAGE invokes the peer directly — claude-host runs `codex exec`, codex-host runs `claude -p`
+  (both are non-interactive subcommands; do NOT claim codex is "interactive-only").
+- Otherwise (cross off, or peer CLI unavailable) → **clean-context same-runtime review**.
 
-State the resolved mode before reviewing.
+Do not invoke the peer ad-hoc. Use the deterministic commands so the fallback is never silent:
+- cross_model **true** → `sage cross-check` (invokes the peer, prints its review, emits `REVIEWER_ACTUAL`)
+- cross_model **false** → `sage review` (same-runtime, emits `REVIEWER_ACTUAL: same_runtime`)
+
+If `sage cross-check` cannot reach the peer it prints `REVIEWER_ACTUAL: same_runtime` (not silent) — pass
+that to `sage review-loop close --reviewer-actual` so the gate flags the degraded cross-model run. State the
+resolved mode before reviewing.
 
 ## Choose pass vs loop
 
@@ -67,10 +75,12 @@ one of `APPROVED | FAIL | BLOCKED`:
 
 ## Loop A — adversarial review-rework (when `review_loop.enabled` + L2/L3)
 
-Load `cfg = pdca.review_loop`. Open the audit trail and capture the run id:
+Load `cfg = pdca.review_loop`. Open the audit trail and capture the run id, recording the
+**intended** reviewer mode (`cross_model` if `options.cross_model: true`, else `same_runtime`):
 
 ```
-RUN_ID=$(sage review-loop open --risk <L2|L3>)
+REQ=$( [ cross_model true ] && echo cross_model || echo same_runtime )
+RUN_ID=$(sage review-loop open --risk <L2|L3> --reviewer-requested $REQ)
 ```
 
 `sage review-loop` auto-discovers the project root (the dir holding `sage/project-profile.yaml`),
@@ -81,9 +91,12 @@ subsequent `round`/`close`.
 Then repeat each round until a termination rule fires (max `cfg.max_iterations[risk]`):
 
 ### 1. FIND (parallel lenses + cross-model peer)
-Run one reviewer per lens in `cfg.lenses` (parallel, divergent), plus — if cross-model
-is resolved — one opposite-runtime peer. Use the **FIND prompt** (§ skeletons). Collect
-findings. **Dedup**: drop any finding whose key `(norm(file), line_bucket, lens, sha(norm(claim)))`
+Run one reviewer per lens in `cfg.lenses` (parallel, divergent). For the cross-model peer,
+**do not invoke the peer by hand** — write the review packet (diff + 05 context) to a file and run
+`sage cross-check --packet-file <f>`; it invokes the peer (`codex exec`/`claude -p`) and prints the
+peer's findings. Capture its last line `REVIEWER_ACTUAL: <mode>` as `ACTUAL` (it is `same_runtime`
+if the peer was unreachable — fold those findings into the host's same-runtime review). Use the
+**FIND prompt** (§ skeletons) for host lenses. Collect findings. **Dedup**: drop any finding whose key `(norm(file), line_bucket, lens, sha(norm(claim)))`
 is already in `seen` (prevents tail/resurfacing churn).
 
 ### 2. REFUTE (adversarial false-positive filter)
@@ -96,7 +109,7 @@ a wrongly-dropped real issue is the human BLOCKED path. Add survivors to `seen`.
 For each survivor, run the **TRIAGE prompt**. If `scope == architecture_change` AND
 `classify_risk(file)` is L3 → **stop the loop, escalate to a human**:
 ```
-sage review-loop close --run-id $RUN_ID --result BLOCKED --reason BLOCKED_ARCH --iterations <n>
+sage review-loop close --run-id $RUN_ID --result BLOCKED --reason BLOCKED_ARCH --iterations <n> --reviewer-actual $ACTUAL
 ```
 Record the block in the Phase-05 doc and STOP. Architecture changes are not auto-reworked.
 
@@ -106,9 +119,10 @@ Record the block in the Phase-05 doc and STOP. Architecture changes are not auto
 - iteration ≥ `cfg.max_iterations[risk]` (still unconverged) → **BLOCKED** (reason `BUDGET_ITER`)
 - cumulative tokens ≥ `cfg.budget_tokens[risk]` → **BLOCKED** (reason `BUDGET_TOK`)
 
-On any terminal state, record the round then close:
+On any terminal state, record the round then close (pass the **actual** reviewer mode so the gate
+can flag a degraded cross-model run — `$ACTUAL` from `sage cross-check`, or `same_runtime`):
 ```
-sage review-loop close --run-id $RUN_ID --result <APPROVED|BLOCKED> --reason <REASON> --iterations <n>
+sage review-loop close --run-id $RUN_ID --result <APPROVED|BLOCKED> --reason <REASON> --iterations <n> --reviewer-actual $ACTUAL
 ```
 
 **Record the run id in the Phase-05 doc** — add a line `Loop-Run: $RUN_ID` to this cycle's
