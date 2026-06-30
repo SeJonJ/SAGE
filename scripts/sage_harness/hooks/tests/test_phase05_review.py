@@ -19,8 +19,8 @@ from sage.commands import review as RV  # noqa: E402
 
 
 class _Args:
-    def __init__(self, root=None, packet_file=None, timeout=540):
-        self.root = root; self.packet_file = packet_file; self.timeout = timeout
+    def __init__(self, root=None, packet_file=None, timeout=540, strict=False):
+        self.root = root; self.packet_file = packet_file; self.timeout = timeout; self.strict = strict
 
 
 def _mkprofile(d, host="claude", cross=False):
@@ -49,18 +49,19 @@ class TestParsers(unittest.TestCase):
         self.assertIsNone(RV._parse_claude_json('{"x":1}'))
         self.assertIsNone(RV._parse_claude_json("not json"))
 
-    def test_peer_command_codex(self):
-        cmd = RV._peer_command("codex", "PROMPT")
+    def test_peer_command_codex_no_prompt_arg(self):
+        # 프롬프트는 stdin 으로 — argv 에 포함되면 안 됨(ARG_MAX 회피, codex R1 P1).
+        cmd = RV._peer_command("codex")
         self.assertEqual(cmd[:5], ["codex", "exec", "--json", "-s", "read-only"])
-        self.assertEqual(cmd[-1], "PROMPT")
+        self.assertNotIn("PROMPT", cmd)
+        self.assertEqual(cmd[-1], 'model_reasoning_effort="high"')
 
-    def test_peer_command_claude(self):
-        cmd = RV._peer_command("claude", "PROMPT")
-        self.assertEqual(cmd, ["claude", "-p", "--output-format", "json", "PROMPT"])
+    def test_peer_command_claude_no_prompt_arg(self):
+        self.assertEqual(RV._peer_command("claude"), ["claude", "-p", "--output-format", "json"])
 
     def test_peer_command_unknown(self):
         with self.assertRaises(ValueError):
-            RV._peer_command("gpt", "x")
+            RV._peer_command("gpt")
 
 
 class TestReview(unittest.TestCase):
@@ -133,6 +134,14 @@ class TestCrossCheck(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertIn("REVIEWER_ACTUAL: same_runtime", out.getvalue())   # degraded 근거
             self.assertIn("timeout", err.getvalue())                          # 실패 사유 표면화
+
+    def test_cross_strict_nonzero_on_fallback(self):
+        # --strict: cross-model 미수행(폴백) 시 exit 3 (stdout 센티넬 못 보는 caller 용).
+        with tempfile.TemporaryDirectory() as d:
+            _mkprofile(d, cross=False)
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d), strict=True))
+            self.assertEqual(rc, 3)
 
     def test_cross_empty_packet_toolerror(self):
         with tempfile.TemporaryDirectory() as d:

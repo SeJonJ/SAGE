@@ -33,20 +33,23 @@ def register(sub):
     pc.add_argument("--packet-file", required=True,
                     help="리뷰 패킷(변경 diff + 05 맥락) 파일 — peer 에게 전달할 프롬프트")
     pc.add_argument("--timeout", type=int, default=_DEFAULT_TIMEOUT, help=f"peer 호출 상한 초(기본 {_DEFAULT_TIMEOUT})")
+    pc.add_argument("--strict", action="store_true",
+                    help="cross-model 미수행(폴백) 시 exit 3 (stdout 센티넬을 놓치는 자동 caller/CI 용). 기본 off")
     pc.add_argument("--root", default=None)
     pc.set_defaults(func=run_cross_check)
 
 
 # ---- 순수 헬퍼(테스트 직격) ----
 
-def _peer_command(peer, prompt):
-    """peer 런타임 비대화 리뷰 argv. shell 미경유(주입 안전). stdin 은 호출부가 DEVNULL 로 차단."""
+def _peer_command(peer):
+    """peer 런타임 비대화 리뷰 argv(프롬프트 제외). shell 미경유(주입 안전).
+    프롬프트는 **stdin** 으로 전달한다(codex R1 P1): positional arg 로 넘기면 큰 diff 가 OS ARG_MAX 를
+    넘겨 모든 대형 리뷰가 same_runtime 으로 degrade. codex exec/claude -p 둘 다 prompt 부재 시 stdin 을 읽는다."""
     if peer == "codex":
-        # codex exec: 비대화 1턴. read-only 샌드박스 + 캐시 web_search 끔(결정성). PROMPT 는 positional.
-        return ["codex", "exec", "--json", "-s", "read-only",
-                "-c", 'model_reasoning_effort="high"', prompt]
+        # codex exec: 비대화 1턴, read-only 샌드박스 + reasoning high. PROMPT 생략 → stdin 읽기.
+        return ["codex", "exec", "--json", "-s", "read-only", "-c", 'model_reasoning_effort="high"']
     if peer == "claude":
-        return ["claude", "-p", "--output-format", "json", prompt]
+        return ["claude", "-p", "--output-format", "json"]
     raise ValueError(f"unknown peer runtime: {peer!r}")
 
 
@@ -92,9 +95,10 @@ def _invoke_peer(peer, prompt, timeout):
     """peer 런타임을 비대화 실행 → (ok, review_text, err). 미설치/타임아웃/비정상종료/파싱실패 = (False, None, 사유)."""
     if not shutil.which(peer):
         return False, None, f"{peer} CLI 미설치(PATH 없음)"
-    cmd = _peer_command(peer, prompt)
+    cmd = _peer_command(peer)
     try:
-        r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True,
+        # 프롬프트는 stdin 으로(ARG_MAX 회피, codex R1 P1). codex exec/claude -p 가 stdin 을 프롬프트로 읽음.
+        r = subprocess.run(cmd, input=prompt, capture_output=True,
                            text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return False, None, f"{peer} 호출 timeout({timeout}s)"
@@ -166,7 +170,7 @@ def run_cross_check(args):
         print(f"[sage cross-check] ⚠️  cross-model 미수행 → same-runtime 폴백 ({reason}). "
               f"{rr['notice']}", file=sys.stderr)
         print("REVIEWER_ACTUAL: same_runtime")
-        return 0
+        return 3 if getattr(args, "strict", False) else 0
 
     peer = rr["reviewer_runtime"]
     try:
@@ -184,7 +188,7 @@ def run_cross_check(args):
         # peer 도달 실패 → 폴백을 침묵시키지 않음(6차 버그 수정). degraded 로 게이트가 잡게 한다.
         print(f"[sage cross-check] ⚠️  {peer} 리뷰 실패 → same-runtime 폴백: {err}", file=sys.stderr)
         print("REVIEWER_ACTUAL: same_runtime")
-        return 0
+        return 3 if getattr(args, "strict", False) else 0
 
     # peer 리뷰 본문 = stdout(스킬이 05 문서/REWORK 입력으로 사용). 마지막 줄에 REVIEWER_ACTUAL.
     print(f"===== {peer.upper()} CROSS-MODEL REVIEW =====")
