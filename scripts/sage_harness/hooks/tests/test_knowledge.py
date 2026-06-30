@@ -145,6 +145,62 @@ class TestKnowledge(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertIn("N/A", out.getvalue())
 
+    # --- 7차 배치2 4-2/4-3: note_convention tags_style + index ---
+    def _profile_conv(self, root, vault, extra):
+        os.makedirs(os.path.join(root, "sage"), exist_ok=True)
+        Path(os.path.join(root, "sage", "project-profile.yaml")).write_text(
+            "knowledge_capture:\n"
+            f"  vault_path: \"{vault}\"\n"
+            "  update_after_dev: true\n"
+            "  note_convention: { folder: \"wiki\", filename_pattern: \"{prefix} - {title}.md\", " + extra + " }\n",
+            encoding="utf-8")
+
+    def test_tags_style_frontmatter_default(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            self._profile_conv(root, vault, 'tags_style: frontmatter')
+            with redirect_stdout(io.StringIO()):
+                knowledge._run_write_back(WriteArgs(root, "FM", "s"))
+            body = Path(os.path.join(vault, "wiki", "TECH - FM.md")).read_text(encoding="utf-8")
+            self.assertTrue(body.startswith("---"))            # frontmatter 블록
+            self.assertIn("tags:", body.split("---")[1])       # tags 가 frontmatter 안
+            self.assertNotIn("태그: #", body)
+
+    def test_tags_style_inline(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            self._profile_conv(root, vault, 'tags_style: inline')
+            with redirect_stdout(io.StringIO()):
+                knowledge._run_write_back(WriteArgs(root, "IN", "s"))
+            body = Path(os.path.join(vault, "wiki", "TECH - IN.md")).read_text(encoding="utf-8")
+            self.assertIn("태그: #tech #sage #knowledge-capture", body)   # 본문 인라인 태그
+            fm = body.split("---")[1] if body.startswith("---") else ""
+            self.assertNotIn("tags:", fm)                                  # frontmatter 엔 tags 없음
+
+    def test_tags_style_none(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            self._profile_conv(root, vault, 'tags_style: none')
+            with redirect_stdout(io.StringIO()):
+                knowledge._run_write_back(WriteArgs(root, "NO", "s"))
+            body = Path(os.path.join(vault, "wiki", "TECH - NO.md")).read_text(encoding="utf-8")
+            self.assertNotIn("태그: #", body)
+            fm = body.split("---")[1] if body.startswith("---") else ""
+            self.assertNotIn("tags:", fm)
+
+    def test_index_append_when_configured(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            self._profile_conv(root, vault, 'index: "index.md"')
+            with redirect_stdout(io.StringIO()):
+                knowledge._run_write_back(WriteArgs(root, "IDX", "s"))
+                knowledge._run_write_back(WriteArgs(root, "IDX", "s"))   # 멱등
+            idx = Path(os.path.join(vault, "wiki", "index.md")).read_text(encoding="utf-8")
+            self.assertEqual(idx.count("[[TECH - IDX]]"), 1)
+
+    def test_index_skipped_when_unset(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            self._profile_conv(root, vault, 'flat: true')   # index 미설정
+            with redirect_stdout(io.StringIO()):
+                knowledge._run_write_back(WriteArgs(root, "NOIDX", "s"))
+            self.assertFalse(os.path.exists(os.path.join(vault, "wiki", "index.md")))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

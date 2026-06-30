@@ -247,11 +247,13 @@ def _note_filename(profile, prefix, title):
     return os.path.basename(name)
 
 
-def _append_log_once(vault, folder, note_stem, title):
+def _append_link_once(vault, folder, target_file, note_stem, title):
+    """vault/folder/<target_file> 에 `- <date> [[note]] - title` 한 줄을 멱등 append(이미 링크되면 skip).
+    log.md(이력)·index(목차) 공용(7차 배치2 4-3). target_file 는 basename 만(경로 탈출 방지)."""
     root = os.path.realpath(vault)
     d = _inside_or_root(root, os.path.realpath(os.path.join(root, folder)))
     os.makedirs(d, exist_ok=True)
-    path = os.path.join(d, "log.md")
+    path = os.path.join(d, os.path.basename(target_file))
     if os.path.islink(path):
         os.unlink(path)
     line = f"- {_dt.date.today().isoformat()} [[{note_stem}]] - {title}\n"
@@ -267,6 +269,26 @@ def _append_log_once(vault, folder, note_stem, title):
     return path, True
 
 
+def _append_log_once(vault, folder, note_stem, title):
+    return _append_link_once(vault, folder, "log.md", note_stem, title)
+
+
+def _note_tags_style(profile):
+    """note_convention.tags_style → frontmatter(기본) | inline | none. 무효값은 frontmatter 폴백.
+    vault 규칙을 따르도록 profile 주입(7차 배치2 4-2): frontmatter 안 쓰는 vault 는 inline/none 선택."""
+    kc = profile.get("knowledge_capture") if isinstance(profile, dict) else {}
+    conv = (kc if isinstance(kc, dict) else {}).get("note_convention") or {}
+    style = conv.get("tags_style") or "frontmatter"
+    return style if style in ("frontmatter", "inline", "none") else "frontmatter"
+
+
+def _index_name(profile):
+    """note_convention.index → 목차 파일명(예: index.md). 비면 '' = index 갱신 안 함(기본 — index 없는 vault 존중)."""
+    kc = profile.get("knowledge_capture") if isinstance(profile, dict) else {}
+    conv = (kc if isinstance(kc, dict) else {}).get("note_convention") or {}
+    return os.path.basename(str(conv.get("index") or "")).strip()
+
+
 def _note_path(vault, folder, filename):
     root = os.path.realpath(vault)
     d = _inside_or_root(root, os.path.realpath(os.path.join(root, folder)))
@@ -274,7 +296,7 @@ def _note_path(vault, folder, filename):
     return os.path.join(d, os.path.basename(filename))
 
 
-def _write_or_append_note(vault, folder, filename, frontmatter, note_stem, summary):
+def _write_or_append_note(vault, folder, filename, frontmatter, note_stem, summary, tag_line=""):
     import hashlib
     marker = "SAGE-KNOWLEDGE-WRITEBACK:" + hashlib.sha256(summary.encode("utf-8")).hexdigest()[:16]
     section = (f"\n\n<!-- {marker} -->\n\n"
@@ -291,7 +313,11 @@ def _write_or_append_note(vault, folder, filename, frontmatter, note_stem, summa
                     f.write("\n")
                 f.write(section.lstrip("\n"))
         return path
-    body = f"# {note_stem}\n\n## Summary\n\n{summary or '(summary not provided)'}\n"
+    # tag_line(인라인 태그 스타일)은 제목 바로 아래에 둔다(frontmatter/none 이면 빈 문자열).
+    head = f"# {note_stem}\n\n"
+    if tag_line:
+        head += f"{tag_line}\n\n"
+    body = head + f"## Summary\n\n{summary or '(summary not provided)'}\n"
     return _vault.write_note(vault, folder, filename, frontmatter, body, create_only=True)
 
 
@@ -309,13 +335,26 @@ def _run_write_back(args):
     title = _safe_title(args.title)
     filename = _note_filename(profile, args.prefix, title)
     note_stem = filename[:-3] if filename.endswith(".md") else filename
-    fm = {"tags": ["tech", "sage", "knowledge-capture"], "date": _dt.date.today().isoformat(), "source": "sage knowledge write-back"}
+    # tags_style(4-2): vault 규칙에 맞춰 frontmatter(기본) / inline(본문 태그줄) / none(태그 없음).
+    tags = ["tech", "sage", "knowledge-capture"]
+    style = _note_tags_style(profile)
+    fm = {"date": _dt.date.today().isoformat(), "source": "sage knowledge write-back"}
+    tag_line = ""
+    if style == "frontmatter":
+        fm["tags"] = tags
+    elif style == "inline":
+        tag_line = "태그: " + " ".join(f"#{t}" for t in tags)
     try:
-        path = _write_or_append_note(vault, folder, filename, fm, note_stem, summary)
+        path = _write_or_append_note(vault, folder, filename, fm, note_stem, summary, tag_line=tag_line)
         print(f"[sage knowledge write-back] note written: {path}")
         if args.append_log:
             log_path, added = _append_log_once(vault, folder, note_stem, title)
             print(f"[sage knowledge write-back] log {'updated' if added else 'already linked'}: {log_path}")
+        # index(4-3): note_convention.index 설정 시에만 목차에 멱등 append(없는 vault 존중 — 기본 off).
+        idx = _index_name(profile)
+        if idx:
+            idx_path, idx_added = _append_link_once(vault, folder, idx, note_stem, title)
+            print(f"[sage knowledge write-back] index {'updated' if idx_added else 'already linked'}: {idx_path}")
         return 0
     except Exception as e:
         print(f"[sage knowledge write-back] FAIL — {type(e).__name__}: {e}")
