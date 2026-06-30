@@ -19,8 +19,10 @@ from sage.commands import review as RV  # noqa: E402
 
 
 class _Args:
-    def __init__(self, root=None, packet_file=None, timeout=540, strict=False):
+    def __init__(self, root=None, packet_file=None, timeout=540, strict=False,
+                 kind=None, batch=False, gate=False):
         self.root = root; self.packet_file = packet_file; self.timeout = timeout; self.strict = strict
+        self.kind = kind; self.batch = batch; self.gate = gate
 
 
 def _mkprofile(d, host="claude", cross=False):
@@ -73,6 +75,14 @@ class TestReview(unittest.TestCase):
                 rc = RV.run_review(_Args(root=d))
             self.assertEqual(rc, 0)
             self.assertIn("REVIEWER_ACTUAL: same_runtime", buf.getvalue())
+
+    def test_review_legacy_flag_migration_message(self):
+        # 구 `sage review --gate`(자산분류) → 친절한 asset-check 안내 + exit 2 (codex 배치2 R3 P1).
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = RV.run_review(_Args(gate=True))
+        self.assertEqual(rc, 2)
+        self.assertIn("asset-check", err.getvalue())
 
 
 class TestCrossCheck(unittest.TestCase):

@@ -13,6 +13,7 @@ gstack 의존 없음: claude-host→`codex exec`, codex-host→`claude -p` 를 S
 기법만 차용 — read-only 샌드박스·stdin 차단·timeout·--json 최종 메시지 파싱).
 """
 
+import argparse
 import json
 import os
 import shutil
@@ -27,6 +28,12 @@ _DEFAULT_TIMEOUT = 540   # codex/claude 비대화 1턴 상한(초). gstack /code
 def register(sub):
     pr = sub.add_parser("review", help="Phase 05 same-runtime 리뷰(cross_model=false 경로)")
     pr.add_argument("--root", default=None)
+    # 마이그레이션 shim(codex 배치2 R3 P1): `sage review` 는 자산분류→Phase05 리뷰로 의미가 바뀌었다.
+    # 구 자산분류 플래그를 hidden 으로 받아, 쓰이면 친절히 `sage asset-check` 로 안내(암호적 argparse 실패 방지).
+    # 동작은 넘기지 않는다(유저 결정: review=same-runtime). SAGE 가 PyPI 배포라 다운스트림 CI 충격 완화용.
+    pr.add_argument("--kind", help=argparse.SUPPRESS)
+    pr.add_argument("--batch", action="store_true", help=argparse.SUPPRESS)
+    pr.add_argument("--gate", action="store_true", help=argparse.SUPPRESS)
     pr.set_defaults(func=run_review)
 
     pc = sub.add_parser("cross-check", help="Phase 05 cross-model 리뷰 — 반대 런타임 CLI 직접 호출")
@@ -149,6 +156,12 @@ def _find_root(explicit):
 def run_review(args):
     """same-runtime 경로. peer 호출 없음 — host AI 자신이 clean-context 로 리뷰한다(스킬이 수행).
     cross_model=true 인데 이 명령을 부르면 의도 불일치를 경고(스킬 라우팅 오류 방지)."""
+    # 구 `sage review`(자산분류) 플래그 감지 → 친절한 이름변경 안내(codex 배치2 R3 P1).
+    if getattr(args, "kind", None) is not None or getattr(args, "batch", False) or getattr(args, "gate", False):
+        print("[sage review] 이 명령은 Phase 05 리뷰로 의미가 바뀌었습니다. 자산 자동승인 분류는 "
+              "`sage asset-check` 로 이름이 변경됐습니다 — `sage asset-check --kind … [--batch] [--gate]`.",
+              file=sys.stderr)
+        return 2
     root = _find_root(args.root)
     _, _, rr = _load_profile_caps(root)
     if rr["reviewer_mode"] == "opposite_runtime":
