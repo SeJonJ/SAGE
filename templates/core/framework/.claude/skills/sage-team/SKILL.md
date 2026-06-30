@@ -133,6 +133,25 @@ After 06 is written, run the configured knowledge write-back when it is enabled:
 3. Record the command output in 06. If it reports `N/A` or fails, record the exact
    skipped/failed reason; do not claim vault capture completed.
 
+> **Single write path (do NOT freelance).** The vault note, `wiki/log.md`, and any index
+> are written ONLY by `sage knowledge write-back` (it resolves the vault path, note convention,
+> tags style, and index from the profile). Never hand-write a vault note or use an obsidian
+> MCP to create cycle notes — that produced the 6th-test misplaced `<project>/sage/*.md`.
+> Likewise the loop audit (`.sage/loop_audit.jsonl`) is written ONLY by `sage review-loop`
+> open/round/close — never append or edit it by hand (the gate validates record sequence and
+> rejects hand-written rounds).
+
+After write-back, capture the cycle's learning as an asset-improvement proposal (Loop C —
+advisory, does not auto-apply; closes the 6th-test gap where loop findings never fed back
+into framework assets):
+
+```bash
+python -m sage retro --run-id <RUN_ID>   # --vault if retro_note enabled
+```
+
+Record that retro ran (or why it was skipped) in 06. Applying any proposal is a separate
+human-gated step.
+
 ## Done
 
 The cycle is complete when 06 exists and reflects an APPROVED Phase 05 with a clean,

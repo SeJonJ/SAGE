@@ -105,6 +105,7 @@ If **off**, leave `review_loop.enabled: false` and skip the rest. If **on**, aut
 | 연속 dry 라운드? | `dry_rounds` | K라운드 연속 신규 0 → 수렴 (기본 1) |
 | 승인 불가 심각도? | `severity_block` | 미해결 시 APPROVED 차단 (기본 [P0,P1]) |
 | cross-model 반박? | `cross_model` | `options.cross_model` 연동 — 이미 물었으면 그 값 재사용(새로 묻지 않음) |
+| 06←05 audit 게이트 강도? | `report_gate_enforce` | 06 작성 시 05 가 가리키는 loop run 이 clean·closed·APPROVED·seq연속·degraded아님인지 검사. `advisory`(기본, WARN) / `enforce`(BLOCK — 모든 05 가 루프 돌 때만 안전) / `off`(마커만). 안정화 전 advisory 권장, 팀 합의 후 enforce |
 
 **Vault outputs** — ask **only if the loop is on AND `knowledge_capture.vault_path` is set**
 (one turn; otherwise skip entirely):
@@ -125,6 +126,17 @@ true while `vault_path` is empty.
 
 These are explicit host-side steps backed by `sage knowledge scan` and
 `sage knowledge write-back`; they are not hidden background writes.
+
+**Note convention — follow the vault's existing rules (do not impose).** When `vault_path` is set,
+inspect the vault before proposing `knowledge_capture.note_convention`: list the target folder,
+read 2–3 existing notes, and check for an index/log. Propose values from what you observe, then
+confirm with the user (do not auto-detect at write time — record the decision in the profile):
+> - `folder` / `filename_pattern` / `prefixes` — match the vault's existing layout & title prefix (e.g. `TECH - {title}.md`); if the vault uses no prefix, leave it empty.
+> - `tags_style` — `frontmatter` / `inline` / `none`. Match how existing notes tag (YAML frontmatter vs a `태그:` line vs none). Default `frontmatter`.
+> - `index` — the vault's index filename (e.g. `index.md`) if one exists and the user wants new notes linked there; **empty if the vault has no index** (write-back then skips index updates).
+
+This makes `sage knowledge write-back` honor the user's vault conventions deterministically instead of
+imposing SAGE defaults (6th-test: frontmatter/index assumptions didn't match the vault).
 
 ### 3. Handoff to the deterministic backend
 On approval, hand off — do not keep authoring registration artifacts by hand:
