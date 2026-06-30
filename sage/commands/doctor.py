@@ -19,24 +19,23 @@ def register(sub):
 
 
 def reviewer_resolution(profile: dict, caps: dict) -> dict:
-    """Phase 05 reviewer 해석 (순수). caps={'gstack':bool} 는 doctor 가 주입.
+    """Phase 05 reviewer 해석 (순수). caps={'codex':bool,'claude':bool} 는 doctor 가 주입(peer CLI 가용성).
 
-    결정표(Codex 2R 합의 + P2-8 대칭 능력게이팅):
-    - cross_model off                              → clean_context_same_runtime (의도적, degraded=false)
-    - cross on, claude-host, claude_host설정 + gstack가용 → opposite_runtime(codex)
-    - cross on, claude-host, gstack 불가            → clean_context fallback (degraded, gstack_unavailable)
-    - cross on, codex-host, codex_host설정 + claude가용  → opposite_runtime(claude)
-    - cross on, codex-host, codex_host설정 + claude불가  → clean_context fallback (degraded, claude_cli_unavailable, §12)
-    - cross on, codex-host, codex_host 미설정        → clean_context fallback (degraded, codex_host_claude_invocation_unresolved, §12)
+    7차 배치2: gstack 의존 폐기. cross-model 리뷰는 SAGE 가 반대 런타임 CLI 를 직접 호출하므로
+    (claude-host→`codex exec`, codex-host→`claude -p`), **peer 런타임 CLI 가용성만으로** 판정한다.
+    이전의 `which gstack` 판정(1-a 오탐: gstack 은 PATH 바이너리가 아니라 ~/.claude/skills 폴더라 항상
+    false)과 codex-host 의 invocation 문자열 요구를 모두 제거 — host 대칭.
 
-    P2-8(역방향 스텁 제거): 이전엔 codex-host 가 codex_host 필드만 있으면 능력검증 없이 opposite 를
-    맹신했다(claude-host 는 gstack 능력을 요구하는데 비대칭). codex-host→Claude 도 claude CLI 능력
-    (caps.claude)을 요구해 대칭화 — 경로 설정 + 실제 호출가능성 둘 다 확인. 실행 명령 자체는 런타임
-    config(invocation.codex_host)가 정의(doctor 는 진단만)."""
+    결정표:
+    - cross_model off                       → clean_context_same_runtime (의도적, degraded=false)
+    - cross on, claude-host, codex CLI 가용  → opposite_runtime(codex) via `codex exec`
+    - cross on, claude-host, codex CLI 불가  → clean_context fallback (degraded, codex_cli_unavailable)
+    - cross on, codex-host, claude CLI 가용  → opposite_runtime(claude) via `claude -p`
+    - cross on, codex-host, claude CLI 불가  → clean_context fallback (degraded, claude_cli_unavailable)
+    """
     runtime = profile.get("runtime", {}) or {}
     host = runtime.get("host", "claude")
     cross = bool((profile.get("options", {}) or {}).get("cross_model", False))
-    invocation = (profile.get("cross_model", {}) or {}).get("invocation", {}) or {}
 
     def res(mode, rt, fb, deg, reason, notice):
         return {"reviewer_mode": mode, "reviewer_runtime": rt, "fallback_used": fb,
@@ -45,21 +44,13 @@ def reviewer_resolution(profile: dict, caps: dict) -> dict:
     if not cross:
         return res("clean_context_same_runtime", host, False, False, None,
                    "cross_model off — 의도적 same-runtime (degraded 아님)")
-    if host == "claude":
-        if invocation.get("claude_host") and caps.get("gstack"):
-            return res("opposite_runtime", "codex", False, False, None,
-                       "claude-host → Codex via gstack /codex")
-        return res("clean_context_same_runtime", "claude", True, True, "gstack_unavailable",
-                   "cross_model on 이나 gstack 미가용 → clean-context fallback (모델편향 못없애는 최소안전선)")
-    # host == codex
-    if invocation.get("codex_host"):
-        if caps.get("claude"):
-            return res("opposite_runtime", "claude", False, False, None,
-                       "codex-host → Claude (경로 설정 + claude CLI 가용)")
-        return res("clean_context_same_runtime", "codex", True, True, "claude_cli_unavailable",
-                   "codex-host→Claude 경로 설정됐으나 claude CLI 미가용 → clean-context fallback (§12)")
-    return res("clean_context_same_runtime", "codex", True, True, "codex_host_claude_invocation_unresolved",
-               "codex-host→Claude 호출 경로 미확정(§12) → v1 fallback")
+    peer = "codex" if host == "claude" else "claude"
+    if caps.get(peer):
+        invoker = "codex exec" if peer == "codex" else "claude -p"
+        return res("opposite_runtime", peer, False, False, None,
+                   f"{host}-host → {peer} via `{invoker}` (SAGE 직접 호출, gstack 불요)")
+    return res("clean_context_same_runtime", host, True, True, f"{peer}_cli_unavailable",
+               f"cross_model on 이나 {peer} CLI 미가용 → clean-context fallback (모델편향 못없애는 최소안전선)")
 
 
 _DEFAULT_PROFILE = {"runtime": {"host": "claude"}, "options": {"cross_model": False}}
@@ -206,16 +197,20 @@ def run(args):
 
     # 옵션 의존성
     caps_prof = profile.get("capabilities", {}) or {}
-    gstack_avail = bool(shutil.which("gstack")) or bool(caps_prof.get("gstack"))
-    claude_avail = bool(shutil.which("claude")) or bool(caps_prof.get("claude"))   # P2-8: 역방향 능력 검증
+    # 7차 배치2: cross-model 은 peer 런타임 CLI 직접 호출(codex exec / claude -p) — peer CLI 가용성으로 판정.
+    codex_avail = bool(shutil.which("codex")) or bool(caps_prof.get("codex"))
+    claude_avail = bool(shutil.which("claude")) or bool(caps_prof.get("claude"))
     opts = profile.get("options", {}) or {}
+    host = (profile.get("runtime", {}) or {}).get("host", "claude")
+    peer = "codex" if host == "claude" else "claude"
+    peer_avail = codex_avail if peer == "codex" else claude_avail
     _kc = profile.get("knowledge_capture")
     vault = _kc.get("vault_path", "") if isinstance(_kc, dict) else ""   # 비-dict kc 방어(codex A)
     print("## 옵션 의존성")
-    print(f"  cross_model : {opts.get('cross_model', False)}")
-    print(f"  gstack      : {'available' if gstack_avail else 'unavailable'} (PATH which gstack | capabilities.gstack)")
-    if (profile.get("runtime", {}) or {}).get("host") == "codex":   # 역방향(codex→claude) 진단 시에만 노출
-        print(f"  claude CLI  : {'available' if claude_avail else 'unavailable'} (PATH which claude | capabilities.claude)")
+    print(f"  cross_model : {opts.get('cross_model', False)} (peer={peer})")
+    _invoker = "codex exec" if peer == "codex" else "claude -p"
+    print(f"  peer CLI    : {peer} {'available' if peer_avail else 'unavailable'} "
+          f"(PATH which {peer} | capabilities.{peer}) — cross-model 시 `{_invoker}` 직접 호출")
     print(f"  codegraph   : {opts.get('codegraph', 'optional')} (MCP 필요 — 미연결 시 rg/read degrade)")
     print(f"  obsidian    : vault_path={'set' if vault else 'empty → 기능 OFF(N/A)'}")
 
@@ -226,7 +221,7 @@ def run(args):
     _check_codex_skill_deployment(prof_path, profile)
 
     # reviewer resolution
-    rr = reviewer_resolution(profile, {"gstack": gstack_avail, "claude": claude_avail})
+    rr = reviewer_resolution(profile, {"codex": codex_avail, "claude": claude_avail})
     print("## Phase 05 reviewer")
     print(f"  mode    : {rr['reviewer_mode']} (runtime={rr['reviewer_runtime']})")
     print(f"  notice  : {rr['notice']}")

@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""reviewer_resolution 검증 (step10 — cross-model reviewer 대칭 능력게이팅, P2-8).
+"""reviewer_resolution 검증 (7차 배치2 — gstack 의존 폐기, peer CLI 직접 탐지).
 
 결정표:
   cross off → same-runtime(degraded=false, 의도적)
-  cross on + claude-host + gstack → opposite(codex)
-  cross on + claude-host + !gstack → fallback(degraded, gstack_unavailable)
-  cross on + codex-host + claude CLI → opposite(claude)
-  cross on + codex-host + !claude CLI → fallback(degraded, claude_cli_unavailable)  [P2-8 스텁 제거]
-  cross on + codex-host(미설정) → fallback(degraded, codex_host_claude_invocation_unresolved)
+  cross on + claude-host + codex CLI 가용 → opposite(codex) via `codex exec`
+  cross on + claude-host + codex CLI 불가 → fallback(degraded, codex_cli_unavailable)
+  cross on + codex-host + claude CLI 가용 → opposite(claude) via `claude -p`
+  cross on + codex-host + claude CLI 불가 → fallback(degraded, claude_cli_unavailable)
 """
 import io
 import os
@@ -20,53 +19,47 @@ sys.path.insert(0, REPO)
 from sage.commands import doctor as D  # noqa: E402
 
 
-def prof(host, cross, claude_host="/codex consult", codex_host=""):
-    return {
-        "runtime": {"host": host},
-        "options": {"cross_model": cross},
-        "cross_model": {"invocation": {"claude_host": claude_host, "codex_host": codex_host}},
-    }
+def prof(host, cross):
+    return {"runtime": {"host": host}, "options": {"cross_model": cross}}
 
 
 class TestReviewerResolution(unittest.TestCase):
     def test_cross_off_intentional(self):
-        r = D.reviewer_resolution(prof("claude", False), {"gstack": True})
+        r = D.reviewer_resolution(prof("claude", False), {"codex": True, "claude": True})
         self.assertEqual(r["reviewer_mode"], "clean_context_same_runtime")
         self.assertFalse(r["fallback_used"])
         self.assertFalse(r["reviewer_degraded"])  # 의도적 — degraded 아님
 
-    def test_claude_host_gstack_opposite(self):
-        r = D.reviewer_resolution(prof("claude", True), {"gstack": True})
+    def test_claude_host_codex_avail_opposite(self):
+        r = D.reviewer_resolution(prof("claude", True), {"codex": True})
         self.assertEqual(r["reviewer_mode"], "opposite_runtime")
         self.assertEqual(r["reviewer_runtime"], "codex")
         self.assertFalse(r["reviewer_degraded"])
 
-    def test_claude_host_no_gstack_fallback(self):
-        r = D.reviewer_resolution(prof("claude", True), {"gstack": False})
+    def test_claude_host_no_codex_fallback(self):
+        r = D.reviewer_resolution(prof("claude", True), {"codex": False})
         self.assertEqual(r["reviewer_mode"], "clean_context_same_runtime")
         self.assertTrue(r["fallback_used"])
         self.assertTrue(r["reviewer_degraded"])
-        self.assertEqual(r["reviewer_degrade_reason"], "gstack_unavailable")
+        self.assertEqual(r["reviewer_degrade_reason"], "codex_cli_unavailable")
 
-    def test_codex_host_unresolved_fallback(self):
-        r = D.reviewer_resolution(prof("codex", True, codex_host=""), {"gstack": False})
-        self.assertEqual(r["reviewer_mode"], "clean_context_same_runtime")
-        self.assertTrue(r["reviewer_degraded"])
-        self.assertEqual(r["reviewer_degrade_reason"], "codex_host_claude_invocation_unresolved")
-
-    def test_codex_host_configured_with_claude_opposite(self):
-        # P2-8: 경로 설정 + claude CLI 가용 → opposite(claude). (이전엔 능력검증 없이 맹신 — 스텁)
-        r = D.reviewer_resolution(prof("codex", True, codex_host="$claude consult"), {"claude": True})
+    def test_codex_host_claude_avail_opposite(self):
+        r = D.reviewer_resolution(prof("codex", True), {"claude": True})
         self.assertEqual(r["reviewer_mode"], "opposite_runtime")
         self.assertEqual(r["reviewer_runtime"], "claude")
         self.assertFalse(r["reviewer_degraded"])
 
-    def test_codex_host_configured_no_claude_cli_fallback(self):
-        # P2-8 대칭 게이팅: 경로 설정됐으나 claude CLI 미가용 → degraded fallback(claude_cli_unavailable).
-        r = D.reviewer_resolution(prof("codex", True, codex_host="$claude consult"), {"claude": False})
+    def test_codex_host_no_claude_cli_fallback(self):
+        r = D.reviewer_resolution(prof("codex", True), {"claude": False})
         self.assertEqual(r["reviewer_mode"], "clean_context_same_runtime")
         self.assertTrue(r["reviewer_degraded"])
         self.assertEqual(r["reviewer_degrade_reason"], "claude_cli_unavailable")
+
+    def test_peer_runtime_independent_of_caps_keys(self):
+        # claude-host 는 codex caps 만 보고, claude caps 유무는 무관(대칭 확인).
+        r = D.reviewer_resolution(prof("claude", True), {"codex": True, "claude": False})
+        self.assertEqual(r["reviewer_runtime"], "codex")
+        self.assertFalse(r["reviewer_degraded"])
 
 
 class TestDoctorOutput(unittest.TestCase):
