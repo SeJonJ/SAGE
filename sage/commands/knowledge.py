@@ -283,10 +283,13 @@ def _note_tags_style(profile):
 
 
 def _index_name(profile):
-    """note_convention.index → 목차 파일명(예: index.md). 비면 '' = index 갱신 안 함(기본 — index 없는 vault 존중)."""
+    """note_convention.index → 목차 파일명(예: index.md). 비면 '' = index 갱신 안 함(기본 — index 없는 vault 존중).
+    basename 후 ''/'.'/'..' 는 무효 처리(codex 중R1 P1): 그대로 두면 _append_link_once 가 폴더/상위를 열어
+    IsADirectoryError 로 write-back 전체가 abort 된다."""
     kc = profile.get("knowledge_capture") if isinstance(profile, dict) else {}
     conv = (kc if isinstance(kc, dict) else {}).get("note_convention") or {}
-    return os.path.basename(str(conv.get("index") or "")).strip()
+    name = os.path.basename(str(conv.get("index") or "")).strip()
+    return name if name not in ("", ".", "..") else ""
 
 
 def _note_path(vault, folder, filename):
@@ -308,10 +311,15 @@ def _write_or_append_note(vault, folder, filename, frontmatter, note_stem, summa
     if os.path.exists(path):
         body = Path(path).read_text(encoding="utf-8")
         if marker not in body:
+            addition = section.lstrip("\n")
+            # inline 스타일인데 기존 노트에 태그줄이 없으면 추가(codex 중R1 P2): 신규 노트에만 태그가
+            # 들어가던 비일관 해소. 임의 노트의 제목 위치 파싱은 취약하므로 append 섹션 앞에 1회 보장.
+            if tag_line and tag_line not in body:
+                addition = f"{tag_line}\n\n" + addition
             with open(path, "a", encoding="utf-8") as f:
                 if body and not body.endswith("\n"):
                     f.write("\n")
-                f.write(section.lstrip("\n"))
+                f.write(addition)
         return path
     # tag_line(인라인 태그 스타일)은 제목 바로 아래에 둔다(frontmatter/none 이면 빈 문자열).
     head = f"# {note_stem}\n\n"

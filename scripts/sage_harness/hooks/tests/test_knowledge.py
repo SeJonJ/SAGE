@@ -201,6 +201,29 @@ class TestKnowledge(unittest.TestCase):
                 knowledge._run_write_back(WriteArgs(root, "NOIDX", "s"))
             self.assertFalse(os.path.exists(os.path.join(vault, "wiki", "index.md")))
 
+    def test_index_invalid_dot_does_not_crash(self):
+        # index: "." → 무효 처리, write-back 정상 완료(폴더 open IsADirectoryError abort 방지, codex 중R1 P1).
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            self._profile_conv(root, vault, 'index: "."')
+            with redirect_stdout(io.StringIO()):
+                rc = knowledge._run_write_back(WriteArgs(root, "DOT", "s"))
+            self.assertEqual(rc, 0)
+            self.assertTrue(os.path.exists(os.path.join(vault, "wiki", "TECH - DOT.md")))
+
+    def test_inline_tag_added_to_existing_note(self):
+        # inline 전환 후 태그줄 없던 기존 노트에 append 시 태그줄 1회 보강(codex 중R1 P2).
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            self._profile_conv(root, vault, 'tags_style: inline')
+            os.makedirs(os.path.join(vault, "wiki"))
+            note = os.path.join(vault, "wiki", "TECH - Pre.md")
+            Path(note).write_text("# Pre\n\nHUMAN\n", encoding="utf-8")
+            with redirect_stdout(io.StringIO()):
+                knowledge._run_write_back(WriteArgs(root, "Pre", "s1"))
+                knowledge._run_write_back(WriteArgs(root, "Pre", "s1"))   # 멱등(태그 1회만)
+            body = Path(note).read_text(encoding="utf-8")
+            self.assertIn("HUMAN", body)
+            self.assertEqual(body.count("태그: #tech #sage #knowledge-capture"), 1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
