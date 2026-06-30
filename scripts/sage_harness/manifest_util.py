@@ -6,6 +6,7 @@ schema/manifest.schema.json 의 필드 규약을 따른다. 결정론(정렬 + i
 import hashlib
 import json
 import os
+import sys
 
 MANIFEST_REL = os.path.join("docs", "sage_harness", ".manifest.json")
 
@@ -18,12 +19,24 @@ def sha256_of(path: str) -> str:
 def _derived_contract_version(module_name: str) -> str:
     """interpretive(agent/skill) adapter_contract_version 을 reverse_extract 모듈의 CONTRACT_VERSION 에서
     파생한다(하드코딩 '1' 제거 — R3 잔여 5-2). hook 의 contract_version_of(core) 와 같은 취지: 추출 계약이
-    바뀌면 스탬프가 따라가 drift 를 표면화. import 실패(경로 격리) 시 '1' 폴백(현행값과 동일 — 안전)."""
+    바뀌면 스탬프가 따라가 drift 를 표면화.
+    하R1 반영: ① manifest_util 디렉토리를 sys.path 에 보장 → 스크립트·번들 양쪽에서 sibling 해석(번들에서
+    영구 '1' 폴백 방지). ② ModuleNotFoundError 만 '1' 폴백 — 모듈 자체 깨짐(syntax 등)은 가리지 않고 surface.
+    ③ CONTRACT_VERSION 이 비문자열/빈 값이면 '1' 폴백(None→'None' 스탬프 방지)."""
     import importlib
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
     try:
-        return str(getattr(importlib.import_module(module_name), "CONTRACT_VERSION", "1"))
-    except Exception:
+        mod = importlib.import_module(module_name)
+    except ModuleNotFoundError:
         return "1"
+    cv = getattr(mod, "CONTRACT_VERSION", None)
+    if isinstance(cv, str) and cv.strip():
+        return cv
+    if isinstance(cv, int):
+        return str(cv)
+    return "1"
 
 
 def find_root(start: str = None) -> str | None:
