@@ -15,8 +15,10 @@ Rules: `AGENT_GUIDE.md`. The user supplies intent and approves; you author to th
 spec/render and run the backend. This is not a turnkey generator.
 
 > This skill is a **CORE framework bootstrap asset** — hand-shipped by `sage install`,
-> NOT manifest-tracked. Claude reads it from the repo (`.claude/skills/sage-asset/`);
-> Codex reads it from the user-global skills dir (`$CODEX_HOME/skills/sage-asset/`).
+> NOT manifest-tracked. Its reference spec lives at
+> `docs/sage_harness/skills/sage-asset.md`. Claude reads this render from the repo
+> (`.claude/skills/sage-asset/`); Codex reads it from the user-global skills dir
+> (`$CODEX_HOME/skills/sage-asset/`).
 
 ## Hard rules
 

@@ -14,8 +14,10 @@ conversation. It is the third conversational entry point:
 Authoritative protocol: `docs/agent/bootstrap-authoring.md`. Rules: `AGENT_GUIDE.md`.
 
 > This skill is a **CORE framework bootstrap asset** — hand-shipped by `sage install`,
-> NOT manifest-tracked. Claude reads it from the repo (`.claude/skills/sage-profile-modify/`);
-> Codex reads it from the user-global skills dir (`$CODEX_HOME/skills/sage-profile-modify/`).
+> NOT manifest-tracked. Its reference spec lives at
+> `docs/sage_harness/skills/sage-profile-modify.md`. Claude reads this render from the
+> repo (`.claude/skills/sage-profile-modify/`); Codex reads it from the user-global
+> skills dir (`$CODEX_HOME/skills/sage-profile-modify/`).
 
 ## What this skill is NOT
 
