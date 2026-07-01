@@ -167,7 +167,7 @@ toggle's detail entirely when it stays off.
   `knowledge_capture.vault_path` (empty path = vault features fully OFF) and the
   note convention. If a vault path is set, explicitly confirm the PDCA boundary
   automation flags:
-  - `knowledge_capture.scan_before_dev` — `/sage-pdca-start` runs `sage knowledge scan`
+  - `knowledge_capture.scan_before_dev` — `/sage-plan` runs `sage knowledge scan`
     before leader planning and refreshes `.sage/knowledge_scan.md`.
   - `knowledge_capture.update_after_dev` — `/sage-team` runs `sage knowledge write-back`
     after 06 completion to create/update the vault note and `wiki/log.md`.

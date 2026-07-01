@@ -30,7 +30,7 @@ scripts/sage_harness/hooks/generated-artifact-write-guard.sh
 ## CORE 부트스트랩 자산 면제 (exit 0)
 spec→generate 산출물이 아닌 hand-shipped CORE 자산은 block 에서 면제한다(없는 spec 으로 보내는
 막다른 redirect 방지). 면제 경로:
-- `*.claude/skills/{sage-init,sage-pdca-start,sage-team,sage-review,sage-asset,sage-profile-modify}/*` — CORE skill 렌더(claude)
+- `*.claude/skills/{sage-init,sage-cycle,sage-plan,sage-team,sage-review,sage-asset,sage-profile-modify}/*` — CORE skill 렌더(claude)
 - `*.claude/agents/{leader,implementer-a,implementer-b,qa,reviewer,convention-checker}.md` — CORE 로스터 렌더(claude)
 - `*.codex/agents/{leader,implementer-a,implementer-b,qa,reviewer,convention-checker}.md` — CORE 로스터 렌더(codex)
 

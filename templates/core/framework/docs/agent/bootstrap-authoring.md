@@ -120,7 +120,7 @@ true while `vault_path` is empty.
 **PDCA knowledge scan/write-back** — ask when `knowledge_capture.vault_path` is set
 (one turn, default both on):
 > "개발 전후로 vault 지식 캡처를 자동 실행할까요?"
-> · 사전 조회 — `/sage-pdca-start`가 구현 전에 vault를 검색해 `.sage/knowledge_scan.md`를 갱신 → `knowledge_capture.scan_before_dev`
+> · 사전 조회 — `/sage-plan`이 구현 전에 vault를 검색해 `.sage/knowledge_scan.md`를 갱신 → `knowledge_capture.scan_before_dev`
 > · 개발 후 갱신 — `/sage-team` 완료 시 vault 노트와 `wiki/log.md`를 갱신 → `knowledge_capture.update_after_dev`
 > · [둘 다 / 사전 조회만 / 개발 후 갱신만 / 안 함]
 

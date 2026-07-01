@@ -1,13 +1,13 @@
 ---
 name: sage-team
-description: "Orchestrate a full SAGE PDCA cycle after the plan exists — drives implementation, deterministic verification, QA, the Phase-05 review (via /sage-review), and completion, with file-ownership boundaries. Resumable. Invoke when the user says /sage-team (Claude) or $sage-team (Codex), 팀 개발, 팀 오케스트레이션, run the team, or after /sage-pdca-start hands back an ownership map."
+description: "Drive the implementation half of a SAGE PDCA cycle (Phases 03–06) after the plan exists — implementation, deterministic verification, QA, the Phase-05 review (via /sage-review), and completion, with file-ownership boundaries. Resumable. Invoke when the user says /sage-team (Claude) or $sage-team (Codex), 팀 개발, 팀 오케스트레이션, run the team, or after /sage-plan (or /sage-cycle) hands back an ownership map."
 ---
 
 # sage-team — SAGE PDCA Team Orchestration
 
 Invoke as `/sage-team` (Claude) or `$sage-team` (Codex).
 
-This skill takes the plan + ownership map that `/sage-pdca-start` produced and drives
+This skill takes the plan + ownership map that `/sage-plan` produced and drives
 the cycle to completion: implementation → deterministic verification → QA → Phase-05
 review → completion report. It is the host-side orchestrator; SAGE still owns every
 deterministic gate (`pre-implementation-gate`, `verify-changes`, `sage review-loop`
@@ -33,12 +33,12 @@ Confirm the profile is bootstrapped (`project.name` non-empty, `risk`/`component
 If not → stop: "Profile is not bootstrapped. Run `/sage-init` first."
 
 A plan doc (Phases 00–02) for this cycle must already exist. If none → stop and direct
-the user to `/sage-pdca-start` (do NOT silently author the plan here — that is a
+the user to `/sage-plan` (do NOT silently author the plan here — that is a
 different skill's job).
 
 ## Resolve the cycle + resume point (presence ≠ completion)
 
-Identify the **single cycle** by its plan-doc stem (the feature name `/sage-pdca-start`
+Identify the **single cycle** by its plan-doc stem (the feature name `/sage-plan`
 used). Match every phase doc and audit run to that one stem — ignore stale docs from
 other cycles. Then find the first incomplete stage using **evidence anchors**, not bare
 file existence:

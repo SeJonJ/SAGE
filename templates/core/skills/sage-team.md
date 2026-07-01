@@ -12,14 +12,14 @@ verification, QA, the Phase-05 review (via sage-review), and completion, honorin
 ownership. SAGE owns the deterministic gates; this skill only ensures they are invoked.
 
 ## when_to_use
-- After `sage-pdca-start` produced a plan + ownership map, to run the cycle to completion
+- After `sage-plan` (or `/sage-cycle`) produced a plan + ownership map, to run the cycle to completion
 - When the user says "/sage-team" (Claude), "$sage-team" (Codex), "팀 개발",
   "팀 오케스트레이션", "run the team", or asks to drive the team through implementation→review
 
 ## procedure
 1. Read `sage/project-profile.yaml` — confirm bootstrapped; confirm a plan doc (Phases
    00–02) for this cycle exists. If not bootstrapped → direct to `/sage-init`; if no plan
-   → direct to `/sage-pdca-start` (do not author the plan here).
+   → direct to `/sage-plan` (do not author the plan here).
 2. Resolve the cycle by its plan-doc stem and find the resume point by evidence anchors,
    not file presence: 03 complete = pre-code checklist + impl + recorded verify evidence;
    04 complete = gap + qa coverage + acceptance evidence context; 05 state ∈ {started (open run), closed-nonapproved, approved

@@ -1,15 +1,20 @@
 ---
-name: sage-pdca-start
-description: "Start a SAGE PDCA cycle for a new feature or change — verifies gate conditions, invokes the leader to author plan docs, and distributes file ownership before any implementation begins. Invoke when the user says /sage-pdca-start (Claude) or $sage-pdca-start (Codex), PDCA 시작, 새 기능 시작, or wants to begin a development cycle."
+name: sage-plan
+description: "Plan the first half of a SAGE PDCA cycle (Phases 00–02) — verifies gate conditions, invokes the leader to author plan docs, and distributes file ownership before any implementation begins. Hands back an ownership map that /sage-team (03–06) picks up. Invoke when the user says /sage-plan (Claude) or $sage-plan (Codex), 기획, 설계 시작, 계획 세워, plan a feature, or wants to scope a change before implementation."
 ---
 
-# sage-pdca-start — SAGE PDCA Cycle Start
+# sage-plan — SAGE PDCA Planning (Phases 00–02)
 
-Invoke as `/sage-pdca-start` (Claude) or `$sage-pdca-start` (Codex).
+Invoke as `/sage-plan` (Claude) or `$sage-plan` (Codex).
+
+This skill owns the **planning half** of a PDCA cycle: it produces the plan doc
+(Phases 00–02) and the file-ownership map, then hands back. Implementation through
+completion (03–06) is `/sage-team`'s job; `/sage-cycle` is the umbrella that runs
+both in sequence.
 
 ## Read these first (mandatory, in order)
 
-1. `docs/sage_harness/skills/sage-pdca-start.md` — authoritative spec: intent, procedure, drift_checks
+1. `docs/sage_harness/skills/sage-plan.md` — authoritative spec: intent, procedure, drift_checks
 2. `AGENT_GUIDE.md` — PDCA phases, risk gate, phase-first rule
 3. `sage/project-profile.yaml` — project.name, components, paths.plan_docs
 
@@ -64,14 +69,16 @@ If the leader did not create it, block and ask the leader to retry.
 
 Present the ownership map to the user:
 ```
-PDCA cycle started for: [task scope]
+Planning complete for: [task scope]
 Plan doc: [path]
 implementer-a owns: [component id / paths]
 implementer-b owns: [component id / paths]
 Integration point: [where the two connect]
 ```
 
-Confirm the user is ready to proceed to implementation.
+Confirm the user is ready to proceed to implementation. The next step is
+`/sage-team` (drives 03–06); or, if the user started here via `/sage-cycle`,
+that umbrella continues into `/sage-team` automatically.
 
 ## Step 5 — State the phase flow (so the user knows what comes next)
 
@@ -97,7 +104,7 @@ because 03/04 are easy to misorder. This skill produces 00–02; the rest follow
 > This skill is a **CORE framework bootstrap asset**: hand-shipped by `sage install`,
 > NOT a manifest-tracked skill (no claims file, no render hash, not gated by
 > `sage validate`/`sage asset-check`). Its reference spec lives at
-> `docs/sage_harness/skills/sage-pdca-start.md`. To change it, edit the framework
+> `docs/sage_harness/skills/sage-plan.md`. To change it, edit the framework
 > template, not via `sage generate`. Deploy location is runtime-specific: Claude
-> reads it from the repo (`.claude/skills/sage-pdca-start/`); Codex reads it from the
-> user-global skills dir (`$CODEX_HOME/skills/sage-pdca-start/`).
+> reads it from the repo (`.claude/skills/sage-plan/`); Codex reads it from the
+> user-global skills dir (`$CODEX_HOME/skills/sage-plan/`).

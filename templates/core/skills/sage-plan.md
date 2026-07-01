@@ -1,5 +1,5 @@
 ---
-id: sage-pdca-start
+id: sage-plan
 kind: skill
 # CORE skill (neutral). Project specifics come from profile, not this spec.
 # CORE framework bootstrap asset: hand-shipped by `sage install`, NOT manifest-tracked.
@@ -7,14 +7,16 @@ kind: skill
 # (spec + claims + render hash) created via the generate/extract flow.
 ---
 ## intent
-Start a PDCA cycle for a feature: verify gate conditions, invoke the leader to
-author plan docs, and distribute file ownership before any L2/L3 code is written.
+Own the planning half of a PDCA cycle (Phases 00–02): verify gate conditions,
+invoke the leader to author plan docs, and distribute file ownership before any
+L2/L3 code is written. Hands back an ownership map; `/sage-team` drives 03–06.
 
 ## when_to_use
-- At the beginning of a new feature or change cycle (before implementation)
-- When the leader needs to bootstrap plan docs for a task
-- When the user says "/sage-pdca-start" (Claude), "$sage-pdca-start" (Codex),
-  "start PDCA", "PDCA 시작", "새 기능 시작", or asks to begin a new development cycle
+- At the beginning of a new feature or change cycle, to produce the plan + ownership map
+- When the leader needs to bootstrap plan docs (00–02) for a task
+- When the user says "/sage-plan" (Claude), "$sage-plan" (Codex), "plan a feature",
+  "기획", "설계 시작", "계획 세워", or asks to scope/plan a change before implementation
+- Invoked by `/sage-cycle` as the 00–02 half of the full-cycle umbrella
 
 ## procedure
 1. Read `sage/project-profile.yaml` — confirm the project is bootstrapped
@@ -38,7 +40,7 @@ author plan docs, and distribute file ownership before any L2/L3 code is written
    check that the file under `paths.plan_docs` is non-empty and references
    the feature scope.
 7. Report the ownership map to the user and confirm they are ready to proceed
-   to implementation.
+   to implementation via `/sage-team` (or the `/sage-cycle` umbrella).
 8. State the phase flow so the user does not misorder 03/04: 00–02 now (leader);
    03 is opened before source edits with file ownership, implementation checklist,
    and Phase-01 acceptance IDs, then completed after code with implementation,
@@ -48,13 +50,13 @@ author plan docs, and distribute file ownership before any L2/L3 code is written
    05 records APPROVED.
 
 ## advisory_scope
-- role_boundary: does not implement code; invokes leader only
+- role_boundary: does not implement code; invokes leader only. Owns 00–02, not 03–06.
 - uses: leader agent, project-profile.yaml, AGENT_GUIDE.md
 - convention_doc: AGENT_GUIDE.md
 
 ## runtime_bindings
-- claude: .claude/skills/sage-pdca-start/SKILL.md (repo — Claude Code auto-discovers)
-- codex:  $CODEX_HOME/skills/sage-pdca-start/SKILL.md (global — codex does not auto-discover repo-scoped skills)
+- claude: .claude/skills/sage-plan/SKILL.md (repo — Claude Code auto-discovers)
+- codex:  $CODEX_HOME/skills/sage-plan/SKILL.md (global — codex does not auto-discover repo-scoped skills)
 
 ## drift_checks
-- conformance: procedure step 1 (gate check) and step 4 (leader invocation) must be present
+- conformance: procedure step 1 (gate check) and step 5 (leader invocation) must be present

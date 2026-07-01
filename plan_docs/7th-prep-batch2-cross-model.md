@@ -9,10 +9,11 @@
 >   - asset-check rename / sage review(same-runtime) / sage cross-check(peer 직접 호출 codex exec·claude -p) / reviewer_resolution gstack→peer CLI / 진단정정
 >   - codex 수정: stdin 전송(ARG_MAX)·utf-8·is_error 가드·strict·마이그레이션 shim 수용 / 해시체인·old시맨틱·symlink abort 는 reasoned 비수용
 >
-> **🟡 중 tier — note_convention + 스킬텍스트 완료, 3분할 미완**
+> **🟡 중 tier — note_convention + 스킬텍스트 + 1-1 3분할 완료(codex 2R)**
 > - 4-2/4-3 note_convention(tags_style·index): codex 3회(R1·R2 BLOCK→R3 SHIP). `0333107 064feb4 fb05287`
 > - 배치1 스킬-텍스트(1-3 인터뷰·1-4 enforce·1-5 vault조사·1-6 retro advisory·1-7/4-1 단일경로): `2940b90`
-> - **미완(다음 세션 — 대규모 interpretive)**: 1-1 스킬 3분할(sage-cycle/plan/team, install.py+테스트 동반) + 1-2 docs/sage_harness/skills 스펙 8종. codex 2~3회.
+> - **1-1 스킬 3분할 완료(codex R1 P1+2P2 → R2 clean)**: sage-pdca-start→sage-plan(git mv rename)·신규 sage-cycle(00~06 우산)·sage-team(03~06) 유지. install.py `_CORE_SKILLS`(6종)+`_LEGACY_CORE_SKILLS`에 sage-pdca-start 추가(rename 수렴). 스펙(templates/core/skills/{cycle,plan}.md)+렌더(framework/.claude/skills/{cycle,plan}/SKILL.md). 참조 일괄: sage-team spec/render·write-guard(.sh+cases.tsv cycle/plan block+면제)·AGENT_GUIDE/CLAUDE/CODEX/README·sage-init·bootstrap-authoring·test_install(29 PASS·prune matrix subTest·roster 런타임파생). codex R1: sage-cycle 재개로직 P1(cycle stem 미식별·완성도 미검) + cases.tsv sage-cycle 누락 P2 + prune matrix 반쪽 P2 → 전부 수정. R2: P1 해소 확인(우산이 sub-skill 게이트로 위임, sage-team이 backstop), 잔여 P2(주석 5종·테스트 하드코딩) 수정. run-all 전체 green + 양 host install 스모크(6 CORE skill·legacy prune).
+> - **미완**: 1-2 docs/sage_harness/skills 스펙(신규 cycle/plan 스펙은 3분할로 이미 생성 — 나머지 dangling 점검).
 >
 > **🟢 하 tier — 5-1·5-2 완료, 5-3 plan-보류**
 > - 5-2 하드코딩"1"→reverse_extract 파생: codex 3회(R1·R2·R3 BLOCK→해소). `915c69f` 등

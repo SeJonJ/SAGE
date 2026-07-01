@@ -28,7 +28,7 @@ set up, or a new component/asset is introduced, follow
 schema keys, never edit generated artifacts, never bypass a `validate` FAIL.
 
 The conversational entry point is the **`/sage-init` skill**. It and the other
-**CORE framework bootstrap assets** — the `sage-pdca-start` / `sage-team` / `sage-review` / `sage-asset` /
+**CORE framework bootstrap assets** — the `sage-cycle` / `sage-plan` / `sage-team` / `sage-review` / `sage-asset` /
 `sage-profile-modify` skills and the six CORE roster agent renders (`leader`, `implementer-a`,
 `implementer-b`, `qa`, `reviewer`, `convention-checker`) — are hand-shipped by `sage install` like
 this guide and `docs/agent/*`. They are NOT manifest-tracked: the
@@ -46,7 +46,7 @@ codex), so each install deploys only that host's copies. On a **claude** host,
 Claude auto-discovers repo-scoped skills and agents under `.claude/` (CORE skills →
 `.claude/skills/`, CORE agents → `.claude/agents/`). On a **codex** host, Codex does
 not auto-discover repo-scoped skills, so CORE skills install to the user-global
-`$CODEX_HOME/skills/` (`$sage-init`, `$sage-pdca-start`, `$sage-team`, `$sage-review`, `$sage-asset`, `$sage-profile-modify`); and since Codex
+`$CODEX_HOME/skills/` (`$sage-init`, `$sage-cycle`, `$sage-plan`, `$sage-team`, `$sage-review`, `$sage-asset`, `$sage-profile-modify`); and since Codex
 has no native subagent auto-discovery either, the CORE roster agent renders install
 to repo `.codex/agents/<id>.md` (the SAGE-canonical asset path), which the Codex AI
 references as role definitions via the `AGENTS.md` router rather than native
@@ -122,7 +122,7 @@ plan-doc + risk checks only; the phase machinery is inert.
 - Do not perform destructive or outward-facing actions without confirmation.
 - Do not directly edit generated artifacts (`{host}/agents`, `{host}/skills`,
   `{host}/hooks`) — edit the spec under `docs/sage_harness/` and regenerate.
-  (Exception: the hand-shipped CORE bootstrap renders — `sage-init`/`sage-pdca-start`/
+  (Exception: the hand-shipped CORE bootstrap renders — `sage-init`/`sage-cycle`/`sage-plan`/
   `sage-team`/`sage-review`/`sage-asset`/`sage-profile-modify` skills and the six CORE roster agent
   renders — are not generated and are write-guard exempt; edit them directly. See the
   bootstrap section above.)

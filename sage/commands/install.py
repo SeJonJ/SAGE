@@ -19,12 +19,14 @@ from sage import __version__
 
 from sage import _resources   # 번들 리소스 경로 단일 해석(env override + repo fallback — 재배치/설치 대비)
 
-# CORE roster (중립 6인) + CORE hook 6종(form) + CORE skill 5종. 도메인값 아님 = framework 메타.
+# CORE roster (중립 6인) + CORE hook 6종(form) + CORE skill 6종. 도메인값 아님 = framework 메타.
+# skill 3분할: sage-cycle(00~06 우산) → sage-plan(00~02 기획) → sage-team(03~06 개발).
 _CORE_AGENTS = ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]
-_CORE_SKILLS = ["sage-pdca-start", "sage-team", "sage-review", "sage-asset", "sage-profile-modify"]
+_CORE_SKILLS = ["sage-cycle", "sage-plan", "sage-team", "sage-review", "sage-asset", "sage-profile-modify"]
 _CORE_BOOTSTRAP_SKILL = "sage-init"
 # 은퇴한 CORE skill 이름 — install 시 잔존 사본을 정리(rename 수렴). 이름이 바뀌면 옛 이름을 여기 추가.
-_LEGACY_CORE_SKILLS = ["pdca-start"]
+# sage-pdca-start → sage-plan 으로 3분할 rename(옛 이름 잔존 사본 정리). pdca-start 는 그 이전 rename.
+_LEGACY_CORE_SKILLS = ["pdca-start", "sage-pdca-start"]
 # SAGE 가 hand-ship 하는 모든 CORE skill SKILL.md 에 들어있는 마커. 정리 전 SAGE 자산 확인용
 # (codex 전역처럼 공유 공간에서 동명의 사용자 skill 을 오삭제하지 않도록).
 _LEGACY_SKILL_SIGNATURE = "CORE framework bootstrap asset"
@@ -53,7 +55,7 @@ def register(sub):
     p.add_argument("--dest", default=".", help="설치 대상 프로젝트 루트 (선택, 기본값: 현재 디렉토리)")
     p.add_argument("--force", action="store_true", help="기존 파일 덮어쓰기 (기본: skip)")
     p.add_argument("--no-global-skill", action="store_true",
-                   help="codex host: CORE 스킬($sage-init/$sage-pdca-start/$sage-team/$sage-review/$sage-asset/$sage-profile-modify)의 전역(~/.codex/skills) 설치를 건너뜁니다 (CI/샌드박스용)")
+                   help="codex host: CORE 스킬($sage-init/$sage-cycle/$sage-plan/$sage-team/$sage-review/$sage-asset/$sage-profile-modify)의 전역(~/.codex/skills) 설치를 건너뜁니다 (CI/샌드박스용)")
     p._optionals.title = "옵션"
     p.set_defaults(func=run)
 
@@ -292,7 +294,7 @@ def run(args) -> int:
         _copy_file(os.path.join(core, "agents", f"{aid}.md"),
                    os.path.join(dest, "docs", "sage_harness", "agents", f"{aid}.md"), args.force, created, skipped)
 
-    # 5b. CORE skill spec(중립 5종) → docs/sage_harness/skills/ (host 무관 — CORE agent spec 과 대칭).
+    # 5b. CORE skill spec(중립 6종) → docs/sage_harness/skills/ (host 무관 — CORE agent spec 과 대칭).
     #     CORE 부트스트랩 자산이라 sage-init/CORE agent spec 과 동일하게 manifest 비추적(reference spec).
     #     manifest 추적 skill(spec+claims+render hash)은 generate/extract 흐름이 소유한다.
     for sid in _CORE_SKILLS:

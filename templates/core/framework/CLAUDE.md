@@ -15,5 +15,5 @@ output contract are governed solely by `AGENT_GUIDE.md`.
   `.claude/hooks`) which are generated from `docs/sage_harness/` specs.
 - Do not modify generated artifacts directly — edit the spec and run
   `sage generate`. (Exception: hand-shipped CORE bootstrap renders under
-  `.claude/skills/{sage-init,sage-pdca-start,sage-team,sage-review,sage-asset,sage-profile-modify}` and `.claude/agents/`
+  `.claude/skills/{sage-init,sage-cycle,sage-plan,sage-team,sage-review,sage-asset,sage-profile-modify}` and `.claude/agents/`
   CORE roster are not generated and are write-guard exempt — edit directly.)

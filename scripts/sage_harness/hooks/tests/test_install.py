@@ -53,14 +53,16 @@ class TestInstall(unittest.TestCase):
                 ".claude/agents/qa.md",
                 ".claude/agents/reviewer.md",
                 ".claude/agents/convention-checker.md",
-                # CORE skill spec 5종 → docs/sage_harness/skills/
-                "docs/sage_harness/skills/sage-pdca-start.md",
+                # CORE skill spec 6종 → docs/sage_harness/skills/ (3분할: cycle/plan/team)
+                "docs/sage_harness/skills/sage-cycle.md",
+                "docs/sage_harness/skills/sage-plan.md",
                 "docs/sage_harness/skills/sage-team.md",
                 "docs/sage_harness/skills/sage-review.md",
                 "docs/sage_harness/skills/sage-asset.md",
                 "docs/sage_harness/skills/sage-profile-modify.md",
                 # CORE skill 렌더 (Claude Code .claude/skills/ 자동발견)
-                ".claude/skills/sage-pdca-start/SKILL.md",
+                ".claude/skills/sage-cycle/SKILL.md",
+                ".claude/skills/sage-plan/SKILL.md",
                 ".claude/skills/sage-team/SKILL.md",
                 ".claude/skills/sage-review/SKILL.md",
                 ".claude/skills/sage-asset/SKILL.md",
@@ -130,8 +132,8 @@ class TestInstall(unittest.TestCase):
                 self.assertIn(f"name: {aid}", Path(path).read_text(encoding="utf-8"))
 
     def test_deploys_core_skill_specs(self):
-        """Gap-2 mutation teeth: CORE skill spec 5종이 docs/sage_harness/skills/ 에 배치된다."""
-        _CORE_SKILLS = ["sage-pdca-start", "sage-team", "sage-review", "sage-asset", "sage-profile-modify"]
+        """Gap-2 mutation teeth: CORE skill spec 6종이 docs/sage_harness/skills/ 에 배치된다."""
+        _CORE_SKILLS = list(install._CORE_SKILLS)   # 런타임 목록에서 파생 — rename/추가 시 자동 동기(desync 방지)
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("claude", d))
             for sid in _CORE_SKILLS:
@@ -144,7 +146,7 @@ class TestInstall(unittest.TestCase):
 
     def test_claude_host_deploys_core_skill_renders(self):
         """Gap-2 mutation teeth: claude install 시 CORE skill 렌더가 .claude/skills/ 에 배치된다."""
-        _CORE_SKILLS = ["sage-pdca-start", "sage-team", "sage-review", "sage-asset", "sage-profile-modify"]
+        _CORE_SKILLS = list(install._CORE_SKILLS)   # 런타임 목록에서 파생 — rename/추가 시 자동 동기(desync 방지)
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("claude", d))
             for sid in _CORE_SKILLS:
@@ -157,26 +159,30 @@ class TestInstall(unittest.TestCase):
     _LEGACY_SIG = "name: pdca-start\nThis skill is a CORE framework bootstrap asset.\n"
 
     def test_claude_install_prunes_legacy_core_skill(self):
-        """rename 수렴: claude install 은 은퇴한 SAGE CORE skill(pdca-start) 잔존 사본을 .claude/skills/ 에서 제거한다."""
-        with tempfile.TemporaryDirectory() as d:
-            legacy = os.path.join(d, ".claude", "skills", "pdca-start")
-            os.makedirs(legacy)
-            Path(os.path.join(legacy, "SKILL.md")).write_text(self._LEGACY_SIG, encoding="utf-8")
-            install.run(Args("claude", d))
-            self.assertFalse(os.path.exists(legacy), "은퇴한 pdca-start 잔존 사본 미제거")
-            self.assertTrue(os.path.exists(os.path.join(d, ".claude", "skills", "sage-pdca-start", "SKILL.md")))
+        """rename 수렴: claude install 은 은퇴한 SAGE CORE skill 잔존 사본을 .claude/skills/ 에서 제거한다.
+        _LEGACY_CORE_SKILLS 전체(pdca-start·sage-pdca-start)를 검증 — 목록의 어느 항목이 깨져도 빨갛게."""
+        for legacy_name in install._LEGACY_CORE_SKILLS:
+            with self.subTest(legacy=legacy_name), tempfile.TemporaryDirectory() as d:
+                legacy = os.path.join(d, ".claude", "skills", legacy_name)
+                os.makedirs(legacy)
+                Path(os.path.join(legacy, "SKILL.md")).write_text(self._LEGACY_SIG, encoding="utf-8")
+                install.run(Args("claude", d))
+                self.assertFalse(os.path.exists(legacy), f"은퇴한 {legacy_name} 잔존 사본 미제거")
+                self.assertTrue(os.path.exists(os.path.join(d, ".claude", "skills", "sage-plan", "SKILL.md")))
 
     def test_codex_install_prunes_legacy_global_core_skill(self):
-        """rename 수렴: codex install 은 은퇴한 SAGE CORE skill 잔존 사본을 전역 $CODEX_HOME/skills 에서 제거한다."""
+        """rename 수렴: codex install 은 은퇴한 SAGE CORE skill 잔존 사본을 전역 $CODEX_HOME/skills 에서 제거한다.
+        _LEGACY_CORE_SKILLS 전체를 검증(런타임 목록과 테스트 매트릭스 일치)."""
         import unittest.mock as mock
-        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
-            legacy = os.path.join(codex_home, "skills", "pdca-start")
-            os.makedirs(legacy)
-            Path(os.path.join(legacy, "SKILL.md")).write_text(self._LEGACY_SIG, encoding="utf-8")
-            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
-                install.run(Args("codex", d))
-            self.assertFalse(os.path.exists(legacy), "은퇴한 전역 pdca-start 잔존 사본 미제거")
-            self.assertTrue(os.path.exists(os.path.join(codex_home, "skills", "sage-pdca-start", "SKILL.md")))
+        for legacy_name in install._LEGACY_CORE_SKILLS:
+            with self.subTest(legacy=legacy_name), tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+                legacy = os.path.join(codex_home, "skills", legacy_name)
+                os.makedirs(legacy)
+                Path(os.path.join(legacy, "SKILL.md")).write_text(self._LEGACY_SIG, encoding="utf-8")
+                with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                    install.run(Args("codex", d))
+                self.assertFalse(os.path.exists(legacy), f"은퇴한 전역 {legacy_name} 잔존 사본 미제거")
+                self.assertTrue(os.path.exists(os.path.join(codex_home, "skills", "sage-plan", "SKILL.md")))
 
     def test_install_preserves_foreign_skill_named_pdca_start(self):
         """안전: SAGE 시그니처가 없는 사용자 동명 skill(pdca-start)은 정리하지 않는다(codex R2-P2).
@@ -192,15 +198,16 @@ class TestInstall(unittest.TestCase):
             self.assertTrue(os.path.exists(foreign), "SAGE 자산 아닌 사용자 동명 skill 을 오삭제함")
 
     def test_codex_no_global_skill_does_not_prune(self):
-        """--no-global-skill 이면 전역 미접근 — 은퇴한 전역 사본도 건드리지 않는다."""
+        """--no-global-skill 이면 전역 미접근 — 은퇴한 전역 사본도 건드리지 않는다(legacy 목록 전체)."""
         import unittest.mock as mock
-        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
-            legacy = os.path.join(codex_home, "skills", "pdca-start")
-            os.makedirs(legacy)
-            Path(os.path.join(legacy, "SKILL.md")).write_text(self._LEGACY_SIG, encoding="utf-8")
-            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
-                install.run(Args("codex", d, no_global_skill=True))
-            self.assertTrue(os.path.exists(legacy), "--no-global-skill 인데 전역 사본을 건드림")
+        for legacy_name in install._LEGACY_CORE_SKILLS:
+            with self.subTest(legacy=legacy_name), tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+                legacy = os.path.join(codex_home, "skills", legacy_name)
+                os.makedirs(legacy)
+                Path(os.path.join(legacy, "SKILL.md")).write_text(self._LEGACY_SIG, encoding="utf-8")
+                with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                    install.run(Args("codex", d, no_global_skill=True))
+                self.assertTrue(os.path.exists(legacy), f"--no-global-skill 인데 전역 {legacy_name} 사본을 건드림")
 
     def test_codex_host_installs_core_skills_globally(self):
         """Gap-2 P1.2: codex host 는 CORE skill 렌더를 $CODEX_HOME/skills 전역에 설치한다.
@@ -208,7 +215,7 @@ class TestInstall(unittest.TestCase):
         codex 는 repo-스코프 스킬을 자동발견하지 않으므로(sage-init 과 동일 비대칭),
         CORE skill 도 전역 설치되어야 codex 프로젝트에서 호출 가능하다."""
         import unittest.mock as mock
-        _CORE_SKILLS = ["sage-pdca-start", "sage-team", "sage-review", "sage-asset", "sage-profile-modify"]
+        _CORE_SKILLS = list(install._CORE_SKILLS)   # 런타임 목록에서 파생 — rename/추가 시 자동 동기(desync 방지)
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
             with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
                 install.run(Args("codex", d))
@@ -217,7 +224,7 @@ class TestInstall(unittest.TestCase):
                 self.assertTrue(os.path.exists(path), f"전역 codex CORE skill {sid} 미설치")
                 self.assertIn(f"name: {sid}", Path(path).read_text(encoding="utf-8"))
             # codex host 는 repo .claude/skills/ 에 CORE skill 렌더를 두지 않는다
-            self.assertFalse(os.path.exists(os.path.join(d, ".claude", "skills", "sage-pdca-start")))
+            self.assertFalse(os.path.exists(os.path.join(d, ".claude", "skills", "sage-plan")))
 
     def test_codex_no_global_skill_skips_core_skills(self):
         """--no-global-skill 이면 CORE skill 전역 설치도 생략(CI/샌드박스)."""
@@ -225,10 +232,10 @@ class TestInstall(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
             with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
                 install.run(Args("codex", d, no_global_skill=True))
-            self.assertFalse(os.path.exists(os.path.join(codex_home, "skills", "sage-pdca-start")))
+            self.assertFalse(os.path.exists(os.path.join(codex_home, "skills", "sage-plan")))
             self.assertFalse(os.path.exists(os.path.join(codex_home, "skills", "sage-review")))
             # spec 은 host 무관이라 codex host 에도 docs/ 에 배치된다
-            self.assertTrue(os.path.exists(os.path.join(d, "docs", "sage_harness", "skills", "sage-pdca-start.md")))
+            self.assertTrue(os.path.exists(os.path.join(d, "docs", "sage_harness", "skills", "sage-plan.md")))
 
     def test_claude_agent_renders_create_only(self):
         """Gap-1 create-only 안전성: 사용자 커스터마이즈 렌더는 --force 없이 보존된다."""
