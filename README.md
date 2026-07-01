@@ -3,7 +3,7 @@
 [![CI](https://github.com/SeJonJ/SAGE/actions/workflows/ci.yml/badge.svg)](https://github.com/SeJonJ/SAGE/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/sage-harness)](https://pypi.org/project/sage-harness/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/sage-harness/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](LICENSE)
 
 > **개발 중인 프로젝트입니다.** PyPI 패키지와 기본 CLI는 사용할 수 있지만, profile 대화형 작성 흐름과 일부 cross-runtime 자동화는 아직 개선 중입니다. README의 명령과 지원 범위를 확인하고 적용하세요.
 
@@ -589,4 +589,6 @@ SAGE의 선택 기능이 연동하는 외부 도구들입니다.
 
 ## 라이선스
 
-MIT — [LICENSE](LICENSE) 참조.
+CC BY-NC-SA 4.0 — [LICENSE](LICENSE) 참조.
+
+비상업적 사용 및 동일 조건 재배포 허용. 상업적 이용은 저작권자와 별도 협의.
