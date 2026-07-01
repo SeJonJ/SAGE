@@ -97,10 +97,10 @@
       "test": "scripts/sage_harness/hooks/tests/test_stop_compliance_report.py"
     },
     "hooks/generated-artifact-write-guard": {
-      "spec_hash": "sha256:bcecbd4674fc6e4b16716229dd0691030d170e7ffbb4c1a382e072975fd4ef9b",
-      "canonical_hash": "sha256:7a24ce5a2aa12f3c97f52aa9298eb801e81541222ac524078eea9eb440d9e743",
+      "spec_hash": "sha256:7b41950edbcb464a19a5c322a9200143ec24f6399b40560abd3bb623d904a644",
+      "canonical_hash": "sha256:ec53a1b85b0d59f062704234c8fb7128a139eb6831d06a7af924c6ed6f0133f1",
       "render_hash": {
-        "native": "sha256:7a24ce5a2aa12f3c97f52aa9298eb801e81541222ac524078eea9eb440d9e743"
+        "native": "sha256:ec53a1b85b0d59f062704234c8fb7128a139eb6831d06a7af924c6ed6f0133f1"
       },
       "adapter_contract_version": "1",
       "conformance": "PASS",
@@ -111,8 +111,8 @@
     }
   },
   "hook_runtime_hash": {
-    "shared": "sha256:4b6e9e512faf182e7873d878707e0326d0c02feff0d643befeb263224685edc4",
-    "claude": "sha256:768da72fbd608768bb1819a8c6129f1e6944ded8c214a208be5fc6e993f30c02",
-    "codex": "sha256:7c54fb557f3aec0608977a11cc1af5cb4cfc8b67542f57b025e1b1fb39e0bfb1"
+    "shared": "sha256:716949c3fa4d710b1deb5eb5a4f7ec77add8c9d28ad96ae6e767bd16fa74f59b",
+    "claude": "sha256:77126a3bfaa36cc1cdb60b62252993ad05692aa3ea6208736ab1b86d29d0a831",
+    "codex": "sha256:ccc40a617c118c10be91e295e5b92fc61274539593a2b8e4fff09a599cab2e57"
   }
 }
