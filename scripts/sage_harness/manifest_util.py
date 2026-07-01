@@ -29,8 +29,12 @@ def _derived_contract_version(module_name: str) -> str:
         sys.path.insert(0, here)
     try:
         mod = importlib.import_module(module_name)
-    except ModuleNotFoundError:
-        return "1"
+    except ModuleNotFoundError as e:
+        # 대상 모듈 자체가 없을 때만 '1' 폴백(하R2): reverse_extract_* 안의 전이 import 실패
+        # (e.name != module_name)는 진짜 breakage 이므로 re-raise 해 가리지 않는다.
+        if e.name == module_name:
+            return "1"
+        raise
     cv = getattr(mod, "CONTRACT_VERSION", None)
     if isinstance(cv, str) and cv.strip():
         return cv
