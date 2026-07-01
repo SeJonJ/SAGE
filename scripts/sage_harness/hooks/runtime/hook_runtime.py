@@ -298,7 +298,10 @@ def build_checklist_snapshot(core, event, profile, root):
 def run_pre_phase4_checklist_gate(io, root, core_dir, raw_text):
     """pre-phase4-checklist-gate 오케스트레이터(PreToolUse). 03→04 전환 시 체크리스트 완료 강제."""
     hid = "pre-phase4-checklist-gate"
-    raw = parse_input_fail_open(hid, raw_text, surface=False)
+    # 게이트 hook 이므로 malformed 입력을 surface(5-1): pre-implementation-gate 와 일관.
+    # silent fail-open 은 게이트가 조용히 열린 걸 숨긴다(비게이트 logger 와 달리). fail-closed 전환은
+    # transient 입력 전면차단 위험이라 별도 설계결정(보류) — 여기선 비silent 화까지만.
+    raw = parse_input_fail_open(hid, raw_text, surface=True)
     if raw is None:
         return 0
     if io.should_skip(raw):

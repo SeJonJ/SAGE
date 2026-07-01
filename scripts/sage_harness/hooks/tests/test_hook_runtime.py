@@ -113,6 +113,22 @@ class TestRunStrategyF8b(unittest.TestCase):
     def test_no_strategy_returns_none(self):
         self.assertIsNone(hr.run_strategy("h", {"risk": {}}, "/tmp", [], {}, {}))
 
+    def test_parse_input_fail_open_surface(self):
+        # 게이트 hook(surface=True): malformed 입력을 stderr 로 surface + None(호출자 exit0). (5-1)
+        err = io.StringIO()
+        with redirect_stderr(err):
+            r = hr.parse_input_fail_open("pre-phase4-checklist-gate", "{not valid json", surface=True)
+        self.assertIsNone(r)
+        self.assertIn("파싱 실패", err.getvalue())
+
+    def test_parse_input_fail_open_silent_for_nongate(self):
+        # 비게이트(surface=False): 원본 silent 보존.
+        err = io.StringIO()
+        with redirect_stderr(err):
+            r = hr.parse_input_fail_open("post-tool-logger", "{bad", surface=False)
+        self.assertIsNone(r)
+        self.assertEqual(err.getvalue(), "")
+
 
 class TestRenderChannels(unittest.TestCase):
     def test_codex_block_to_stderr_exit2(self):
