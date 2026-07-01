@@ -1,6 +1,6 @@
 [project]
 name = "sage-harness"
-version = "0.9.31"
+version = "0.9.32"
 description = "Governance harness for AI coding agents — spec-SSOT closed loop for Claude Code and Codex"
 readme = "README.md"
 license = { text = "CC BY-NC-SA 4.0" }

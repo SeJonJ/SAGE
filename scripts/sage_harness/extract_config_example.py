@@ -25,9 +25,9 @@ EXAMPLE_EXTRACT_CONFIG = {
     "guide_boundary_tokens": ["commit", "push", "generated/"],
     "runtime_policy_tokens": {"codex": ["gstack"]},
     # cross-model 호출 의미동등 토큰(§3.2.1 host별 경로 차이). 한쪽-only 여도 unresolved 아님 → allowlist.
-    # claude-host=Codex 호출(gstack:codex / /codex consult), codex-host=Claude 호출($claude consult).
-    "cross_model_invocation": {"claude": ["gstack:codex", "/codex consult"],
-                               "codex": ["$claude consult", "claude consult"]},
+    # claude-host=`codex exec`(SAGE 직접 호출), codex-host=`claude -p`(SAGE 직접 호출).
+    "cross_model_invocation": {"claude": ["codex exec", "/codex consult"],
+                               "codex": ["claude -p", "$claude consult", "claude consult"]},
     # skill reverse_extract 용 (reverse_extract_skill) — section 헤더 + 입력범위 패턴
     "intent_headers": ["목적", "개요", "purpose", "intent"],
     "procedure_headers": ["실행 방법", "실행방법", "절차", "단계", "procedure", "steps"],

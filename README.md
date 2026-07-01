@@ -373,7 +373,8 @@ sage validate
 
 ## 관련 프로젝트
 
-- **[Obsidian LLM Wiki (Local)](https://github.com/kytmanov/obsidian-llm-wiki-local)** — 로컬 LLM 기반 Obsidian vault. SAGE의 지식 캡처가 PDCA 산출 지식을 적재하는 대상입니다.
+- **[llm_wiki](https://github.com/nashsu/llm_wiki)** — 로컬 LLM 기반 Obsidian vault. SAGE의 지식 캡처가 PDCA 산출 지식을 적재하는 대상입니다.
+- **[LLM OS (Karpathy)](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)** — AI 에이전트를 OS처럼 운영하는 접근법. SAGE의 거버넌스 개념과 맞닿아 있습니다.
 - **[CodeGraph](https://github.com/colbymchenry/codegraph)** — 코드 지식 그래프. SAGE에서 `mcp.enabled`에 추가해 MCP 자산으로 관리합니다.
 
 ---

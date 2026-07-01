@@ -72,11 +72,11 @@ decisions that genuinely need user intent; author the rest from them:
 - `verification.commands` — the deterministic build/test/lint commands for the stack.
 - `file_type_map` — `{ glob, type }` first-match classification used for logging.
 - `options.cross_model` — when true, Phase 05 review is opposite-runtime **only
-  when reachable**; `sage doctor` resolves it from `options.cross_model` +
-  `cross_model.invocation` + `capabilities` (e.g. gstack), and falls back to
-  clean-context same-runtime when the invocation path or capability is
-  unavailable. It is **not** resolved from `runtime.external_reviewer` (which
-  records the intended preference only).
+  when reachable**; `sage doctor` resolves reachability from peer CLI availability
+  (`which codex` / `which claude`) and falls back to clean-context same-runtime
+  when the peer CLI is unavailable. No third-party tool is needed — SAGE calls
+  the peer runtime directly (`codex exec` / `claude -p`). It is **not** resolved
+  from `runtime.external_reviewer` (which records the intended preference only).
 - **Review loop (Phase 05)** — the optional adversarial review-rework loop. Use the
   shared interview set below (§ Review loop + vault interview set). Both `sage-init`
   (first authoring) and `sage-profile-modify` (later editing) drive the *same* set.

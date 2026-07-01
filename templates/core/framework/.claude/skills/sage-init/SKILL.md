@@ -142,27 +142,19 @@ a default, and only dive into the matching section if the user enables it. Skip 
 toggle's detail entirely when it stays off.
 
 - **`options.cross_model`** — when true, Phase 05 review runs opposite-runtime
-  **only when reachable**. `sage doctor` resolves it from `options.cross_model` +
-  `cross_model.invocation` + `capabilities` (e.g. gstack), falling back to
-  clean-context same-runtime. If enabling, confirm the `capabilities` (e.g.
-  `{ gstack: true }`) and that `hooks.register` should be `[claude, codex]`.
-  - **If the user enables cross_model but gstack is not installed**, don't just
-    record `gstack: false` — explain and offer to guide. *Why it's needed:* on a
-    claude-host project, gstack supplies the `/codex consult` invocation that lets
-    Phase 05 actually reach the opposite model; without it `sage doctor` resolves
-    to `clean_context_same_runtime` (same model, fresh context) instead of a true
-    cross-model review. `sage doctor` treats gstack as available only via `gstack`
-    on `PATH` (a `which gstack` check) or an explicit `capabilities.gstack: true` —
-    it does not probe the install folder. *How to install* (Claude Code skill pack,
-    needs git + Bun):
-    ```
-    git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git \
-      ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup
-    ```
-    After install, if `gstack` is on `PATH` that's enough — `sage doctor` detects
-    it. Only set `capabilities.gstack: true` if it isn't visible on `PATH`. If the
-    user prefers not to install it, that's fine — leave cross_model on with the
-    same-runtime fallback, and say so.
+  **only when reachable**. `sage doctor` resolves reachability from peer CLI
+  availability: claude-host checks `which codex`, codex-host checks `which claude`.
+  No third-party tool is required — SAGE calls the peer runtime directly
+  (`codex exec` / `claude -p`). If enabling, confirm that `hooks.register`
+  should be `[claude, codex]`.
+  - **If the user enables cross_model**, confirm the peer CLI is installed:
+    - claude-host: `codex` must be on PATH (`which codex`)
+    - codex-host: `claude` must be on PATH (`which claude`)
+    If the peer CLI is unavailable, `sage doctor` falls back to
+    `clean_context_same_runtime` (same model, fresh context). Run `sage doctor`
+    to verify the resolved reviewer mode before starting a cycle. If the user
+    prefers not to install the peer CLI, that's fine — leave cross_model on with
+    the same-runtime fallback, and say so.
 - **`options.obsidian` / `knowledge_capture`** — if used, set
   `knowledge_capture.vault_path` (empty path = vault features fully OFF) and the
   note convention. If a vault path is set, explicitly confirm the PDCA boundary

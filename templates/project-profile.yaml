@@ -128,14 +128,11 @@ team:                            # CORE 5인(team.core). 역할명은 스택 중
 
 cross_model:                     # opposite-runtime 무상관 검증. 권장 optional
   peer: opposite_runtime         # host=claude → codex / host=codex → claude (하드코딩 금지)
-  requires: [gstack]             # claude-host opposite 전제. doctor 가 가용성 판정
-  invocation:
-    claude_host: "/codex consult (gstack)"   # requires: gstack
-    codex_host:  ""              # host=codex 일 때 Claude 실행 명령 — 기본 미제공. 채우면 동작,
-                                 # 비우면 doctor 가 clean_context_same_runtime 으로 fallback
   on_unavailable: clean_context_same_runtime
+  # peer CLI 가용성은 sage doctor 가 which(codex)/which(claude) 로 직접 판정한다.
+  # claude-host → `codex exec`, codex-host → `claude -p` 를 SAGE 가 직접 호출(외부 도구 불필요).
 
-capabilities: {}                 # 선택: { gstack: true } 로 가용성 선언(PATH which 보강)
+capabilities: {}                 # 선택: { codex: true, claude: true } 로 PATH 보강 선언 가능
 
 hooks:
   enabled: true
