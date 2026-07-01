@@ -81,7 +81,7 @@ class TestSchemaCheck(unittest.TestCase):
 def _runtime_root(d):
     runtime = os.path.join(d, "scripts", "sage_harness", "hooks", "runtime")
     os.makedirs(runtime, exist_ok=True)
-    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "io_claude.py", "io_codex.py"):
+    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "messages.py", "io_claude.py", "io_codex.py"):
         Path(os.path.join(runtime, fn)).write_text(f"# {fn}\n", encoding="utf-8")
 
 

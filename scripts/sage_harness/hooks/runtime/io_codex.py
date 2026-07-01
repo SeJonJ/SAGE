@@ -1,13 +1,15 @@
 """io_codex — pre-implementation-gate 의 Codex 전용 IO (입력추출/declared/렌더). R1 분리.
 
 런타임이 진짜 다른 부분만: apply_patch 다중파일 파싱, .codex/logs declared 읽기,
-block→stderr / 그 외→hookSpecificOutput JSON 렌더. 본문 로직은 hook_runtime 공유.
-msg 테이블은 원본 codex 어댑터에서 verbatim 이식(출력 문자열 무변경).
+block→stderr / 그 외→hookSpecificOutput JSON 렌더(채널). 본문 로직은 hook_runtime 공유,
+사용자 문구는 messages 모듈 공유(5-3 — io_claude 와의 테이블 중복 제거).
 """
 import json
 import os
 import re
 import sys
+
+import messages
 
 RUNTIME = "codex"
 HOST_DIR = ".codex"
@@ -44,35 +46,15 @@ def read_declared_level(raw, root):
 
 
 def render_gate(decision, profile):
-    d = decision
-    k = d.get("message_key")
-    fs = d.get("file_short", "")
-    rs = d.get("reason", "")
-    table = {
-        "block_desktop": f"[GATE BLOCK] 동기화 산출물/금지 경로 직접수정 금지. 파일: {fs} | {(profile.get('risk') or {}).get('desktop_block_hint','원본 경로 수정 후 동기화')}",
-        "block_l3_no_plan": f"[GATE BLOCK - L3] L3 작업 + plan 문서 없음. 파일: {fs} | 근거: {rs}",
-        "block_l3_strategy_unresolved": f"[GATE BLOCK - L3] L3 review 전략 미선택(unresolved) → 리뷰 확인 불가. 파일: {fs} (override required)",
-        "warn_l3_no_review": f"[GATE WARN - L3] 2라운드 리뷰 문서 미확인. 파일: {fs} | 근거: {rs}",
-        "warn_l2_no_plan": f"[GATE WARN - L2] 소스/설정 변경인데 plan 문서 없음. 파일: {fs} | 근거: {rs}",
-        "warn_l0_l3_content": f"[GATE WARN - L0] 문서/plan 에 L3 내용 키워드 감지 — 민감정보 노출 점검. 파일: {fs}",
-        "block_phase_incomplete": f"[GATE BLOCK - {d.get('risk')}] 의무 PDCA phase 미작성: [{', '.join(d.get('missing_phases') or [])}]. 파일: {fs} | 근거: {rs} (docs/agent/pdca-templates.md)",
-        "warn_phase_incomplete": f"[GATE WARN - L1] 권장 PDCA phase 미작성: [{', '.join(d.get('missing_phases') or [])}]. 파일: {fs}",
-        "block_report_without_approval": f"[GATE BLOCK - PDCA] {rs}. 파일: {fs}",
-        "block_report_without_audit": f"[GATE BLOCK - PDCA] {rs}. 파일: {fs} | $sage-review 로 loop 닫고(APPROVED) 05 에 'Loop-Run: <run_id>' 기록",
-        "warn_report_without_audit": f"[GATE WARN - PDCA] {rs}. 파일: {fs} | (advisory) $sage-review loop audit 권장 + 05 에 'Loop-Run: <run_id>'",
-        "block_report_without_acceptance": f"[GATE BLOCK - PDCA] {rs}. 파일: {fs} | 04-analyze 에 acceptance evidence(PASS/FAIL/NOT TESTED/N/A) 기록 후 05 재검토",
-        "warn_report_without_acceptance": f"[GATE WARN - PDCA] {rs}. 파일: {fs} | (advisory) 04-analyze acceptance evidence 보강 권장",
-        "ok_l3": f"[GATE OK - L3] review 확인됨 | {fs}",
-        "ok_l2": f"[GATE OK - L2] plan 확인 | {fs}",
-    }
-    m = table.get(k, "")
-    if d["status"] == "block":
+    # 문구는 messages 공유(SSOT), 채널은 Codex=block→stderr / 그 외→hookSpecific JSON.
+    m = messages.gate_text(decision, profile, RUNTIME)
+    if decision["status"] == "block":
         if m:
             print(m, file=sys.stderr)
     elif m:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": m}},
                          ensure_ascii=False))
-    return d["exit_code"]
+    return decision["exit_code"]
 
 
 def render_declared_capture(level):
@@ -80,7 +62,7 @@ def render_declared_capture(level):
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
-            "additionalContext": f"[Risk 선언 포착] 이번 세션 작업 레벨: {level}. 소스 수정 시 해당 레벨 게이트가 적용됩니다."
+            "additionalContext": messages.declared_capture_text(level, RUNTIME)
         }
     }, ensure_ascii=False))
 
@@ -124,14 +106,14 @@ def render_phase4(decision):
     dec = decision
     s = dec["status"]
     if s == "block":
-        lines = [f"[GATE BLOCK - Phase 3->4] 체크리스트 미완료 {dec['total_unchecked']}건 (기능: {dec['base']})"]
+        lines = [messages.phase4_block_header(dec['total_unchecked'], dec['base'], RUNTIME)]
         for ev in dec["evidence"]:
             lines.append(f"  - {ev['label']}: {ev['file']} ({len(ev['unchecked'])}건 미완료)")
         msg = "\n".join(lines)
     elif s == "warn":
-        msg = f"[GATE WARN - Phase 3->4] '{dec['base']}' 의 03-implementation 문서를 찾지 못했습니다."
+        msg = messages.phase4_warn(dec['base'], RUNTIME)
     elif s == "ok":
-        msg = f"[GATE OK - Phase 3->4] '{dec['base']}' 체크리스트 완료 확인"
+        msg = messages.phase4_ok(dec['base'], RUNTIME)
     else:
         msg = ""
     if dec["status"] == "block":
@@ -189,5 +171,5 @@ def attach_policy_results(model, profile, entries, raw_text, kc_result):
 
 def render_report_saved(today):
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop",
-          "additionalContext": f"Compliance report saved: .codex/logs/compliance-{today}.md"}},
+          "additionalContext": messages.report_saved_text(HOST_DIR, today, RUNTIME)}},
                      ensure_ascii=False))

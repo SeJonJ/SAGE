@@ -15,10 +15,10 @@
 > - **1-1 스킬 3분할 완료(codex R1 P1+2P2 → R2 clean)**: sage-pdca-start→sage-plan(git mv rename)·신규 sage-cycle(00~06 우산)·sage-team(03~06) 유지. install.py `_CORE_SKILLS`(6종)+`_LEGACY_CORE_SKILLS`에 sage-pdca-start 추가(rename 수렴). 스펙(templates/core/skills/{cycle,plan}.md)+렌더(framework/.claude/skills/{cycle,plan}/SKILL.md). 참조 일괄: sage-team spec/render·write-guard(.sh+cases.tsv cycle/plan block+면제)·AGENT_GUIDE/CLAUDE/CODEX/README·sage-init·bootstrap-authoring·test_install(29 PASS·prune matrix subTest·roster 런타임파생). codex R1: sage-cycle 재개로직 P1(cycle stem 미식별·완성도 미검) + cases.tsv sage-cycle 누락 P2 + prune matrix 반쪽 P2 → 전부 수정. R2: P1 해소 확인(우산이 sub-skill 게이트로 위임, sage-team이 backstop), 잔여 P2(주석 5종·테스트 하드코딩) 수정. run-all 전체 green + 양 host install 스모크(6 CORE skill·legacy prune).
 > - **1-2 스펙 SSOT 완료**: CORE skill 스펙 6종 전부 존재(cycle/plan은 3분할로 생성, 기존 4종 유지), 리포 전체 dangling 참조 0 확인. skill↔spec SSOT 링크 균일화 — sage-asset·sage-profile-modify 렌더에도 reference-spec 경로 명시(기존 4종과 동일 푸터). sage-init은 스펙 없음(설계상 예외).
 >
-> **🟢 하 tier — 5-1·5-2 완료, 5-3 plan-보류**
+> **🟢 하 tier — 5-1·5-2·5-3 완료**
 > - 5-2 하드코딩"1"→reverse_extract 파생: codex 3회(R1·R2·R3 BLOCK→해소). `915c69f` 등
 > - 5-1 게이트 malformed 입력 surface(pre-phase4 일관화): codex 1회(clean SHIP). fail-closed 전환은 설계결정 보류.
-> - **보류(plan 스코핑 "동작변경·별도 PR")**: 5-3 messages.py 통일 — io_claude/io_codex 인라인 메시지 텍스트 통일(출력 변경이라 별도 PR).
+> - **5-3 messages.py 통일 완료(codex R1 clean·P2 테스트핀 보강)**: io_claude/io_codex 가 각자 들던 게이트 문구 테이블(16키)+phase4+declared+report 를 messages.py SSOT 로 통합. io_* 는 채널(stdout / stderr / hookSpecific JSON)+exit 만 담당, 런타임 표현(emoji·대시·구분자·스킬접두·arrow)은 runtime 인자 분기. 문구는 정보량 많은 쪽으로 통일 → codex 출력 본문 변경(의도된 4차 잔여 드리프트 제거). messages.py 를 hook_runtime_files 'shared' 에 추가(validate/generate 해시 추적 — 문구 드리프트 감지). 신규 test_messages.py(11) + run-all #38 배선, 런타임파일 목록 픽스처 3곳 갱신. run-all 전체 green + install 스모크(messages.py 배포).
 >
 > **그 후**: 7차 weatherapp e2e (양 host).
 >

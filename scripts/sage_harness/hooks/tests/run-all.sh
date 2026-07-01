@@ -156,5 +156,9 @@ echo "### 37. vault (S5 Obsidian 옵션 — show --vault 대시보드 / retro --
 python3 "$HERE/test_vault.py" || rc=1
 
 echo ""
+echo "### 38. messages SSOT (io_claude/io_codex 공유 게이트/컴플라이언스 문구 통일 — 5-3)"
+python3 "$HERE/test_messages.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

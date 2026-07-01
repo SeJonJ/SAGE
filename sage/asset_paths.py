@@ -28,6 +28,9 @@ def hook_runtime_files(root: str) -> dict[str, list[str]]:
             # 게이트가 신뢰하는 감사 트레일 로직. 추적 안 하면 감사 무결성 코드가 validate 미감지로
             # 표류(7차 배치3, codex R1b P2 수용).
             os.path.join(runtime, "loop_audit.py"),
+            # messages.py: io_claude/io_codex 가 import 하는 게이트/컴플라이언스 문구 SSOT(5-3).
+            # 추적 안 하면 사용자 대상 게이트 문구가 validate 미감지로 표류(loop_audit 과 동일 논리).
+            os.path.join(runtime, "messages.py"),
         ],
         "claude": [os.path.join(runtime, "io_claude.py")],
         "codex": [os.path.join(runtime, "io_codex.py")],
