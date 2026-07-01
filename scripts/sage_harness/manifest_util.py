@@ -38,7 +38,7 @@ def _derived_contract_version(module_name: str) -> str:
     cv = getattr(mod, "CONTRACT_VERSION", None)
     if isinstance(cv, str) and cv.strip():
         return cv
-    if isinstance(cv, int):
+    if isinstance(cv, int) and not isinstance(cv, bool):   # bool 은 int 하위형 → True/False 가 "True" 스탬프되는 것 배제(하R3)
         return str(cv)
     return "1"
 
