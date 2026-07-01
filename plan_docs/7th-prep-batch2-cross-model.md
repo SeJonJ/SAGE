@@ -9,13 +9,19 @@
 >   - asset-check rename / sage review(same-runtime) / sage cross-check(peer 직접 호출 codex exec·claude -p) / reviewer_resolution gstack→peer CLI / 진단정정
 >   - codex 수정: stdin 전송(ARG_MAX)·utf-8·is_error 가드·strict·마이그레이션 shim 수용 / 해시체인·old시맨틱·symlink abort 는 reasoned 비수용
 >
-> **🟡 중 tier 일부 완료**
+> **🟡 중 tier — note_convention + 스킬텍스트 완료, 3분할 미완**
 > - 4-2/4-3 note_convention(tags_style·index): codex 3회(R1·R2 BLOCK→R3 SHIP). `0333107 064feb4 fb05287`
-> - **미완(다음 세션)**: 배치1 — 스킬 3분할(sage-cycle/plan/team) + docs/sage_harness/skills 스펙 8종 + review_loop 항목별 인터뷰 + sage-init enforce/vault조사 + 1-7 단일경로 지시 + 4-1 vault 단일경로(스킬). codex 2~3회.
+> - 배치1 스킬-텍스트(1-3 인터뷰·1-4 enforce·1-5 vault조사·1-6 retro advisory·1-7/4-1 단일경로): `2940b90`
+> - **미완(다음 세션 — 대규모 interpretive)**: 1-1 스킬 3분할(sage-cycle/plan/team, install.py+테스트 동반) + 1-2 docs/sage_harness/skills 스펙 8종. codex 2~3회.
 >
-> **🟢 하 tier 미착수(다음 세션)**: 배치5 — malformed JSON fail-open·하드코딩"1"→manifest 파생·messages.py 통일. codex 1~3회.
+> **🟢 하 tier — 5-1·5-2 완료, 5-3 plan-보류**
+> - 5-2 하드코딩"1"→reverse_extract 파생: codex 3회(R1·R2·R3 BLOCK→해소). `915c69f` 등
+> - 5-1 게이트 malformed 입력 surface(pre-phase4 일관화): codex 1회(clean SHIP). fail-closed 전환은 설계결정 보류.
+> - **보류(plan 스코핑 "동작변경·별도 PR")**: 5-3 messages.py 통일 — io_claude/io_codex 인라인 메시지 텍스트 통일(출력 변경이라 별도 PR).
 >
 > **그 후**: 7차 weatherapp e2e (양 host).
+>
+> **세션 누계**: codex 17라운드(상9·중3·하5), ~20 커밋, 전부 green. 매 finding 논리검증 후 수용/비수용(비수용 근거: 해시체인·rename old시맨틱·symlink abort — 유저결정/기존설계 존중).
 
 ---
 
