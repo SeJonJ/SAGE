@@ -125,9 +125,9 @@ docs/.../mcps/{id}.md               .mcp.json                           │
 - **드리프트 방어** — spec↔산출물 불일치는 `validate`가 잡습니다
 - **직접수정 차단** — write-guard가 산출물 직접 수정을 막고 spec으로 redirect합니다
 - **단일 모델 편향 방지** — cross-model 리뷰로 반대 런타임이 독립 리뷰합니다
-- **침묵 비활성 방지** — profile 오타가 게이트를 조용히 끄는 것을 fail-closed로 적발합니다
+- **침묵 비활성 방지** — profile 오타가 게이트를 조용히 끄는 것을 `sage validate`가 fail-closed로 적발합니다
 
-판단(리뷰·분석)은 AI가, 경계(게이트·무결성)는 SAGE가 결정론으로 — 판단이 틀려도 게이트는 무너지지 않습니다.
+판단(리뷰·분석)은 AI가, 경계(게이트·무결성)는 SAGE가 결정론으로 — 판단이 틀려도 게이트는 무너지지 않습니다. 2층 불변식·실패 정책(fail-open/closed)·신뢰 경계(막지 않는 것 포함)는 [ARCHITECTURE.md](docs/ARCHITECTURE.md)에 정리돼 있습니다.
 
 ---
 
@@ -139,7 +139,7 @@ Phase 05 리뷰를 수렴할 때까지 반복 실행하는 루프입니다 (`pro
 찾기(병렬 렌즈 + cross-model) → 반박(false-positive 필터) → 분류 → 수정 → 종료(수렴/dry/예산)
 ```
 
-- **`sage-review` 스킬**이 루프 진행과 종료 판단을 담당하고, **`sage review-loop`** CLI가 라운드별 결과를 `.sage/loop_audit.jsonl`에 기록하며 무결성을 검증합니다.
+- **`sage-review` 스킬**이 루프 진행과 종료 판단을 담당하고, **`sage review-loop`** CLI가 라운드별 결과를 `.sage/loop_audit.jsonl`에 기록하며 시퀀스 무결성을 검증합니다. 이 검사는 수기 기록·순서 뒤바뀜·누락 같은 게으른 우회를 잡는 sanity 검사이지 위변조 내성(해시체인)이 아닙니다 — 신뢰 경계는 [ARCHITECTURE.md](docs/ARCHITECTURE.md) 참조.
 - cross-model 요청이 same-runtime으로 폴백되면 `degraded`로 표면화됩니다.
 - 루프 종료 backstop은 report←approve(06←05 APPROVED) — 루프는 이를 우회하지 않습니다.
 - **`sage retro`** (Loop C)는 사이클 완료 후 놓친 패턴을 모아 개선 제안을 제시합니다 (자동 반영 없음).
