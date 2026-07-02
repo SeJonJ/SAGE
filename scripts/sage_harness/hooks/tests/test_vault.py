@@ -202,6 +202,29 @@ class TestVaultDashboard(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue(os.path.exists(os.path.join(vault, "wiki", "SAGE-loop-audit.md")))
 
+    def test_close_auto_writes_dashboard_when_profile_flag_enabled(self):
+        tmp, vault = tempfile.mkdtemp(), tempfile.mkdtemp()
+        _profile(tmp, vault, loop_audit_dashboard=True)
+        r = _sage("review-loop", "open", "--risk", "L3", root=tmp)
+        rid = r.stdout.strip().splitlines()[0]
+        _sage("review-loop", "round", "--run-id", rid, "--iteration", "1", "--found", "1",
+              "--survived", "0", "--accepted", "0", root=tmp)
+        r = _sage("review-loop", "close", "--run-id", rid, "--result", "APPROVED",
+                  "--reason", "CONVERGED", "--iterations", "1", root=tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        dash = os.path.join(vault, "wiki", "SAGE-loop-audit.md")
+        self.assertTrue(os.path.exists(dash))
+        with open(dash, encoding="utf-8") as f:
+            txt = f.read()
+        self.assertIn(rid, txt)
+        self.assertIn("APPROVED/CONVERGED", txt)
+
+    def test_close_does_not_auto_write_dashboard_when_flag_disabled(self):
+        tmp, vault = tempfile.mkdtemp(), tempfile.mkdtemp()
+        _profile(tmp, vault, loop_audit_dashboard=False)
+        _run_loop(tmp)
+        self.assertFalse(os.path.exists(os.path.join(vault, "wiki", "SAGE-loop-audit.md")))
+
 
 class TestVaultRetro(unittest.TestCase):
     def _add_05(self, tmp, stem="loop-engineering"):

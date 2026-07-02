@@ -287,6 +287,7 @@ def _run_close(args):
     la.close_loop(root, args.run_id, args.result, args.reason, args.iterations,
                   reviewer_actual=args.reviewer_actual)
     print(f"[sage review-loop] close run_id={args.run_id} {args.result}/{args.reason} iterations={args.iterations}", file=sys.stderr)
+    _auto_write_vault_dashboard(la, root)
     return 0
 
 
@@ -332,7 +333,7 @@ def _dashboard_md(la, root):
         rows.append(f"| {rid} | {risk} | {len(rounds)} | {f_tot} | {a_tot} | {status} | {iters} |")
     body = ["# SAGE Loop A 감사 대시보드", "",
             "> Phase 05 적대적 review-rework 루프 이력. `accepted` 합계 = 리뷰가 채운 host 의 체계적 누락.",
-            "> 정본 데이터: `.sage/loop_audit.jsonl`. 이 노트는 `sage review-loop show --vault` 로 갱신.", "",
+            "> 정본 데이터: `.sage/loop_audit.jsonl`. 이 노트는 `sage review-loop show --vault` 또는 `loop_audit_dashboard: true` 상태의 close 로 갱신.", "",
             "| run_id | risk | rounds | found(합) | accepted(합) | 종료 | iters |",
             "|---|---|---:|---:|---:|---|---:|"]
     body += rows or ["| (기록 없음) | | | | | | |"]
@@ -353,3 +354,21 @@ def _write_vault_dashboard(la, root, override):
           "generated_by": "sage review-loop show --vault"}
     path = _vault.write_note(vault, folder, "SAGE-loop-audit.md", fm, _dashboard_md(la, root))
     print(f"  ✅ Obsidian 대시보드 작성: {path}", file=sys.stderr)
+
+
+def _auto_write_vault_dashboard(la, root):
+    """profile opt-in 이면 close 직후 vault 대시보드를 갱신한다.
+
+    `loop_audit_dashboard` 는 사람이 별도 `show --vault` 를 실행해야 하는 힌트가 아니라
+    loop close 의 side artifact opt-in 이다. 실패해도 audit close 자체는 이미 성공했으므로
+    non-fatal WARN 으로 표면화한다.
+    """
+    profile = _load_profile(root)
+    kc = profile.get("knowledge_capture") if isinstance(profile, dict) else {}
+    kc = kc if isinstance(kc, dict) else {}
+    if kc.get("loop_audit_dashboard") is not True:
+        return
+    try:
+        _write_vault_dashboard(la, root, None)
+    except Exception as e:
+        print(f"  ⚠️  Obsidian 대시보드 자동 갱신 실패: {type(e).__name__}: {e}", file=sys.stderr)
