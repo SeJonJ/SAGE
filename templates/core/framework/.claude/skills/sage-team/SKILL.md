@@ -124,8 +124,15 @@ missing or unresolved — never bypass it.
 After 06 is written, run the configured knowledge write-back when it is enabled:
 
 1. If `knowledge_capture.update_after_dev: true` and `knowledge_capture.vault_path`
-   is set, create `.sage/knowledge_writeback_summary.md` from the 06 completion
-   summary, changed files, verification evidence, and remaining risks.
+   is set, create `.sage/knowledge_writeback_summary.md`. This note is the durable,
+   cross-project distillation that outlives the workspace — **not** a build log. Synthesize
+   (do not transcribe) from PDCA 00~06; keep it short (a few sentences per axis) and cover:
+   1. **Architecture & module boundaries** — the split, each module's responsibility, dependency direction, and *why* (from 02-design).
+   2. **Key design decisions & trade-offs** — the alternatives considered and why this path (from 00/02).
+   3. **Loop A findings & accepted rework + reasoning** — what adversarial review caught in the code and *why* it mattered (from 05), not just the counts.
+   4. **L3 security / risk posture** — sensitive areas, chosen mitigations (from 00 risk + 05 security).
+   5. **Reusable lessons** — what a future similar project should carry forward (from 06 lessons).
+   6. **Links to related vault notes** — `[[...]]` to prior cycles / design notes (vault notes only; project-local `plan_docs` die with the workspace, so point to detail with one line, don't copy it).
 2. Run:
    ```bash
    python -m sage knowledge write-back --title "[cycle stem]" --summary-file .sage/knowledge_writeback_summary.md --append-log
@@ -155,9 +162,12 @@ human-gated step.
 ## Done
 
 The cycle is complete when 06 exists and reflects an APPROVED Phase 05 with a clean,
-closed loop-audit run for this cycle, and the knowledge write-back step has either
-completed or recorded a concrete skipped/failed reason. Report the per-phase outcome +
-the recorded `run_id` to the user.
+closed loop-audit run for this cycle, and **both** closing captures are accounted for in 06
+(neither may be silently omitted):
+- knowledge write-back has completed or 06 records a concrete skipped/failed reason;
+- `sage retro` has run or 06 records why it was skipped.
+
+Report the per-phase outcome + the recorded `run_id` to the user.
 
 ---
 

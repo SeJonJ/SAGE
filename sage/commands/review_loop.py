@@ -331,7 +331,13 @@ def _dashboard_md(la, root):
         status = f"{close['result']}/{close['reason']}" if close else "진행중"
         iters = close["iterations"] if close else len(rounds)
         rows.append(f"| {rid} | {risk} | {len(rounds)} | {f_tot} | {a_tot} | {status} | {iters} |")
-    body = ["# SAGE Loop A 감사 대시보드", "",
+    from sage.commands._common import _project_name
+    from sage.commands.knowledge import _safe_title
+    # 파일명(_note_filename)과 동일하게 개행/구분자를 정규화 — 정규화 안 하면 project.name 에
+    # 섞인 개행(`\n## x`)이 H1 본문에 살아 대시보드가 주입 헤딩으로 깨진다.
+    name = _project_name(_load_profile(root))
+    title_suffix = f" — {_safe_title(name)}" if name else ""
+    body = [f"# SAGE Loop A 감사 대시보드{title_suffix}", "",
             "> Phase 05 적대적 review-rework 루프 이력. `accepted` 합계 = 리뷰가 채운 host 의 체계적 누락.",
             "> 정본 데이터: `.sage/loop_audit.jsonl`. 이 노트는 `sage review-loop show --vault` 또는 `loop_audit_dashboard: true` 상태의 close 로 갱신.", "",
             "| run_id | risk | rounds | found(합) | accepted(합) | 종료 | iters |",
@@ -343,16 +349,30 @@ def _dashboard_md(la, root):
     return "\n".join(body) + "\n"
 
 
+def _dashboard_filename(profile):
+    """loop audit 대시보드 파일명 — vault note_convention + project.name 파생.
+
+    프로젝트당 1페이지(예: `TECH - weatherapp loop audit.md`)로, close 마다 같은 파일을
+    덮어쓰기 갱신한다(run 별 페이지 난립 방지). 여러 프로젝트가 한 vault 를 공유해도 파일명이
+    프로젝트별로 갈려 서로 덮어쓰지 않는다. write-back 노트와 동일한 `_note_filename` 을 재사용해
+    vault 명명 관례(prefix·filename_pattern)를 그대로 따른다. project.name 이 비면 'SAGE' 폴백."""
+    from sage.commands.knowledge import _note_filename
+    from sage.commands._common import _project_name
+    name = _project_name(profile) or "SAGE"
+    return _note_filename(profile, "TECH", f"{name} loop audit")
+
+
 def _write_vault_dashboard(la, root, override):
     from sage.commands import _vault
-    vault, folder = _vault.vault_target(_load_profile(root), override)
+    profile = _load_profile(root)
+    vault, folder = _vault.vault_target(profile, override)
     if not vault:
         print("  ℹ️  vault 비활성(knowledge_capture.vault_path 미설정, --vault 경로도 없음) → 대시보드 생략", file=sys.stderr)
         return
     import datetime
     fm = {"tags": ["sage", "loop-audit"], "updated": datetime.date.today().isoformat(),
-          "generated_by": "sage review-loop show --vault"}
-    path = _vault.write_note(vault, folder, "SAGE-loop-audit.md", fm, _dashboard_md(la, root))
+          "generated_by": "sage review-loop (close 자동 / show --vault)"}
+    path = _vault.write_note(vault, folder, _dashboard_filename(profile), fm, _dashboard_md(la, root))
     print(f"  ✅ Obsidian 대시보드 작성: {path}", file=sys.stderr)
 
 

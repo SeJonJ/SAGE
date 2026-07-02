@@ -144,9 +144,14 @@ class TestVaultHelper(unittest.TestCase):
             self.assertEqual(parsed, val.replace("\n", " "))
 
 
+# loop audit 대시보드는 project.name 기반 프로젝트별 파일명으로 갱신된다(vault note_convention 파생).
+DASH = "TECH - demoapp loop audit.md"
+
+
 def _profile(tmp, vault, retro_note=False, loop_audit_dashboard=False):
     os.makedirs(os.path.join(tmp, "sage"), exist_ok=True)
     with open(os.path.join(tmp, "sage", "project-profile.yaml"), "w", encoding="utf-8") as f:
+        f.write("project:\n  name: demoapp\n")
         f.write("pdca:\n  approve_phase: \"05\"\n  phases:\n"
                 "    - { id: \"05\", glob: \"plan_docs/05-expert-review/**/*.md\" }\n"
                 "  review_loop: { enabled: true, lenses: [security], refuters: 2 }\n")
@@ -178,13 +183,14 @@ class TestVaultDashboard(unittest.TestCase):
         rid = _run_loop(tmp)
         r = _sage("review-loop", "show", "--vault", root=tmp)
         self.assertEqual(r.returncode, 0, r.stderr)
-        dash = os.path.join(vault, "wiki", "SAGE-loop-audit.md")
+        dash = os.path.join(vault, "wiki", DASH)
         self.assertTrue(os.path.exists(dash))
         with open(dash, encoding="utf-8") as f:
             txt = f.read()
         self.assertIn(rid, txt)
         self.assertIn("| run_id |", txt)        # plain 테이블(플러그인 무관)
         self.assertIn("APPROVED/DRY", txt)
+        self.assertIn("demoapp", txt)           # 프로젝트별 대시보드 제목
 
     def test_show_vault_disabled_graceful(self):
         tmp = tempfile.mkdtemp()
@@ -200,7 +206,7 @@ class TestVaultDashboard(unittest.TestCase):
         _run_loop(tmp)
         r = _sage("review-loop", "show", "--vault", vault, root=tmp)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertTrue(os.path.exists(os.path.join(vault, "wiki", "SAGE-loop-audit.md")))
+        self.assertTrue(os.path.exists(os.path.join(vault, "wiki", DASH)))
 
     def test_close_auto_writes_dashboard_when_profile_flag_enabled(self):
         tmp, vault = tempfile.mkdtemp(), tempfile.mkdtemp()
@@ -212,7 +218,7 @@ class TestVaultDashboard(unittest.TestCase):
         r = _sage("review-loop", "close", "--run-id", rid, "--result", "APPROVED",
                   "--reason", "CONVERGED", "--iterations", "1", root=tmp)
         self.assertEqual(r.returncode, 0, r.stderr)
-        dash = os.path.join(vault, "wiki", "SAGE-loop-audit.md")
+        dash = os.path.join(vault, "wiki", DASH)
         self.assertTrue(os.path.exists(dash))
         with open(dash, encoding="utf-8") as f:
             txt = f.read()
@@ -223,7 +229,28 @@ class TestVaultDashboard(unittest.TestCase):
         tmp, vault = tempfile.mkdtemp(), tempfile.mkdtemp()
         _profile(tmp, vault, loop_audit_dashboard=False)
         _run_loop(tmp)
-        self.assertFalse(os.path.exists(os.path.join(vault, "wiki", "SAGE-loop-audit.md")))
+        self.assertFalse(os.path.exists(os.path.join(vault, "wiki", DASH)))
+
+    def test_dashboard_title_sanitizes_project_name_newline(self):
+        # project.name 에 개행이 섞여도 H1 이 주입 헤딩으로 깨지지 않아야 한다.
+        tmp, vault = tempfile.mkdtemp(), tempfile.mkdtemp()
+        os.makedirs(os.path.join(tmp, "sage"), exist_ok=True)
+        with open(os.path.join(tmp, "sage", "project-profile.yaml"), "w", encoding="utf-8") as f:
+            f.write("project:\n  name: \"demo\\n## injected\"\n"
+                    "pdca:\n  approve_phase: \"05\"\n  phases:\n"
+                    "    - { id: \"05\", glob: \"plan_docs/05-expert-review/**/*.md\" }\n"
+                    "  review_loop: { enabled: true, lenses: [security], refuters: 2 }\n"
+                    f"knowledge_capture:\n  vault_path: \"{vault}\"\n  note_convention: {{ folder: wiki }}\n"
+                    "  loop_audit_dashboard: true\n")
+        rid = _run_loop(tmp)
+        wiki = os.path.join(vault, "wiki")
+        dash = os.path.join(wiki, os.listdir(wiki)[0])
+        with open(dash, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        h1 = next(l for l in lines if l.startswith("# "))
+        self.assertNotIn("\n", h1)
+        self.assertFalse(any(l.startswith("## injected") for l in lines))
+        self.assertIn(rid, "\n".join(lines))
 
 
 class TestVaultRetro(unittest.TestCase):
