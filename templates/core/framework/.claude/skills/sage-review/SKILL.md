@@ -146,9 +146,10 @@ sage review-loop round --run-id $RUN_ID --iteration <n> \
 
 ### After close — Obsidian dashboard (optional)
 If `knowledge_capture.loop_audit_dashboard` is true and `knowledge_capture.vault_path` is set,
-`sage review-loop close` automatically refreshes the vault dashboard:
+`sage review-loop close` automatically refreshes the per-project vault dashboard
+(filename derived from `note_convention` + `project.name`):
 ```
-<vault>/<folder>/SAGE-loop-audit.md
+<vault>/<folder>/TECH - <project.name> loop audit.md
 ```
 You may still run `sage review-loop show --vault` to inspect/regenerate it manually. The
 dashboard is a side artifact, never a gate; a vault write failure is reported as a warning
