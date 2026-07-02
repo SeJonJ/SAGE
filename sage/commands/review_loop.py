@@ -80,6 +80,11 @@ def register(sub):
     ps.add_argument("--root", default=None)
     ps.set_defaults(func=_run_show)
 
+    pn = sp.add_parser("next", help="기록된 라운드 + profile cfg 로 계속/종료를 결정론 권고(감사 기록 안 함)")
+    pn.add_argument("--run-id", required=True)
+    pn.add_argument("--root", default=None)
+    pn.set_defaults(func=_run_next)
+
 
 def _find_project_root(start):
     """프로젝트 루트 탐색(codex S3 P1) — cwd 의존 제거. 서브디렉토리에서 실행해도 open/round/close 가
@@ -315,6 +320,82 @@ def _run_show(args):
     if args.vault is not None:
         _write_vault_dashboard(la, root, args.vault or None)
     return 1 if integ else 0
+
+
+def _next_recommendation(la, root, run_id, cfg, risk):
+    """기록된 라운드 + cfg(review_loop)로 '계속 vs 종료'를 결정론 권고한다(LLM 0, 감사 기록 0).
+    _termination_discrepancies 와 같은 신호(survived/tokens/arch + cfg tier)를 쓰되, 사후 검산이
+    아니라 전향 권고를 낸다. 반환: (action, result, reason, why, skips).
+    action == 'STOP' 이면 result/reason 은 close 에 그대로 넘길 값. 권고는 사실 기반이라, 자료가
+    부족한 축(cfg tier 미설정)은 STOP 을 권하지 않고 skip 사유만 남긴다(false STOP 방지)."""
+    rounds = la.rounds_of(root, run_id)
+
+    def _tier_int(section):
+        m = cfg.get(section) if isinstance(cfg.get(section), dict) else {}
+        v = m.get(risk)
+        return v if isinstance(v, int) and not isinstance(v, bool) else None
+    budget = _tier_int("budget_tokens")
+    max_iter = _tier_int("max_iterations")
+
+    skips = []
+    if budget is None:
+        skips.append(f"budget_tokens[{risk}] 미설정 — 예산 초과 종료 권고 불가")
+    if max_iter is None:
+        skips.append(f"max_iterations[{risk}] 미설정 — 반복상한 종료 권고 불가")
+
+    if not rounds:
+        return ("CONTINUE", None, None, "라운드 기록 0 — 첫 라운드부터 진행", skips)
+
+    iterations = len(rounds)
+    last_survived = int(rounds[-1].get("survived", 0) or 0)
+    total_tokens = max((int(r.get("tokens", 0) or 0) for r in rounds), default=0)  # tokens=누적 → max=총량
+    any_arch = any(int(r.get("arch", 0) or 0) > 0 for r in rounds)
+    converged = last_survived == 0
+
+    # 우선순위: 아키텍처 > 예산 > 반복상한 > 수렴 > 계속.
+    if any_arch:
+        return ("STOP", "BLOCKED", "BLOCKED_ARCH",
+                "아키텍처 에스컬레이션 기록됨(arch>0) — 루프 밖 상위 결정 필요", skips)
+    if budget is not None and total_tokens >= budget:
+        return ("STOP", "BLOCKED", "BUDGET_TOK",
+                f"누적 tokens={total_tokens} ≥ budget[{risk}]={budget}", skips)
+    if max_iter is not None and iterations >= max_iter:
+        if converged:
+            return ("STOP", "APPROVED", "CONVERGED",
+                    f"반복 상한 도달(iter={iterations}=max[{risk}]={max_iter}) + 마지막 survived=0(수렴)", skips)
+        return ("STOP", "BLOCKED", "BUDGET_ITER",
+                f"반복 상한 도달(iter={iterations}=max[{risk}]={max_iter}) + survived={last_survived}(미수렴)", skips)
+    if converged:
+        return ("STOP", "APPROVED", "CONVERGED", "마지막 라운드 survived=0 — 미해결 없음(수렴)", skips)
+    return ("CONTINUE", None, None,
+            f"마지막 survived={last_survived}(미해결 남음), 예산·반복상한 여유 — 라운드 계속", skips)
+
+
+def _run_next(args):
+    la = _load_loop_audit()
+    root = _root(args)
+    if not _is_open(la, root, args.run_id):
+        print(f"[sage review-loop] run_id '{args.run_id}' 의 loop_open 없음 — 먼저 open", file=sys.stderr)
+        return 2
+    if _is_closed(la, root, args.run_id):
+        close = la.close_of(root, args.run_id)
+        print(f"[sage review-loop] run_id '{args.run_id}' 이미 종료됨: {close['result']}/{close['reason']}", file=sys.stderr)
+        print("NEXT: DONE")
+        return 0
+    cfg = _cfg_snapshot(root)
+    risk = _run_risk(la, root, args.run_id)
+    action, result, reason, why, skips = _next_recommendation(la, root, args.run_id, cfg, risk)
+    for s in skips:
+        print(f"[sage review-loop] 권고 skip: {s}", file=sys.stderr)
+    print(f"[sage review-loop] 근거: {why}", file=sys.stderr)
+    if action == "CONTINUE":
+        print("NEXT: CONTINUE")
+    else:
+        print(f"NEXT: STOP result={result} reason={reason}")
+        print(f"[sage review-loop] 권고 close: sage review-loop close --run-id {args.run_id} "
+              f"--result {result} --reason {reason} --iterations {len(la.rounds_of(root, args.run_id))}", file=sys.stderr)
+    print("[sage review-loop] (권고만 — 감사 기록/종료는 close 가 수행. 사실이 다르면 host 는 무시 가능)", file=sys.stderr)
+    return 0
 
 
 def _dashboard_md(la, root):

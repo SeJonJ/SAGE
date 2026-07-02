@@ -119,6 +119,15 @@ Record the block in the Phase-05 doc and STOP. Architecture changes are not auto
 - iteration ≥ `cfg.max_iterations[risk]` (still unconverged) → **BLOCKED** (reason `BUDGET_ITER`)
 - cumulative tokens ≥ `cfg.budget_tokens[risk]` → **BLOCKED** (reason `BUDGET_TOK`)
 
+Do not eyeball these. After recording each round (§ below), run:
+```
+sage review-loop next --run-id $RUN_ID
+```
+It evaluates the rules above deterministically from the recorded rounds + profile cfg and
+prints `NEXT: CONTINUE` or `NEXT: STOP result=<..> reason=<..>` — moving the continue/stop
+decision from host judgment to SAGE. It is advisory (writes nothing); on `STOP`, pass the
+printed `result`/`reason` straight to `close`.
+
 On any terminal state, record the round then close (pass the **actual** reviewer mode so the gate
 can flag a degraded cross-model run — `$ACTUAL` from `sage cross-check`, or `same_runtime`):
 ```

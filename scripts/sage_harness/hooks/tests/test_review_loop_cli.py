@@ -301,5 +301,81 @@ class TestTerminationEnforcement(unittest.TestCase):
         self.assertIn("미지원", r.stderr)
 
 
+class TestReviewLoopNext(unittest.TestCase):
+    """`review-loop next` — 기록된 라운드 + cfg 로 계속/종료 결정론 권고(감사 기록 안 함)."""
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.tmp, "sage"), exist_ok=True)
+        with open(os.path.join(self.tmp, "sage", "project-profile.yaml"), "w", encoding="utf-8") as f:
+            f.write("pdca:\n  review_loop:\n    enabled: true\n    lenses: [security]\n    refuters: 2\n"
+                    "    max_iterations: { L3: 3 }\n    budget_tokens: { L3: 100000 }\n    dry_rounds: 1\n")
+
+    def _open(self, risk="L3"):
+        return sage("open", "--risk", risk, root=self.tmp).stdout.strip().splitlines()[0]
+
+    def _round(self, rid, it, found, survived, accepted=0, tokens=0, arch=0):
+        sage("round", "--run-id", rid, "--iteration", str(it), "--found", str(found),
+             "--survived", str(survived), "--accepted", str(accepted), "--tokens", str(tokens),
+             "--arch", str(arch), root=self.tmp)
+
+    def test_no_rounds_continue(self):
+        rid = self._open()
+        r = sage("next", "--run-id", rid, root=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("NEXT: CONTINUE", r.stdout)
+
+    def test_unresolved_continue(self):
+        rid = self._open()
+        self._round(rid, 1, found=5, survived=2, tokens=1000)
+        r = sage("next", "--run-id", rid, root=self.tmp)
+        self.assertIn("NEXT: CONTINUE", r.stdout)
+
+    def test_converged_stop_approved(self):
+        rid = self._open()
+        self._round(rid, 1, found=2, survived=2, accepted=2, tokens=1000)   # 발견→전부 채택
+        self._round(rid, 2, found=0, survived=0, accepted=0, tokens=2000)   # 신규·미해결 0 = 수렴
+        r = sage("next", "--run-id", rid, root=self.tmp)
+        self.assertIn("NEXT: STOP result=APPROVED reason=CONVERGED", r.stdout)
+
+    def test_budget_stop_blocked(self):
+        rid = self._open()
+        self._round(rid, 1, found=5, survived=2, tokens=100000)   # ≥ budget[L3]
+        r = sage("next", "--run-id", rid, root=self.tmp)
+        self.assertIn("NEXT: STOP result=BLOCKED reason=BUDGET_TOK", r.stdout)
+
+    def test_max_iter_unresolved_stop_blocked(self):
+        rid = self._open()
+        for it in (1, 2, 3):                      # max_iterations[L3]=3
+            self._round(rid, it, found=2, survived=1, tokens=1000)
+        r = sage("next", "--run-id", rid, root=self.tmp)
+        self.assertIn("NEXT: STOP result=BLOCKED reason=BUDGET_ITER", r.stdout)
+
+    def test_arch_stop_blocked(self):
+        rid = self._open()
+        self._round(rid, 1, found=2, survived=1, tokens=1000, arch=1)
+        r = sage("next", "--run-id", rid, root=self.tmp)
+        self.assertIn("NEXT: STOP result=BLOCKED reason=BLOCKED_ARCH", r.stdout)
+
+    def test_orphan_rejected(self):
+        r = sage("next", "--run-id", "rl-nope", root=self.tmp)
+        self.assertEqual(r.returncode, 2)
+
+    def test_closed_reports_done(self):
+        rid = self._open()
+        self._round(rid, 1, found=0, survived=0, accepted=0, tokens=1000)
+        sage("close", "--run-id", rid, "--result", "APPROVED", "--reason", "CONVERGED",
+             "--iterations", "1", root=self.tmp)
+        r = sage("next", "--run-id", rid, root=self.tmp)
+        self.assertIn("NEXT: DONE", r.stdout)
+
+    def test_next_does_not_mutate_audit(self):
+        rid = self._open()
+        self._round(rid, 1, found=5, survived=2, tokens=1000)
+        path = os.path.join(self.tmp, ".sage", "loop_audit.jsonl")
+        before = open(path, encoding="utf-8").read()
+        sage("next", "--run-id", rid, root=self.tmp)
+        self.assertEqual(open(path, encoding="utf-8").read(), before)   # 감사 로그 불변
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

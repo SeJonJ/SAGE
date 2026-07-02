@@ -29,8 +29,10 @@ a structured review report for the current implementation cycle.
    implementer summary (changed files, unit tests), qa findings, and the Phase 01/04
    acceptance matrix/evidence. Report findings verbatim.
 5. Loop A (find→refute→triage→rework→terminate): drive rounds per review-protocol.md;
-   record each boundary with `sage review-loop` (open/round/close). Counters, budget, and
-   termination are SAGE-owned (deterministic); judgement (find/refute/rework) runs in-host.
+   record each boundary with `sage review-loop` (open/round/close). After each round call
+   `sage review-loop next` for the deterministic continue/stop recommendation. Counters,
+   budget, and termination are SAGE-owned (deterministic); judgement (find/refute/rework)
+   runs in-host.
    architecture_change at L3 → BLOCKED_ARCH (human escalation), never auto-reworked.
 6. Required acceptance items marked `FAIL` or `NOT TESTED` in Phase 04 block `APPROVED`.
    Use `N/A` only with explicit out-of-scope/deferred/user-approved reasoning.
