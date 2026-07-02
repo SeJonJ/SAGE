@@ -349,50 +349,55 @@ def run(args) -> int:
             print(f"  - {p}")
     # 다음 단계 안내 — 설계상 진입점은 "AI 대화로 profile 채우기"다(직접 편집 아님).
     # profile 미부트스트랩(project.name 빈값) 상태에선 sage generate 가 BLOCK 된다(강제 게이트).
+    runner = "claude" if args.host == "claude" else "codex"
+    init_cmd = "/sage-init" if args.host == "claude" else "$sage-init"
+    gen_cmd = "sage generate --kind hook --write" + ("" if args.host == "claude" else " --target codex")
     print("")
-    print("다음 단계 (대화형 부트스트랩 — 설계상 진입점):")
-    if args.host == "claude":
-        print("  1) 이 디렉토리에서 claude 를 실행")
-        print("  2) `/sage-init` 입력 → AI 가 인터뷰로 sage/project-profile.yaml 을 채움")
-        print("  3) 승인 후 핸드오프: `sage generate --kind hook --write` → `sage validate --check --schema`")
-    else:
-        print("  1) 이 디렉토리에서 codex 를 실행")
-        print("  2) `$sage-init` 입력 → AI 가 인터뷰로 sage/project-profile.yaml 을 채움")
-        print("     (codex 가 AGENTS.md 를 자동으로 읽어 부트스트랩을 안내하기도 함)")
-        print("  3) 승인 후 핸드오프: `sage generate --kind hook --write --target codex` → `sage validate --check --schema`")
-        if codex_skill_status:
-            status, dst = codex_skill_status
-            if status == "installed":
-                print(f"  ✅ 전역 $sage-init 스킬 설치: {dst}")
-            elif status == "skipped":
-                print(f"  = 전역 $sage-init 스킬 최신(동일 내용): {dst}")
-            elif status == "stale":
-                print(f"  ⚠️  전역 $sage-init 스킬이 현재 SAGE 버전과 다릅니다(구버전 또는 로컬수정): {dst}")
-                print("     최신으로 갱신하려면 `sage install --host codex --force` (로컬수정은 덮어써짐).")
-            elif status == "error":
-                print(f"  ⚠️  전역 $sage-init 스킬 설치 실패(권한/읽기전용 home?): {dst}")
-                print("     codex 에서 `$sage-init` 미동작 시 AGENTS.md/bootstrap-authoring.md 프로토콜을 수동 사용하세요.")
-            elif status == "missing":
-                print("  ⚠️  $sage-init 스킬 소스를 찾지 못해 전역 설치를 건너뜀(번들 손상?).")
-            elif status == "disabled":
-                print("  = 전역 $sage-init 스킬 설치 생략(--no-global-skill). codex 부트스트랩은 AGENTS.md 라우터로 안내됩니다.")
-        for sid, (status, dst) in core_skill_status:
-            if status == "installed":
-                print(f"  ✅ 전역 ${sid} 스킬 설치: {dst}")
-            elif status == "skipped":
-                print(f"  = 전역 ${sid} 스킬 최신(동일 내용): {dst}")
-            elif status == "stale":
-                print(f"  ⚠️  전역 ${sid} 스킬이 현재 SAGE 버전과 다릅니다(구버전 또는 로컬수정): {dst}")
-                print("     최신으로 갱신하려면 `sage install --host codex --force`.")
-            elif status == "error":
-                print(f"  ⚠️  전역 ${sid} 스킬 설치 실패(권한/읽기전용 home?): {dst}")
-            elif status == "missing":
-                print(f"  ⚠️  ${sid} 스킬 소스를 찾지 못해 전역 설치를 건너뜀(번들 손상?).")
-        if not core_skill_status and getattr(args, "no_global_skill", False):
-            print(f"  = 전역 CORE 스킬({', '.join(_CORE_SKILLS)}) 설치 생략(--no-global-skill).")
+    print("다음 단계:")
+    print(f"  1) 이 폴더에서 {runner} 실행 → `{init_cmd}` 입력")
+    print("     AI 가 인터뷰로 sage/project-profile.yaml 을 채웁니다.")
+    print(f"  2) 완료되면: {gen_cmd} → sage validate")
+    print("")
+    print("   설정을 마치기 전에는 `sage generate` 가 차단됩니다 (거버넌스 게이트).")
+
+    if args.host == "codex":
+        _print_codex_skill_summary(codex_skill_status, core_skill_status,
+                                   getattr(args, "no_global_skill", False))
         if agents_md_collision:
-            print("  ⚠️  기존 AGENTS.md 가 있어 codex 부트스트랩 라우터를 자동 배치하지 못했습니다.")
-            print("     templates 의 AGENTS.md 부트스트랩 섹션을 수동 병합하거나 --force 로 교체하세요.")
-    print("")
-    print("⚠️  부트스트랩 전(project.name + risk/components 미설정)에는 `sage generate` 가 차단됩니다 — 거버넌스 게이트가 무력화되지 않도록 강제.")
+            print("")
+            print("   ⚠️  기존 AGENTS.md 가 있어 codex 부트스트랩 라우터를 배치하지 못했습니다.")
+            print("       --force 로 교체하거나 templates 의 AGENTS.md 부트스트랩 섹션을 수동 병합하세요.")
     return 0
+
+
+def _print_codex_skill_summary(codex_skill_status, core_skill_status, no_global_skill):
+    """codex 전역 스킬 설치 결과를 상태별 카운트로 요약(개별 나열 대신). stale/error 만 갱신 안내."""
+    if no_global_skill and not core_skill_status and (not codex_skill_status or codex_skill_status[0] == "disabled"):
+        print("")
+        print("   전역 CORE 스킬 설치 생략(--no-global-skill). 부트스트랩은 AGENTS.md 라우터로 안내됩니다.")
+        return
+
+    # (id, status) 전체 수집 — sage-init + CORE 스킬.
+    entries = []
+    if codex_skill_status:
+        entries.append(("sage-init", codex_skill_status[0]))
+    entries.extend((sid, st) for sid, (st, _dst) in core_skill_status)
+    if not entries:
+        return
+
+    from collections import Counter
+    counts = Counter(st for _sid, st in entries)
+    total = len(entries)
+    ok = counts.get("installed", 0) + counts.get("skipped", 0)
+    stale = counts.get("stale", 0)
+    err = counts.get("error", 0) + counts.get("missing", 0)
+
+    print("")
+    print(f"   전역 스킬 {total}종: 최신 {ok}" + (f", 갱신필요 {stale}" if stale else "") + (f", 실패 {err}" if err else ""))
+    if stale:
+        stale_ids = ", ".join(f"${sid}" for sid, st in entries if st == "stale")
+        print(f"   ⚠️  갱신 필요: {stale_ids}")
+        print("       → `sage install --host codex --force` (로컬 수정은 덮어써집니다)")
+    if err:
+        err_ids = ", ".join(f"${sid}" for sid, st in entries if st in ("error", "missing"))
+        print(f"   ⚠️  설치 실패: {err_ids} (권한/읽기전용 home 또는 번들 손상?)")

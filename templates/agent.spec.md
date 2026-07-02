@@ -12,7 +12,8 @@ kind: agent
 - convention_doc: 준수 문서
 
 ## runtime_bindings
-- model: opus | sonnet
+- model: opus | sonnet   # 작업 강도 티어(opus=고강도 / sonnet=표준). claude-host 는 이 값을
+                         # Claude 서브에이전트 모델로 매핑, codex-host 는 명목 티어(codex 자체 모델 사용).
 # claims / runtime_delta_allowlist 는 reverse_extract가 {id}.claims.yml 로 자동 도출.
 
 ## drift_checks

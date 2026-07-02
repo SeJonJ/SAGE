@@ -347,7 +347,8 @@ plus production code-convention verification within its boundary.
 - convention_doc: (component convention doc declared in profile.conventions)
 
 ## runtime_bindings
-- model: {model}
+- model: {model}   # work-intensity tier (opus=heavy / sonnet=standard); claude-host maps it to the
+                   # Claude subagent model, codex-host treats it as a nominal tier (Codex uses its own model)
 - claims/allowlist are auto-derived into {{id}}.claims.yml by reverse_extract
 
 ## drift_checks

@@ -61,6 +61,10 @@ decisions that genuinely need user intent; author the rest from them:
 - `project.name` / `project.prefix`
 - `components[]` — component boundaries (id + path globs + model). Filling this
   enables `sage generate --kind roster` to scaffold `implementer-<id>` specs.
+  `model` is a work-intensity tier (`opus`=heavy / `sonnet`=standard), not a runtime
+  model name: claude-host maps it to the Claude subagent model, codex-host treats it
+  as a nominal tier (Codex uses its own model). On a codex-host project, present it as
+  a tier choice, not a Claude-model recommendation.
 - `risk.*` — derived from the stack and the high-risk domains the user names
   (e.g. secrets, auth, payments → `l3_*`). Cover the tier globs
   (`l0_pass_globs` / `l1_path_globs` / `l2_path_globs` /

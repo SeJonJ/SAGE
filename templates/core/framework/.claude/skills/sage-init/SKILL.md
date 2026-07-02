@@ -103,6 +103,12 @@ reach thoroughness through the back-and-forth, not a wall of questions.
 2. **`components[]`** — propose the partition from top-level dirs (e.g. backend /
    frontend) as `{ id, paths: [globs], model }`. Filling this enables
    `sage generate --kind roster` to scaffold `implementer-<id>` specs.
+   - **`model` is a work-intensity tier, not a runtime model name.** `opus` = heavy
+     (design-heavy / high-complexity components), `sonnet` = standard. On a **claude-host**
+     project this tier maps to the Claude subagent model; on a **codex-host** project it is
+     just a nominal intensity hint (Codex uses its own model regardless). So when the host
+     is Codex, do **not** frame this as "recommending a Claude model" — say "heavier tier
+     (`opus`)" or "standard tier (`sonnet`)". Allowed values stay `opus | sonnet`.
 3. **`verification.commands`** — propose the real `build` / `test` / `lint` (and
    `syntax` for L1) from the build files you found. Empty = that check is skipped,
    so confirm only commands that genuinely exist.

@@ -21,6 +21,8 @@ paths:
 
 components: []                    # 예: [{ id: backend, paths: ["src/backend/**"], model: opus }]
                                   # 채우면 `sage generate --kind roster` 가 컴포넌트당 implementer-<id> 에이전트 spec 동적 생성(EH-1).
+                                  # model = 작업 강도 티어(opus=고강도 / sonnet=표준). claude-host 는 Claude
+                                  # 서브에이전트 모델로 매핑, codex-host 는 명목 티어(codex 자체 모델 사용).
                                   # 비우면 team.core 의 고정 implementer-a/b 폴백(하위호환).
 
 risk:                            # pre-implementation-gate / stop-compliance 가 읽는 위험 분류(flat 계약)
