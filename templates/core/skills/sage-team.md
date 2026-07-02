@@ -42,10 +42,16 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
    this deterministically.
 8. Knowledge write-back: if `knowledge_capture.update_after_dev: true` and
    `knowledge_capture.vault_path` is set, write the final cycle summary to
-   `.sage/knowledge_writeback_summary.md` and run
+   `.sage/knowledge_writeback_summary.md` — a durable cross-project distillation
+   (synthesize, do not transcribe) covering architecture & module boundaries, key
+   decisions/trade-offs, Loop A findings + reasoning, L3 security posture, reusable
+   lessons, and `[[vault links]]` — then run
    `python -m sage knowledge write-back --title "<cycle-stem>" --summary-file .sage/knowledge_writeback_summary.md --append-log`.
    Record the output or skipped reason in the completion report. This is an explicit
    host step, not hidden automatic mutation.
+9. Retro (Loop C, advisory): run `python -m sage retro --run-id <RUN_ID>` (auto-writes a
+   vault human-gate note when `retro_note` is enabled). Record that retro ran, or why it
+   was skipped, in the completion report — a required completion axis, not optional.
 
 ## advisory_scope
 - role_boundary: does not implement code; orchestrates leader/implementers/qa/reviewer
@@ -63,4 +69,5 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
 
 ## drift_checks
 - conformance: procedure step 6 (Phase-05 via sage-review, not hand-written), step 7
-  (06 only when 05_approved), and step 8 (knowledge write-back when enabled) must be present
+  (06 only when 05_approved), step 8 (knowledge write-back when enabled), and step 9
+  (retro run or recorded skip) must be present

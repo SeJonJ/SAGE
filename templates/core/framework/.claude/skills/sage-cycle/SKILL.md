@@ -80,9 +80,10 @@ claim the cycle completed.
 ## Done
 
 The cycle is complete when `/sage-team` reports 06 written against an APPROVED
-Phase 05 with a clean, closed loop-audit run and a completed (or explicitly
-recorded skipped/failed) knowledge write-back. sage-cycle adds no completion
-criterion of its own beyond sequencing the two halves.
+Phase 05 with a clean, closed loop-audit run and both closing captures accounted for:
+a completed (or explicitly recorded skipped/failed) knowledge write-back, and retro
+run (or a recorded skip reason). sage-cycle adds no completion criterion of its own
+beyond sequencing the two halves.
 
 ---
 
