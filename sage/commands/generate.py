@@ -74,12 +74,10 @@ def _parse_runtime_bindings(spec_path):
 
 
 def _command_template(target, hook_id):
-    """런타임별 등록 command 문자열 (관측된 런타임 command 형식)."""
-    if target == "claude":
-        return f'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/{hook_id}.sh"'
-    # codex: PROJECT_ROOT/CODEX_HOME wrapper
-    return ("bash -c 'PROJECT_ROOT=\"${CODEX_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; "
-            f"CODEX_HOME=\"${{CODEX_HOME:-$PROJECT_ROOT/.codex}}\"; bash \"$CODEX_HOME/hooks/{hook_id}.sh\"'")
+    """런타임별 등록 command 문자열. `sage-hook` 콘솔 엔트리포인트(pip 설치)로 호출 —
+    bash·python 경로 추측 없이 크로스플랫폼(Windows 포함) 동작. root/core-dir 은 sage-hook 이
+    env/git/cwd 로 자동 해석하므로 host 별 래퍼가 불필요하다. (`.sh` shim 은 수동 폴백으로 유지.)"""
+    return f"sage-hook --runtime {target} --hook {hook_id}"
 
 
 def _build_registration(root, target, hook_ids):

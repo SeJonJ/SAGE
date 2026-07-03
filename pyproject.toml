@@ -39,6 +39,7 @@ Changelog = "https://github.com/SeJonJ/SAGE/releases"
 
 [project.scripts]
 sage = "sage.cli:main"
+sage-hook = "sage.hook_entry:main"
 
 [build-system]
 requires = ["setuptools>=64"]

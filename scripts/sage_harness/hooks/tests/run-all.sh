@@ -76,6 +76,10 @@ echo "### 18. sage generate (hook 등록 산출물 + manifest 스탬프)"
 python3 "$HERE/test_generate.py" || rc=1
 
 echo ""
+echo "### 18b. sage-hook 콘솔 엔트리포인트 (bash 비의존 hook 실행 — root/core-dir 해석)"
+python3 "$HERE/test_hook_entry.py" || rc=1
+
+echo ""
 echo "### 17. reverse_extract_skill (skill typed claim 자동도출)"
 python3 "$HERE/test_reverse_extract_skill.py" || rc=1
 

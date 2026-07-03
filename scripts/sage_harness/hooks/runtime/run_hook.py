@@ -19,6 +19,23 @@ import io_codex             # noqa: E402
 _IO = {"claude": io_claude, "codex": io_codex}
 
 
+def dispatch(runtime, hook, root, core_dir, raw_text):
+    """hook id → hook_runtime 실행 (단일소스). 셸 어댑터(run_hook.main)와 `sage-hook`
+    콘솔 엔트리포인트(sage.hook_entry)가 공유한다. 알 수 없는 hook 은 안전 통과(rc 0)."""
+    io = _IO[runtime]
+    if hook == "pre-implementation-gate":
+        return hr.run_pre_implementation_gate(io, root, core_dir, raw_text)
+    if hook == "capture-declared-risk":
+        return hr.run_capture_declared_risk(io, root, core_dir, raw_text)
+    if hook == "post-tool-logger":
+        return hr.run_post_tool_logger(io, root, core_dir, raw_text)
+    if hook == "pre-phase4-checklist-gate":
+        return hr.run_pre_phase4_checklist_gate(io, root, core_dir, raw_text)
+    if hook == "stop-compliance-report":
+        return hr.run_stop_compliance_report(io, root, core_dir, raw_text)
+    return 0   # 미지원 hook id → 안전 통과
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runtime", required=True, choices=["claude", "codex"])
@@ -26,23 +43,7 @@ def main():
     ap.add_argument("--root", required=True)
     ap.add_argument("--core-dir", required=True)
     a = ap.parse_args()
-    io = _IO[a.runtime]
-    raw_text = sys.stdin.read()
-
-    if a.hook == "pre-implementation-gate":
-        rc = hr.run_pre_implementation_gate(io, a.root, a.core_dir, raw_text)
-    elif a.hook == "capture-declared-risk":
-        rc = hr.run_capture_declared_risk(io, a.root, a.core_dir, raw_text)
-    elif a.hook == "post-tool-logger":
-        rc = hr.run_post_tool_logger(io, a.root, a.core_dir, raw_text)
-    elif a.hook == "pre-phase4-checklist-gate":
-        rc = hr.run_pre_phase4_checklist_gate(io, a.root, a.core_dir, raw_text)
-    elif a.hook == "stop-compliance-report":
-        rc = hr.run_stop_compliance_report(io, a.root, a.core_dir, raw_text)
-    else:
-        # 알 수 없는 hook id → 안전 통과(미지원).
-        rc = 0
-    sys.exit(rc)
+    sys.exit(dispatch(a.runtime, a.hook, a.root, a.core_dir, sys.stdin.read()))
 
 
 if __name__ == "__main__":

@@ -297,10 +297,12 @@ class TestGenerate(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(dest, ".codex", "hooks.json")))
             s = json.loads(Path(os.path.join(dest, ".claude", "settings.json")).read_text())
             self.assertIn("hooks", s)
-            # codex wrapper 형식
+            # 등록 command 는 sage-hook 콘솔 엔트리포인트(bash 비의존, 크로스플랫폼)
             x = json.loads(Path(os.path.join(dest, ".codex", "hooks.json")).read_text())
             cmd = x["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-            self.assertIn("CODEX_HOME", cmd)
+            self.assertIn("sage-hook", cmd)
+            self.assertIn("--runtime codex", cmd)
+            self.assertNotIn("bash", cmd)
 
     def test_single_id_preserves_all_registrations(self):
         # F6 회귀: generate --id <단일hook> 가 settings.json 을 그 hook 하나로 재생성하면 나머지
