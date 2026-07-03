@@ -113,20 +113,27 @@ sage review-loop close --run-id $RUN_ID --result BLOCKED --reason BLOCKED_ARCH -
 ```
 Record the block in the Phase-05 doc and STOP. Architecture changes are not auto-reworked.
 
-### 4. TERMINATION (evaluate in this fixed order)
-- survivors == 0 → **APPROVED** (reason `CONVERGED`)
-- `cfg.dry_rounds` consecutive rounds with 0 new findings → **APPROVED** (reason `DRY`)
-- iteration ≥ `cfg.max_iterations[risk]` (still unconverged) → **BLOCKED** (reason `BUDGET_ITER`)
-- cumulative tokens ≥ `cfg.budget_tokens[risk]` → **BLOCKED** (reason `BUDGET_TOK`)
-
-Do not eyeball these. After recording each round (§ below), run:
+### 4. TERMINATION
+Do not eyeball this. After recording each round (§ below), run:
 ```
 sage review-loop next --run-id $RUN_ID
 ```
-It evaluates the rules above deterministically from the recorded rounds + profile cfg and
-prints `NEXT: CONTINUE` or `NEXT: STOP result=<..> reason=<..>` — moving the continue/stop
-decision from host judgment to SAGE. It is advisory (writes nothing); on `STOP`, pass the
-printed `result`/`reason` straight to `close`.
+It reads the recorded rounds + profile cfg and prints the deterministic decision —
+`NEXT: CONTINUE` or `NEXT: STOP result=<..> reason=<..>` — moving the continue/stop call
+from host judgment to SAGE. It is advisory (writes nothing); on `STOP`, pass the printed
+`result`/`reason` straight to `close`.
+
+Evaluation order it uses (highest precedence first — budget/iteration limits win over
+convergence, matching what `close` accepts):
+1. architecture escalation recorded (`arch > 0`) → **BLOCKED** (`BLOCKED_ARCH`)
+2. cumulative tokens ≥ `cfg.budget_tokens[risk]` → **BLOCKED** (`BUDGET_TOK`)
+3. iteration ≥ `cfg.max_iterations[risk]` → **APPROVED** (`CONVERGED`) if last-round survivors == 0, else **BLOCKED** (`BUDGET_ITER`)
+4. last-round survivors == 0 → **APPROVED** (`CONVERGED`)
+5. otherwise → **CONTINUE**
+
+`DRY` (dry-convergence: `cfg.dry_rounds` consecutive rounds with 0 new findings) remains a
+valid `close` reason for a resolved loop, but `next` reports resolved loops as `CONVERGED`
+and does not emit `DRY` separately.
 
 On any terminal state, record the round then close (pass the **actual** reviewer mode so the gate
 can flag a degraded cross-model run — `$ACTUAL` from `sage cross-check`, or `same_runtime`):
