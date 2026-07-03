@@ -71,9 +71,9 @@ pdca:                            # PDCA phase 의무구조 — pre-implementatio
     - { id: "05", glob: "plan_docs/05-expert-review/**/*.md" }   # 독립 종합 + 최종 판정(APPROVED/FAIL/BLOCKED)
     - { id: "06", glob: "plan_docs/06-report/**/*.md" }      # 완료 보고(05 APPROVED 후에만)
   pre_implementation_required:   # 코드 변경 전 존재해야 할 phase(위험 레벨별). 누락 시 L2/L3 BLOCK · L1 WARN
-    L1: ["00"]
-    L2: ["00", "01", "02"]
-    L3: ["00", "01", "02"]
+    L1: ["00"]                   # 03 은 구현 문서(파일소유+체크리스트) — L2/L3 소스 편집 전에 반드시 존재해야
+    L2: ["00", "01", "02", "03"] # 함. root 스캐폴딩/설정/글루(build·local.properties·.gitignore 등)도 소스 편집이라
+    L3: ["00", "01", "02", "03"] # 03 선행 대상(컴포넌트 소유 여부와 무관 — risk 글롭으로 분류).
   report_phase: "06"             # 이 phase 문서 작성 시 approve_phase 승인 확인
   approve_phase: "05"            # report 전 APPROVED 가 있어야 할 phase
   approve_marker: "APPROVED"     # approve_phase 문서에서 찾을 승인 마커(대소문자 무시)

@@ -165,7 +165,7 @@ PDCA_PROFILE = {
             {"id": "05", "glob": "plan_docs/05-expert-review/**/*.md"},
             {"id": "06", "glob": "plan_docs/06-report/**/*.md"},
         ],
-        "pre_implementation_required": {"L1": ["00"], "L2": ["00", "01", "02"], "L3": ["00", "01", "02"]},
+        "pre_implementation_required": {"L1": ["00"], "L2": ["00", "01", "02", "03"], "L3": ["00", "01", "02", "03"]},
         "report_phase": "06", "approve_phase": "05", "approve_marker": "APPROVED",
     },
 }
@@ -181,33 +181,50 @@ def snap_pdca(phase_docs=None, plan=None, review=None):
 
 class TestPdcaEnforcement(unittest.TestCase):
     def test_l2_missing_phases_blocks(self):
-        # 의무 phase(00/01/02) 중 01·02 결핍 → L2 BLOCK
+        # 의무 phase(00/01/02/03) 중 01·02·03 결핍 → L2 BLOCK
         d = core.decide(ev("backend/Svc.java"), PDCA_PROFILE,
                         snap_pdca(phase_docs={"00": [_pdoc()]}), None)
         self.assertEqual(d["message_key"], "block_phase_incomplete")
         self.assertEqual(d["exit_code"], 2)
-        self.assertEqual(d["missing_phases"], ["01", "02"])
+        self.assertEqual(d["missing_phases"], ["01", "02", "03"])
+
+    def test_l2_missing_only_03_blocks(self):
+        # 00/01/02 있어도 03(구현 문서=파일소유/체크리스트) 없으면 소스 편집 BLOCK — 스캐폴딩 우회 차단
+        docs = {"00": [_pdoc()], "01": [_pdoc()], "02": [_pdoc()]}
+        d = core.decide(ev("backend/build.gradle.kts"), PDCA_PROFILE,
+                        snap_pdca(phase_docs=docs, plan=[_pdoc()]), None)
+        self.assertEqual(d["message_key"], "block_phase_incomplete")
+        self.assertEqual(d["exit_code"], 2)
+        self.assertEqual(d["missing_phases"], ["03"])
 
     def test_l2_all_phases_present_falls_through(self):
-        # 00/01/02 충족 → phase 통과 → 기존 L2 로직(plan 있음 → ok_l2)
-        docs = {"00": [_pdoc()], "01": [_pdoc()], "02": [_pdoc()]}
+        # 00/01/02/03 충족 → phase 통과 → 기존 L2 로직(plan 있음 → ok_l2)
+        docs = {"00": [_pdoc()], "01": [_pdoc()], "02": [_pdoc()], "03": [_pdoc()]}
         d = core.decide(ev("backend/Svc.java"), PDCA_PROFILE,
                         snap_pdca(phase_docs=docs, plan=[_pdoc()]), None)
         self.assertEqual(d["message_key"], "ok_l2")
 
     def test_l3_phases_present_then_review_logic_preserved(self):
         # phase 충족이 L3 review 게이트를 단축하지 않는다 → 전략 미선택이면 여전히 BLOCK
-        docs = {"00": [_pdoc()], "01": [_pdoc()], "02": [_pdoc()]}
+        docs = {"00": [_pdoc()], "01": [_pdoc()], "02": [_pdoc()], "03": [_pdoc()]}
         d = core.decide(ev("a/payment.java", branch="bug/127"), PDCA_PROFILE,
                         snap_pdca(phase_docs=docs, plan=[{"path": "x", "content": "#127", "recent": True}]), None)
         self.assertEqual(d["message_key"], "block_l3_strategy_unresolved")
+
+    def test_l3_missing_only_03_blocks(self):
+        # L3 도 03 선행 강제 — 00/01/02 있어도 03 없으면 BLOCK
+        docs = {"00": [_pdoc()], "01": [_pdoc()], "02": [_pdoc()]}
+        d = core.decide(ev("a/payment.java"), PDCA_PROFILE,
+                        snap_pdca(phase_docs=docs, plan=[_pdoc()]), {"found": True})
+        self.assertEqual(d["message_key"], "block_phase_incomplete")
+        self.assertEqual(d["missing_phases"], ["03"])
 
     def test_l3_missing_phases_blocks_before_review(self):
         # phase 결핍이 우선 → review 전략 결과와 무관하게 phase BLOCK
         d = core.decide(ev("a/payment.java"), PDCA_PROFILE,
                         snap_pdca(phase_docs={"00": [_pdoc()]}), {"found": True})
         self.assertEqual(d["message_key"], "block_phase_incomplete")
-        self.assertEqual(d["missing_phases"], ["01", "02"])
+        self.assertEqual(d["missing_phases"], ["01", "02", "03"])
 
     def test_l1_missing_phases_warns(self):
         d = core.decide(ev("frontend/app.js"), PDCA_PROFILE, snap_pdca(phase_docs={}), None)

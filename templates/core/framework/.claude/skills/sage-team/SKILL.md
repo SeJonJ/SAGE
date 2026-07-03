@@ -68,6 +68,13 @@ ownership from `profile.components` / `team.core`. Each implementer edits ONLY i
 component's paths (file-ownership boundary; the integration point is stated in the plan
 doc).
 
+> **No "scaffolding is exempt" shortcut.** Root scaffolding / config / glue files (build
+> files, lockfiles, `local.properties`, `.gitignore`, `settings.*`) ARE source edits —
+> they are classified by `profile.risk` globs, not by component ownership. "belongs to no
+> component" ≠ "not implementation". Write 03 first regardless. For L2/L3 this is now a
+> hard gate: `pdca.pre_implementation_required` lists `03`, so a source edit before the 03
+> doc exists is BLOCKED — do not try to route around it.
+
 - **Claude host**: spawn implementers as **parallel subagents** (one per component).
 - **Codex host**: **sequential** delegation (no parallel-subagent model) — same ownership
   boundaries, one implementer at a time. This is a throughput difference only; the

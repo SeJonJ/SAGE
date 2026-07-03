@@ -26,10 +26,13 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
    (APPROVED marker + matching closed APPROVED run, audit integrity clean)}. Only
    `05_approved` permits Phase 06. Start at the first stage whose anchor is absent.
 3. Implementation (03): before source edits, open/update the 03 doc with ownership,
-   checklist, and Phase-01 acceptance IDs. Then dispatch implementers by ownership
-   (Claude = parallel subagents, Codex = sequential, semantics preserved). Each edits
-   only its component paths and records files, checklist, acceptance trace, and unit
-   tests into 03.
+   checklist, and Phase-01 acceptance IDs. Root scaffolding/config/glue (build files,
+   `local.properties`, `.gitignore`, `settings.*`) are source edits too — classified by
+   `profile.risk`, not component ownership; no "scaffolding is exempt" shortcut. For L2/L3
+   this is a hard gate (`pre_implementation_required` includes `03`): a source edit before
+   03 exists is BLOCKED. Then dispatch implementers by ownership (Claude = parallel
+   subagents, Codex = sequential, semantics preserved). Each edits only its component paths
+   and records files, checklist, acceptance trace, and unit tests into 03.
 4. Verification: invoke `scripts/verify-changes.sh` per `profile.verification` at the risk
    gate. SAGE owns policy/gates/result format; this skill only triggers the run
    (pre-implementation-gate is not the executor). Record results in 03; stop if red.
