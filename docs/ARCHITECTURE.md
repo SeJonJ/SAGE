@@ -46,7 +46,8 @@ profile 로드 · L3 전략 로드 경로.
 - **loop_audit 위변조** — `scripts/sage_harness/hooks/runtime/loop_audit.py`의 seq 연속성 검사는 *수기 append·순서
   뒤바뀜·누락* 같은 **게으른 우회(anti-lazy-bypass)** 를 잡는 **sanity 검사**입니다.
   seq = 기록된 레코드 수이므로, 파일을 읽어 다음 정수를 추측해 append 하면 통과합니다.
-  진짜 **위변조 내성(tamper-resistance)은 해시체인**이며, 향후 하드닝 과제로 남아 있습니다.
+  진짜 **위변조 내성(tamper-resistance)은 해시체인**이며, 향후 하드닝 과제로 남아 있습니다
+  (로드맵: `plan_docs/enhancement-backlog.md` EH-3).
 
 경계를 넘는 위협(장악된 runtime, 감사 로그 위변조)은 결정론 게이트가 아니라
 cross-model 리뷰·사람 승인 같은 상위 절차가 완화합니다. 결정론 게이트는 "정직한 host의

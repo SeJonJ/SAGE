@@ -40,6 +40,22 @@
 
 ---
 
+## EH-3 — loop_audit 해시체인 위변조 내성 (tamper-resistance)
+
+- **배경**: `scripts/sage_harness/hooks/runtime/loop_audit.py` 의 `_next_seq` 는 seq 연속성 검사가
+  *수기 append·순서 뒤바뀜·누락* 같은 게으른 우회를 잡는 **anti-lazy-bypass sanity** 검사이지
+  위변조 내성이 아님을 스스로 자인한다(seq = 레코드 수 → 파일을 읽어 다음 정수를 맞춰 append 하면 통과).
+- **문제**: 감사 로그(`.sage/loop_audit.jsonl`)가 "위변조 방지"로 오인될 수 있다. 경계는 문서로 명시했으나
+  (`docs/ARCHITECTURE.md` 신뢰 경계 · README), 실제 tamper-resistance 메커니즘은 없다.
+- **접근**: 각 레코드에 직전 레코드의 해시를 포함하는 **해시체인(prev_hash chaining)** — 중간 삽입/수정/삭제가
+  체인 단절로 검출된다. 게이트가 체인 무결성을 검산. 기존 로그 마이그레이션(genesis 재스탬프) 고려.
+- **규모/위험**: 중. loop_audit 스키마 확장(prev_hash) + 기록/검증 로직 + 게이트 배선 + 하위호환.
+- **트리거**: 위협모델이 "정직한 host"에서 "적대적 host / 감사 로그 신뢰가 필요한 규제·외부 감사"로 확장될 때
+  (README "완전 장악된 host runtime 은 방어하지 않음" 전제가 바뀔 때). **현 위협모델상 낮은 긴급도.**
+- **상태**: 📋 **로드맵 등재(미착수)**. 감사 표현 정직화(경계 명시)는 완료 — `ARCHITECTURE.md` 신뢰 경계 · README.
+
+---
+
 ## (참고) 보류 — 자산 사이클 내 기록
 - F5(클린 업그레이드)는 하드닝에서 해소(profile create-only). F1/F3/F7/malformed 동일.
 - 진행 로그: vault `TECH - SAGE 구현 진행 로그.md`, 1차 테스트 평가: `SAGE 프로젝트 1차 테스트(26.06.18)`.
