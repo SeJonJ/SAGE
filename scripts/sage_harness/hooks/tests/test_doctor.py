@@ -61,6 +61,15 @@ class TestDoctor(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertEqual(doctor._load_profile(p)[1], "ok")
 
+    def test_env_section_reports_sage_hook(self):
+        # W2b: hook 등록이 sage-hook 콘솔 스크립트에 의존 → doctor 실행환경이 이를 진단해야.
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "p.yaml")
+            Path(p).write_text("runtime: { host: codex }\noptions: { cross_model: false }\n")
+            _, out = run_doctor(p)
+            self.assertIn("## 실행 환경", out)
+            self.assertIn("sage-hook", out)
+
     def _codex_skill_project(self, root):
         import json
         os.makedirs(os.path.join(root, "sage"))

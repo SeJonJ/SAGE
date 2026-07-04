@@ -185,15 +185,24 @@ def run(args):
         print(f"        → 선언한 설정이 무시됩니다. YAML 수정 필요.")
         profile = dict(_DEFAULT_PROFILE)
 
-    # 실행 환경(P3-11 이식성): OS / python / bash 점검. 어댑터는 bash + python3(SAGE_PYTHON override)이라
-    # Windows 네이티브는 Git Bash/WSL + python(3) 필요 → 가시화. bash 부재 = 어댑터 구동 불가(치명).
+    # 실행 환경: OS / python / sage-hook / bash 점검.
+    # W2b 이후 hook 등록 command 는 `sage-hook`(sage 패키지 콘솔 스크립트) — PATH 에 없으면 등록돼도
+    # hook 실행이 실패한다(조용한 gate-disable). bash 는 이제 hook 주경로가 아니라 verify-changes.sh(L2/L3 검증)와
+    # `.sh` 수동 폴백 구동용 — hook 실행 자체는 sage-hook 이 bash 없이 담당.
+    sage_hook = shutil.which("sage-hook")
     bash_path = shutil.which("bash")
     print("## 실행 환경")
     print(f"  OS       : {platform.system()} ({os.name})")
     print(f"  python   : {platform.python_version()} (sys.executable={sys.executable})")
-    print(f"  bash     : {bash_path or 'NOT FOUND'}" + ("" if bash_path else "  ⚠️  어댑터(.sh) 구동 불가 — Git Bash/WSL 필요"))
+    print(f"  sage-hook: {sage_hook or 'NOT FOUND'}"
+          + ("" if sage_hook else "  ⚠️  hook 실행 진입점이 PATH 에 없음 → 등록돼도 hook 이 안 돎(게이트 무력화). "
+             "`pipx install sage-harness`(또는 `pip install -e .`)로 재설치 — sage-hook 은 sage 패키지 콘솔 스크립트."))
+    print(f"  bash     : {bash_path or 'NOT FOUND'}"
+          + ("" if bash_path else "  ⚠️  scripts/verify-changes.sh(L2/L3 검증)와 `.sh` 수동 폴백 구동 불가 — Git Bash/WSL 필요"
+             "(hook 실행 자체는 sage-hook 이 담당)."))
     if os.name == "nt" or platform.system() == "Windows":
-        print("  ⚠️  Windows 네이티브: 어댑터는 Git Bash/WSL 에서만 동작. python3 부재 시 SAGE_PYTHON=python 설정.")
+        print("  ⚠️  Windows 네이티브: hook 실행은 sage-hook 으로 bash 없이 동작. 단 verify-changes.sh(검증)와 `.sh` "
+              "폴백은 Git Bash/WSL 필요. python3 부재 시 SAGE_PYTHON=python 설정.")
 
     # 옵션 의존성
     caps_prof = profile.get("capabilities", {}) or {}
