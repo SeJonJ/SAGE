@@ -199,6 +199,21 @@ class TestAbsorbFromRetro(unittest.TestCase):
             self.assertIn("의미적 누락 → agent / skill", out)
             self.assertIn("자동 반영하지 않음", out)
 
+    def test_proposals_anchored_to_heading_not_decoy(self):
+        # codex P2: 안내문의 백틱 `## 제안` 언급 + `## 요약` 안의 JSON 코드블록(decoy)이 있어도
+        # 실제 `## 제안` 헤딩 라인에서만 잘라 진짜 제안을 흡수해야 한다.
+        with tempfile.TemporaryDirectory() as d:
+            note = ('---\napproved: true\nstatus: "x"\n---\n'
+                    '> 안내: `## 제안` JSON 을 채우세요.\n\n'
+                    '## 요약\n```json\n[{"pattern":"DECOY","target":"profile","proposed_change":"WRONG"}]\n```\n\n'
+                    '## 제안 (proposals)\n```json\n[{"pattern":"REAL","target":"agent","proposed_change":"RIGHT","confidence":"high","evidence":["f-1"]}]\n```\n')
+            p = os.path.join(d, "n.md")
+            Path(p).write_text(note, encoding="utf-8")
+            rc, out = run_absorb(Args(from_retro=p))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("RIGHT", out)
+            self.assertNotIn("WRONG", out)
+
     def test_unapproved_refused(self):
         with tempfile.TemporaryDirectory() as d:
             rc, out = run_absorb(Args(from_retro=_retro_note(d, "false")))

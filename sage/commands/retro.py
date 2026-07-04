@@ -176,18 +176,28 @@ def _write_vault_note(profile, root, rid, feature, out_lines, override):
         print("  ℹ️  vault 비활성(knowledge_capture.vault_path 미설정, --vault 경로도 없음) → 노트 생략", file=sys.stderr)
         return
     import datetime
+    from sage.commands.knowledge import _note_filename
+    from sage.commands._common import _project_name
     # 파일명 stem 은 사용자 입력(--feature)일 수 있으므로 경로 탈출 방지 — 안전 문자만 남긴다.
     raw_stem = feature or rid or "cycle"
     stem = re.sub(r"[^A-Za-z0-9._-]", "-", raw_stem).strip("-.") or "cycle"
-    fname = f"sage-retro-{stem}-{datetime.date.today().isoformat()}.md"
+    today = datetime.date.today().isoformat()
+    # 파일명은 vault note_convention(prefix + filename_pattern)을 따른다 — loop-audit 대시보드와 동일 방식.
+    # 프로젝트/stem/날짜로 유일성 유지(같은 날 재실행 create-only 보존). project.name 비면 'SAGE' 폴백.
+    name = _project_name(profile) or "SAGE"
+    fname = _note_filename(profile, "TECH", f"{name} retro {stem} {today}")
     fm = {"tags": ["sage", "retro", "loop-c"], "approved": False, "run_id": rid or "",
-          "date": datetime.date.today().isoformat(), "status": "pending-review"}
-    body = ("> **Loop C retro — human gate.** 아래 증거로 패턴을 distill 해 `## 제안` 블록을 채우고, 검토 후\n"
-            "> frontmatter `approved: true` 로 승인하세요. 그 다음 `sage absorb --from-retro <이 노트>` 로\n"
-            "> 자산 patch 후보를 받습니다. 자동 반영되지 않습니다(SSOT 보호).\n\n"
-            "## 증거\n```\n" + "\n".join(out_lines) + "\n```\n\n"
+          "date": today, "status": "pending-review"}
+    body = ("> **Loop C retro — human gate.** `## 요약` 에 사람용 회고 1~2줄, `## 제안` JSON 에 distill 결과를\n"
+            "> 채운 뒤 검토해 frontmatter `approved: true` 로 승인하세요. 그 다음 `sage absorb --from-retro <이 노트>`\n"
+            "> 로 자산 patch 후보를 받습니다. 자동 반영되지 않습니다(SSOT 보호).\n\n"
+            "## 요약\n"
+            "_이번 사이클에 체계적으로 놓친 것과 바꾸기로 한 것을 사람이 읽을 1~2줄로 (absorb 파싱 대상 아님)._\n\n"
             "## 제안 (proposals) — distill 결과를 JSON 배열로 채우세요. target ∈ {profile,hook,agent,skill}\n"
-            "```json\n[]\n```\n")
+            "```json\n[]\n```\n\n"
+            "---\n"
+            "<details>\n<summary>증거 · distiller 프롬프트 (참고 — 채울 때만 사용, absorb 는 위 `## 제안` JSON 만 읽음)</summary>\n\n"
+            "```\n" + "\n".join(out_lines) + "\n```\n\n</details>\n")
     # create-only: 같은 날 재실행이 사람이 검토/승인(approved:true)한 노트를 덮어쓰지 않게(codex S5 P2).
     path = _vault.write_note(vault, folder, fname, fm, body, create_only=True)
     if path is None:

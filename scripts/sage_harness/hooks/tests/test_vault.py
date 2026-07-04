@@ -267,14 +267,17 @@ class TestVaultRetro(unittest.TestCase):
         self._add_05(tmp)
         r = _sage("retro", "--feature", "loop-engineering", "--vault", root=tmp)
         self.assertEqual(r.returncode, 0, r.stderr)
-        notes = [f for f in os.listdir(os.path.join(vault, "wiki")) if f.startswith("sage-retro-")]
+        notes = [f for f in os.listdir(os.path.join(vault, "wiki")) if (f.startswith("TECH -") and "retro" in f)]
         self.assertEqual(len(notes), 1)
         with open(os.path.join(vault, "wiki", notes[0]), encoding="utf-8") as f:
             txt = f.read()
+        self.assertTrue(notes[0].startswith("TECH -") and "retro" in notes[0])  # note_convention 준수
         self.assertIn("approved: false", txt)        # human gate
         self.assertIn("pending-review", txt)
         self.assertIn(rid, txt)
-        self.assertIn("distiller", txt)              # 증거+프롬프트 포함
+        self.assertIn("## 요약", txt)                # 사람용 요약 슬롯
+        self.assertIn("## 제안", txt)                # absorb 파싱 대상 JSON 섹션
+        self.assertIn("distiller", txt)              # 증거+프롬프트는 <details> 로 보존
 
     def test_retro_vault_disabled_graceful(self):
         tmp = tempfile.mkdtemp()
@@ -293,7 +296,7 @@ class TestVaultRetro(unittest.TestCase):
         self._add_05(tmp)
         _sage("retro", "--feature", "loop-engineering", "--vault", root=tmp)
         note = os.path.join(vault, "wiki",
-                            [f for f in os.listdir(os.path.join(vault, "wiki")) if f.startswith("sage-retro-")][0])
+                            [f for f in os.listdir(os.path.join(vault, "wiki")) if (f.startswith("TECH -") and "retro" in f)][0])
         # 사람이 승인 표시
         with open(note, encoding="utf-8") as f:
             txt = f.read().replace("approved: false", "approved: true")
@@ -319,7 +322,7 @@ class TestVaultRetro(unittest.TestCase):
         _sage("retro", "--feature", "../../etc/evil", "--vault", root=tmp)
         # vault/wiki 안에 sage-retro-*.md 생성, vault 밖(상위)엔 evil 파일 없음
         wiki = os.path.join(vault, "wiki")
-        notes = [f for f in os.listdir(wiki) if f.startswith("sage-retro-")] if os.path.isdir(wiki) else []
+        notes = [f for f in os.listdir(wiki) if (f.startswith("TECH -") and "retro" in f)] if os.path.isdir(wiki) else []
         self.assertTrue(notes and all("/" not in n and ".." not in n for n in notes))
         self.assertFalse(os.path.exists(os.path.join(os.path.dirname(vault), "etc", "evil")))
 
@@ -332,7 +335,7 @@ class TestVaultRetro(unittest.TestCase):
         self._add_05(tmp)
         r = _sage("retro", "--feature", "loop-engineering", root=tmp)   # --vault 없음
         self.assertEqual(r.returncode, 0, r.stderr)
-        notes = [f for f in os.listdir(os.path.join(vault, "wiki")) if f.startswith("sage-retro-")]
+        notes = [f for f in os.listdir(os.path.join(vault, "wiki")) if (f.startswith("TECH -") and "retro" in f)]
         self.assertEqual(len(notes), 1, "retro_note 플래그로 자동 작성됐어야")
 
     def test_retro_note_flag_off_no_auto_vault(self):
@@ -344,7 +347,7 @@ class TestVaultRetro(unittest.TestCase):
         r = _sage("retro", "--feature", "loop-engineering", root=tmp)   # --vault 없음
         self.assertEqual(r.returncode, 0, r.stderr)
         wiki = os.path.join(vault, "wiki")
-        notes = [f for f in os.listdir(wiki) if f.startswith("sage-retro-")] if os.path.isdir(wiki) else []
+        notes = [f for f in os.listdir(wiki) if (f.startswith("TECH -") and "retro" in f)] if os.path.isdir(wiki) else []
         self.assertEqual(len(notes), 0, "플래그 off 인데 자동 작성됨")
 
     def test_no_vault_overrides_retro_note_flag(self):
@@ -356,7 +359,7 @@ class TestVaultRetro(unittest.TestCase):
         r = _sage("retro", "--feature", "loop-engineering", "--no-vault", root=tmp)
         self.assertEqual(r.returncode, 0, r.stderr)
         wiki = os.path.join(vault, "wiki")
-        notes = [f for f in os.listdir(wiki) if f.startswith("sage-retro-")] if os.path.isdir(wiki) else []
+        notes = [f for f in os.listdir(wiki) if (f.startswith("TECH -") and "retro" in f)] if os.path.isdir(wiki) else []
         self.assertEqual(len(notes), 0, "--no-vault 인데 자동 작성됨")
 
 

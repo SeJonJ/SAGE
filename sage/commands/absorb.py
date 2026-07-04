@@ -173,7 +173,9 @@ def _extract_proposals(text):
     """`## 제안` 섹션 이후의 펜스 코드블록들을 순서대로 시도 → 첫 'JSON 배열' 블록 채택 → (list, None).
     설명용 비-json 블록이 앞서거나 fence 언어가 달라도 견고(codex B P2). 없음/실패 → (None, 사유)."""
     import re
-    sec = re.split(r"##\s*제안", text, maxsplit=1)
+    # 실제 헤딩 라인(줄 시작 '## 제안')에서만 자른다 — 안내문 안의 백틱 `## 제안` 언급이나
+    # 그 앞 `## 요약` 섹션의 코드블록을 제안으로 오파싱하지 않도록(codex P2).
+    sec = re.split(r"(?m)^##\s*제안.*$", text, maxsplit=1)
     if len(sec) < 2:
         return None, "## 제안 섹션을 찾지 못함"
     blocks = re.findall(r"```[a-zA-Z]*\n(.*?)\n```", sec[1], re.S)
