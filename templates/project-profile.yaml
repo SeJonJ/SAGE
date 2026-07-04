@@ -85,7 +85,7 @@ pdca:                            # PDCA phase 의무구조 — pre-implementatio
     max_iterations: { L2: 1, L3: 3 }      # risk-tier 비례 반복 상한. 초과 미수렴 → BLOCKED
     dry_rounds: 1                # K라운드 연속 신규 0 → 수렴(APPROVED)
     budget_tokens: { L2: 150000, L3: 600000 }   # loop-until-budget. 초과 → BLOCKED
-    cross_model: from_options.cross_model        # 반박자 1명을 opposite-runtime 로(options.cross_model 연동)
+    cross_model: from_options.cross_model        # FIND 단계에 opposite-runtime peer 리뷰어 1명 추가(sage cross-check). 문제를 *찾는* 쪽 — refuters(반박자) 아님. options.cross_model 연동
     severity_block: [P0, P1]     # 미해결 시 APPROVED 불가한 심각도
     architecture_escalation: from_risk.l3        # arch 변경 finding → BLOCKED(사람). risk.l3_* 재사용(중복정의 금지)
     termination_enforce: advisory                # 종료 검산 모드: advisory(불일치 경고만, 측정용) | enforce(불일치 close 거부). 수렴률 측정 후 enforce 전환 권장
