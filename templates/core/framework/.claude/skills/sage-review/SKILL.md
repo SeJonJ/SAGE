@@ -91,7 +91,10 @@ subsequent `round`/`close`.
 Then repeat each round until a termination rule fires (max `cfg.max_iterations[risk]`):
 
 ### 1. FIND (parallel lenses + cross-model peer)
-Run one reviewer per lens in `cfg.lenses` (parallel, divergent). For the cross-model peer,
+Run **exactly one reviewer per lens** in `cfg.lenses` over the full diff (parallel,
+divergent). Do NOT sub-divide a lens by component / file / module — that multiplies
+subagents (e.g. 6 lenses × 2 components = 12) with no coverage gain; one lens reviewer
+already sees the whole diff. For the cross-model peer,
 **do not invoke the peer by hand** — write the review packet (diff + 05 context) to a file and run
 `sage cross-check --packet-file <f>`; it invokes the peer (`codex exec`/`claude -p`) and prints the
 peer's findings. Capture its last line `REVIEWER_ACTUAL: <mode>` as `ACTUAL` (it is `same_runtime`
@@ -100,10 +103,15 @@ if the peer was unreachable — fold those findings into the host's same-runtime
 is already in `seen` (prevents tail/resurfacing churn).
 
 ### 2. REFUTE (adversarial false-positive filter)
-For each fresh finding, run `cfg.refuters` refuters with the **REFUTE prompt**. A finding
-**survives** only if refuting votes `< ⌈refuters/2⌉` (majority). Refuters bias toward
-"refuted=true when uncertain" — this conservatively drops weak findings; the backstop for
-a wrongly-dropped real issue is the human BLOCKED path. Add survivors to `seen`.
+Run **exactly `cfg.refuters` refuters for the whole round** — each refuter judges **ALL
+fresh findings in one batched pass** (via the **REFUTE prompt**), NOT one refuter per
+finding. This spawns `refuters` subagents per round regardless of finding count, and loads
+each cited file's context once per refuter instead of once per finding×refuter (the old
+per-finding fan-out re-read the same file for every finding in it). A finding **survives**
+only if refuting votes `< ⌈refuters/2⌉` (majority of refuters marked it refuted → dropped) —
+tallied per finding, so the result is identical to per-finding refutation. Refuters bias
+toward "refuted=true when uncertain" — this conservatively drops weak findings; the backstop
+for a wrongly-dropped real issue is the human BLOCKED path. Add survivors to `seen`.
 
 ### 3. TRIAGE (human-escalation boundary)
 For each survivor, run the **TRIAGE prompt**. If `scope == architecture_change` AND
@@ -194,14 +202,16 @@ loop adds the audited find→refute→rework rounds in front of it.
    "claim":"what is wrong and why, 1-2 sentences", "repro":"evidence (optional)", "fix":"suggestion (optional)" }]
 ```
 
-### REFUTE — skeptical verifier
+### REFUTE — skeptical verifier (batched: all fresh findings in one pass)
 ```
-[ROLE] You are a skeptical verifier. Your job is to REFUTE this finding, not accept it.
-[INPUT] finding: {finding_json}; relevant code: {file_context}; design docs.
-[TASK] Actively try to disprove it: is there already a guard? is the premise wrong?
-  is it non-reproducible? does the cited file:line not match reality?
-[RULE] If you cannot clearly refute it, refuted=false. If uncertain, refuted=true (conservative — drop weak findings).
-[OUTPUT] { "finding_id":"{id}", "refuted": true|false, "reason":"1-2 sentences (file:line)" }
+[ROLE] You are a skeptical verifier. Your job is to REFUTE these findings, not accept them.
+[INPUT] findings: {findings_json[]}; relevant code (union of cited files): {file_context}; design docs.
+[TASK] Judge EACH finding INDEPENDENTLY. For each, actively try to disprove it: is there
+  already a guard? is the premise wrong? is it non-reproducible? does the cited file:line not match reality?
+[RULE] Per finding: if you cannot clearly refute it, refuted=false. If uncertain, refuted=true
+  (conservative — drop weak findings). Do not let one finding's verdict bias another.
+[OUTPUT] one verdict per finding, in an array:
+  [ { "finding_id":"...", "refuted": true|false, "reason":"1-2 sentences (file:line)" }, ... ]
 ```
 
 ### TRIAGE — scope classifier

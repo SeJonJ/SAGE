@@ -102,14 +102,21 @@ If **off**, leave `review_loop.enabled: false` and skip the rest. If **on**, aut
 
 | ask | key | one-line meaning |
 |---|---|---|
-| 어떤 관점? (스택 기반 제안) | `lenses` | FIND 렌즈(엔진 어휘: correctness/security/concurrency/convention/lifecycle/performance/error_handling/data_integrity/api_contract) |
+| 어떤 관점? (스택 기반 제안) | `lenses` | FIND 렌즈(엔진 어휘: correctness/security/concurrency/convention/lifecycle/performance/error_handling/data_integrity/api_contract). **렌즈 1개 = 라운드당 리뷰어 서브에이전트 1개** |
 | L2·L3 최대 라운드? | `max_iterations` | 수렴 못 하면 이 횟수에서 BLOCKED (기본 L2:1·L3:3) |
 | 토큰 예산? | `budget_tokens` | 누적 초과 시 BLOCKED (기본 L2:150k·L3:600k) |
-| 반박자 수? | `refuters` | finding당 반증 시도. 생존=반증표 < 과반 (기본 2) |
+| 반박자 수? | `refuters` | **라운드당** 반박자 수(전체 finding 을 한 번에 배치 판정 — finding 수와 무관). 생존=반증표 < 과반 (기본 2) |
 | 연속 dry 라운드? | `dry_rounds` | K라운드 연속 신규 0 → 수렴 (기본 1) |
 | 승인 불가 심각도? | `severity_block` | 미해결 시 APPROVED 차단 (기본 [P0,P1]) |
 | cross-model 반박? | `cross_model` | `options.cross_model` 연동 — 이미 물었으면 그 값 재사용(새로 묻지 않음) |
 | 06←05 audit 게이트 강도? | `report_gate_enforce` | 06 작성 시 05 가 가리키는 loop run 이 clean·closed·APPROVED·seq연속·degraded아님인지 검사. `advisory`(기본, WARN) / `enforce`(BLOCK — 모든 05 가 루프 돌 때만 안전) / `off`(마커만). 안정화 전 advisory 권장, 팀 합의 후 enforce |
+
+> **비용(토큰) 감 잡기 — 이 값들이 곧 서브에이전트 수입니다.** 이 앞의 용어부터: **finding = 리뷰가 찾은 문제**, **refuter = 그 문제가 진짜인지 따지는 검사관**. Phase 05 루프는 서브에이전트로 돕니다:
+> - **FIND**: `lenses` 개수만큼 리뷰어가 매 라운드 병렬로 뜹니다(렌즈 6개 = 라운드당 6개). 각자 코드를 읽습니다.
+> - **REFUTE**: 검사관(`refuters`)이 매 라운드 그 수만큼 뜹니다 — **문제가 몇 개든 검사관은 라운드당 이 수로 고정**(전체 문제를 한 번에 배치 판정). 기본 2.
+> - **cross_model**: **FIND 단계에** 반대 런타임(codex/claude) peer 리뷰어 1명을 더합니다(`sage cross-check`, 별도 토큰). 이건 문제를 *찾는* 쪽이라 검사관(refuters)과 역할이 다릅니다 — refuters 수를 늘리는 게 아닙니다.
+> - 이게 **최대 `max_iterations` 라운드** 반복되고, 누적 토큰이 `budget_tokens` 를 넘으면 종료됩니다.
+> 즉 **렌즈·refuters·라운드·cross_model 을 키울수록 토큰이 늘어납니다.** 안전-크리티컬이 아닌 앱은 렌즈를 3~4개로 줄이면 커버리지 대비 토큰을 크게 아낍니다.
 
 **Vault outputs** — ask **only if the loop is on AND `knowledge_capture.vault_path` is set**
 (one turn; otherwise skip entirely):

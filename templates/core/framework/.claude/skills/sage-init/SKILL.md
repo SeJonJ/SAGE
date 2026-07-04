@@ -178,6 +178,9 @@ toggle's detail entirely when it stays off.
   `lenses` / `max_iterations` / `budget_tokens` / `refuters` / `dry_rounds` /
   `severity_block` / `cross_model` (reuse the `options.cross_model` value already
   settled above — do not re-ask). Each value gets its one-line meaning, per that set.
+  Also surface that set's **token-cost note** (each lens = one reviewer subagent per round;
+  `refuters` = reviewers per round batched over findings; cross_model adds a peer) so the
+  user sets `lenses`/`refuters` knowing the subagent/token impact.
   - **Vault outputs (conditional)**: only when the loop is **on AND
     `knowledge_capture.vault_path` is set**, ask the one vault turn from the shared set —
     `loop_audit_dashboard` (감사 대시보드) and/or `retro_note` (회고 human-gate 노트).

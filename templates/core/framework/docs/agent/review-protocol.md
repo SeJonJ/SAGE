@@ -34,13 +34,16 @@ section is the contract it follows.
 
 Per round (up to `review_loop.max_iterations[risk]`):
 
-1. **FIND** — one reviewer per `review_loop.lenses` (parallel, divergent) plus an
-   opposite-runtime peer when cross-model is resolved. Findings are deduped by
-   `(file, line-bucket, lens, claim-hash)` so resurfaced items don't churn.
-2. **REFUTE** — `review_loop.refuters` refuters try to disprove each fresh finding.
-   A finding survives only if refuting votes `< ⌈refuters/2⌉` (majority). Refuters bias
-   to "refuted when uncertain", so weak findings drop; a wrongly-dropped real issue is
-   caught by the human BLOCKED path.
+1. **FIND** — exactly one reviewer per `review_loop.lenses` over the full diff (parallel,
+   divergent; do not sub-divide a lens by component/file) plus an opposite-runtime peer
+   when cross-model is resolved. Findings are deduped by `(file, line-bucket, lens,
+   claim-hash)` so resurfaced items don't churn.
+2. **REFUTE** — exactly `review_loop.refuters` refuters run for the round; each judges ALL
+   fresh findings in one batched pass (not one refuter per finding — that fanned out to
+   refuters×findings subagents and re-read each file per finding). A finding survives only
+   if refuting votes `< ⌈refuters/2⌉` (majority, tallied per finding — identical result).
+   Refuters bias to "refuted when uncertain", so weak findings drop; a wrongly-dropped real
+   issue is caught by the human BLOCKED path.
 3. **TRIAGE** — surviving findings are classified `within_design` vs `architecture_change`.
    An `architecture_change` at L3 stops the loop and escalates to a human (never auto-reworked).
 4. **TERMINATION** (fixed priority): no survivors → APPROVED(CONVERGED); `dry_rounds`
