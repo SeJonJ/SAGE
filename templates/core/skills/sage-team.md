@@ -46,9 +46,9 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
 8. Knowledge write-back: if `knowledge_capture.update_after_dev: true` and
    `knowledge_capture.vault_path` is set, write the final cycle summary to
    `.sage/knowledge_writeback_summary.md` — a durable cross-project distillation
-   (synthesize, do not transcribe) covering architecture & module boundaries, key
-   decisions/trade-offs, Loop A findings + reasoning, L3 security posture, reusable
-   lessons, and `[[vault links]]` — then run
+   (synthesize, do not transcribe). Lead with a required 2–3 sentence `## Summary` (never
+   blank), then cover architecture & module boundaries, key decisions/trade-offs, Loop A
+   findings + reasoning, L3 security posture, reusable lessons, and `[[vault links]]` — then run
    `python -m sage knowledge write-back --title "<cycle-stem>" --summary-file .sage/knowledge_writeback_summary.md --append-log`.
    Record the output or skipped reason in the completion report. This is an explicit
    host step, not hidden automatic mutation.

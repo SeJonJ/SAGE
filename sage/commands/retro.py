@@ -83,6 +83,13 @@ _DISTILLER_PROMPT = """\
 [TASK] 이 host 가 *체계적으로 놓치는 패턴*만 추출하라(1회성 실수 제외, 반복·구조적인 것만). 각 패턴을 분기:
 - 기계로 탐지 가능(파일패턴/키워드/구조 신호 있음) → target = hook | profile  (다음부터 결정론 강제 차단)
 - 의미적(판단 필요, 패턴화 불가)                  → target = agent | skill   (다음부터 페르소나/체크리스트로 유도)
+[MECHANISM] target 을 정하기 전 각 SAGE 필드/메커니즘의 *실제* 용도를 확인하라(이름만 보고 추측 금지):
+- `profile.conventions`(+ convention-checker 에이전트) = convention 문서(경로/설정)를 리뷰 시 **참조**하는 의미적·advisory 경로. **결정론 grep 아님** — 에이전트가 그 문서를 보고 diff 를 점검할 뿐(스키마는 느슨한 배열, 강제 게이트 아님). 반복 코드 규칙을 "다음 리뷰에서 잡게" 하려면 여기 + convention doc(단 하드 차단은 아님).
+- `risk.l3_content_keywords`/`risk.l3_filename_globs` = 위험도 분류 트리거(무엇을 L3 로 볼지). 안티패턴 탐지 아님.
+- `risk.review_patterns` = **L3 리뷰 대상 문서 탐지용**(`claude_grep_first` 전략, scripts/sage_harness/hooks/strategies/). **코드 안티패턴 탐지가 아니다** — 여기에 코드 규칙을 넣지 말 것.
+- `hook` = pre-implementation-gate 등 결정론 게이트(phase/risk 순서 강제) — **실제 결정론 차단은 여기**. 단 "범용 코드 안티패턴 grep" 전용 필드는 현재 없으므로, 그런 하드 차단이 필요하면 hook/전략 신설이 별도 과제다.
+- `agent|skill` = 페르소나/체크리스트로 판단 유도(패턴화 불가한 것).
+[VERIFY] 제안한 target 이 실제로 그 결함을 다음부터 잡을 수 있는지, 해당 메커니즘의 소스(전략 스크립트/profile 스키마)를 확인한 뒤 확정하라.
 [OUTPUT] 제안 목록(자동반영 아님):
 [{ "pattern":"...", "evidence":["finding 근거/파일:라인"], "target":"hook|profile|agent|skill",
    "proposed_change":"구체 patch 문구(profile 키/컨벤션 문장/agent 체크리스트 등)", "confidence":"high|med|low" }]

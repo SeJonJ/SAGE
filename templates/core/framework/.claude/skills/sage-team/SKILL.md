@@ -133,7 +133,9 @@ After 06 is written, run the configured knowledge write-back when it is enabled:
 1. If `knowledge_capture.update_after_dev: true` and `knowledge_capture.vault_path`
    is set, create `.sage/knowledge_writeback_summary.md`. This note is the durable,
    cross-project distillation that outlives the workspace — **not** a build log. Synthesize
-   (do not transcribe) from PDCA 00~06; keep it short (a few sentences per axis) and cover:
+   (do not transcribe) from PDCA 00~06. **Lead with a 2–3 sentence `## Summary`** (what was
+   built + the single most important outcome/lesson) — required, never leave it blank — then
+   keep it short (a few sentences per axis) and cover:
    1. **Architecture & module boundaries** — the split, each module's responsibility, dependency direction, and *why* (from 02-design).
    2. **Key design decisions & trade-offs** — the alternatives considered and why this path (from 00/02).
    3. **Loop A findings & accepted rework + reasoning** — what adversarial review caught in the code and *why* it mattered (from 05), not just the counts.
