@@ -142,20 +142,30 @@ After 06 is written, run the configured knowledge write-back when it is enabled:
    4. **L3 security / risk posture** — sensitive areas, chosen mitigations (from 00 risk + 05 security).
    5. **Reusable lessons** — what a future similar project should carry forward (from 06 lessons).
    6. **Links to related vault notes** — `[[...]]` to prior cycles / design notes (vault notes only; project-local `plan_docs` die with the workspace, so point to detail with one line, don't copy it).
-2. Run:
+2. **Match the vault's own authoring guide, then run.** Before writing, check the vault
+   root for an authoring guide — first found of `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` /
+   `AGENT_GUIDE.md`. If present, follow its note conventions: pick domain-appropriate **tags**
+   and the right **prefix** (e.g. `BUG`/`FEAT`/`PLAN`/`TECH`), and format the body per its
+   rules (e.g. a `[!summary]` callout). Pass them to the CLI; **omit the flags to fall back to
+   defaults** when the vault has no guide:
    ```bash
-   python -m sage knowledge write-back --title "[cycle stem]" --summary-file .sage/knowledge_writeback_summary.md --append-log
+   python -m sage knowledge write-back --title "[cycle stem]" --prefix <PREFIX> --tags "<t1,t2,…>" --summary-file .sage/knowledge_writeback_summary.md --append-log
    ```
+   (The CLI still owns deterministic placement — path, `tags_style`, index/log append — from
+   the profile; the guide only informs the *judgment* values you pass, per SAGE's determinism
+   boundary.)
 3. Record the command output in 06. If it reports `N/A` or fails, record the exact
    skipped/failed reason; do not claim vault capture completed.
 4. **Planning-interview note (if it exists).** If `.sage/plan_interview.md` exists (a
    planning interview ran in `sage-plan`) AND vault is enabled, capture it as a **separate**
    vault note via the same single write path:
    ```bash
-   python -m sage knowledge write-back --title "[cycle stem] 기획 인터뷰" --summary-file .sage/plan_interview.md --append-log
+   python -m sage knowledge write-back --title "[cycle stem] 기획 인터뷰" --prefix <PREFIX> --tags "<t1,t2,…>" --summary-file .sage/plan_interview.md --append-log
    ```
-   This preserves the user's raw requirements intent durably (like the prior 대화 기록 notes),
-   kept separate from the distilled tech summary. Skip when the file is absent or no vault.
+   The **same vault-guide rules apply** — derive the prefix/tags for this note from the guide
+   too (omit the flags for defaults when no guide). This preserves the user's raw requirements
+   intent durably (like the prior 대화 기록 notes), kept separate from the distilled tech
+   summary. Skip when the file is absent or no vault.
 
 > **Single write path (do NOT freelance).** The vault note, `wiki/log.md`, and any index
 > are written ONLY by `sage knowledge write-back` (it resolves the vault path, note convention,
@@ -164,6 +174,12 @@ After 06 is written, run the configured knowledge write-back when it is enabled:
 > Likewise the loop audit (`.sage/loop_audit.jsonl`) is written ONLY by `sage review-loop`
 > open/round/close — never append or edit it by hand (the gate validates record sequence and
 > rejects hand-written rounds).
+>
+> **One allowed hand-edit (guide-driven):** `write-back` appends a single wikilink *line* to
+> `log.md`/index. If the vault's authoring guide keeps a **history table** there (a row per
+> note), add that row yourself — the CLI's line-append does not produce table rows. This
+> exception is limited to the **existing hub table in log/index**; never hand-create notes or
+> place them outside the vault-resolved path.
 
 After write-back, capture the cycle's learning as an asset-improvement proposal (Loop C —
 advisory, does not auto-apply; closes the 6th-test gap where loop findings never fed back

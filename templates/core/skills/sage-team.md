@@ -48,12 +48,17 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
    `.sage/knowledge_writeback_summary.md` — a durable cross-project distillation
    (synthesize, do not transcribe). Lead with a required 2–3 sentence `## Summary` (never
    blank), then cover architecture & module boundaries, key decisions/trade-offs, Loop A
-   findings + reasoning, L3 security posture, reusable lessons, and `[[vault links]]` — then run
-   `python -m sage knowledge write-back --title "<cycle-stem>" --summary-file .sage/knowledge_writeback_summary.md --append-log`.
+   findings + reasoning, L3 security posture, reusable lessons, and `[[vault links]]`. First
+   check the vault root for an authoring guide (`CLAUDE.md`/`AGENTS.md`/`GEMINI.md`/`AGENT_GUIDE.md`,
+   first found) and follow its note conventions — choose tags/prefix and body format per it —
+   then run `python -m sage knowledge write-back --title "<cycle-stem>" --prefix <PREFIX> --tags "<t1,t2,…>" --summary-file .sage/knowledge_writeback_summary.md --append-log` (omit --tags/--prefix for defaults when no guide).
    Record the output or skipped reason in the completion report. This is an explicit
-   host step, not hidden automatic mutation. If `.sage/plan_interview.md` exists (a planning
-   interview ran) and vault is enabled, also capture it as a **separate** note via the same
-   path: `python -m sage knowledge write-back --title "<cycle-stem> 기획 인터뷰" --summary-file .sage/plan_interview.md --append-log`.
+   host step, not hidden automatic mutation. **One allowed hand-edit only:** if the vault's
+   guide keeps a history *table* in `log.md`/index, add that row by hand (CLI appends a line,
+   not a row) — limited to that existing hub table; never hand-create notes and never write
+   outside the vault-resolved path. If `.sage/plan_interview.md` exists (a planning interview
+   ran) and vault is enabled, also capture it as a **separate** note via the same path (same
+   guide-derived prefix/tags apply): `python -m sage knowledge write-back --title "<cycle-stem> 기획 인터뷰" --prefix <PREFIX> --tags "<t1,t2,…>" --summary-file .sage/plan_interview.md --append-log`.
 9. Retro (Loop C, advisory): run `python -m sage retro --run-id <RUN_ID>` (auto-writes a
    vault human-gate note when `retro_note` is enabled). Record that retro ran, or why it
    was skipped, in the completion report — a required completion axis, not optional.

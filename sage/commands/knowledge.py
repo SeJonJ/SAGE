@@ -38,6 +38,8 @@ def register(sub):
     pw.add_argument("--vault", nargs="?", const="", default=None,
                     help="vault 경로 override. 경로 생략 시 profile.knowledge_capture.vault_path 사용")
     pw.add_argument("--prefix", default="TECH", help="노트 prefix(기본 TECH)")
+    pw.add_argument("--tags", default=None,
+                    help="쉼표구분 태그(벌트 작성 가이드대로 host 가 제공; 미지정 시 기본 tech,sage,knowledge-capture)")
     pw.add_argument("--append-log", action="store_true", help="wiki/log.md 에 wikilink 라인 추가")
     pw.add_argument("--root", default=None, help="프로젝트 루트 override")
     pw.set_defaults(func=_run_write_back)
@@ -348,7 +350,15 @@ def _run_write_back(args):
     filename = _note_filename(profile, args.prefix, title)
     note_stem = filename[:-3] if filename.endswith(".md") else filename
     # tags_style(4-2): vault 규칙에 맞춰 frontmatter(기본) / inline(본문 태그줄) / none(태그 없음).
-    tags = ["tech", "sage", "knowledge-capture"]
+    # 태그 값: host 가 벌트 작성 가이드를 읽고 --tags 로 전달(판단=host). 정규화(strip·빈값제거·순서보존 dedupe)
+    # 후 비면 기본값 fallback — `--tags ",,"` 로 빈 `tags: []`/빈 태그줄이 나가지 않도록.
+    _default_tags = ["tech", "sage", "knowledge-capture"]
+    if args.tags:
+        _seen = set()
+        tags = [t for t in (x.strip() for x in args.tags.split(","))
+                if t and not (t in _seen or _seen.add(t))] or _default_tags
+    else:
+        tags = _default_tags
     style = _note_tags_style(profile)
     fm = {"date": _dt.date.today().isoformat(), "source": "sage knowledge write-back"}
     tag_line = ""

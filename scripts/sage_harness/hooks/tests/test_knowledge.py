@@ -31,6 +31,7 @@ class WriteArgs:
     profile = None
     vault = None
     prefix = "TECH"
+    tags = None
     append_log = True
 
     def __init__(self, root, title, summary):
@@ -164,6 +165,46 @@ class TestKnowledge(unittest.TestCase):
             self.assertTrue(body.startswith("---"))            # frontmatter 블록
             self.assertIn("tags:", body.split("---")[1])       # tags 가 frontmatter 안
             self.assertNotIn("태그: #", body)
+
+    def test_write_back_custom_tags_override_default(self):
+        # host 가 벌트 가이드대로 --tags 전달 → 하드코딩 기본(tech,sage,knowledge-capture) 대신 그 값 사용.
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            self._profile_conv(root, vault, 'tags_style: frontmatter')
+            a = WriteArgs(root, "CT", "s"); a.tags = "bug, 녹화, chatforyou"
+            with redirect_stdout(io.StringIO()):
+                knowledge._run_write_back(a)
+            fm = Path(os.path.join(vault, "wiki", "TECH - CT.md")).read_text(encoding="utf-8").split("---")[1]
+            self.assertIn("bug", fm); self.assertIn("녹화", fm); self.assertIn("chatforyou", fm)
+            self.assertNotIn("knowledge-capture", fm)          # 기본 태그로 덮이지 않음
+
+    def test_write_back_tags_empty_or_commas_fall_back_to_default(self):
+        # --tags ",," / 공백만 → 정규화 후 비면 빈 tags 대신 기본값(빈 tags: [] 방지, codex P2)
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            self._profile_conv(root, vault, 'tags_style: frontmatter')
+            a = WriteArgs(root, "ET", "s"); a.tags = " , ,"
+            with redirect_stdout(io.StringIO()):
+                knowledge._run_write_back(a)
+            fm = Path(os.path.join(vault, "wiki", "TECH - ET.md")).read_text(encoding="utf-8").split("---")[1]
+            self.assertIn("knowledge-capture", fm)             # 기본값 fallback
+            self.assertNotIn("tags: []", fm)
+
+    def test_write_back_tags_dedup_preserves_order(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            self._profile_conv(root, vault, 'tags_style: inline')
+            a = WriteArgs(root, "DD", "s"); a.tags = "bug, bug, 녹화, bug"
+            with redirect_stdout(io.StringIO()):
+                knowledge._run_write_back(a)
+            body = Path(os.path.join(vault, "wiki", "TECH - DD.md")).read_text(encoding="utf-8")
+            self.assertEqual(body.count("#bug"), 1)             # 중복 제거
+            self.assertIn("#녹화", body)
+
+    def test_write_back_default_tags_when_no_flag(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            self._profile_conv(root, vault, 'tags_style: frontmatter')
+            with redirect_stdout(io.StringIO()):
+                knowledge._run_write_back(WriteArgs(root, "DT", "s"))   # tags 미지정
+            fm = Path(os.path.join(vault, "wiki", "TECH - DT.md")).read_text(encoding="utf-8").split("---")[1]
+            self.assertIn("knowledge-capture", fm)             # 기본값 fallback
 
     def test_tags_style_inline(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
