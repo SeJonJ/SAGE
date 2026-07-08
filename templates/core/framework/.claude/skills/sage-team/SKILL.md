@@ -148,6 +148,14 @@ After 06 is written, run the configured knowledge write-back when it is enabled:
    ```
 3. Record the command output in 06. If it reports `N/A` or fails, record the exact
    skipped/failed reason; do not claim vault capture completed.
+4. **Planning-interview note (if it exists).** If `.sage/plan_interview.md` exists (a
+   planning interview ran in `sage-plan`) AND vault is enabled, capture it as a **separate**
+   vault note via the same single write path:
+   ```bash
+   python -m sage knowledge write-back --title "[cycle stem] 기획 인터뷰" --summary-file .sage/plan_interview.md --append-log
+   ```
+   This preserves the user's raw requirements intent durably (like the prior 대화 기록 notes),
+   kept separate from the distilled tech summary. Skip when the file is absent or no vault.
 
 > **Single write path (do NOT freelance).** The vault note, `wiki/log.md`, and any index
 > are written ONLY by `sage knowledge write-back` (it resolves the vault path, note convention,

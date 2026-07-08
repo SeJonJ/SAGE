@@ -28,12 +28,19 @@ Confirm `sage/project-profile.yaml` is bootstrapped:
 If any check fails: stop and say "Profile is not bootstrapped. Run `/sage-init` to
 set up the project profile before starting a PDCA cycle."
 
-## Step 1 — Scope the task
+## Step 1 — Scope + planning interview
 
-If the user has not described the task, ask for a one-sentence description:
-"What is the feature or change we are implementing in this PDCA cycle?"
+Get a one-sentence task description if the user hasn't given one
+("What is the feature or change we are implementing in this PDCA cycle?"), then **run the
+planning interview** per `docs/agent/plan-interview.md`: ask the core questions
+(platform / core features / data·API / constraints / done-criteria) plus adaptive
+follow-ups, anchored to what Phase 00/01 need. **Do not write a shallow plan from the
+one-liner.** Record the Q&A verbatim to `.sage/plan_interview.md` — this is the input the
+leader authors 00/01 from. Skip/shorten only if the user already gave rich detail or says
+"enough" (record what you have). The interview elicits *requirements*; it does NOT re-ask
+profile config (`components`/`risk`/`cross_model`) that `sage-init` already settled.
 
-Record the task scope. Do not proceed to leader handoff until scope is confirmed.
+Do not proceed to leader handoff until scope + interview are confirmed.
 
 ## Step 2 — Invoke the leader
 
@@ -52,7 +59,9 @@ Before leader handoff, run the configured knowledge scan when it is enabled:
      continue; do not read a previous cycle's scan as current context.
 
 Hand off to the `leader` agent with this briefing:
-- Task scope: (the one-sentence description from Step 1)
+- Task scope + interview: the one-sentence description **plus `.sage/plan_interview.md`** —
+  the leader authors 00/01 FROM the interview record, structuring it into 00 CONTEXT /
+  01 CONTENT (do not transcribe; mark unresolved items TBD, do not hide gaps)
 - Profile location: `sage/project-profile.yaml`
 - Plan docs directory: the `paths.plan_docs` value from the profile
 - Knowledge scan: `.sage/knowledge_scan.md` status and matches, if `status: ran`

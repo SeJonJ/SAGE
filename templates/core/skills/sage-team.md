@@ -51,7 +51,9 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
    findings + reasoning, L3 security posture, reusable lessons, and `[[vault links]]` — then run
    `python -m sage knowledge write-back --title "<cycle-stem>" --summary-file .sage/knowledge_writeback_summary.md --append-log`.
    Record the output or skipped reason in the completion report. This is an explicit
-   host step, not hidden automatic mutation.
+   host step, not hidden automatic mutation. If `.sage/plan_interview.md` exists (a planning
+   interview ran) and vault is enabled, also capture it as a **separate** note via the same
+   path: `python -m sage knowledge write-back --title "<cycle-stem> 기획 인터뷰" --summary-file .sage/plan_interview.md --append-log`.
 9. Retro (Loop C, advisory): run `python -m sage retro --run-id <RUN_ID>` (auto-writes a
    vault human-gate note when `retro_note` is enabled). Record that retro ran, or why it
    was skipped, in the completion report — a required completion axis, not optional.

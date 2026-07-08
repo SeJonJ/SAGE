@@ -48,8 +48,10 @@ feature's plan as this cycle's).
 Check whether a **real, non-empty** plan doc for *this* cycle's stem already exists.
 
 - **No usable plan for this stem** (absent, empty, or only a stub) → invoke
-  **`/sage-plan`** (`$sage-plan` on Codex). It runs the gate check, scopes the task,
-  invokes the leader to author the plan (00–02), and hands back an ownership map.
+  **`/sage-plan`** (`$sage-plan` on Codex). It runs the gate check, scopes the task **via
+  the planning interview** (`docs/agent/plan-interview.md` — elicits requirements/design
+  before writing 00/01), invokes the leader to author the plan (00–02), and hands back an
+  ownership map.
 - **A real plan for this stem exists** → skip planning. Do NOT re-author or duplicate
   it (that would fork the cycle). Go straight to Step 3.
 

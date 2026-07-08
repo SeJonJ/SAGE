@@ -24,8 +24,10 @@ L2/L3 code is written. Hands back an ownership map; `/sage-team` drives 03–06.
    direct to `/sage-init`.
 2. Read `AGENT_GUIDE.md` — identify the required PDCA phases (00–06) and the
    phase-first rule for L2/L3 files.
-3. Determine the task scope: ask the user for a one-sentence description of the
-   feature or change if not already provided.
+3. Determine the task scope: one-sentence description, then run the **planning interview**
+   (`docs/agent/plan-interview.md` — core questions platform/features/data·API/constraints/
+   done-criteria + adaptive, anchored to Phase 00/01). Record Q&A to `.sage/plan_interview.md`;
+   the leader authors 00/01 from it. Skip/shorten if the user already gave rich detail.
 4. If `knowledge_capture.scan_before_dev: true` and `knowledge_capture.vault_path`
    is set, write the task scope to `.sage/knowledge_query.txt` and run
    `python -m sage knowledge scan --query-file .sage/knowledge_query.txt`. The
