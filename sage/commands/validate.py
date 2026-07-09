@@ -564,5 +564,19 @@ def run(args):
                 if _SEV_RANK[psev] > _SEV_RANK[overall]:
                     overall = psev
 
+    # CORE 자산 오버레이 게이트-완화 린트 (WARN — 결정론). 오버레이는 manifest 밖이라 위 루프가
+    #   못 본다. CORE 렌더의 "must not relax ... gates" 프로즈를 실제 체크로 승격(/sage-asset-override 저작 백스톱).
+    from sage.overlay_lint import scan_overlays
+    ov = scan_overlays(root)
+    if ov:
+        if overall == "PASS":
+            overall = "WARN"
+        for relpath, hits in ov:
+            print(f"⚠️  WARN  overlay 게이트-완화 의심: {relpath}")
+            for _pid, desc in hits:
+                print(f"        - {desc}")
+        print("        오버레이는 AGENT_GUIDE/phase/review/verification 게이트를 완화할 수 없습니다. "
+              "의도한 것이 맞는지 확인하세요(오탐이면 무시).")
+
     print(f"---- 종합: {overall} (exit {_EXIT[overall]}) ----")
     return _EXIT[overall]

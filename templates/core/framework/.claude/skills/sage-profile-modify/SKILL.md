@@ -10,6 +10,7 @@ conversation. It is the third conversational entry point:
 - `/sage-init` — first authoring (0→1).
 - **`/sage-profile-modify` — edit existing profile / governance values (this skill).**
 - `/sage-asset` — add/modify governance assets (hook/agent/skill).
+- `/sage-asset-override` — overlay an existing CORE agent/skill (project-local, --force-safe).
 
 Authoritative protocol: `docs/agent/bootstrap-authoring.md`. Rules: `AGENT_GUIDE.md`.
 

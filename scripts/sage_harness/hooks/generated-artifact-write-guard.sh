@@ -47,22 +47,11 @@ for p in out:
 #  소유하고 비-MCP 설정 공존이라 파일 통째 가드 안 함 — staleness+소유권 검사로 보호. MCP plan §2.3 비대칭.)
 is_guarded() {
   local p; p="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
-  # 예외: CORE 프레임워크 부트스트랩 자산(install 이 hand-ship — AGENT_GUIDE/docs/agent 와 동류).
-  #   CORE skill(sage-init/sage-cycle/sage-plan/sage-team/sage-review/sage-asset/sage-profile-modify) 렌더 + CORE 로스터 6인 에이전트 렌더.
-  #   spec→generate 산출물이 아니므로 가드 면제 — 없는 spec 으로 보내는 막다른 redirect 방지(codex 리뷰 P1-2/P2).
-  #   면제 패턴은 가드의 다른 패턴과 동일하게 path-global — 런타임 어댑터(hook_runtime.make_rel)가
-  #   절대경로를 root 상대로 먼저 정규화한다.
-  #   skill: claude=repo .claude/skills, codex=전역 $CODEX_HOME/skills 설치라 repo 산출물 아님 → claude 만 면제.
-  #     repo .codex/skills/ 는 프로젝트 skill 영역(generate/extract)이라 동명이라도 계속 가드(과잉면제 방지).
-  #   agent: claude=.claude/agents/, codex=.codex/agents/ 둘 다 repo CORE 렌더(install hand-ship) → 둘 다 by-name 면제.
-  #     프로젝트 에이전트(비-CORE 이름)는 계속 가드.
-  case "$p" in
-    *.claude/skills/sage-init/*|*.claude/skills/sage-cycle/*|*.claude/skills/sage-plan/*|*.claude/skills/sage-team/*|*.claude/skills/sage-review/*|*.claude/skills/sage-asset/*|*.claude/skills/sage-profile-modify/*) return 1 ;;
-    *.claude/agents/leader.md|*.claude/agents/implementer-a.md|*.claude/agents/implementer-b.md) return 1 ;;
-    *.claude/agents/qa.md|*.claude/agents/reviewer.md|*.claude/agents/convention-checker.md)     return 1 ;;
-    *.codex/agents/leader.md|*.codex/agents/implementer-a.md|*.codex/agents/implementer-b.md)     return 1 ;;
-    *.codex/agents/qa.md|*.codex/agents/reviewer.md|*.codex/agents/convention-checker.md)         return 1 ;;
-  esac
+  # CORE 부트스트랩 렌더(install hand-ship: CORE skill·로스터 에이전트)도 이제 가드한다.
+  #   과거엔 spec→generate 산출물이 아니라는 이유로 면제했으나, 그러면 CORE 렌더 직접수정이 무방비였고
+  #   sage install --force 가 그 수정을 조용히 덮어썼다. 이제 sage/asset_overrides/** (install-safe overlay)가
+  #   프로젝트 로컬 커스터마이즈의 정식 경로이므로, CORE 렌더도 가드하고 block() 이 overlay 로 redirect 한다.
+  #   (id→overlay 매핑은 core_overlay_hint. hook_runtime.make_rel 가 절대경로를 root 상대로 먼저 정규화한다.)
   case "$p" in
     *.claude/agents/*|*.claude/hooks/*|*.claude/skills/*) return 0 ;;
     *.codex/agents/*|*.codex/hooks/*|*.codex/skills/*)    return 0 ;;
@@ -71,13 +60,35 @@ is_guarded() {
   return 1
 }
 
+# CORE 부트스트랩 렌더면 프로젝트 로컬 overlay 경로를 출력(return 0), 아니면 return 1.
+#   block() 안내 전용 — is_guarded 판정과 무관. 대상 = 과거 가드 면제였던 CORE 렌더와 동일:
+#   claude CORE skill 렌더 + 양 host 로스터 에이전트(codex CORE skill 은 전역설치라 repo 경로로 안 옴).
+core_overlay_hint() {
+  local p; p="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$p" in
+    *.claude/skills/sage-init/*|*.claude/skills/sage-cycle/*|*.claude/skills/sage-plan/*|*.claude/skills/sage-team/*|*.claude/skills/sage-review/*|*.claude/skills/sage-asset/*|*.claude/skills/sage-profile-modify/*|*.claude/skills/sage-asset-override/*)
+      printf 'sage/asset_overrides/skills/%s.md' "$(basename "$(dirname "$1")")"; return 0 ;;
+    *.claude/agents/leader.md|*.claude/agents/implementer-a.md|*.claude/agents/implementer-b.md|*.claude/agents/qa.md|*.claude/agents/reviewer.md|*.claude/agents/convention-checker.md|*.codex/agents/leader.md|*.codex/agents/implementer-a.md|*.codex/agents/implementer-b.md|*.codex/agents/qa.md|*.codex/agents/reviewer.md|*.codex/agents/convention-checker.md)
+      printf 'sage/asset_overrides/agents/%s' "$(basename "$1")"; return 0 ;;
+  esac
+  return 1
+}
+
 block() {
   # printf 사용(heredoc temp 파일 회피 — 제한 환경에서도 exit 2 보장, audit 5회차 P1).
-  printf '%s\n' \
-    "⛔ SAGE write guard: '$1' 는 생성 산출물입니다. 직접수정 금지." \
-    "→ docs/sage_harness/<kind>s/<id>.md (spec) 을 고치고 'sage generate' 를 쓰세요." \
-    "→ 이미 수정한 diff 라면 'sage absorb --kind <k> --id <id> --from-blocked-diff' 로 spec patch 로 변환하세요." \
-    "(sage generate CLI 는 편집도구를 안 거치므로 이 가드에 걸리지 않습니다.)" >&2
+  local overlay=""; overlay="$(core_overlay_hint "$1")" || true
+  if [ -n "$overlay" ]; then
+    printf '%s\n' \
+      "⛔ SAGE write guard: '$1' 는 CORE 부트스트랩 렌더입니다. 직접수정 금지." \
+      "→ 프로젝트 로컬 커스터마이즈는 '$overlay' 에 작성하세요 (sage install --force 에도 보존)." \
+      "→ 작성 도움: '/sage-asset-override' (게이트 완화 여부까지 점검)." >&2
+  else
+    printf '%s\n' \
+      "⛔ SAGE write guard: '$1' 는 생성 산출물입니다. 직접수정 금지." \
+      "→ docs/sage_harness/<kind>s/<id>.md (spec) 을 고치고 'sage generate' 를 쓰세요." \
+      "→ 이미 수정한 diff 라면 'sage absorb --kind <k> --id <id> --from-blocked-diff' 로 spec patch 로 변환하세요." \
+      "(sage generate CLI 는 편집도구를 안 거치므로 이 가드에 걸리지 않습니다.)" >&2
+  fi
   exit 2
 }
 

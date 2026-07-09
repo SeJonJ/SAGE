@@ -141,28 +141,77 @@ def _check_codex_skill_deployment(prof_path, profile):
             print(f"  ✅ {sid}: 전역 배포 최신 (${gid})")
 
 
-def _check_codex_core_skill_drift(profile):
-    """Hand-shipped CORE skills are not manifest-tracked, but Codex discovers them from
-    the user-global skill dir. Diagnose stale/missing global copies so a stale
-    `$sage-init`/`$sage-team` cannot silently bypass current profile/review-loop rules."""
-    if (profile.get("runtime") or {}).get("host") != "codex":
-        return
+def _project_root_from_profile(prof_path):
+    """실제 프로젝트 profile(<root>/sage/project-profile.yaml)에서 root 파생. templates 기본은 None.
+    realpath 정규화(상대 --profile·심링크도 cwd 무관하게 올바른 root — codex 리뷰 P2와 동일 패턴)."""
+    norm = os.path.normpath(os.path.realpath(prof_path))
+    if not norm.endswith(os.path.join("sage", "project-profile.yaml")):
+        return None
+    return os.path.dirname(os.path.dirname(norm))
+
+
+def _emit_core_drift(kind, id_, status, dst, stale, missing):
+    if status == "ok":
+        print(f"  ✅ [{kind}] {id_}: 최신 ({dst})")
+    elif status == "missing":
+        print(f"  ⚠️  [{kind}] {id_}: 미설치 ({dst})")
+        missing.append((kind, id_))
+    elif status == "stale":
+        print(f"  ⚠️  [{kind}] {id_}: 현재 SAGE 번들과 다름(stale) ({dst})")
+        stale.append((kind, id_))
+    elif status == "source_missing":
+        print(f"  ⚠️  [{kind}] {id_}: 번들 CORE 소스 없음 → 설치 패키지 손상 가능")
+    else:
+        print(f"  ⚠️  [{kind}] {id_}: 점검 실패 ({dst})")
+
+
+def _check_core_render_drift(profile, prof_path):
+    """Hand-shipped CORE renders (CORE skills 7종 + roster agents 6종) are not
+    manifest-tracked. A stale copy silently runs outdated profile/review-loop rules, and
+    `sage install --force` overwrites local edits without warning. Diagnose stale/missing
+    for the profile's host across BOTH skills and agents so that divergence is visible
+    (이전엔 codex + 스킬만 점검 — claude host 와 에이전트는 사각지대였음).
+
+    - 스킬: claude=repo `.claude/skills/<id>/SKILL.md`, codex=전역 `$CODEX_HOME/skills/<id>/SKILL.md`.
+    - 에이전트: claude=`.claude/agents/<id>.md`, codex=`.codex/agents/<id>.md` (둘 다 repo 렌더, 동일 소스).
+    로컬 커스터마이즈는 CORE 렌더 직접수정이 아니라 `sage/asset_overrides/**`(install-safe)로 두어 보존한다.
+    """
     from sage.commands import install
-    print("## codex CORE skill 전역 설치 상태")
-    print("  기준: `sage install --host codex` 가 설치하는 unprefixed CORE skills")
+    host = (profile.get("runtime") or {}).get("host", "claude")
+    root = _project_root_from_profile(prof_path)   # None → templates 기본(프로젝트 아님)
+    print("## CORE 렌더 drift 점검 (스킬 + 로스터 에이전트)")
+    print(f"  host={host} · 기준: `sage install` 가 hand-ship 하는 CORE 렌더 (manifest 비추적)")
+    stale, missing = [], []
+
     for sid in install.core_skill_ids():
-        status, dst = install.codex_core_skill_status(sid)
-        if status == "ok":
-            print(f"  ✅ {sid}: 최신 ({dst})")
-        elif status == "missing":
-            print(f"  ⚠️  {sid}: 전역 CORE skill 없음 ({dst}) → `sage install --host codex --force`")
-        elif status == "stale":
-            print(f"  ⚠️  {sid}: 전역 CORE skill 이 현재 SAGE 번들과 다름(stale) ({dst}) → `sage install --host codex --force`")
-        elif status == "source_missing":
-            print(f"  ⚠️  {sid}: 번들 CORE skill 소스 없음 → 설치 패키지 손상 가능")
+        if host == "codex":
+            status, dst = install.codex_core_skill_status(sid)   # 전역 $CODEX_HOME/skills 대조
+        elif root is not None:
+            status, dst = install.core_render_status(
+                install._core_skill_source(sid),
+                os.path.join(root, ".claude", "skills", sid, "SKILL.md"))
         else:
-            print(f"  ⚠️  {sid}: 전역 CORE skill 점검 실패({dst})")
-    print("  ℹ️  Claude host 는 repo `.claude/skills/` 사본을 프로젝트별로 설치하므로 Codex 전역 drift 점검 대상이 아닙니다.")
+            continue   # claude repo 스킬은 프로젝트 루트가 있어야 점검 가능
+        _emit_core_drift("skill", sid, status, dst, stale, missing)
+
+    if root is not None:
+        agent_dir = ".claude" if host == "claude" else ".codex"
+        for aid in install.core_agent_ids():
+            status, dst = install.core_render_status(
+                install._core_agent_source(aid),
+                os.path.join(root, agent_dir, "agents", f"{aid}.md"))
+            _emit_core_drift("agent", aid, status, dst, stale, missing)
+    else:
+        print("  ℹ️  프로젝트 루트 미상(templates 기본 profile) → 로스터 에이전트 점검 생략.")
+
+    if stale or missing:
+        if stale:
+            print(f"  ⚠️  갱신 필요 {len(stale)}건 → `sage install --host {host} --force`")
+        if missing:
+            print(f"  ⚠️  미설치 {len(missing)}건 → `sage install --host {host} --force`")
+        print("      (로컬 커스터마이즈는 sage/asset_overrides/** 에 두면 --force 에도 보존됩니다 — /sage-asset-override.)")
+    else:
+        print("  ✅ 모든 CORE 렌더 최신")
 
 
 def run(args):
@@ -226,7 +275,7 @@ def run(args):
     # codex skill 전역 배포 점검(Part C) — manifest-추적 프로젝트 skill 이 codex 전역에 배포됐는지.
     #   정본 = repo .codex/skills/<id>/SKILL.md (manifest 추적), 전역 = $CODEX_HOME/skills/<prefix>-<id> (발견용 캐시).
     #   validate 는 전역을 무시(clone-stable repo 정본만) → 전역 staleness 는 여기(환경 진단)에서 WARN.
-    _check_codex_core_skill_drift(profile)
+    _check_core_render_drift(profile, prof_path)
     _check_codex_skill_deployment(prof_path, profile)
 
     # reviewer resolution

@@ -14,6 +14,10 @@ Authoritative protocol: `docs/agent/bootstrap-authoring.md` (§5 Asset additions
 Rules: `AGENT_GUIDE.md`. The user supplies intent and approves; you author to the
 spec/render and run the backend. This is not a turnkey generator.
 
+To **customize an existing CORE agent/skill** (leader/reviewer/sage-review/…) for this
+project without creating a new asset, use `/sage-asset-override` instead — it writes a
+project-local overlay (`sage/asset_overrides/**`, `--force`-safe), not a new spec.
+
 Before acting, read optional project overlay `sage/asset_overrides/skills/sage-asset.md`
 if it exists. Apply it before these CORE instructions. The overlay is project-local and
 survives `sage install --force`. It may add project-specific guidance but must not relax AGENT_GUIDE, phase, review, or verification gates. Never edit this CORE render for project-specific loop

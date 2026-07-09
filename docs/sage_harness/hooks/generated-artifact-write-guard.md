@@ -27,19 +27,24 @@ scripts/sage_harness/hooks/generated-artifact-write-guard.sh
 - 예외 처리 불필요: `sage generate` CLI 는 편집도구(Write/Edit/apply_patch)를 거치지 않으므로
   애초에 이 PreToolUse 가드에 걸리지 않는다 (설계 §5.6 G3)
 
-## CORE 부트스트랩 자산 면제 (exit 0)
-spec→generate 산출물이 아닌 hand-shipped CORE 자산은 block 에서 면제한다(없는 spec 으로 보내는
-막다른 redirect 방지). 면제 경로:
-- `*.claude/skills/{sage-init,sage-cycle,sage-plan,sage-team,sage-review,sage-asset,sage-profile-modify}/*` — CORE skill 렌더(claude)
-- `*.claude/agents/{leader,implementer-a,implementer-b,qa,reviewer,convention-checker}.md` — CORE 로스터 렌더(claude)
-- `*.codex/agents/{leader,implementer-a,implementer-b,qa,reviewer,convention-checker}.md` — CORE 로스터 렌더(codex)
+## CORE 부트스트랩 렌더 차단 + overlay redirect (exit 2)
+CORE hand-shipped 렌더(CORE skill·로스터 에이전트)도 다른 산출물과 동일하게 block 한다. 과거엔
+spec→generate 산출물이 아니라는 이유로 면제했으나, 그러면 CORE 렌더 직접수정이 무방비였고
+`sage install --force` 가 그 수정을 조용히 덮어썼다(첫 실 사이클 실증에서 드러난 갭).
 
-패턴은 가드의 다른 패턴과 동일하게 path-global 이며, 런타임 어댑터(`hook_runtime.make_rel`)가
-절대경로를 root 상대로 먼저 정규화한다.
-- skill: claude=repo `.claude/skills`, codex=전역 `$CODEX_HOME/skills` 설치라 repo 산출물이 아님 →
-  claude 만 면제. repo `.codex/skills/` 는 프로젝트 skill 영역(generate/extract)이라 동명이라도 계속 가드.
-- agent: claude=`.claude/agents/`, codex=`.codex/agents/` 둘 다 repo CORE 렌더(install hand-ship)라 by-name 면제.
-  프로젝트 에이전트(비-CORE 이름)는 계속 가드.
+이제 프로젝트 로컬 커스터마이즈의 정식 경로는 `sage/asset_overrides/**`(install 미ship, `--force`
+생존)이며, block 메시지가 CORE 경로면 그 overlay 경로로 redirect 한다(`core_overlay_hint`). redirect
+대상:
+- `*.claude/skills/{sage-init,sage-cycle,sage-plan,sage-team,sage-review,sage-asset,sage-profile-modify,sage-asset-override}/*`
+  → `sage/asset_overrides/skills/<id>.md` (CORE skill 렌더, claude)
+- `*.claude/agents/{leader,implementer-a,implementer-b,qa,reviewer,convention-checker}.md`
+  → `sage/asset_overrides/agents/<id>.md` (CORE 로스터 렌더, claude)
+- `*.codex/agents/{...}.md` → 동일 (CORE 로스터 렌더, codex)
+
+codex CORE skill 은 전역 `$CODEX_HOME/skills` 설치라 repo 경로로 가드에 오지 않는다. repo
+`.codex/skills/` 는 프로젝트 skill 영역이라 CORE 이름이어도 일반 산출물로 block(spec→generate 안내).
+비-CORE 렌더는 기존대로 `docs/sage_harness/<kind>s/<id>.md` spec→generate redirect. 오버레이 저작은
+`/sage-asset-override` 스킬이 안내하며, 게이트 완화 여부는 `sage validate` overlay 린트가 표면화한다.
 
 ## scope 메모 (v1)
 - 가드 범위 = agents/hooks/skills 디렉토리 (설계 §5.6 다이어그램 명시 범위)

@@ -29,12 +29,16 @@ schema keys, never edit generated artifacts, never bypass a `validate` FAIL.
 
 The conversational entry point is the **`/sage-init` skill**. It and the other
 **CORE framework bootstrap assets** — the `sage-cycle` / `sage-plan` / `sage-team` / `sage-review` / `sage-asset` /
-`sage-profile-modify` skills and the six CORE roster agent renders (`leader`, `implementer-a`,
+`sage-profile-modify` / `sage-asset-override` skills and the six CORE roster agent renders (`leader`, `implementer-a`,
 `implementer-b`, `qa`, `reviewer`, `convention-checker`) — are hand-shipped by `sage install` like
 this guide and `docs/agent/*`. They are NOT manifest-tracked: the
 manifest/claims/`validate` loop is reserved for project-authored assets created
-via `generate`/`extract`. The write-guard exempts their paths (editing them
-directly is allowed — there is no spec→generate redirect). The CORE skills ship
+via `generate`/`extract`. **Do not edit these CORE renders directly** — the
+write-guard blocks it and `sage install --force` would overwrite the edit anyway.
+Customize them per-project via an **overlay** at `sage/asset_overrides/{agents,skills}/<id>.md`
+(hand-authored, install never ships it so `--force` preserves it; each CORE render reads
+its overlay first). Author overlays with `/sage-asset-override`; `sage validate` lints them
+for gate-relaxation. The CORE skills ship
 reference specs under `docs/sage_harness/skills/` (sage-init has none), but those
 specs are not manifest-registered. Until the profile is bootstrapped
 (`project.name` set + `risk`/`components` configured), `sage generate` is BLOCKED
@@ -122,10 +126,10 @@ plan-doc + risk checks only; the phase machinery is inert.
 - Do not perform destructive or outward-facing actions without confirmation.
 - Do not directly edit generated artifacts (`{host}/agents`, `{host}/skills`,
   `{host}/hooks`) — edit the spec under `docs/sage_harness/` and regenerate.
-  (Exception: the hand-shipped CORE bootstrap renders — `sage-init`/`sage-cycle`/`sage-plan`/
-  `sage-team`/`sage-review`/`sage-asset`/`sage-profile-modify` skills and the six CORE roster agent
-  renders — are not generated and are write-guard exempt; edit them directly. See the
-  bootstrap section above.)
+  The hand-shipped CORE bootstrap renders (the `sage-*` skills and the six CORE roster
+  agent renders) are also write-guarded: don't edit them directly — customize per-project
+  via an overlay at `sage/asset_overrides/{agents,skills}/<id>.md` (`/sage-asset-override`).
+  See the bootstrap section above.
 - Report outcomes faithfully: if tests fail, say so with the output.
 
 These are inherited by every agent/skill claim set as

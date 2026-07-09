@@ -142,10 +142,34 @@ class TestDoctor(unittest.TestCase):
             with mock.patch.dict(os.environ, {"CODEX_HOME": ch}):
                 rc, out = run_doctor(prof)
             self.assertEqual(rc, 0)
-            self.assertIn("codex CORE skill 전역 설치 상태", out)
+            self.assertIn("CORE 렌더 drift 점검", out)
             self.assertIn("sage-init", out)
             self.assertIn("stale", out)
             self.assertIn("sage install --host codex --force", out)
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
+    def test_claude_host_core_render_drift_detected(self):
+        # claude host 도 CORE 렌더 drift 를 점검한다(이전엔 codex 스킬만 → 사각지대였음).
+        # install(claude) 로 렌더 배치 후 한 스킬 렌더를 변조하면 stale, 한 에이전트 렌더를 지우면 missing.
+        with tempfile.TemporaryDirectory() as root:
+            class IArgs:
+                host = "claude"; dest = root; prefix = "px"; force = True; no_global_skill = False
+            os.makedirs(os.path.join(root, "sage"))
+            prof = os.path.join(root, "sage", "project-profile.yaml")
+            Path(prof).write_text('project: { name: "t", prefix: "px" }\nruntime: { host: claude }\n')
+            install.run(IArgs())
+            # 스킬 렌더 변조 → stale
+            Path(os.path.join(root, ".claude", "skills", "sage-cycle", "SKILL.md")).write_text(
+                "LOCAL_EDIT\n", encoding="utf-8")
+            # 에이전트 렌더 제거 → missing
+            os.remove(os.path.join(root, ".claude", "agents", "leader.md"))
+            rc, out = run_doctor(prof)
+            self.assertEqual(rc, 0)
+            self.assertIn("CORE 렌더 drift 점검", out)
+            self.assertIn("[skill] sage-cycle", out)
+            self.assertIn("stale", out)
+            self.assertIn("[agent] leader", out)
+            self.assertIn("sage install --host claude --force", out)
 
     @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
     def test_codex_core_skill_doctor_agrees_with_install_status(self):

@@ -19,10 +19,11 @@ from sage import __version__
 
 from sage import _resources   # 번들 리소스 경로 단일 해석(env override + repo fallback — 재배치/설치 대비)
 
-# CORE roster (중립 6인) + CORE hook 6종(form) + CORE skill 6종. 도메인값 아님 = framework 메타.
+# CORE roster (중립 6인) + CORE hook 6종(form) + CORE skill 7종. 도메인값 아님 = framework 메타.
 # skill 3분할: sage-cycle(00~06 우산) → sage-plan(00~02 기획) → sage-team(03~06 개발).
+# sage-asset-override: CORE 자산 오버레이(sage/asset_overrides/**) 저작 — CORE 렌더 직접수정 대체 경로.
 _CORE_AGENTS = ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]
-_CORE_SKILLS = ["sage-cycle", "sage-plan", "sage-team", "sage-review", "sage-asset", "sage-profile-modify"]
+_CORE_SKILLS = ["sage-cycle", "sage-plan", "sage-team", "sage-review", "sage-asset", "sage-profile-modify", "sage-asset-override"]
 _CORE_BOOTSTRAP_SKILL = "sage-init"
 # 은퇴한 CORE skill 이름 — install 시 잔존 사본을 정리(rename 수렴). 이름이 바뀌면 옛 이름을 여기 추가.
 # sage-pdca-start → sage-plan 으로 3분할 rename(옛 이름 잔존 사본 정리). pdca-start 는 그 이전 rename.
@@ -55,7 +56,7 @@ def register(sub):
     p.add_argument("--dest", default=".", help="설치 대상 프로젝트 루트 (선택, 기본값: 현재 디렉토리)")
     p.add_argument("--force", action="store_true", help="기존 파일 덮어쓰기 (기본: skip)")
     p.add_argument("--no-global-skill", action="store_true",
-                   help="codex host: CORE 스킬($sage-init/$sage-cycle/$sage-plan/$sage-team/$sage-review/$sage-asset/$sage-profile-modify)의 전역(~/.codex/skills) 설치를 건너뜁니다 (CI/샌드박스용)")
+                   help="codex host: CORE 스킬($sage-init/$sage-cycle/$sage-plan/$sage-team/$sage-review/$sage-asset/$sage-profile-modify/$sage-asset-override)의 전역(~/.codex/skills) 설치를 건너뜁니다 (CI/샌드박스용)")
     p._optionals.title = "옵션"
     p.set_defaults(func=run)
 
@@ -129,6 +130,37 @@ def _core_skill_source(skill_id):
 def core_skill_ids():
     """CORE skill ids that `sage install --host codex` installs into the Codex global skill dir."""
     return [_CORE_BOOTSTRAP_SKILL, *_CORE_SKILLS]
+
+
+def _core_agent_source(agent_id):
+    """hand-shipped CORE roster agent render source. Both hosts render from the same
+    framework `.claude/agents/<id>.md` (install copies it to `.claude/agents` for claude
+    and `.codex/agents` for codex — run() 5c), so install/doctor must compare against
+    this exact artifact."""
+    return os.path.join(_resources.core_dir(), "framework", ".claude", "agents", f"{agent_id}.md")
+
+
+def core_agent_ids():
+    """CORE roster agent ids that `sage install` hand-ships into the host agents dir."""
+    return list(_CORE_AGENTS)
+
+
+def core_render_status(src, dst):
+    """Compare a hand-shipped CORE render (src) with its installed copy (dst).
+
+    status ∈ {ok, missing, stale, source_missing, error}. Shared by skill/agent and
+    claude/codex so drift detection cannot diverge per host. (`codex_core_skill_status`
+    stays as the codex-global-skill convenience wrapper over the same comparison.)
+    """
+    if not os.path.exists(src):
+        return ("source_missing", None)
+    if not os.path.exists(dst):
+        return ("missing", dst)
+    try:
+        return ("ok" if Path(dst).read_text(encoding="utf-8") == Path(src).read_text(encoding="utf-8")
+                else "stale", dst)
+    except (OSError, UnicodeError) as e:
+        return ("error", f"{dst} ({e})")
 
 
 def codex_core_skill_status(skill_id):
@@ -360,6 +392,16 @@ def run(args) -> int:
     print("")
     print("   설정을 마치기 전에는 `sage generate` 가 차단됩니다 (거버넌스 게이트).")
 
+    if args.host == "claude":
+        # CORE 렌더(skill/agent)는 create-only 라 --force 없이는 기존 사본이 skip 된다 →
+        # 번들과 달라져도 조용히 stale 로 남을 수 있음. drift 확인 진입점을 안내(codex 전역 요약과 대칭).
+        skipped_core = [p for p in skipped
+                        if os.sep + ".claude" + os.sep in p and (os.sep + "skills" + os.sep in p
+                                                                 or os.sep + "agents" + os.sep in p)]
+        if skipped_core and not args.force:
+            print("")
+            print(f"   ℹ️  기존 CORE 렌더 {len(skipped_core)}건 skip(이미 존재). 번들과 다를 수 있으니 "
+                  "`sage doctor` 로 drift 확인 — 갱신은 `sage install --host claude --force`.")
     if args.host == "codex":
         _print_codex_skill_summary(codex_skill_status, core_skill_status,
                                    getattr(args, "no_global_skill", False))

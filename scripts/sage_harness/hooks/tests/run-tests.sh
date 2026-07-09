@@ -41,6 +41,17 @@ check_stdin '{"tool_name":"apply_patch","tool_input":{"command":"*** Update File
 check_stdin '{"tool_name":"apply_patch","tool_input":{"command":"*** Add File: src/main/java/Foo.java\n+z\n"}}' 0 "codex apply_patch 일반소스 통과"
 check_stdin '{"tool_name":"apply_patch","tool_input":{"command":"*** Add File: docs/sage_harness/hooks/x.md\n+z\n"}}' 0 "codex apply_patch spec 통과"
 
+# CORE 렌더 block 메시지는 overlay 경로로 redirect 한다(단순 exit 2 뿐 아니라 안내 내용도 검증)
+check_msg() {
+  local path="$1" needle="$2" desc="$3"
+  local out; out="$(bash "$GUARD" --path "$path" 2>&1)"
+  if printf '%s' "$out" | grep -qF "$needle"; then pass=$((pass+1)); else fail=$((fail+1)); printf '  ✗ [msg:%s] missing %q\n' "$desc" "$needle"; fi
+}
+check_msg ".claude/skills/sage-review/SKILL.md" "sage/asset_overrides/skills/sage-review.md" "CORE skill → overlay 경로 안내"
+check_msg ".codex/agents/leader.md" "sage/asset_overrides/agents/leader.md" "CORE agent → overlay 경로 안내"
+check_msg ".claude/skills/sage-review/SKILL.md" "/sage-asset-override" "CORE 렌더 → 작성 스킬 안내"
+check_msg ".claude/agents/my-custom.md" "sage generate" "비-CORE 산출물 → 기존 spec→generate 안내"
+
 echo "----"
 echo "PASS=$pass FAIL=$fail"
 [[ "$fail" == "0" ]] || exit 1
