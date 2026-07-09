@@ -97,10 +97,10 @@
       "test": "scripts/sage_harness/hooks/tests/test_stop_compliance_report.py"
     },
     "hooks/generated-artifact-write-guard": {
-      "spec_hash": "sha256:7b41950edbcb464a19a5c322a9200143ec24f6399b40560abd3bb623d904a644",
-      "canonical_hash": "sha256:ec53a1b85b0d59f062704234c8fb7128a139eb6831d06a7af924c6ed6f0133f1",
+      "spec_hash": "sha256:e2b8e67da029ede7ac7e510f218a400f16367cb324e9251490de4af2a69b61bc",
+      "canonical_hash": "sha256:c5edde265422439e951d4f122b60cfccf33f8f791125d5ff5c427c6e33ee95d9",
       "render_hash": {
-        "native": "sha256:ec53a1b85b0d59f062704234c8fb7128a139eb6831d06a7af924c6ed6f0133f1"
+        "native": "sha256:c5edde265422439e951d4f122b60cfccf33f8f791125d5ff5c427c6e33ee95d9"
       },
       "adapter_contract_version": "1",
       "conformance": "PASS",
