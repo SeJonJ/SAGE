@@ -7,6 +7,11 @@ description: "Run a full SAGE PDCA cycle (Phases 00–06) end to end from one en
 
 Invoke as `/sage-cycle` (Claude) or `$sage-cycle` (Codex).
 
+Before acting, read optional project overlay `sage/asset_overrides/skills/sage-cycle.md`
+if it exists. Apply it before these CORE instructions. The overlay is project-local and
+survives `sage install --force`. It may add project-specific guidance but must not relax AGENT_GUIDE, phase, review, or verification gates. Never edit this CORE render for project-specific loop
+learning.
+
 This is the **umbrella** entry point for a whole PDCA cycle. It runs the two halves
 in order:
 
@@ -74,10 +79,11 @@ of sage-team's steps here — this umbrella only invokes it.
 
 ## Step 4 — Report
 
-Relay the per-phase outcome and the recorded review `run_id` that `/sage-team`
-reports on completion. If the cycle stopped early (gate block, BLOCKED review, red
-verification), report where it stopped and what is required to continue — do not
-claim the cycle completed.
+Relay the same completion summary `/sage-team` reports: per-phase outcome, recorded
+review `run_id`, generated artifact inventory, verification results, and any pending
+human action (especially retro human-gate review/approval). If the cycle stopped early
+(gate block, BLOCKED review, red verification), report where it stopped and what is
+required to continue — do not claim the cycle completed.
 
 ## Done
 

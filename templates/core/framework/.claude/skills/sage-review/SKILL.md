@@ -5,6 +5,11 @@ description: "Run SAGE Phase-05 independent review. Single-pass clean-context/cr
 
 # sage-review — SAGE Phase-05 Independent Review
 
+Before acting, read optional project overlay `sage/asset_overrides/skills/sage-review.md`
+if it exists. Apply it before these CORE instructions. The overlay is project-local and
+survives `sage install --force`. It may add project-specific guidance but must not relax AGENT_GUIDE, phase, review, or verification gates. Never edit this CORE render for project-specific loop
+learning.
+
 ## Read these first (mandatory, in order)
 
 1. `docs/sage_harness/skills/sage-review.md` — authoritative spec: procedure, drift_checks

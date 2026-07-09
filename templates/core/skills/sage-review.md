@@ -49,6 +49,8 @@ a structured review report for the current implementation cycle.
 - review_loop: deterministic gates (counters/budget/termination/audit) SAGE-owned; the loop
   never bypasses the report←approve (06←05) backstop
 - convention_doc: docs/agent/review-protocol.md
+- overlay: optional `sage/asset_overrides/skills/sage-review.md` has project-local
+  priority over CORE guidance and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates
 
 ## runtime_bindings
 - claude: .claude/skills/sage-review/SKILL.md (repo — Claude Code auto-discovers)

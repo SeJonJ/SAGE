@@ -226,6 +226,50 @@ class TestInstall(unittest.TestCase):
             # codex host 는 repo .claude/skills/ 에 CORE skill 렌더를 두지 않는다
             self.assertFalse(os.path.exists(os.path.join(d, ".claude", "skills", "sage-plan")))
 
+    def test_asset_overrides_not_shipped_and_preserved_by_force_both_hosts(self):
+        """Q2 overlay: project-local sage/asset_overrides 는 install 이 만들지도 덮지도 않는다.
+
+        CORE 는 업그레이드 가능하고, loop/retro 가 만든 프로젝트별 overlay 는 --force 에도 생존해야 한다.
+        """
+        import unittest.mock as mock
+        for host in ("claude", "codex"):
+            with self.subTest(host=host), tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+                with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                    install.run(Args(host, d, no_global_skill=(host == "codex")))
+                    self.assertFalse(os.path.exists(os.path.join(d, "sage", "asset_overrides")))
+                    overlay = os.path.join(d, "sage", "asset_overrides", "agents", "leader.md")
+                    skill_overlay = os.path.join(d, "sage", "asset_overrides", "skills", "sage-team.md")
+                    os.makedirs(os.path.dirname(overlay), exist_ok=True)
+                    os.makedirs(os.path.dirname(skill_overlay), exist_ok=True)
+                    Path(overlay).write_text("PROJECT_OVERLAY\n", encoding="utf-8")
+                    Path(skill_overlay).write_text("PROJECT_SKILL_OVERLAY\n", encoding="utf-8")
+                    install.run(Args(host, d, force=True, no_global_skill=(host == "codex")))
+                self.assertEqual(Path(overlay).read_text(encoding="utf-8"), "PROJECT_OVERLAY\n")
+                self.assertEqual(Path(skill_overlay).read_text(encoding="utf-8"), "PROJECT_SKILL_OVERLAY\n")
+
+    def test_core_renders_reference_project_asset_overlays(self):
+        """Claude/Codex 양 host 가 읽는 CORE agent/skill 렌더에 overlay 참조가 있어야 한다."""
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            install.run(Args("claude", d))
+            leader = Path(os.path.join(d, ".claude", "agents", "leader.md")).read_text(encoding="utf-8")
+            team = Path(os.path.join(d, ".claude", "skills", "sage-team", "SKILL.md")).read_text(encoding="utf-8")
+            leader_line = next(l for l in leader.splitlines() if "sage/asset_overrides/agents/leader.md" in l)
+            team_line = next(l for l in team.splitlines() if "sage/asset_overrides/skills/sage-team.md" in l)
+            self.assertIn("must not relax AGENT_GUIDE", leader)
+            self.assertIn("must not relax AGENT_GUIDE", team)
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                install.run(Args("codex", d))
+            leader = Path(os.path.join(d, ".codex", "agents", "leader.md")).read_text(encoding="utf-8")
+            team = Path(os.path.join(codex_home, "skills", "sage-team", "SKILL.md")).read_text(encoding="utf-8")
+            codex_leader_line = next(l for l in leader.splitlines() if "sage/asset_overrides/agents/leader.md" in l)
+            codex_team_line = next(l for l in team.splitlines() if "sage/asset_overrides/skills/sage-team.md" in l)
+            self.assertEqual(leader_line, codex_leader_line)
+            self.assertEqual(team_line, codex_team_line)
+            self.assertIn("must not relax AGENT_GUIDE", leader)
+            self.assertIn("must not relax AGENT_GUIDE", team)
+
     def test_codex_no_global_skill_skips_core_skills(self):
         """--no-global-skill 이면 CORE skill 전역 설치도 생략(CI/샌드박스)."""
         import unittest.mock as mock

@@ -7,6 +7,11 @@ description: "Drive the implementation half of a SAGE PDCA cycle (Phases 03–06
 
 Invoke as `/sage-team` (Claude) or `$sage-team` (Codex).
 
+Before acting, read optional project overlay `sage/asset_overrides/skills/sage-team.md`
+if it exists. Apply it before these CORE instructions. The overlay is project-local and
+survives `sage install --force`. It may add project-specific guidance but must not relax AGENT_GUIDE, phase, review, or verification gates. Never edit this CORE render for project-specific loop
+learning.
+
 This skill takes the plan + ownership map that `/sage-plan` produced and drives
 the cycle to completion: implementation → deterministic verification → QA → Phase-05
 review → completion report. It is the host-side orchestrator; SAGE still owns every
@@ -200,7 +205,14 @@ closed loop-audit run for this cycle, and **both** closing captures are accounte
 - knowledge write-back has completed or 06 records a concrete skipped/failed reason;
 - `sage retro` has run or 06 records why it was skipped.
 
-Report the per-phase outcome + the recorded `run_id` to the user.
+Report to the user:
+- per-phase outcome + the recorded review `run_id`;
+- generated artifact inventory: plan docs, code/config files, vault notes, loop-audit
+  dashboard, retro note, and any installed/generated SAGE assets;
+- verification commands and results;
+- pending human action. If a retro human-gate note was created, explicitly ask the user to
+  review the note and set `approved: true` before running `sage absorb --from-retro`. Do
+  not imply retro proposals were applied automatically.
 
 ---
 

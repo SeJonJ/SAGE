@@ -13,6 +13,11 @@ conversation. It is the third conversational entry point:
 
 Authoritative protocol: `docs/agent/bootstrap-authoring.md`. Rules: `AGENT_GUIDE.md`.
 
+Before acting, read optional project overlay `sage/asset_overrides/skills/sage-profile-modify.md`
+if it exists. Apply it before these CORE instructions. The overlay is project-local and
+survives `sage install --force`. It may add project-specific guidance but must not relax AGENT_GUIDE, phase, review, or verification gates. Never edit this CORE render for project-specific loop
+learning.
+
 > This skill is a **CORE framework bootstrap asset** — hand-shipped by `sage install`,
 > NOT manifest-tracked. Its reference spec lives at
 > `docs/sage_harness/skills/sage-profile-modify.md`. Claude reads this render from the

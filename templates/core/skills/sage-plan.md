@@ -55,6 +55,8 @@ L2/L3 code is written. Hands back an ownership map; `/sage-team` drives 03–06.
 - role_boundary: does not implement code; invokes leader only. Owns 00–02, not 03–06.
 - uses: leader agent, project-profile.yaml, AGENT_GUIDE.md
 - convention_doc: AGENT_GUIDE.md
+- overlay: optional `sage/asset_overrides/skills/sage-plan.md` has project-local
+  priority over CORE guidance and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates
 
 ## runtime_bindings
 - claude: .claude/skills/sage-plan/SKILL.md (repo — Claude Code auto-discovers)

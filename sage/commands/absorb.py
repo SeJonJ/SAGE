@@ -153,6 +153,24 @@ _RETRO_MECHANICAL = {"profile", "hook"}   # 결정론 강제 — profile 키 / h
 _RETRO_SEMANTIC = {"agent", "skill"}      # interpretive — spec intent/advisory_scope 보강
 
 
+def _overlay_hint(p):
+    """agent/skill retro proposal 의 install-safe overlay 후보 경로.
+
+    retro JSON 은 아직 schema-less human-gate 제안이라 asset_id 가 없을 수 있다. 있으면 구체 경로,
+    없으면 placeholder 로 출력해 사람이 어느 CORE 자산에 적용할지 정하게 한다.
+    """
+    target = p.get("target") if isinstance(p, dict) else None
+    raw = p.get("asset_id") or p.get("id") or p.get("asset") or f"<{target}-id>"
+    aid = str(raw).strip() or f"<{target}-id>"
+    if aid.startswith("<") and aid.endswith(">"):
+        safe = aid
+    else:
+        safe = "".join(ch if (ch.isalnum() or ch in "._-") else "-" for ch in os.path.basename(aid))
+        safe = safe.strip(".-") or f"<{target}-id>"
+    subdir = "agents" if target == "agent" else "skills"
+    return f"sage/asset_overrides/{subdir}/{safe}.md"
+
+
 def _parse_frontmatter_approved(text):
     """노트 frontmatter 의 approved 값 → True/False/None(없음). 의존성 0(미니 파서)."""
     if not text.startswith("---"):
@@ -243,12 +261,16 @@ def _absorb_from_retro(args) -> int:
         print("\n【 기계적 누락 → profile / hook (결정론 강제) 】")
         for p in mech:
             _show(p)
-        print("  적용: profile 키 수정(/sage-profile-modify) 또는 hook spec 수정 → sage generate → sage validate")
+        print("  적용: profile 키 수정(/sage-profile-modify) 또는 hook spec/코드 수정 → sage generate → sage validate")
+        print("  주의: hook 은 결정론 런타임이므로 overlay 파일만으로 실행 동작을 바꾸지 않습니다.")
     if sem:
-        print("\n【 의미적 누락 → agent / skill (interpretive 보강) 】")
+        print("\n【 의미적 누락 → agent / skill (install-safe overlay 우선) 】")
         for p in sem:
             _show(p)
-        print("  적용: spec(intent/advisory_scope) 보강 → sage generate --kind agent|skill → sage validate")
+            print(f"      overlay 후보: {_overlay_hint(p)}")
+        print("  적용: CORE 렌더 직접수정 금지. 위 overlay 파일에 프로젝트별 규칙을 작성하세요.")
+        print("        host 는 CORE 자산을 읽은 뒤 overlay 가 있으면 우선 적용합니다. install --force 에도 보존됩니다.")
+        print("        범용화할 내용이면 이후 spec/CORE 반영은 별도 변경으로 승격하세요.")
     if skipped:
         print(f"\n⚠️  target 미지/누락 {len(skipped)}건 — target ∈ {{profile,hook,agent,skill}} 이어야 분류됨:")
         for p in skipped:

@@ -11,6 +11,9 @@ description: "SAGE Phase-05 independent reviewer — synthesis review of a compl
 2. `docs/agent/review-protocol.md` — the full review protocol and output format
 3. `AGENT_GUIDE.md` — PDCA phases, risk gate, phase-first rule, safety boundaries
 4. `sage/project-profile.yaml` — `cross_model`, `options`, reviewer model binding
+5. Optional project overlay: `sage/asset_overrides/agents/reviewer.md`
+   if it exists. Apply it before the CORE instructions below; it is project-local
+   and survives `sage install --force`. It may add project-specific guidance but must not relax AGENT_GUIDE, phase, review, or verification gates.
 
 ## Role
 

@@ -62,11 +62,19 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
 9. Retro (Loop C, advisory): run `python -m sage retro --run-id <RUN_ID>` (auto-writes a
    vault human-gate note when `retro_note` is enabled). Record that retro ran, or why it
    was skipped, in the completion report — a required completion axis, not optional.
+10. Final user report: include the per-phase outcome, review `run_id`, generated artifact
+   inventory (plan docs, code/config files, vault notes, loop-audit dashboard, retro note),
+   verification commands/results, and any human action still required. If a retro
+   human-gate note was created, explicitly ask the user to review it and approve
+   `approved: true` before `sage absorb --from-retro`; do not imply the proposal has been
+   applied.
 
 ## advisory_scope
 - role_boundary: does not implement code; orchestrates leader/implementers/qa/reviewer
 - uses: leader, implementer agents, qa agent, sage-review skill, verify-changes, project-profile.yaml
 - convention_doc: AGENT_GUIDE.md, docs/agent/pdca-templates.md
+- overlay: optional `sage/asset_overrides/skills/sage-team.md` has project-local
+  priority over CORE guidance and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates
 
 ## enforcement
 - SOFT-ENFORCED: the loop/verification are non-skippable only when this skill is followed.
@@ -80,4 +88,5 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
 ## drift_checks
 - conformance: procedure step 6 (Phase-05 via sage-review, not hand-written), step 7
   (06 only when 05_approved), step 8 (knowledge write-back when enabled), and step 9
-  (retro run or recorded skip) must be present
+  (retro run or recorded skip) must be present. The final report must name created
+  artifacts and any pending retro human-gate review.

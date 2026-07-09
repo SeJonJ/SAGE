@@ -42,6 +42,8 @@ then re-validate. The profile-editing counterpart to /sage-init (first authoring
   (routes to /sage-init when unbootstrapped)
 - uses: sage validate / sage doctor, bootstrap-authoring.md (shared interview set)
 - convention_doc: AGENT_GUIDE.md
+- overlay: optional `sage/asset_overrides/skills/sage-profile-modify.md` has project-local
+  priority over CORE guidance and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates
 
 ## runtime_bindings
 - claude: .claude/skills/sage-profile-modify/SKILL.md (repo — Claude Code auto-discovers)

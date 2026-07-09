@@ -89,10 +89,11 @@ _DISTILLER_PROMPT = """\
 - `risk.review_patterns` = **L3 리뷰 대상 문서 탐지용**(`claude_grep_first` 전략, scripts/sage_harness/hooks/strategies/). **코드 안티패턴 탐지가 아니다** — 여기에 코드 규칙을 넣지 말 것.
 - `hook` = pre-implementation-gate 등 결정론 게이트(phase/risk 순서 강제) — **실제 결정론 차단은 여기**. 단 "범용 코드 안티패턴 grep" 전용 필드는 현재 없으므로, 그런 하드 차단이 필요하면 hook/전략 신설이 별도 과제다.
 - `agent|skill` = 페르소나/체크리스트로 판단 유도(패턴화 불가한 것).
+- `sage/asset_overrides/agents/*.md` · `sage/asset_overrides/skills/*.md` = 프로젝트 로컬 overlay. CORE agent/skill 렌더가 이를 먼저 읽고, `sage install --force` 가 ship 하지 않아 loop 학습이 보존된다. agent/skill 개선은 CORE 렌더 직접수정이 아니라 overlay 로 제안하라.
 [VERIFY] 제안한 target 이 실제로 그 결함을 다음부터 잡을 수 있는지, 해당 메커니즘의 소스(전략 스크립트/profile 스키마)를 확인한 뒤 확정하라.
 [OUTPUT] 제안 목록(자동반영 아님):
 [{ "pattern":"...", "evidence":["finding 근거/파일:라인"], "target":"hook|profile|agent|skill",
-   "proposed_change":"구체 patch 문구(profile 키/컨벤션 문장/agent 체크리스트 등)", "confidence":"high|med|low" }]
+   "asset_id":"해당 agent/skill id(있을 때)", "proposed_change":"구체 patch 문구(profile 키/overlay 문장/hook spec 변경 등)", "confidence":"high|med|low" }]
 """
 
 
@@ -124,7 +125,8 @@ _APPLY_PATH = (
     "【 적용 경로 (absorb 철학 — 자동 반영 절대 없음) 】\n"
     "  제안 → 사람 승인 → 자산 수정:\n"
     "    · 기계적(hook/profile): spec/profile 수정 → sage generate → sage validate\n"
-    "    · 의미적(agent/skill):  spec(intent/advisory_scope) 보강 → sage generate --kind agent|skill → sage validate\n"
+    "    · 의미적(agent/skill):  sage/asset_overrides/agents|skills/<id>.md 작성(install-safe) → 다음 host 실행이 CORE+overlay 로 읽음\n"
+    "      범용화할 내용이면 별도 CORE/spec 변경으로 승격\n"
     "  feed-forward: 다음 feature 의 00 Prior-Knowledge Scan 이 반영분을 읽음."
 )
 
@@ -185,6 +187,7 @@ def _write_vault_note(profile, root, rid, feature, out_lines, override):
     import datetime
     from sage.commands.knowledge import _note_filename
     from sage.commands._common import _project_name
+    from sage.commands.review_loop import _dashboard_filename, _wiki_stem, _write_vault_dashboard
     # 파일명 stem 은 사용자 입력(--feature)일 수 있으므로 경로 탈출 방지 — 안전 문자만 남긴다.
     raw_stem = feature or rid or "cycle"
     stem = re.sub(r"[^A-Za-z0-9._-]", "-", raw_stem).strip("-.") or "cycle"
@@ -193,11 +196,13 @@ def _write_vault_note(profile, root, rid, feature, out_lines, override):
     # 프로젝트/stem/날짜로 유일성 유지(같은 날 재실행 create-only 보존). project.name 비면 'SAGE' 폴백.
     name = _project_name(profile) or "SAGE"
     fname = _note_filename(profile, "TECH", f"{name} retro {stem} {today}")
+    dash_name = _dashboard_filename(profile)
     fm = {"tags": ["sage", "retro", "loop-c"], "approved": False, "run_id": rid or "",
           "date": today, "status": "pending-review"}
     body = ("> **Loop C retro — human gate.** `## 요약` 에 사람용 회고 1~2줄, `## 제안` JSON 에 distill 결과를\n"
             "> 채운 뒤 검토해 frontmatter `approved: true` 로 승인하세요. 그 다음 `sage absorb --from-retro <이 노트>`\n"
             "> 로 자산 patch 후보를 받습니다. 자동 반영되지 않습니다(SSOT 보호).\n\n"
+            f"관련 loop audit: [[{_wiki_stem(dash_name)}]]\n\n"
             "## 요약\n"
             "_이번 사이클에 체계적으로 놓친 것과 바꾸기로 한 것을 사람이 읽을 1~2줄로 (absorb 파싱 대상 아님)._\n\n"
             "## 제안 (proposals) — distill 결과를 JSON 배열로 채우세요. target ∈ {profile,hook,agent,skill}\n"
@@ -212,3 +217,7 @@ def _write_vault_note(profile, root, rid, feature, out_lines, override):
               f"{os.path.join(vault, folder, fname)}", file=sys.stderr)
     else:
         print(f"  ✅ Obsidian retro human-gate 노트 작성(approved:false): {path}", file=sys.stderr)
+    try:
+        _write_vault_dashboard(_load_loop_audit(root), root, override)
+    except Exception as e:
+        print(f"  ⚠️  loop audit 대시보드 retro 링크 갱신 실패: {type(e).__name__}: {e}", file=sys.stderr)

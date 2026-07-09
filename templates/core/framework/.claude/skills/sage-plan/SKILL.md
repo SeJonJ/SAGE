@@ -7,6 +7,11 @@ description: "Plan the first half of a SAGE PDCA cycle (Phases 00–02) — veri
 
 Invoke as `/sage-plan` (Claude) or `$sage-plan` (Codex).
 
+Before acting, read optional project overlay `sage/asset_overrides/skills/sage-plan.md`
+if it exists. Apply it before these CORE instructions. The overlay is project-local and
+survives `sage install --force`. It may add project-specific guidance but must not relax AGENT_GUIDE, phase, review, or verification gates. Never edit this CORE render for project-specific loop
+learning.
+
 This skill owns the **planning half** of a PDCA cycle: it produces the plan doc
 (Phases 00–02) and the file-ownership map, then hands back. Implementation through
 completion (03–06) is `/sage-team`'s job; `/sage-cycle` is the umbrella that runs

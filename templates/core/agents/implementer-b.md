@@ -15,6 +15,8 @@ plus production code-convention verification within that component's boundary.
   work coordinates with the other implementer at integration points.
 - uses: convention/test skills declared in profile.team
 - convention_doc: (component convention doc declared in profile.conventions)
+- overlay: optional `sage/asset_overrides/agents/implementer-b.md` has project-local
+  priority over CORE guidance and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates
 
 ## runtime_bindings
 - model: (from profile.team.core.implementer-b.model)

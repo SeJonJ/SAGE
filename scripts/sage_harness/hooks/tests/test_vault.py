@@ -191,6 +191,7 @@ class TestVaultDashboard(unittest.TestCase):
         self.assertIn("| run_id |", txt)        # plain 테이블(플러그인 무관)
         self.assertIn("APPROVED/DRY", txt)
         self.assertIn("demoapp", txt)           # 프로젝트별 대시보드 제목
+        self.assertIn("| run_id | risk | rounds | found(합) | accepted(합) | 종료 | iters | retro |", txt)
 
     def test_show_vault_disabled_graceful(self):
         tmp = tempfile.mkdtemp()
@@ -278,6 +279,13 @@ class TestVaultRetro(unittest.TestCase):
         self.assertIn("## 요약", txt)                # 사람용 요약 슬롯
         self.assertIn("## 제안", txt)                # absorb 파싱 대상 JSON 섹션
         self.assertIn("distiller", txt)              # 증거+프롬프트는 <details> 로 보존
+        self.assertIn("[[TECH - demoapp loop audit]]", txt)
+        dash = os.path.join(vault, "wiki", DASH)
+        self.assertTrue(os.path.exists(dash), "retro 작성 후 loop audit 대시보드도 갱신돼야")
+        with open(dash, encoding="utf-8") as f:
+            dash_txt = f.read()
+        self.assertIn(rid, dash_txt)
+        self.assertIn(f"[[{os.path.splitext(notes[0])[0]}]]", dash_txt)
 
     def test_retro_vault_disabled_graceful(self):
         tmp = tempfile.mkdtemp()

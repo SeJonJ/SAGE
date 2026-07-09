@@ -196,8 +196,28 @@ class TestAbsorbFromRetro(unittest.TestCase):
             self.assertEqual(rc, 0, out)
             self.assertIn("기계적 누락 → profile / hook", out)
             self.assertIn("risk.l3_content_keywords", out)
-            self.assertIn("의미적 누락 → agent / skill", out)
+            self.assertIn("의미적 누락 → agent / skill (install-safe overlay 우선)", out)
+            self.assertIn("sage/asset_overrides/agents/<agent-id>.md", out)
+            self.assertIn("install --force", out)
             self.assertIn("자동 반영하지 않음", out)
+
+    def test_agent_skill_proposals_use_overlay_asset_id(self):
+        with tempfile.TemporaryDirectory() as d:
+            props = ('[{"target":"agent","asset_id":"leader","proposed_change":"리더 체크리스트 추가"},'
+                     '{"target":"skill","id":"sage-team","proposed_change":"완료보고 보강"}]')
+            rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals=props)))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("sage/asset_overrides/agents/leader.md", out)
+            self.assertIn("sage/asset_overrides/skills/sage-team.md", out)
+
+    def test_agent_skill_overlay_hint_missing_and_malformed_id(self):
+        with tempfile.TemporaryDirectory() as d:
+            props = ('[{"target":"agent","proposed_change":"id 없음"},'
+                     '{"target":"skill","asset_id":"../sage-team!!","proposed_change":"정규화"}]')
+            rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals=props)))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("sage/asset_overrides/agents/<agent-id>.md", out)
+            self.assertIn("sage/asset_overrides/skills/sage-team.md", out)
 
     def test_proposals_anchored_to_heading_not_decoy(self):
         # codex P2: 안내문의 백틱 `## 제안` 언급 + `## 요약` 안의 JSON 코드블록(decoy)이 있어도

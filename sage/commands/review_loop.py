@@ -10,6 +10,7 @@ argparse 로 강제한다(라이브러리는 permissive recorder).
 """
 import os
 import sys
+import re
 
 from sage import _resources
 
@@ -398,9 +399,56 @@ def _run_next(args):
     return 0
 
 
-def _dashboard_md(la, root):
+def _wiki_stem(filename):
+    """Obsidian wikilink target = filename without .md."""
+    return os.path.splitext(os.path.basename(filename))[0]
+
+
+def _frontmatter_run_id(path):
+    """Best-effort frontmatter run_id reader for retro notes. No YAML dependency here."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            txt = f.read(4096)
+    except Exception:
+        return None
+    if not txt.startswith("---"):
+        return None
+    end = txt.find("\n---", 3)
+    if end == -1:
+        return None
+    fm = txt[3:end]
+    m = re.search(r"(?m)^run_id:\s*['\"]?([^'\"\n]+)['\"]?\s*$", fm)
+    return m.group(1).strip() if m else None
+
+
+def _retro_links_by_run(vault, folder):
+    """Return {run_id: ['[[retro note]]', ...]} for existing retro human-gate notes."""
+    if not vault or not folder:
+        return {}
+    base = os.path.join(vault, folder)
+    try:
+        names = os.listdir(base)
+    except OSError:
+        return {}
+    out = {}
+    for name in names:
+        lower = name.lower()
+        if (not name.endswith(".md") or
+                not (re.search(r"(^|[\s_.-])retro([\s_.-]|$)", lower) or lower.startswith("sage-retro-"))):
+            continue
+        rid = _frontmatter_run_id(os.path.join(base, name))
+        if not rid:
+            continue
+        out.setdefault(rid, []).append(f"[[{_wiki_stem(name)}]]")
+    for links in out.values():
+        links.sort()
+    return out
+
+
+def _dashboard_md(la, root, retro_links=None):
     """loop_audit → Obsidian 대시보드 마크다운(plain 테이블 — DataView 플러그인 무관 항상 가독).
     run 별 1행: run_id·risk·rounds·found/accepted 합계·종료. 무결성 경고 섹션."""
+    retro_links = retro_links or {}
     rows = []
     for rid in la.runs(root):
         rounds = la.rounds_of(root, rid)
@@ -411,7 +459,8 @@ def _dashboard_md(la, root):
         a_tot = sum(int(r.get("accepted", 0) or 0) for r in rounds)
         status = f"{close['result']}/{close['reason']}" if close else "진행중"
         iters = close["iterations"] if close else len(rounds)
-        rows.append(f"| {rid} | {risk} | {len(rounds)} | {f_tot} | {a_tot} | {status} | {iters} |")
+        retro = ", ".join(retro_links.get(rid, [])) or "-"
+        rows.append(f"| {rid} | {risk} | {len(rounds)} | {f_tot} | {a_tot} | {status} | {iters} | {retro} |")
     from sage.commands._common import _project_name
     from sage.commands.knowledge import _safe_title
     # 파일명(_note_filename)과 동일하게 개행/구분자를 정규화 — 정규화 안 하면 project.name 에
@@ -421,9 +470,9 @@ def _dashboard_md(la, root):
     body = [f"# SAGE Loop A 감사 대시보드{title_suffix}", "",
             "> Phase 05 적대적 review-rework 루프 이력. `accepted` 합계 = 리뷰가 채운 host 의 체계적 누락.",
             "> 정본 데이터: `.sage/loop_audit.jsonl`. 이 노트는 `sage review-loop show --vault` 또는 `loop_audit_dashboard: true` 상태의 close 로 갱신.", "",
-            "| run_id | risk | rounds | found(합) | accepted(합) | 종료 | iters |",
-            "|---|---|---:|---:|---:|---|---:|"]
-    body += rows or ["| (기록 없음) | | | | | | |"]
+            "| run_id | risk | rounds | found(합) | accepted(합) | 종료 | iters | retro |",
+            "|---|---|---:|---:|---:|---|---:|---|"]
+    body += rows or ["| (기록 없음) | | | | | | | |"]
     integ = la.integrity_issues(root)
     if integ:
         body += ["", "## ⚠️ 무결성 경고", ""] + [f"- {i}" for i in integ]
@@ -453,7 +502,8 @@ def _write_vault_dashboard(la, root, override):
     import datetime
     fm = {"tags": ["sage", "loop-audit"], "updated": datetime.date.today().isoformat(),
           "generated_by": "sage review-loop (close 자동 / show --vault)"}
-    path = _vault.write_note(vault, folder, _dashboard_filename(profile), fm, _dashboard_md(la, root))
+    path = _vault.write_note(vault, folder, _dashboard_filename(profile), fm,
+                             _dashboard_md(la, root, _retro_links_by_run(vault, folder)))
     print(f"  ✅ Obsidian 대시보드 작성: {path}", file=sys.stderr)
 
 

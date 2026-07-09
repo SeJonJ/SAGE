@@ -14,6 +14,8 @@ synthesizes results.
   frontend / qa and integrates their results
 - uses: (project agents/skills, resolved at render from profile.team)
 - convention_doc: AGENT_GUIDE.md
+- overlay: optional `sage/asset_overrides/agents/leader.md` has project-local priority
+  over CORE guidance and is not shipped by `sage install`
 
 ## runtime_bindings
 - model: (from profile.team.core.leader.model)

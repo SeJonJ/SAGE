@@ -14,6 +14,8 @@ model bias.
 - role_boundary: does not implement or modify code; assesses others' work
 - uses: profile.cross_model invocation path (resolved by sage doctor)
 - convention_doc: docs/agent/review-protocol.md
+- overlay: optional `sage/asset_overrides/agents/reviewer.md` has project-local
+  priority over CORE guidance and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates
 
 ## runtime_bindings
 - model: (from profile.team.core.reviewer.model)

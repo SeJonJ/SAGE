@@ -40,14 +40,17 @@ resumes at the right half.
 4. Invoke `/sage-team` to drive 03–06 (implementation → deterministic verification →
    QA → Phase-05 review via `/sage-review` → completion), honoring the same
    evidence-anchored resume logic sage-team owns.
-5. Report the per-phase outcome and the recorded review `run_id` to the user, the
-   same summary `/sage-team` produces on completion.
+5. Relay the same completion summary `/sage-team` produces: per-phase outcome,
+   recorded review `run_id`, generated artifact inventory, verification results, and
+   any pending human action (especially retro human-gate review/approval).
 
 ## advisory_scope
 - role_boundary: does not implement code and does not reimplement any gate; it only
   sequences `/sage-plan` (00–02) then `/sage-team` (03–06)
 - uses: sage-plan skill, sage-team skill, project-profile.yaml, AGENT_GUIDE.md
 - convention_doc: AGENT_GUIDE.md
+- overlay: optional `sage/asset_overrides/skills/sage-cycle.md` has project-local
+  priority over CORE guidance and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates
 
 ## runtime_bindings
 - claude: .claude/skills/sage-cycle/SKILL.md (repo — Claude Code auto-discovers)

@@ -10,6 +10,9 @@ description: "SAGE QA agent — test scenario design, integration tests, boundar
 1. `docs/sage_harness/agents/qa.md` — authoritative intent, advisory_scope, runtime_bindings
 2. `AGENT_GUIDE.md` — PDCA phases, risk gate, phase-first rule, safety boundaries
 3. `sage/project-profile.yaml` — `components`, test paths, qa skills
+4. Optional project overlay: `sage/asset_overrides/agents/qa.md`
+   if it exists. Apply it before the CORE instructions below; it is project-local
+   and survives `sage install --force`. It may add project-specific guidance but must not relax AGENT_GUIDE, phase, review, or verification gates.
 
 ## Role
 

@@ -10,6 +10,9 @@ description: "SAGE team leader for requirement analysis, plan authoring, work de
 1. `docs/sage_harness/agents/leader.md` — authoritative intent, advisory_scope, runtime_bindings
 2. `AGENT_GUIDE.md` — PDCA phases, risk gate, phase-first rule, safety boundaries
 3. `sage/project-profile.yaml` — project.name, components, risk tiers, conventions
+4. Optional project overlay: `sage/asset_overrides/agents/leader.md`
+   if it exists. Apply it before the CORE instructions below; it is project-local
+   and survives `sage install --force`. It may add project-specific guidance but must not relax AGENT_GUIDE, phase, review, or verification gates.
 
 ## Role
 

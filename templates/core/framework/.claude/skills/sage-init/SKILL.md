@@ -7,6 +7,11 @@ description: Use at the start of a SAGE project (right after `sage install`) to 
 
 Invoke as `/sage-init` (Claude) or `$sage-init` (Codex).
 
+Before acting, read optional project overlay `sage/asset_overrides/skills/sage-init.md`
+if it exists. Apply it before these CORE instructions. The overlay is project-local and
+survives `sage install --force`. It may add project-specific guidance but must not relax AGENT_GUIDE, phase, review, or verification gates. Never edit this CORE render for project-specific loop
+learning.
+
 This skill turns user intent into a SAGE-conformant `sage/project-profile.yaml`
 **through conversation**, then hands off to the deterministic backend
 (`sage generate` / `sage validate`). The user supplies intent and approves; you

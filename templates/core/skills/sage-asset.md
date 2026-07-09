@@ -38,6 +38,8 @@ assets), then hand off to `sage generate` to extract and register.
   interpretive assets (codex 함께 — both renders required)
 - uses: sage generate / sage validate / sage doctor, bootstrap-authoring.md
 - convention_doc: AGENT_GUIDE.md
+- overlay: optional `sage/asset_overrides/skills/sage-asset.md` has project-local
+  priority over CORE guidance and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates
 
 ## runtime_bindings
 - claude: .claude/skills/sage-asset/SKILL.md (repo — Claude Code auto-discovers)
