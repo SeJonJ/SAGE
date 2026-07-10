@@ -11,6 +11,7 @@ unresolved 처리: 새로 한쪽-only 가 된 claim 은 unresolved 로 플래그
 """
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -171,48 +172,115 @@ def _overlay_hint(p):
     return f"sage/asset_overrides/{subdir}/{safe}.md"
 
 
-def _parse_frontmatter_approved(text):
-    """노트 frontmatter 의 approved 값 → True/False/None(없음). 의존성 0(미니 파서)."""
+def frontmatter_value(text, key):
+    """노트 frontmatter 의 <key> scalar 값 → str. 없음/비-scalar → None. 의존성 0(미니 파서).
+
+    quote 인지 + 인라인 주석 제거. 순진하게 `strip('"')` 만 하면 `run_id: "rl-a" # note` 가
+    `rl-a" # note` 로 읽혀, 사람이 주석 한 줄 달았다고 run 대조가 오탐한다(codex 재검토 P2).
+    리스트/맵(`[`·`{` 시작)은 scalar 가 아니므로 None — 호출자가 불일치로 처리한다.
+    """
     if not text.startswith("---"):
         return None
     end = text.find("\n---", 3)
     if end == -1:
         return None
-    fm = text[3:end]
-    for line in fm.splitlines():
+    for line in text[3:end].splitlines():
         s = line.strip()
-        if s.startswith("approved:"):
-            v = s.split(":", 1)[1].strip().strip('"').strip("'").lower()
-            return v == "true"
+        if not s.startswith(key + ":"):
+            continue
+        v = s.split(":", 1)[1].strip()
+        if v[:1] in ('"', "'"):                 # 따옴표 안의 `:`·`#` 는 값의 일부
+            q, rest = v[0], v[1:]
+            eq = rest.find(q)
+            return rest[:eq] if eq != -1 else rest
+        v = v.split(" #", 1)[0].strip()         # 인라인 주석(` #` 앞 공백 필수 — YAML 규칙)
+        return None if v[:1] in ("[", "{") else (v or None)
     return None
 
 
+def _parse_frontmatter_approved(text):
+    """노트 frontmatter 의 approved 값 → True/False/None(없음)."""
+    v = frontmatter_value(text, "approved")
+    return None if v is None else v.lower() == "true"
+
+
+_FENCE = re.compile(r"^\s*```+\s*([A-Za-z0-9_+-]*)\s*$")
+_PROPOSAL_HEADING = re.compile(r"^##\s*제안")
+# 섹션 경계 — 임의 레벨 헤딩 / 수평선 / <details>. 반드시 **펜스 밖**에서만 판정한다:
+# 코드블록 안의 `---` 나 `### …` 는 마크다운상 본문 텍스트지 경계가 아니다.
+_SECTION_BOUNDARY = re.compile(r"^(?:#{1,6}\s|---+\s*$|<details\b)")
+
+
+def _fenced_blocks_in_proposal_section(text):
+    """`## 제안` 섹션(펜스 밖 경계까지)의 코드블록 → [(lang, content)]. 섹션 없음 → None.
+
+    fence 상태를 추적하는 단일 스캐너다. 이전의 정규식 split 방식은 펜스를 모르기 때문에
+    ① 설명용 블록 안의 `---` 를 섹션 끝으로 오인하고 ② `### 증거` 같은 h3 를 경계로 못 봐서
+    증거 블록의 `[]` 를 제안으로 오독했다(둘 다 codex 재검토에서 실증).
+    """
+    lines = text.splitlines()
+    in_fence = False
+    fence_lang = ""
+    started = False          # `## 제안` 헤딩을 지났는가
+    buf, blocks = [], []
+    for line in lines:
+        m = _FENCE.match(line)
+        if m:
+            if in_fence:
+                if started:
+                    blocks.append((fence_lang, "\n".join(buf)))
+                in_fence, buf = False, []
+            else:
+                in_fence, fence_lang, buf = True, (m.group(1) or "").lower(), []
+            continue
+        if in_fence:
+            buf.append(line)
+            continue
+        # --- 여기부터는 펜스 밖 ---
+        if not started:
+            if _PROPOSAL_HEADING.match(line):
+                started = True
+            continue
+        if _SECTION_BOUNDARY.match(line):
+            break            # 섹션 끝(다음 헤딩/구분선/<details>)
+    if not started:
+        return None
+    return blocks
+
+
+def _is_proposal_candidate(lang, content):
+    """제안 데이터로 볼 블록인가. `json` 펜스이거나 JSON 배열처럼 시작하는 블록만.
+
+    `{` 로 시작하는 설명용 프로즈(예: `{패턴을 여기 적으세요}`)를 데이터로 오인해 하드 실패시키면,
+    '프로즈 블록은 건너뛴다'는 기존 계약이 깨진다(codex 재검토 P1). 제안은 항상 JSON *배열*이므로
+    무-언어 블록은 `[` 로 시작할 때만 후보로 본다.
+    """
+    return lang == "json" or content.lstrip().startswith("[")
+
+
 def _extract_proposals(text):
-    """`## 제안` 섹션 이후의 펜스 코드블록들을 순서대로 시도 → 첫 'JSON 배열' 블록 채택 → (list, None).
-    설명용 비-json 블록이 앞서거나 fence 언어가 달라도 견고(codex B P2). 없음/실패 → (None, 사유)."""
-    import re
-    # 실제 헤딩 라인(줄 시작 '## 제안')에서만 자른다 — 안내문 안의 백틱 `## 제안` 언급이나
-    # 그 앞 `## 요약` 섹션의 코드블록을 제안으로 오파싱하지 않도록(codex P2).
-    sec = re.split(r"(?m)^##\s*제안.*$", text, maxsplit=1)
-    if len(sec) < 2:
+    """`## 제안` 섹션의 첫 제안 후보 블록 → (list, None). 없음/실패 → (None, 사유).
+
+    마스킹 금지: 후보 블록이 파싱에 실패하면 뒤 블록으로 구제하지 않고 즉시 실패한다. 그러지 않으면
+    뒤쪽 증거 블록의 `[]` 가 망가진 제안을 덮어 '제안 0건'으로 통과한다(codex P1).
+    """
+    blocks = _fenced_blocks_in_proposal_section(text)
+    if blocks is None:
         return None, "## 제안 섹션을 찾지 못함"
-    blocks = re.findall(r"```[a-zA-Z]*\n(.*?)\n```", sec[1], re.S)
     if not blocks:
         return None, "## 제안 섹션에 코드블록이 없음"
-    last_err = "유효한 JSON 배열 블록 없음"
-    for raw in blocks:
-        raw = raw.strip()
-        if not raw:
-            continue
+    for lang, content in blocks:
+        raw = content.strip()
+        if not raw or not _is_proposal_candidate(lang, raw):
+            continue         # 설명용 프로즈 블록 — 데이터 아님
         try:
             data = json.loads(raw)
         except Exception as e:
-            last_err = f"제안 JSON 파싱 실패: {e}"
-            continue
-        if isinstance(data, list):
-            return data, None
-        last_err = "제안 블록이 JSON 배열이 아님"
-    return None, last_err
+            return None, f"제안 JSON 파싱 실패: {e}"
+        if not isinstance(data, list):
+            return None, "제안 블록이 JSON 배열이 아님"
+        return data, None
+    return None, "유효한 JSON 배열 블록 없음"
 
 
 def _absorb_from_retro(args) -> int:

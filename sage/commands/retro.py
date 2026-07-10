@@ -19,11 +19,15 @@ import sys
 def register(sub):
     p = sub.add_parser("retro", help="리뷰 사이클 학습을 자산 개선 제안으로 정리합니다(Loop C, 자동반영 없음)")
     p.add_argument("--run-id", default=None, help="대상 loop_audit run_id(기본: 최신)")
-    p.add_argument("--feature", default=None, help="05 문서 경로 필터(스템). 예: loop-engineering")
+    p.add_argument("--feature", default=None,
+                   help="사이클 스템 — 05 문서 경로 필터 + human-gate 노트 제목. 예: loop-engineering")
     p.add_argument("--vault", nargs="?", const="", default=None,
                    help="Obsidian vault 에 human-gate 노트(approved:false) 작성. 경로 생략 시 profile.knowledge_capture.vault_path")
     p.add_argument("--no-vault", action="store_true",
                    help="이번 실행만 vault 노트 생략(retro_note 플래그가 켜져 있어도). --vault 보다 우선")
+    p.add_argument("--check", default=None, metavar="NOTE",
+                   help="retro 노트가 실제로 채워졌는지 결정론 검사(빈 템플릿/무효 제안이면 non-zero). "
+                        "--run-id 를 함께 주면 그 run 의 노트인지도 대조")
     p.add_argument("--root", default=None)
     p.set_defaults(func=run)
 
@@ -130,8 +134,116 @@ _APPLY_PATH = (
     "  feed-forward: 다음 feature 의 00 Prior-Knowledge Scan 이 반영분을 읽음."
 )
 
+# 노트 템플릿 ↔ --check 의 단일 소스. 이 문장이 그대로 남아 있으면 host 가 distill 을 돌리지 않은 것.
+_SUMMARY_PLACEHOLDER = "_이번 사이클에 체계적으로 놓친 것과 바꾸기로 한 것을 사람이 읽을 1~2줄로 (absorb 파싱 대상 아님)._"
+_PROPOSAL_TARGETS = ("profile", "hook", "agent", "skill")   # absorb 가 분기하는 target 어휘
+
+
+def _derive_stem(feature, docs, rid):
+    """human-gate 노트 파일명 stem → (stem, hint). 우선순위: --feature > 유일한 05 문서명 > run_id.
+
+    run_id 폴백은 제목만으로 어떤 사이클인지 알아볼 수 없어(난수형) 마지막 수단이다. 05 문서가
+    하나뿐이면 그 파일명이 곧 사이클 식별자이므로 결정론적으로 승격한다."""
+    if feature:
+        return feature, None
+    if len(docs) == 1:
+        return os.path.splitext(os.path.basename(docs[0]))[0], None
+    reason = f"05 문서 {len(docs)}건 — 사이클 특정 불가" if docs else "05 문서 0건"
+    return (rid or "cycle"), (
+        f"노트 제목에 run_id 를 사용합니다({reason}). 제목만으로 사이클을 알아보려면 "
+        f"`--feature <사이클 stem>` 을 주세요.")
+
+
+def _summary_body(text):
+    """`## 요약` 섹션 본문(다음 `## ` 헤딩 전까지). 헤딩 없음 → None."""
+    m = re.search(r"(?m)^##[ \t]*요약[ \t]*$", text)
+    if not m:
+        return None
+    rest = text[m.end():]
+    nxt = re.search(r"(?m)^##[ \t]", rest)
+    return rest[:nxt.start()] if nxt else rest
+
+
+def _check_note(path, run_id=None):
+    """retro 노트가 실제로 채워졌는지 결정론 검사 → exit code.
+
+    CLI 는 빈 템플릿만 쓰고 distill/작성은 host AI 에 맡긴다(설계: gather=결정론, distillation=판단).
+    그 위임이 조용히 실패해도(요약 placeholder 그대로·제안 `[]`) 지금까지는 아무 게이트가 잡지
+    못했다 — 이 검사가 완료 게이트의 결정론 백스톱이다.
+
+    통과 조건: 노트가 대상 run 의 것(--run-id 를 준 경우) + `## 요약` 이 placeholder 를 넘어선 산문
+    + `## 제안` 이 유효 JSON 배열이고 각 항목이 absorb 가 분기할 수 있는 형태(dict · target 어휘 ·
+    비어있지 않은 proposed_change). 제안 0건은 '이번 사이클엔 구조적 패턴 없음' 이라는 정당한 결론일
+    수 있어 통과시키되 경고한다.
+    """
+    # 노트 파서 단일화(absorb 가 읽는 블록과 동일) — check 통과가 absorb 파싱 성공을 함의해야 한다.
+    from sage.commands.absorb import _extract_proposals, frontmatter_value
+
+    # isfile: 디렉토리 경로도 exists() 는 참이라 read() 가 IsADirectoryError 로 터진다(오타 흔함).
+    if not os.path.isfile(path):
+        print(f"[sage retro --check] 노트 파일 없음: {path}", file=sys.stderr)
+        return 2
+    try:
+        text = open(path, encoding="utf-8").read()
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"[sage retro --check] 노트 읽기 실패: {type(e).__name__}: {e}", file=sys.stderr)
+        return 2
+    problems = []
+
+    # run 결속: 파일명에 run_id 가 없으므로 같은 stem/날짜의 *이전* run 노트가 재사용될 수 있다.
+    # 그 노트는 이미 채워져 있어 검사를 통과 → 이번 run 은 회고 없이 완료 처리된다(게이트 우회).
+    # 노트가 run 을 선언했는데 --run-id 를 안 주면 결속 검사가 통째로 꺼지므로, 생략 자체를 실패로 본다.
+    noted = frontmatter_value(text, "run_id")
+    if run_id:
+        if noted != run_id:
+            problems.append(f"노트 run_id={noted!r} ≠ 대상 run_id={run_id!r} — 다른 사이클의 회고 노트")
+    elif noted:
+        problems.append(f"--run-id 미전달 — 이 노트는 run_id={noted!r} 에 결속돼 있어 대조가 필요합니다 "
+                        f"(`--run-id {noted}`)")
+
+    body = _summary_body(text)
+    if body is None:
+        problems.append("`## 요약` 헤딩이 없음(노트 구조 손상)")
+    else:
+        # placeholder 를 지웠든 그 아래에 덧붙였든 통과 — 남은 산문이 있으면 사람이 쓴 것.
+        prose = "\n".join(l for l in body.splitlines() if l.strip() and _SUMMARY_PLACEHOLDER not in l).strip()
+        if not prose:
+            problems.append("`## 요약` 이 비었거나 템플릿 placeholder 그대로 — 사이클 회고가 작성되지 않음")
+
+    proposals, err = _extract_proposals(text)
+    if err:
+        problems.append(f"`## 제안` 파싱 불가: {err}")
+    else:
+        for i, p in enumerate(proposals):
+            if not isinstance(p, dict):
+                problems.append(f"제안[{i}] 이 객체가 아님: {p!r}")
+                continue
+            if p.get("target") not in _PROPOSAL_TARGETS:
+                problems.append(f"제안[{i}] target={p.get('target')!r} — {list(_PROPOSAL_TARGETS)} 중 하나여야 absorb 가 분기")
+            if not str(p.get("proposed_change") or "").strip():
+                problems.append(f"제안[{i}] proposed_change 가 비었음")
+
+    if problems:
+        print(f"== sage retro --check ({os.path.basename(path)}) — 미완성 ==", file=sys.stderr)
+        for p in problems:
+            print(f"  ✗ {p}", file=sys.stderr)
+        print("\n노트를 열어 distiller 결과로 `## 요약`(사람용 1~2줄)과 `## 제안`(JSON 배열)을 채운 뒤 "
+              "다시 실행하세요. 증거·프롬프트는 노트 하단 <details> 에 있습니다.", file=sys.stderr)
+        return 1
+
+    n = len(proposals)
+    print(f"== sage retro --check ({os.path.basename(path)}) — OK ==")
+    print(f"  요약 작성됨 · 제안 {n}건" + (" (전부 유효 target)" if n else ""))
+    if n == 0:
+        print("  ⚠️  제안 0건 — 구조적 패턴이 정말 없었다면 정상이나, 그 판단 근거를 완료 보고에 남기세요.")
+    print("  다음: 사람이 검토 후 frontmatter `approved: true` → `sage absorb --from-retro <노트>`")
+    return 0
+
 
 def run(args):
+    if args.check:
+        return _check_note(args.check, args.run_id)
+
     root = os.path.abspath(args.root) if args.root else _find_project_root(os.getcwd())
     profile = _load_profile(root)
     la = _load_loop_audit(root)
@@ -173,11 +285,14 @@ def run(args):
         if vault_arg is None and kc.get("retro_note") is True:
             vault_arg = ""   # profile vault_path 사용(자동 활성)
     if vault_arg is not None:
-        _write_vault_note(profile, root, rid, args.feature, out, vault_arg or None)
+        raw_stem, stem_hint = _derive_stem(args.feature, docs, rid)
+        if stem_hint:
+            print(f"  ℹ️  {stem_hint}", file=sys.stderr)
+        _write_vault_note(profile, root, rid, raw_stem, out, vault_arg or None)
     return 0
 
 
-def _write_vault_note(profile, root, rid, feature, out_lines, override):
+def _write_vault_note(profile, root, rid, raw_stem, out_lines, override):
     """retro 패킷을 vault 에 human-gate 노트(approved:false)로 작성. 사람이 Obsidian 에서 검토·승인."""
     from sage.commands import _vault
     vault, folder = _vault.vault_target(profile, override)
@@ -188,23 +303,41 @@ def _write_vault_note(profile, root, rid, feature, out_lines, override):
     from sage.commands.knowledge import _note_filename
     from sage.commands._common import _project_name
     from sage.commands.review_loop import _dashboard_filename, _wiki_stem, _write_vault_dashboard
-    # 파일명 stem 은 사용자 입력(--feature)일 수 있으므로 경로 탈출 방지 — 안전 문자만 남긴다.
-    raw_stem = feature or rid or "cycle"
-    stem = re.sub(r"[^A-Za-z0-9._-]", "-", raw_stem).strip("-.") or "cycle"
+    # 파일명 stem 은 사용자 입력(--feature)이거나 05 문서명일 수 있으므로 경로 탈출 방지 — 안전 문자만 남긴다.
+    # 비-ASCII 낱말문자(한글 등)는 보존: 구분자만 제거하면 탈출은 막히고(+ _note_filename 이 basename),
+    # ASCII-only 로 깎으면 한글 사이클명이 통째로 사라져 제목이 다시 식별 불가가 된다.
+    stem = re.sub(r"[^\w.-]", "-", raw_stem, flags=re.UNICODE).strip("-.") or "cycle"
     today = datetime.date.today().isoformat()
     # 파일명은 vault note_convention(prefix + filename_pattern)을 따른다 — loop-audit 대시보드와 동일 방식.
     # 프로젝트/stem/날짜로 유일성 유지(같은 날 재실행 create-only 보존). project.name 비면 'SAGE' 폴백.
     name = _project_name(profile) or "SAGE"
     fname = _note_filename(profile, "TECH", f"{name} retro {stem} {today}")
+    # 파일명은 run_id 를 담지 않는다(제목 식별성). 그래서 같은 날 같은 stem 의 *다른* run 이 돌면
+    # create-only 가 앞 run 의 (이미 채워진) 노트를 그대로 두어, 이번 run 이 회고 없이 완료 게이트를
+    # 통과한다. 충돌할 때만 run suffix 로 분리 — 흔한 경우의 제목은 그대로 두면서 결속을 지킨다.
+    if rid:
+        prior = os.path.join(vault, folder, fname)
+        if os.path.isfile(prior):
+            from sage.commands.absorb import frontmatter_value
+            try:
+                prev_rid = frontmatter_value(open(prior, encoding="utf-8").read(), "run_id")
+            except (OSError, UnicodeDecodeError):
+                prev_rid = None
+            if prev_rid and prev_rid != rid:
+                fname = _note_filename(profile, "TECH", f"{name} retro {stem} {today} {rid}")
+                print(f"  ℹ️  같은 이름의 노트가 다른 run({prev_rid})의 것 → 이번 run 은 별도 노트로 작성",
+                      file=sys.stderr)
     dash_name = _dashboard_filename(profile)
     fm = {"tags": ["sage", "retro", "loop-c"], "approved": False, "run_id": rid or "",
           "date": today, "status": "pending-review"}
+    check_cmd = f"sage retro --check <이 노트>" + (f" --run-id {rid}" if rid else "")
     body = ("> **Loop C retro — human gate.** `## 요약` 에 사람용 회고 1~2줄, `## 제안` JSON 에 distill 결과를\n"
-            "> 채운 뒤 검토해 frontmatter `approved: true` 로 승인하세요. 그 다음 `sage absorb --from-retro <이 노트>`\n"
-            "> 로 자산 patch 후보를 받습니다. 자동 반영되지 않습니다(SSOT 보호).\n\n"
+            f"> 채운 뒤(`{check_cmd}` 로 확인) 검토해 frontmatter `approved: true` 로 승인하세요.\n"
+            "> 그 다음 `sage absorb --from-retro <이 노트>` 로 자산 patch 후보를 받습니다.\n"
+            "> 자동 반영되지 않습니다(SSOT 보호).\n\n"
             f"관련 loop audit: [[{_wiki_stem(dash_name)}]]\n\n"
             "## 요약\n"
-            "_이번 사이클에 체계적으로 놓친 것과 바꾸기로 한 것을 사람이 읽을 1~2줄로 (absorb 파싱 대상 아님)._\n\n"
+            f"{_SUMMARY_PLACEHOLDER}\n\n"
             "## 제안 (proposals) — distill 결과를 JSON 배열로 채우세요. target ∈ {profile,hook,agent,skill}\n"
             "```json\n[]\n```\n\n"
             "---\n"
@@ -213,10 +346,15 @@ def _write_vault_note(profile, root, rid, feature, out_lines, override):
     # create-only: 같은 날 재실행이 사람이 검토/승인(approved:true)한 노트를 덮어쓰지 않게(codex S5 P2).
     path = _vault.write_note(vault, folder, fname, fm, body, create_only=True)
     if path is None:
-        print(f"  ℹ️  retro 노트가 이미 존재 — 사람 검토 상태 보존(덮지 않음): "
-              f"{os.path.join(vault, folder, fname)}", file=sys.stderr)
+        path = os.path.join(vault, folder, fname)
+        print(f"  ℹ️  retro 노트가 이미 존재 — 사람 검토 상태 보존(덮지 않음): {path}", file=sys.stderr)
     else:
         print(f"  ✅ Obsidian retro human-gate 노트 작성(approved:false): {path}", file=sys.stderr)
+    # 노트는 빈 템플릿으로 나간다 — 채우는 건 host 몫이므로, 검산 명령을 여기서 못박아 전달한다.
+    # --run-id 를 포함해 출력한다: 빠뜨리면 run 결속 검사가 꺼져 남의 노트로 통과할 수 있다.
+    rid_arg = f' --run-id {rid}' if rid else ""
+    print(f'  ▶ 다음: 노트의 `## 요약`/`## 제안` 을 distill 결과로 채운 뒤 '
+          f'`python -m sage retro --check "{path}"{rid_arg}` (미완성이면 non-zero)', file=sys.stderr)
     try:
         _write_vault_dashboard(_load_loop_audit(root), root, override)
     except Exception as e:

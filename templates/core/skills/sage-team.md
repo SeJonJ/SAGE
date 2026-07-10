@@ -59,15 +59,26 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
    outside the vault-resolved path. If `.sage/plan_interview.md` exists (a planning interview
    ran) and vault is enabled, also capture it as a **separate** note via the same path (same
    guide-derived prefix/tags apply): `python -m sage knowledge write-back --title "<cycle-stem> 기획 인터뷰" --prefix <PREFIX> --tags "<t1,t2,…>" --summary-file .sage/plan_interview.md --append-log`.
-9. Retro (Loop C, advisory): run `python -m sage retro --run-id <RUN_ID>` (auto-writes a
-   vault human-gate note when `retro_note` is enabled). Record that retro ran, or why it
-   was skipped, in the completion report — a required completion axis, not optional.
+9. Retro (Loop C, advisory): run `python -m sage retro --run-id <RUN_ID> --feature <cycle-stem>`
+   — always pass `--feature` (the plan-doc stem) so the note title names the cycle instead of
+   being derived from the sole 05 doc or falling back to the run_id. A vault human-gate note is
+   written only when the vault is enabled (`vault_path` + `retro_note`, both off by default);
+   if no note path is printed, record `retro note skipped: vault disabled` and stop. When a note
+   is written it is **empty on purpose**: the CLI gathers evidence deterministically and leaves
+   distillation to you. So open the note, run the printed distiller prompt over the evidence, and
+   fill `## 요약` (1–2 human-readable lines) and `## 제안` (the JSON proposal array). Verify with
+   `python -m sage retro --check <note path> --run-id <RUN_ID>`; it exits non-zero while the note
+   is still the blank template, a proposal lacks a valid `target`/`proposed_change`, or the note
+   belongs to another run. Never leave the note unfilled and never set `approved: true` yourself.
+   Record that retro ran, or why it was skipped, in the completion report — a required completion
+   axis, not optional.
 10. Final user report: include the per-phase outcome, review `run_id`, generated artifact
    inventory (plan docs, code/config files, vault notes, loop-audit dashboard, retro note),
-   verification commands/results, and any human action still required. If a retro
-   human-gate note was created, explicitly ask the user to review it and approve
-   `approved: true` before `sage absorb --from-retro`; do not imply the proposal has been
-   applied.
+   verification commands/results, and any human action still required. Summarize the retro
+   proposals inline (pattern → target → proposed change) so the user can judge them without
+   opening the note. If a retro human-gate note was created, explicitly ask the user to review
+   it and approve `approved: true` before `sage absorb --from-retro`; do not imply the proposal
+   has been applied.
 
 ## advisory_scope
 - role_boundary: does not implement code; orchestrates leader/implementers/qa/reviewer
@@ -88,5 +99,6 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
 ## drift_checks
 - conformance: procedure step 6 (Phase-05 via sage-review, not hand-written), step 7
   (06 only when 05_approved), step 8 (knowledge write-back when enabled), and step 9
-  (retro run or recorded skip) must be present. The final report must name created
-  artifacts and any pending retro human-gate review.
+  (retro run with `--feature`; when a note was written, it is filled and `retro --check
+  --run-id` is clean — otherwise a recorded skip) must be present. The final report must name
+  created artifacts, summarize the retro proposals, and state any pending retro human-gate review.

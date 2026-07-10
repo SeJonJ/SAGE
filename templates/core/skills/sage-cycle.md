@@ -41,8 +41,11 @@ resumes at the right half.
    QA → Phase-05 review via `/sage-review` → completion), honoring the same
    evidence-anchored resume logic sage-team owns.
 5. Relay the same completion summary `/sage-team` produces: per-phase outcome,
-   recorded review `run_id`, generated artifact inventory, verification results, and
-   any pending human action (especially retro human-gate review/approval).
+   recorded review `run_id`, generated artifact inventory (each named by path), a summary
+   of the retro proposals, verification results, and any pending human action (especially
+   retro human-gate review/approval). Do not report the cycle complete on a retro note that
+   is still the blank template — `sage-team`'s Done gate requires `sage retro --check` clean
+   whenever a note was written (vault disabled → a recorded skip reason instead).
 
 ## advisory_scope
 - role_boundary: does not implement code and does not reimplement any gate; it only

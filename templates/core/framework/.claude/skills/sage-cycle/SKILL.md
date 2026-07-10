@@ -80,9 +80,10 @@ of sage-team's steps here — this umbrella only invokes it.
 ## Step 4 — Report
 
 Relay the same completion summary `/sage-team` reports: per-phase outcome, recorded
-review `run_id`, generated artifact inventory, verification results, and any pending
-human action (especially retro human-gate review/approval). If the cycle stopped early
-(gate block, BLOCKED review, red verification), report where it stopped and what is
+review `run_id`, generated artifact inventory (name each artifact by path), a summary of
+the retro proposals (pattern → target → proposed change), verification results, and any
+pending human action (especially retro human-gate review/approval). If the cycle stopped
+early (gate block, BLOCKED review, red verification), report where it stopped and what is
 required to continue — do not claim the cycle completed.
 
 ## Done
@@ -90,8 +91,10 @@ required to continue — do not claim the cycle completed.
 The cycle is complete when `/sage-team` reports 06 written against an APPROVED
 Phase 05 with a clean, closed loop-audit run and both closing captures accounted for:
 a completed (or explicitly recorded skipped/failed) knowledge write-back, and retro
-run (or a recorded skip reason). sage-cycle adds no completion criterion of its own
-beyond sequencing the two halves.
+run with its note — when the vault wrote one — filled and passing `sage retro --check`
+(or a recorded skip reason, including "vault disabled"). A retro note left as the blank
+template does not count as retro having run. sage-cycle adds no completion criterion of
+its own beyond sequencing the two halves.
 
 ---
 

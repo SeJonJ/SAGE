@@ -9,6 +9,8 @@
   5. proposal-only: 어떤 파일도 쓰지 않음(자동반영 없음)
   6. 루트 자동탐색(profile 마커)
   7. 무결성 경고 표면화
+  8. 노트 제목 stem: --feature > 유일한 05 문서명 > run_id 폴백(+힌트)
+  9. --check: 빈 템플릿/무효 제안 non-zero, 채워진 노트 0
 """
 import os
 import subprocess
@@ -31,7 +33,9 @@ def retro(*args, root, cwd=None):
     return subprocess.run(cmd, cwd=cwd or REPO, capture_output=True, text=True)
 
 
-class TestRetro(unittest.TestCase):
+class _ProjectFixture:
+    """profile 마커 + 05 문서 + 닫힌 loop_audit run 을 갖춘 임시 프로젝트(테스트 클래스 간 공유)."""
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         os.makedirs(os.path.join(self.tmp, "sage"), exist_ok=True)
@@ -58,6 +62,8 @@ class TestRetro(unittest.TestCase):
                          "--iterations", "1", root=self.tmp)
         return rid
 
+
+class TestRetro(_ProjectFixture, unittest.TestCase):
     def test_full_evidence_and_prompt(self):
         rid = self._run_loop()
         self._add_05()
@@ -150,6 +156,224 @@ class TestRetro(unittest.TestCase):
         self._add_05()
         r = retro(root=self.tmp)
         self.assertIn("무결성", r.stdout)
+
+
+class TestRetroNoteStem(_ProjectFixture, unittest.TestCase):
+    """human-gate 노트 파일명이 사이클을 식별해야 한다(run_id 폴백은 최후수단)."""
+
+    def _vault(self):
+        v = os.path.join(self.tmp, "vault")
+        os.makedirs(v, exist_ok=True)
+        return v
+
+    def _note(self, vault):
+        hits = [os.path.join(dp, fn) for dp, _, fs in os.walk(vault) for fn in fs
+                if fn.endswith(".md") and " retro " in fn]
+        self.assertEqual(len(hits), 1, f"retro 노트 1건이어야: {hits}")
+        return hits[0]
+
+    def test_stem_from_single_05_doc(self):
+        self._run_loop()
+        self._add_05("feat-x")
+        v = self._vault()
+        r = retro("--vault", v, root=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("feat-x-review", os.path.basename(self._note(v)))
+
+    def test_feature_beats_doc_derivation(self):
+        self._run_loop()
+        self._add_05("alpha")
+        self._add_05("beta")
+        v = self._vault()
+        retro("--feature", "alpha", "--vault", v, root=self.tmp)
+        self.assertIn("alpha", os.path.basename(self._note(v)))
+
+    def test_runid_fallback_emits_feature_hint(self):
+        rid = self._run_loop()
+        self._add_05("alpha")
+        self._add_05("beta")   # 사이클 특정 불가 → run_id 폴백
+        v = self._vault()
+        r = retro("--vault", v, root=self.tmp)
+        self.assertIn(rid, os.path.basename(self._note(v)))
+        self.assertIn("--feature", r.stderr)
+
+    def test_unicode_stem_preserved(self):
+        # ASCII-only 로 깎으면 한글 사이클명이 통째로 사라져 제목이 다시 식별 불가가 된다.
+        self._run_loop()
+        self._add_05()
+        v = self._vault()
+        retro("--feature", "녹화-정리", "--vault", v, root=self.tmp)
+        self.assertIn("녹화-정리", os.path.basename(self._note(v)))
+
+    def test_second_run_same_day_gets_its_own_note(self):
+        """codex P1: 파일명에 run_id 가 없어 create-only 가 앞 run 의 채워진 노트를 재사용 →
+        이번 run 이 회고 없이 완료 게이트를 통과하던 우회."""
+        rid1 = self._run_loop()
+        self._add_05("alpha")
+        v = self._vault()
+        retro("--feature", "alpha", "--vault", v, root=self.tmp)
+        rid2 = self._run_loop()
+        self.assertNotEqual(rid1, rid2)
+        retro("--feature", "alpha", "--run-id", rid2, "--vault", v, root=self.tmp)
+        notes = [f for dp, _, fs in os.walk(v) for f in fs if " retro " in f]
+        self.assertEqual(len(notes), 2, f"run 마다 별도 노트여야: {notes}")
+        self.assertTrue(any(rid2 in n for n in notes), f"2번째 run 노트에 run suffix: {notes}")
+
+
+class TestRetroCheck(unittest.TestCase):
+    """--check: CLI 가 위임한 '노트 채우기'가 조용히 실패했는지 결정론 검사."""
+
+    PROPOSALS = ('## 제안 (proposals)\n```json\n%s\n```\n')
+    # 실제 노트는 제안 뒤에 구분선 + <details> 증거 블록이 붙는다.
+    EVIDENCE = "\n---\n<details>\n<summary>증거</summary>\n\n```\n%s\n```\n\n</details>\n"
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def _head(self, run_id=None):
+        rid = f"run_id: {run_id}\n" if run_id else ""
+        return f"---\ntags: [sage]\napproved: false\n{rid}---\n\n"
+
+    def _note(self, summary, proposals_json, evidence=None, run_id=None):
+        p = os.path.join(self.tmp, "note.md")
+        body = self._head(run_id) + "## 요약\n" + summary + "\n\n" + self.PROPOSALS % proposals_json
+        if evidence is not None:
+            body += self.EVIDENCE % evidence
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(body)
+        return p
+
+    def _check(self, path, *extra):
+        return subprocess.run([sys.executable, "-m", "sage", "retro", "--check", path, *extra],
+                              cwd=REPO, capture_output=True, text=True)
+
+    def test_untouched_template_fails(self):
+        placeholder = "_이번 사이클에 체계적으로 놓친 것과 바꾸기로 한 것을 사람이 읽을 1~2줄로 (absorb 파싱 대상 아님)._"
+        r = self._check(self._note(placeholder, "[]"))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("요약", r.stderr)
+
+    def test_filled_note_passes(self):
+        r = self._check(self._note(
+            "게이트 우회 패턴을 반복해 놓쳤다. hook 으로 승격.",
+            '[{"pattern":"p","target":"hook","proposed_change":"pre-gate 확장","confidence":"high"}]'))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("제안 1건", r.stdout)
+
+    def test_summary_appended_below_placeholder_passes(self):
+        placeholder = "_이번 사이클에 체계적으로 놓친 것과 바꾸기로 한 것을 사람이 읽을 1~2줄로 (absorb 파싱 대상 아님)._"
+        r = self._check(self._note(
+            placeholder + "\n\n리뷰가 잡은 누락은 전부 컨벤션 계열.",
+            '[{"pattern":"p","target":"skill","proposed_change":"체크리스트 추가"}]'))
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_empty_proposals_with_summary_passes_with_warning(self):
+        r = self._check(self._note("구조적 패턴 없음 — 1회성 실수뿐.", "[]"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("제안 0건", r.stdout)
+
+    def test_bad_target_fails(self):
+        r = self._check(self._note("요약 있음.", '[{"pattern":"p","target":"readme","proposed_change":"x"}]'))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("target", r.stderr)
+
+    def test_empty_proposed_change_fails(self):
+        r = self._check(self._note("요약 있음.", '[{"pattern":"p","target":"hook","proposed_change":"  "}]'))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("proposed_change", r.stderr)
+
+    def test_malformed_json_fails(self):
+        r = self._check(self._note("요약 있음.", "{not json"))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("제안", r.stderr)
+
+    def test_missing_note_is_tool_error(self):
+        r = self._check(os.path.join(self.tmp, "nope.md"))
+        self.assertEqual(r.returncode, 2)
+
+    def test_directory_path_is_tool_error_not_traceback(self):
+        # exists() 는 디렉토리에도 참 → read() 가 IsADirectoryError 로 터졌었다(e2e 발견).
+        r = self._check(self.tmp)
+        self.assertEqual(r.returncode, 2)
+        self.assertNotIn("Traceback", r.stderr)
+
+    def test_malformed_proposals_not_masked_by_later_json_block(self):
+        """codex P1: 파서가 문서 끝까지 훑어, 뒤 <details> 의 `[]` 가 망가진 제안을 덮고
+        '제안 0건 PASS' 로 통과시켰다. 섹션 경계 + JSON 유사 블록 하드실패로 차단."""
+        r = self._check(self._note("요약 있음.", "{ broken json", evidence="[]"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("파싱 실패", r.stderr)
+
+    def test_evidence_json_array_is_not_read_as_proposals(self):
+        # 증거 블록이 우연히 JSON 배열이어도 제안으로 채택되면 안 된다(섹션 경계).
+        r = self._check(self._note("요약 있음.", "[]",
+                                   evidence='[{"target":"hook","proposed_change":"증거일 뿐"}]'))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("제안 0건", r.stdout)   # 증거 블록을 제안으로 오독하지 않음
+
+    def _write(self, body):
+        p = os.path.join(self.tmp, "note.md")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(body)
+        return p
+
+    def test_prose_block_before_json_still_accepted(self):
+        # 기존 계약 보존(absorb codex B P2): 설명용 프로즈 블록이 앞서도 뒤의 JSON 배열을 찾는다.
+        r = self._check(self._write(
+            self._head() + "## 요약\n요약 있음.\n\n## 제안 (proposals)\n"
+            "```text\n여기에 설명\n```\n"
+            '```json\n[{"target":"profile","proposed_change":"risk += y"}]\n```\n'))
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_brace_prose_block_is_skipped_not_hard_failed(self):
+        # codex 재검토 P1 회귀: `{` 로 시작하는 설명 블록을 JSON 후보로 오인해 하드실패시켰다.
+        r = self._check(self._write(
+            self._head() + "## 요약\n요약 있음.\n\n## 제안 (proposals)\n"
+            "```text\n{패턴을 여기 적으세요}\n```\n"
+            '```json\n[{"target":"hook","proposed_change":"x"}]\n```\n'))
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_hr_inside_fence_does_not_end_section(self):
+        # codex 재검토 P1 회귀: 펜스 안의 `---` 를 섹션 끝으로 오인해 '코드블록 없음' 이 됐다.
+        r = self._check(self._write(
+            self._head() + "## 요약\n요약 있음.\n\n## 제안 (proposals)\n"
+            "```text\n설명\n---\n더 설명\n```\n"
+            '```json\n[{"target":"hook","proposed_change":"x"}]\n```\n'))
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_h3_heading_bounds_section(self):
+        # codex 재검토 P1 회귀: h3 는 경계로 안 봐서 `### 증거` 아래 `[]` 를 제안으로 채택했다.
+        r = self._check(self._write(
+            self._head() + "## 요약\n요약 있음.\n\n## 제안 (proposals)\n"
+            "```text\n아직 안 채움\n```\n"
+            "### 증거\n```json\n[]\n```\n"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("제안", r.stderr)
+
+    def test_run_id_mismatch_fails(self):
+        """codex P1: 같은 stem/날짜의 앞 run 노트가 재사용되면 이미 채워져 있어 통과한다.
+        --run-id 대조로 '다른 사이클의 회고'를 차단."""
+        note = self._note("요약 있음.", '[{"target":"hook","proposed_change":"x"}]', run_id="rl-aaa")
+        self.assertEqual(self._check(note, "--run-id", "rl-aaa").returncode, 0)
+        r = self._check(note, "--run-id", "rl-bbb")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("run_id", r.stderr)
+
+    def test_missing_run_id_on_bound_note_fails(self):
+        # codex 재검토 P1: --run-id 를 빠뜨리면 결속 검사가 통째로 꺼진다 → 생략 자체를 실패로.
+        note = self._note("요약 있음.", '[{"target":"hook","proposed_change":"x"}]', run_id="rl-aaa")
+        r = self._check(note)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("--run-id", r.stderr)
+
+    def test_frontmatter_inline_comment_not_misread(self):
+        # codex 재검토 P2: `run_id: "rl-aaa" # 메모` 가 `rl-aaa" # 메모` 로 오독되면 false mismatch.
+        p = os.path.join(self.tmp, "note.md")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write('---\napproved: false\nrun_id: "rl-aaa"   # 사람이 단 메모\n---\n\n'
+                    "## 요약\n요약 있음.\n\n" + self.PROPOSALS % '[{"target":"hook","proposed_change":"x"}]')
+        r = self._check(p, "--run-id", "rl-aaa")
+        self.assertEqual(r.returncode, 0, r.stderr)
 
 
 if __name__ == "__main__":

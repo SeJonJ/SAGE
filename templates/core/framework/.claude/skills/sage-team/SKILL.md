@@ -191,11 +191,38 @@ advisory, does not auto-apply; closes the 6th-test gap where loop findings never
 into framework assets):
 
 ```bash
-python -m sage retro --run-id <RUN_ID>   # --vault if retro_note enabled
+python -m sage retro --run-id <RUN_ID> --feature <cycle-stem>   # --vault if retro_note enabled
 ```
 
-Record that retro ran (or why it was skipped) in 06. Applying any proposal is a separate
-human-gated step.
+Always pass `--feature` (the plan-doc stem). Without it the note title is derived from the
+sole Phase-05 doc, or falls back to the run_id — which reads as a random hash and hides
+which cycle the note belongs to.
+
+**A note is only written when the vault is enabled** (`knowledge_capture.vault_path` plus
+`retro_note: true`, or an explicit `--vault`). Both are off by default.
+
+- **No note path printed** → the vault is disabled. Record `retro note skipped: vault
+  disabled` in 06 and stop here; there is nothing to fill or check.
+- **A note path printed** → it is written **empty on purpose**. `retro` gathers the evidence
+  deterministically and leaves distillation to you (the CLI has no LLM). Open that note, run
+  the distiller prompt from its `<details>` block over the evidence, and write:
+  - `## 요약` — 1–2 human-readable lines on what this host systematically missed;
+  - `## 제안` — the JSON array, one object per pattern, each with a `target` of
+    `profile`/`hook`/`agent`/`skill` and a concrete `proposed_change`.
+
+  Then verify, and fix whatever it reports:
+
+  ```bash
+  python -m sage retro --check "<note path printed above>" --run-id <RUN_ID>
+  ```
+
+  It exits non-zero while `## 요약` is still the blank placeholder, `## 제안` does not parse,
+  a proposal lacks a valid `target`/`proposed_change`, or the note belongs to a different
+  run. An empty proposal array passes only with a written summary — if you conclude there
+  were no systematic patterns, say so and why.
+
+Never set `approved: true` yourself; that is the human gate. Record that retro ran (or why
+it was skipped) in 06. Applying any proposal is a separate human-gated step.
 
 ## Done
 
@@ -203,13 +230,17 @@ The cycle is complete when 06 exists and reflects an APPROVED Phase 05 with a cl
 closed loop-audit run for this cycle, and **both** closing captures are accounted for in 06
 (neither may be silently omitted):
 - knowledge write-back has completed or 06 records a concrete skipped/failed reason;
-- `sage retro` has run or 06 records why it was skipped.
+- `sage retro` has run, and — when it wrote a note — that note passes
+  `sage retro --check … --run-id <RUN_ID>`; otherwise 06 records why it was skipped (vault
+  disabled counts). A note left as the blank template does not count as retro having run.
 
 Report to the user:
 - per-phase outcome + the recorded review `run_id`;
 - generated artifact inventory: plan docs, code/config files, vault notes, loop-audit
-  dashboard, retro note, and any installed/generated SAGE assets;
+  dashboard, retro note, and any installed/generated SAGE assets — name each by path;
 - verification commands and results;
+- a summary of the retro proposals (pattern → target → proposed change) so the user can
+  judge them without opening the note;
 - pending human action. If a retro human-gate note was created, explicitly ask the user to
   review the note and set `approved: true` before running `sage absorb --from-retro`. Do
   not imply retro proposals were applied automatically.

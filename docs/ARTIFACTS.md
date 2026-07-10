@@ -67,7 +67,7 @@ hook 어댑터가 세션 실행 중 남기는 기록입니다. host 디렉토리
 |---|---|---|
 | write-back TECH 노트 | PDCA 완료 후 산출 지식을 vault에 적재. 태그는 vault 작성가이드(AGENT_GUIDE/CLAUDE/GEMINI.md)를 읽어 결정하고 CLI `--tags`로 덮어쓸 수 있음(하드코딩 아님) | `sage/commands/knowledge.py:301` `_note_path` |
 | `TECH - <name> loop audit.md` | Loop A 대시보드. 프로젝트당 1페이지로 close마다 갱신되며 `.sage/loop_audit.jsonl`의 파생 뷰. run별 retro 링크 열 포함 | `sage/commands/review_loop.py:485, :492` |
-| `TECH - <name> retro <stem> <date>.md` | Loop C 회고 human-gate 노트. `approved:false`로 생성 — 사람이 승인(`approved:true`)하기 전엔 absorb되지 않으며 자동 반영되지 않음. 관련 loop audit로의 역링크 포함 | `sage/commands/retro.py:198, :219` |
+| `TECH - <name> retro <stem> <date>.md` | Loop C 회고 human-gate 노트. `approved:false`로 생성 — 사람이 승인(`approved:true`)하기 전엔 absorb되지 않으며 자동 반영되지 않음. 관련 loop audit로의 역링크 포함. `<stem>`은 `--feature` > 유일한 05 문서명 > run_id 순으로 정해짐. 같은 날 같은 stem의 **다른 run**이 회고를 남기면 뒤 노트는 `… <date> <run_id>.md`로 분리 생성(앞 run의 노트를 재사용해 완료 게이트를 통과하는 것을 막음). 대시보드 링크는 파일명이 아니라 frontmatter `run_id` 기준 | `sage/commands/retro.py` `_write_vault_note` |
 | `log.md` · index 링크 | 노트 생성 시 vault의 history-hub `log.md`와 index에 `- <date> [[note]] - title` 한 줄을 멱등 append | `sage/commands/knowledge.py:278` `_append_log_once` |
 
 파일명은 `note_convention`을, 태그는 vault 작성가이드를 따르므로 vault마다 관례가 달라도 그에 맞춰 생성됩니다.
