@@ -18,9 +18,11 @@ a structured review report for the current implementation cycle.
   or "cross-model review"
 
 ## procedure
-1. Read `sage/project-profile.yaml` — `options.cross_model` + `cross_model.invocation`
-   resolve the review mode (cross_model:true + reachable → opposite-runtime; else
-   clean-context same-runtime); `pdca.review_loop` resolves pass vs loop.
+1. Read `sage/project-profile.yaml` — `options.cross_model` resolves the review mode
+   (cross_model:true + peer CLI reachable → opposite-runtime via `sage cross-check`;
+   else clean-context same-runtime via `sage review`); `pdca.review_loop` resolves pass
+   vs loop. `cross_model.effort` (optional, default `high`) is the reasoning effort
+   `sage cross-check` passes to the peer CLI.
 2. Read `docs/agent/review-protocol.md` — the authoritative output format + loop contract.
 3. Choose pass vs loop:
    - `review_loop.enabled` false/absent, or risk L0/L1 → single-pass reviewer invocation.

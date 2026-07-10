@@ -304,9 +304,31 @@ options:
 runtime:
   host: claude
   external_reviewer: opposite_runtime
+
+cross_model:
+  effort: xhigh        # 선택. peer 에게 넘길 reasoning effort. 미설정 → high
 ```
 
 `sage doctor`로 리뷰어 가용성을 확인하세요. 반대 런타임에 도달할 수 없으면 same-runtime으로 자동 전환됩니다.
+
+`cross_model.effort`는 `options.cross_model: true`일 때만 유효하며, peer마다 어휘가 다릅니다 — peer가 `codex`면 `minimal|low|medium|high|xhigh`, `claude`면 `low|medium|high|xhigh|max`. 미설정 시 SAGE는 `high`를 넘깁니다(peer CLI 기본값에 맡기면 적대적 리뷰 강도가 조용히 낮아질 수 있어서). codex는 모르는 값을 조용히 무시하므로 `sage validate`와 `sage cross-check`가 먼저 차단합니다. peer의 **모델**은 SAGE가 정하지 않습니다 — peer CLI 자신의 설정을 따릅니다.
+
+### 에이전트 모델 / effort (claude host)
+
+CORE 에이전트 각각에 실행 모델과 reasoning effort를 지정할 수 있습니다.
+
+```yaml
+team:
+  core:
+    leader:   { enabled: true, runtime: { model: opus, effort: xhigh } }
+    reviewer: { enabled: true, runtime: { model: opus } }
+```
+
+`model`은 `opus | sonnet | haiku | fable | inherit` 또는 전체 모델 id로, **미설정 시 host CLI가 고른 모델**을 그대로 씁니다. `effort`는 `low | medium | high | xhigh | max` 또는 양의 정수로, **미설정 시 `high`** 입니다.
+
+이 값들은 `.claude/agents/<id>.md` frontmatter로 주입되므로 **claude host에서만** 동작합니다(codex는 `.codex/agents/*.md`를 model/effort로 해석하는 기전이 없어 주입하지 않고, `sage validate`가 무동작 경고). 값을 바꾼 뒤에는 `sage install --force`로 렌더를 재배포하세요 — 재배포 전까지 `sage doctor`가 해당 에이전트를 `stale`로 표시합니다.
+
+> **`runtime:` 아래에 두는 이유** — 역할 바로 아래의 `model:`은 예전 프로필이 쓰던 죽은 필드입니다(어떤 코드도 읽지 않았고, 템플릿이 `qa`/`reviewer`에 `sonnet`을 박아두었습니다). 그 키를 그대로 살렸다면 업그레이드만으로 Phase 05 리뷰어가 조용히 sonnet으로 고정됐을 것입니다. `sage validate`가 남아 있는 옛 키를 무동작으로 경고합니다.
 
 ### Obsidian 지식 캡처
 

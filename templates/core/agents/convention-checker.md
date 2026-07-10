@@ -18,5 +18,7 @@ with fix guidance.
   priority over CORE guidance and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates
 
 ## runtime_bindings
-- model: (from profile.team.core.reviewer.model or a lightweight model)
+- model / effort: (from profile.team.core.convention-checker.runtime; unset model = host CLI
+  default, unset effort = high). claude host only — injected into the agent frontmatter by
+  `sage install`; re-run `sage install --force` after changing them.
 - claims/allowlist are auto-derived into {id}.claims.yml by reverse_extract

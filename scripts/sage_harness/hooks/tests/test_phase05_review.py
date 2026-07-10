@@ -59,9 +59,22 @@ class TestParsers(unittest.TestCase):
     def test_peer_command_codex_no_prompt_arg(self):
         # 프롬프트는 stdin 으로 — argv 에 포함되면 안 됨(ARG_MAX 회피, codex R1 P1).
         cmd = RV._peer_command("codex")
-        self.assertEqual(cmd[:5], ["codex", "exec", "--json", "-s", "read-only"])
+        self.assertEqual(cmd, ["codex", "exec", "--json", "-s", "read-only"])
         self.assertNotIn("PROMPT", cmd)
-        self.assertEqual(cmd[-1], 'model_reasoning_effort="high"')
+
+    def test_peer_command_default_overrides_nothing(self):
+        # effort 미설정 → peer CLI 자신의 설정이 정한다. model 은 어느 경우에도 엔진이 정하지 않는다.
+        for peer in ("codex", "claude"):
+            argv = " ".join(RV._peer_command(peer))
+            self.assertNotIn("model_reasoning_effort", argv)
+            self.assertNotIn("--model", argv)
+            self.assertNotIn("--effort", argv)
+
+    def test_peer_command_appends_effort_when_set(self):
+        self.assertEqual(RV._peer_command("codex", "low")[-2:], ["-c", 'model_reasoning_effort="low"'])
+        self.assertEqual(RV._peer_command("claude", "max")[-2:], ["--effort", "max"])
+        # effort 를 줘도 model 은 여전히 peer 몫.
+        self.assertNotIn("--model", RV._peer_command("claude", "max"))
 
     def test_peer_command_claude_no_prompt_arg(self):
         self.assertEqual(RV._peer_command("claude"), ["claude", "-p", "--output-format", "json"])
@@ -69,6 +82,29 @@ class TestParsers(unittest.TestCase):
     def test_peer_command_unknown(self):
         with self.assertRaises(ValueError):
             RV._peer_command("gpt")
+
+
+class TestEffortIssue(unittest.TestCase):
+    def test_unset_is_ok(self):
+        self.assertIsNone(RV.effort_issue("codex", None))
+        self.assertIsNone(RV.effort_issue("claude", ""))
+
+    def test_valid_values_per_peer(self):
+        self.assertIsNone(RV.effort_issue("codex", "minimal"))
+        self.assertIsNone(RV.effort_issue("claude", "max"))
+
+    def test_vocabularies_are_not_interchangeable(self):
+        # 실측: codex 는 max 를, claude 는 minimal 을 모른다. 서로의 값을 빌려 쓰면 안 됨.
+        self.assertIsNotNone(RV.effort_issue("codex", "max"))
+        self.assertIsNotNone(RV.effort_issue("claude", "minimal"))
+
+    def test_unknown_value_blocked_because_peer_ignores_it_silently(self):
+        msg = RV.effort_issue("codex", "bogus")
+        self.assertIn("bogus", msg)
+        self.assertIn("조용히 무시", msg)
+
+    def test_unknown_peer(self):
+        self.assertIsNotNone(RV.effort_issue("gpt", "high"))
 
 
 class TestReview(unittest.TestCase):
@@ -110,7 +146,7 @@ class TestCrossCheck(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             _mkprofile(d, host="claude", cross=True)
             orig = RV._invoke_peer
-            RV._invoke_peer = lambda peer, prompt, timeout: (True, f"{peer} says SHIP", None)
+            RV._invoke_peer = lambda peer, prompt, timeout, effort=None: (True, f"{peer} says SHIP", None)
             # peer 가용성: caps 는 which 로 잡히지만 cross_model=true + opposite_runtime 판정에
             # codex 가용이 필요 → reviewer_resolution 이 which(codex) 로 판정. CI 에 codex 없을 수 있어
             # capabilities 로 강제 주입.
@@ -129,17 +165,140 @@ class TestCrossCheck(unittest.TestCase):
             self.assertIn("codex says SHIP", v)
             self.assertIn("CROSS-MODEL REVIEW", v)
 
-    def _profile_cross_codex(self, d):
+    def _profile_cross_codex(self, d, effort=None):
         os.makedirs(os.path.join(d, "sage"), exist_ok=True)
+        extra = f"cross_model: {{ effort: {effort} }}\n" if effort else ""
         with open(os.path.join(d, "sage", "project-profile.yaml"), "w", encoding="utf-8") as f:
             f.write("runtime: { host: claude }\noptions: { cross_model: true }\n"
-                    "capabilities: { codex: true }\n")
+                    "capabilities: { codex: true }\n" + extra)
+
+    def test_cross_effort_passed_to_peer(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._profile_cross_codex(d, effort="low")
+            seen = {}
+            orig = RV._invoke_peer
+
+            def fake(peer, prompt, timeout, effort=None):
+                seen["effort"] = effort
+                return True, "SHIP", None
+
+            RV._invoke_peer = fake
+            try:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d)))
+            finally:
+                RV._invoke_peer = orig
+            self.assertEqual(rc, 0)
+            self.assertEqual(seen["effort"], "low")
+
+    def test_cross_effort_unset_uses_default_high(self):
+        # peer CLI 기본값에 맡기지 않는다 — Phase 05 리뷰 강도가 조용히 낮아지면 안 됨.
+        with tempfile.TemporaryDirectory() as d:
+            self._profile_cross_codex(d)
+            seen = {}
+            orig = RV._invoke_peer
+
+            def fake(peer, prompt, timeout, effort=None):
+                seen["effort"] = effort
+                return True, "SHIP", None
+
+            RV._invoke_peer = fake
+            try:
+                err = io.StringIO()
+                with redirect_stdout(io.StringIO()), redirect_stderr(err):
+                    rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d)))
+            finally:
+                RV._invoke_peer = orig
+            self.assertEqual(rc, 0)
+            self.assertEqual(seen["effort"], RV.DEFAULT_EFFORT)
+            self.assertEqual(seen["effort"], "high")
+            self.assertIn("기본값", err.getvalue())   # 설정값이 아님을 표면화
+
+    def test_default_effort_valid_for_both_peers(self):
+        # 기본값이 한쪽 peer 어휘에만 있으면 그 host 의 cross-check 가 전부 exit 2 로 죽는다.
+        for peer in ("codex", "claude"):
+            self.assertIsNone(RV.effort_issue(peer, RV.DEFAULT_EFFORT))
+
+    def test_falsy_effort_is_not_read_as_unset(self):
+        # `effort: false` / `effort: 0` 를 `or` 로 미설정 취급하면 기본값으로 흡수돼 fail-closed 가 깨진다.
+        for bad in ("false", "0"):
+            with tempfile.TemporaryDirectory() as d:
+                self._profile_cross_codex(d, effort=bad)
+                orig = RV._invoke_peer
+                RV._invoke_peer = lambda *a, **k: self.fail(f"effort={bad} 인데 peer 를 호출함")
+                try:
+                    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                        rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d)))
+                finally:
+                    RV._invoke_peer = orig
+                self.assertEqual(rc, 2, f"effort={bad} 는 TOOL ERROR 여야 함")
+
+    def test_bad_effort_fails_even_when_peer_unreachable(self):
+        # peer 가 마침 미가용이면 폴백이 먼저 return 해 잘못된 설정이 통과했다(codex 5R).
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "sage"), exist_ok=True)
+            with open(os.path.join(d, "sage", "project-profile.yaml"), "w", encoding="utf-8") as f:
+                f.write("runtime: { host: claude }\noptions: { cross_model: true }\n"
+                        "cross_model: { effort: max }\n")   # max 는 claude 어휘, peer=codex 는 모름
+            orig = RV._doctor.reviewer_resolution
+            RV._doctor.reviewer_resolution = lambda p, c: {
+                "reviewer_mode": "clean_context_same_runtime", "reviewer_runtime": "claude",
+                "fallback_used": True, "reviewer_degraded": True,
+                "reviewer_degrade_reason": "codex_cli_unavailable", "notice": "n/a"}
+            try:
+                err = io.StringIO()
+                with redirect_stdout(io.StringIO()), redirect_stderr(err):
+                    rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d)))
+            finally:
+                RV._doctor.reviewer_resolution = orig
+            self.assertEqual(rc, 2, "peer 미가용이어도 잘못된 effort 는 TOOL ERROR")
+            self.assertIn("max", err.getvalue())
+
+    def test_cross_check_enforces_the_same_cross_model_rules_as_validate(self):
+        # validate 가 FAIL 이라 부르는 설정을 cross-check 가 조용히 무시한 채 기본값으로 돌면 안 된다.
+        import sage.profile_validate as pv
+        for line in ("cross_model: { effrot: xhigh }",
+                     "cross_model: { on_unavailable: block }",
+                     "cross_model: { peer: claude }",
+                     "cross_model: [effort, max]"):
+            with tempfile.TemporaryDirectory() as d:
+                os.makedirs(os.path.join(d, "sage"), exist_ok=True)
+                body = ("runtime: { host: claude }\noptions: { cross_model: true }\n"
+                        "capabilities: { codex: true }\n" + line + "\n")
+                with open(os.path.join(d, "sage", "project-profile.yaml"), "w", encoding="utf-8") as f:
+                    f.write(body)
+                orig = RV._invoke_peer
+                RV._invoke_peer = lambda *a, **k: self.fail(f"peer 를 호출하면 안 됨: {line}")
+                try:
+                    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                        rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d)))
+                finally:
+                    RV._invoke_peer = orig
+                self.assertEqual(rc, 2, line)
+                import yaml
+                prof = yaml.safe_load(body)
+                self.assertEqual(pv.severity_of(pv.validate_profile(prof, REPO)), "FAIL", line)
+
+    def test_cross_bad_effort_is_tool_error_not_silent_ignore(self):
+        # codex 는 모르는 effort 를 조용히 무시한다 → 설정대로 돈 것처럼 보이면 안 됨. peer 호출 전 차단.
+        with tempfile.TemporaryDirectory() as d:
+            self._profile_cross_codex(d, effort="max")   # max 는 claude 어휘, codex 는 모름
+            orig = RV._invoke_peer
+            RV._invoke_peer = lambda *a, **k: self.fail("peer 를 호출하면 안 됨")
+            try:
+                err = io.StringIO()
+                with redirect_stdout(io.StringIO()), redirect_stderr(err):
+                    rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d)))
+            finally:
+                RV._invoke_peer = orig
+            self.assertEqual(rc, 2)
+            self.assertIn("max", err.getvalue())
 
     def test_cross_on_peer_failure_falls_back_not_silent(self):
         with tempfile.TemporaryDirectory() as d:
             self._profile_cross_codex(d)
             orig = RV._invoke_peer
-            RV._invoke_peer = lambda peer, prompt, timeout: (False, None, "codex 호출 timeout(540s)")
+            RV._invoke_peer = lambda peer, prompt, timeout, effort=None: (False, None, "codex 호출 timeout(540s)")
             try:
                 out, err = io.StringIO(), io.StringIO()
                 with redirect_stdout(out), redirect_stderr(err):

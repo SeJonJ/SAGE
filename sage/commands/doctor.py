@@ -194,16 +194,32 @@ def _check_core_render_drift(profile, prof_path):
             continue   # claude repo 스킬은 프로젝트 루트가 있어야 점검 가능
         _emit_core_drift("skill", sid, status, dst, stale, missing)
 
-    if root is not None:
+    # install 이 쓰기 전에 거부하는 것과 **같은 검사**. 여기서 잡히면 렌더 대조는 의미가 없다.
+    invalid = [m for sev, m in install.team_runtime_issues(profile) if sev == "FAIL"]
+    for msg in invalid:
+        print(f"  ❌ [agent] {msg}")
+
+    if root is not None and not invalid:
         agent_dir = ".claude" if host == "claude" else ".codex"
         for aid in install.core_agent_ids():
+            # claude host 만 profile 의 model/effort 를 렌더에 주입한다 → 기대 렌더도 같은 기준이어야
+            # drift 로 오판되지 않는다. codex 는 주입 기전이 없어 소스 원문이 기대값.
+            overrides = install.agent_frontmatter_overrides(profile, aid) if host == "claude" else {}
             status, dst = install.core_render_status(
                 install._core_agent_source(aid),
-                os.path.join(root, agent_dir, "agents", f"{aid}.md"))
+                os.path.join(root, agent_dir, "agents", f"{aid}.md"), overrides)
             _emit_core_drift("agent", aid, status, dst, stale, missing)
-    else:
+    elif root is None:
         print("  ℹ️  프로젝트 루트 미상(templates 기본 profile) → 로스터 에이전트 점검 생략.")
 
+    if invalid:
+        # 이 profile 로는 install 이 거부한다 → `--force` 를 권하면 유저가 헛돈다. stale/missing 안내는
+        # profile 을 고치고 재진단한 뒤에만 의미가 있으므로 여기서 멈춘다.
+        print(f"  ❌ profile 오류 {len(invalid)}건 → sage/project-profile.yaml 수정 → `sage validate` → "
+              f"`sage doctor` 재실행")
+        if stale or missing:
+            print(f"      (렌더 drift {len(stale) + len(missing)}건도 있으나 profile 을 고친 뒤 다시 진단하세요)")
+        return 1
     if stale or missing:
         if stale:
             print(f"  ⚠️  갱신 필요 {len(stale)}건 → `sage install --host {host} --force`")
@@ -212,13 +228,46 @@ def _check_core_render_drift(profile, prof_path):
         print("      (로컬 커스터마이즈는 sage/asset_overrides/** 에 두면 --force 에도 보존됩니다 — /sage-asset-override.)")
     else:
         print("  ✅ 모든 CORE 렌더 최신")
+    return 0
+
+
+def _is_repo_boundary(path):
+    """git 저장소 경계. `.git`(디렉토리·worktree 파일) 또는 bare repo 레이아웃.
+    상위 저장소의 profile 을 집어 남의 프로젝트를 진단하지 않도록 여기서 상승을 멈춘다."""
+    if os.path.exists(os.path.join(path, ".git")):
+        return True
+    # bare repo: HEAD 는 파일, objects/refs 는 디렉토리. 존재만 보면 평범한 디렉토리를 오인한다.
+    return (os.path.isfile(os.path.join(path, "HEAD"))
+            and all(os.path.isdir(os.path.join(path, n)) for n in ("objects", "refs")))
+
+
+def _discover_profile(start=None):
+    """cwd 부터 위로 올라가며 `<root>/sage/project-profile.yaml` 을 찾는다.
+
+    없으면 None → 호출자가 templates 기본으로 폴백. 자동탐색이 없으면 설치된 프로젝트에서
+    맨손 `sage doctor` 가 templates profile 을 읽어 **로스터 에이전트 drift 점검을 통째로 건너뛴다**
+    (프로젝트 루트를 못 구해서). 즉 stale 안내가 사실상 동작하지 않는다(codex 2R).
+    """
+    cur = os.path.realpath(start or os.getcwd())
+    while True:
+        cand = os.path.join(cur, "sage", "project-profile.yaml")
+        if os.path.isfile(cand):
+            return cand
+        if _is_repo_boundary(cur):
+            return None
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            return None
+        cur = parent
 
 
 def run(args):
     from sage import _resources
-    prof_path = args.profile or os.path.join(_resources.templates_dir(), "project-profile.yaml")
+    prof_path = (args.profile or _discover_profile()
+                 or os.path.join(_resources.templates_dir(), "project-profile.yaml"))
     profile, status = _load_profile(prof_path)
     print("== sage doctor ==")
+    print(f"  profile: {prof_path}")
     rc = 0
     if status == "ok":
         pass  # profile 정상 로드
@@ -265,7 +314,11 @@ def run(args):
     _kc = profile.get("knowledge_capture")
     vault = _kc.get("vault_path", "") if isinstance(_kc, dict) else ""   # 비-dict kc 방어(codex A)
     print("## 옵션 의존성")
-    print(f"  cross_model : {opts.get('cross_model', False)} (peer={peer})")
+    from sage.commands.review import effort_issue, resolve_effort   # review→doctor import 순환 회피(함수 지역)
+    _eff, _set = resolve_effort(profile)   # `or` 로 판정하면 effort: false/0 을 "기본값" 이라 거짓 보고한다
+    _issue = effort_issue(peer, _eff) if _set is not None else None
+    _note = " — 기본값" if _set is None else (f" — ❌ {_issue}" if _issue else "")
+    print(f"  cross_model : {opts.get('cross_model', False)} (peer={peer}, effort={_eff!r}{_note})")
     _invoker = "codex exec" if peer == "codex" else "claude -p"
     print(f"  peer CLI    : {peer} {'available' if peer_avail else 'unavailable'} "
           f"(PATH which {peer} | capabilities.{peer}) — cross-model 시 `{_invoker}` 직접 호출")
@@ -275,7 +328,8 @@ def run(args):
     # codex skill 전역 배포 점검(Part C) — manifest-추적 프로젝트 skill 이 codex 전역에 배포됐는지.
     #   정본 = repo .codex/skills/<id>/SKILL.md (manifest 추적), 전역 = $CODEX_HOME/skills/<prefix>-<id> (발견용 캐시).
     #   validate 는 전역을 무시(clone-stable repo 정본만) → 전역 staleness 는 여기(환경 진단)에서 WARN.
-    _check_core_render_drift(profile, prof_path)
+    if _check_core_render_drift(profile, prof_path):
+        rc = 1   # 에이전트 frontmatter 로 주입될 값이 무효 = 설정이 조용히 무시되는 것 방지
     _check_codex_skill_deployment(prof_path, profile)
 
     # reviewer resolution

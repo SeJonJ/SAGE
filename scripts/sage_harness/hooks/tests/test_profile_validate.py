@@ -447,5 +447,122 @@ class TestKnowledgeCaptureVault(unittest.TestCase):
         self.assertTrue(any("vault_path" in m and "문자열" in m for _, m in issues))
 
 
+class TestCrossModelEffort(unittest.TestCase):
+    def _prof(self, **cm):
+        return {"runtime": {"host": "claude"}, "options": {"cross_model": True}, "cross_model": cm}
+
+    def test_unset_is_clean(self):
+        self.assertEqual([], [i for i in sevs(self._prof(peer="opposite_runtime")) if i[0] == "FAIL"])
+
+    def test_valid_effort_for_resolved_peer(self):
+        self.assertNotIn("FAIL", [s for s, _ in sevs(self._prof(effort="xhigh"))])
+
+    def test_effort_from_wrong_peer_vocabulary_is_fail(self):
+        # host=claude → peer=codex. `max` 는 claude 어휘라 codex 가 조용히 무시 → 정적으로 차단.
+        issues = sevs(self._prof(effort="max"))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("max" in m for _, m in issues))
+        # host 를 뒤집으면 같은 값이 유효해진다(peer=claude).
+        prof = self._prof(effort="max"); prof["runtime"]["host"] = "codex"
+        self.assertNotIn("FAIL", [s for s, _ in sevs(prof)])
+
+    def test_effort_without_cross_model_on_is_warn(self):
+        prof = self._prof(effort="high"); prof["options"]["cross_model"] = False
+        issues = sevs(prof)
+        self.assertNotIn("FAIL", [s for s, _ in issues])
+        self.assertTrue(any("무동작" in m for _, m in issues))
+
+    def test_non_string_effort_is_fail_not_crash(self):
+        self.assertEqual(severity_of(sevs(self._prof(effort=3))), "FAIL")
+
+    def test_unknown_cross_model_key_is_fail(self):
+        # `effrot: max` 가 조용히 무시되면 기본 high 로 돌면서 설정대로 돈 것처럼 보인다.
+        issues = sevs(self._prof(effrot="max"))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("effrot" in m for _, m in issues))
+
+    def test_known_cross_model_keys_pass(self):
+        prof = self._prof(peer="opposite_runtime", on_unavailable="clean_context_same_runtime", effort="high")
+        self.assertNotIn("FAIL", [s for s, _ in sevs(prof)])
+
+    def test_unimplemented_peer_or_on_unavailable_value_is_fail(self):
+        # 엔진은 값으로 분기하지 않는다 — `on_unavailable: block` 은 안전정책처럼 보이지만 무동작이다.
+        self.assertEqual(severity_of(sevs(self._prof(on_unavailable="block"))), "FAIL")
+        self.assertEqual(severity_of(sevs(self._prof(peer="claude"))), "FAIL")
+
+    def test_retired_invocation_key_is_fail(self):
+        # 옛 gstack wrapper 시절 키. 남아 있으면 조용히 무시되므로 FAIL 로 이주를 강제한다.
+        self.assertEqual(severity_of(sevs(self._prof(invocation="codex exec"))), "FAIL")
+
+    def test_non_mapping_cross_model_is_fail_without_jsonschema(self):
+        # jsonschema 는 선택 의존성 — 구조검증이 skip 되는 환경에서 의미검증이 유일한 관문이다.
+        from sage.profile_validate import _cross_model_issues
+        issues = _cross_model_issues({"cross_model": ["effort", "max"]})
+        self.assertEqual([s for s, _ in issues], ["FAIL"])
+        self.assertEqual([], _cross_model_issues({}))   # 미설정은 정상
+
+
+class TestTeamAgentModelEffort(unittest.TestCase):
+    def _prof(self, host="claude", **runtime):
+        role = {"enabled": True}
+        if runtime:
+            role["runtime"] = runtime
+        return {"runtime": {"host": host}, "team": {"core": {"leader": role}}}
+
+    def test_unset_is_clean(self):
+        self.assertNotIn("FAIL", [s for s, _ in sevs(self._prof())])
+
+    def test_valid_alias_and_effort(self):
+        self.assertNotIn("FAIL", [s for s, _ in sevs(self._prof(model="opus", effort="xhigh"))])
+
+    def test_full_model_id_allowed(self):
+        self.assertNotIn("FAIL", [s for s, _ in sevs(self._prof(model="claude-opus-4-8"))])
+
+    def test_integer_effort_allowed(self):
+        self.assertNotIn("FAIL", [s for s, _ in sevs(self._prof(effort=8))])
+
+    def test_bool_effort_rejected(self):
+        # bool 은 int 의 서브클래스 — `effort: true` 가 effort=1 로 통과하면 안 됨.
+        self.assertEqual(severity_of(sevs(self._prof(effort=True))), "FAIL")
+
+    def test_model_typo_is_fail(self):
+        issues = sevs(self._prof(model="opuss"))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("opuss" in m and "leader" in m for _, m in issues))
+
+    def test_model_id_with_newline_is_fail(self):
+        # frontmatter 로 그대로 주입되므로 개행이 섞인 id 는 키 주입 통로가 된다.
+        self.assertEqual(severity_of(sevs(self._prof(model="claude-x\nname: replaced"))), "FAIL")
+
+    def test_effort_typo_is_fail(self):
+        self.assertEqual(severity_of(sevs(self._prof(effort="ultra"))), "FAIL")
+
+    def test_unknown_runtime_key_is_fail(self):
+        self.assertEqual(severity_of(sevs(self._prof(modle="opus"))), "FAIL")
+
+    def test_runtime_non_dict_is_fail_not_crash(self):
+        prof = {"runtime": {"host": "claude"}, "team": {"core": {"leader": {"runtime": "opus"}}}}
+        self.assertEqual(severity_of(sevs(prof)), "FAIL")
+
+    def test_codex_host_warns_inert(self):
+        issues = sevs(self._prof(host="codex", model="opus"))
+        self.assertNotIn("FAIL", [s for s, _ in issues])
+        self.assertTrue(any("무동작" in m for _, m in issues))
+
+    def test_role_typo_is_fail_not_silently_ignored(self):
+        # `reviewerr` 를 무시하면 설정이 죽은 필드가 된다 — 렌더에도 doctor 에도 안 잡힘.
+        prof = {"runtime": {"host": "claude"}, "team": {"core": {"reviewerr": {"runtime": {"model": "opus"}}}}}
+        issues = sevs(prof)
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("reviewerr" in m for _, m in issues))
+
+    def test_legacy_role_level_model_warns_inert(self):
+        # 옛 프로필의 죽은 필드. 조용히 승격되지 않고, 조용히 무시되지도 않는다.
+        prof = {"runtime": {"host": "claude"}, "team": {"core": {"reviewer": {"model": "sonnet"}}}}
+        issues = sevs(prof)
+        self.assertNotIn("FAIL", [s for s, _ in issues])
+        self.assertTrue(any("무동작" in m and "runtime" in m for _, m in issues))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

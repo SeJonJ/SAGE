@@ -426,6 +426,33 @@ def _knowledge_capture_issues(profile):
     return issues
 
 
+def _cross_model_issues(profile):
+    """cross_model 검증. 판정은 review 의 `cross_model_issues` 가 소유한다 — validate 와 cross-check 가
+    서로 다른 규칙을 쓰면, cross-check 가 오타 키/미구현 값을 조용히 무시한 채 기본값으로 돈다(codex 7R).
+    여기서는 그 위에 "설정했지만 cross_model:false 라 무동작" WARN 만 얹는다."""
+    from sage.commands.review import cross_model_issues, resolve_effort
+
+    issues = list(cross_model_issues(profile))
+    if any(sev == "FAIL" for sev, _ in issues):
+        return issues
+    _, configured = resolve_effort(profile)
+    opts = profile.get("options")
+    on = bool(opts.get("cross_model", False)) if isinstance(opts, dict) else False
+    if configured is not None and not on:
+        issues.append(("WARN", f"cross_model.effort={configured} 이나 options.cross_model=false → "
+                               f"cross-model 미수행이라 무동작"))
+    return issues
+
+
+def _team_agent_issues(profile):
+    """team.core.<role>.runtime.{model,effort} 검증. 판정은 install 의 `team_runtime_issues` 가 소유한다 —
+    install(주입 직전 관문)과 validate 가 서로 다른 규칙을 쓰면, validate 를 건너뛴 `install --force` 가
+    오타 설정을 조용히 무시한 채 성공한다(codex 4R)."""
+    from sage.commands.install import team_runtime_issues
+
+    return team_runtime_issues(profile)
+
+
 def validate_profile(profile, root):
     """구조 + 의미 검증 결과 [(severity, message)]. 어떤 입력에도 예외를 던지지 않는다(totality 계약).
 
@@ -444,7 +471,8 @@ def validate_profile(profile, root):
     issues = _schema_issues(profile, root)
     try:
         issues = issues + _semantic_issues(profile, root) + _review_loop_issues(profile) \
-            + _acceptance_issues(profile) + _knowledge_capture_issues(profile)
+            + _acceptance_issues(profile) + _knowledge_capture_issues(profile) \
+            + _cross_model_issues(profile) + _team_agent_issues(profile)
     except Exception as e:
         issues.append(("FAIL", f"profile 의미검증 중 예외 — malformed profile 추정({type(e).__name__}). "
                                f"구조(중첩 값 타입) 점검 필요"))

@@ -48,15 +48,100 @@ def register(sub):
 
 # ---- 순수 헬퍼(테스트 직격) ----
 
-def _peer_command(peer):
+# peer CLI 가 실제로 받는 reasoning effort 값(각 CLI 로 실증). 두 CLI 모두 어휘가 다르고,
+# **codex 는 모르는 값을 조용히 무시**한다(오타 → 리뷰 강도가 말없이 기본값으로 떨어짐).
+# 그래서 SAGE 가 fail-closed 로 먼저 거른다.
+PEER_EFFORTS = {
+    "codex":  ("minimal", "low", "medium", "high", "xhigh"),
+    "claude": ("low", "medium", "high", "xhigh", "max"),
+}
+# cross_model.effort 미설정 시 SAGE 가 쓰는 값. 두 peer 어휘의 교집합에 있어 host 를 안 가린다.
+# peer CLI 기본값에 맡기지 않는 이유: Phase 05 는 적대적 리뷰라 강도가 조용히 낮아지면 안 된다.
+DEFAULT_EFFORT = "high"
+
+CROSS_MODEL_KEYS = frozenset({"peer", "on_unavailable", "effort"})
+# peer/on_unavailable 은 엔진이 값으로 분기하지 않는다 — reviewer_resolution 이 host 의 반대 런타임을
+# 계산하고, peer 미가용이면 항상 clean-context 로 폴백한다. 즉 이 키들은 그 동작을 *서술*할 뿐이다.
+# 다른 값을 쓰면(`on_unavailable: block`) 안전정책처럼 보이지만 아무 일도 안 하므로 FAIL 로 막는다.
+CROSS_MODEL_FIXED = {"peer": "opposite_runtime", "on_unavailable": "clean_context_same_runtime"}
+
+
+def intended_peer(profile):
+    """검증 대상 peer = host 의 반대 런타임. peer CLI 도달 가능성과 무관하다 —
+    peer 가 마침 미가용이면 잘못된 설정이 검증 없이 통과해버린다."""
+    rt = profile.get("runtime") if isinstance(profile, dict) else None
+    host = rt.get("host", "claude") if isinstance(rt, dict) else "claude"
+    return "codex" if host == "claude" else "claude"
+
+
+def resolve_effort(profile):
+    """(effort, configured) — configured 가 None 이면 DEFAULT_EFFORT 를 쓴 것.
+    `or` 로 미설정 판정하면 `effort: false` / `effort: 0` 이 조용히 기본값으로 흡수돼 fail-closed 가 깨진다."""
+    cm = profile.get("cross_model") if isinstance(profile, dict) else None
+    configured = cm.get("effort") if isinstance(cm, dict) else None
+    if configured is None or configured == "":
+        configured = None
+    return (DEFAULT_EFFORT if configured is None else configured), configured
+
+
+def cross_model_issues(profile):
+    """profile.cross_model 검증 → [(severity, message)]. `sage validate`·`sage cross-check` **단일 소스**.
+
+    두 곳이 서로 다른 규칙을 쓰면, cross-check 가 `effrot: xhigh` 나 `on_unavailable: block` 을
+    조용히 무시한 채 기본값으로 돌면서 설정대로 돈 것처럼 보인다(codex 7R).
+    """
+    cm = profile.get("cross_model") if isinstance(profile, dict) else None
+    if cm in (None, ""):
+        return []
+    if not isinstance(cm, dict):
+        # jsonschema 는 선택 의존성 → 구조검증이 skip 되는 환경에서 여기가 유일한 관문이다.
+        return [("FAIL", f"cross_model 은 매핑이어야 함 (받음: {type(cm).__name__})")]
+    issues = []
+    unknown = [k for k in cm if k not in CROSS_MODEL_KEYS]
+    if unknown:
+        # `effrot: max` 가 조용히 무시되면 기본값으로 돌면서 설정대로 돈 것처럼 보인다.
+        issues.append(("FAIL", f"cross_model 의 알 수 없는 키: {', '.join(sorted(str(k) for k in unknown))} "
+                               f"(허용: {', '.join(sorted(CROSS_MODEL_KEYS))})"))
+    for key, only in CROSS_MODEL_FIXED.items():
+        val = cm.get(key)
+        if val not in (None, "") and val != only:
+            issues.append(("FAIL", f"cross_model.{key}={val!r} 는 엔진이 구현하지 않는 값 — "
+                                   f"`{only}` 만 지원합니다(다른 값은 무동작이라 안전정책으로 오인됩니다)"))
+    effort, configured = resolve_effort(profile)
+    if configured is not None:
+        issue = effort_issue(intended_peer(profile), effort)
+        if issue:
+            issues.append(("FAIL", issue))
+    return issues
+
+
+def effort_issue(peer, effort):
+    """cross_model.effort 검증 → 문제 문자열(없으면 None). validate/doctor/cross-check 공용."""
+    if effort in (None, ""):
+        return None
+    if peer not in PEER_EFFORTS:
+        return f"cross_model.effort: 알 수 없는 peer {peer!r}"
+    if effort not in PEER_EFFORTS[peer]:
+        return (f"cross_model.effort={effort!r} 는 {peer} 가 모르는 값 "
+                f"(허용: {', '.join(PEER_EFFORTS[peer])}). {peer} 는 모르는 값을 조용히 무시하므로 차단합니다")
+    return None
+
+
+def _peer_command(peer, effort=None):
     """peer 런타임 비대화 리뷰 argv(프롬프트 제외). shell 미경유(주입 안전).
     프롬프트는 **stdin** 으로 전달한다(codex R1 P1): positional arg 로 넘기면 큰 diff 가 OS ARG_MAX 를
-    넘겨 모든 대형 리뷰가 same_runtime 으로 degrade. codex exec/claude -p 둘 다 prompt 부재 시 stdin 을 읽는다."""
+    넘겨 모든 대형 리뷰가 same_runtime 으로 degrade. codex exec/claude -p 둘 다 prompt 부재 시 stdin 을 읽는다.
+
+    model 은 지정하지 않는다 — peer CLI 자신의 설정이 고른 모델을 존중한다. effort 는 호출자가
+    해석한 값(profile `cross_model.effort` 또는 DEFAULT_EFFORT)을 넘긴다. None 이면 argv 에 아무것도
+    붙이지 않아 peer CLI 기본값이 된다."""
     if peer == "codex":
-        # codex exec: 비대화 1턴, read-only 샌드박스 + reasoning high. PROMPT 생략 → stdin 읽기.
-        return ["codex", "exec", "--json", "-s", "read-only", "-c", 'model_reasoning_effort="high"']
+        # codex exec: 비대화 1턴, read-only 샌드박스. PROMPT 생략 → stdin 읽기.
+        cmd = ["codex", "exec", "--json", "-s", "read-only"]
+        return cmd + ["-c", f'model_reasoning_effort="{effort}"'] if effort else cmd
     if peer == "claude":
-        return ["claude", "-p", "--output-format", "json"]
+        cmd = ["claude", "-p", "--output-format", "json"]
+        return cmd + ["--effort", effort] if effort else cmd
     raise ValueError(f"unknown peer runtime: {peer!r}")
 
 
@@ -100,11 +185,11 @@ def _parse_peer_output(peer, text):
 
 # ---- subprocess 경계(테스트는 이 함수를 monkeypatch) ----
 
-def _invoke_peer(peer, prompt, timeout):
+def _invoke_peer(peer, prompt, timeout, effort=None):
     """peer 런타임을 비대화 실행 → (ok, review_text, err). 미설치/타임아웃/비정상종료/파싱실패 = (False, None, 사유)."""
     if not shutil.which(peer):
         return False, None, f"{peer} CLI 미설치(PATH 없음)"
-    cmd = _peer_command(peer)
+    cmd = _peer_command(peer, effort)
     try:
         # 프롬프트는 stdin 으로(ARG_MAX 회피, codex R1 P1). codex exec/claude -p 가 stdin 을 프롬프트로 읽음.
         # encoding 명시(codex R2 P2): text=True 만 두면 locale 인코딩 사용 → C-locale 호스트에서 한글
@@ -181,7 +266,16 @@ def run_review(args):
 def run_cross_check(args):
     """cross-model 경로. reviewer_resolution 으로 peer 결정 → 도달 가능하면 직접 호출, 아니면 폴백 표면화."""
     root = _find_root(args.root)
-    _, _, rr = _load_profile_caps(root)
+    profile, _, rr = _load_profile_caps(root)
+
+    # cross_model 검증은 폴백 판정보다 **먼저** — peer 가 마침 미가용이면 잘못된 설정이 통과해버린다.
+    # `sage validate` 와 같은 규칙(cross_model_issues)을 쓴다: 다르면 한쪽이 조용히 무시된다.
+    fails = [m for sev, m in cross_model_issues(profile) if sev == "FAIL"]
+    if fails:
+        for m in fails:
+            print(f"[sage cross-check] TOOL ERROR: {m}", file=sys.stderr)
+        return 2
+    effort, configured = resolve_effort(profile)
 
     if rr["reviewer_mode"] != "opposite_runtime":
         # cross 미설정이거나 peer CLI 미가용 → same-runtime 폴백을 침묵시키지 않고 명시(degraded 근거).
@@ -192,6 +286,7 @@ def run_cross_check(args):
         return 3 if getattr(args, "strict", False) else 0
 
     peer = rr["reviewer_runtime"]
+
     try:
         prompt = open(args.packet_file, encoding="utf-8").read()
     except Exception as e:
@@ -201,8 +296,9 @@ def run_cross_check(args):
         print("[sage cross-check] TOOL ERROR: 패킷이 비어 있음", file=sys.stderr)
         return 2
 
-    print(f"[sage cross-check] {peer} 직접 호출 중(timeout {args.timeout}s)…", file=sys.stderr)
-    ok, review, err = _invoke_peer(peer, prompt, args.timeout)
+    eff_note = f"effort={effort}" + ("" if configured else " (기본값)")
+    print(f"[sage cross-check] {peer} 직접 호출 중(timeout {args.timeout}s, {eff_note})…", file=sys.stderr)
+    ok, review, err = _invoke_peer(peer, prompt, args.timeout, effort)
     if not ok:
         # peer 도달 실패 → 폴백을 침묵시키지 않음(6차 버그 수정). degraded 로 게이트가 잡게 한다.
         print(f"[sage cross-check] ⚠️  {peer} 리뷰 실패 → same-runtime 폴백: {err}", file=sys.stderr)

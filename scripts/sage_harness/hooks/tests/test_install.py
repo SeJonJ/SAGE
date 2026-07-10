@@ -446,11 +446,219 @@ class TestInstall(unittest.TestCase):
             install.run(Args("claude", d))
             prof_path = os.path.join(d, "sage", "project-profile.yaml")
             guide_path = os.path.join(d, "AGENT_GUIDE.md")
-            Path(prof_path).write_text("CUSTOM_PROFILE_MARKER\n", encoding="utf-8")   # 사용자 커스터마이즈
+            # 사용자 커스터마이즈. profile 은 매핑이어야 한다 — 스칼라면 install 이 fail-closed 로 거부한다.
+            Path(prof_path).write_text("project: { name: CUSTOM_PROFILE_MARKER }\n", encoding="utf-8")
             Path(guide_path).write_text("STALE_ENGINE\n", encoding="utf-8")           # 엔진 파일 훼손
-            install.run(Args("claude", d, force=True))
+            self.assertEqual(install.run(Args("claude", d, force=True)), 0)
             self.assertIn("CUSTOM_PROFILE_MARKER", Path(prof_path).read_text(encoding="utf-8"))     # profile 보존
             self.assertNotIn("STALE_ENGINE", Path(guide_path).read_text(encoding="utf-8"))          # 엔진은 force 갱신
+
+
+_AGENT_SRC = "---\nname: leader\ndescription: \"x\"\n---\n\n# leader\n"
+
+
+class TestAgentRender(unittest.TestCase):
+    def test_no_overrides_is_byte_identical(self):
+        # 미설정이면 소스 그대로 → 기존 설치가 drift 로 뜨지 않는다.
+        self.assertEqual(install.render_core_agent(_AGENT_SRC, {}), _AGENT_SRC)
+
+    def test_injects_into_frontmatter_before_close(self):
+        out = install.render_core_agent(_AGENT_SRC, {"model": "opus", "effort": "xhigh"})
+        head = out.split("\n---\n", 1)[0]
+        self.assertIn("model: opus", head)
+        self.assertIn("effort: xhigh", head)
+        self.assertIn("name: leader", head)      # 기존 키 보존
+        self.assertTrue(out.endswith("# leader\n"))   # 본문 보존
+
+    def test_reinjection_is_idempotent(self):
+        once = install.render_core_agent(_AGENT_SRC, {"model": "opus"})
+        twice = install.render_core_agent(once, {"model": "opus"})
+        self.assertEqual(once, twice)
+        self.assertEqual(1, once.count("model: opus"))
+
+    def test_no_frontmatter_left_alone(self):
+        self.assertEqual(install.render_core_agent("# plain\n", {"model": "opus"}), "# plain\n")
+
+    def test_effort_defaults_to_high_model_does_not_default(self):
+        # effort 는 미설정이어도 high. model 은 기본값 없음(host CLI 가 고른 모델 유지).
+        for aid in install.core_agent_ids():
+            self.assertEqual(install.agent_frontmatter_overrides({}, aid), {"effort": "high"})
+        self.assertNotIn("model", install.agent_frontmatter_overrides({}, "reviewer"))
+
+    def test_overrides_read_from_role_runtime(self):
+        prof = {"team": {"core": {"qa": {"enabled": True, "runtime": {"model": "sonnet", "effort": "low"}}}}}
+        self.assertEqual(install.agent_frontmatter_overrides(prof, "qa"), {"model": "sonnet", "effort": "low"})
+        self.assertEqual(install.agent_frontmatter_overrides(prof, "leader"), {"effort": "high"})
+
+    def test_legacy_role_level_model_is_never_promoted(self):
+        # 옛 템플릿은 reviewer/qa 에 `model: sonnet` 을 박아뒀다(죽은 필드). 이걸 승격하면 업그레이드만으로
+        # Phase 05 리뷰어가 조용히 다운그레이드된다 → runtime 아래가 아니면 무시해야 한다.
+        legacy = {"team": {"core": {"reviewer": {"enabled": True, "model": "sonnet"}}}}
+        self.assertEqual(install.agent_frontmatter_overrides(legacy, "reviewer"), {"effort": "high"})
+
+    def test_non_core_agent_gets_nothing(self):
+        self.assertEqual(install.agent_frontmatter_overrides({}, "not-a-core-agent"), {})
+
+    def test_overrides_tolerate_malformed_profile(self):
+        for bad in (None, "oops", {"team": "oops"}, {"team": {"core": "oops"}},
+                    {"team": {"core": {"qa": "oops"}}}, {"team": {"core": {"qa": {"runtime": "oops"}}}}):
+            self.assertEqual(install.agent_frontmatter_overrides(bad, "qa"), {"effort": "high"})
+
+    def test_frontmatter_issue_rejects_bad_values(self):
+        self.assertIsNone(install.agent_frontmatter_issue({"model": "opus", "effort": "max"}))
+        self.assertIsNone(install.agent_frontmatter_issue({"model": "claude-opus-4-8", "effort": 8}))
+        self.assertIsNone(install.agent_frontmatter_issue({}))
+        self.assertIsNotNone(install.agent_frontmatter_issue({"model": "opuss"}))
+        self.assertIsNotNone(install.agent_frontmatter_issue({"effort": "ultra"}))
+        self.assertIsNotNone(install.agent_frontmatter_issue({"effort": True}))   # bool 은 int 서브클래스
+        self.assertIsNotNone(install.agent_frontmatter_issue({"effort": 0}))
+
+    def test_model_id_cannot_smuggle_extra_frontmatter_keys(self):
+        # prefix 검사만 하면 `claude-x\nname: replaced` 가 통과해 frontmatter 에 키를 주입한다.
+        for evil in ("claude-x\nname: replaced", "claude-x\n---\nbody", "claude-", "claude-x y", " claude-x"):
+            self.assertIsNotNone(install.agent_frontmatter_issue({"model": evil}), f"{evil!r} 가 통과함")
+
+    def test_quoted_and_spaced_keys_are_replaced_not_duplicated(self):
+        # `"model": x` / `model : x` 도 정상 YAML 최상위 키다. 못 알아보면 제거를 놓쳐 중복 키가 된다.
+        for line in ('"model": sonnet', "model : sonnet", "'model': sonnet"):
+            out = install.render_core_agent(f"---\nname: x\n{line}\n---\nbody\n", {"model": "opus"})
+            model_lines = [ln for ln in out.split("\n") if ln.split(":", 1)[0].strip().strip("'\"") == "model"]
+            self.assertEqual(["model: opus"], model_lines, f"{line!r} → {out!r}")
+
+    def test_boundary_allows_trailing_space_but_not_indent(self):
+        self.assertTrue(install._is_fm_boundary("--- "))
+        self.assertFalse(install._is_fm_boundary("  ---"))
+        self.assertFalse(install._is_fm_boundary("----"))
+
+    def test_shipped_core_renders_are_parseable(self):
+        # 렌더가 BOM/CRLF/비-frontmatter 면 주입이 조용히 no-op 된다 → 배송 자산은 계약을 지켜야 한다.
+        for aid in install.core_agent_ids():
+            text = Path(install._core_agent_source(aid)).read_text(encoding="utf-8")
+            self.assertTrue(text.startswith("---\n"), f"{aid}: frontmatter 시작 아님")
+            self.assertNotIn("\r", text, f"{aid}: CRLF")
+            self.assertIn("effort: high", install.render_core_agent(text, {"effort": "high"}))
+
+    def test_install_aborts_before_writing_invalid_frontmatter(self):
+        # `sage validate` 를 건너뛰고 install --force 만 돌려도 잘못된 값이 배포되면 안 된다.
+        # 오타 키/역할은 주입 직전 overrides 로는 기본값으로 축소돼 보이지 않는다 → 원본 구조를 봐야 한다.
+        for bad in ("leader: { runtime: { model: opuss } }",
+                    "leader: { runtime: { modle: opus } }",     # 키 오타
+                    "leaderr: { runtime: { model: opus } }",    # 역할 오타
+                    "leader: { runtime: oops }"):
+            with tempfile.TemporaryDirectory() as d:
+                install.run(Args("claude", d))
+                leader = Path(os.path.join(d, ".claude", "agents", "leader.md"))
+                before = leader.read_text(encoding="utf-8")
+                Path(os.path.join(d, "sage", "project-profile.yaml")).write_text(
+                    f"team: {{ core: {{ {bad} }} }}\n", encoding="utf-8")
+                self.assertEqual(install.run(Args("claude", d, force=True)), 1, bad)
+                self.assertEqual(leader.read_text(encoding="utf-8"), before, bad)   # 아무것도 안 씀
+
+    def test_team_runtime_issues_never_raises(self):
+        # totality: 어떤 profile 입력에도 크래시 금지. 숫자 키는 sorted(mixed) 에서 TypeError 였다.
+        for prof in (None, "oops", {"team": "oops"}, {"team": {"core": "oops"}},
+                     {"team": {"core": {"leader": "oops"}}},
+                     {"team": {"core": {1: {"runtime": {"model": "opus"}}}}},
+                     {"team": {"core": {"leader": {"runtime": {1: "x", "model": "opus"}}}}},
+                     {"team": {"core": {"leader": {"runtime": {"model": ["a"]}}}}}):
+            install.team_runtime_issues(prof)   # 예외 없이 반환하면 통과
+
+    def test_non_mapping_role_spec_is_fail_not_silent_default(self):
+        # 조용히 넘기면 그 역할 설정이 통째로 무시된 채 기본 렌더가 배포된다.
+        fails = [m for s, m in install.team_runtime_issues({"team": {"core": {"leader": "oops"}}}) if s == "FAIL"]
+        self.assertTrue(fails)
+
+    def test_role_level_key_typo_is_fail(self):
+        # `runtim:` 은 아무도 안 읽어 설정한 model 이 조용히 사라지고 기본 렌더가 나간다.
+        prof = {"team": {"core": {"leader": {"runtim": {"model": "opus"}}}}}
+        fails = [m for s, m in install.team_runtime_issues(prof) if s == "FAIL"]
+        self.assertTrue(fails)
+        self.assertIn("runtim", fails[0])
+
+    def test_legitimate_role_keys_pass(self):
+        prof = {"team": {"core": {"reviewer": {"enabled": True, "owns": ["x"], "runtime": {"effort": "max"},
+                                               "cross_model": {"capability": "from_options.cross_model"}}}}}
+        self.assertEqual([], [m for s, m in install.team_runtime_issues(prof) if s == "FAIL"])
+
+    def test_install_and_validate_share_one_rule(self):
+        # 두 곳이 다른 규칙을 쓰면 validate 를 건너뛴 install 이 오타를 조용히 통과시킨다.
+        import sage.profile_validate as pv
+        for prof in ({"team": {"core": {"reviewer": {"runtime": {"modle": "opus"}}}}},
+                     {"team": {"core": {"reviewerr": {"runtime": {"model": "opus"}}}}},
+                     {"team": {"core": {"reviewer": {"runtime": {"model": "opuss"}}}}}):
+            self.assertTrue([m for s, m in install.team_runtime_issues(prof) if s == "FAIL"], prof)
+            self.assertEqual(pv.severity_of(pv.validate_profile(prof, REPO)), "FAIL", prof)
+
+    def test_corrupt_profile_aborts_install_not_silently_default_rendered(self):
+        # 파싱 실패를 {} 로 삼키면 설정이 조용히 무시된 채 기본 렌더가 배포된다.
+        for body in ("team: { core: {\n", "- just\n- a list\n"):
+            with tempfile.TemporaryDirectory() as d:
+                install.run(Args("claude", d))
+                leader = Path(os.path.join(d, ".claude", "agents", "leader.md"))
+                before = leader.read_text(encoding="utf-8")
+                Path(os.path.join(d, "sage", "project-profile.yaml")).write_text(body, encoding="utf-8")
+                self.assertEqual(install.run(Args("claude", d, force=True)), 1, body)
+                self.assertEqual(leader.read_text(encoding="utf-8"), before, body)
+
+    def test_empty_profile_file_is_not_an_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            Path(os.path.join(d, "sage", "project-profile.yaml")).write_text("", encoding="utf-8")
+            self.assertEqual(install.run(Args("claude", d, force=True)), 0)
+
+    def test_codex_host_install_still_rejects_typo_role(self):
+        # codex 는 주입하지 않지만, 오타 역할은 어느 host 에서든 설정을 죽인다.
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("codex", d, no_global_skill=True))
+            Path(os.path.join(d, "sage", "project-profile.yaml")).write_text(
+                "runtime: { host: codex }\nteam: { core: { leaderr: { runtime: { model: opus } } } }\n",
+                encoding="utf-8")
+            self.assertEqual(install.run(Args("codex", d, force=True, no_global_skill=True)), 1)
+
+    def test_block_scalar_frontmatter_survives(self):
+        # 줄 단위 파싱이 블록 스칼라 본문의 `  model:` 을 지우거나 들여쓴 `---` 를 종료로 오인하면 안 됨.
+        src = "---\nname: x\ndescription: |\n  model: 이건 본문이다\n  ---\n  effort: 이것도 본문\n---\nbody\n"
+        out = install.render_core_agent(src, {"effort": "high"})
+        self.assertIn("  model: 이건 본문이다", out)
+        self.assertIn("  effort: 이것도 본문", out)
+        self.assertIn("\neffort: high\n", out)
+        self.assertTrue(out.endswith("body\n"))
+
+    def test_drift_status_compares_against_render_not_source(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "leader.md"); dst = os.path.join(d, "installed.md")
+            Path(src).write_text(_AGENT_SRC, encoding="utf-8")
+            ov = {"model": "opus"}
+            Path(dst).write_text(install.render_core_agent(_AGENT_SRC, ov), encoding="utf-8")
+            # 주입된 설치본은 소스와 다르지만, 같은 overrides 기준으로는 ok 여야 한다(영구 stale 방지).
+            self.assertEqual(install.core_render_status(src, dst, ov)[0], "ok")
+            self.assertEqual(install.core_render_status(src, dst)[0], "stale")   # overrides 없으면 drift
+
+    def test_install_renders_agent_from_existing_profile(self):
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            leader = Path(os.path.join(d, ".claude", "agents", "leader.md"))
+            first = leader.read_text(encoding="utf-8")
+            self.assertIn("effort: high", first)     # 템플릿 profile 미설정 → 기본 effort
+            self.assertNotIn("model:", first)        # model 은 기본값 없음
+            prof = os.path.join(d, "sage", "project-profile.yaml")
+            Path(prof).write_text(
+                "runtime: { host: claude }\n"
+                "team: { core: { leader: { enabled: true, runtime: { model: opus, effort: max } } } }\n",
+                encoding="utf-8")
+            install.run(Args("claude", d, force=True))   # sage-init 후 재배포 경로
+            text = leader.read_text(encoding="utf-8")
+            self.assertIn("model: opus", text)
+            self.assertIn("effort: max", text)
+            self.assertNotIn("effort: high", text)   # 기본값이 남아 중복되지 않는다
+
+    def test_codex_host_agents_get_no_frontmatter_injection(self):
+        # .codex/agents/*.md 는 model/effort 해석 기전이 없다 → 주입하면 죽은 필드.
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("codex", d, no_global_skill=True))
+            text = Path(os.path.join(d, ".codex", "agents", "leader.md")).read_text(encoding="utf-8")
+            self.assertNotIn("effort:", text)
+            self.assertNotIn("model:", text)
 
 
 if __name__ == "__main__":

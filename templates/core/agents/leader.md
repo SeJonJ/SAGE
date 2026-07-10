@@ -18,5 +18,7 @@ synthesizes results.
   over CORE guidance and is not shipped by `sage install`
 
 ## runtime_bindings
-- model: (from profile.team.core.leader.model)
+- model / effort: (from profile.team.core.leader.runtime; unset model = host CLI default,
+  unset effort = high). claude host only — injected into .claude/agents/leader.md frontmatter
+  by `sage install`; re-run `sage install --force` after changing them.
 - claims/allowlist are auto-derived into {id}.claims.yml by reverse_extract

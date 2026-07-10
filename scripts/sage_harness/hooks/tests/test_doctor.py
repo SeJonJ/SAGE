@@ -210,5 +210,104 @@ class TestDoctor(unittest.TestCase):
         self.assertIsNone(dst)
 
 
+class TestProfileDiscovery(unittest.TestCase):
+    """맨손 `sage doctor` 가 프로젝트 profile 을 못 찾으면 로스터 에이전트 drift 점검을 통째로 건너뛴다
+    (프로젝트 루트를 profile 경로에서 파생하므로). 그러면 stale 안내가 사실상 동작하지 않는다."""
+
+    def test_finds_profile_in_cwd(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "sage", "project-profile.yaml")
+            os.makedirs(os.path.dirname(p)); Path(p).write_text("runtime: { host: claude }\n", encoding="utf-8")
+            self.assertEqual(os.path.realpath(doctor._discover_profile(d)), os.path.realpath(p))
+
+    def test_walks_up_from_subdirectory(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "sage", "project-profile.yaml")
+            os.makedirs(os.path.dirname(p)); Path(p).write_text("runtime: { host: claude }\n", encoding="utf-8")
+            deep = os.path.join(d, "a", "b", "c"); os.makedirs(deep)
+            self.assertEqual(os.path.realpath(doctor._discover_profile(deep)), os.path.realpath(p))
+
+    def test_returns_none_outside_a_project(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(doctor._discover_profile(os.path.join(d)))
+
+    def test_stops_at_repo_boundary(self):
+        # 상위 저장소의 profile 을 집어 남의 프로젝트를 진단하면 안 된다.
+        with tempfile.TemporaryDirectory() as d:
+            outer = os.path.join(d, "sage"); os.makedirs(outer)
+            Path(os.path.join(outer, "project-profile.yaml")).write_text("runtime: {}\n", encoding="utf-8")
+            inner = os.path.join(d, "vendor", "nested"); os.makedirs(inner)
+            Path(os.path.join(inner, ".git")).write_text("gitdir: x\n", encoding="utf-8")
+            self.assertIsNone(doctor._discover_profile(inner))
+            # 경계가 없으면 상위 profile 을 집는다(중첩 repo 가 아닐 때의 정상 동작).
+            plain = os.path.join(d, "vendor", "plain"); os.makedirs(plain)
+            self.assertIsNotNone(doctor._discover_profile(plain))
+
+    def test_bare_repo_is_a_boundary(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "sage"))
+            Path(os.path.join(d, "sage", "project-profile.yaml")).write_text("runtime: {}\n", encoding="utf-8")
+            bare = os.path.join(d, "mirror.git")
+            for n in ("objects", "refs"):
+                os.makedirs(os.path.join(bare, n))
+            Path(os.path.join(bare, "HEAD")).write_text("ref: refs/heads/main\n", encoding="utf-8")
+            self.assertIsNone(doctor._discover_profile(bare))
+
+    def test_invalid_agent_runtime_is_error_not_stale(self):
+        # ❌ 를 stale 로 세면 doctor 가 rc=0 으로 `install --force` 를 권하는데 install 은 거부한다.
+        with tempfile.TemporaryDirectory() as d:
+            install.run(_InstallArgs("claude", d))
+            Path(os.path.join(d, "sage", "project-profile.yaml")).write_text(
+                "runtime: { host: claude }\n"
+                "team: { core: { reviewer: { runtime: { model: opuss } } } }\n", encoding="utf-8")
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = doctor.run(Args(profile=os.path.join(d, "sage", "project-profile.yaml")))
+            v = out.getvalue()
+            self.assertEqual(rc, 1)
+            self.assertIn("profile 오류", v)
+            self.assertIn("opuss", v)
+            self.assertNotIn("갱신 필요", v)   # --force 를 권하지 않는다
+
+    def test_invalid_suppresses_force_advice_even_with_real_stale(self):
+        # invalid + 진짜 stale 이 섞여도 실패할 `install --force` 를 권하면 안 된다.
+        with tempfile.TemporaryDirectory() as d:
+            install.run(_InstallArgs("claude", d))
+            Path(os.path.join(d, ".claude", "skills", "sage-review", "SKILL.md")).write_text(
+                "STALE\n", encoding="utf-8")   # 실제 drift 유발
+            Path(os.path.join(d, "sage", "project-profile.yaml")).write_text(
+                "runtime: { host: claude }\n"
+                "team: { core: { reviewer: { runtime: { modle: opus } } } }\n", encoding="utf-8")
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = doctor.run(Args(profile=os.path.join(d, "sage", "project-profile.yaml")))
+            v = out.getvalue()
+            self.assertEqual(rc, 1)
+            self.assertIn("modle", v)
+            self.assertNotIn("갱신 필요", v)
+            self.assertIn("다시 진단", v)
+
+    def test_bare_doctor_checks_roster_agents_in_installed_project(self):
+        with tempfile.TemporaryDirectory() as d:
+            install.run(_InstallArgs("claude", d))
+            cwd = os.getcwd()
+            try:
+                os.chdir(d)
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    doctor.run(Args(profile=None))   # --profile 없이
+            finally:
+                os.chdir(cwd)
+            v = out.getvalue()
+            self.assertIn("[agent] reviewer", v)          # 점검을 건너뛰지 않음
+            self.assertNotIn("로스터 에이전트 점검 생략", v)
+
+
+class _InstallArgs:
+    def __init__(self, host, dest, prefix="sage", force=False, no_global_skill=True):
+        self.host = host; self.dest = dest; self.prefix = prefix; self.force = force
+        self.no_global_skill = no_global_skill
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

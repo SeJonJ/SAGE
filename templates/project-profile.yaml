@@ -116,13 +116,21 @@ runtime:                         # host runtime 모델 (§2.2). Claude 특권화
   external_reviewer: clean_context_same_runtime   # opposite_runtime | clean_context_same_runtime
   asset_ssot: deferred
 
-team:                            # CORE 5인(team.core). 역할명은 스택 중립 — 컴포넌트 매핑은 owns 가 담당. reviewer = Phase 05
+team:                            # CORE 로스터(team.core). 역할명은 스택 중립 — 컴포넌트 매핑은 owns 가 담당. reviewer = Phase 05
+  # 아래 5인 외에 convention-checker 도 CORE 에이전트다(기본값으로 충분해 항목을 생략).
+  # runtime 을 주려면 `convention-checker: { runtime: { effort: low } }` 처럼 추가하면 된다.
+  # `runtime: { model, effort }` 은 선택. 넣으면 claude host 의 .claude/agents/<id>.md frontmatter 로
+  # 주입된다. 값을 바꾼 뒤엔 `sage install --force` 로 렌더를 재배포(`sage doctor` 가 stale 로 알려줌).
+  # codex host 는 .codex/agents/*.md 에 해석 기전이 없어 무동작.
+  #   model  : opus | sonnet | haiku | fable | inherit | 전체 모델 id   (미설정 → host CLI 기본 모델)
+  #   effort : low | medium | high | xhigh | max | 양의 정수            (미설정 → high)
+  # 예) reviewer: { enabled: true, runtime: { model: opus, effort: max }, cross_model: {...} }
   core:
-    leader:        { enabled: true,  model: opus }
-    implementer-a: { enabled: true,  model: opus,   owns: [] }   # profile.components 의 컴포넌트 id 1개 할당(예: [core])
-    implementer-b: { enabled: true,  model: opus,   owns: [] }   # 두 번째 컴포넌트(단일 컴포넌트면 enabled:false 로 끔)
-    qa:            { enabled: true,  model: sonnet, owns: ["**/test/**"] }
-    reviewer: { enabled: true,  model: sonnet,
+    leader:        { enabled: true }
+    implementer-a: { enabled: true,  owns: [] }   # profile.components 의 컴포넌트 id 1개 할당(예: [core])
+    implementer-b: { enabled: true,  owns: [] }   # 두 번째 컴포넌트(단일 컴포넌트면 enabled:false 로 끔)
+    qa:            { enabled: true,  owns: ["**/test/**"] }
+    reviewer: { enabled: true,
                 cross_model: { capability: from_options.cross_model,
                                fallback: clean_context_same_runtime } }
   optional_reviewers: []         # roster 밖 온디맨드 (external-consultant류)
@@ -131,6 +139,10 @@ team:                            # CORE 5인(team.core). 역할명은 스택 중
 cross_model:                     # opposite-runtime 무상관 검증. 권장 optional
   peer: opposite_runtime         # host=claude → codex / host=codex → claude (하드코딩 금지)
   on_unavailable: clean_context_same_runtime
+  # effort: high                 # 선택. 미설정 → high. options.cross_model=true 일 때만 유효.
+  #                              #   peer=codex  : minimal | low | medium | high | xhigh
+  #                              #   peer=claude : low | medium | high | xhigh | max
+  #                              # model 은 지정하지 않는다 — peer CLI 설정의 몫.
   # peer CLI 가용성은 sage doctor 가 which(codex)/which(claude) 로 직접 판정한다.
   # claude-host → `codex exec`, codex-host → `claude -p` 를 SAGE 가 직접 호출(외부 도구 불필요).
 

@@ -142,6 +142,24 @@ reach thoroughness through the back-and-forth, not a wall of questions.
      module name). The review protocol blocks L3 until this is set.
 6. **`file_type_map`** — propose `{ glob, type }` first-match classification for
    logging from the stack you've established.
+7. **`team.core.<role>.runtime.model` / `.effort`** — optional per-agent runtime settings
+   for the CORE roles (`leader`, `implementer-a`, `implementer-b`, `qa`, `reviewer`,
+   `convention-checker`). Ask once, as a single topic; leaving both unset is a fine answer.
+   Note the nesting: these live under `runtime:`, *not* directly on the role — a bare
+   `model:` on the role is a legacy dead field and `sage validate` warns about it.
+   - `model`: `opus | sonnet | haiku | fable | inherit`, or a full model id (`claude-…`).
+     **Unset → the host CLI's own model.** SAGE never picks a model for you.
+   - `effort`: `low | medium | high | xhigh | max`, or a positive integer.
+     **Unset → `high`**, which SAGE injects rather than deferring to the CLI default.
+   - These bind on a **claude host only** — they are injected into
+     `.claude/agents/<id>.md` frontmatter. On a codex host `.codex/agents/*.md` has no
+     mechanism to read them, so SAGE does not inject them and `sage validate` reports any
+     that are set as inert. Don't offer the topic on a codex-host project.
+   - Do not quietly pin `reviewer` or `qa` to a cheaper model or a lower effort than the
+     rest — that silently weakens Phase 05 review. If the user wants that, make the trade
+     explicit.
+   - Changing these later requires `sage install --force` to re-render the agent files;
+     `sage doctor` reports the un-re-rendered files as `stale` until you do.
 
 Keep `pdca.*` at the standard 00–06 unless the user runs a different phase set
 (don't raise it as a question unless they bring it up).
@@ -166,6 +184,13 @@ toggle's detail entirely when it stays off.
     to verify the resolved reviewer mode before starting a cycle. If the user
     prefers not to install the peer CLI, that's fine — leave cross_model on with
     the same-runtime fallback, and say so.
+  - **Only when cross_model is on**, optionally offer `cross_model.effort` — the reasoning
+    effort SAGE passes to the peer CLI for its review. **Unset → `high`.** The vocabulary
+    differs per peer and a wrong value is **silently ignored by codex**, so `sage validate`
+    and `sage cross-check` reject it:
+    - peer `codex` (claude-host): `minimal | low | medium | high | xhigh`
+    - peer `claude` (codex-host): `low | medium | high | xhigh | max`
+    The peer's **model** is never configurable from SAGE — that stays the peer CLI's own setting.
 - **`options.obsidian` / `knowledge_capture`** — if used, set
   `knowledge_capture.vault_path` (empty path = vault features fully OFF) and the
   note convention. If a vault path is set, explicitly confirm the PDCA boundary

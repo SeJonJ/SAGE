@@ -12,7 +12,9 @@
 """
 import json
 import os
+import re
 import shutil
+import sys
 from pathlib import Path
 
 from sage import __version__
@@ -108,6 +110,44 @@ def _copy_tree(src_dir, dst_dir, force, created, skipped):
             _copy_file(s, d, force, created, skipped)
 
 
+def _installed_profile(dest):
+    """dest 의 인스턴스 profile → (profile, error). install 은 profile 을 --force 로도 덮지 않으므로,
+    `sage-init` 로 채운 뒤 `sage install --force` 를 다시 돌리면 그 값으로 에이전트가 재렌더된다.
+
+    파싱 실패를 `{}` 로 삼키면 **설정이 조용히 무시된 채 기본 렌더가 배포된다** → error 를 돌려
+    호출자가 무변경 exit 1 하게 한다(codex 5R). 파일 부재는 첫 install 이라 정상.
+    """
+    path = os.path.join(dest, "sage", "project-profile.yaml")
+    if not os.path.exists(path):
+        return {}, None
+    try:
+        import yaml
+    except ImportError:
+        return {}, f"pyyaml 미설치 — {path} 를 읽을 수 없어 에이전트 렌더를 결정할 수 없습니다 (pip install pyyaml)"
+    try:
+        data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    except Exception as e:
+        return {}, f"profile 파싱 실패: {path} ({type(e).__name__}: {e})"
+    if data is None:
+        return {}, None   # 빈 파일 = 미설정
+    if not isinstance(data, dict):
+        return {}, f"profile 최상위가 매핑이 아님: {path} (받음: {type(data).__name__})"
+    return data, None
+
+
+def _copy_agent_renders(src_dir, dst_dir, profile, force, created, skipped):
+    """CORE 에이전트 렌더 배치. claude host 만 profile 의 model/effort 를 frontmatter 로 주입한다
+    (codex 는 .codex/agents/<id>.md 를 model/effort 로 해석하는 기전이 없어 주입해도 무동작)."""
+    for fn in sorted(os.listdir(src_dir)) if os.path.isdir(src_dir) else []:
+        if not fn.endswith(".md"):
+            continue
+        src = os.path.join(src_dir, fn)
+        dst = os.path.join(dst_dir, fn)
+        overrides = agent_frontmatter_overrides(profile, fn[:-3])
+        _write(dst, render_core_agent(Path(src).read_text(encoding="utf-8"), overrides),
+               force, created, skipped)
+
+
 def _codex_skills_root():
     """codex 스킬 전역 루트 = $CODEX_HOME/skills (미설정 시 ~/.codex/skills). codex 바이너리 규약.
 
@@ -145,20 +185,189 @@ def core_agent_ids():
     return list(_CORE_AGENTS)
 
 
-def core_render_status(src, dst):
+# claude 에이전트 frontmatter 가 실제로 받는 reasoning effort(claude 바이너리 스키마 실측:
+# effort = enum(low|medium|high|xhigh|max) | int). model 은 free string(alias 또는 full id).
+AGENT_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+AGENT_MODEL_ALIASES = ("opus", "sonnet", "haiku", "fable", "inherit")
+# 전체 문자열 앵커 — prefix 검사만 하면 `claude-x\nname: replaced` 가 통과해 frontmatter 에 키를 주입한다.
+_MODEL_ID_RE = re.compile(r"\Aclaude-[A-Za-z0-9._-]+\Z")
+
+# effort 미설정 시 CORE 에이전트가 받는 값. host CLI 기본값에 맡기지 않는 이유: SAGE 의 PDCA 는
+# 설계·리뷰 중심이라 추론 강도가 조용히 낮아지면 게이트 품질이 함께 떨어진다.
+DEFAULT_AGENT_EFFORT = "high"
+
+# model 은 기본값을 두지 않는다 — 미설정이면 host CLI 가 고른 모델을 그대로 쓴다(조용한 다운그레이드 방지).
+_DEFAULT_AGENT_FRONTMATTER = {"effort": DEFAULT_AGENT_EFFORT}
+
+# 실행 바인딩은 `team.core.<role>.runtime` 아래에만 둔다. 역할 바로 아래의 `model` 은 옛 프로필이
+# 쓰던 죽은 필드(어떤 코드도 읽지 않았고 템플릿이 reviewer/qa 에 sonnet 을 박아두었다) — 여기서
+# 승격하면 업그레이드만으로 Phase 05 리뷰어가 조용히 다운그레이드된다. 그래서 이름을 분리했다.
+_RUNTIME_KEY = "runtime"
+_LEGACY_ROLE_KEYS = ("model", "effort")
+# 역할 객체가 가질 수 있는 키. 미지 키를 흘려보내면 `runtim: {...}` 오타가 조용히 기본 렌더로 흡수된다.
+_ROLE_KEYS = frozenset({"enabled", "owns", "cross_model", _RUNTIME_KEY, *_LEGACY_ROLE_KEYS})
+
+
+def _role_runtime(profile, agent_id):
+    """profile.team.core.<role>.runtime (dict 아니면 {})."""
+    if not isinstance(profile, dict):
+        return {}
+    team = profile.get("team")
+    core = team.get("core") if isinstance(team, dict) else None
+    spec = core.get(agent_id) if isinstance(core, dict) else None
+    rt = spec.get(_RUNTIME_KEY) if isinstance(spec, dict) else None
+    return rt if isinstance(rt, dict) else {}
+
+
+def agent_frontmatter_issue(overrides):
+    """주입 직전 최종 관문 — 잘못된 값이 에이전트 파일에 박히면 그 에이전트가 로드되지 않는다.
+    `sage validate` 를 거치지 않고 `sage install --force` 만 돌린 경우를 위해 install 도 직접 검사한다."""
+    model, effort = overrides.get("model"), overrides.get("effort")
+    if model is not None and not (isinstance(model, str)
+                                  and (model in AGENT_MODEL_ALIASES or _MODEL_ID_RE.match(model))):
+        return (f"team.core.*.runtime.model={model!r} 는 알 수 없는 값 "
+                f"(허용: {', '.join(AGENT_MODEL_ALIASES)} 또는 claude-* 전체 id)")
+    if effort is not None and not (effort in AGENT_EFFORTS
+                                   or (isinstance(effort, int) and not isinstance(effort, bool) and effort > 0)):
+        return (f"team.core.*.runtime.effort={effort!r} 는 알 수 없는 값 "
+                f"(허용: {', '.join(AGENT_EFFORTS)} 또는 양의 정수)")
+    return None
+
+
+def team_runtime_issues(profile):
+    """team.core 전체를 검사해 [(severity, message)] 반환. `sage validate` 와 `sage install` 의 **단일 소스**.
+
+    install 이 주입 직전의 `overrides` 만 봤을 때는 오타 키(`runtime.modle`)나 오타 역할(`reviewerr`)이
+    기본값으로 축소돼 통과했다 — validate 를 건너뛰면 설정이 조용히 무시된 채 설치가 성공한다.
+    그래서 구조(역할명·runtime 키)까지 여기서 함께 본다.
+
+    - 역할명 오타 / runtime 키 오타 / 잘못된 값 → FAIL (install 이 거부)
+    - 역할 바로 아래 model·effort → WARN. 옛 프로필의 죽은 필드이며, 승격하면 업그레이드만으로
+      reviewer/qa 가 조용히 다운그레이드된다(템플릿이 sonnet 을 박아뒀었다).
+    - codex host 에서의 설정 → WARN (해석 기전 없음)
+    """
+    if not isinstance(profile, dict):
+        return []
+    team = profile.get("team")
+    if team in (None, ""):
+        return []
+    if not isinstance(team, dict):
+        return [("FAIL", f"team 은 매핑이어야 함 (받음: {type(team).__name__})")]
+    core = team.get("core")
+    if core in (None, ""):
+        return []
+    if not isinstance(core, dict):
+        return [("FAIL", f"team.core 는 매핑이어야 함 (받음: {type(core).__name__})")]
+    rt_prof = profile.get("runtime")
+    host = rt_prof.get("host", "claude") if isinstance(rt_prof, dict) else "claude"
+    issues = []
+    for role, spec in core.items():
+        # 키가 비-str 일 수 있다(YAML `1: {...}`) → 어떤 입력에도 크래시 없이 FAIL 로 떨어져야 한다.
+        if role not in _CORE_AGENTS:
+            issues.append(("FAIL", f"team.core.{role!s} 는 알 수 없는 역할 — 오타면 조용히 무시된다 "
+                                   f"(CORE 로스터: {', '.join(_CORE_AGENTS)})"))
+            continue
+        if not isinstance(spec, dict):
+            # 조용히 넘기면 이 역할의 설정 전체가 무시된 채 기본 렌더가 배포된다.
+            issues.append(("FAIL", f"team.core.{role} 은 매핑이어야 함 (받음: {type(spec).__name__})"))
+            continue
+        stray = [k for k in spec if k not in _ROLE_KEYS]
+        if stray:
+            # `runtim:` 오타는 아무도 안 읽어 기본 렌더가 나간다 — 설정한 model 이 조용히 사라진다.
+            issues.append(("FAIL", f"team.core.{role} 의 알 수 없는 키: "
+                                   f"{', '.join(sorted(str(k) for k in stray))} "
+                                   f"(허용: {', '.join(sorted(_ROLE_KEYS))})"))
+        legacy = [k for k in ("model", "effort") if spec.get(k) not in (None, "")]
+        if legacy:
+            issues.append(("WARN", f"team.core.{role}.{'/'.join(legacy)} 는 무동작 — 실행 바인딩은 "
+                                   f"team.core.{role}.runtime.{{model,effort}} 로 옮기세요"))
+        rt = spec.get(_RUNTIME_KEY)
+        if rt in (None, ""):
+            continue
+        if not isinstance(rt, dict):
+            issues.append(("FAIL", f"team.core.{role}.runtime 은 매핑이어야 함 (받음: {type(rt).__name__})"))
+            continue
+        unknown = [k for k in rt if k not in ("model", "effort")]
+        if unknown:
+            issues.append(("FAIL", f"team.core.{role}.runtime 의 알 수 없는 키: "
+                                   f"{', '.join(sorted(str(k) for k in unknown))} (허용: model, effort)"))
+        issue = agent_frontmatter_issue({k: rt[k] for k in ("model", "effort") if rt.get(k) not in (None, "")})
+        if issue:
+            issues.append(("FAIL", issue.replace("team.core.*", f"team.core.{role}")))
+        if host == "codex" and any(rt.get(k) not in (None, "") for k in ("model", "effort")):
+            issues.append(("WARN", f"team.core.{role}.runtime 의 model/effort 는 codex host 에서 무동작 "
+                                   f"(.codex/agents/*.md 는 해석 기전 없음)"))
+    return issues
+
+
+def agent_frontmatter_overrides(profile, agent_id):
+    """이 CORE 에이전트 렌더에 주입할 {model, effort}. team.core.<role>.runtime 이 기본값을 덮는다.
+
+    effort 는 미설정이어도 DEFAULT_AGENT_EFFORT 가 들어간다. model 은 미설정이면 빠진다.
+    codex host 는 .codex/agents/<id>.md 가 이 키들을 해석하는 기전이 없어 호출자가 주입하지 않는다.
+    """
+    if agent_id not in _CORE_AGENTS:
+        return {}
+    out = dict(_DEFAULT_AGENT_FRONTMATTER)
+    rt = _role_runtime(profile, agent_id)
+    for key in ("model", "effort"):
+        val = rt.get(key)
+        if val is not None and val != "":
+            out[key] = val
+    return out
+
+
+def _is_fm_boundary(line):
+    """frontmatter 구분선은 컬럼 0 의 `---` 뿐(뒤 공백 허용). 들여쓴 `---` 는 블록 스칼라 본문이다."""
+    return line.rstrip() == "---" and not line[:1].isspace()
+
+
+def _is_top_level_key(line, names):
+    """컬럼 0 에서 시작하는 `<name>:` 만 최상위 키. 들여쓴 줄은 블록 스칼라 본문이라 건드리지 않는다.
+    `model : x` / `"model": x` 같은 정상 YAML 표기도 같은 키로 본다 — 안 그러면 제거를 놓쳐 중복 키가 된다."""
+    if not line or line[:1].isspace() or ":" not in line:
+        return False
+    key = line.split(":", 1)[0].strip().strip("'\"")
+    return key in names
+
+
+def render_core_agent(src_text, overrides):
+    """CORE 에이전트 렌더에 model/effort frontmatter 를 주입. overrides 가 비면 원문 그대로.
+
+    install 이 쓰는 내용과 doctor 가 drift 를 대조하는 기준이 같은 함수여야 한다 — 아니면
+    설정된 에이전트가 모두 영구 stale 로 뜬다.
+    """
+    if not overrides:
+        return src_text
+    lines = src_text.split("\n")
+    if not lines or not _is_fm_boundary(lines[0]):
+        return src_text   # frontmatter 없는 렌더는 건드리지 않는다
+    try:
+        close = next(i for i in range(1, len(lines)) if _is_fm_boundary(lines[i]))
+    except StopIteration:
+        return src_text
+    injected = [f"{k}: {overrides[k]}" for k in ("model", "effort") if k in overrides]
+    kept = [ln for ln in lines[1:close] if not _is_top_level_key(ln, ("model", "effort"))]
+    return "\n".join(["---", *kept, *injected, *lines[close:]])
+
+
+def core_render_status(src, dst, overrides=None):
     """Compare a hand-shipped CORE render (src) with its installed copy (dst).
 
     status ∈ {ok, missing, stale, source_missing, error}. Shared by skill/agent and
     claude/codex so drift detection cannot diverge per host. (`codex_core_skill_status`
     stays as the codex-global-skill convenience wrapper over the same comparison.)
+
+    `overrides` 가 있으면 src 원문이 아니라 `render_core_agent(src, overrides)` 결과와 대조한다 —
+    profile 이 정한 model/effort 주입이 drift 로 오판되지 않도록.
     """
     if not os.path.exists(src):
         return ("source_missing", None)
     if not os.path.exists(dst):
         return ("missing", dst)
     try:
-        return ("ok" if Path(dst).read_text(encoding="utf-8") == Path(src).read_text(encoding="utf-8")
-                else "stale", dst)
+        expected = render_core_agent(Path(src).read_text(encoding="utf-8"), overrides)
+        return ("ok" if Path(dst).read_text(encoding="utf-8") == expected else "stale", dst)
     except (OSError, UnicodeError) as e:
         return ("error", f"{dst} ({e})")
 
@@ -259,6 +468,22 @@ def run(args) -> int:
     wrapper = "CLAUDE.md" if args.host == "claude" else "CODEX.md"
     core = _resources.core_dir()
     fw = os.path.join(core, "framework")
+    # 첫 install 은 profile 이 없어 빈 dict. 주입은 claude host 만(아래 5c) — codex 는 해석 기전이 없다.
+    # 단 구조 검사는 host 무관: 오타 역할/키는 어느 host 에서든 설정을 조용히 죽인다.
+    _profile, _perr = _installed_profile(dest)
+    if _perr:
+        print(f"❌ {_perr}", file=sys.stderr)
+        return 1
+    agent_profile = _profile if args.host == "claude" else {}
+    # 잘못된 값이 frontmatter 에 박히면 그 에이전트가 로드되지 않고, 오타 키/역할은 설정을 조용히 죽인다.
+    # validate 와 **같은 검사**로 아무것도 쓰기 전에 멈춘다.
+    _fails = [m for sev, m in team_runtime_issues(_profile) if sev == "FAIL"]
+    if _fails:
+        for _m in _fails:
+            print(f"❌ {_m}", file=sys.stderr)
+        print("   sage/project-profile.yaml 의 team.core 를 고친 뒤 다시 실행하세요 (`sage validate` 로 확인).",
+              file=sys.stderr)
+        return 1
 
     # 1. profile — 인스턴스 커스터마이즈 SSOT(위험분류/pdca/team 등). F5: 엔진 자산이 아니므로
     #    --force(엔진 업그레이드)여도 절대 덮어쓰지 않는다 — 덮으면 프로젝트 값 소실로 클린 업그레이드 불가.
@@ -288,8 +513,9 @@ def run(args) -> int:
         _copy_tree(os.path.join(fw, ".claude", "skills", "sage-init"),
                    os.path.join(dest, ".claude", "skills", "sage-init"), args.force, created, skipped)
         # claude: CORE 6인 에이전트 렌더 → .claude/agents/ (Claude Code 자동발견 경로)
-        _copy_tree(os.path.join(fw, ".claude", "agents"),
-                   os.path.join(dest, ".claude", "agents"), args.force, created, skipped)
+        _copy_agent_renders(os.path.join(fw, ".claude", "agents"),
+                            os.path.join(dest, ".claude", "agents"), agent_profile,
+                            args.force, created, skipped)
     else:
         # codex: ① repo-스코프 스킬 자동발견 불가 → $sage-init 스킬을 전역($CODEX_HOME/skills)에 설치
         #           (--no-global-skill 로 opt-out — CI/샌드박스/타repo 검사용, codex R1-P1).

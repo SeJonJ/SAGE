@@ -64,7 +64,18 @@ From the user's stated intent, or by asking, pin the **section**:
   `risk.*` (L0–L3 globs / content keywords / `l3_review_strategy`) ·
   **`pdca.review_loop`** (the Phase-05 loop — use the shared interview set) ·
   `options.*` · **`knowledge_capture`** (vault_path + `loop_audit_dashboard` / `retro_note`) ·
-  `file_type_map` · `compliance` / `output_contract`.
+  `file_type_map` · `compliance` / `output_contract` ·
+  **`team.core.<role>.runtime`** (`model` / `effort`) · **`cross_model.effort`**.
+
+**`team.core.<role>.runtime.{model,effort}`** are injected into `.claude/agents/<id>.md`
+frontmatter, so editing the profile alone does nothing — finish with
+`sage install --force` to re-render, then `sage doctor` to confirm no agent reports
+`stale`. They bind on a claude host only. A bare `model:`/`effort:` directly on the role
+(no `runtime:`) is a legacy dead field; move it under `runtime:`.
+
+**`cross_model.effort`** only matters when `options.cross_model: true`. Unset → `high`.
+The vocabulary is peer-specific (`codex`: `minimal|low|medium|high|xhigh`;
+`claude`: `low|medium|high|xhigh|max`) and a wrong value is rejected by `sage validate`.
 
 For **`pdca.review_loop`** and the **vault outputs**, drive the *same* questions as
 `/sage-init` via `docs/agent/bootstrap-authoring.md` (§ Review loop + vault interview

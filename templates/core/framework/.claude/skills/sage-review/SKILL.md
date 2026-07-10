@@ -14,7 +14,7 @@ learning.
 
 1. `docs/sage_harness/skills/sage-review.md` — authoritative spec: procedure, drift_checks
 2. `docs/agent/review-protocol.md` — the reviewer output format + loop contract
-3. `sage/project-profile.yaml` — `options.cross_model`, `cross_model.invocation`,
+3. `sage/project-profile.yaml` — `options.cross_model`, `cross_model.effort`,
    and **`pdca.review_loop`** (lenses, refuters, max_iterations, dry_rounds, budget_tokens)
 
 ## Resolve review mode
