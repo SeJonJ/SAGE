@@ -197,12 +197,13 @@ class TestRetroGateWiring(unittest.TestCase):
 
     def _setup(self, root, mode="enforce", has_loop_run=True, session_matches=True, log_06=True,
                glob06="plan_docs/06-*.md", doc06="plan_docs/06-cycle.md", glob05="plan_docs/05-*.md",
-               log_05=True, doc05="plan_docs/05-cycle.md", retro_note=True):
+               log_05=True, doc05="plan_docs/05-cycle.md", retro_note=True, vault_path="/tmp/v"):
         prof = {"pdca": {"phases": [{"id": "05", "glob": glob05},
                                      {"id": "06", "glob": glob06}],
                          "retro": {"report_gate_enforce": mode}},
                 # retro_note 켜져야 게이트가 유효(노트가 생성돼야 --check 가능). off 는 별도 테스트.
-                "knowledge_capture": {"retro_note": retro_note, "vault_path": "/tmp/v"}}
+                # 게이트 활성은 retro CLI 와 동일: retro_note is True + vault_path 실존(codex 7R P1).
+                "knowledge_capture": {"retro_note": retro_note, "vault_path": vault_path}}
         prof_path = os.path.join(root, "profile.json")
         with open(prof_path, "w", encoding="utf-8") as f:
             json.dump(prof, f)
@@ -507,6 +508,34 @@ class TestRetroGateWiring(unittest.TestCase):
             self.assertEqual(p.returncode, 0)
             report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
             self.assertIn("retro_audit 기록 실패", report)
+
+    def test_gate_runs_when_session_log_is_different_date_file(self):
+        # codex 7R P0(teeth): 로거는 UTC 날짜로 session-*.jsonl 을 쓰고 Stop 은 로컬 날짜 파일을 연다.
+        # 양수 오프셋(KST) 자정 경계에서 오늘자(로컬) 파일이 없어도, 이번 세션이 다른 날짜 파일에 있으면
+        # 게이트가 돌아야 한다 — 오늘자 파일만 보고 早期 return 하면 enforce 가 조용히 무동작한다.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce")
+            os.rename(os.path.join(log_dir, f"session-{TODAY}.jsonl"),
+                      os.path.join(log_dir, "session-2020-01-01.jsonl"))   # 로거가 다른 날짜로 씀
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 2, p.stdout)   # 세션 스코프 감지→block(오늘자 파일 부재 무관)
+
+    def test_enforce_retro_note_true_but_vault_empty_is_inactive(self):
+        # codex 7R P1(teeth): retro_note=true 라도 vault_path 가 비면 retro CLI 는 노트를 안 써(--check
+        # 불가) → 게이트가 통과 불가능한 걸 강제하면 안 된다. bool(retro_note) 만 보던 오판을 교정.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", vault_path="")
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 0, p.stdout)
+            self.assertEqual([], [r for r in self._audit_records(root) if r["event"] == "retro_check_missing"])
+
+    def test_enforce_retro_note_string_false_is_inactive(self):
+        # codex 7R P1(teeth): retro_note 가 문자열 "false" 면 CLI 는 `is True` 로 비활성인데 bool("false")
+        # 은 truthy 라 게이트만 활성으로 오판해 정상 흐름을 막았다. `is True` 로 CLI 와 일치시킴.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", retro_note="false")
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 0, p.stdout)
 
 
 if __name__ == "__main__":

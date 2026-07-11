@@ -449,25 +449,57 @@ def _stop_hook_active(raw):
     return isinstance(v, str) and v.strip().lower() == "true"
 
 
-def retro_gate_result(profile, root, raw, entries):
+def _session_log_entries(log_dir, session_id):
+    """이번 세션(session_id)의 로그 엔트리를 로그 디렉토리의 **모든** session-*.jsonl 에서 모은다.
+
+    로거는 UTC 날짜(now_utc[:10] = gmtime)로 session-YYYY-MM-DD.jsonl 을 쓰는데 Stop 은 로컬 날짜
+    (localtime)로 파일 하나만 열어(codex 7R P0), KST 등 양수 오프셋의 자정 경계·UTC 자정을 넘는 세션에서
+    파일명이 어긋나 게이트가 조용히 무동작한다. 세션 감지를 날짜 파일 하나가 아니라 session_id 로 전
+    파일에서 걸러야 타임존/날짜와 무관하게 이번 세션을 놓치지 않는다(리포트 본문 집계 범위는 그대로 둔다)."""
+    if not session_id:
+        return []
+    out = []
+    for fp in glob.glob(os.path.join(log_dir, "session-*.jsonl")):
+        try:
+            with open(fp, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        e = json.loads(line)
+                    except Exception:
+                        continue
+                    if e.get("session") == session_id:
+                        out.append(e)
+        except Exception:
+            continue
+    return out
+
+
+def retro_gate_result(profile, root, raw, session_entries):
     """retro_gate 정책 결과(양 런타임 공유, knowledge_capture 와 동형 — 9-C v1).
 
-    raw = Stop 이벤트 원본(파싱됨, session_id/stop_hook_active 추출용). entries = 오늘자 전체 로그
-    (report 본문과 같은 소스) — 06 작성 감지에만 `session` 필드로 이번 세션에 한정해 걸러 쓴다
-    (report 본문 자체의 집계 범위는 건드리지 않는다 — 기존 동작 보존)."""
+    raw = Stop 이벤트 원본(파싱됨, session_id/stop_hook_active 추출용). session_entries = 이번 세션의
+    로그 엔트리(모든 session-*.jsonl 에서 session_id 로 모은 것 — _session_log_entries). 06/05 작성
+    감지에만 쓴다(리포트 본문 집계 범위는 건드리지 않는다 — 기존 동작 보존)."""
     import retro_audit
     import retro_gate
 
     pdca_retro = (profile.get("pdca") or {}).get("retro")
     mode = (pdca_retro or {}).get("report_gate_enforce") or "off"
     kc = profile.get("knowledge_capture")
-    notes_enabled = bool(kc.get("retro_note")) if isinstance(kc, dict) else False
+    kc = kc if isinstance(kc, dict) else {}
+    # 게이트 활성 조건을 retro CLI 와 일치시킨다(codex 7R P1): CLI 는 `retro_note is True` 이고 vault 경로가
+    # 실제로 잡혀야 노트를 쓴다(_vault.vault_target). 노트가 안 써지면 --check 대상이 없어 게이트가 통과
+    # 불가능한 걸 강제하게 된다. bool(retro_note) 만 보면 "false"(문자열)·vault 미설정을 활성으로 오판한다.
+    vp = kc.get("vault_path")
+    vault = vp.strip() if isinstance(vp, str) else ""
+    notes_enabled = (kc.get("retro_note") is True) and bool(vault)
 
-    session_id = raw.get("session_id") or ""
     # 06/05 감지 모두 이번 세션 로그 파일집합(정규 키) ∩ glob.glob(recursive) 실존파일로 한다.
     # fnmatch 로 `entries[].file` 을 직접 매칭하면 `**` 제로디렉토리 케이스를 놓친다(구현리뷰 1R P0).
-    session_files = {_canon_relkey(e.get("file", "")) for e in entries if e.get("session") == session_id} \
-        if session_id else set()
+    session_files = {_canon_relkey(e.get("file", "")) for e in session_entries}
     stems06 = _session_06_stems(root, profile, session_files) if session_files else set()
     has_06 = bool(stems06)
 
@@ -509,21 +541,29 @@ def run_stop_compliance_report(io, root, core_dir, raw_text):
     today = os.environ.get("SAGE_TODAY") or time.strftime("%Y-%m-%d", time.localtime())
     log_dir = os.path.join(root, io.HOST_DIR, "logs")
     log_file = os.path.join(log_dir, f"session-{today}.jsonl")
-    if not os.path.exists(log_file):
-        return 0   # 로그 없으면 리포트 생략
     profile = load_profile_fail_open(hid)
     if profile is None:
         return 0
 
+    # 리포트 본문은 오늘자(로컬 날짜) 파일을 그대로 쓴다(기존 집계 범위 보존). 게이트 세션 감지는 이와
+    # 별개로 모든 session-*.jsonl 에서 이번 session_id 로 모은다 — 로거는 UTC 날짜로, Stop 은 로컬 날짜로
+    # 파일명을 잡아 자정 경계에서 오늘자 파일이 아예 없을 수 있고(codex 7R P0), 그때 여기서 早期 return
+    # 하면 게이트가 통째로 무동작한다. 그래서 오늘자 파일 부재만으로는 바로 종료하지 않는다.
+    raw = parse_input_fail_open(hid, raw_text, surface=False) or {}   # session_id/stop_hook_active 추출용
+    session_entries = _session_log_entries(log_dir, raw.get("session_id") or "")
+
     entries = []
-    with open(log_file, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                try:
-                    entries.append(json.loads(line))
-                except Exception:
-                    pass
+    if os.path.exists(log_file):
+        with open(log_file, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except Exception:
+                        pass
+    elif not session_entries:
+        return 0   # 오늘자 로그도, 이번 세션 로그도 없음 → 리포트/게이트 생략(기존 동작)
 
     snapshot = {"entries": entries, "today": today, "branch": resolve_branch(root, ""), "runtime": io.RUNTIME}
     event = {"hook_id": hid, "hook_event_name": "Stop", "runtime": io.RUNTIME}
@@ -535,9 +575,8 @@ def run_stop_compliance_report(io, root, core_dir, raw_text):
     kc_result = knowledge_capture_result(profile, entries)   # 공유(F7)
     io.attach_policy_results(model, profile, entries, raw_text, kc_result)  # 런타임별 정책+순서
 
-    raw = parse_input_fail_open(hid, raw_text, surface=False) or {}   # session_id/stop_hook_active 추출용
     try:
-        rg_result = retro_gate_result(profile, root, raw, entries)
+        rg_result = retro_gate_result(profile, root, raw, session_entries)
     except Exception as e:
         # Stop 훅은 내부 오류로 세션을 막으면 안 된다(fail-open) — 게이트 판정 불가 시 skip 으로 낮춘다.
         rg_result = {"name": "retro_gate", "severity": "INFO",
