@@ -202,7 +202,8 @@ which cycle the note belongs to.
 `retro_note: true`, or an explicit `--vault`). Both are off by default.
 
 - **No note path printed** → the vault is disabled. Record `retro note skipped: vault
-  disabled` in 06 and stop here; there is nothing to fill or check.
+  disabled` in 06 and stop here; there is nothing to fill or check. The Loop C gate
+  (`pdca.retro.report_gate_enforce`) is inactive when `retro_note` is off, so skipping is fine.
 - **A note path printed** → it is written **empty on purpose**. `retro` gathers the evidence
   deterministically and leaves distillation to you (the CLI has no LLM). Open that note, run
   the distiller prompt from its `<details>` block over the evidence, and write:
@@ -219,7 +220,9 @@ which cycle the note belongs to.
   It exits non-zero while `## 요약` is still the blank placeholder, `## 제안` does not parse,
   a proposal lacks a valid `target`/`proposed_change`, or the note belongs to a different
   run. An empty proposal array passes only with a written summary — if you conclude there
-  were no systematic patterns, say so and why.
+  were no systematic patterns, say so and why. This `--check` is **mandatory when
+  `report_gate_enforce` is advisory/enforce**: without a passing `--check`, the session-end
+  Stop hook records the cycle as unfinished and (under `enforce`, claude host) blocks stopping once.
 
 Never set `approved: true` yourself; that is the human gate. Record that retro ran (or why
 it was skipped) in 06. Applying any proposal is a separate human-gated step.

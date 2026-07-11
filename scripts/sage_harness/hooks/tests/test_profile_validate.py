@@ -564,5 +564,77 @@ class TestTeamAgentModelEffort(unittest.TestCase):
         self.assertTrue(any("무동작" in m and "runtime" in m for _, m in issues))
 
 
+class TestRetroGateEnforce(unittest.TestCase):
+    """pdca.retro.report_gate_enforce (9-C v1) 검증."""
+
+    def _prof(self, mode=None, retro_note=None, glob06="plan_docs/06-report/**/*.md",
+              file_type_map=None):
+        pdca = {}
+        if mode is not None:
+            pdca["retro"] = {"report_gate_enforce": mode}
+        if glob06 is not None:
+            pdca["phases"] = [{"id": "06", "glob": glob06}]
+        prof = {"pdca": pdca}
+        if retro_note is not None:
+            prof["knowledge_capture"] = {"retro_note": retro_note, "vault_path": "/tmp/v"}
+        # 기본은 06 을 커버하는 file_type_map(로그 커버리지 경고를 유발하지 않도록)
+        prof["file_type_map"] = file_type_map if file_type_map is not None \
+            else [{"glob": "plan_docs/**", "type": "plan-doc"}]
+        return prof
+
+    def test_unset_is_clean(self):
+        self.assertNotIn("FAIL", [s for s, _ in sevs(self._prof())])
+
+    def test_off_is_clean(self):
+        self.assertNotIn("FAIL", [s for s, _ in sevs(self._prof(mode="off"))])
+
+    def test_valid_modes_pass_with_retro_note_on(self):
+        for mode in ("advisory", "enforce"):
+            issues = sevs(self._prof(mode=mode, retro_note=True))
+            self.assertNotIn("FAIL", [s for s, _ in issues], mode)
+
+    def test_typo_mode_is_fail(self):
+        issues = sevs(self._prof(mode="enforcee"))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("enforcee" in m for _, m in issues))
+
+    def test_non_string_mode_is_fail(self):
+        self.assertEqual(severity_of(sevs(self._prof(mode=True))), "FAIL")
+
+    def test_non_dict_retro_section_is_fail_not_crash(self):
+        issues = sevs({"pdca": {"retro": "oops"}})
+        self.assertEqual(severity_of(issues), "FAIL")
+
+    def test_enabled_without_retro_note_warns_inert(self):
+        issues = sevs(self._prof(mode="enforce", retro_note=False))
+        self.assertNotIn("FAIL", [s for s, _ in issues])
+        self.assertTrue(any("retro_note" in m and "off" in m for _, m in issues))
+
+    def test_enabled_with_retro_note_no_warn(self):
+        issues = sevs(self._prof(mode="advisory", retro_note=True))
+        self.assertEqual([], [m for s, m in issues if s == "WARN" and "retro_note" in m])
+
+    def test_enforce_warns_when_06_not_logged(self):
+        # codex 구현리뷰 P1: 06 이 file_type_map 에 안 걸리면 post_tool_logger 가 안 남겨 게이트 무동작.
+        issues = sevs(self._prof(mode="enforce", retro_note=True, file_type_map=[{"glob": "src/**", "type": "code"}]))
+        self.assertNotIn("FAIL", [s for s, _ in issues])
+        self.assertTrue(any("file_type_map" in m and "06" in m for _, m in issues))
+
+    def test_enforce_no_logger_warn_when_06_covered(self):
+        # plan_docs/** 가 06 을 덮으면 경고 없음.
+        issues = sevs(self._prof(mode="enforce", retro_note=True,
+                                 file_type_map=[{"glob": "plan_docs/**", "type": "plan-doc"}]))
+        self.assertEqual([], [m for s, m in issues if "file_type_map" in m])
+
+    def test_empty_file_type_map_warns(self):
+        issues = sevs(self._prof(mode="enforce", retro_note=True, file_type_map=[]))
+        self.assertTrue(any("file_type_map" in m for _, m in issues))
+
+    def test_retro_key_accepted_in_schemaless_fallback(self):
+        # jsonschema 없어도 pdca.retro 가 오타로 FAIL 되면 안 된다(_CLOSED_SECTION_FALLBACK 포함 확인).
+        import sage.profile_validate as pv
+        self.assertIn("retro", pv._CLOSED_SECTION_FALLBACK["pdca"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -85,6 +85,14 @@
             "termination_enforce": { "enum": ["advisory", "enforce"] },
             "report_gate_enforce": { "enum": ["off", "advisory", "enforce"] }
           }
+        },
+        "retro": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Loop C(sage retro --check) 실행 여부를 Stop 훅이 사후 확인하는 9-C v1 게이트. 06←05 훅은 못 쓴다(06 이 retro 보다 먼저 쓰임) — 강제 지점은 세션 종료. enforce 라도 Stop 훅 플랫폼 제약(stop_hook_active)상 block 은 세션당 최대 1회.",
+          "properties": {
+            "report_gate_enforce": { "enum": ["off", "advisory", "enforce"] }
+          }
         }
       }
     },

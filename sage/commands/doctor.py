@@ -343,7 +343,42 @@ def run(args):
     # Loop A (review_loop) — 켜졌는지 + 설정 유효성(profile_validate 의 review_loop 발 이슈만 표면화).
     # 환경 진단이라 정보성. 강제(fail-closed)는 generate/validate 가 담당(같은 validate_profile 경유).
     _report_review_loop(profile)
+    # Loop C (retro gate) — 미완료로 종료된 사이클(retro --check 안 하고 06 완료)을 표면화(9-C v1).
+    _report_retro_gate(profile, _project_root_from_profile(prof_path))
     return rc
+
+
+def _report_retro_gate(profile, root):
+    """retro_audit.jsonl 에서 최신 상태가 missing 인 run(= retro --check 없이 06 완료된 사이클)을
+    표면화한다. Stop 훅이 남긴 영구 기록의 사람용 소비 경로(9-C v1 유저 스코프). root 미상이면 skip."""
+    mode = ((profile.get("pdca") or {}).get("retro") or {}).get("report_gate_enforce") or "off"
+    print("## Loop C (retro gate)")
+    print(f"  enforce : {mode}")
+    if root is None:
+        print("  (프로젝트 루트 미상 → retro_audit 점검 생략)")
+        return
+    try:
+        from sage import _resources
+        rt = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks", "runtime")
+        if rt not in sys.path:
+            sys.path.insert(0, rt)
+        import retro_audit
+        # 신뢰불가(디렉토리·깨진 심링크·권한없음·비-UTF-8)를 '미완료 없음' 으로 오보하지 않는다
+        # (codex 구현리뷰 3R·4R P1: 감사 불능이 '없음' 으로 둔갑 금지). status 로 분기.
+        status, summary = retro_audit.audit_summary_status(root)
+    except Exception:
+        print("  ⚠️  retro_audit 조회 불가 — 미완료 기록을 신뢰할 수 없음")
+        return
+    if status == "unreadable":
+        print(f"  ⚠️  retro_audit 신뢰 불가({retro_audit.audit_path(root)}: 파일 아님/읽기 실패) — 미완료 기록을 신뢰할 수 없음")
+        return
+    missing = sorted(rid for rid, s in summary.items() if s.get("state") == "missing")
+    if not missing:
+        print("  ✅ 미완료(retro --check 누락) 사이클 없음")
+        return
+    for rid in missing:
+        print(f"  ⚠️  run {rid}: 06 완료됐으나 retro --check 미실행 → "
+              f"`sage retro --run-id {rid} --feature <stem>` 후 `sage retro --check <노트> --run-id {rid}`")
 
 
 def _report_review_loop(profile):

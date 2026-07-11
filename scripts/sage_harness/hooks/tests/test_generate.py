@@ -48,10 +48,13 @@ def make_root(d, with_adapter=True):
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", "claude"), exist_ok=True)
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", "codex"), exist_ok=True)
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime"), exist_ok=True)
+    os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "policies"), exist_ok=True)
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "aaa-hook.md")).write_text(SPEC_A)
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "bbb-hook.md")).write_text(SPEC_B)
-    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "messages.py", "io_claude.py", "io_codex.py"):
+    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py", "messages.py",
+               "io_claude.py", "io_codex.py"):
         Path(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
+    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "retro_gate.py")).write_text("# retro_gate\n")
     Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).write_text(json.dumps({
         "sage_version": "0.1.0", "host_runtime": "claude", "assets": {
             "hooks/aaa-hook": {"form": "core_adapter", "spec_hash": "x", "render_hash": {"claude": "x"}, "conformance": "PASS"},

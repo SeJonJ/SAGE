@@ -80,9 +80,13 @@ class TestSchemaCheck(unittest.TestCase):
 
 def _runtime_root(d):
     runtime = os.path.join(d, "scripts", "sage_harness", "hooks", "runtime")
+    policies = os.path.join(d, "scripts", "sage_harness", "hooks", "policies")
     os.makedirs(runtime, exist_ok=True)
-    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "messages.py", "io_claude.py", "io_codex.py"):
+    os.makedirs(policies, exist_ok=True)
+    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py", "messages.py",
+               "io_claude.py", "io_codex.py"):
         Path(os.path.join(runtime, fn)).write_text(f"# {fn}\n", encoding="utf-8")
+    Path(os.path.join(policies, "retro_gate.py")).write_text("# retro_gate\n", encoding="utf-8")
 
 
 class TestHookRuntimeHash(unittest.TestCase):
@@ -119,6 +123,17 @@ class TestHookRuntimeHash(unittest.TestCase):
             sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": "bad", "assets": {}})
             self.assertEqual(sev, "FAIL")
             self.assertTrue(any("구조 오류" in m for m in msgs))
+
+    def test_missing_retro_gate_policy_is_caught(self):
+        # codex 구현리뷰 2R P0: enforce 게이트 자체인 policies/retro_gate.py 가 빠지면 hash 대상에서
+        # 누락돼 validate 통과 → enforce 조용히 무동작. 이제 shared 그룹에 포함되므로 삭제 시 FAIL.
+        with tempfile.TemporaryDirectory() as d:
+            _runtime_root(d)
+            hashes, _missing = calculate_hook_runtime_hash(d)
+            os.remove(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "retro_gate.py"))
+            sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
+            self.assertEqual(sev, "FAIL")
+            self.assertTrue(any("retro_gate.py" in m for m in msgs))
 
 
 class TestDescriptiveUnresolved(unittest.TestCase):

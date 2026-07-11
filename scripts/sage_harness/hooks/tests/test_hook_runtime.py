@@ -100,6 +100,26 @@ class TestBuildSnapshot(unittest.TestCase):
             self.assertEqual(snap["loop_audit"], {"runs": {}, "has_any_records": False})
 
 
+class TestPhaseStem(unittest.TestCase):
+    """9-C: 06↔05 사이클 결속용 stem 추출 — phase 번호 접두어만 제거(임의 선행숫자 아님)."""
+
+    def test_flat_strips_phase_prefix(self):
+        self.assertEqual(hr._phase_stem("plan_docs/05-cycle.md", "05"), "cycle")
+        self.assertEqual(hr._phase_stem("plan_docs/06-cycle.md", "06"), "cycle")
+
+    def test_nested_numeric_ticket_preserved(self):
+        # codex 5R P1: nested 는 basename 이 티켓번호로 시작할 수 있다 — 지우면 다른 티켓이 충돌한다.
+        self.assertEqual(hr._phase_stem("plan_docs/05-review/138-webrtc.md", "05"), "138-webrtc")
+        self.assertEqual(hr._phase_stem("plan_docs/06-report/139-webrtc.md", "06"), "139-webrtc")
+
+    def test_wrong_phase_prefix_not_stripped(self):
+        # 06 문서를 05 로 해석하려 하면 접두어가 안 맞아 그대로 둔다.
+        self.assertEqual(hr._phase_stem("plan_docs/06-cycle.md", "05"), "06-cycle")
+
+    def test_underscore_separator(self):
+        self.assertEqual(hr._phase_stem("plan_docs/05_cycle.md", "05"), "cycle")
+
+
 class TestRunStrategyF8b(unittest.TestCase):
     def test_crash_surfaces_and_fails_closed(self):
         buf = io.StringIO()

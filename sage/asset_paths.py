@@ -20,6 +20,7 @@ def hook_runtime_files(root: str) -> dict[str, list[str]]:
     manifest 에 per-hook 으로 중복 스탬프하지 않고 top-level hook_runtime_hash 로 한 번만 추적한다.
     """
     runtime = os.path.join(root, _HOOKS_REL, "runtime")
+    policies = os.path.join(root, _HOOKS_REL, "policies")
     return {
         "shared": [
             os.path.join(runtime, "run_hook.py"),
@@ -28,6 +29,15 @@ def hook_runtime_files(root: str) -> dict[str, list[str]]:
             # 게이트가 신뢰하는 감사 트레일 로직. 추적 안 하면 감사 무결성 코드가 validate 미감지로
             # 표류(7차 배치3, codex R1b P2 수용).
             os.path.join(runtime, "loop_audit.py"),
+            # retro_audit.py: retro_gate_result 가 신뢰하는 Loop C 감사 트레일. loop_audit.py 와
+            # 동일 근거로 추적 — 이 파일 없이는 retro_gate 의 BLOCK 판정 자체가 성립 안 한다(9-C v1).
+            os.path.join(runtime, "retro_audit.py"),
+            # policies/retro_gate.py: enforce 판정 그 자체(BLOCK/WARN). 파일이 없으면 Stop 오케스트레이터가
+            # import 실패를 INFO skip 으로 낮춰 **enforce 가 조용히 무동작**한다 → validate 가 못 잡으면
+            # 설치본에서 이 파일만 빠진 rolling upgrade 가 게이트를 은밀히 해제한다(codex 구현리뷰 2R P0).
+            # knowledge_capture/output_contract 는 advisory-only 라 부재해도 리포트 한 줄이 빠질 뿐이지만,
+            # retro_gate 는 enforcement 라 반드시 추적한다.
+            os.path.join(policies, "retro_gate.py"),
             # messages.py: io_claude/io_codex 가 import 하는 게이트/컴플라이언스 문구 SSOT(5-3).
             # 추적 안 하면 사용자 대상 게이트 문구가 validate 미감지로 표류(loop_audit 과 동일 논리).
             os.path.join(runtime, "messages.py"),

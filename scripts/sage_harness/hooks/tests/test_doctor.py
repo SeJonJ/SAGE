@@ -309,5 +309,44 @@ class _InstallArgs:
         self.no_global_skill = no_global_skill
 
 
+class TestRetroGateVisibility(unittest.TestCase):
+    """doctor 가 retro_audit 의 미완료 사이클(retro --check 누락)을 표면화하는지(9-C v1 유저 스코프)."""
+
+    def _project(self, d):
+        os.makedirs(os.path.join(d, "sage"), exist_ok=True)
+        Path(os.path.join(d, "sage", "project-profile.yaml")).write_text(
+            "runtime: { host: claude }\npdca: { retro: { report_gate_enforce: enforce } }\n", encoding="utf-8")
+        return os.path.join(d, "sage", "project-profile.yaml")
+
+    def test_missing_run_surfaced(self):
+        with tempfile.TemporaryDirectory() as d:
+            prof = self._project(d)
+            sys.path.insert(0, os.path.join(REPO, "scripts", "sage_harness", "hooks", "runtime"))
+            import retro_audit
+            retro_audit.record_missing(d, "rl-xyz")
+            _, out = run_doctor(prof)
+            self.assertIn("Loop C (retro gate)", out)
+            self.assertIn("rl-xyz", out)
+            self.assertIn("retro --check 미실행", out)
+
+    def test_checked_run_not_flagged(self):
+        with tempfile.TemporaryDirectory() as d:
+            prof = self._project(d)
+            sys.path.insert(0, os.path.join(REPO, "scripts", "sage_harness", "hooks", "runtime"))
+            import retro_audit
+            retro_audit.record_check(d, "rl-ok", "note.md", "본문")
+            _, out = run_doctor(prof)
+            self.assertIn("미완료(retro --check 누락) 사이클 없음", out)
+
+    def test_audit_unavailable_not_reported_as_none(self):
+        # codex 구현리뷰 3R P1: 감사파일이 파일이 아니면(디렉토리) '미완료 없음' 으로 오보하지 않는다.
+        with tempfile.TemporaryDirectory() as d:
+            prof = self._project(d)
+            os.makedirs(os.path.join(d, ".sage", "retro_audit.jsonl"), exist_ok=True)
+            _, out = run_doctor(prof)
+            self.assertIn("신뢰할 수 없음", out)
+            self.assertNotIn("미완료(retro --check 누락) 사이클 없음", out)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

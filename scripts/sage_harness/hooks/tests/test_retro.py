@@ -244,7 +244,10 @@ class TestRetroCheck(unittest.TestCase):
         return p
 
     def _check(self, path, *extra):
-        return subprocess.run([sys.executable, "-m", "sage", "retro", "--check", path, *extra],
+        # --root self.tmp: 9-C 부터 --check 성공이 .sage/retro_audit.jsonl 에 기록을 남긴다.
+        # --root 없으면 root 가 cwd(REPO)로 폴백해 이 저장소 자신의 .sage/ 를 오염시킨다.
+        return subprocess.run([sys.executable, "-m", "sage", "retro", "--check", path,
+                               "--root", self.tmp, *extra],
                               cwd=REPO, capture_output=True, text=True)
 
     def test_untouched_template_fails(self):
@@ -374,6 +377,52 @@ class TestRetroCheck(unittest.TestCase):
                     "## 요약\n요약 있음.\n\n" + self.PROPOSALS % '[{"target":"hook","proposed_change":"x"}]')
         r = self._check(p, "--run-id", "rl-aaa")
         self.assertEqual(r.returncode, 0, r.stderr)
+
+    def _audit_records(self):
+        import json
+        path = os.path.join(self.tmp, ".sage", "retro_audit.jsonl")
+        if not os.path.isfile(path):
+            return []
+        with open(path, encoding="utf-8") as f:
+            return [json.loads(ln) for ln in f if ln.strip()]
+
+    def test_success_appends_retro_audit_record(self):
+        # 9-C: Stop 훅(retro_gate)이 대조할 성공 증거. run_id·note_path·digest·ts 필요.
+        note = self._note("요약 있음.", '[{"target":"hook","proposed_change":"x"}]', run_id="rl-aaa")
+        r = self._check(note, "--run-id", "rl-aaa")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        recs = self._audit_records()
+        self.assertEqual(1, len(recs))
+        self.assertEqual(recs[0]["run_id"], "rl-aaa")
+        self.assertEqual(recs[0]["event"], "retro_check_ok")
+        self.assertTrue(recs[0]["digest"])
+        self.assertEqual(64, len(recs[0]["digest"]))   # 전체 SHA-256(잘라쓰지 않음)
+
+    def test_failure_does_not_append_retro_audit_record(self):
+        # 내용검사가 실패하면 audit 에 "성공했다"는 흔적을 남기면 안 된다.
+        note = self._note(
+            "_이번 사이클에 체계적으로 놓친 것과 바꾸기로 한 것을 사람이 읽을 1~2줄로 (absorb 파싱 대상 아님)._",
+            "[]", run_id="rl-aaa")
+        r = self._check(note, "--run-id", "rl-aaa")
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual([], self._audit_records())
+
+    def test_no_resolvable_run_id_skips_audit_silently(self):
+        # --run-id 도 없고 노트도 run_id 를 선언 안 하면(임시/수기 실행) 대조 대상이 없어 조용히 건너뛴다.
+        note = self._note("요약 있음.", '[{"target":"hook","proposed_change":"x"}]')
+        r = self._check(note)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([], self._audit_records())
+
+    def test_audit_append_failure_is_fail_closed(self):
+        # 기록 자체가 실패하면(디스크 문제 등) 내용검사가 통과해도 --check 는 실패해야 한다 —
+        # 기록되지 않은 성공은 게이트가 못 보는 성공과 같다.
+        os.makedirs(os.path.join(self.tmp, ".sage"), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp, ".sage", "retro_audit.jsonl"), exist_ok=True)   # 파일 자리에 디렉토리
+        note = self._note("요약 있음.", '[{"target":"hook","proposed_change":"x"}]', run_id="rl-aaa")
+        r = self._check(note, "--run-id", "rl-aaa")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("retro_audit", r.stderr)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ import glob
 import importlib
 import json
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -351,11 +352,158 @@ def knowledge_capture_result(profile, entries):
     return knowledge_capture.check(vault, has_code, wiki_mtime, earliest)
 
 
+_LOOP_RUN_RE = re.compile(r"(?im)^\s*Loop-Run:\s*(\S+)\s*$")   # pre_implementation_gate_core.py 와 동일 어휘
+
+
+def _pdca_phase_glob(profile, phase_id):
+    for ph in ((profile.get("pdca") or {}).get("phases") or []):
+        if ph.get("id") == phase_id:
+            return ph.get("glob") or ""
+    return ""
+
+
+def _safe_glob(root, pglob):
+    """root 밖/절대경로/`..` 탈출 glob 은 거부(build_snapshot 과 동일 방어 — 독립성) 후 실제 매치 경로.
+    `glob.glob(recursive=True)` 를 쓴다 — `fnmatch` 는 `foo/**/*.md` 가 `foo/x.md`(0 단계 디렉토리)에
+    안 걸린다(codex 구현리뷰 P0: 표준 06 glob `plan_docs/06-report/**/*.md` 가 06 문서를 직속 자식으로
+    두면 fnmatch 로는 영원히 매치 안 돼 게이트가 항상 조용히 skip). glob.glob 은 `**` 를 문서화된 대로
+    "0개 이상의 디렉토리"로 올바르게 해석한다."""
+    if not pglob or os.path.isabs(pglob) or ".." in pglob.split("/"):
+        return []
+    return glob.glob(os.path.join(root, pglob), recursive=True)
+
+
+def _canon_relkey(s):
+    """root-상대 경로를 대조용 정규 키로. 세션 로그의 `entries[].file`(logger 가 그대로 저장)과
+    glob 결과가 표기만 달라 조용히 공집합이 되는 것을 막는다(codex 구현리뷰 2R P1): `\\`→`/`,
+    선행 `./` 제거, 중복 슬래시 정리(posixpath.normpath). 양쪽에 동일 적용해야 의미가 있다.
+    심링크로 06 을 두고 target 경로로 편집하는 경우는 표기정규화로도 안 잡혀 공집합→skip(fail-open,
+    잘못된 block 은 아님) — v1 은 심링크 06 을 지원 대상으로 명시하지 않는다."""
+    s = (s or "").replace("\\", "/")
+    return posixpath.normpath(s) if s else ""
+
+
+def _glob_relmap(root, pglob):
+    """{정규 키: abspath} — glob 매치 파일을 세션 로그 키(정규화)로 인덱싱."""
+    return {_canon_relkey(os.path.relpath(p, root)): p for p in _safe_glob(root, pglob)}
+
+
+def _glob_relpaths(root, pglob):
+    """세션 로그의 상대경로(`entries[].file`)와 직접 대조하기 위한 root-상대 정규 키 집합."""
+    return set(_glob_relmap(root, pglob).keys())
+
+
+def _phase_stem(relkey, phase_id):
+    """phase 문서 경로 → 사이클 stem. **해당 phase 번호 접두어만** 제거하고 나머지는 보존한다.
+    - flat: `plan_docs/05-cycle.md`(phase 05) → basename `05-cycle` → `05-` 제거 → `cycle`
+    - nested: `plan_docs/05-review/138-feature.md`(phase 05) → basename `138-feature` → `05-` 로 시작 안 하니
+      그대로 `138-feature`. 06 쪽 `139-feature` 와 stem 이 다르므로 다른 사이클로 올바로 구분된다.
+    임의 선행숫자를 지우면(codex 구현리뷰 5R P1) `138-feature`·`139-feature` 가 둘 다 `feature` 로 축약돼
+    다른 티켓을 같은 사이클로 오결속한다 — 그래서 phase 번호 접두어만 정확히 벗긴다."""
+    base = posixpath.splitext(posixpath.basename(relkey))[0]
+    for sep in ("-", "_"):
+        prefix = f"{phase_id}{sep}"
+        if base.startswith(prefix):
+            return base[len(prefix):]
+    return base
+
+
+def _session_06_stems(root, profile, session_files):
+    return {_phase_stem(k, "06") for k in _glob_relmap(root, _pdca_phase_glob(profile, "06")) if k in session_files}
+
+
+def _resolve_cycle_run_id(root, profile, session_files, stems06):
+    """이번 세션 06 과 **같은 stem** 의 05 문서들에서 유일한 `Loop-Run:` run_id 를 채택. 0개(마커 없음/
+    stem 불일치) 또는 2개 이상(모호)이면 None → 게이트 skip(fail-open by design).
+
+    05·06 을 stem 으로 결속한다(codex 구현리뷰 4R P1): 세션 스코프만으로는 같은 세션에 쓰인 05-alpha
+    (rl-alpha)와 06-beta(다른 사이클)를 구분 못 해, 06-beta 종료가 rl-alpha 를 잘못 block/기록한다.
+    06 과 stem 이 일치하는 05 만 그 사이클로 인정한다. 세션 스코프도 유지 — 다른 세션의 05 는 애초에
+    session_files 에 없다. 한 문서에 마커가 여럿이어도 finditer 로 전부 본다(같은 문서 상충 마커 포착)."""
+    if not stems06:
+        return None
+    ids = set()
+    for key, path in _glob_relmap(root, _pdca_phase_glob(profile, "05")).items():
+        if key not in session_files or _phase_stem(key, "05") not in stems06:
+            continue
+        try:
+            with open(path, encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+        except Exception:
+            continue
+        ids.update(m.group(1) for m in _LOOP_RUN_RE.finditer(content))
+    return next(iter(ids)) if len(ids) == 1 else None
+
+
+def _stop_hook_active(raw):
+    """Stop 입력의 `stop_hook_active` 를 안전하게 판정. 플랫폼은 JSON boolean 을 보내지만, 어댑터
+    직렬화/스키마 변형에 대비해 bool True 와 문자열 "true"(대소문자 무관)만 active 로 본다(codex
+    구현리뷰 P1: `bool("false")` 는 True 라 문자열 "false" 를 재시도로 오인해 첫 block 이 사라진다).
+
+    방향성: 재시도(무한루프 방지)는 플랫폼이 `true` 를 보낼 때만 성립하므로 `true`/`"true"` 를 놓치지
+    않으면 루프-안전이 유지되고, 그 외(`false`/`"false"`/누락/malformed)를 not-active 로 봐 첫 시도의
+    teeth 를 보존한다."""
+    v = raw.get("stop_hook_active")
+    if v is True:
+        return True
+    return isinstance(v, str) and v.strip().lower() == "true"
+
+
+def retro_gate_result(profile, root, raw, entries):
+    """retro_gate 정책 결과(양 런타임 공유, knowledge_capture 와 동형 — 9-C v1).
+
+    raw = Stop 이벤트 원본(파싱됨, session_id/stop_hook_active 추출용). entries = 오늘자 전체 로그
+    (report 본문과 같은 소스) — 06 작성 감지에만 `session` 필드로 이번 세션에 한정해 걸러 쓴다
+    (report 본문 자체의 집계 범위는 건드리지 않는다 — 기존 동작 보존)."""
+    import retro_audit
+    import retro_gate
+
+    pdca_retro = (profile.get("pdca") or {}).get("retro")
+    mode = (pdca_retro or {}).get("report_gate_enforce") or "off"
+    kc = profile.get("knowledge_capture")
+    notes_enabled = bool(kc.get("retro_note")) if isinstance(kc, dict) else False
+
+    session_id = raw.get("session_id") or ""
+    # 06/05 감지 모두 이번 세션 로그 파일집합(정규 키) ∩ glob.glob(recursive) 실존파일로 한다.
+    # fnmatch 로 `entries[].file` 을 직접 매칭하면 `**` 제로디렉토리 케이스를 놓친다(구현리뷰 1R P0).
+    session_files = {_canon_relkey(e.get("file", "")) for e in entries if e.get("session") == session_id} \
+        if session_id else set()
+    stems06 = _session_06_stems(root, profile, session_files) if session_files else set()
+    has_06 = bool(stems06)
+
+    run_id = _resolve_cycle_run_id(root, profile, session_files, stems06) if has_06 else None
+    checked = False
+    if run_id:
+        checked = bool(retro_audit.audit_summary(root).get(run_id, {}).get("checked"))
+
+    result = retro_gate.check(mode, has_06, run_id, checked, _stop_hook_active(raw), notes_enabled)
+
+    # 미완료 종료(게이트 활성 + 미확인 = WARN/BLOCK)를 .sage/retro_audit.jsonl 에 영구 기록한다 —
+    # host 로그의 컴플라이언스 리포트와 별개로, doctor/다음 사이클이 볼 수 있는 커밋 대상 증거(유저 스코프).
+    # 상태변화 시에만 append(record_missing 이 dedup). 기록 실패는 세션을 막지 않되(fail-open) **조용히
+    # 삼키지 않는다** — 미완료의 영구기록·doctor 가시성이 통째로 사라지므로 리포트에 명시(구현리뷰 3R P1).
+    if run_id and result["severity"] in ("WARN", "BLOCK"):
+        try:
+            retro_audit.record_missing(root, run_id, note_path=None)
+        except Exception as e:
+            result = dict(result)
+            result["text"] += f" (⚠️ retro_audit 기록 실패: {type(e).__name__} — 미완료 영구기록·doctor 가시성 유실)"
+
+    return result
+
+
 def run_stop_compliance_report(io, root, core_dir, raw_text):
     """stop-compliance-report 오케스트레이터(Stop). session JSONL → report.md.
 
     knowledge_capture 는 양 런타임 공유(F7). output_contract 는 codex 전용 → io.attach_policy_results 가
     런타임별로 policy_results 순서까지 결정(codex: [output_contract, knowledge_capture] / claude: [knowledge_capture]).
+    retro_gate(9-C v1)는 그 뒤에 공유로 붙는다(호스트 무관 문구라 순서 분기 불필요).
+
+    retro_gate 가 BLOCK 을 내면 이 함수가 exit 2 를 반환한다 — 기존 PreToolUse 게이트(io.render_gate)와
+    동일한 "exit code 2 = block" 관례를 그대로 쓴다(이 저장소에 Stop 전용 JSON decision 프로토콜 선례가
+    없어, 검증된 기존 관례를 재사용). `stop_hook_active` 가 true 인 재시도에서는 retro_gate 가 스스로
+    severity 를 WARN 으로 낮추므로, 여기서 별도 처리 없이 model["exit_code"]==0 이 자연히 나온다
+    (플랫폼 제약: 세션당 block 은 최대 1회 — retro_gate.py 문서 참조).
     """
     hid = "stop-compliance-report"
     today = os.environ.get("SAGE_TODAY") or time.strftime("%Y-%m-%d", time.localtime())
@@ -387,9 +535,29 @@ def run_stop_compliance_report(io, root, core_dir, raw_text):
     kc_result = knowledge_capture_result(profile, entries)   # 공유(F7)
     io.attach_policy_results(model, profile, entries, raw_text, kc_result)  # 런타임별 정책+순서
 
+    raw = parse_input_fail_open(hid, raw_text, surface=False) or {}   # session_id/stop_hook_active 추출용
+    try:
+        rg_result = retro_gate_result(profile, root, raw, entries)
+    except Exception as e:
+        # Stop 훅은 내부 오류로 세션을 막으면 안 된다(fail-open) — 게이트 판정 불가 시 skip 으로 낮춘다.
+        rg_result = {"name": "retro_gate", "severity": "INFO",
+                     "text": f"N/A — 게이트 판정 중 오류로 skip ({type(e).__name__})"}
+    model["sections"]["policy_results"].append(rg_result)
+
     md = core.render_markdown(model)
     report = os.path.join(log_dir, f"compliance-{today}.md")
     with open(report, "a", encoding="utf-8") as f:
         f.write(md)
     io.render_report_saved(today)
-    return model["exit_code"]
+
+    exit_code = model["exit_code"]
+    if rg_result["severity"] == "BLOCK":
+        # v1 스코프(유저 결정): claude host 만 실제 exit 2. codex 의 Stop lifecycle exit-2 차단은
+        # 이 저장소에서 실 세션으로 검증된 적이 없다 — 검증 전 codex 에서 exit 2 를 내면 이 리포에서
+        # 근거 없는 새 메커니즘에 기대는 셈이라, codex 는 리포트에만 BLOCK 을 남기고 세션은 통과시킨다.
+        if io.RUNTIME == "claude":
+            print(f"[stop-compliance-report] ❌ {rg_result['text']}")
+            exit_code = 2
+        else:
+            print(f"[stop-compliance-report] ⚠️  (codex — 미검증 미차단) {rg_result['text']}")
+    return exit_code

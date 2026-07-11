@@ -59,19 +59,22 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
    outside the vault-resolved path. If `.sage/plan_interview.md` exists (a planning interview
    ran) and vault is enabled, also capture it as a **separate** note via the same path (same
    guide-derived prefix/tags apply): `python -m sage knowledge write-back --title "<cycle-stem> 기획 인터뷰" --prefix <PREFIX> --tags "<t1,t2,…>" --summary-file .sage/plan_interview.md --append-log`.
-9. Retro (Loop C, advisory): run `python -m sage retro --run-id <RUN_ID> --feature <cycle-stem>`
+9. Retro (Loop C): run `python -m sage retro --run-id <RUN_ID> --feature <cycle-stem>`
    — always pass `--feature` (the plan-doc stem) so the note title names the cycle instead of
    being derived from the sole 05 doc or falling back to the run_id. A vault human-gate note is
    written only when the vault is enabled (`vault_path` + `retro_note`, both off by default);
-   if no note path is printed, record `retro note skipped: vault disabled` and stop. When a note
-   is written it is **empty on purpose**: the CLI gathers evidence deterministically and leaves
-   distillation to you. So open the note, run the printed distiller prompt over the evidence, and
-   fill `## 요약` (1–2 human-readable lines) and `## 제안` (the JSON proposal array). Verify with
-   `python -m sage retro --check <note path> --run-id <RUN_ID>`; it exits non-zero while the note
-   is still the blank template, a proposal lacks a valid `target`/`proposed_change`, or the note
-   belongs to another run. Never leave the note unfilled and never set `approved: true` yourself.
-   Record that retro ran, or why it was skipped, in the completion report — a required completion
-   axis, not optional.
+   if no note path is printed, record `retro note skipped: vault disabled` and stop — the Loop C
+   gate (`pdca.retro.report_gate_enforce`) is inactive when `retro_note` is off, so skipping is
+   fine. When a note is written it is **empty on purpose**: the CLI gathers evidence
+   deterministically and leaves distillation to you. So open the note, run the printed distiller
+   prompt over the evidence, and fill `## 요약` (1–2 human-readable lines) and `## 제안` (the JSON
+   proposal array). Verify with `python -m sage retro --check <note path> --run-id <RUN_ID>`; it
+   exits non-zero while the note is still the blank template, a proposal lacks a valid
+   `target`/`proposed_change`, or the note belongs to another run. This `--check` is **mandatory
+   when `report_gate_enforce` is advisory/enforce**: without a passing `--check`, the session-end
+   Stop hook records the cycle as unfinished and (under `enforce`, claude host) blocks stopping
+   once. Never leave the note unfilled and never set `approved: true` yourself. Record that retro
+   ran, or why it was skipped, in the completion report — a required completion axis, not optional.
 10. Final user report: include the per-phase outcome, review `run_id`, generated artifact
    inventory (plan docs, code/config files, vault notes, loop-audit dashboard, retro note),
    verification commands/results, and any human action still required. Summarize the retro

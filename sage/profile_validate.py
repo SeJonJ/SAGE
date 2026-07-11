@@ -25,7 +25,7 @@ _CLOSED_SECTION_FALLBACK = {
              "l1_path_globs", "l2_content_keywords", "l2_path_globs", "l3_content_keywords",
              "l3_filename_globs", "l3_review_strategy", "plan_glob", "review_patterns"},
     "pdca": {"approve_marker", "approve_phase", "enabled", "phases",
-             "pre_implementation_required", "report_phase", "review_loop"},
+             "pre_implementation_required", "report_phase", "review_loop", "retro"},
     "output_contract": {"markers"},
     "mcp": {"enabled"},
     "extraction": {"config"},
@@ -180,6 +180,81 @@ def _review_loop_issues(profile):
             and not any(risk.get(k) for k in ("l3_filename_globs", "l3_content_keywords")):
         issues.append(("WARN", "pdca.review_loop.architecture_escalation=from_risk.l3 이나 risk.l3_* 가 모두 비어 "
                                "→ 아키텍처 에스컬레이션(BLOCKED_ARCH) 무력. risk.l3_filename_globs/l3_content_keywords 채울 것"))
+    return issues
+
+
+def _sample_path_from_glob(g):
+    """phase glob → 대표 직속-자식 경로. 로그 커버리지 사전점검용(post_tool_logger 가 이 06 파일을
+    분류·기록할지). `**` 세그먼트는 0개 디렉토리 케이스(직속 자식)로 떨어뜨리고, `*` 는 probe 로,
+    `*.ext` 는 probe.ext 로 치환한다. 예: plan_docs/06-report/**/*.md → plan_docs/06-report/probe.md."""
+    if not isinstance(g, str) or not g:
+        return ""
+    segs = []
+    for s in g.split("/"):
+        if s == "**":
+            continue
+        if "*" in s:
+            s = s.replace("*", "probe")
+        segs.append(s)
+    return "/".join(segs)
+
+
+def _classifies(path, file_type_map):
+    """post_tool_logger_core._classify 와 동일(ordered first-match fnmatch). 로그 커버리지 heuristic
+    이라 하드 게이트 아님 — post_tool_logger 와 어휘가 어긋나도 WARN 오탐/미탐일 뿐."""
+    import fnmatch
+    if not isinstance(file_type_map, list):
+        return False
+    for entry in file_type_map:
+        if not isinstance(entry, dict):
+            continue
+        gl = entry.get("glob", "")
+        if gl and fnmatch.fnmatch(path, gl):
+            return True
+    return False
+
+
+def _retro_gate_issues(profile):
+    """pdca.retro.report_gate_enforce 검증(9-C v1) — off|advisory|enforce 만(오타 침묵 무효 방지).
+    9.5 의 pdca.review_loop.report_gate_enforce 와 동일 어휘·검증 형태(단일 소스는 아니고 나란히 존재 —
+    06←05 게이트와 Stop 게이트는 강제 지점이 달라 서로 다른 값을 가질 수 있어야 한다)."""
+    pdca = profile.get("pdca")
+    if not isinstance(pdca, dict):
+        return []   # 비-dict pdca 는 _semantic_issues 가 이미 FAIL(중복 회피)
+    retro = pdca.get("retro")
+    if retro is None:
+        return []
+    if not isinstance(retro, dict):
+        return [("FAIL", f"pdca.retro 는 매핑이어야 함 (받음: {type(retro).__name__})")]
+    mode = retro.get("report_gate_enforce")
+    if mode is None:
+        return []
+    if not isinstance(mode, str) or mode not in _REPORT_GATE_MODES:
+        return [("FAIL", f"pdca.retro.report_gate_enforce={mode!r} → {sorted(_REPORT_GATE_MODES)} 중 하나만")]
+    if mode == "off":
+        return []
+    issues = []
+    kc = profile.get("knowledge_capture")
+    kc = kc if isinstance(kc, dict) else {}
+    if not kc.get("retro_note"):
+        issues.append(("WARN", f"pdca.retro.report_gate_enforce={mode} 이나 knowledge_capture.retro_note 가 off "
+                               f"→ retro 노트 미생성 → --check 불가 → 게이트 무동작(retro_note 를 켜야 유효)"))
+    # 게이트의 06 감지는 post_tool_logger 가 남긴 세션 로그에 의존한다 — 06 파일이 file_type_map 으로
+    # 분류되지 않고 skip_untyped=true 면 로그에 안 남아 게이트가 조용히 무동작(codex 구현리뷰 P1).
+    phases = pdca.get("phases")
+    glob06 = ""
+    if isinstance(phases, list):
+        for ph in phases:
+            if isinstance(ph, dict) and ph.get("id") == "06":
+                glob06 = ph.get("glob") or ""
+                break
+    sample = _sample_path_from_glob(glob06)
+    ftm = profile.get("file_type_map")
+    skip_untyped = profile.get("skip_untyped", True)
+    if sample and skip_untyped and not _classifies(sample, ftm):
+        issues.append(("WARN", f"pdca.retro.report_gate_enforce={mode} 이나 06 문서('{sample}' 형태)가 "
+                               f"file_type_map 에 안 걸림 → post_tool_logger 가 안 남겨 게이트가 06 작성을 "
+                               f"못 봄(무동작). file_type_map 에 06 경로를 분류하는 항목을 추가하거나 skip_untyped=false"))
     return issues
 
 
@@ -472,7 +547,7 @@ def validate_profile(profile, root):
     try:
         issues = issues + _semantic_issues(profile, root) + _review_loop_issues(profile) \
             + _acceptance_issues(profile) + _knowledge_capture_issues(profile) \
-            + _cross_model_issues(profile) + _team_agent_issues(profile)
+            + _cross_model_issues(profile) + _team_agent_issues(profile) + _retro_gate_issues(profile)
     except Exception as e:
         issues.append(("FAIL", f"profile 의미검증 중 예외 — malformed profile 추정({type(e).__name__}). "
                                f"구조(중첩 값 타입) 점검 필요"))

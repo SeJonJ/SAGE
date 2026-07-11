@@ -79,7 +79,7 @@
       "l3_review_strategy": "codex_feature_signal"
     },
     "hooks/stop-compliance-report": {
-      "spec_hash": "sha256:04cdde06cee3563754dc9cdb7e45cf3c01ca05b161885dec0c42155d5001c898",
+      "spec_hash": "sha256:485a9e0ae7085af09fd1cde55c894353e2b64fcaa71b806fd3068f3b4e688d07",
       "canonical_hash": "sha256:9722b3c9694ea0649208fb0ae021467cd872ded6b4328794aa8b08dc5690fcb6",
       "adapter_hash": {
         "claude": "sha256:031dcf4cee2de44cd3f5af5e4e38e95aa511704cfaa55b29f84d5d0b2bc7f8d0",
@@ -111,7 +111,7 @@
     }
   },
   "hook_runtime_hash": {
-    "shared": "sha256:afb89522c29b2e9ad576914df38870e2233a9b7b5483789a83186499b5171ab2",
+    "shared": "sha256:f984492915f9b5b01a3fa178e718f780aa13b3f7a897f4f67c79ff649baff76f",
     "claude": "sha256:77126a3bfaa36cc1cdb60b62252993ad05692aa3ea6208736ab1b86d29d0a831",
     "codex": "sha256:ccc40a617c118c10be91e295e5b92fc61274539593a2b8e4fff09a599cab2e57"
   }

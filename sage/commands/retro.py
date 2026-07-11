@@ -32,6 +32,17 @@ def register(sub):
     p.set_defaults(func=run)
 
 
+def _load_retro_audit():
+    """retro_audit 모듈 동적 import — _load_loop_audit 과 동일 패턴(hook 런타임 모듈을 sage 패키지가
+    재사용, 반대 방향 의존은 없음). 9-C: `sage retro --check` 성공 증거를 Stop 훅이 사후 대조한다."""
+    from sage import _resources
+    rt = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks", "runtime")
+    if rt not in sys.path:
+        sys.path.insert(0, rt)
+    import retro_audit as ra
+    return ra
+
+
 def _load_loop_audit(root):
     from sage import _resources
     rt = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks", "runtime")
@@ -164,7 +175,7 @@ def _summary_body(text):
     return rest[:nxt.start()] if nxt else rest
 
 
-def _check_note(path, run_id=None):
+def _check_note(path, root, run_id=None):
     """retro 노트가 실제로 채워졌는지 결정론 검사 → exit code.
 
     CLI 는 빈 템플릿만 쓰고 distill/작성은 host AI 에 맡긴다(설계: gather=결정론, distillation=판단).
@@ -236,15 +247,30 @@ def _check_note(path, run_id=None):
     print(f"  요약 작성됨 · 제안 {n}건" + (" (전부 유효 target)" if n else ""))
     if n == 0:
         print("  ⚠️  제안 0건 — 구조적 패턴이 정말 없었다면 정상이나, 그 판단 근거를 완료 보고에 남기세요.")
+
+    # 9-C: 성공 증거를 .sage/retro_audit.jsonl 에 기록 — Stop 훅(retro_gate)이 이 run 이 실제로
+    # check 를 통과했는지 사후 대조한다. 기록 실패는 --check 자체를 실패로 본다: 기록 안 된 성공은
+    # 게이트가 못 보는 성공과 같다(codex 설계리뷰 1R). run_id 를 특정할 수 없으면(--run-id 도 없고
+    # 노트도 선언 안 함) 대조 대상이 없어 조용히 건너뛴다 — 그 경우도 위에서 이미 검증됐다.
+    bind_id = run_id or noted
+    if bind_id:
+        try:
+            ra = _load_retro_audit()
+            ra.record_check(root, bind_id, path, text)
+        except Exception as e:
+            print(f"[sage retro --check] retro_audit 기록 실패: {type(e).__name__}: {e} "
+                  f"— 게이트가 이 사이클을 완료로 인식할 수 없습니다.", file=sys.stderr)
+            return 2
+
     print("  다음: 사람이 검토 후 frontmatter `approved: true` → `sage absorb --from-retro <노트>`")
     return 0
 
 
 def run(args):
-    if args.check:
-        return _check_note(args.check, args.run_id)
-
     root = os.path.abspath(args.root) if args.root else _find_project_root(os.getcwd())
+    if args.check:
+        return _check_note(args.check, root, args.run_id)
+
     profile = _load_profile(root)
     la = _load_loop_audit(root)
 
