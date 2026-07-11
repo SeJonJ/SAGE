@@ -133,6 +133,12 @@ Only when the cycle is `05_approved` (see resume state machine), the `leader` wr
 `verification.acceptance.report_gate_enforce` can warn/block if 04 acceptance evidence is
 missing or unresolved — never bypass it.
 
+The 06 doc must declare `Loop-Run: <run_id>` at its top — copy the `run_id` from the
+APPROVED 05 doc (and add `Source-05: <05 doc path>`). The Stop-time retro gate reads this
+line to confirm `sage retro --check` ran for that run; if 06 omits it the retro gate
+cannot bind the report (advisory warns, enforce blocks). This survives session resume
+because the report carries its own cycle id rather than inferring it from disk.
+
 After 06 is written, run the configured knowledge write-back when it is enabled:
 
 1. If `knowledge_capture.update_after_dev: true` and `knowledge_capture.vault_path`

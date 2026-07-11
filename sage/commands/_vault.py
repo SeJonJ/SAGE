@@ -16,14 +16,19 @@ def _safe_rel(folder):
     return os.path.join(*parts) if parts else "wiki"
 
 
-def vault_target(profile, override=None):
+def vault_target(profile, override=None, root=None):
     """(vault_path, folder) 또는 (None, None)=비활성. folder 는 안전 상대경로로 정규화.
 
     게이트 계약(codex S5 명확화):
     - 기본(--vault 미지정): vault 출력 안 함.
     - `--vault`(경로 생략): profile.knowledge_capture.vault_path 마스터 게이트 — 비면 OFF.
     - `--vault PATH`: **명시적 opt-in 오버라이드** — profile 게이트와 무관하게 PATH 에 쓴다(테스트/1회 내보내기).
-      사용자가 직접 경로를 타이핑한 것이 곧 opt-in 이므로 의도된 동작이다."""
+      사용자가 직접 경로를 타이핑한 것이 곧 opt-in 이므로 의도된 동작이다.
+
+    root 를 주면 profile 의 **상대** vault_path 는 project root 기준 절대경로로 정규화한다(codex W1 R2 재검 P1):
+    retro Stop 게이트(hook)는 root 기준으로 vault 를 보는데 CLI 가 CWD 기준으로 노트를 쓰면, 하위 디렉토리에서
+    실행 시 게이트가 요구하는 vault 와 노트 위치가 갈려 우회가 생긴다. hook 과 동일 규칙으로 맞춘다.
+    override(사용자 타이핑 경로)는 그 셸 CWD 기준이 의도이므로 정규화하지 않는다."""
     kc = profile.get("knowledge_capture") if isinstance(profile, dict) else {}
     kc = kc if isinstance(kc, dict) else {}
     raw = override if override is not None else kc.get("vault_path")
@@ -31,6 +36,8 @@ def vault_target(profile, override=None):
     vault = raw.strip() if isinstance(raw, str) else ""
     if not vault:
         return None, None
+    if override is None and root and not os.path.isabs(vault):
+        vault = os.path.join(root, vault)
     folder = _safe_rel(((kc.get("note_convention") or {}).get("folder")) or "wiki")
     return vault, folder
 

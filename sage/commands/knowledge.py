@@ -83,13 +83,13 @@ def _text_arg(value, file_path):
     return value or ""
 
 
-def _kc_gate(profile, flag, vault_override):
+def _kc_gate(profile, flag, vault_override, root=None):
     kc = profile.get("knowledge_capture") if isinstance(profile, dict) else {}
     kc = kc if isinstance(kc, dict) else {}
     if kc.get(flag) is not True:
         return None, None, f"knowledge_capture.{flag}=false_or_unset"
     override = vault_override or None
-    vault, folder = _vault.vault_target(profile, override)
+    vault, folder = _vault.vault_target(profile, override, root)
     if not vault:
         return None, None, "vault_path empty"
     return vault, folder, None
@@ -218,7 +218,7 @@ def _run_scan(args):
         _write_scan_report(root, "error", query, None, [], err)
         print(f"[sage knowledge scan] {err} → {_scan_path(root)}")
         return 0
-    vault, folder, reason = _kc_gate(profile, "scan_before_dev", args.vault)
+    vault, folder, reason = _kc_gate(profile, "scan_before_dev", args.vault, root)
     if reason:
         _write_scan_report(root, "n/a", query, None, [], reason)
         print(f"[sage knowledge scan] N/A — {reason} → {_scan_path(root)}")
@@ -342,7 +342,7 @@ def _run_write_back(args):
     if err:
         print(f"[sage knowledge write-back] FAIL — {err}")
         return 1
-    vault, folder, reason = _kc_gate(profile, "update_after_dev", args.vault)
+    vault, folder, reason = _kc_gate(profile, "update_after_dev", args.vault, root)
     if reason:
         print(f"[sage knowledge write-back] N/A — {reason}")
         return 0

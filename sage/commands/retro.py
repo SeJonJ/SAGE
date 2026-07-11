@@ -321,7 +321,7 @@ def run(args):
 def _write_vault_note(profile, root, rid, raw_stem, out_lines, override):
     """retro 패킷을 vault 에 human-gate 노트(approved:false)로 작성. 사람이 Obsidian 에서 검토·승인."""
     from sage.commands import _vault
-    vault, folder = _vault.vault_target(profile, override)
+    vault, folder = _vault.vault_target(profile, override, root)
     if not vault:
         print("  ℹ️  vault 비활성(knowledge_capture.vault_path 미설정, --vault 경로도 없음) → 노트 생략", file=sys.stderr)
         return

@@ -291,6 +291,9 @@ APPROVED / FAIL / BLOCKED
 ```markdown
 # [Report] {Feature Name}
 
+Loop-Run: {run_id}
+Source-05: {root-relative path of the APPROVED Phase 05 doc}
+
 ## 1. Completion Summary
 
 ## 2. Value Delivered
@@ -303,6 +306,11 @@ APPROVED / FAIL / BLOCKED
 | Note | Action | Reason |
 |:---|:---|:---|
 ```
+
+`Loop-Run` copies the `run_id` from the APPROVED Phase 05 doc so the report declares
+which review cycle it closes. The Stop-time retro gate reads this line to verify
+`sage retro --check` ran for that run; omit it and the gate cannot bind the report
+(warned under advisory, blocked under enforce).
 
 ---
 

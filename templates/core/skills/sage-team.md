@@ -42,7 +42,10 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
    `.sage/loop_audit.jsonl`, resolves cross-model, and blocks APPROVED when required
    acceptance evidence is `FAIL` or `NOT TESTED`. On BLOCKED, stop.
 7. Completion (06): only when `05_approved`, the leader writes 06. The 06←05 gate enforces
-   this deterministically.
+   this deterministically. The 06 doc must declare `Loop-Run: <RUN_ID>` at its top (copy the
+   run_id from the APPROVED 05 doc; add `Source-05: <05 doc path>`) — the Stop-time retro gate
+   reads this line to bind the report to its cycle, so it survives session resume. Omitting it
+   leaves the retro gate unable to bind (advisory warns, enforce blocks).
 8. Knowledge write-back: if `knowledge_capture.update_after_dev: true` and
    `knowledge_capture.vault_path` is set, write the final cycle summary to
    `.sage/knowledge_writeback_summary.md` — a durable cross-project distillation

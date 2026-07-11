@@ -34,9 +34,29 @@ class TestRetroGate(unittest.TestCase):
         self.assertEqual(r["severity"], "INFO")
         self.assertIn("06", r["text"])
 
-    def test_unresolvable_run_id_is_info_not_block(self):
-        # 멀티사이클/마커없음 등으로 run_id 특정 불가 → 오탐보다 침묵(skip)이 낫다.
-        r = rg.check("enforce", True, None, False, False)
+    def test_binding_impossible_no_candidate_enforce_blocks(self):
+        # 외부 보완 피드백 Item 2: 06 은 이번 세션에 쓰였는데 같은 stem 05 결속 불가(no_candidate) →
+        # 조용한 skip 은 우회. enforce 첫Stop=BLOCK, advisory=WARN.
+        r = rg.check("enforce", True, None, False, False, binding="no_candidate")
+        self.assertEqual(r["severity"], "BLOCK")
+        self.assertIn("결속 불가", r["text"])
+        w = rg.check("advisory", True, None, False, False, binding="no_candidate")
+        self.assertEqual(w["severity"], "WARN")
+
+    def test_binding_impossible_ambiguous_enforce_blocks(self):
+        # run_id 여럿(다중 사이클/충돌 마커) → ambiguous → 오결속 않되 조용히 skip 도 않음.
+        r = rg.check("enforce", True, None, False, False, binding="ambiguous")
+        self.assertEqual(r["severity"], "BLOCK")
+        self.assertIn("모호", r["text"])
+
+    def test_binding_impossible_retry_never_blocks_again(self):
+        # 플랫폼 제약: 결속 불가 BLOCK 도 재시도(stop_hook_active)에선 WARN 로 낮춰 무한 block 방지.
+        r = rg.check("enforce", True, None, False, True, binding="no_candidate")
+        self.assertEqual(r["severity"], "WARN")
+
+    def test_binding_impossible_inactive_when_notes_disabled(self):
+        # retro_note off 면 결속 불가여도 게이트 무동작(INFO) — notes_enabled 가 우선.
+        r = rg.check("enforce", True, None, False, False, notes_enabled=False, binding="no_candidate")
         self.assertEqual(r["severity"], "INFO")
 
     def test_checked_is_ok_regardless_of_mode(self):

@@ -393,46 +393,71 @@ def _glob_relpaths(root, pglob):
     return set(_glob_relmap(root, pglob).keys())
 
 
-def _phase_stem(relkey, phase_id):
-    """phase 문서 경로 → 사이클 stem. **해당 phase 번호 접두어만** 제거하고 나머지는 보존한다.
-    - flat: `plan_docs/05-cycle.md`(phase 05) → basename `05-cycle` → `05-` 제거 → `cycle`
-    - nested: `plan_docs/05-review/138-feature.md`(phase 05) → basename `138-feature` → `05-` 로 시작 안 하니
-      그대로 `138-feature`. 06 쪽 `139-feature` 와 stem 이 다르므로 다른 사이클로 올바로 구분된다.
-    임의 선행숫자를 지우면(codex 구현리뷰 5R P1) `138-feature`·`139-feature` 가 둘 다 `feature` 로 축약돼
-    다른 티켓을 같은 사이클로 오결속한다 — 그래서 phase 번호 접두어만 정확히 벗긴다."""
-    base = posixpath.splitext(posixpath.basename(relkey))[0]
-    for sep in ("-", "_"):
-        prefix = f"{phase_id}{sep}"
-        if base.startswith(prefix):
-            return base[len(prefix):]
-    return base
+_H2_PLUS_RE = re.compile(r"#{2,}(?:\s|$)")   # H2 이상 ATX 헤딩 = 본문 섹션 시작(H1 제목은 종료로 보지 않음)
 
 
-def _session_06_stems(root, profile, session_files):
-    return {_phase_stem(k, "06") for k in _glob_relmap(root, _pdca_phase_glob(profile, "06")) if k in session_files}
+def _header_loop_run_ids(content):
+    """06 문서 **최상단 메타데이터 블록**의 Loop-Run run_id 집합. 첫 H2 이상 헤딩 전까지만 본다.
 
-
-def _resolve_cycle_run_id(root, profile, session_files, stems06):
-    """이번 세션 06 과 **같은 stem** 의 05 문서들에서 유일한 `Loop-Run:` run_id 를 채택. 0개(마커 없음/
-    stem 불일치) 또는 2개 이상(모호)이면 None → 게이트 skip(fail-open by design).
-
-    05·06 을 stem 으로 결속한다(codex 구현리뷰 4R P1): 세션 스코프만으로는 같은 세션에 쓰인 05-alpha
-    (rl-alpha)와 06-beta(다른 사이클)를 구분 못 해, 06-beta 종료가 rl-alpha 를 잘못 block/기록한다.
-    06 과 stem 이 일치하는 05 만 그 사이클로 인정한다. 세션 스코프도 유지 — 다른 세션의 05 는 애초에
-    session_files 에 없다. 한 문서에 마커가 여럿이어도 finditer 로 전부 본다(같은 문서 상충 마커 포착)."""
-    if not stems06:
-        return None
+    문서 전체를 finditer 하면(codex W1 R2 P2) 본문 섹션의 예시 코드블록에 든 `Loop-Run: rl-example` 까지
+    매치돼 실제 run 과 상충으로 잡혀 false ambiguous BLOCK 이 난다. Loop-Run/Source-05 는 템플릿상 H1 제목
+    바로 아래(첫 H2 전)에 오는 고정 헤더이므로 그 구간만 파싱한다. 헤딩 판정은 선행 공백/탭을 제거하고
+    H2 이상(`##`+)만 종료로 본다(codex W1 R2 재검 P2: `  ## `·`##\t` 변형이 새어 본문 예시를 재파싱). 선두
+    BOM 은 제거해 BOM+Loop-Run 시작 문서에서 마커를 놓치지 않는다. H1(`# `)은 제목이라 종료로 보지 않는다."""
     ids = set()
-    for key, path in _glob_relmap(root, _pdca_phase_glob(profile, "05")).items():
-        if key not in session_files or _phase_stem(key, "05") not in stems06:
+    for line in content.lstrip("\ufeff").splitlines():
+        if _H2_PLUS_RE.match(line.lstrip()):
+            break
+        m = _LOOP_RUN_RE.match(line)
+        if m:
+            ids.add(m.group(1))
+    return ids
+
+
+def _session_06_run_ids(root, profile, session_files):
+    """이번 세션에 쓰인 06 문서별로 자기선언한 Loop-Run run_id 집합. {정규 키: {run_ids}}.
+
+    06 이 자기 사이클을 명시 선언(Loop-Run:)하게 하고 게이트는 06 만 읽는다. 05 를 stem 으로 추측해
+    디스크에서 찾지 않는다(codex W1 P1 2건): 전역 stem 스캔은 (1) 다중 06 을 하나의 run_id 집합으로 합쳐
+    결속 불가 06 을 이미 확인된 06 에 가리고, (2) 과거/타 디렉토리의 동명 05 를 이번 06 에 오결속한다.
+    run_id 는 sage-review 가 05 에 기록하고 06 작성 시 06 으로 복사된다(쓰기 시점에 06←05 review_loop
+    게이트가 그 run 결속을 이미 검증). 06 이 이번 세션 로그 ∩ glob 실존파일일 때만 인정한다. 한 06 에
+    마커가 여럿이어도 finditer 로 전부 보아 상충을 포착한다 — 0개/2개↑ 판정은 호출부(_reduce_06_bindings)."""
+    out = {}
+    for key, path in _glob_relmap(root, _pdca_phase_glob(profile, "06")).items():
+        if key not in session_files:
             continue
         try:
             with open(path, encoding="utf-8", errors="ignore") as f:
                 content = f.read()
         except Exception:
-            continue
-        ids.update(m.group(1) for m in _LOOP_RUN_RE.finditer(content))
-    return next(iter(ids)) if len(ids) == 1 else None
+            content = ""
+        out[key] = _header_loop_run_ids(content)
+    return out
+
+
+def _reduce_06_bindings(per06_ids, audit_summary):
+    """이번 세션 06 들의 자기선언 결속을 retro_gate.check 용 판정 (run_id, binding, checked, missing)으로 축약.
+
+    **06 마다** 결속을 본다(codex W1 P1: 집계 run_id 는 결속 불가 06 을 확인된 다른 06 에 가리고, 정상
+    다중 사이클을 모호로 오판한다). 한 06 이라도 마커가 정확히 1개가 아니면 결속 불가다 — 2개↑=상충
+    (ambiguous), 0개=미선언(no_candidate). 전부 유일 결속이면 각 run 을 감사에서 확인한다: 대표 run_id 와
+    checked 는 게이트 표시용(정렬 첫 미확인, 없으면 첫 run).
+
+    missing 은 **유일 결속(마커 1개) 06 의 미확인 run 전체**다 — **다른 06 의 결속 불가와 무관하게** 모은다
+    (codex W1 R2 재검 P1: 결속 불가 06 을 먼저 만나 즉시 missing=[] 를 반환하면, 같은 세션에서 유효 선언·미확인
+    된 run 의 doctor 가시성이 사라져 R2 #2 가 다시 깨진다). 게이트 판정만 worst-case binding failure 로 축약한다.
+    어댑터가 missing 전부를 record_missing 해야 다중 미확인이 첫 run 하나로 잘리지 않는다(codex W1 R2 P1)."""
+    items = sorted(per06_ids.items())
+    resolved = [next(iter(ids)) for _, ids in items if len(ids) == 1]
+    missing = sorted({r for r in resolved if not bool((audit_summary.get(r) or {}).get("checked"))})
+    if any(len(ids) > 1 for _, ids in items):
+        return None, "ambiguous", False, missing
+    if any(len(ids) == 0 for _, ids in items):
+        return None, "no_candidate", False, missing
+    if missing:
+        return missing[0], "resolved", False, missing
+    return resolved[0], "resolved", True, missing
 
 
 def _stop_hook_active(raw):
@@ -493,30 +518,36 @@ def retro_gate_result(profile, root, raw, session_entries):
     # 게이트 활성 조건을 retro CLI 와 일치시킨다(codex 7R P1): CLI 는 `retro_note is True` 이고 vault 경로가
     # 실제로 잡혀야 노트를 쓴다(_vault.vault_target). 노트가 안 써지면 --check 대상이 없어 게이트가 통과
     # 불가능한 걸 강제하게 된다. bool(retro_note) 만 보면 "false"(문자열)·vault 미설정을 활성으로 오판한다.
+    # vault 는 실제 디렉토리여야 한다(codex W1 R2 P1): 비어있지 않은 문자열이어도 일반 파일/`/dev/null`/권한
+    # 불가 경로면 노트 디렉토리를 만들 수 없어 --check 대상이 없다 — isdir 로 usable vault 만 활성화한다.
+    # 상대경로 vault 는 **project root 기준**으로 판정한다(codex W1 R2 재검 P1): 어댑터가 --root 만 넘기고
+    # cd 하지 않아, raw 상대경로에 isdir 를 걸면 hook CWD 기준이 돼 정상 vault 도 조용히 무동작(INFO)한다.
     vp = kc.get("vault_path")
     vault = vp.strip() if isinstance(vp, str) else ""
-    notes_enabled = (kc.get("retro_note") is True) and bool(vault)
+    vault_abs = vault if os.path.isabs(vault) else os.path.join(root, vault)
+    notes_enabled = (kc.get("retro_note") is True) and bool(vault) and os.path.isdir(vault_abs)
 
-    # 06/05 감지 모두 이번 세션 로그 파일집합(정규 키) ∩ glob.glob(recursive) 실존파일로 한다.
+    # 06 감지는 이번 세션 로그 파일집합(정규 키) ∩ glob.glob(recursive) 실존파일로 한다.
     # fnmatch 로 `entries[].file` 을 직접 매칭하면 `**` 제로디렉토리 케이스를 놓친다(구현리뷰 1R P0).
     session_files = {_canon_relkey(e.get("file", "")) for e in session_entries}
-    stems06 = _session_06_stems(root, profile, session_files) if session_files else set()
-    has_06 = bool(stems06)
+    per06 = _session_06_run_ids(root, profile, session_files) if session_files else {}
+    has_06 = bool(per06)
 
-    run_id = _resolve_cycle_run_id(root, profile, session_files, stems06) if has_06 else None
-    checked = False
-    if run_id:
-        checked = bool(retro_audit.audit_summary(root).get(run_id, {}).get("checked"))
+    run_id, binding, checked, missing = None, "resolved", False, []
+    if has_06:
+        run_id, binding, checked, missing = _reduce_06_bindings(per06, retro_audit.audit_summary(root))
 
-    result = retro_gate.check(mode, has_06, run_id, checked, _stop_hook_active(raw), notes_enabled)
+    result = retro_gate.check(mode, has_06, run_id, checked, _stop_hook_active(raw), notes_enabled, binding)
 
     # 미완료 종료(게이트 활성 + 미확인 = WARN/BLOCK)를 .sage/retro_audit.jsonl 에 영구 기록한다 —
     # host 로그의 컴플라이언스 리포트와 별개로, doctor/다음 사이클이 볼 수 있는 커밋 대상 증거(유저 스코프).
-    # 상태변화 시에만 append(record_missing 이 dedup). 기록 실패는 세션을 막지 않되(fail-open) **조용히
-    # 삼키지 않는다** — 미완료의 영구기록·doctor 가시성이 통째로 사라지므로 리포트에 명시(구현리뷰 3R P1).
-    if run_id and result["severity"] in ("WARN", "BLOCK"):
+    # **미확인 run 전부** 기록한다(codex W1 R2 P1): 다중 06 이 각기 미확인이면 대표 하나만 기록하던 옛
+    # 코드는 나머지를 재시도 dedup 뒤 doctor 가시성에서 잃었다. 상태변화 시에만 append(record_missing 이
+    # dedup). 기록 실패는 세션을 막지 않되(fail-open) **조용히 삼키지 않는다** — 리포트에 명시(구현리뷰 3R P1).
+    if missing and result["severity"] in ("WARN", "BLOCK"):
         try:
-            retro_audit.record_missing(root, run_id, note_path=None)
+            for rid in missing:
+                retro_audit.record_missing(root, rid, note_path=None)
         except Exception as e:
             result = dict(result)
             result["text"] += f" (⚠️ retro_audit 기록 실패: {type(e).__name__} — 미완료 영구기록·doctor 가시성 유실)"

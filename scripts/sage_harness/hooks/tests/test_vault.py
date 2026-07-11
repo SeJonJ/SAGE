@@ -31,6 +31,18 @@ class TestVaultHelper(unittest.TestCase):
         prof = {"knowledge_capture": {"vault_path": "/profile"}}
         self.assertEqual(_vault.vault_target(prof, override="/cli")[0], "/cli")
 
+    def test_profile_relative_vault_resolved_against_root(self):
+        # codex W1 R2 재검 P1: profile 상대 vault_path 는 root 기준 절대경로로 정규화(retro Stop 게이트가 root
+        # 기준으로 보는 vault 와 CLI 가 노트를 쓰는 vault 를 일치시킨다). 절대경로·override 는 그대로.
+        prof = {"knowledge_capture": {"vault_path": "vlt"}}
+        self.assertEqual(_vault.vault_target(prof, root="/proj")[0], os.path.join("/proj", "vlt"))
+        self.assertEqual(_vault.vault_target({"knowledge_capture": {"vault_path": "."}}, root="/proj")[0],
+                         os.path.join("/proj", "."))
+        self.assertEqual(_vault.vault_target({"knowledge_capture": {"vault_path": "/abs/v"}}, root="/proj")[0],
+                         "/abs/v")   # 절대경로는 root 무관
+        self.assertEqual(_vault.vault_target(prof, override="over", root="/proj")[0], "over")   # override 는 CWD 기준 유지
+        self.assertEqual(_vault.vault_target(prof)[0], "vlt")   # root 미지정 → 종전 동작(하위호환)
+
     def test_non_str_vault_path_no_crash(self):
         # vault_path 가 비-str(123)이어도 .strip() 크래시 없이 (None,None)=비활성(codex A).
         self.assertEqual(_vault.vault_target({"knowledge_capture": {"vault_path": 123}}), (None, None))

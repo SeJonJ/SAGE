@@ -197,7 +197,12 @@ class TestRetroGateWiring(unittest.TestCase):
 
     def _setup(self, root, mode="enforce", has_loop_run=True, session_matches=True, log_06=True,
                glob06="plan_docs/06-*.md", doc06="plan_docs/06-cycle.md", glob05="plan_docs/05-*.md",
-               log_05=True, doc05="plan_docs/05-cycle.md", retro_note=True, vault_path="/tmp/v"):
+               log_05=True, doc05="plan_docs/05-cycle.md", retro_note=True, vault_path=None,
+               run_id=None):
+        run_id = run_id or self.RUN_ID
+        if vault_path is None:   # 게이트 활성엔 usable(디렉토리) vault 가 필요(isdir) — 실제 디렉토리 생성
+            vault_path = os.path.join(root, "vault")
+            os.makedirs(vault_path, exist_ok=True)
         prof = {"pdca": {"phases": [{"id": "05", "glob": glob05},
                                      {"id": "06", "glob": glob06}],
                          "retro": {"report_gate_enforce": mode}},
@@ -209,26 +214,26 @@ class TestRetroGateWiring(unittest.TestCase):
             json.dump(prof, f)
 
         os.makedirs(os.path.join(root, "plan_docs"), exist_ok=True)
-        body = f"Loop-Run: {self.RUN_ID}\n" if has_loop_run else "본문만 있고 마커 없음\n"
+        # 05 는 retro 게이트에서 더 이상 스캔하지 않는다(06 이 Loop-Run 을 자가선언 — codex W1). 05 는
+        # 존재해도 결과에 무영향(review_loop 게이트 대상). run_id 는 06 이 스스로 기록한다.
         abs05 = os.path.join(root, doc05)
         os.makedirs(os.path.dirname(abs05), exist_ok=True)
         with open(abs05, "w", encoding="utf-8") as f:
-            f.write(body)
+            f.write("Phase 05 리뷰\n")
 
         sess = "sess-1" if session_matches else "sess-OTHER"
         log_dir = os.path.join(root, ".claude", "logs")
         os.makedirs(log_dir, exist_ok=True)
         entries = []
-        # 05·06 모두 이번 세션 로그에 있어야 게이트가 결속한다(session-scoped run_id — 다른 세션의 05 를
-        # 이번 06 에 오결속하지 않도록). 디스크에도 실재해야 함(글롭 매치 기준).
         if log_05:
             entries.append({"ts": f"{TODAY}T00:00:00Z", "tool": "Write", "file": doc05,
                             "type": "plan-doc", "branch": "main", "session": sess})
         if log_06:
             abs06 = os.path.join(root, doc06)
             os.makedirs(os.path.dirname(abs06), exist_ok=True)
+            marker = f"Loop-Run: {run_id}\n" if has_loop_run else "마커 없음\n"
             with open(abs06, "w", encoding="utf-8") as f:
-                f.write("완료 보고\n")
+                f.write("완료 보고\n" + marker)
             entries.append({"ts": f"{TODAY}T00:00:01Z", "tool": "Write", "file": doc06,
                             "type": "plan-doc", "branch": "main", "session": sess})
         with open(os.path.join(log_dir, f"session-{TODAY}.jsonl"), "w", encoding="utf-8") as f:
@@ -311,16 +316,18 @@ class TestRetroGateWiring(unittest.TestCase):
             p = self._run(root, prof_path, stop_hook_active=False)
             self.assertEqual(p.returncode, 0)
 
-    def test_no_loop_run_marker_does_not_block(self):
-        # run_id 특정 불가 → fail-open(skip), block 아님.
+    def test_no_loop_run_marker_binding_impossible_blocks(self):
+        # 06 이 이번 세션에 쓰였는데 Loop-Run 을 자기선언하지 않아 run_id 특정 불가 = 결속 불가.
+        # 조용한 skip 은 게이트 우회이므로 enforce 에서 BLOCK(외부 보완 피드백 Item 2).
         with tempfile.TemporaryDirectory() as root:
             prof_path, log_dir = self._setup(root, mode="enforce", has_loop_run=False)
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 0)
+            self.assertEqual(p.returncode, 2, p.stdout)
+            self.assertIn("결속 불가", p.stdout)
 
-    def test_unrelated_05_different_stem_is_ignored(self):
-        # 같은 세션에 다른 stem 의 05(rl-different, stem=other)가 있어도 06(stem=cycle)은 stem 이 맞는
-        # 05-cycle(rl-test123)에만 결속된다 — 다른 사이클의 05 는 무시(codex 4R stem-binding).
+    def test_05_content_is_ignored_gate_reads_only_06(self):
+        # codex W1: 게이트는 06 자기선언만 읽는다 — 05 문서의 Loop-Run(rl-different)은 무관하다.
+        # 06 이 rl-test123 을 선언했으니 그 run 에만 결속/기록되고 rl-different 는 절대 새지 않는다.
         with tempfile.TemporaryDirectory() as root:
             prof_path, log_dir = self._setup(root, mode="enforce")
             with open(os.path.join(root, "plan_docs", "05-other.md"), "w", encoding="utf-8") as f:
@@ -330,22 +337,30 @@ class TestRetroGateWiring(unittest.TestCase):
                 f.write(json.dumps({"ts": f"{TODAY}T00:00:00Z", "tool": "Write", "file": "plan_docs/05-other.md",
                                     "type": "plan-doc", "branch": "main", "session": "sess-1"}) + "\n")
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)   # rl-test123 에만 결속 → BLOCK
+            self.assertEqual(p.returncode, 2, p.stdout)   # 06 이 선언한 rl-test123 미확인 → BLOCK
             self.assertIn(self.RUN_ID, p.stdout)
             self.assertNotIn("rl-different", p.stdout)
             missing_ids = {r["run_id"] for r in self._audit_records(root) if r["event"] == "retro_check_missing"}
-            self.assertEqual({self.RUN_ID}, missing_ids)   # 미완료도 rl-different 아닌 rl-test123 에만
+            self.assertEqual({self.RUN_ID}, missing_ids)   # 미완료도 05 의 rl-different 아닌 06 의 rl-test123
 
-    def test_same_session_different_cycle_06_does_not_bind(self):
-        # codex 구현리뷰 4R P1(teeth): 같은 세션에 05-alpha(rl-alpha)와 06-beta(다른 사이클)만 있으면
-        # stem 불일치라 06-beta 가 rl-alpha 에 오결속돼 block/기록되면 안 된다 → skip.
+    def test_selfdeclared_06_ignores_old_same_basename_05(self):
+        # codex W1 P1: 과거/타 디렉토리의 동명 05(rl-old, 확인됨)가 이번 06 에 오결속돼 false OK 되면 안 된다.
+        # 05 를 stem 으로 스캔하던 옛 설계는 archive/05-cycle 의 rl-old 를 채택해 통과시켰다. 이제 06 만
+        # 읽으므로 이번 06 이 사이클 미선언이면 결속 불가로 BLOCK — rl-old 는 완전히 무관.
         with tempfile.TemporaryDirectory() as root:
             prof_path, log_dir = self._setup(
-                root, mode="enforce", has_loop_run=True,
-                doc05="plan_docs/05-alpha.md", doc06="plan_docs/06-beta.md")
+                root, mode="enforce", has_loop_run=False,
+                glob05="plan_docs/**/05-cycle.md", doc05="plan_docs/archive/05-cycle.md",
+                glob06="plan_docs/06-report/**/*.md", doc06="plan_docs/06-report/cycle.md")
+            with open(os.path.join(root, "plan_docs", "archive", "05-cycle.md"), "w", encoding="utf-8") as f:
+                f.write("Loop-Run: rl-old\n")
+            sys.path.insert(0, os.path.join(HOOKS_DIR, "runtime"))
+            import retro_audit
+            retro_audit.record_check(root, "rl-old", "wiki/old.md", "본문")
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 0, p.stdout)   # stem alpha≠beta → skip
-            self.assertEqual([], [r for r in self._audit_records(root) if r["event"] == "retro_check_missing"])
+            self.assertEqual(p.returncode, 2, p.stdout)   # 옛 설계였다면 rl-old 로 오통과(exit 0)
+            self.assertIn("결속 불가", p.stdout)
+            self.assertNotIn("rl-old", p.stdout)
 
     def test_codex_reports_block_but_never_exits_2(self):
         # v1 스코프: codex 의 Stop exit-2 차단은 이 저장소에서 실검증된 적이 없다 — claude 만 실제 차단.
@@ -364,20 +379,32 @@ class TestRetroGateWiring(unittest.TestCase):
             report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
             self.assertIn("[BLOCK] retro_gate", report)   # 리포트엔 사실대로 남음(미차단이지 미탐지 아님)
 
-    def test_05_not_in_this_session_skips(self):
-        # codex 구현리뷰 3R P1(teeth): 05 가 이번 세션 로그에 없으면(다른 세션의 05 만 디스크에 있음)
-        # run_id 를 이번 06 에 결속하지 않는다 → skip(잘못된 cross-session block 방지).
+    def test_resumed_06_self_binds_across_sessions(self):
+        # 재개 가능 PDCA(외부 보완 피드백 Item 2): 05 는 이전 세션, 06 만 이번 세션에 쓰였다. 06 이 자기선언한
+        # Loop-Run 으로 결속하므로 05 세션 여부와 무관하게 미확인 BLOCK — 05 를 세션 로그에서 찾을 필요가 없다.
         with tempfile.TemporaryDirectory() as root:
-            prof_path, log_dir = self._setup(root, mode="enforce", log_05=False)   # 05 는 디스크엔 있으나 세션로그엔 없음
+            prof_path, log_dir = self._setup(root, mode="enforce", log_05=False)   # 05 는 이전 세션(로그엔 없음)
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 0)
-            # missing 감사도 남의 run 에 잘못 기록되면 안 됨.
-            self.assertEqual([], [r for r in self._audit_records(root) if r["event"] == "retro_check_missing"])
+            self.assertEqual(p.returncode, 2, p.stdout)   # 06 자기선언 결속 → 미확인 BLOCK
+            self.assertIn(self.RUN_ID, p.stdout)
+            missing_ids = {r["run_id"] for r in self._audit_records(root) if r["event"] == "retro_check_missing"}
+            self.assertEqual({self.RUN_ID}, missing_ids)
+
+    def test_resumed_06_self_binds_and_passes_when_checked(self):
+        # 재개 회귀: 이전 세션 05 + 이번 세션 06(자기선언) + 정상 check 기록 → PASS.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", log_05=False)
+            sys.path.insert(0, os.path.join(HOOKS_DIR, "runtime"))
+            import retro_audit
+            retro_audit.record_check(root, self.RUN_ID, "wiki/note.md", "본문")
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 0, p.stdout)
+            report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
+            self.assertIn("[OK] retro_gate", report)
 
     def test_standard_recursive_glob_06_is_detected(self):
         # codex 구현리뷰 P0(teeth): 표준 `plan_docs/06-report/**/*.md` 가 06 을 직속 자식으로 두면
         # fnmatch 로는 영원히 매치 안 돼 게이트가 무동작. glob.glob 은 ** 제로디렉토리를 올바로 매치.
-        # 05·06 stem 을 `cycle` 로 맞춤(nested 06 basename=cycle, flat 05=05-cycle → 둘 다 stem cycle).
         with tempfile.TemporaryDirectory() as root:
             prof_path, log_dir = self._setup(
                 root, mode="enforce", glob06="plan_docs/06-report/**/*.md",
@@ -385,27 +412,41 @@ class TestRetroGateWiring(unittest.TestCase):
             p = self._run(root, prof_path, stop_hook_active=False)
             self.assertEqual(p.returncode, 2, p.stdout)   # fnmatch 였다면 0(무동작)
 
-    def test_nested_numeric_ticket_different_cycles_do_not_bind(self):
-        # codex 구현리뷰 5R P1(teeth): nested `[ticket]-[feature].md` 에서 05-138·06-139 는 다른 티켓
-        # (다른 사이클)이다. 임의 선행숫자를 지우면 둘 다 `webrtc` 로 축약돼 오결속된다 → phase 번호만 제거.
-        with tempfile.TemporaryDirectory() as root:
-            prof_path, log_dir = self._setup(
-                root, mode="enforce",
-                glob05="plan_docs/05-review/**/*.md", doc05="plan_docs/05-review/138-webrtc.md",
-                glob06="plan_docs/06-report/**/*.md", doc06="plan_docs/06-report/139-webrtc.md")
-            p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 0, p.stdout)   # 138≠139 → skip
-            self.assertEqual([], [r for r in self._audit_records(root) if r["event"] == "retro_check_missing"])
+    def _add_second_06(self, root, log_dir, name, body):
+        # 이번 세션에 두 번째 06 문서를 추가(다중 06 시나리오용).
+        with open(os.path.join(root, "plan_docs", name), "w", encoding="utf-8") as f:
+            f.write(body)
+        with open(os.path.join(log_dir, f"session-{TODAY}.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": f"{TODAY}T00:00:02Z", "tool": "Write", "file": f"plan_docs/{name}",
+                                "type": "plan-doc", "branch": "main", "session": "sess-1"}) + "\n")
 
-    def test_nested_numeric_ticket_same_cycle_binds(self):
-        # 같은 티켓(138)의 05·06 은 같은 사이클 → 결속·BLOCK.
+    def test_multi_06_undeclared_not_masked_by_checked_06(self):
+        # codex W1 P1(teeth): 한 세션 다중 06 에서 확인된 06 이 미선언 06 을 가리면 안 된다. 옛 집계 설계는
+        # run_id 집합이 {rl-test123} 하나라 resolved·확인됨으로 통과시켜, 06-beta 의 미선언을 삼켰다.
         with tempfile.TemporaryDirectory() as root:
-            prof_path, log_dir = self._setup(
-                root, mode="enforce",
-                glob05="plan_docs/05-review/**/*.md", doc05="plan_docs/05-review/138-webrtc.md",
-                glob06="plan_docs/06-report/**/*.md", doc06="plan_docs/06-report/138-webrtc.md")
+            prof_path, log_dir = self._setup(root, mode="enforce")   # 06-cycle → rl-test123
+            sys.path.insert(0, os.path.join(HOOKS_DIR, "runtime"))
+            import retro_audit
+            retro_audit.record_check(root, self.RUN_ID, "wiki/note.md", "본문")
+            self._add_second_06(root, log_dir, "06-beta.md", "완료 보고\n마커 없음\n")
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)
+            self.assertEqual(p.returncode, 2, p.stdout)   # 집계였다면 exit 0(가림)
+            self.assertIn("결속 불가", p.stdout)
+
+    def test_multi_06_all_declared_and_checked_passes(self):
+        # codex W1 P1(teeth): 정상 다중 사이클(각 06 유일 선언·확인)을 모호로 오판해 차단하면 안 된다.
+        # 옛 집계 설계는 run_id 가 둘({rl-test123, rl-beta})이라 ambiguous 로 정상 흐름을 막았다.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce")   # 06-cycle → rl-test123
+            sys.path.insert(0, os.path.join(HOOKS_DIR, "runtime"))
+            import retro_audit
+            retro_audit.record_check(root, self.RUN_ID, "wiki/a.md", "본문")
+            retro_audit.record_check(root, "rl-beta", "wiki/b.md", "본문")
+            self._add_second_06(root, log_dir, "06-beta.md", "완료 보고\nLoop-Run: rl-beta\n")
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 0, p.stdout)   # 집계였다면 모호로 오차단(exit 2)
+            report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
+            self.assertIn("[OK] retro_gate", report)
 
     def test_stop_hook_active_string_false_still_blocks(self):
         # codex 구현리뷰 P1(teeth): bool("false")==True 라 문자열 "false" 를 재시도로 오인하면
@@ -422,14 +463,16 @@ class TestRetroGateWiring(unittest.TestCase):
             p = self._run(root, prof_path, stop_hook_active="true")
             self.assertEqual(p.returncode, 0)
 
-    def test_two_conflicting_markers_in_one_doc_skips(self):
-        # codex 구현리뷰 P1(teeth): 한 05 문서에 서로 다른 Loop-Run 이 둘이면 모호 → skip(잘못 결속 금지).
+    def test_two_conflicting_markers_in_one_06_is_ambiguous_blocks(self):
+        # 한 06 문서에 서로 다른 Loop-Run 이 둘이면 사이클 모호(ambiguous) → 잘못 결속하지 않되 조용히
+        # skip 하지도 않는다. 06 이 이번 세션에 쓰였으니 결속 불가로 enforce BLOCK.
         with tempfile.TemporaryDirectory() as root:
             prof_path, log_dir = self._setup(root, mode="enforce")
-            with open(os.path.join(root, "plan_docs", "05-cycle.md"), "w", encoding="utf-8") as f:
-                f.write("Loop-Run: rl-aaa\n임의 본문\nLoop-Run: rl-bbb\n")
+            with open(os.path.join(root, "plan_docs", "06-cycle.md"), "w", encoding="utf-8") as f:
+                f.write("완료 보고\nLoop-Run: rl-aaa\n임의 본문\nLoop-Run: rl-bbb\n")
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 0)
+            self.assertEqual(p.returncode, 2, p.stdout)
+            self.assertIn("모호", p.stdout)
 
     def _audit_records(self, root):
         path = os.path.join(root, ".sage", "retro_audit.jsonl")
@@ -472,7 +515,7 @@ class TestRetroGateWiring(unittest.TestCase):
             prof_path, log_dir = self._setup(root, mode="enforce", log_06=False)   # 05 는 세션로그에 있음
             os.makedirs(os.path.join(root, "plan_docs"), exist_ok=True)
             with open(os.path.join(root, "plan_docs", "06-cycle.md"), "w", encoding="utf-8") as f:
-                f.write("완료\n")
+                f.write(f"완료\nLoop-Run: {self.RUN_ID}\n")
             # 06 을 dot-prefix 경로로 로그에 추가(05 로그는 _setup 이 이미 남김).
             with open(os.path.join(log_dir, f"session-{TODAY}.jsonl"), "a", encoding="utf-8") as f:
                 f.write(json.dumps({"ts": f"{TODAY}T00:00:01Z", "tool": "Write",
@@ -480,23 +523,6 @@ class TestRetroGateWiring(unittest.TestCase):
                                     "branch": "main", "session": "sess-1"}) + "\n")
             p = self._run(root, prof_path, stop_hook_active=False)
             self.assertEqual(p.returncode, 2, p.stdout)   # 정규화 안 하면 공집합→exit 0
-
-    def test_other_session_05_does_not_bind_to_this_06(self):
-        # codex 구현리뷰 3R P1(teeth): 다른 세션의 05(rl-other)만 디스크·로그에 있고 이번 세션은 06 만
-        # 쓴 경우, 이번 06 이 rl-other 에 오결속돼 block 되거나 missing 이 rl-other 에 잘못 남으면 안 된다.
-        with tempfile.TemporaryDirectory() as root:
-            # 05 는 sess-OTHER, 06 은 sess-1(현재). _setup 은 05·06 을 같은 세션에 두므로 수동 구성.
-            prof_path, log_dir = self._setup(root, mode="enforce", log_05=False, log_06=False)
-            with open(os.path.join(log_dir, f"session-{TODAY}.jsonl"), "w", encoding="utf-8") as f:
-                f.write(json.dumps({"ts": f"{TODAY}T00:00:00Z", "tool": "Write", "file": "plan_docs/05-cycle.md",
-                                    "type": "plan-doc", "branch": "main", "session": "sess-OTHER"}) + "\n")
-                f.write(json.dumps({"ts": f"{TODAY}T00:00:01Z", "tool": "Write", "file": "plan_docs/06-cycle.md",
-                                    "type": "plan-doc", "branch": "main", "session": "sess-1"}) + "\n")
-            with open(os.path.join(root, "plan_docs", "06-cycle.md"), "w", encoding="utf-8") as f:
-                f.write("완료\n")
-            p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 0, p.stdout)   # 오결속 block 아님
-            self.assertEqual([], [r for r in self._audit_records(root) if r["event"] == "retro_check_missing"])
 
     def test_audit_write_failure_surfaced_not_silent(self):
         # codex 구현리뷰 3R P1(teeth): 감사파일이 디렉토리라 기록 불가면, 리포트에 유실을 명시해야 한다
@@ -536,6 +562,64 @@ class TestRetroGateWiring(unittest.TestCase):
             prof_path, log_dir = self._setup(root, mode="enforce", retro_note="false")
             p = self._run(root, prof_path, stop_hook_active=False)
             self.assertEqual(p.returncode, 0, p.stdout)
+
+    def test_enforce_vault_path_is_regular_file_is_inactive(self):
+        # codex W1 R2 P1(teeth): vault_path 가 비어있지 않아도 일반 파일이면 노트 디렉토리를 못 만들어
+        # --check 불가 → 게이트가 통과 불가능한 걸 강제하면 안 된다. isdir 로 usable vault 만 활성.
+        with tempfile.TemporaryDirectory() as root:
+            vfile = os.path.join(root, "not_a_dir")
+            with open(vfile, "w", encoding="utf-8") as f:
+                f.write("i am a file\n")
+            prof_path, log_dir = self._setup(root, mode="enforce", vault_path=vfile)
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 0, p.stdout)
+            report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
+            self.assertIn("[INFO] retro_gate", report)
+            self.assertEqual([], [r for r in self._audit_records(root) if r["event"] == "retro_check_missing"])
+
+    def test_multi_06_all_unchecked_records_every_missing_run(self):
+        # codex W1 R2 P1(teeth): 다중 06 이 각기 미확인이면 대표 하나만 기록하던 옛 코드는 나머지를
+        # 재시도 dedup 뒤 doctor 가시성에서 잃었다. 미확인 run 전부 record_missing 되어야 한다.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce")   # 06-cycle → rl-test123(미확인)
+            self._add_second_06(root, log_dir, "06-beta.md", "완료 보고\nLoop-Run: rl-beta\n")
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 2, p.stdout)
+            missing = {r["run_id"] for r in self._audit_records(root) if r["event"] == "retro_check_missing"}
+            self.assertEqual({self.RUN_ID, "rl-beta"}, missing)
+
+    def test_no_candidate_still_records_resolved_unchecked_run(self):
+        # codex W1 R2 재검 P1: 미선언 06(결속 불가) + 유효 선언·미확인 06 이 한 세션에 있으면, 게이트는
+        # 결속 불가로 BLOCK 하되 유효 선언된 미확인 run 은 감사에 기록돼야 한다(doctor 가시성 유지).
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce")   # 06-cycle → rl-test123(미확인)
+            self._add_second_06(root, log_dir, "06-beta.md", "완료 보고\n마커 없음\n")   # 미선언
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 2, p.stdout)
+            self.assertIn("결속 불가", p.stdout)
+            missing = {r["run_id"] for r in self._audit_records(root) if r["event"] == "retro_check_missing"}
+            self.assertEqual({self.RUN_ID}, missing)   # 유효 선언·미확인 run 은 기록됨
+
+    def test_relative_vault_path_resolved_against_root(self):
+        # codex W1 R2 재검 P1: 상대 vault_path 는 project root 기준으로 판정 — 어댑터가 cd 안 해도
+        # hook CWD 가 아니라 root/vlt 로 본다. root/vlt 실존 → 게이트 활성 → 미확인 BLOCK.
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "vlt"), exist_ok=True)
+            prof_path, log_dir = self._setup(root, mode="enforce", vault_path="vlt")
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 2, p.stdout)   # raw 상대 isdir 였다면 CWD 기준→INFO(exit0)
+
+    def test_loop_run_in_body_code_block_is_ignored(self):
+        # codex W1 R2 P2(teeth): 헤더의 실제 Loop-Run 뒤 본문 코드블록의 예시 Loop-Run 이 상충으로 잡혀
+        # false ambiguous BLOCK 이 나면 안 된다. 첫 `## ` 섹션 전 헤더만 파싱한다.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce")
+            with open(os.path.join(root, "plan_docs", "06-cycle.md"), "w", encoding="utf-8") as f:
+                f.write(f"# 완료 보고\nLoop-Run: {self.RUN_ID}\n\n## 예시\n```\nLoop-Run: rl-example\n```\n")
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 2, p.stdout)   # 모호 아님 — rl-test123 로 유일 결속 후 미확인 BLOCK
+            self.assertIn(self.RUN_ID, p.stdout)
+            self.assertNotIn("모호", p.stdout)
 
 
 if __name__ == "__main__":

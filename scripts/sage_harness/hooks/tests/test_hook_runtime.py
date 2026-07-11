@@ -100,24 +100,85 @@ class TestBuildSnapshot(unittest.TestCase):
             self.assertEqual(snap["loop_audit"], {"runs": {}, "has_any_records": False})
 
 
-class TestPhaseStem(unittest.TestCase):
-    """9-C: 06↔05 사이클 결속용 stem 추출 — phase 번호 접두어만 제거(임의 선행숫자 아님)."""
+class TestReduce06Bindings(unittest.TestCase):
+    """9-C-2 W1: 06 자기선언 Loop-Run 을 06 별로 결속 → worst-case 축약(집계 마스킹/오판 제거)."""
 
-    def test_flat_strips_phase_prefix(self):
-        self.assertEqual(hr._phase_stem("plan_docs/05-cycle.md", "05"), "cycle")
-        self.assertEqual(hr._phase_stem("plan_docs/06-cycle.md", "06"), "cycle")
+    def test_single_checked_resolves_ok(self):
+        self.assertEqual(hr._reduce_06_bindings({"06-a.md": {"rl-a"}}, {"rl-a": {"checked": True}}),
+                         ("rl-a", "resolved", True, []))
 
-    def test_nested_numeric_ticket_preserved(self):
-        # codex 5R P1: nested 는 basename 이 티켓번호로 시작할 수 있다 — 지우면 다른 티켓이 충돌한다.
-        self.assertEqual(hr._phase_stem("plan_docs/05-review/138-webrtc.md", "05"), "138-webrtc")
-        self.assertEqual(hr._phase_stem("plan_docs/06-report/139-webrtc.md", "06"), "139-webrtc")
+    def test_single_unchecked(self):
+        self.assertEqual(hr._reduce_06_bindings({"06-a.md": {"rl-a"}}, {}), ("rl-a", "resolved", False, ["rl-a"]))
 
-    def test_wrong_phase_prefix_not_stripped(self):
-        # 06 문서를 05 로 해석하려 하면 접두어가 안 맞아 그대로 둔다.
-        self.assertEqual(hr._phase_stem("plan_docs/06-cycle.md", "05"), "06-cycle")
+    def test_no_marker_is_no_candidate(self):
+        rid, binding, _, missing = hr._reduce_06_bindings({"06-a.md": set()}, {})
+        self.assertEqual((rid, binding, missing), (None, "no_candidate", []))
 
-    def test_underscore_separator(self):
-        self.assertEqual(hr._phase_stem("plan_docs/05_cycle.md", "05"), "cycle")
+    def test_two_markers_in_one_06_is_ambiguous(self):
+        rid, binding, _, missing = hr._reduce_06_bindings({"06-a.md": {"rl-a", "rl-b"}}, {})
+        self.assertEqual((rid, binding, missing), (None, "ambiguous", []))
+
+    def test_multi_06_all_checked_passes(self):
+        # codex W1 P1: 정상 다중 사이클을 모호로 오판하지 않는다(각 06 유일 결속·확인).
+        summary = {"rl-a": {"checked": True}, "rl-b": {"checked": True}}
+        rid, binding, checked, missing = hr._reduce_06_bindings({"06-a.md": {"rl-a"}, "06-b.md": {"rl-b"}}, summary)
+        self.assertEqual((binding, checked, missing), ("resolved", True, []))
+        self.assertIn(rid, ("rl-a", "rl-b"))
+
+    def test_multi_06_one_unbound_not_masked(self):
+        # codex W1 P1: 확인된 06 이 결속 불가 06 을 가리지 않는다 — 미선언 06 이 있으면 no_candidate.
+        rid, binding, _, missing = hr._reduce_06_bindings(
+            {"06-a.md": {"rl-a"}, "06-b.md": set()}, {"rl-a": {"checked": True}})
+        self.assertEqual((rid, binding, missing), (None, "no_candidate", []))
+
+    def test_multi_06_all_unchecked_returns_all_missing(self):
+        # codex W1 R2 P1: 다중 미확인 run 을 첫 하나로 자르지 않는다 — missing 에 전부 담아 감사 기록 보장.
+        rid, binding, checked, missing = hr._reduce_06_bindings(
+            {"06-a.md": {"rl-a"}, "06-b.md": {"rl-b"}}, {})
+        self.assertEqual((rid, binding, checked, missing), ("rl-a", "resolved", False, ["rl-a", "rl-b"]))
+
+    def test_multi_06_one_unchecked_reports_that_run(self):
+        # 전부 유일 결속이나 하나가 미확인 → 대표는 그 미확인 run, missing 도 그 run 만.
+        summary = {"rl-a": {"checked": True}, "rl-b": {"checked": False}}
+        self.assertEqual(hr._reduce_06_bindings({"06-a.md": {"rl-a"}, "06-b.md": {"rl-b"}}, summary),
+                         ("rl-b", "resolved", False, ["rl-b"]))
+
+    def test_no_candidate_still_records_resolved_unchecked(self):
+        # codex W1 R2 재검 P1: 결속 불가(미선언 06)여도 유효 선언·미확인 run 은 missing 에 남아야 한다
+        # (게이트는 no_candidate 로 BLOCK 하되 doctor 가시성용 감사 대상은 유지).
+        self.assertEqual(hr._reduce_06_bindings({"06-a.md": {"rl-a"}, "06-b.md": set()}, {}),
+                         (None, "no_candidate", False, ["rl-a"]))
+
+    def test_ambiguous_still_records_resolved_unchecked(self):
+        # 상충 06 이 있어도 다른 유효 선언·미확인 run 은 missing 에 남는다.
+        self.assertEqual(hr._reduce_06_bindings({"06-a.md": {"rl-a"}, "06-b.md": {"rl-x", "rl-y"}}, {}),
+                         (None, "ambiguous", False, ["rl-a"]))
+
+
+class TestHeaderLoopRunIds(unittest.TestCase):
+    """9-C-2 W1: 06 헤더(첫 H2 전)만 Loop-Run 파싱 — 본문 코드블록/헤딩 변형 무시, BOM 제거."""
+
+    def test_marker_before_first_h2(self):
+        c = "# [Report] X\n\nLoop-Run: rl-a\nSource-05: p\n\n## 1. Summary\n"
+        self.assertEqual(hr._header_loop_run_ids(c), {"rl-a"})
+
+    def test_body_code_block_ignored(self):
+        c = "# X\nLoop-Run: rl-a\n\n## 예시\n```\nLoop-Run: rl-example\n```\n"
+        self.assertEqual(hr._header_loop_run_ids(c), {"rl-a"})
+
+    def test_indented_and_tab_h2_terminate_header(self):
+        # codex W1 R2 재검 P2: `  ## `·`##\t` 도 헤더 종료로 봐 본문 예시 Loop-Run 이 새지 않는다.
+        for h2 in ("  ## Summary", "##\tSummary"):
+            c = f"# X\nLoop-Run: rl-a\n{h2}\nLoop-Run: rl-body\n"
+            self.assertEqual(hr._header_loop_run_ids(c), {"rl-a"}, h2)
+
+    def test_bom_prefixed_marker_detected(self):
+        # codex W1 R2 재검 P2: 선두 BOM 뒤 바로 오는 Loop-Run 도 놓치지 않는다.
+        self.assertEqual(hr._header_loop_run_ids("\ufeffLoop-Run: rl-a\n## S\n"), {"rl-a"})
+
+    def test_h1_is_not_a_terminator(self):
+        # H1 제목은 종료가 아니다 — 그 아래 Loop-Run 을 여전히 읽는다.
+        self.assertEqual(hr._header_loop_run_ids("# [Report]\nLoop-Run: rl-a\n## S\n"), {"rl-a"})
 
 
 class TestRunStrategyF8b(unittest.TestCase):

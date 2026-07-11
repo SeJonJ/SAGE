@@ -495,7 +495,7 @@ def _dashboard_filename(profile):
 def _write_vault_dashboard(la, root, override):
     from sage.commands import _vault
     profile = _load_profile(root)
-    vault, folder = _vault.vault_target(profile, override)
+    vault, folder = _vault.vault_target(profile, override, root)
     if not vault:
         print("  ℹ️  vault 비활성(knowledge_capture.vault_path 미설정, --vault 경로도 없음) → 대시보드 생략", file=sys.stderr)
         return
