@@ -328,8 +328,6 @@ team:
 
 이 값들은 `.claude/agents/<id>.md` frontmatter로 주입되므로 **claude host에서만** 동작합니다(codex는 `.codex/agents/*.md`를 model/effort로 해석하는 기전이 없어 주입하지 않고, `sage validate`가 무동작 경고). 값을 바꾼 뒤에는 `sage install --force`로 렌더를 재배포하세요 — 재배포 전까지 `sage doctor`가 해당 에이전트를 `stale`로 표시합니다.
 
-> **`runtime:` 아래에 두는 이유** — 역할 바로 아래의 `model:`은 예전 프로필이 쓰던 죽은 필드입니다(어떤 코드도 읽지 않았고, 템플릿이 `qa`/`reviewer`에 `sonnet`을 박아두었습니다). 그 키를 그대로 살렸다면 업그레이드만으로 Phase 05 리뷰어가 조용히 sonnet으로 고정됐을 것입니다. `sage validate`가 남아 있는 옛 키를 무동작으로 경고합니다.
-
 ### Obsidian 지식 캡처
 
 ```yaml
