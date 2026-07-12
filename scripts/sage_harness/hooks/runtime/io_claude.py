@@ -99,5 +99,9 @@ def attach_policy_results(model, profile, entries, raw_text, kc_result):
     model["sections"]["policy_results"].append(kc_result)
 
 
-def render_report_saved(today):
+def render_stop_result(today, block_reason=None):
     print(messages.report_saved_text(HOST_DIR, today, RUNTIME))
+    if block_reason:
+        print(f"[stop-compliance-report] ❌ {block_reason}")
+        return 2
+    return 0

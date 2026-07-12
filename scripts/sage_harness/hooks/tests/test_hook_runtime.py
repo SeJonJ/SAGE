@@ -8,6 +8,7 @@ import io
 import os
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
@@ -283,6 +284,148 @@ class TestStopPolicyOrder(unittest.TestCase):
         self.assertEqual(len(res), 2)
         self.assertEqual(res[0].get("name"), "output_contract")    # codex 는 output_contract 먼저
         self.assertEqual(res[1], {"check": "kc"})                  # 그 다음 공유 knowledge_capture(sentinel)
+
+
+sys.path.insert(0, HOOKS_DIR)   # cores 는 HOOKS_DIR 직속
+import session_start_snapshot_core as sss_core   # noqa: E402
+
+
+class TestSessionStartSnapshotCore(unittest.TestCase):
+    """W2: SessionStart 06 baseline 스냅샷 결정(순수 core)."""
+
+    def test_writes_when_no_existing_snapshot(self):
+        d = sss_core.decide({"session_id": "s1", "now_utc": "2026-07-12T00:00:00Z"},
+                            {"exists": False, "sha256": {"plan_docs/06-a.md": "h1"}})
+        self.assertEqual(d["action"], "write")
+        self.assertEqual(d["record"], {"session_id": "s1", "taken": "2026-07-12T00:00:00Z",
+                                       "sha256": {"plan_docs/06-a.md": "h1"}})
+
+    def test_noop_when_snapshot_exists(self):
+        # write-once: 이미 baseline 있으면 안 덮는다(resume 시 초기 변경 유실 방지).
+        d = sss_core.decide({"session_id": "s1", "now_utc": "t"}, {"exists": True, "sha256": {"x": "y"}})
+        self.assertEqual(d, {"action": "noop", "record": None})
+
+    def test_empty_sha_map_still_writes_baseline(self):
+        # 06 이 아직 하나도 없어도 빈 baseline 을 남겨야 이후 신규 06 을 diff 로 잡는다.
+        d = sss_core.decide({"session_id": "s1", "now_utc": "t"}, {"exists": False, "sha256": {}})
+        self.assertEqual(d["action"], "write")
+        self.assertEqual(d["record"]["sha256"], {})
+
+
+class TestSnapshotChanged06(unittest.TestCase):
+    """W2: baseline 대비 신규/변경된 06 정규 키 집합 + status(writer-독립 감지, degraded 표면화용)."""
+
+    def _profile(self, root):
+        # 게이트 활성이어야 SessionStart 가 스냅샷을 쓴다(비활성 프로젝트 IO 절약). usable vault(isdir) 필요.
+        vault = os.path.join(root, "vault")
+        os.makedirs(vault, exist_ok=True)
+        return {"pdca": {"enabled": True, "phases": [{"id": "06", "glob": "plan_docs/06-*.md"}],
+                         "retro": {"report_gate_enforce": "enforce"}},
+                "knowledge_capture": {"retro_note": True, "vault_path": vault}}
+
+    def _write06(self, root, name, text):
+        os.makedirs(os.path.join(root, "plan_docs"), exist_ok=True)
+        with open(os.path.join(root, "plan_docs", name), "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def _snapshot(self, root, log_dir, session_id="s1"):
+        import json
+        prof_path = os.path.join(root, "profile.json")
+        with open(prof_path, "w", encoding="utf-8") as f:
+            json.dump(self._profile(root), f)
+        old = os.environ.get("SAGE_PROFILE")
+        os.environ["SAGE_PROFILE"] = prof_path
+        try:
+            hr.run_session_start_snapshot(io_claude, root, HOOKS_DIR, json.dumps({"session_id": session_id}))
+        finally:
+            os.environ.pop("SAGE_PROFILE", None) if old is None else os.environ.__setitem__("SAGE_PROFILE", old)
+
+    def test_absent_snapshot_returns_absent_status(self):
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".claude", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            self._write06(root, "06-a.md", "x")
+            self.assertEqual(hr._snapshot_changed_06(root, self._profile(root), log_dir, "s1"), ("absent", set()))
+
+    def test_no_session_id_returns_no_session_status(self):
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".claude", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            self.assertEqual(hr._snapshot_changed_06(root, self._profile(root), log_dir, ""), ("no_session", set()))
+
+    def test_new_and_changed_06_detected_unchanged_ignored(self):
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".claude", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            self._write06(root, "06-old.md", "orig")     # baseline 에 포함될 파일
+            self._snapshot(root, log_dir)                # SessionStart baseline(현재 상태)
+            self._write06(root, "06-old.md", "MUTATED")  # 내용 변경
+            self._write06(root, "06-new.md", "brand new") # 신규
+            status, changed = hr._snapshot_changed_06(root, self._profile(root), log_dir, "s1")
+            self.assertEqual(status, "ok")
+            self.assertEqual(changed, {"plan_docs/06-old.md", "plan_docs/06-new.md"})
+
+    def test_corrupt_snapshot_returns_corrupt_status(self):
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".claude", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            with open(hr._snapshot_path(log_dir, "s1"), "w", encoding="utf-8") as f:
+                f.write('{"sha256": {tr')   # 잘린 JSON
+            self.assertEqual(hr._snapshot_changed_06(root, self._profile(root), log_dir, "s1"), ("corrupt", set()))
+
+    def test_valid_json_nondict_sha256_is_corrupt_not_crash(self):
+        # codex R2 P1: 유효 JSON 이지만 sha256 이 dict 가 아니면(문자열 등) base.get() 이 던지기 전에
+        # corrupt 로 분류해야 한다 — 이 함수는 게이트 try 밖에서 불려 예외가 Stop 세션을 죽인다.
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".claude", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            with open(hr._snapshot_path(log_dir, "s1"), "w", encoding="utf-8") as f:
+                f.write('{"sha256": "not-a-map"}')
+            self.assertEqual(hr._snapshot_changed_06(root, self._profile(root), log_dir, "s1"), ("corrupt", set()))
+
+    def test_ttl_cleanup_preserves_current_session(self):
+        # codex R2 P1: TTL 초과여도 이번 세션 baseline 은 지우지 않는다(장수 세션이 자기 baseline 을 잃지 않게).
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".claude", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            cur = hr._snapshot_path(log_dir, "s1")
+            old = hr._snapshot_path(log_dir, "s-old")
+            for p in (cur, old):
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write("{}")
+            stale = time.time() - (hr._SNAPSHOT_TTL_SECONDS + 3600)
+            os.utime(cur, (stale, stale)); os.utime(old, (stale, stale))   # 둘 다 TTL 초과
+            hr._cleanup_old_snapshots(log_dir, keep_path=cur)
+            self.assertTrue(os.path.exists(cur), "이번 세션 baseline 은 보존")
+            self.assertFalse(os.path.exists(old), "다른 세션 오래된 baseline 은 삭제")
+
+    def test_off_mode_stop_does_not_hash_06(self):
+        # codex R2 P2: mode=off 면 Stop 이 06 을 해싱하지 않는다(_snapshot_changed_06 미호출).
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, ".claude", "logs"), exist_ok=True)
+            log_dir = os.path.join(root, ".claude", "logs")
+            with open(os.path.join(log_dir, "session-2026-06-13.jsonl"), "w", encoding="utf-8") as f:
+                f.write(json.dumps({"ts": "t", "tool": "Write", "file": "a.src", "type": "src",
+                                    "branch": "m", "session": "s1"}) + "\n")
+            prof = {"pdca": {"phases": [{"id": "06", "glob": "plan_docs/06-*.md"}],
+                             "retro": {"report_gate_enforce": "off"}}}   # 게이트 off
+            prof_path = os.path.join(root, "profile.json")
+            with open(prof_path, "w", encoding="utf-8") as f:
+                json.dump(prof, f)
+            orig = hr._hash_06_glob
+            hr._hash_06_glob = lambda *a, **k: (_ for _ in ()).throw(AssertionError("off 인데 06 해싱함"))
+            env_keys = {"SAGE_PROFILE": prof_path, "SAGE_TODAY": "2026-06-13", "SAGE_GATE_BRANCH": "m"}
+            saved = {k: os.environ.get(k) for k in env_keys}
+            os.environ.update(env_keys)
+            try:
+                rc = hr.run_stop_compliance_report(io_claude, root, HOOKS_DIR,
+                                                   json.dumps({"session_id": "s1"}))
+                self.assertEqual(rc, 0)   # 해싱 안 하고 정상 종료
+            finally:
+                hr._hash_06_glob = orig
+                for k, v in saved.items():
+                    os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
 
 
 if __name__ == "__main__":

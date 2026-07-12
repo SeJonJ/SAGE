@@ -306,6 +306,34 @@ def run(args):
     kc = kc if isinstance(kc, dict) else {}   # 비-dict 방어(codex A — .get 크래시 방지)
     if args.no_vault:
         vault_arg = None
+        # --no-vault 는 이 run 을 "노트 생략"으로 감사에 남겨 Stop 게이트가 없는 노트의 --check 를 요구하지
+        # 않게 한다(게이트 면제 생성). 일반 조회보다 엄격하게 결속한다:
+        #  · run 이 정확히 1개면 자동 결속 허용   · 2개↑면 --run-id 필수(엉뚱한 최신 run 자동 면제 방지)
+        #  · 명시 --run-id 는 실재 run 이어야 함(임의 id 우회 차단)   · 기록 실패는 fail-fast(기록 안 된 skip=게이트 미가시)
+        real_runs = list(la.runs(root))
+        target = None
+        if args.run_id:
+            if args.run_id not in real_runs:
+                print(f"⛔ [sage retro --no-vault] run_id={args.run_id} 는 실재하는 loop_audit run 이 아닙니다 "
+                      f"— skip 미기록(게이트 우회 방지).", file=sys.stderr)
+                return 2
+            target = args.run_id
+        elif len(real_runs) == 1:
+            target = real_runs[0]   # 단일 run 자동 결속
+        elif len(real_runs) >= 2:
+            print(f"⛔ [sage retro --no-vault] loop_audit run 이 {len(real_runs)}개 — 어느 run 을 면제할지 "
+                  f"모호합니다. --run-id 로 명시하세요(엉뚱한 최신 run 자동 면제 방지).", file=sys.stderr)
+            return 2
+        else:
+            # 결속할 run 자체가 없음(단발 리뷰 등) — 게이트는 06 Loop-Run 결속으로만 판정하므로 skip 불필요.
+            print("  ℹ️  [--no-vault] 결속할 loop_audit run 이 없어 skip 미기록(노트만 생략).", file=sys.stderr)
+        if target:
+            try:
+                _load_retro_audit().record_skip(root, target, reason="no_vault")
+            except Exception as e:
+                print(f"⛔ [sage retro --no-vault] retro_audit skip 기록 실패: {type(e).__name__}: {e} "
+                      f"— 기록 안 된 skip 은 게이트가 못 봅니다(false BLOCK).", file=sys.stderr)
+                return 2
     else:
         vault_arg = args.vault
         if vault_arg is None and kc.get("retro_note") is True:

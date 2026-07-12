@@ -83,8 +83,8 @@ class TestInstall(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(d, "CLAUDE.md")))
             m = json.loads(Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).read_text(encoding="utf-8"))
             self.assertEqual(m["host_runtime"], "codex")
-            # manifest 는 CORE hook 6종 등록(빈 assets 아님) → generate 가 동작 가능
-            self.assertEqual(len([k for k in m["assets"] if k.startswith("hooks/")]), 6)
+            # manifest 는 CORE hook 7종 등록(빈 assets 아님) → generate 가 동작 가능
+            self.assertEqual(len([k for k in m["assets"] if k.startswith("hooks/")]), 7)
             self.assertEqual(m["assets"]["hooks/pre-implementation-gate"]["form"], "core_adapter")
             self.assertEqual(m["assets"]["hooks/generated-artifact-write-guard"]["form"], "native")
 

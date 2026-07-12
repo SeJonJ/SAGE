@@ -11,6 +11,7 @@ core.decide 호출을 여기로 1회만 들어올린다(verbatim lift — 동작
 """
 import calendar
 import glob
+import hashlib
 import importlib
 import json
 import os
@@ -448,9 +449,14 @@ def _reduce_06_bindings(per06_ids, audit_summary):
     (codex W1 R2 재검 P1: 결속 불가 06 을 먼저 만나 즉시 missing=[] 를 반환하면, 같은 세션에서 유효 선언·미확인
     된 run 의 doctor 가시성이 사라져 R2 #2 가 다시 깨진다). 게이트 판정만 worst-case binding failure 로 축약한다.
     어댑터가 missing 전부를 record_missing 해야 다중 미확인이 첫 run 하나로 잘리지 않는다(codex W1 R2 P1)."""
+    def _satisfied(rid):
+        # 게이트 통과 = 실제 --check 통과(checked) 또는 --no-vault 로 노트 생략(state=skipped). 그 외 미완료.
+        e = audit_summary.get(rid) or {}
+        return bool(e.get("checked")) or e.get("state") == "skipped"
+
     items = sorted(per06_ids.items())
     resolved = [next(iter(ids)) for _, ids in items if len(ids) == 1]
-    missing = sorted({r for r in resolved if not bool((audit_summary.get(r) or {}).get("checked"))})
+    missing = sorted({r for r in resolved if not _satisfied(r)})
     if any(len(ids) > 1 for _, ids in items):
         return None, "ambiguous", False, missing
     if any(len(ids) == 0 for _, ids in items):
@@ -502,42 +508,188 @@ def _session_log_entries(log_dir, session_id):
     return out
 
 
-def retro_gate_result(profile, root, raw, session_entries):
-    """retro_gate 정책 결과(양 런타임 공유, knowledge_capture 와 동형 — 9-C v1).
+def _retro_gate_config(profile, root):
+    """(mode, notes_enabled) — retro 게이트 활성 판정 요소. retro_gate_result·SessionStart·early-return 공유.
 
-    raw = Stop 이벤트 원본(파싱됨, session_id/stop_hook_active 추출용). session_entries = 이번 세션의
-    로그 엔트리(모든 session-*.jsonl 에서 session_id 로 모은 것 — _session_log_entries). 06/05 작성
-    감지에만 쓴다(리포트 본문 집계 범위는 건드리지 않는다 — 기존 동작 보존)."""
-    import retro_audit
-    import retro_gate
-
-    pdca_retro = (profile.get("pdca") or {}).get("retro")
-    mode = (pdca_retro or {}).get("report_gate_enforce") or "off"
+    mode ∈ off|advisory|enforce. notes_enabled 는 retro CLI 와 동일 조건: retro_note is True + vault 가
+    usable 디렉토리(isdir, 상대경로는 project root 기준). 노트가 안 써지면 --check 대상이 없어 게이트가
+    통과 불가능한 걸 강제하게 되므로, 이 조합이 참일 때만 게이트가 실제로 동작한다."""
+    pdca_retro = (profile.get("pdca") or {}).get("retro") or {}
+    mode = pdca_retro.get("report_gate_enforce") or "off"
     kc = profile.get("knowledge_capture")
     kc = kc if isinstance(kc, dict) else {}
-    # 게이트 활성 조건을 retro CLI 와 일치시킨다(codex 7R P1): CLI 는 `retro_note is True` 이고 vault 경로가
-    # 실제로 잡혀야 노트를 쓴다(_vault.vault_target). 노트가 안 써지면 --check 대상이 없어 게이트가 통과
-    # 불가능한 걸 강제하게 된다. bool(retro_note) 만 보면 "false"(문자열)·vault 미설정을 활성으로 오판한다.
-    # vault 는 실제 디렉토리여야 한다(codex W1 R2 P1): 비어있지 않은 문자열이어도 일반 파일/`/dev/null`/권한
-    # 불가 경로면 노트 디렉토리를 만들 수 없어 --check 대상이 없다 — isdir 로 usable vault 만 활성화한다.
-    # 상대경로 vault 는 **project root 기준**으로 판정한다(codex W1 R2 재검 P1): 어댑터가 --root 만 넘기고
-    # cd 하지 않아, raw 상대경로에 isdir 를 걸면 hook CWD 기준이 돼 정상 vault 도 조용히 무동작(INFO)한다.
     vp = kc.get("vault_path")
     vault = vp.strip() if isinstance(vp, str) else ""
     vault_abs = vault if os.path.isabs(vault) else os.path.join(root, vault)
     notes_enabled = (kc.get("retro_note") is True) and bool(vault) and os.path.isdir(vault_abs)
+    return mode, notes_enabled
 
-    # 06 감지는 이번 세션 로그 파일집합(정규 키) ∩ glob.glob(recursive) 실존파일로 한다.
+
+def _retro_gate_active(profile, root):
+    """게이트가 실제로 동작하는가(mode advisory/enforce + notes_enabled). 비활성 프로젝트에서 매 Start/Stop
+    마다 06 전체를 해싱하는 낭비를 피하려고 스냅샷 IO 를 이 조건 뒤에 둔다."""
+    mode, notes_enabled = _retro_gate_config(profile, root)
+    return mode in ("advisory", "enforce") and notes_enabled
+
+
+def _snapshot_path(log_dir, session_id):
+    """이번 세션의 06 baseline 스냅샷 파일 경로. session_id 를 파일명 안전문자로 정규화(io_codex 와 동형)."""
+    sid = re.sub(r"[^A-Za-z0-9_-]", "_", session_id or "nosession")[:64]
+    return os.path.join(log_dir, f"session-snapshot-{sid}.json")
+
+
+_SNAPSHOT_TTL_SECONDS = 14 * 86400   # 오래된 session-snapshot-*.json 정리 상한(무한 누적 방지)
+_SEV_ORDER = {"INFO": 0, "OK": 1, "WARN": 2, "BLOCK": 3}   # retro_gate._SEVERITIES 순위(degraded 승격 비교용)
+
+
+def _cleanup_old_snapshots(log_dir, keep_path=None):
+    """TTL 초과 session-snapshot-*.json 삭제. 세션마다 파일 하나가 남아 무한 누적되는 걸 막는다
+    (capture-declared-risk 가 declared-risk state 를 정리하는 것과 동일). 실패는 무시(best-effort).
+
+    keep_path(이번 세션 baseline)는 TTL 초과여도 지우지 않는다: TTL 보다 오래 사는 세션이 재-SessionStart
+    될 때 자기 baseline 을 지웠다가 write-once 로 현재(이미 변경된) 06 상태를 새 baseline 으로 굳혀 초기 변경을
+    잃는 걸 막는다(그 세션의 감지는 원래 baseline 이 유지돼야 성립)."""
+    now = time.time()
+    keep = os.path.abspath(keep_path) if keep_path else None
+    for f in glob.glob(os.path.join(log_dir, "session-snapshot-*.json")):
+        try:
+            if keep and os.path.abspath(f) == keep:
+                continue
+            if now - os.path.getmtime(f) > _SNAPSHOT_TTL_SECONDS:
+                os.remove(f)
+        except Exception:
+            pass
+
+
+def _hash_06_glob(root, profile):
+    """{정규 키: sha256} — 현재 존재하는 06 glob 파일 전체의 내용 해시. 읽기 실패 파일은 제외(부분 스냅샷).
+
+    바이트 단위 해시라 편집기·Bash·apply_patch 등 **작성 도구와 무관하게** 내용 변화를 포착한다.
+    _session_06_run_ids 와 같은 06 glob·정규 키를 써 스냅샷↔감지 키가 정확히 대응한다."""
+    out = {}
+    for key, path in _glob_relmap(root, _pdca_phase_glob(profile, "06")).items():
+        try:
+            with open(path, "rb") as f:
+                out[key] = hashlib.sha256(f.read()).hexdigest()
+        except Exception:
+            continue
+    return out
+
+
+def _snapshot_changed_06(root, profile, log_dir, session_id):
+    """(status, changed) — SessionStart baseline 대비 이번 세션에 신규/변경된 06 정규 키 집합(writer-독립).
+
+    post-tool-logger 는 Write/Edit(claude)·apply_patch(codex)만 로깅해 **Bash 로 쓴 06 을 놓친다**(P0-b:
+    로그기반 감지만으로는 게이트가 조용히 무동작). 파일시스템 상태(SessionStart baseline ↔ Stop 현재)를
+    직접 비교하면 작성 도구와 무관하게 이번 세션 작성 06 을 잡는다.
+
+    status ∈ {"ok","no_session","absent","corrupt"}. baseline 이 없거나(no_session/absent) 손상(corrupt)이면
+    **조용히 통과시키면 안 된다**(codex: 부재/불일치/손상 snapshot 이 Bash-06 을 무음 bypass). 호출부가
+    게이트 활성 시 이 status 를 표면화하고, changed 는 로그기반 감지와 union 한다(부재여도 회귀 아님)."""
+    if not session_id:
+        return "no_session", set()   # 상관키 없음 → "nosession" 공유 파일 오염 대신 신뢰불가로 처리
+    path = _snapshot_path(log_dir, session_id)
+    if not os.path.exists(path):
+        return "absent", set()
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+        base = (doc or {}).get("sha256")
+    except Exception:
+        return "corrupt", set()   # 잘린/손상 JSON — 부분기록 방지(원자쓰기)와 별개로 읽기측도 안전 처리
+    if not isinstance(base, dict):
+        # sha256 이 dict 가 아닌(문자열 등) 유효-JSON-그러나-스키마위반 baseline: base.get(...) 이 던지기 전에
+        # corrupt 로 분류한다. 이 함수는 retro_gate 의 try 밖(run_stop_compliance_report)에서 불려 예외가
+        # 세션을 죽일 수 있으므로, 여기서 반드시 안전 반환한다.
+        return "corrupt", set()
+    return "ok", {key for key, h in _hash_06_glob(root, profile).items() if base.get(key) != h}
+
+
+def run_session_start_snapshot(io, root, core_dir, raw_text):
+    """session-start-snapshot 오케스트레이터(SessionStart). 이번 세션의 06 baseline(존재+해시)을 기록한다.
+
+    Stop 훅의 retro_gate 가 이 baseline 대비 변경분으로 **작성 도구와 무관하게** 이번 세션 작성 06 을 감지
+    (W2/P0-b). 게이트 아님 → parse 실패 silent. 스냅샷은 세션당 **1회만** 쓴다: resume/재-SessionStart 가
+    세션 도중 baseline 을 덮으면 그 전 변경이 baseline 에 흡수돼 감지에서 사라진다(write-once 로 방지)."""
+    hid = "session-start-snapshot"
+    raw = parse_input_fail_open(hid, raw_text, surface=False)
+    if raw is None:
+        return 0
+    profile = load_profile_fail_open(hid)
+    if profile is None:
+        return 0
+    session_id = raw.get("session_id") or ""
+    # 게이트 비활성 프로젝트에선 baseline 이 무의미 → 06 전체 해싱 IO 를 하지 않는다(off 가 기본). session_id 가
+    # 없으면 상관키가 없어 "nosession" 공유 파일이 세션 간 오염되므로 아예 안 쓴다(Stop 이 no_session 으로 표면화).
+    if not _retro_gate_active(profile, root) or not session_id:
+        return 0
+    log_dir = os.path.join(root, io.HOST_DIR, "logs")
+    path = _snapshot_path(log_dir, session_id)
+    _cleanup_old_snapshots(log_dir, keep_path=path)   # 오래된 스냅샷 정리(이번 세션 baseline 은 보존)
+    # write-once 판정은 core 가 소유한다. 이미 존재하면 06 해시(디스크 읽기)를 생략해 불필요한 IO 를 피한다.
+    exists = os.path.exists(path)
+    sha = {} if exists else _hash_06_glob(root, profile)
+    event = {"session_id": session_id,
+             "now_utc": os.environ.get("SAGE_NOW_UTC") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    sys.path.insert(0, core_dir)
+    import session_start_snapshot_core as core
+    decision = core.decide(event, {"exists": exists, "sha256": sha})
+    if decision["action"] != "write":
+        return 0
+    tmp = path + f".tmp-{os.getpid()}"   # try 밖에서 바인딩(예외 시 cleanup 이 UnboundLocalError 안 나게)
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        # 원자적 기록(temp+replace): 쓰기 도중 프로세스 종료로 잘린 JSON 이 남으면 Stop 이 corrupt 로 읽어
+        # writer-독립 감지가 무음 bypass 된다. temp 에 완결 후 os.replace 로 원자 교체해 부분파일을 없앤다.
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(decision["record"], f, ensure_ascii=False)
+        os.replace(tmp, path)
+    except Exception as e:
+        # baseline 기록 실패 = 이번 세션 writer-독립 감지 불가 → 로그기반 감지로 폴백(회귀 아님). silent 금지.
+        print(f"[{hid}] 06 baseline 스냅샷 기록 실패 → writer-독립 감지 이번 세션 skip: {type(e).__name__}: {e}",
+              file=sys.stderr)
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+    return 0
+
+
+def retro_gate_result(profile, root, raw, session_entries, snapshot_06=None, snapshot_status="ok"):
+    """retro_gate 정책 결과(양 런타임 공유, knowledge_capture 와 동형 — 9-C v1).
+
+    raw = Stop 이벤트 원본(파싱됨, session_id/stop_hook_active 추출용). session_entries = 이번 세션의
+    로그 엔트리(모든 session-*.jsonl 에서 session_id 로 모은 것 — _session_log_entries). snapshot_06 =
+    SessionStart baseline 대비 변경된 06 정규 키(writer-독립 감지 — Bash 작성 06 포착). snapshot_status =
+    baseline 신뢰도("ok"|"no_session"|"absent"|"corrupt"): degraded 면 게이트 활성 시 표면화한다(무음 bypass
+    금지). 06 작성 감지는 로그기반 ∪ 스냅샷기반 union(리포트 본문 집계 범위는 건드리지 않는다 — 기존 동작 보존)."""
+    import retro_audit
+    import retro_gate
+
+    # 게이트 활성 조건은 retro CLI 와 동일: mode advisory/enforce + retro_note is True + usable vault(isdir,
+    # 상대경로는 root 기준). 노트가 안 써지면 --check 대상이 없어 게이트가 통과 불가능한 걸 강제하게 된다.
+    mode, notes_enabled = _retro_gate_config(profile, root)
+
+    # 06 감지 = 로그기반(정규 키) ∪ 스냅샷기반(writer-독립). 로그는 Write/Edit·apply_patch 만 보므로
+    # Bash 작성 06 을 스냅샷 diff 가 보완한다(W2/P0-b). glob.glob(recursive) 실존파일과 대조하는 건 동일 —
     # fnmatch 로 `entries[].file` 을 직접 매칭하면 `**` 제로디렉토리 케이스를 놓친다(구현리뷰 1R P0).
     session_files = {_canon_relkey(e.get("file", "")) for e in session_entries}
+    session_files |= set(snapshot_06 or ())
     per06 = _session_06_run_ids(root, profile, session_files) if session_files else {}
     has_06 = bool(per06)
 
     run_id, binding, checked, missing = None, "resolved", False, []
+    audit = retro_audit.audit_summary(root)
     if has_06:
-        run_id, binding, checked, missing = _reduce_06_bindings(per06, retro_audit.audit_summary(root))
+        run_id, binding, checked, missing = _reduce_06_bindings(per06, audit)
 
     result = retro_gate.check(mode, has_06, run_id, checked, _stop_hook_active(raw), notes_enabled, binding)
+
+    # --no-vault 로 노트를 생략한 run 은 checked=True 로 게이트를 통과하지만 "--check 통과"는 아니다 —
+    # OK 문구를 실제 상태(노트 생략)로 바로잡는다(오해 방지). run 이 여럿이면 대표 run 기준.
+    if result["severity"] == "OK" and (audit.get(run_id) or {}).get("state") == "skipped":
+        result = dict(result)
+        result["text"] = f"N/A — --no-vault 로 이번 run 노트 생략 (run_id={run_id})"
 
     # 미완료 종료(게이트 활성 + 미확인 = WARN/BLOCK)를 .sage/retro_audit.jsonl 에 영구 기록한다 —
     # host 로그의 컴플라이언스 리포트와 별개로, doctor/다음 사이클이 볼 수 있는 커밋 대상 증거(유저 스코프).
@@ -551,6 +703,23 @@ def retro_gate_result(profile, root, raw, session_entries):
         except Exception as e:
             result = dict(result)
             result["text"] += f" (⚠️ retro_audit 기록 실패: {type(e).__name__} — 미완료 영구기록·doctor 가시성 유실)"
+
+    # writer-독립 감지 degraded 처리: 게이트 활성인데 baseline 이 없거나(no_session/absent) 손상(corrupt)이면
+    # 로그에 안 남는 Bash-06 을 놓쳤을 수 있다(로그기반 06 이 일부 잡혀도 두 번째 숨은 06 가능성 — codex R2 P0).
+    # enforce 는 이걸 통과로 두면 게이트가 무력화되고 W3(codex 실차단)이 막을 BLOCK 자체가 안 생기므로
+    # **fail-closed(BLOCK)** 한다. advisory 는 WARN, 재시도(stop_hook_active=true)는 세션당 1회 차단 제약상
+    # WARN 으로 완화(무한 Stop 재호출 방지 — 미확인 케이스와 동일 정책). off 는 애초에 gate_active=False.
+    gate_active = mode in ("advisory", "enforce") and notes_enabled
+    if gate_active and snapshot_status in ("no_session", "absent", "corrupt"):
+        reason = {"no_session": "session_id 없음(상관 불가)", "absent": "SessionStart baseline 없음(훅 미발화?)",
+                  "corrupt": "baseline 손상"}[snapshot_status]
+        deg_sev = retro_gate._unchecked_severity(mode, _stop_hook_active(raw))   # enforce 첫Stop=BLOCK / advisory·재시도=WARN
+        result = dict(result)
+        if _SEV_ORDER[deg_sev] > _SEV_ORDER[result["severity"]]:
+            result["severity"] = deg_sev
+        verb = "차단" if deg_sev == "BLOCK" else "경고"
+        result["text"] += (f" (⚠️ writer-독립 06 감지 불가 — {reason}. Bash 로 작성한 06 을 놓쳤을 수 있어 "
+                           f"{verb} — SessionStart 훅 동작을 확인하세요)")
 
     return result
 
@@ -581,7 +750,18 @@ def run_stop_compliance_report(io, root, core_dir, raw_text):
     # 파일명을 잡아 자정 경계에서 오늘자 파일이 아예 없을 수 있고(codex 7R P0), 그때 여기서 早期 return
     # 하면 게이트가 통째로 무동작한다. 그래서 오늘자 파일 부재만으로는 바로 종료하지 않는다.
     raw = parse_input_fail_open(hid, raw_text, surface=False) or {}   # session_id/stop_hook_active 추출용
-    session_entries = _session_log_entries(log_dir, raw.get("session_id") or "")
+    session_id = raw.get("session_id") or ""
+    session_entries = _session_log_entries(log_dir, session_id)
+    # writer-독립 06 감지: SessionStart baseline 대비 변경분(status, changed). Bash 로만 06 을 쓴 세션은 로그
+    # 엔트리가 아예 없어(로거 미매칭) 아래 早期 return 에 걸려 게이트가 무동작하므로, 이 감지 결과도 종료판정에
+    # 넣는다. baseline 이 degraded(부재/손상/상관불가)여도 게이트 활성이면 早期 return 대신 리포트를 내
+    # writer-독립 감지 불가를 표면화한다(무음 bypass 금지).
+    gate_active = _retro_gate_active(profile, root)
+    if gate_active:
+        snapshot_status, snapshot_06 = _snapshot_changed_06(root, profile, log_dir, session_id)
+    else:
+        snapshot_status, snapshot_06 = "ok", set()   # 게이트 비활성 → 감지 불필요, 06 해싱 IO skip(off 기본)
+    gate_degraded = gate_active and snapshot_status != "ok"
 
     entries = []
     if os.path.exists(log_file):
@@ -593,8 +773,8 @@ def run_stop_compliance_report(io, root, core_dir, raw_text):
                         entries.append(json.loads(line))
                     except Exception:
                         pass
-    elif not session_entries:
-        return 0   # 오늘자 로그도, 이번 세션 로그도 없음 → 리포트/게이트 생략(기존 동작)
+    elif not session_entries and not snapshot_06 and not gate_degraded:
+        return 0   # 오늘자 로그·이번 세션 로그·writer-독립 06 변경 전무 + baseline 정상 → 리포트/게이트 생략(기존 동작)
 
     snapshot = {"entries": entries, "today": today, "branch": resolve_branch(root, ""), "runtime": io.RUNTIME}
     event = {"hook_id": hid, "hook_event_name": "Stop", "runtime": io.RUNTIME}
@@ -607,7 +787,7 @@ def run_stop_compliance_report(io, root, core_dir, raw_text):
     io.attach_policy_results(model, profile, entries, raw_text, kc_result)  # 런타임별 정책+순서
 
     try:
-        rg_result = retro_gate_result(profile, root, raw, session_entries)
+        rg_result = retro_gate_result(profile, root, raw, session_entries, snapshot_06, snapshot_status)
     except Exception as e:
         # Stop 훅은 내부 오류로 세션을 막으면 안 된다(fail-open) — 게이트 판정 불가 시 skip 으로 낮춘다.
         rg_result = {"name": "retro_gate", "severity": "INFO",
@@ -618,16 +798,10 @@ def run_stop_compliance_report(io, root, core_dir, raw_text):
     report = os.path.join(log_dir, f"compliance-{today}.md")
     with open(report, "a", encoding="utf-8") as f:
         f.write(md)
-    io.render_report_saved(today)
-
     exit_code = model["exit_code"]
     if rg_result["severity"] == "BLOCK":
-        # v1 스코프(유저 결정): claude host 만 실제 exit 2. codex 의 Stop lifecycle exit-2 차단은
-        # 이 저장소에서 실 세션으로 검증된 적이 없다 — 검증 전 codex 에서 exit 2 를 내면 이 리포에서
-        # 근거 없는 새 메커니즘에 기대는 셈이라, codex 는 리포트에만 BLOCK 을 남기고 세션은 통과시킨다.
-        if io.RUNTIME == "claude":
-            print(f"[stop-compliance-report] ❌ {rg_result['text']}")
-            exit_code = 2
-        else:
-            print(f"[stop-compliance-report] ⚠️  (codex — 미검증 미차단) {rg_result['text']}")
+        # 정책 의미는 양 host 동일하고 wire만 IO 모듈이 소유한다. Claude는 exit 2, Codex는
+        # stdout decision:block + exit 0으로 같은 turn을 한 번 더 실행한다.
+        return io.render_stop_result(today, rg_result["text"])
+    io.render_stop_result(today)
     return exit_code

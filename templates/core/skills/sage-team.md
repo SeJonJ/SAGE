@@ -75,7 +75,7 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
    exits non-zero while the note is still the blank template, a proposal lacks a valid
    `target`/`proposed_change`, or the note belongs to another run. This `--check` is **mandatory
    when `report_gate_enforce` is advisory/enforce**: without a passing `--check`, the session-end
-   Stop hook records the cycle as unfinished and (under `enforce`, claude host) blocks stopping
+   Stop hook records the cycle as unfinished and (under `enforce`, both hosts) blocks stopping
    once. Never leave the note unfilled and never set `approved: true` yourself. Record that retro
    ran, or why it was skipped, in the completion report — a required completion axis, not optional.
 10. Final user report: include the per-phase outcome, review `run_id`, generated artifact

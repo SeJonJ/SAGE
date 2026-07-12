@@ -241,11 +241,15 @@ class TestRetroGateWiring(unittest.TestCase):
                 f.write(json.dumps(e, ensure_ascii=False) + "\n")
         return prof_path, log_dir
 
-    def _run(self, root, prof_path, stop_hook_active=False):
+    def _run(self, root, prof_path, stop_hook_active=False, baseline=True, session_id="sess-1"):
+        # 실사용에선 SessionStart 가 Stop 前 항상 발화한다 → 기본으로 baseline 을 확보(status ok)해 degraded
+        # 정책이 오작동하지 않게 한다. degraded/absent 를 테스트하는 케이스만 baseline=False 로 옵트아웃.
+        if baseline:
+            self._run_session_start(root, prof_path, session_id=session_id)
         env = dict(os.environ, CLAUDE_PROJECT_DIR=root, SAGE_HOOK_CORE_DIR=HOOKS_DIR,
                    SAGE_PROFILE=prof_path, SAGE_TODAY=TODAY, SAGE_GATE_BRANCH="main")
         adapter = os.path.join(ADAPTERS, "claude", "stop-compliance-report.sh")
-        stdin = json.dumps({"session_id": "sess-1", "stop_hook_active": stop_hook_active})
+        stdin = json.dumps({"session_id": session_id, "stop_hook_active": stop_hook_active})
         return subprocess.run(["bash", adapter], input=stdin, capture_output=True, text=True, env=env)
 
     def test_enforce_first_attempt_blocks_when_unchecked(self):
@@ -362,22 +366,68 @@ class TestRetroGateWiring(unittest.TestCase):
             self.assertIn("결속 불가", p.stdout)
             self.assertNotIn("rl-old", p.stdout)
 
-    def test_codex_reports_block_but_never_exits_2(self):
-        # v1 스코프: codex 의 Stop exit-2 차단은 이 저장소에서 실검증된 적이 없다 — claude 만 실제 차단.
+    def _run_codex_stop(self, root, prof_path, stop_hook_active=False):
+        log_dir = os.path.join(root, ".codex", "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        claude_log = os.path.join(root, ".claude", "logs", f"session-{TODAY}.jsonl")
+        codex_log = os.path.join(log_dir, f"session-{TODAY}.jsonl")
+        if os.path.exists(claude_log):
+            os.rename(claude_log, codex_log)
+        env = dict(os.environ, CODEX_PROJECT_ROOT=root, SAGE_HOOK_CORE_DIR=HOOKS_DIR,
+                   SAGE_PROFILE=prof_path, SAGE_TODAY=TODAY, SAGE_GATE_BRANCH="main")
+        start_adapter = os.path.join(ADAPTERS, "codex", "session-start-snapshot.sh")
+        start = subprocess.run(["bash", start_adapter], input=json.dumps({"session_id": "sess-1"}),
+                               capture_output=True, text=True, env=env)
+        self.assertEqual(0, start.returncode, start.stderr)
+        adapter = os.path.join(ADAPTERS, "codex", "stop-compliance-report.sh")
+        stdin = json.dumps({"session_id": "sess-1", "stop_hook_active": stop_hook_active})
+        result = subprocess.run(["bash", adapter], input=stdin, capture_output=True, text=True, env=env)
+        return result, log_dir
+
+    def test_codex_enforce_emits_block_decision(self):
+        # Codex Stop 차단 wire: exit 0 + stdout 단일 JSON decision:block. exit 2는 Claude 전용 계약이다.
         with tempfile.TemporaryDirectory() as root:
             prof_path, _ = self._setup(root, mode="enforce")
-            log_dir = os.path.join(root, ".codex", "logs")
-            os.makedirs(log_dir, exist_ok=True)
-            os.rename(os.path.join(root, ".claude", "logs", f"session-{TODAY}.jsonl"),
-                      os.path.join(log_dir, f"session-{TODAY}.jsonl"))
-            env = dict(os.environ, CODEX_PROJECT_ROOT=root, SAGE_HOOK_CORE_DIR=HOOKS_DIR,
-                       SAGE_PROFILE=prof_path, SAGE_TODAY=TODAY, SAGE_GATE_BRANCH="main")
-            adapter = os.path.join(ADAPTERS, "codex", "stop-compliance-report.sh")
-            stdin = json.dumps({"session_id": "sess-1", "stop_hook_active": False})
-            p = subprocess.run(["bash", adapter], input=stdin, capture_output=True, text=True, env=env)
-            self.assertEqual(p.returncode, 0)   # claude 였다면 2
+            p, log_dir = self._run_codex_stop(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            wire = json.loads(p.stdout)
+            self.assertEqual("block", wire["decision"])
+            self.assertIn(self.RUN_ID, wire["reason"])
+            self.assertIn("compliance-", wire["reason"])
+            self.assertNotIn("hookSpecificOutput", wire)   # 결합하면 Codex가 hook failure로 처리
             report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
-            self.assertIn("[BLOCK] retro_gate", report)   # 리포트엔 사실대로 남음(미차단이지 미탐지 아님)
+            self.assertIn("[BLOCK] retro_gate", report)
+
+    def test_codex_enforce_retry_is_silent_pass(self):
+        # decision:block 뒤 Codex 재호출은 stop_hook_active=true. Stop 통과 wire는 무출력 exit 0이어야 한다.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, _ = self._setup(root, mode="enforce")
+            p, log_dir = self._run_codex_stop(root, prof_path, stop_hook_active=True)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertEqual("", p.stdout)
+            report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
+            self.assertIn("[WARN] retro_gate", report)
+
+    def test_codex_advisory_is_silent_pass(self):
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, _ = self._setup(root, mode="advisory")
+            p, log_dir = self._run_codex_stop(root, prof_path)
+            self.assertEqual(0, p.returncode, p.stderr)
+            self.assertEqual("", p.stdout)
+            report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
+            self.assertIn("[WARN] retro_gate", report)
+
+    def test_codex_checked_run_is_silent_pass(self):
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, _ = self._setup(root, mode="enforce")
+            sys.path.insert(0, os.path.join(HOOKS_DIR, "runtime"))
+            import retro_audit
+            retro_audit.record_check(root, self.RUN_ID, "wiki/note.md", "본문")
+            p, log_dir = self._run_codex_stop(root, prof_path)
+            self.assertEqual(0, p.returncode, p.stderr)
+            self.assertEqual("", p.stdout)
+            report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
+            self.assertIn("[OK] retro_gate", report)
 
     def test_resumed_06_self_binds_across_sessions(self):
         # 재개 가능 PDCA(외부 보완 피드백 Item 2): 05 는 이전 세션, 06 만 이번 세션에 쓰였다. 06 이 자기선언한
@@ -620,6 +670,138 @@ class TestRetroGateWiring(unittest.TestCase):
             self.assertEqual(p.returncode, 2, p.stdout)   # 모호 아님 — rl-test123 로 유일 결속 후 미확인 BLOCK
             self.assertIn(self.RUN_ID, p.stdout)
             self.assertNotIn("모호", p.stdout)
+
+    # --- W2: writer-독립 06 감지 (SessionStart 스냅샷) ---
+    def _run_session_start(self, root, prof_path, session_id="sess-1"):
+        env = dict(os.environ, CLAUDE_PROJECT_DIR=root, SAGE_HOOK_CORE_DIR=HOOKS_DIR,
+                   SAGE_PROFILE=prof_path, SAGE_TODAY=TODAY, SAGE_GATE_BRANCH="main")
+        adapter = os.path.join(ADAPTERS, "claude", "session-start-snapshot.sh")
+        return subprocess.run(["bash", adapter], input=json.dumps({"session_id": session_id}),
+                              capture_output=True, text=True, env=env)
+
+    def _bash_write_06(self, root, name="06-cycle.md", run_id=None):
+        # post-tool-logger 를 거치지 않는 06 작성(Bash 리다이렉트 모사) — 세션 로그에 엔트리가 안 남는다.
+        with open(os.path.join(root, "plan_docs", name), "w", encoding="utf-8") as f:
+            f.write(f"완료 보고\nLoop-Run: {run_id or self.RUN_ID}\n")
+
+    def _plant_snapshot(self, root, session_id, body):
+        # 특정 내용의 스냅샷 파일을 직접 심는다(손상 baseline 테스트용). _run(baseline=False) 와 함께 쓴다.
+        snap = os.path.join(root, ".claude", "logs", f"session-snapshot-{session_id}.json")
+        os.makedirs(os.path.dirname(snap), exist_ok=True)
+        with open(snap, "w", encoding="utf-8") as f:
+            f.write(body)
+
+    def test_bash_written_06_detected_via_snapshot(self):
+        # W2/P0-b(teeth): 로그에 안 남는 Bash 작성 06 도 SessionStart baseline 대비 신규로 감지돼 BLOCK.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", log_06=False)   # 06 미작성·미로깅
+            self._run_session_start(root, prof_path)                               # baseline: 06 없음
+            self._bash_write_06(root)                                              # 로그 없이 06 생성
+            p = self._run(root, prof_path, baseline=False)                         # 위 baseline 유지
+            self.assertEqual(p.returncode, 2, p.stdout)   # 스냅샷 diff 로 06 포착 → 미확인 enforce BLOCK
+            self.assertIn(self.RUN_ID, p.stdout)
+
+    def test_snapshot_write_once_preserves_baseline(self):
+        # write-once(teeth): baseline 을 찍은 뒤 06 이 생겨도 재-SessionStart 가 baseline 을 덮지 않는다.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", log_06=False)
+            self._run_session_start(root, prof_path)     # baseline #1: 06 없음
+            self._bash_write_06(root)                    # 06 생성
+            self._run_session_start(root, prof_path)     # 재-SessionStart — write-once 로 baseline 보존돼야
+            p = self._run(root, prof_path, baseline=False)
+            self.assertEqual(p.returncode, 2, p.stdout)   # baseline 이 덮였다면 감지 실패
+
+    def test_unchanged_06_not_flagged_by_snapshot(self):
+        # SessionStart 시점부터 있던(이번 세션 미변경) 06 은 스냅샷 diff 로 안 잡힌다. baseline 정상이라
+        # degraded 도 아님 → 게이트 무동작(false block 방지).
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", log_06=False)
+            self._bash_write_06(root)                     # SessionStart 前부터 존재
+            self._run_session_start(root, prof_path)      # baseline: 06 이미 포함(같은 내용)
+            p = self._run(root, prof_path, baseline=False)
+            self.assertEqual(p.returncode, 0, p.stdout)   # 변경 없음·baseline 정상 → 이번 세션 06 아님
+
+    def test_baseline_ok_no_degraded_note(self):
+        # baseline 정상(SessionStart 실행) + 06 없음 → degraded 노이즈 없음(정상 경로).
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", log_06=False)
+            self._run_session_start(root, prof_path)      # baseline 정상 기록
+            p = self._run(root, prof_path, baseline=False)
+            self.assertEqual(p.returncode, 0, p.stdout)
+            report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
+            self.assertNotIn("writer-독립 06 감지 불가", report)
+
+    # --- W2 degraded baseline 정책: enforce=BLOCK / advisory=WARN / 재시도=WARN (fail-closed) ---
+    def test_absent_baseline_enforce_blocks(self):
+        # baseline 없음(SessionStart 미발화) + Bash 06 + enforce → fail-closed BLOCK(놓친 06 가능성).
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", log_06=False)
+            self._bash_write_06(root)
+            p = self._run(root, prof_path, baseline=False)
+            self.assertEqual(p.returncode, 2, p.stdout)
+            self.assertIn("writer-독립 06 감지 불가", p.stdout)
+
+    def test_corrupt_baseline_enforce_blocks(self):
+        # 손상 baseline + enforce → BLOCK(읽기 불가 baseline 은 신뢰 불가 → fail-closed).
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", log_06=False)
+            self._bash_write_06(root)
+            self._plant_snapshot(root, "sess-1", '{"sha256": {trunc')   # 잘린 JSON
+            p = self._run(root, prof_path, baseline=False)
+            self.assertEqual(p.returncode, 2, p.stdout)
+
+    def test_no_session_id_enforce_blocks(self):
+        # session_id 없음 → 상관 불가(no_session) + enforce → BLOCK.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", log_06=False)
+            self._bash_write_06(root)
+            p = self._run(root, prof_path, baseline=False, session_id="")
+            self.assertEqual(p.returncode, 2, p.stdout)
+
+    def test_absent_baseline_advisory_warns_not_blocks(self):
+        # advisory 는 같은 degraded 조건에서 차단하지 않고 WARN(rc 0) — 표면화만.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="advisory", log_06=False)
+            self._bash_write_06(root)
+            p = self._run(root, prof_path, baseline=False)
+            self.assertEqual(p.returncode, 0, p.stdout)
+            report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
+            self.assertIn("writer-독립 06 감지 불가", report)
+
+    def test_degraded_retry_does_not_block_twice(self):
+        # stop_hook_active=true(이미 1회 차단) 재시도에서는 WARN 으로 완화 — 무한 Stop 재호출 방지.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", log_06=False)
+            self._bash_write_06(root)
+            p = self._run(root, prof_path, baseline=False, stop_hook_active=True)
+            self.assertEqual(p.returncode, 0, p.stdout)   # 재시도 → 차단 안 함(플랫폼 제약)
+
+    def test_corrupt_baseline_blocks_even_with_checked_logged_06(self):
+        # 로그로 확인된 06 이 있어도 baseline 손상이면 숨은 두 번째 06 가능성 때문에 enforce BLOCK.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce")   # 06-cycle 로그됨 → rl-test123
+            sys.path.insert(0, os.path.join(HOOKS_DIR, "runtime"))
+            import retro_audit
+            retro_audit.record_check(root, self.RUN_ID, "wiki/note.md", "본문")   # 로그된 06 은 확인됨
+            self._plant_snapshot(root, "sess-1", "{ broken")
+            p = self._run(root, prof_path, baseline=False)
+            self.assertEqual(p.returncode, 2, p.stdout)   # 확인된 06 이 있어도 손상 baseline → BLOCK
+            self.assertIn("writer-독립 06 감지 불가", p.stdout)
+
+    # --- W4: --no-vault run 예외 (skip 이벤트) ---
+    def test_no_vault_skip_passes_gate(self):
+        # W4(teeth): retro_note=on 이라 게이트 활성이지만 이 run 은 --no-vault 로 노트를 생략(skip 기록).
+        # --check 없이 종료해도 BLOCK 이 아니라 통과(노트 생략은 미완료가 아님).
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce")   # 06-cycle → rl-test123(미확인)
+            sys.path.insert(0, os.path.join(HOOKS_DIR, "runtime"))
+            import retro_audit
+            retro_audit.record_skip(root, self.RUN_ID)               # --no-vault 가 남기는 skip
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 0, p.stdout)              # skip 이므로 통과(BLOCK 아님)
+            report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
+            self.assertIn("no-vault", report)                        # 통과 사유 = 노트 생략
+            self.assertEqual([], [r for r in self._audit_records(root) if r["event"] == "retro_check_missing"])
 
 
 if __name__ == "__main__":

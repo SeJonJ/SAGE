@@ -92,8 +92,8 @@ pdca:                            # PDCA phase 의무구조 — pre-implementatio
     report_gate_enforce: advisory                # 06←05 audit 게이트: off(마커만) | advisory(WARN) | enforce(BLOCK). 05 가 가리키는 loop run 이 closed+APPROVED 인지 검사. enforce 는 모든 05 가 루프 돌 때만 안전
 
   # retro:                          # Loop C(sage retro --check) 실행 여부를 Stop 훅이 사후 확인(9-C v1).
-  #   report_gate_enforce: off      # off | advisory(WARN) | enforce(BLOCK, claude host 만·세션당 최대 1회 —
-  #                                  # Stop 훅 플랫폼 제약. codex host 는 리포트에만 기록, 미차단).
+  #   report_gate_enforce: off      # off | advisory(WARN) | enforce(BLOCK, 양 host·세션당 최대 1회).
+  #                                  # Claude는 exit 2, Codex는 Stop decision:block wire를 사용.
   #                                  # enforce 켜려면 knowledge_capture.retro_note 도 켜야 의미가 있다(안 그러면 노트 자체가 안 생김).
 
 conventions: []                  # 예: [{ scope: backend, stack: "<stack>", doc: sage/conventions/<name>.md, file_globs: ["**/*.<ext>"] }]

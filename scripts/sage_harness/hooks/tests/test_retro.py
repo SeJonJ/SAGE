@@ -126,6 +126,91 @@ class TestRetro(_ProjectFixture, unittest.TestCase):
         r = retro("--feature", "loop", root=self.tmp)
         self.assertIn("alpha.loop-review.md", r.stdout)
 
+    def _read_audit(self):
+        import json as _json
+        p = os.path.join(self.tmp, ".sage", "retro_audit.jsonl")
+        if not os.path.isfile(p):
+            return []
+        with open(p, encoding="utf-8") as f:
+            return [_json.loads(l) for l in f if l.strip()]
+
+    def test_no_vault_records_skip_event(self):
+        # W4: --no-vault 실행이 이 run 의 skip 이벤트(reason=no_vault)를 retro_audit.jsonl 에 남긴다 →
+        # Stop 게이트가 없는 노트의 --check 를 요구하지 않는다(--no-vault↔enforce 충돌 해소).
+        rid = self._run_loop()
+        self._add_05()
+        r = retro("--no-vault", "--run-id", rid, root=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        recs = self._read_audit()
+        self.assertEqual([(x["event"], x["run_id"], x.get("reason")) for x in recs],
+                         [("retro_check_skipped", rid, "no_vault")])
+
+    def test_no_vault_single_run_auto_binds(self):
+        # run 이 정확히 1개면 --run-id 없이도 자동 결속(skip 기록).
+        rid = self._run_loop()
+        self._add_05()
+        r = retro("--no-vault", root=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([(x["event"], x["run_id"]) for x in self._read_audit()],
+                         [("retro_check_skipped", rid)])
+
+    def test_no_vault_multi_run_requires_run_id(self):
+        # run 이 2개↑인데 --run-id 없으면 모호 → rc 2, skip 미기록(엉뚱한 최신 run 자동 면제 방지).
+        self._run_loop(); self._run_loop()
+        self._add_05()
+        r = retro("--no-vault", root=self.tmp)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertEqual(self._read_audit(), [])   # 아무것도 안 남김
+
+    def test_no_vault_multi_run_explicit_run_id_binds_only_that(self):
+        # run 2개 + 명시 유효 --run-id → 그 run 만 skipped.
+        rid1 = self._run_loop(); rid2 = self._run_loop()
+        self._add_05()
+        r = retro("--no-vault", "--run-id", rid1, root=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        recs = self._read_audit()
+        self.assertEqual([x["run_id"] for x in recs], [rid1])   # rid2 는 건드리지 않음
+        self.assertNotIn(rid2, [x["run_id"] for x in recs])
+
+    def test_no_vault_feature_does_not_auto_skip_latest(self):
+        # --feature 가 있어도 복수 run 에서 최신 run 이 자동 skip 되지 않는다(--run-id 필수 유지).
+        self._run_loop(); self._run_loop()
+        self._add_05("alpha")
+        r = retro("--no-vault", "--feature", "alpha", root=self.tmp)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertEqual(self._read_audit(), [])
+
+    def test_no_vault_writes_no_note(self):
+        # --no-vault 는 노트를 만들지 않는다(skip 기록만) — 파일 생성은 audit 한 줄뿐.
+        rid = self._run_loop()
+        self._add_05()
+        retro("--no-vault", "--run-id", rid, root=self.tmp)
+        self.assertFalse(os.path.isdir(os.path.join(self.tmp, "vault")))
+
+    def test_no_vault_bogus_run_id_refused(self):
+        # W4 게이트 우회 차단: 실재하지 않는 --run-id 로 skip 을 기록하려 하면 거부(rc 2)하고 아무것도 안 남긴다.
+        self._run_loop()
+        self._add_05()
+        r = retro("--no-vault", "--run-id", "rl-victim", root=self.tmp)
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertFalse(os.path.isfile(os.path.join(self.tmp, ".sage", "retro_audit.jsonl")))
+
+    def test_no_vault_no_loop_run_records_nothing(self):
+        # 결속할 loop_audit run 이 없으면(단발 리뷰) skip 미기록 — false 우회도 false BLOCK 도 아님(안내만).
+        self._add_05()   # loop 없음
+        r = retro("--no-vault", root=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(os.path.isfile(os.path.join(self.tmp, ".sage", "retro_audit.jsonl")))
+
+    def test_no_vault_skip_write_failure_returns_2(self):
+        # codex P1(teeth): skip 기록 실패는 rc 2(fail-fast) — 기록 안 된 skip 은 게이트가 못 봐 false BLOCK.
+        rid = self._run_loop()
+        self._add_05()
+        # .sage/retro_audit.jsonl 자리에 디렉토리를 두어 append 를 실패시킨다.
+        os.makedirs(os.path.join(self.tmp, ".sage", "retro_audit.jsonl"), exist_ok=True)
+        r = retro("--no-vault", "--run-id", rid, root=self.tmp)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+
     def test_corrupt_audit_line_surfaced(self):
         # codex S4 P2: 손상/비-dict 줄이 silent drop 되어도 retro 가 증거 불완전을 경고.
         self._run_loop()

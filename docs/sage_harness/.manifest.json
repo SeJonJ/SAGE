@@ -79,7 +79,7 @@
       "l3_review_strategy": "codex_feature_signal"
     },
     "hooks/stop-compliance-report": {
-      "spec_hash": "sha256:485a9e0ae7085af09fd1cde55c894353e2b64fcaa71b806fd3068f3b4e688d07",
+      "spec_hash": "sha256:ec98fe34c4c947cb479dca996524c66a60b340a731c9a19631da1c821501ca60",
       "canonical_hash": "sha256:9722b3c9694ea0649208fb0ae021467cd872ded6b4328794aa8b08dc5690fcb6",
       "adapter_hash": {
         "claude": "sha256:031dcf4cee2de44cd3f5af5e4e38e95aa511704cfaa55b29f84d5d0b2bc7f8d0",
@@ -108,11 +108,28 @@
       "test": "scripts/sage_harness/hooks/tests/run-tests.sh",
       "risk": [],
       "unresolved": []
+    },
+    "hooks/session-start-snapshot": {
+      "form": "core_adapter",
+      "conformance": "UNKNOWN",
+      "risk": [],
+      "unresolved": [],
+      "spec_hash": "sha256:ba50d5e662f3870ec6b2f677e2cff2955e85d1cf1258555ab36c1f87efe7dddc",
+      "canonical_hash": "sha256:bdeb1dcf32159149493882ee8e87bb4ca4de33154f6c205333995b88543d1277",
+      "adapter_contract_version": "1",
+      "adapter_hash": {
+        "claude": "sha256:b26a97efa5264b2b60dd54df70b1bf65b4974cf3ca99e9f07506267937720cbc",
+        "codex": "sha256:e7a33a0f14a56461af6cba1d328b972f182697407d634e7a9610c0f561fc64d2"
+      },
+      "render_hash": {
+        "claude": "sha256:b26a97efa5264b2b60dd54df70b1bf65b4974cf3ca99e9f07506267937720cbc",
+        "codex": "sha256:e7a33a0f14a56461af6cba1d328b972f182697407d634e7a9610c0f561fc64d2"
+      }
     }
   },
   "hook_runtime_hash": {
-    "shared": "sha256:239f7c2d11dd6de575e9343438ade1df1adb5a717a26b3b0512514a17e57b264",
-    "claude": "sha256:77126a3bfaa36cc1cdb60b62252993ad05692aa3ea6208736ab1b86d29d0a831",
-    "codex": "sha256:ccc40a617c118c10be91e295e5b92fc61274539593a2b8e4fff09a599cab2e57"
+    "shared": "sha256:cb33475437db49f1e07a2fcda619e1d8904616151efafb0b85e13c8a3f20c051",
+    "claude": "sha256:d0af1829282e733b78b6cc3540402a9c4e746d97ec5c6319ec903cc8607cf4e5",
+    "codex": "sha256:ab851a7b2e228e4b8cdbdd2599cea9d74083c1a3a6731dd648b1017ad66356ea"
   }
 }

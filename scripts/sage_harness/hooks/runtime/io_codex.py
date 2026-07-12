@@ -169,7 +169,16 @@ def attach_policy_results(model, profile, entries, raw_text, kc_result):
     model["sections"]["policy_results"].append(kc_result)
 
 
-def render_report_saved(today):
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop",
-          "additionalContext": messages.report_saved_text(HOST_DIR, today, RUNTIME)}},
-                     ensure_ascii=False))
+def render_stop_result(today, block_reason=None):
+    """Codex Stop wire는 단일 JSON 객체만 허용한다.
+
+    차단 시 decision/reason을 반환하면 Codex가 같은 turn을 재실행하고 다음 Stop 입력에
+    stop_hook_active=true를 보낸다. Stop 이벤트는 hookSpecificOutput.additionalContext를 허용하지 않고,
+    decision과 결합하거나 단독으로 출력해도 hook failure가 된다. 차단 reason에 리포트 경로를 포함하고
+    통과 시에는 아무것도 출력하지 않는다. 리포트 자체는 호출 전에 파일로 저장된다.
+    """
+    report_text = messages.report_saved_text(HOST_DIR, today, RUNTIME)
+    if block_reason:
+        print(json.dumps({"decision": "block", "reason": f"{block_reason}\n{report_text}"},
+                         ensure_ascii=False))
+    return 0

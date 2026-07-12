@@ -33,6 +33,8 @@ def dispatch(runtime, hook, root, core_dir, raw_text):
         return hr.run_pre_phase4_checklist_gate(io, root, core_dir, raw_text)
     if hook == "stop-compliance-report":
         return hr.run_stop_compliance_report(io, root, core_dir, raw_text)
+    if hook == "session-start-snapshot":
+        return hr.run_session_start_snapshot(io, root, core_dir, raw_text)
     return 0   # 미지원 hook id → 안전 통과
 
 

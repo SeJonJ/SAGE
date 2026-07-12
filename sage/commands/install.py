@@ -21,7 +21,7 @@ from sage import __version__
 
 from sage import _resources   # 번들 리소스 경로 단일 해석(env override + repo fallback — 재배치/설치 대비)
 
-# CORE roster (중립 6인) + CORE hook 6종(form) + CORE skill 7종. 도메인값 아님 = framework 메타.
+# CORE roster (중립 6인) + CORE hook 7종(form) + CORE skill 7종. 도메인값 아님 = framework 메타.
 # skill 3분할: sage-cycle(00~06 우산) → sage-plan(00~02 기획) → sage-team(03~06 개발).
 # sage-asset-override: CORE 자산 오버레이(sage/asset_overrides/**) 저작 — CORE 렌더 직접수정 대체 경로.
 _CORE_AGENTS = ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]
@@ -38,6 +38,7 @@ _CORE_HOOKS = [
     ("post-tool-logger", "core_adapter"),
     ("pre-implementation-gate", "core_adapter"),
     ("pre-phase4-checklist-gate", "core_adapter"),
+    ("session-start-snapshot", "core_adapter"),
     ("stop-compliance-report", "core_adapter"),
     ("generated-artifact-write-guard", "native"),
 ]
@@ -443,7 +444,7 @@ def _profile_with_host(host, prefix):
 
 
 def _manifest(host):
-    """CORE hook 6종을 등록한 manifest(스켈레톤). hash/conformance 는 generate 가 스탬프."""
+    """CORE hook 7종을 등록한 manifest(스켈레톤). hash/conformance 는 generate 가 스탬프."""
     assets = {}
     for hid, form in _CORE_HOOKS:
         # 미스탬프 상태(install 직후): conformance=UNKNOWN(schema 준수). generate --write 가 hash/PASS 스탬프.
@@ -538,7 +539,7 @@ def run(args) -> int:
         _copy_tree(os.path.join(fw, ".claude", "agents"),
                    os.path.join(dest, ".codex", "agents"), args.force, created, skipped)
 
-    # 3. CORE hook spec(중립 6종) → docs/sage_harness/hooks/
+    # 3. CORE hook spec(중립 7종) → docs/sage_harness/hooks/
     specs = _resources.hook_specs_dir()
     for hid, _form in _CORE_HOOKS:
         _copy_file(os.path.join(specs, f"{hid}.md"),

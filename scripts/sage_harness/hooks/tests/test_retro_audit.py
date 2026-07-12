@@ -119,6 +119,29 @@ class TestRetroAudit(unittest.TestCase):
     def test_latest_state_none_when_no_record(self):
         self.assertIsNone(ra.latest_state(self.tmp, "rl-nope"))
 
+    def test_record_skip_appends_and_sets_state(self):
+        # W4: --no-vault run 은 skip 이벤트 → state=skipped, checked=False(check 통과 아님).
+        rec = ra.record_skip(self.tmp, "rl-aaa")
+        self.assertEqual(rec["event"], "retro_check_skipped")
+        self.assertEqual(ra.latest_state(self.tmp, "rl-aaa"), "skipped")
+        self.assertFalse(ra.audit_summary(self.tmp)["rl-aaa"]["checked"])
+
+    def test_record_skip_is_state_change_only(self):
+        # 매 --no-vault 마다 불어나지 않도록: 이미 skipped 면 재기록 안 함(None).
+        self.assertIsNotNone(ra.record_skip(self.tmp, "rl-aaa"))
+        self.assertIsNone(ra.record_skip(self.tmp, "rl-aaa"))
+        self.assertEqual(1, len(ra.read_records(self.tmp)))
+
+    def test_record_skip_no_run_id_is_noop(self):
+        self.assertIsNone(ra.record_skip(self.tmp, None))
+        self.assertEqual(0, len(ra.read_records(self.tmp)))
+
+    def test_skip_then_check_flips_to_ok(self):
+        # --no-vault 로 생략했다가 나중에 실제로 노트 쓰고 check → 최신 상태 ok.
+        ra.record_skip(self.tmp, "rl-aaa")
+        ra.record_check(self.tmp, "rl-aaa", "note.md", "채운 내용")
+        self.assertEqual(ra.latest_state(self.tmp, "rl-aaa"), "ok")
+
     def test_read_status_absent_vs_unreadable(self):
         # codex 구현리뷰 4R P1: 진짜 없음(absent)과 신뢰불가(unreadable)를 구분해야 doctor 가 오보 안 함.
         self.assertEqual(ra.read_records_status(self.tmp)[0], "absent")

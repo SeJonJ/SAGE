@@ -125,11 +125,11 @@ class TestGoldenInstanceE2E(unittest.TestCase):
         self.assertIn("SCHEMA PASS", self.validate.stdout)
 
     def test_all_hooks_registered(self):
-        # F6 가드: generate 가 6 hook 전부 등록(클로버 없음)
+        # F6 가드: generate 가 7 hook 전부 등록(클로버 없음)
         with open(os.path.join(self.inst, ".claude", "settings.json"), encoding="utf-8") as f:
             cmds = json.dumps(json.load(f))
         for hid in ("generated-artifact-write-guard", "pre-implementation-gate", "pre-phase4-checklist-gate",
-                    "post-tool-logger", "stop-compliance-report", "capture-declared-risk"):
+                    "post-tool-logger", "stop-compliance-report", "capture-declared-risk", "session-start-snapshot"):
             self.assertIn(hid, cmds, f"{hid} 등록 누락(클로버)")
 
     def test_install_tree_no_domain_tokens(self):
