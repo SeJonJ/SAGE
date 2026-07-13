@@ -278,8 +278,22 @@ def _conformance_check(root, asset_id, claims_path):
     return bump, msgs
 
 
+def _interpretive_contract_version(subdir):
+    """현재 agent/skill 역추출 계약버전을 generate 와 같은 SSOT 에서 읽는다."""
+    module_name = {
+        "agents": "reverse_extract_agent",
+        "skills": "reverse_extract_skill",
+    }[subdir]
+    from sage import _resources
+    harness = os.path.join(_resources.sage_root(), "scripts", "sage_harness")
+    if harness not in sys.path:
+        sys.path.insert(0, harness)
+    import manifest_util
+    return manifest_util._derived_contract_version(module_name)
+
+
 def _validate_interpretive(root, asset_id, entry, run_regression=True):
-    """interpretive 자산(agent/skill) → spec_hash + claims_hash staleness + conformance(P1-4) + (선택)regression.
+    """interpretive 자산(agent/skill) → hash/계약 staleness + conformance(P1-4) + (선택)regression.
 
     asset_id 'agents/<id>' 또는 'skills/<id>' — prefix 에서 디렉토리 결정(독립: 하드코딩 아님)."""
     msgs = []
@@ -307,6 +321,21 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True):
         bump("FAIL"); msgs.append(f"  FAIL missing claims: {claims}")
     elif entry.get("claims_hash") and _sha(claims) != entry["claims_hash"]:
         bump("STALE"); msgs.append("  STALE claims_hash 불일치")
+
+    # generate 가 스탬프한 역추출 계약버전과 현재 계약을 대조한다. 레거시 엔트리의 부재는 허용하고,
+    # 양쪽 값이 모두 있으면서 다른 경우만 STALE 로 판정해 hook 의 mismatch-only 의미론과 맞춘다.
+    try:
+        want_cv = _interpretive_contract_version(subdir)
+    except Exception as e:
+        msgs.append(f"  INFO interpretive 계약버전 검사 skip — 모듈 로드 실패: {e}")
+    else:
+        have_cv = entry.get("adapter_contract_version")
+        if want_cv and have_cv and want_cv != have_cv:
+            bump("STALE")
+            msgs.append(
+                f"  STALE 계약버전 불일치 ({have_cv}→{want_cv}) — "
+                "sage generate --kind agent|skill --write 재스탬프 필요"
+            )
     unres = entry.get("unresolved")
     if isinstance(unres, list):   # 오염 manifest 의 unresolved:1 등 비-list 는 순회 시 TypeError → 무시
         for u in unres:

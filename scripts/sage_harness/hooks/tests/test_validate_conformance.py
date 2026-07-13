@@ -11,6 +11,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -138,6 +139,45 @@ class TestConformanceWiring(unittest.TestCase):
             claims_path = os.path.join(root, "docs", "sage_harness", "agents", "z.claims.yml")
             sev, msgs = V._conformance_check(root, "agents/z", claims_path)
             self.assertEqual((sev, msgs), ("PASS", []))
+
+    def test_interpretive_contract_version_mismatch_is_stale(self):
+        for asset_id in ("agents/x", "skills/x"):
+            with self.subTest(asset_id=asset_id), tempfile.TemporaryDirectory() as tmp:
+                root = _mk_instance(tmp, asset_id, _CLAIMS, render_text=None)
+                entry = _stamped_entry(root, asset_id)
+                entry["adapter_contract_version"] = "stale-contract"
+                sev, msgs = V._validate_interpretive(root, asset_id, entry, run_regression=False)
+                self.assertEqual(sev, "STALE", msgs)
+                self.assertTrue(any("계약버전 불일치" in m for m in msgs), msgs)
+
+    def test_interpretive_contract_version_match_passes(self):
+        for asset_id in ("agents/x", "skills/x"):
+            with self.subTest(asset_id=asset_id), tempfile.TemporaryDirectory() as tmp:
+                root = _mk_instance(tmp, asset_id, _CLAIMS, render_text=None)
+                subdir = asset_id.split("/", 1)[0]
+                entry = _stamped_entry(root, asset_id)
+                entry["adapter_contract_version"] = V._interpretive_contract_version(subdir)
+                sev, msgs = V._validate_interpretive(root, asset_id, entry, run_regression=False)
+                self.assertEqual(sev, "PASS", msgs)
+                self.assertFalse(any("계약버전 불일치" in m for m in msgs), msgs)
+
+    def test_missing_interpretive_contract_version_remains_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _mk_instance(tmp, "agents/x", _CLAIMS, render_text=None)
+            sev, msgs = V._validate_interpretive(
+                root, "agents/x", _stamped_entry(root, "agents/x"), run_regression=False)
+            self.assertEqual(sev, "PASS", msgs)
+            self.assertFalse(any("계약버전 불일치" in m for m in msgs), msgs)
+
+    def test_interpretive_contract_version_load_failure_is_info_skip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _mk_instance(tmp, "agents/x", _CLAIMS, render_text=None)
+            entry = _stamped_entry(root, "agents/x")
+            entry["adapter_contract_version"] = "stale-contract"
+            with mock.patch.object(V, "_interpretive_contract_version", side_effect=ImportError("broken")):
+                sev, msgs = V._validate_interpretive(root, "agents/x", entry, run_regression=False)
+            self.assertEqual(sev, "PASS", msgs)
+            self.assertTrue(any("INFO interpretive 계약버전 검사 skip" in m for m in msgs), msgs)
 
 
 if __name__ == "__main__":
