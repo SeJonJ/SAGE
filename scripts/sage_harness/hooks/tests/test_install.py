@@ -247,6 +247,98 @@ class TestInstall(unittest.TestCase):
                 self.assertEqual(Path(overlay).read_text(encoding="utf-8"), "PROJECT_OVERLAY\n")
                 self.assertEqual(Path(skill_overlay).read_text(encoding="utf-8"), "PROJECT_SKILL_OVERLAY\n")
 
+    def test_force_reinstall_preserves_generated_kind_manifest_entries(self):
+        """--force 재설치가 sage generate 로 등록된 mcp/agent/skill manifest 항목을 보존한다(이슈 #1).
+
+        엔진 자산(CORE hook)은 미스탬프 스켈레톤으로 리셋되지만, 인스턴스가 등록한 다른 kind 는
+        profile.yaml 과 같은 보존 정책을 따라야 한다 — 안 그러면 --force 가 등록을 지워 orphan drift 가 난다.
+        """
+        import unittest.mock as mock
+        manifest_rel = os.path.join("docs", "sage_harness", ".manifest.json")
+        for host in ("claude", "codex"):
+            with self.subTest(host=host), tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+                with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                    install.run(Args(host, d, no_global_skill=(host == "codex")))
+                    mpath = os.path.join(d, manifest_rel)
+                    m = json.loads(Path(mpath).read_text(encoding="utf-8"))
+                    # sage generate --kind {mcp,agent,skill} --write 가 stamp 하는 항목을 모사
+                    m["assets"]["mcps/weather"] = {"form": "declarative", "conformance": "PASS"}
+                    m["assets"]["agents/analyst"] = {"form": "native", "conformance": "PASS"}
+                    m["assets"]["skills/summarize"] = {"form": "native", "conformance": "PASS"}
+                    a_core_hook = next(k for k in m["assets"] if k.startswith("hooks/"))
+                    m["assets"][a_core_hook]["conformance"] = "PASS"  # 스탬프된 상태 모사
+                    Path(mpath).write_text(json.dumps(m, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+                    install.run(Args(host, d, force=True, no_global_skill=(host == "codex")))
+                    m2 = json.loads(Path(mpath).read_text(encoding="utf-8"))
+                # 등록 자산 보존
+                self.assertEqual(m2["assets"].get("mcps/weather"), {"form": "declarative", "conformance": "PASS"})
+                self.assertEqual(m2["assets"].get("agents/analyst"), {"form": "native", "conformance": "PASS"})
+                self.assertEqual(m2["assets"].get("skills/summarize"), {"form": "native", "conformance": "PASS"})
+                # CORE hook 은 엔진 자산 → 미스탬프 스켈레톤으로 리셋
+                self.assertEqual(m2["assets"][a_core_hook]["conformance"], "UNKNOWN")
+                self.assertEqual(len([k for k in m2["assets"] if k.startswith("hooks/")]), len(install._CORE_HOOKS))
+
+    def test_force_reinstall_drops_corrupt_entries_and_validate_survives(self):
+        """--force 보존이 손상 항목(non-dict)을 버려 이후 sage validate 가 크래시하지 않는다(codex R1-P1).
+
+        보존을 무검증 얕은 복사로 하면 assets["agents/x"]=[] 같은 항목이 살아남아 validate 의 .get() 이
+        AttributeError 로 게이트를 죽인다. dict 항목만 보존하고 실물 spec 은 orphan(WARN)으로 처리돼야 한다.
+        """
+        from sage.commands import validate as V
+
+        class VArgs:
+            def __init__(self, root):
+                self.check = True; self.schema = False; self.kind = "all"; self.id = None; self.root = root
+
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            mpath = os.path.join(d, "docs", "sage_harness", ".manifest.json")
+            m = json.loads(Path(mpath).read_text(encoding="utf-8"))
+            m["assets"]["mcps/good"] = {"form": "declarative", "conformance": "PASS"}
+            m["assets"]["agents/bad_list"] = []       # 최상위 손상: dict 아님 → install 이 버림
+            m["assets"]["skills/bad_null"] = None     # 최상위 손상: dict 아님 → install 이 버림
+            # 내부 필드 손상(dict 라 install 필터를 통과) → validate 의 방어 가드가 크래시를 막아야 한다.
+            m["assets"]["mcps/inner_render"] = {"render_hash": "not-a-dict"}
+            m["assets"]["hooks/inner_adapter"] = {"adapter_hash": "bad", "form": "core_adapter"}
+            m["assets"]["agents/inner_unres"] = {"unresolved": 1}
+            m["assets"]["skills/inner_test"] = {"test": 123}
+            Path(mpath).write_text(json.dumps(m, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 0)
+            m2 = json.loads(Path(mpath).read_text(encoding="utf-8"))
+            self.assertEqual(m2["assets"].get("mcps/good"), {"form": "declarative", "conformance": "PASS"})
+            self.assertNotIn("agents/bad_list", m2["assets"])   # 최상위 손상 항목은 버려짐
+            self.assertNotIn("skills/bad_null", m2["assets"])
+            self.assertTrue(all(isinstance(v, dict) for v in m2["assets"].values()))
+            # 핵심 회귀: 내부 손상 dict 가 보존돼도 validate 게이트가 예외 없이 완주한다.
+            # 크래시면 V.run 이 예외를 던져 테스트가 에러난다. TOOL_ERR(2)가 아니라 실제 자산 판정을
+            # 냈음(STALE/FAIL)을 확인해 "게이트가 죽지 않고 완주"를 단언한다.
+            rc = V.run(VArgs(d))
+            self.assertIsInstance(rc, int)
+            self.assertNotEqual(rc, 2)
+
+    def test_force_reinstall_tolerates_unreadable_manifest(self):
+        """기존 manifest 가 손상 JSON/비-dict 여도 --force 는 새 스켈레톤으로 폴백(install fail-open)."""
+        for corrupt in ("{ not json", "[]", "null"):
+            with self.subTest(corrupt=corrupt), tempfile.TemporaryDirectory() as d:
+                install.run(Args("claude", d))
+                mpath = os.path.join(d, "docs", "sage_harness", ".manifest.json")
+                Path(mpath).write_text(corrupt, encoding="utf-8")
+                self.assertEqual(install.run(Args("claude", d, force=True)), 0)
+                m = json.loads(Path(mpath).read_text(encoding="utf-8"))
+                self.assertIs(m.get("installed_instance"), True)
+                self.assertEqual(sorted(m["assets"].keys()),
+                                 sorted(f"hooks/{hid}" for hid, _ in install._CORE_HOOKS))
+
+    def test_first_install_manifest_has_only_core_hooks(self):
+        """최초 install(기존 manifest 없음)은 CORE hook 만 등록 — --force 보존 로직이 동작을 바꾸지 않는다."""
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            m = json.loads(Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).read_text(encoding="utf-8"))
+            self.assertEqual(sorted(m["assets"].keys()),
+                             sorted(f"hooks/{hid}" for hid, _ in install._CORE_HOOKS))
+
     def test_core_renders_reference_project_asset_overlays(self):
         """Claude/Codex 양 host 가 읽는 CORE agent/skill 렌더에 overlay 참조가 있어야 한다."""
         import unittest.mock as mock

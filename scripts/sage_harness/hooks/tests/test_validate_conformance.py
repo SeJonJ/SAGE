@@ -39,6 +39,15 @@ unresolved: []
 """
 
 
+def _stamped_entry(root, asset_id):
+    """spec/claims hash 를 채운 정상 스탬프 entry — conformance 를 staleness 와 분리해 검사하기 위함.
+    hashless entry 는 이제 STALE(미스탬프)로 판정되므로, conformance 만 격리하려면 hash 를 채워야 한다."""
+    subdir, aid = asset_id.split("/", 1)
+    docs = os.path.join(root, "docs", "sage_harness", subdir)
+    return {"spec_hash": V._sha(os.path.join(docs, f"{aid}.md")),
+            "claims_hash": V._sha(os.path.join(docs, f"{aid}.claims.yml"))}
+
+
 def _mk_instance(tmp, asset_id, claims_text, render_text):
     """tmp 에 interpretive 자산 1건(spec + claims + claude render) 배치 → root 반환."""
     subdir, aid = asset_id.split("/", 1)
@@ -66,10 +75,10 @@ def _mk_instance(tmp, asset_id, claims_text, render_text):
 @unittest.skipUnless(_HAS_YAML, "pyyaml 미설치 — conformance INFO skip 되어 강제 teeth 무의미")
 class TestConformanceWiring(unittest.TestCase):
     def test_render_absent_skips(self):
-        # render(.md) 미존재 → conformance skip(미렌더 interpretive). entry 빈 dict → hash 검사 무 → PASS.
+        # render(.md) 미존재 → conformance skip(미렌더 interpretive). 정상 스탬프 entry → staleness 무 → PASS.
         with tempfile.TemporaryDirectory() as tmp:
             root = _mk_instance(tmp, "agents/x", _CLAIMS, render_text=None)
-            sev, msgs = V._validate_interpretive(root, "agents/x", {}, run_regression=False)
+            sev, msgs = V._validate_interpretive(root, "agents/x", _stamped_entry(root, "agents/x"), run_regression=False)
             self.assertEqual(sev, "PASS")
 
     def test_missing_required_claim_is_fail(self):
@@ -82,11 +91,11 @@ class TestConformanceWiring(unittest.TestCase):
             self.assertTrue(any("conformance" in m and "owned_paths" in m for m in msgs), msgs)
 
     def test_clean_render_passes(self):
-        # render 가 모든 required token 포함 + 금지 claim 없음 → PASS.
+        # render 가 모든 required token 포함 + 금지 claim 없음 + 정상 스탬프 → PASS.
         good = "Owns src/foo/** paths. Follows docs/backend.md conventions for the backend."
         with tempfile.TemporaryDirectory() as tmp:
             root = _mk_instance(tmp, "agents/x", _CLAIMS, render_text=good)
-            sev, msgs = V._validate_interpretive(root, "agents/x", {}, run_regression=False)
+            sev, msgs = V._validate_interpretive(root, "agents/x", _stamped_entry(root, "agents/x"), run_regression=False)
             self.assertEqual(sev, "PASS", msgs)
 
     def test_forbidden_contradiction_is_fail(self):
@@ -97,6 +106,22 @@ class TestConformanceWiring(unittest.TestCase):
             sev, msgs = V._validate_interpretive(root, "agents/x", {}, run_regression=False)
             self.assertEqual(sev, "FAIL")
             self.assertTrue(any("금지위반" in m for m in msgs), msgs)
+
+    def test_hashless_interpretive_is_stale(self):
+        # spec/claims 는 있으나 hash 미등록(entry={}) → STALE(미스탬프) — hook/mcp 와 대칭.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _mk_instance(tmp, "agents/x", _CLAIMS, render_text=None)
+            sev, msgs = V._validate_interpretive(root, "agents/x", {}, run_regression=False)
+            self.assertEqual(sev, "STALE")
+            self.assertTrue(any("미스탬프" in m for m in msgs), msgs)
+
+    def test_partial_hash_interpretive_is_stale(self):
+        # spec_hash 만 있고 claims_hash 부재(레거시 부분스탬프) → STALE(drift 마스킹 방지).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _mk_instance(tmp, "agents/x", _CLAIMS, render_text=None)
+            spec = os.path.join(root, "docs", "sage_harness", "agents", "x.md")
+            sev, msgs = V._validate_interpretive(root, "agents/x", {"spec_hash": V._sha(spec)}, run_regression=False)
+            self.assertEqual(sev, "STALE")
 
     def test_skill_subdir_resolves(self):
         # skills/ prefix → .claude/skills/<id>/SKILL.md 경로 해석(dir 기반, flat 아님 — codex 리뷰 P2).

@@ -57,7 +57,8 @@ def _safe_test_path(root, test):
     조건: 상대경로 / `..` 없음 / .py·.sh 확장자 / realpath 가 root 내부 / scripts/sage_harness/ 하위.
     위반 시 None.
     """
-    if not test or os.path.isabs(test) or ".." in test.split("/"):
+    # test 가 문자열이 아니면(오염 manifest 의 test: 123 등) 안전 경로 아님 — isabs/split 이 죽지 않게 먼저 거른다.
+    if not isinstance(test, str) or not test or os.path.isabs(test) or ".." in test.split("/"):
         return None
     if not (test.endswith(".py") or test.endswith(".sh")):
         return None
@@ -150,8 +151,10 @@ def _validate_hook(root, asset_id, entry, run_regression):
 
     # 3. adapter hash (core_adapter 만)
     if form == "core_adapter":
+        ah_map = entry.get("adapter_hash")
+        ah_map = ah_map if isinstance(ah_map, dict) else {}   # 오염 manifest 의 adapter_hash:"bad" 등에 .get() 크래시 방지
         for rt, key in (("claude", "adapter_claude"), ("codex", "adapter_codex")):
-            ah = (entry.get("adapter_hash") or {}).get(rt)
+            ah = ah_map.get(rt)
             if not os.path.exists(p[key]):
                 bump("FAIL"); msgs.append(f"  FAIL missing adapter[{rt}]: {p[key]}")
             elif ah and _sha(p[key]) != ah:
@@ -168,8 +171,10 @@ def _validate_hook(root, asset_id, entry, run_regression):
     # 4. WARN 정보 (exit 영향 없음)
     if entry.get("safety_degraded"):
         bump("WARN"); msgs.append("  WARN safety_degraded=true")
-    for u in entry.get("unresolved", []):
-        bump("WARN"); msgs.append(f"  WARN unresolved: {u}")
+    unres = entry.get("unresolved")
+    if isinstance(unres, list):   # 오염 manifest 의 unresolved:1 등 비-list 는 순회 시 TypeError → 무시
+        for u in unres:
+            bump("WARN"); msgs.append(f"  WARN unresolved: {u}")
 
     # 5. regression (--check 아니고 hash 가 FAIL/STALE 아니면)
     if run_regression and sev in ("PASS", "WARN"):
@@ -288,6 +293,12 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True):
         if _SEV_RANK[s] > _SEV_RANK[sev]:
             sev = s
 
+    # 미스탬프 감지(hook 0단계·mcp 미스탬프 감지와 대칭): spec·claims 는 있으나 hash 미등록/부분등록 →
+    #   STALE(generate 필요). hash 부재를 PASS 로 보면 레거시·부분스탬프 manifest 가 --force 로 보존될 때
+    #   spec/claims 변경이 검출되지 않아 drift 를 가린다(interpretive 만 이 감지가 빠져 있었음).
+    if os.path.exists(spec) and os.path.exists(claims) and not (entry.get("spec_hash") and entry.get("claims_hash")):
+        bump("STALE"); msgs.append("  STALE 미스탬프 — sage generate --kind agent|skill --write 필요")
+
     if not os.path.exists(spec):
         bump("FAIL"); msgs.append(f"  FAIL missing spec: {spec}")
     elif entry.get("spec_hash") and _sha(spec) != entry["spec_hash"]:
@@ -296,8 +307,10 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True):
         bump("FAIL"); msgs.append(f"  FAIL missing claims: {claims}")
     elif entry.get("claims_hash") and _sha(claims) != entry["claims_hash"]:
         bump("STALE"); msgs.append("  STALE claims_hash 불일치")
-    for u in entry.get("unresolved", []):
-        bump("WARN"); msgs.append(f"  WARN unresolved: {u}")
+    unres = entry.get("unresolved")
+    if isinstance(unres, list):   # 오염 manifest 의 unresolved:1 등 비-list 는 순회 시 TypeError → 무시
+        for u in unres:
+            bump("WARN"); msgs.append(f"  WARN unresolved: {u}")
     # descriptive unresolved(비게이팅) 표면화: claims.yml 의 confidence:unresolved 중 manifest gating 에 없는 것.
     # 서술형(절차/when_to_use 등)은 게이팅 제외 설계지만 조용히 숨으면 PDCA 핵심 의미가 빠질 수 있어 INFO 로 가시화(sev 불변).
     if os.path.exists(claims):
@@ -306,7 +319,7 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True):
                               if "confidence: unresolved" in ln)
         except Exception:
             total_unres = 0
-        descriptive = total_unres - len(entry.get("unresolved", []))
+        descriptive = total_unres - (len(unres) if isinstance(unres, list) else 0)
         if descriptive > 0:
             msgs.append(f"  INFO descriptive unresolved {descriptive}건 (비게이팅 — 절차/서술 의미 누락 주의, {os.path.basename(claims)} 확인)")
     # conformance lint (P1-4): render(.md) 가 존재하면 claim 부합을 강제 — hook hash/contract 강제와 대칭.
@@ -375,7 +388,8 @@ def _validate_mcp(root, asset_id, entry):
         else:
             bump("WARN"); msgs.append(f"  WARN {smsg}")
     # render_hash staleness (spec→manifest 스탬프 대조) — 무관 서버/블록밖 편집에 흔들리지 않음
-    rh = entry.get("render_hash") or {}
+    rh = entry.get("render_hash")
+    rh = rh if isinstance(rh, dict) else {}   # 오염 manifest 의 render_hash:"bad" 등에 .get() 크래시 방지
     for tgt in mdl["runtime_targets"]:
         want = "sha256:" + hashlib.sha256(M.canonical_render(mdl, tgt).encode("utf-8")).hexdigest()
         have = rh.get(tgt)
@@ -458,8 +472,17 @@ def run(args):
     except Exception as e:
         print(f"[sage validate] TOOL ERROR: manifest 파싱 실패: {e}", file=sys.stderr)
         return 2
+    if not isinstance(manifest, dict):
+        # 최상위가 object 아님(오염 manifest 가 []/null/문자열) — manifest.get() 크래시 대신 TOOL ERROR.
+        print("[sage validate] TOOL ERROR: manifest 최상위가 object(dict) 아님 (오염 manifest)", file=sys.stderr)
+        return 2
 
-    assets = manifest.get("assets", {})
+    assets = manifest.get("assets")
+    # 오염/레거시 manifest 방어: assets 가 dict 가 아니면(list/str/null) 크래시 대신 빈 자산으로 진행하고
+    # 아래서 FAIL 로 표면화한다 — 진단 도구가 손상 입력에 traceback 으로 죽으면 안 된다.
+    assets_malformed = not isinstance(assets, dict)
+    if assets_malformed:
+        assets = {}
     prefixes = []
     if args.kind in ("hook", "all"):
         prefixes.append("hooks/")
@@ -477,12 +500,16 @@ def run(args):
             return 2
 
     overall = "PASS"
+    if assets_malformed:
+        overall = "FAIL"
+        print("❌ FAIL  manifest.assets 구조 오류 — object(dict) 여야 함 (오염/레거시 manifest)")
     # 미부트스트랩 경고: profile 이 배치됐으나 project.name 빈값이면 거버넌스 inert(risk globs 0).
     # validate 는 읽기전용 진단이므로 차단(FAIL)이 아니라 WARN 으로 표면화 — 차단은 generate 게이트가 담당.
     bw = _bootstrap_warn(root)
     if bw:
         print(bw)
-        overall = "WARN"
+        if _SEV_RANK["WARN"] > _SEV_RANK[overall]:   # bump: 손상 assets FAIL 등 상위 severity 를 덮지 않는다
+            overall = "WARN"
     print(f"== sage validate ({args.kind}{', --check' if args.check else ''}) — {len(target_ids)} assets ==")
     if args.kind in ("hook", "all"):
         rsev, rmsgs = _validate_hook_runtime_hash(root, manifest)
@@ -494,12 +521,19 @@ def run(args):
             print(m)
 
     for aid in sorted(target_ids):
+        entry = assets[aid]
+        if not isinstance(entry, dict):
+            # 오염 항목(entry 가 object 아님) — 하위 _validate_* 는 dict 를 가정하므로 크래시 대신 FAIL 로 표면화.
+            if _SEV_RANK["FAIL"] > _SEV_RANK[overall]:
+                overall = "FAIL"
+            print(f"❌ FAIL  {aid} — manifest entry 구조 오류(object 아님)")
+            continue
         if aid.startswith("hooks/"):
-            sev, msgs = _validate_hook(root, aid, assets[aid], run_regression=not args.check)
+            sev, msgs = _validate_hook(root, aid, entry, run_regression=not args.check)
         elif aid.startswith("mcps/"):
-            sev, msgs = _validate_mcp(root, aid, assets[aid])
+            sev, msgs = _validate_mcp(root, aid, entry)
         else:  # agents/ or skills/ — interpretive
-            sev, msgs = _validate_interpretive(root, aid, assets[aid], run_regression=not args.check)
+            sev, msgs = _validate_interpretive(root, aid, entry, run_regression=not args.check)
         if _SEV_RANK[sev] > _SEV_RANK[overall]:
             overall = sev
         mark = {"PASS": "✅", "WARN": "⚠️ ", "STALE": "🔶", "FAIL": "❌"}[sev]
@@ -526,7 +560,8 @@ def run(args):
     if args.kind in ("mcp", "all"):
         mcp_ids = [k.split("/", 1)[1] for k in assets if k.startswith("mcps/")]
         codex_ids = [k.split("/", 1)[1] for k in assets if k.startswith("mcps/")
-                     and "codex" in (assets[k].get("runtime_targets") or [])]
+                     and isinstance(assets[k], dict) and isinstance(assets[k].get("runtime_targets"), list)
+                     and "codex" in assets[k]["runtime_targets"]]
         osev, omsgs = _mcp_ownership_check(root, mcp_ids, codex_ids)
         for m in omsgs:
             print(m)
