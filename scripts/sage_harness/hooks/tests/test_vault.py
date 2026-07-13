@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -64,6 +65,28 @@ class TestVaultHelper(unittest.TestCase):
         self.assertIn("approved: false", txt)
         self.assertIn('tags: ["sage"]', txt)
         self.assertTrue(txt.rstrip().endswith("body here"))
+
+    def test_write_note_create_only_atomic_no_clobber(self):
+        # create_only 는 원자적(O_EXCL) — 기존/경쟁 생성 파일을 덮지 않고 None 반환, 원본 내용 보존.
+        tmp = tempfile.mkdtemp()
+        first = _vault.write_note(tmp, "wiki", "n.md", {}, "original", create_only=True)
+        self.assertIsNotNone(first)
+        second = _vault.write_note(tmp, "wiki", "n.md", {}, "overwrite attempt", create_only=True)
+        self.assertIsNone(second)
+        self.assertIn("original", Path(first).read_text(encoding="utf-8"))
+        self.assertNotIn("overwrite attempt", Path(first).read_text(encoding="utf-8"))
+
+    def test_write_note_create_only_refuses_symlink(self):
+        # create_only 의 O_EXCL 는 심링크도 거부 → leaf 심링크로의 우회 기록 차단(None, target 불변).
+        tmp = tempfile.mkdtemp()
+        outside = tempfile.mkdtemp()
+        target = os.path.join(outside, "t.md")
+        Path(target).write_text("outside-original\n", encoding="utf-8")
+        os.makedirs(os.path.join(tmp, "wiki"), exist_ok=True)
+        os.symlink(target, os.path.join(tmp, "wiki", "n.md"))
+        result = _vault.write_note(tmp, "wiki", "n.md", {}, "injected", create_only=True)
+        self.assertIsNone(result)
+        self.assertEqual(Path(target).read_text(encoding="utf-8"), "outside-original\n")
 
     def test_safe_rel_folder_escape(self):
         # codex S5 P1: 절대경로/.. 폴더는 vault 안 상대경로로 정규화.

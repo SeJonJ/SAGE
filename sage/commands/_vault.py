@@ -38,7 +38,9 @@ def vault_target(profile, override=None, root=None):
         return None, None
     if override is None and root and not os.path.isabs(vault):
         vault = os.path.join(root, vault)
-    folder = _safe_rel(((kc.get("note_convention") or {}).get("folder")) or "wiki")
+    conv = kc.get("note_convention")
+    conv = conv if isinstance(conv, dict) else {}   # 손상 note_convention(list 등)에 .get() 크래시 방지
+    folder = _safe_rel(conv.get("folder") or "wiki")
     return vault, folder
 
 
@@ -68,16 +70,25 @@ def write_note(vault, folder, filename, frontmatter, body, create_only=False):
         d = vault_abs
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, os.path.basename(filename))
-    if create_only and os.path.exists(path):
-        return None
-    # leaf 심링크 차단(codex S5): open(w) 는 심링크를 따라가므로, 누군가 vault 안에 외부를 가리키는
+    # frontmatter 키도 안전 식별자만(codex S5) — 키에 개행/콜론이 있으면 구조 주입 가능. 값은 _fm_value 가 보호.
+    fm = "---\n" + "".join(f"{_safe_key(k)}: {_fm_value(v)}\n" for k, v in frontmatter.items()) + "---\n\n"
+    content = fm + body
+    if create_only:
+        # 원자적 create: O_EXCL 는 파일(심링크 포함)이 이미 있으면 즉시 실패 → None. check-then-open
+        # 사이 경쟁 생성으로 남의 노트를 덮어쓰는 TOCTOU 와, leaf 심링크로의 우회 기록을 동시에 막는다.
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            return None
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        return path
+    # overwrite 경로: leaf 심링크 차단(codex S5) — open(w) 는 심링크를 따라가므로, vault 안에 외부를 가리키는
     # 심링크를 심어두면 그 target 에 쓰게 된다. 심링크면 링크 자체만 제거(target 불변) 후 실제 파일 생성.
     if os.path.islink(path):
         os.unlink(path)
-    # frontmatter 키도 안전 식별자만(codex S5) — 키에 개행/콜론이 있으면 구조 주입 가능. 값은 _fm_value 가 보호.
-    fm = "---\n" + "".join(f"{_safe_key(k)}: {_fm_value(v)}\n" for k, v in frontmatter.items()) + "---\n\n"
     with open(path, "w", encoding="utf-8") as f:
-        f.write(fm + body)
+        f.write(content)
     return path
 
 

@@ -52,6 +52,29 @@ def _profile(root, vault, scan=True, write=True):
     )
 
 
+def _count_summary_headers(body):
+    """정본 Summary 헤더 라인 수 — 변형('## summary'/'##  Summary')까지 세어 canonicalize 검증을 강화한다.
+    body.count('## Summary') 는 대소문자/공백 변형을 놓친다(codex 리뷰)."""
+    return sum(1 for ln in body.splitlines() if knowledge._SUMMARY_HEADER_RE.match(ln.strip()))
+
+
+def _profile_with_structure(root, vault):
+    """required_structure(PREFIX→필수 마커) 를 포함한 profile — advisory 구조 검증 테스트용."""
+    os.makedirs(os.path.join(root, "sage"), exist_ok=True)
+    Path(os.path.join(root, "sage", "project-profile.yaml")).write_text(
+        "knowledge_capture:\n"
+        f"  vault_path: \"{vault}\"\n"
+        "  scan_before_dev: true\n"
+        "  update_after_dev: true\n"
+        "  note_convention:\n"
+        "    folder: \"wiki\"\n"
+        "    filename_pattern: \"{prefix} - {title}.md\"\n"
+        "    required_structure:\n"
+        "      BUG: [\"> [!summary]\", \"## 증상\", \"## 원인\", \"## 수정\", \"## 재발 방지\"]\n",
+        encoding="utf-8",
+    )
+
+
 class TestKnowledge(unittest.TestCase):
     def test_scan_writes_matches_deterministically(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
@@ -108,6 +131,144 @@ class TestKnowledge(unittest.TestCase):
             self.assertTrue(os.path.exists(note))
             log_body = Path(log).read_text(encoding="utf-8")
             self.assertEqual(log_body.count("[[TECH - SAGE 5차 보완]]"), 1)
+
+    def test_write_back_summary_header_not_duplicated(self):
+        # summary 가 '## Summary' 로 시작하면(spec "Lead with a ## Summary" 지시) CLI 가 헤더를
+        # 다시 붙이지 않아 노트에 '## Summary' 가 1회만 나온다.
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            _profile(root, vault)
+            args = WriteArgs(root, "Dup", "## Summary\n\n실제 요약 본문")
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(knowledge._run_write_back(args), 0)
+            body = Path(os.path.join(vault, "wiki", "TECH - Dup.md")).read_text(encoding="utf-8")
+            self.assertEqual(_count_summary_headers(body), 1)
+            self.assertIn("실제 요약 본문", body)
+
+    def test_write_back_summary_header_inserted_when_absent(self):
+        # summary 가 헤더 없이 오면 CLI 가 '## Summary' 를 1회 삽입한다(기존 동작 유지).
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            _profile(root, vault)
+            args = WriteArgs(root, "NoHdr", "헤더 없는 요약")
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(knowledge._run_write_back(args), 0)
+            body = Path(os.path.join(vault, "wiki", "TECH - NoHdr.md")).read_text(encoding="utf-8")
+            self.assertEqual(_count_summary_headers(body), 1)
+            self.assertIn("## Summary\n\n헤더 없는 요약", body)
+
+    def test_write_back_concurrent_create_none_is_graceful(self):
+        # write_note 가 경쟁 생성으로 None 반환 → 크래시 없음, 'note written: None' 오보 없음, 구조검증 미실행,
+        # 후속(append_log) 지속, rc 0.
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            _profile_with_structure(root, vault)
+            args = WriteArgs(root, "Race", "요약")
+            args.prefix = "BUG"
+            out = io.StringIO()
+            with mock.patch.object(knowledge._vault, "write_note", return_value=None), redirect_stdout(out):
+                self.assertEqual(knowledge._run_write_back(args), 0)
+            output = out.getvalue()
+            self.assertNotIn("note written: None", output)
+            self.assertIn("동시 생성", output)
+            self.assertNotIn("advisory", output)       # 신규 아님 → 구조검증 skip
+            self.assertIn("log", output)               # append_log 후속은 지속
+
+    def test_write_back_structure_advisory_warns_on_missing(self):
+        # required_structure 설정 + 얕은 요약(필수 마커 누락) → advisory WARN, 그러나 차단 안 함(rc 0).
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            _profile_with_structure(root, vault)
+            args = WriteArgs(root, "Shallow", "그냥 얕은 요약")
+            args.prefix = "BUG"
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(knowledge._run_write_back(args), 0)
+            self.assertIn("advisory", out.getvalue())
+            self.assertIn("증상", out.getvalue())   # 누락 마커가 표면화됨
+
+    def test_write_back_structure_advisory_passes_when_complete(self):
+        # 필수 마커를 모두 담은 요약 → 구조 검증 통과, advisory WARN 없음.
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            _profile_with_structure(root, vault)
+            summary = "> [!summary]\n\n## 증상\n\nx\n\n## 원인\n\nx\n\n## 수정\n\nx\n\n## 재발 방지\n\nx"
+            args = WriteArgs(root, "Full", summary)
+            args.prefix = "BUG"
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(knowledge._run_write_back(args), 0)
+            self.assertIn("구조 검증 통과", out.getvalue())
+            self.assertNotIn("advisory", out.getvalue())
+
+    def test_write_back_no_structure_config_skips_check(self):
+        # required_structure 미설정(기본) → 구조 검증 자체를 하지 않는다(동작 불변).
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            _profile(root, vault)
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(knowledge._run_write_back(WriteArgs(root, "Plain", "s")), 0)
+            self.assertNotIn("advisory", out.getvalue())
+            self.assertNotIn("구조 검증", out.getvalue())
+
+    def test_write_back_tolerates_non_dict_note_convention(self):
+        # note_convention 이 손상(list) 이어도 write-back 이 크래시하지 않고 기본값으로 진행(rc 0, fail-open).
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            os.makedirs(os.path.join(root, "sage"), exist_ok=True)
+            Path(os.path.join(root, "sage", "project-profile.yaml")).write_text(
+                "knowledge_capture:\n"
+                f"  vault_path: \"{vault}\"\n"
+                "  update_after_dev: true\n"
+                "  note_convention: [\"bad\"]\n", encoding="utf-8")
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(knowledge._run_write_back(WriteArgs(root, "Corrupt", "s")), 0)
+            self.assertTrue(os.path.exists(os.path.join(vault, "wiki", "TECH - Corrupt.md")))
+
+    def test_write_back_titled_summary_header_preserved(self):
+        # '## Summary of X'(제목 붙은 별개 헤더)는 정확 매칭이 아니라 CLI 정본 '## Summary' 를 별도로 붙이고 보존.
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            _profile(root, vault)
+            args = WriteArgs(root, "Titled", "## Summary of X\n\n본문")
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(knowledge._run_write_back(args), 0)
+            body = Path(os.path.join(vault, "wiki", "TECH - Titled.md")).read_text(encoding="utf-8")
+            self.assertEqual(sum(1 for ln in body.splitlines() if ln.strip() == "## Summary"), 1)
+            self.assertIn("## Summary of X", body)
+
+    def test_write_back_summary_header_variants_canonicalized(self):
+        # 대소문자/공백/BOM/다중 변형도 정본 헤더 정확히 1개로 통일(유사 중복 방지). 헤더 라인 수로 단언.
+        for variant in ("## summary\n\n본문", "##  Summary\n\n본문",
+                        "﻿## Summary\n\n본문", "## Summary\n\n## summary\n\n본문"):
+            with self.subTest(variant=variant), tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+                _profile(root, vault)
+                with redirect_stdout(io.StringIO()):
+                    self.assertEqual(knowledge._run_write_back(WriteArgs(root, "Var", variant)), 0)
+                body = Path(os.path.join(vault, "wiki", "TECH - Var.md")).read_text(encoding="utf-8")
+                self.assertEqual(_count_summary_headers(body), 1, body)
+                self.assertIn("본문", body)
+
+    def test_write_back_structure_marker_no_substring_false_pass(self):
+        # '## 증상들' 은 필수 마커 '## 증상' 을 충족하지 않는다(startswith 오탐 방지) → 증상 누락 WARN.
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            _profile_with_structure(root, vault)
+            summary = "> [!summary]\n\n## 증상들\n\nx\n\n## 원인\n\nx\n\n## 수정\n\nx\n\n## 재발 방지\n\nx"
+            args = WriteArgs(root, "Sub", summary)
+            args.prefix = "BUG"
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(knowledge._run_write_back(args), 0)
+            self.assertIn("advisory", out.getvalue())
+            self.assertIn("## 증상", out.getvalue())   # 증상 누락 보고(증상들은 불충족)
+
+    def test_write_back_append_skips_structure_check(self):
+        # 기존 노트 append 는 구조검증 대상 아님(사람 저작 본문에 WARN 소음 방지).
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            _profile_with_structure(root, vault)
+            os.makedirs(os.path.join(vault, "wiki"), exist_ok=True)
+            Path(os.path.join(vault, "wiki", "BUG - Exists.md")).write_text("# BUG - Exists\n\n기존 본문\n", encoding="utf-8")
+            args = WriteArgs(root, "Exists", "추가 요약")
+            args.prefix = "BUG"
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(knowledge._run_write_back(args), 0)
+            self.assertNotIn("advisory", out.getvalue())
+            self.assertNotIn("구조 검증", out.getvalue())
 
     def test_write_back_existing_note_is_appended_not_clobbered(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:

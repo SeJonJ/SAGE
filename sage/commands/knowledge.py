@@ -239,9 +239,18 @@ def _safe_title(title):
     return s or "SAGE update"
 
 
+def _note_convention(profile):
+    """profile.knowledge_capture.note_convention 을 dict 로 안전 반환(비-dict/부재는 {}).
+
+    note_convention 이 손상(list/str 등)이면 `(kc or {}).get("note_convention") or {}` 패턴이 그 손상값을
+    그대로 물려 이후 .get() 에서 크래시한다 — write-back 전체 abort. 정규화를 단일 지점으로 모아 fail-open."""
+    kc = profile.get("knowledge_capture") if isinstance(profile, dict) else None
+    conv = kc.get("note_convention") if isinstance(kc, dict) else None
+    return conv if isinstance(conv, dict) else {}
+
+
 def _note_filename(profile, prefix, title):
-    kc = profile.get("knowledge_capture") if isinstance(profile, dict) else {}
-    conv = (kc if isinstance(kc, dict) else {}).get("note_convention") or {}
+    conv = _note_convention(profile)
     pattern = conv.get("filename_pattern") or "{prefix} - {title}.md"
     name = pattern.replace("{prefix}", _safe_title(prefix)).replace("{title}", _safe_title(title))
     if not name.endswith(".md"):
@@ -282,8 +291,7 @@ def _append_log_once(vault, folder, note_stem, title):
 def _note_tags_style(profile):
     """note_convention.tags_style → frontmatter(기본) | inline | none. 무효값은 frontmatter 폴백.
     vault 규칙을 따르도록 profile 주입(7차 배치2 4-2): frontmatter 안 쓰는 vault 는 inline/none 선택."""
-    kc = profile.get("knowledge_capture") if isinstance(profile, dict) else {}
-    conv = (kc if isinstance(kc, dict) else {}).get("note_convention") or {}
+    conv = _note_convention(profile)
     style = conv.get("tags_style") or "frontmatter"
     return style if style in ("frontmatter", "inline", "none") else "frontmatter"
 
@@ -292,10 +300,42 @@ def _index_name(profile):
     """note_convention.index → 목차 파일명(예: index.md). 비면 '' = index 갱신 안 함(기본 — index 없는 vault 존중).
     basename 후 ''/'.'/'..' 는 무효 처리(codex 중R1 P1): 그대로 두면 _append_link_once 가 폴더/상위를 열어
     IsADirectoryError 로 write-back 전체가 abort 된다."""
-    kc = profile.get("knowledge_capture") if isinstance(profile, dict) else {}
-    conv = (kc if isinstance(kc, dict) else {}).get("note_convention") or {}
+    conv = _note_convention(profile)
     name = os.path.basename(str(conv.get("index") or "")).strip()
     return name if name not in ("", ".", "..") else ""
+
+
+def _required_structure(profile, prefix):
+    """note_convention.required_structure[PREFIX] → 필수 마커(라인 시작 문자열) 목록, 없으면 [].
+
+    advisory 구조 검증용. 이 매핑이 없으면(기본) 검증하지 않는다 — 동작 불변, 옵트인. authoring guide 가
+    PREFIX 별로 요구하는 구조(예: BUG=[!summary]+증상/원인/수정/재발방지)의 **존재**만 결정론으로 확인한다
+    (내용 깊이는 게이트 대상 아님 — skill 지침·human gate 영역). PREFIX 는 대소문자 그대로 매칭(vault 규칙
+    소유). 손상 설정(비-dict/비-list)은 fail-open([]) — advisory 가 write-back 을 깨면 안 된다."""
+    table = _note_convention(profile).get("required_structure")
+    if not isinstance(table, dict):
+        return []
+    markers = table.get(prefix)
+    if not isinstance(markers, list):
+        return []
+    return [m for m in markers if isinstance(m, str) and m.strip()]
+
+
+def _line_marker_match(line, marker):
+    """라인이 마커를 충족하는가. strip 후 마커와 정확히 같거나 '마커 '(공백)로 시작해야 한다 —
+    단순 startswith 는 '## 증상들' 이 필수 마커 '## 증상' 을 충족한 것으로 오판(false pass)한다.
+    제목 붙은 헤더/콜아웃('> [!summary] 핵심', '## 증상 및 원인')은 공백 경계로 정상 인정된다."""
+    s = line.strip()
+    return s == marker or s.startswith(marker + " ")
+
+
+def _missing_structure(note_path, markers):
+    """note 에서 빠진 필수 마커 목록. 읽기 실패는 빈 목록(fail-open — advisory 가 예외로 write-back 을 깨지 않는다)."""
+    try:
+        lines = Path(note_path).read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return []
+    return [m for m in markers if not any(_line_marker_match(ln, m) for ln in lines)]
 
 
 def _note_path(vault, folder, filename):
@@ -326,13 +366,35 @@ def _write_or_append_note(vault, folder, filename, frontmatter, note_stem, summa
                 if body and not body.endswith("\n"):
                     f.write("\n")
                 f.write(addition)
-        return path
+        return path, False   # 기존 노트 append — 신규 본문을 CLI 가 저작한 게 아니라 구조검증 대상 아님
     # tag_line(인라인 태그 스타일)은 제목 바로 아래에 둔다(frontmatter/none 이면 빈 문자열).
     head = f"# {note_stem}\n\n"
     if tag_line:
         head += f"{tag_line}\n\n"
-    body = head + f"## Summary\n\n{summary or '(summary not provided)'}\n"
-    return _vault.write_note(vault, folder, filename, frontmatter, body, create_only=True)
+    body = head + _summary_section(summary)
+    written = _vault.write_note(vault, folder, filename, frontmatter, body, create_only=True)
+    # write_note 는 create_only 충돌(경쟁 생성) 시 None 반환 → 신규 저작 아님(구조검증 대상 아님).
+    return written, written is not None
+
+
+_SUMMARY_HEADER_RE = re.compile(r"^##[ \t]+summary[ \t]*$", re.IGNORECASE)
+
+
+def _summary_section(summary):
+    """새 노트의 Summary 섹션을 CLI 정본 '## Summary' 헤더 1개로 통일한다.
+
+    spec 이 host 에게 "Lead with a `## Summary`" 를 지시하고 CLI 도 헤더를 삽입해 '## Summary' 가 2회
+    출력되던 버그를 막는다. host 가 앞에 Summary 헤더(대소문자·공백 변형 포함)를 넣었으면 그 한 줄을
+    제거하고 정본 헤더를 붙여 정확히 1개만 남긴다. 'startswith' 가 아니라 헤더 라인 정확 매칭이라
+    '## Summary of X'(제목 붙은 별개 헤더)는 보존한다."""
+    text = (summary or "").lstrip("﻿ \t\r\n")   # 선행 BOM·공백 제거(BOM 이면 헤더 매칭이 빗나감)
+    lines = text.split("\n")
+    while lines and _SUMMARY_HEADER_RE.match(lines[0].strip()):   # 선행 Summary 헤더(변형·다중)를 연속 제거
+        lines.pop(0)
+        while lines and not lines[0].strip():   # 헤더 뒤 빈 줄 제거
+            lines.pop(0)
+    text = "\n".join(lines).strip("\n") or "(summary not provided)"
+    return f"## Summary\n\n{text}\n"
 
 
 def _run_write_back(args):
@@ -367,8 +429,23 @@ def _run_write_back(args):
     elif style == "inline":
         tag_line = "태그: " + " ".join(f"#{t}" for t in tags)
     try:
-        path = _write_or_append_note(vault, folder, filename, fm, note_stem, summary, tag_line=tag_line)
-        print(f"[sage knowledge write-back] note written: {path}")
+        path, created = _write_or_append_note(vault, folder, filename, fm, note_stem, summary, tag_line=tag_line)
+        if path is None:
+            # write_note 가 create_only 충돌(경쟁 생성)로 None 반환 — "note written: None" 오보 대신 정확 보고.
+            print(f"[sage knowledge write-back] note already exists (동시 생성) — 신규 작성 skip: {filename}")
+        else:
+            print(f"[sage knowledge write-back] note written: {path}")
+        # advisory 구조 검증(옵트인): authoring guide 가 요구하는 PREFIX 별 필수 마커의 존재만 확인.
+        # 결정론으로 잡히는 형식 누락을 표면화하되 차단하지 않는다(내용 깊이는 게이트 밖 — skill/human gate).
+        # 신규 노트만 대상 — 기존 노트 append 는 사람이 저작한 본문이라 구조 미준수를 WARN 하면 소음.
+        markers = _required_structure(profile, args.prefix) if created else []
+        if markers:
+            missing = _missing_structure(path, markers)
+            if missing:
+                print(f"[sage knowledge write-back] ⚠️  advisory: authoring guide 필수 구조 누락 "
+                      f"({args.prefix}) — {', '.join(missing)}")
+            else:
+                print(f"[sage knowledge write-back] ✅ 구조 검증 통과 ({args.prefix})")
         if args.append_log:
             log_path, added = _append_log_once(vault, folder, note_stem, title)
             print(f"[sage knowledge write-back] log {'updated' if added else 'already linked'}: {log_path}")
