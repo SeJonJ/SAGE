@@ -164,5 +164,25 @@ echo "### 38. messages SSOT (io_claude/io_codex 공유 게이트/컴플라이언
 python3 "$HERE/test_messages.py" || rc=1
 
 echo ""
+echo "### 39. bootstrap gate (profile 미부트스트랩 시 generate BLOCK / validate WARN — 강제 진입점)"
+python3 "$HERE/test_bootstrap_gate.py" || rc=1
+
+echo ""
+echo "### 40. knowledge (Obsidian scan/write-back — vault 게이트, 노트 조립, 인덱스/로그 멱등)"
+python3 "$HERE/test_knowledge.py" || rc=1
+
+echo ""
+echo "### 41. overlay lint (project overlay 구조/금지 검사)"
+python3 "$HERE/test_overlay_lint.py" || rc=1
+
+echo ""
+echo "### 42. retro_audit (Loop C --check 성공 증거 append-only 감사 — ok/missing/skipped 상태전이)"
+python3 "$HERE/test_retro_audit.py" || rc=1
+
+echo ""
+echo "### 43. retro_gate (retro 게이트 enforce 판정 BLOCK/WARN — report_gate_enforce 정책)"
+python3 "$HERE/test_retro_gate.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

@@ -11,6 +11,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -37,6 +38,15 @@ forbidden_claims:
 runtime_delta_allowlist: []
 unresolved: []
 """
+
+
+def _stamped_entry(root, asset_id):
+    """spec/claims hash 를 채운 정상 스탬프 entry — conformance 를 staleness 와 분리해 검사하기 위함.
+    hashless entry 는 이제 STALE(미스탬프)로 판정되므로, conformance 만 격리하려면 hash 를 채워야 한다."""
+    subdir, aid = asset_id.split("/", 1)
+    docs = os.path.join(root, "docs", "sage_harness", subdir)
+    return {"spec_hash": V._sha(os.path.join(docs, f"{aid}.md")),
+            "claims_hash": V._sha(os.path.join(docs, f"{aid}.claims.yml"))}
 
 
 def _mk_instance(tmp, asset_id, claims_text, render_text):
@@ -66,10 +76,10 @@ def _mk_instance(tmp, asset_id, claims_text, render_text):
 @unittest.skipUnless(_HAS_YAML, "pyyaml 미설치 — conformance INFO skip 되어 강제 teeth 무의미")
 class TestConformanceWiring(unittest.TestCase):
     def test_render_absent_skips(self):
-        # render(.md) 미존재 → conformance skip(미렌더 interpretive). entry 빈 dict → hash 검사 무 → PASS.
+        # render(.md) 미존재 → conformance skip(미렌더 interpretive). 정상 스탬프 entry → staleness 무 → PASS.
         with tempfile.TemporaryDirectory() as tmp:
             root = _mk_instance(tmp, "agents/x", _CLAIMS, render_text=None)
-            sev, msgs = V._validate_interpretive(root, "agents/x", {}, run_regression=False)
+            sev, msgs = V._validate_interpretive(root, "agents/x", _stamped_entry(root, "agents/x"), run_regression=False)
             self.assertEqual(sev, "PASS")
 
     def test_missing_required_claim_is_fail(self):
@@ -82,11 +92,11 @@ class TestConformanceWiring(unittest.TestCase):
             self.assertTrue(any("conformance" in m and "owned_paths" in m for m in msgs), msgs)
 
     def test_clean_render_passes(self):
-        # render 가 모든 required token 포함 + 금지 claim 없음 → PASS.
+        # render 가 모든 required token 포함 + 금지 claim 없음 + 정상 스탬프 → PASS.
         good = "Owns src/foo/** paths. Follows docs/backend.md conventions for the backend."
         with tempfile.TemporaryDirectory() as tmp:
             root = _mk_instance(tmp, "agents/x", _CLAIMS, render_text=good)
-            sev, msgs = V._validate_interpretive(root, "agents/x", {}, run_regression=False)
+            sev, msgs = V._validate_interpretive(root, "agents/x", _stamped_entry(root, "agents/x"), run_regression=False)
             self.assertEqual(sev, "PASS", msgs)
 
     def test_forbidden_contradiction_is_fail(self):
@@ -97,6 +107,22 @@ class TestConformanceWiring(unittest.TestCase):
             sev, msgs = V._validate_interpretive(root, "agents/x", {}, run_regression=False)
             self.assertEqual(sev, "FAIL")
             self.assertTrue(any("금지위반" in m for m in msgs), msgs)
+
+    def test_hashless_interpretive_is_stale(self):
+        # spec/claims 는 있으나 hash 미등록(entry={}) → STALE(미스탬프) — hook/mcp 와 대칭.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _mk_instance(tmp, "agents/x", _CLAIMS, render_text=None)
+            sev, msgs = V._validate_interpretive(root, "agents/x", {}, run_regression=False)
+            self.assertEqual(sev, "STALE")
+            self.assertTrue(any("미스탬프" in m for m in msgs), msgs)
+
+    def test_partial_hash_interpretive_is_stale(self):
+        # spec_hash 만 있고 claims_hash 부재(레거시 부분스탬프) → STALE(drift 마스킹 방지).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _mk_instance(tmp, "agents/x", _CLAIMS, render_text=None)
+            spec = os.path.join(root, "docs", "sage_harness", "agents", "x.md")
+            sev, msgs = V._validate_interpretive(root, "agents/x", {"spec_hash": V._sha(spec)}, run_regression=False)
+            self.assertEqual(sev, "STALE")
 
     def test_skill_subdir_resolves(self):
         # skills/ prefix → .claude/skills/<id>/SKILL.md 경로 해석(dir 기반, flat 아님 — codex 리뷰 P2).
@@ -113,6 +139,45 @@ class TestConformanceWiring(unittest.TestCase):
             claims_path = os.path.join(root, "docs", "sage_harness", "agents", "z.claims.yml")
             sev, msgs = V._conformance_check(root, "agents/z", claims_path)
             self.assertEqual((sev, msgs), ("PASS", []))
+
+    def test_interpretive_contract_version_mismatch_is_stale(self):
+        for asset_id in ("agents/x", "skills/x"):
+            with self.subTest(asset_id=asset_id), tempfile.TemporaryDirectory() as tmp:
+                root = _mk_instance(tmp, asset_id, _CLAIMS, render_text=None)
+                entry = _stamped_entry(root, asset_id)
+                entry["adapter_contract_version"] = "stale-contract"
+                sev, msgs = V._validate_interpretive(root, asset_id, entry, run_regression=False)
+                self.assertEqual(sev, "STALE", msgs)
+                self.assertTrue(any("계약버전 불일치" in m for m in msgs), msgs)
+
+    def test_interpretive_contract_version_match_passes(self):
+        for asset_id in ("agents/x", "skills/x"):
+            with self.subTest(asset_id=asset_id), tempfile.TemporaryDirectory() as tmp:
+                root = _mk_instance(tmp, asset_id, _CLAIMS, render_text=None)
+                subdir = asset_id.split("/", 1)[0]
+                entry = _stamped_entry(root, asset_id)
+                entry["adapter_contract_version"] = V._interpretive_contract_version(subdir)
+                sev, msgs = V._validate_interpretive(root, asset_id, entry, run_regression=False)
+                self.assertEqual(sev, "PASS", msgs)
+                self.assertFalse(any("계약버전 불일치" in m for m in msgs), msgs)
+
+    def test_missing_interpretive_contract_version_remains_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _mk_instance(tmp, "agents/x", _CLAIMS, render_text=None)
+            sev, msgs = V._validate_interpretive(
+                root, "agents/x", _stamped_entry(root, "agents/x"), run_regression=False)
+            self.assertEqual(sev, "PASS", msgs)
+            self.assertFalse(any("계약버전 불일치" in m for m in msgs), msgs)
+
+    def test_interpretive_contract_version_load_failure_is_info_skip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _mk_instance(tmp, "agents/x", _CLAIMS, render_text=None)
+            entry = _stamped_entry(root, "agents/x")
+            entry["adapter_contract_version"] = "stale-contract"
+            with mock.patch.object(V, "_interpretive_contract_version", side_effect=ImportError("broken")):
+                sev, msgs = V._validate_interpretive(root, "agents/x", entry, run_regression=False)
+            self.assertEqual(sev, "PASS", msgs)
+            self.assertTrue(any("INFO interpretive 계약버전 검사 skip" in m for m in msgs), msgs)
 
 
 if __name__ == "__main__":

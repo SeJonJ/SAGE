@@ -443,11 +443,35 @@ def _profile_with_host(host, prefix):
     return "\n".join(out) + "\n"
 
 
-def _manifest(host):
-    """CORE hook 7종을 등록한 manifest(스켈레톤). hash/conformance 는 generate 가 스탬프."""
+def _load_manifest(dest):
+    """기존 manifest 를 dict 로 읽어 반환(없거나 손상 시 None). --force 재설치가 인스턴스 등록 자산을
+    보존하는 데 쓰인다 — 못 읽으면 새 스켈레톤으로 폴백해 install 을 깨지 않는다(부트스트랩 fail-open)."""
+    path = os.path.join(dest, "docs", "sage_harness", ".manifest.json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        m = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return None
+    return m if isinstance(m, dict) else None
+
+
+def _manifest(host, existing=None):
+    """CORE hook 7종을 등록한 manifest(스켈레톤). hash/conformance 는 generate 가 스탬프.
+
+    existing 이 주어지면(--force 재설치) 그 manifest 가 등록한 인스턴스 자산(sage generate 가 stamp 한
+    mcps/agents/skills 및 사용자 추가 hook)을 보존하고 CORE hook 항목만 미스탬프 스켈레톤으로 되돌린다.
+    CORE hook 은 엔진 자산이라 업그레이드 시 재스탬프 대상이지만, 다른 kind 는 인스턴스 소유라 profile.yaml
+    과 같은 보존 정책을 따라야 한다 — 안 그러면 --force 가 등록을 지워 다음 validate 부터 orphan drift 가
+    난다. 최초 install(existing=None)은 빈 스켈레톤(동작 불변)."""
     assets = {}
+    if isinstance(existing, dict) and isinstance(existing.get("assets"), dict):
+        # 인스턴스 등록 자산(mcps/agents/skills 및 사용자 추가 hook)만 보존한다. 값이 dict 가 아닌 손상
+        # 항목은 버린다 — 보존하면 --force 뒤 sage validate 가 그 항목에서 .get() 크래시로 게이트가 죽는다.
+        # 버려도 실물 spec 이 남아 있으면 validate 가 orphan(WARN)으로 잡아 --force 이전 거동과 동일하다.
+        assets = {k: v for k, v in existing["assets"].items() if isinstance(v, dict)}
     for hid, form in _CORE_HOOKS:
-        # 미스탬프 상태(install 직후): conformance=UNKNOWN(schema 준수). generate --write 가 hash/PASS 스탬프.
+        # CORE hook 은 엔진 자산 → 항상 미스탬프 스켈레톤으로 리셋(generate --write 가 hash/PASS 재스탬프).
         assets[f"hooks/{hid}"] = {
             "form": form, "conformance": "UNKNOWN", "risk": [], "unresolved": [],
         }
@@ -579,9 +603,11 @@ def run(args) -> int:
         elif not getattr(args, "no_global_skill", False):
             _prune_legacy_skill(os.path.join(_codex_skills_root(), legacy), pruned)
 
-    # 6. manifest (CORE hook 등록 — generate 가 hash 스탬프)
+    # 6. manifest (CORE hook 등록 — generate 가 hash 스탬프). --force 재설치는 기존 manifest 의
+    #    인스턴스 등록 자산(mcps/agents/skills)을 보존하고 CORE hook 만 리셋(profile.yaml 과 동일 보존 정책).
     _write(os.path.join(dest, "docs", "sage_harness", ".manifest.json"),
-           json.dumps(_manifest(args.host), ensure_ascii=False, indent=2) + "\n", args.force, created, skipped)
+           json.dumps(_manifest(args.host, _load_manifest(dest)), ensure_ascii=False, indent=2) + "\n",
+           args.force, created, skipped)
 
     # 7. spec 템플릿(사람 작성 참고) + schema(validate 참조)
     templates = _resources.templates_dir()
@@ -606,6 +632,15 @@ def run(args) -> int:
         print(f"정리 {len(pruned)}건 (은퇴한 CORE skill 잔존 사본 제거):")
         for p in sorted(pruned):
             print(f"  - {p}")
+    # --force(업그레이드) 재설치는 CORE 자산을 갱신하므로, 인스턴스가 등록한 kind(mcp/agent/skill)
+    #    가 manifest 와 어긋나지 않았는지 설치 직후 바로 확인하도록 안내한다(현재는 사람이 별도 validate
+    #    를 돌려야만 orphan drift 를 발견).
+    if args.force:
+        print("")
+        print("   ℹ️  --force 재설치 완료. CORE hook 은 `sage generate --kind hook --write` 로 재스탬프하기")
+        print("       전까지 STALE 이 정상입니다. 등록 자산(mcp/agent/skill) 보존 여부는 아래로 확인:")
+        print("         sage validate --check --kind all")
+
     # 다음 단계 안내 — 설계상 진입점은 "AI 대화로 profile 채우기"다(직접 편집 아님).
     # profile 미부트스트랩(project.name 빈값) 상태에선 sage generate 가 BLOCK 된다(강제 게이트).
     runner = "claude" if args.host == "claude" else "codex"
