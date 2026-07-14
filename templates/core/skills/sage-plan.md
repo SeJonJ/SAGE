@@ -36,11 +36,17 @@ L2/L3 code is written. Hands back an ownership map; `/sage-team` drives 03–06.
    vault context", not as a blocker.
 5. Invoke the `leader` agent to:
    a. Author a plan doc under `paths.plan_docs` that covers the task scope.
-   b. Distribute file ownership to implementer-a / implementer-b by component.
-   c. State the integration point where the two implementers connect.
+   b. Record a filled `Risk Level: Lx` line in the 00 base plan (L1/L2/L3 — the higher
+      of the user-declared level and the glob-implied risk; write-back reads it to size
+      the note, the 06 acceptance-evidence report gate scans it as a fallback). Never
+      leave the `<L1|L2|L3>` placeholder.
+   c. Distribute file ownership to implementer-a / implementer-b by component.
+   d. State the integration point where the two implementers connect.
 6. Verify the plan doc exists before handing off:
    check that the file under `paths.plan_docs` is non-empty and references
-   the feature scope.
+   the feature scope, and that 00 carries a filled `Risk Level: L[123]` line
+   (not the `<L1|L2|L3>` placeholder) — if missing/unfilled, block and have the
+   leader set it.
 7. Report the ownership map to the user and confirm they are ready to proceed
    to implementation via `/sage-team` (or the `/sage-cycle` umbrella).
 8. State the phase flow so the user does not misorder 03/04: 00–02 now (leader);

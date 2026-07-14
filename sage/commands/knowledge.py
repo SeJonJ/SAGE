@@ -41,6 +41,9 @@ def register(sub):
     pw.add_argument("--tags", default=None,
                     help="쉼표구분 태그(벌트 작성 가이드대로 host 가 제공; 미지정 시 기본 tech,sage,knowledge-capture)")
     pw.add_argument("--append-log", action="store_true", help="wiki/log.md 에 wikilink 라인 추가")
+    pw.add_argument("--skip-structure-check", action="store_true",
+                    help="required_structure advisory 골격 검증을 끈다(L1 사소 노트·기획 인터뷰 등 심층 골격 대상이 아닌 노트용). "
+                         "risk tier·노트 종류 판단은 host 가 하고 CLI 는 그 결과만 결정론으로 반영한다(SAGE 경계)")
     pw.add_argument("--root", default=None, help="프로젝트 루트 override")
     pw.set_defaults(func=_run_write_back)
 
@@ -308,14 +311,24 @@ def _index_name(profile):
 def _required_structure(profile, prefix):
     """note_convention.required_structure[PREFIX] → 필수 마커(라인 시작 문자열) 목록, 없으면 [].
 
-    advisory 구조 검증용. 이 매핑이 없으면(기본) 검증하지 않는다 — 동작 불변, 옵트인. authoring guide 가
-    PREFIX 별로 요구하는 구조(예: BUG=[!summary]+증상/원인/수정/재발방지)의 **존재**만 결정론으로 확인한다
-    (내용 깊이는 게이트 대상 아님 — skill 지침·human gate 영역). PREFIX 는 대소문자 그대로 매칭(vault 규칙
-    소유). 손상 설정(비-dict/비-list)은 fail-open([]) — advisory 가 write-back 을 깨면 안 된다."""
+    advisory 구조 검증용. 이 매핑이 비었거나 없으면(기본) 검증하지 않는다 — 동작 불변, 옵트인. authoring
+    guide 가 PREFIX 별로 요구하는 구조(예: BUG=[!summary]+증상/원인/수정/재발방지)의 **존재**만 결정론으로
+    확인한다(내용 깊이는 게이트 대상 아님 — skill 지침·host depth self-review 영역).
+
+    PREFIX 조회는 정확 일치 우선, 없으면 대소문자 무시 폴백 — `--prefix` 기본값 'TECH' 와 vault 규칙의
+    'tech' 표기 차이로 검증이 조용히 건너뛰는 것을 막는다(폴백은 파일 순서상 첫 매칭, 결정론). 노트 파일명의
+    prefix 표기는 손대지 않는다(원본 vault 규칙 소유). 손상 설정(비-dict/비-list)은 fail-open([]) — advisory 가
+    write-back 을 깨면 안 된다."""
     table = _note_convention(profile).get("required_structure")
     if not isinstance(table, dict):
         return []
     markers = table.get(prefix)
+    if markers is None:
+        low = prefix.casefold()
+        for k, v in table.items():
+            if isinstance(k, str) and k.casefold() == low:
+                markers = v
+                break
     if not isinstance(markers, list):
         return []
     return [m for m in markers if isinstance(m, str) and m.strip()]
@@ -355,6 +368,9 @@ def _write_or_append_note(vault, folder, filename, frontmatter, note_stem, summa
     if os.path.islink(path):
         os.unlink(path)
     if os.path.exists(path):
+        # 기존(사람 저작) 노트에는 pass-through 계약(신규 노트 전용)을 적용하지 않고, host 본문을 정본
+        # '## SAGE Write-back' H2 섹션으로 감싸 non-destructive append 한다 — 사람 본문을 덮어쓰지 않기
+        # 위한 의도된 예외. 그래서 이 경로는 created=False 로 반환되어 구조 advisory 검증도 건너뛴다.
         body = Path(path).read_text(encoding="utf-8")
         if marker not in body:
             addition = section.lstrip("\n")
@@ -377,30 +393,30 @@ def _write_or_append_note(vault, folder, filename, frontmatter, note_stem, summa
     return written, written is not None
 
 
-_SUMMARY_HEADER_RE = re.compile(r"^##[ \t]+summary[ \t]*$", re.IGNORECASE)
-
-
 def _summary_section(summary):
-    """새 노트의 Summary 섹션을 CLI 정본 '## Summary' 헤더 1개로 통일한다.
+    """host 가 저작한 본문을 선행 BOM 만 제거하고 그대로 통과시킨다(CLI 정본 헤더 강제 없음).
 
-    spec 이 host 에게 "Lead with a `## Summary`" 를 지시하고 CLI 도 헤더를 삽입해 '## Summary' 가 2회
-    출력되던 버그를 막는다. host 가 앞에 Summary 헤더(대소문자·공백 변형 포함)를 넣었으면 그 한 줄을
-    제거하고 정본 헤더를 붙여 정확히 1개만 남긴다. 'startswith' 가 아니라 헤더 라인 정확 매칭이라
-    '## Summary of X'(제목 붙은 별개 헤더)는 보존한다."""
-    text = (summary or "").lstrip("﻿ \t\r\n")   # 선행 BOM·공백 제거(BOM 이면 헤더 매칭이 빗나감)
-    lines = text.split("\n")
-    while lines and _SUMMARY_HEADER_RE.match(lines[0].strip()):   # 선행 Summary 헤더(변형·다중)를 연속 제거
-        lines.pop(0)
-        while lines and not lines[0].strip():   # 헤더 뒤 빈 줄 제거
-            lines.pop(0)
-    text = "\n".join(lines).strip("\n") or "(summary not provided)"
-    return f"## Summary\n\n{text}\n"
+    vault 마다 리드 섹션 규칙이 다르다(예: '> [!abstract] 핵심 Takeaway' 콜아웃 vs '## Summary'). CLI 가
+    특정 헤더를 강제하면 vault authoring guide 와 충돌하고 이중 헤더를 만든다. 본문 형식·깊이는 vault
+    guide + skill 지침 소유(SAGE 결정론 경계: CLI=배치·frontmatter·제목, host=본문 내용). vault 규칙 준수는
+    note_convention.required_structure advisory 로 확인한다.
+
+    양끝 공백/개행 정규화는 진입점 `_run_write_back` 이 이미 `.strip()` 으로 한 번 수행하므로 여기선
+    반복하지 않는다(이중 strip 이 trailing hard-break 등 본문을 두 번 건드리는 것을 피함). 남는 것은 오직
+    선행 BOM — 이게 있으면 첫 콜아웃/헤더가 라인 시작에 오지 못해 마커 매칭이 빗나가므로 제거한다.
+    빈 요약만 placeholder 로 방어."""
+    text = (summary or "").lstrip("﻿")   # 선행 BOM 만 제거(양끝 공백은 호출부에서 이미 정규화)
+    return (text or "(summary not provided)") + "\n"
 
 
 def _run_write_back(args):
     root = _root(args)
     profile, err = _load_profile(_profile_path(args, root))
-    summary = _text_arg(args.summary, args.summary_file).strip()
+    # 선행 BOM 과 모든 유니코드 공백(NBSP·전각공백 포함)의 반복 조합을 제거한 뒤 후행 공백을 정리한다 —
+    # 원래 `.strip()` 이 처리하던 공백 범위를 유지(회귀 방지)하면서 BOM 까지 처리해, BOM·공백이 어떤
+    # 순서로 섞여도 첫 마커가 라인 시작에 오게 한다. `.strip()` 단독은 BOM 을 공백으로 보지 않아 그
+    # 지점에서 멈춰 들여쓰기가 남는다(BOM 은 `\s` 에도 미포함이라 `[\s﻿]` 로 명시 결합).
+    summary = re.sub(r"^[\s﻿]+", "", _text_arg(args.summary, args.summary_file)).rstrip()
     if err:
         print(f"[sage knowledge write-back] FAIL — {err}")
         return 1
@@ -436,16 +452,19 @@ def _run_write_back(args):
         else:
             print(f"[sage knowledge write-back] note written: {path}")
         # advisory 구조 검증(옵트인): authoring guide 가 요구하는 PREFIX 별 필수 마커의 존재만 확인.
-        # 결정론으로 잡히는 형식 누락을 표면화하되 차단하지 않는다(내용 깊이는 게이트 밖 — skill/human gate).
+        # 결정론으로 잡히는 형식 누락을 표면화하되 차단하지 않는다(내용 깊이는 게이트 밖 — skill 지침·host depth self-review).
         # 신규 노트만 대상 — 기존 노트 append 는 사람이 저작한 본문이라 구조 미준수를 WARN 하면 소음.
-        markers = _required_structure(profile, args.prefix) if created else []
+        # --skip-structure-check: L1 사소 노트·기획 인터뷰 등 심층 골격 대상이 아닌 노트는 host 가 검사를 끈다
+        # (심층 골격은 L2/L3 최종 요약 노트에만 요구 — risk/kind 판단은 host, CLI 는 플래그로 받아 결정론 실행).
+        markers = _required_structure(profile, args.prefix) if created and not args.skip_structure_check else []
         if markers:
             missing = _missing_structure(path, markers)
             if missing:
                 print(f"[sage knowledge write-back] ⚠️  advisory: authoring guide 필수 구조 누락 "
                       f"({args.prefix}) — {', '.join(missing)}")
             else:
-                print(f"[sage knowledge write-back] ✅ 구조 검증 통과 ({args.prefix})")
+                print(f"[sage knowledge write-back] ✅ 골격 마커 존재 확인 ({args.prefix}) — "
+                      f"내용 깊이는 미검증(skill 지침·host depth self-review 영역)")
         if args.append_log:
             log_path, added = _append_log_once(vault, folder, note_stem, title)
             print(f"[sage knowledge write-back] log {'updated' if added else 'already linked'}: {log_path}")

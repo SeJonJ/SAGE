@@ -128,6 +128,13 @@ adversarial find→refute→triage→rework loop, recording every round to
 
 ## Step 5 — Completion (Phase 06)
 
+**Before the 06 report is written, reconcile this cycle's risk tier.** Re-classify the actual
+changed paths/content with `profile.risk`, take `max(00's declared tier, that classification)`,
+and if it exceeds 00's `Risk Level` line, raise that line to match. Doing this *before* 06 keeps
+the 06 acceptance-evidence report gate (which reads the tier via `_cycle_risk`) and the later
+knowledge write-back from acting on a stale L1 when the work turned out L2/L3. This is prompt-level
+best effort; its deterministic enforcement is deferred to EH-5.
+
 Only when the cycle is `05_approved` (see resume state machine), the `leader` writes the
 06 completion report. The existing 06←05 gate enforces this deterministically, and
 `verification.acceptance.report_gate_enforce` can warn/block if 04 acceptance evidence is
@@ -144,15 +151,47 @@ After 06 is written, run the configured knowledge write-back when it is enabled:
 1. If `knowledge_capture.update_after_dev: true` and `knowledge_capture.vault_path`
    is set, create `.sage/knowledge_writeback_summary.md`. This note is the durable,
    cross-project distillation that outlives the workspace — **not** a build log. Synthesize
-   (do not transcribe) from PDCA 00~06. **Lead with a 2–3 sentence `## Summary`** (what was
-   built + the single most important outcome/lesson) — required, never leave it blank — then
-   keep it short (a few sentences per axis) and cover:
-   1. **Architecture & module boundaries** — the split, each module's responsibility, dependency direction, and *why* (from 02-design).
-   2. **Key design decisions & trade-offs** — the alternatives considered and why this path (from 00/02).
-   3. **Loop A findings & accepted rework + reasoning** — what adversarial review caught in the code and *why* it mattered (from 05), not just the counts.
-   4. **L3 security / risk posture** — sensitive areas, chosen mitigations (from 00 risk + 05 security).
-   5. **Reusable lessons** — what a future similar project should carry forward (from 06 lessons).
-   6. **Links to related vault notes** — `[[...]]` to prior cycles / design notes (vault notes only; project-local `plan_docs` die with the workspace, so point to detail with one line, don't copy it).
+   (do not transcribe) from PDCA 00~06, and **write to the depth of the vault's own hand-written
+   deep notes**: open two or three existing notes of the same prefix and match that bar. The
+   goal — someone reading the vault alone, months later, sees *what* was built, *which* parts
+   changed, *where* a future bug/improvement is likely, and *how* it was verified.
+
+   **Depth scales with this cycle's risk tier.** Read the `Risk Level: Lx` line from this cycle's
+   00 base plan — that is the durable per-cycle tier (it survives session resume, unlike your
+   in-session memory), already reconciled to the actual work at the start of Step 5. If 00 genuinely
+   carries no `Risk Level` (a legacy doc, or the placeholder was left unfilled), **default to L2 and
+   write the deep note** — over-documenting a trivial change is cheap; a shallow note on real work is
+   the failure we are fixing. (`profile.risk` is only the glob/keyword *mapping* that yields a tier,
+   not the tier itself — do not read a per-cycle tier out of it.)
+   - **L1 (only when the change is plainly trivial):** a few sentences suffice — what changed and
+     the one thing to remember. Do not pad; skip the section skeleton below, and pass
+     `--skip-structure-check` on the write-back command so the advisory skeleton check does not WARN
+     on a note that intentionally has none.
+   - **L2 / L3 (meaningful work):** write a deep note using the vault guide's own headers/callout
+     syntax. When `note_convention.required_structure` is configured (non-empty) for this prefix,
+     the CLI's advisory check WARNs on any missing marker — treat a warning as unfinished; when it
+     is unset (the default `{}`), no marker check runs and only the host depth self-review (step 3)
+     remains. Either way the check confirms only that the skeleton *markers exist*, never that each
+     section is deep enough — that judgment is the host depth self-review (step 3). Cover each as its
+     own section:
+     1. **핵심 Takeaway (리드 콜아웃)** — the vault's top callout (e.g. `> [!abstract]`): 2–3 lines,
+        what was built + the single most important outcome/lesson. Never blank.
+     2. **배경 · 근본 원인** — why the work existed: the problem, the root cause, and (for a bug) the
+        falsification that confirmed it (from 00/02).
+     3. **설계 결정** — the alternatives weighed and why this path won; module boundaries, each
+        module's responsibility, and dependency direction (from 00/02).
+     4. **변경 내역** — the actual files/functions touched, **named explicitly** (`파일:함수:line`).
+        Represent the code *proportional to change volume*: a small change → the actual before/after
+        snippet; a large change → pseudocode or a prose walkthrough anchored by `파일:함수:line`.
+        Always say *where*; never only describe in the abstract.
+     5. **검증** — how it was proven: tests added/run and their results, Loop A findings + accepted
+        rework and *why* it mattered (from 04/05), manual checks.
+     6. **재발 방지 · 향후 · 잔여 리스크** — L3 security / risk posture and mitigations (from 00 risk +
+        05 security), where a future bug or improvement is likely, and what was left undone.
+     7. **관련 문서** — cross-links. Vault notes as `[[...]]` wikilinks. The PDCA docs this cycle
+        produced (00~06) and any `plan_docs` as **plain filenames only** — no wikilink, no path —
+        because they die with the workspace; a later reader still learns which file to look for, and
+        a missing file is tolerated.
 2. **Match the vault's own authoring guide, then run.** Before writing, check the vault
    root for an authoring guide — first found of `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` /
    `AGENT_GUIDE.md`. If present, follow its note conventions: pick domain-appropriate **tags**
@@ -166,12 +205,20 @@ After 06 is written, run the configured knowledge write-back when it is enabled:
    the profile; the guide only informs the *judgment* values you pass, per SAGE's determinism
    boundary.)
 3. Record the command output in 06. If it reports `N/A` or fails, record the exact
-   skipped/failed reason; do not claim vault capture completed.
+   skipped/failed reason; do not claim vault capture completed. **Then run the host depth self-review
+   checklist (advisory — the marker check cannot judge depth, and there is no hook enforcing this;
+   it is your own review, not an independent human gate):** for an L2/L3 note, re-open the written
+   note and confirm each skeleton section carries *real content* — not an empty header the advisory
+   marker check would still pass. Specifically verify 변경 내역 names actual `파일:함수:line` and 검증
+   states concrete test results. If any section is a hollow placeholder, rewrite and re-run before
+   declaring the cycle done, and record in 06 that this self-review was performed (or, for L1, that
+   it was intentionally skipped).
 4. **Planning-interview note (if it exists).** If `.sage/plan_interview.md` exists (a
    planning interview ran in `sage-plan`) AND vault is enabled, capture it as a **separate**
-   vault note via the same single write path:
+   vault note via the same single write path. This is a raw-requirements note, **not** a deep tech
+   note, so pass `--skip-structure-check` — the deep skeleton does not apply to it:
    ```bash
-   python -m sage knowledge write-back --title "[cycle stem] 기획 인터뷰" --prefix <PREFIX> --tags "<t1,t2,…>" --summary-file .sage/plan_interview.md --append-log
+   python -m sage knowledge write-back --title "[cycle stem] 기획 인터뷰" --prefix <PREFIX> --tags "<t1,t2,…>" --summary-file .sage/plan_interview.md --append-log --skip-structure-check
    ```
    The **same vault-guide rules apply** — derive the prefix/tags for this note from the guide
    too (omit the flags for defaults when no guide). This preserves the user's raw requirements

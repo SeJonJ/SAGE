@@ -1,7 +1,7 @@
-# SAGE Enhancement Backlog (자산 사이클과 독립 — 추후 적용)
+# SAGE Enhancement 백로그
 
-핵심 자산 사이클(install/generate/validate/hook/agent/skill) 밖의 강화 후보를 모은다.
-각 항목 = 배경 · 문제 · 접근 · 규모/위험 · 트리거 · 상태. 즉시 필요 아님 → 트리거 충족 시 착수.
+- SAGE 개발 중 확인된 이슈들로 당장 개발해야하는 내용들은 아니지만, 추후 개발 필요시 참고한다.
+- 각 항목 = 배경 · 문제 · 접근 · 규모/위험 · 트리거 · 상태. 즉시 필요 아님 → 트리거 충족 시 착수.
 
 ---
 
@@ -75,6 +75,30 @@
 
 ---
 
+## EH-5 — Risk Level 강제 게이트 + 완전 effective-max 결정론화
+
+- **배경**: write-back 심층 노트(9-E)가 "이 사이클 risk tier 로 노트 깊이 결정"을 지시. 후속 A 로
+  00 템플릿에 `Risk Level: Lx` 필수 필드 + sage-plan 기입 지침 + write-back 이 그 라인을 읽어 **선언값
+  결정론 정본화**는 완료(재개 세션에도 tier 확정, `_cycle_risk` 정규식과 동일 라인).
+- **문제(A 의 advisory 한계)**:
+  1. **미기입 무방비** — sage-plan Step 3/6 이 채워짐을 *프롬프트로* 확인하나 훅 차단은 아님. leader 가
+     placeholder 를 남겨도 결정론으로 막지 못한다(현재는 write-back 이 unknown→L2 심층 fallback 으로 안전 degrade).
+  2. **effective-max 불완전** — `_cycle_risk` 는 `event.declared_max` → `snapshot.cycle_risk` → 00~05 스캔
+     순서라 **세션 선언이 00 보다 우선**. 00=L3 이어도 세션 declared=L1 이면 acceptance gate 가 낮게 열린다.
+     또 00 을 먼저 찾으면 후속 phase 의 더 높은 risk 를 안 본다(첫 매칭 반환).
+  3. **재조정 강제 부재** — 계획 L1 이 구현 후 L2/L3 로 커져도 자동 상향 없음. write-back 이 06 전에 `profile.risk`
+     로 재분류해 00 을 갱신하도록 *프롬프트로* 지시하나 best-effort(집행 없음).
+- **접근**: (1) 00 `Risk Level` 미기입/placeholder 를 WARN/차단하는 **결정론 게이트**(pre-implementation 또는
+  전용 훅). (2) `_cycle_risk` 를 `max(declared_max, snapshot, 00~05 전체 스캔)` 로 바꿔 **완전 effective-max**
+  반환. (3) 06 작성 전 risk reconciliation(`profile.risk` 재분류→00 상향)을 결정론 단계로.
+- **규모/위험**: **중간**. PDCA 문서 계약(00 스키마)·pre-implementation 게이트·`_cycle_risk`·테스트 동시 변경.
+- **트리거**: write-back 노트 깊이 오분류가 실제 관측되거나, "정직한 host" 전제로 부족할 때. **현 긴급도 낮음**
+  — 미기입/불명확은 write-back 이 L2 심층 fallback 으로 안전 degrade.
+- **상태**: 🕗 **defer(2026-07-14, 유저 승인 "A 만 진행, B 는 추후")**. codex A 리뷰 파생. 정본 vault
+  `SAGE - write-back 심층 노트 설계 + required_structure 배선(26.07.14)`.
+
+---
+
 ## (참고) 보류 — 자산 사이클 내 기록
 - F5(클린 업그레이드)는 하드닝에서 해소(profile create-only). F1/F3/F7/malformed 동일.
-- 진행 로그: vault `TECH - SAGE 구현 진행 로그.md`, 1차 테스트 평가: `SAGE 프로젝트 1차 테스트(26.06.18)`.
+- 진행 로그: vault `TECH - SAGE 구현 진행 로그.md`

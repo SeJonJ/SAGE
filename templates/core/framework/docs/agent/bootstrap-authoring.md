@@ -145,6 +145,23 @@ confirm with the user (do not auto-detect at write time — record the decision 
 > - `folder` / `filename_pattern` / `prefixes` — match the vault's existing layout & title prefix (e.g. `TECH - {title}.md`); if the vault uses no prefix, leave it empty.
 > - `tags_style` — `frontmatter` / `inline` / `none`. Match how existing notes tag (YAML frontmatter vs a `태그:` line vs none). Default `frontmatter`.
 > - `index` — the vault's index filename (e.g. `index.md`) if one exists and the user wants new notes linked there; **empty if the vault has no index** (write-back then skips index updates).
+> - `required_structure` — per-PREFIX required body markers (line-start strings) the vault expects for each note
+>   type. Inspect the vault's authoring rules (or ask the user) and record the markers each prefix must contain.
+>   These markers should describe the vault's **deep-note skeleton** for meaningful (L2/L3) work — e.g.
+>   `BUG: ["> [!abstract]", "## 배경", "## 설계 결정", "## 변경 내역", "## 검증", "## 재발 방지", "## 관련 문서"]`. On
+>   write-back of a **new** note, `sage knowledge write-back` advisory-checks that these markers exist and WARNs
+>   (never blocks) on omission. It verifies marker **existence only** (a deterministic skeleton check); content
+>   depth is left to the skill prompt + the write-back skill's host depth self-review (advisory), not the CLI. PREFIX is matched exactly first, then
+>   case-insensitively. **Leave `{}` (default) if the vault imposes no fixed structure — the check is then fully
+>   off.** Confirm the markers with the user; do not invent a structure the vault does not actually require.
+
+**Note depth scales with risk tier (skill-driven, not CLI-enforced).** The write-back skill authors L1
+(trivial) notes as a few sentences and L2/L3 (meaningful) notes to the vault's full deep skeleton above,
+matching the depth of the vault's own hand-written notes. In the 변경 내역 section, code is shown proportional
+to change volume — small changes as the actual before/after snippet, large changes as pseudocode/walkthrough
+anchored by `파일:함수:line`. `required_structure` (when configured) only checks that the L2/L3 skeleton markers
+are present; the CLI never judges whether each section is deep enough (that stays with the skill prompt and the
+skill's host depth self-review (advisory) — an independent human review only if the project sets one up separately).
 
 This makes `sage knowledge write-back` honor the user's vault conventions deterministically instead of
 imposing SAGE defaults (6th-test: frontmatter/index assumptions didn't match the vault).

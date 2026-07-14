@@ -170,9 +170,20 @@ knowledge_capture:               # obsidian
   mcp_check: true
   scan_before_dev: true
   update_after_dev: true
-  note_convention: { folder: "wiki", filename_pattern: "{prefix} - {title}.md", prefixes: [], flat: true,
-                     tags_style: frontmatter,   # frontmatter | inline | none — vault 규칙 따름(sage-init 이 vault 조사해 제안). 기본 frontmatter
-                     index: "" }                # 목차 파일명(예: index.md). 비면 index 갱신 안 함(index 없는 vault 존중)
+  note_convention:
+    folder: "wiki"
+    filename_pattern: "{prefix} - {title}.md"
+    prefixes: []
+    flat: true
+    tags_style: frontmatter    # frontmatter | inline | none — vault 규칙 따름(sage-init 이 vault 조사해 제안). 기본 frontmatter
+    index: ""                  # 목차 파일명(예: index.md). 비면 index 갱신 안 함(index 없는 vault 존중)
+    required_structure: {}     # PREFIX → 필수 마커(라인 시작 문자열) 목록. write-back 신규 노트가 authoring
+                               # guide 형식을 갖췄는지 advisory 로 확인(누락=WARN, 차단 안 함). 비면(기본) 검사 OFF.
+                               # 마커 **존재**만 결정론 확인(깊이는 skill 지침·host depth self-review 영역). PREFIX 는 정확
+                               # 일치 우선·대소문자 무시 폴백. sage-init 이 vault 규칙 조사해 채운다.
+                               # L2/L3 심층 노트 골격 예(prefix 무관 7섹션 — 재발 방지·향후·잔여 리스크 포함):
+                               #   { BUG:  ["> [!abstract]", "## 배경", "## 설계 결정", "## 변경 내역", "## 검증", "## 재발 방지", "## 관련 문서"],
+                               #     TECH: ["> [!abstract]", "## 배경", "## 설계 결정", "## 변경 내역", "## 검증", "## 재발 방지", "## 관련 문서"] }
   loop_audit_dashboard: false    # 루프 종료 시 vault 에 Loop A 감사 대시보드 자동 갱신(sage review-loop show --vault). vault_path 필요
   retro_note: false              # sage retro 시 vault 에 human-gate 회고 노트 자동 작성(--vault). vault_path 필요
 
