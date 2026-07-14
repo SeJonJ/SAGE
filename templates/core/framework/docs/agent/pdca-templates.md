@@ -117,6 +117,14 @@ is on and reachable — `docs/agent/review-protocol.md`).
 ```markdown
 # [Base Plan] {Feature Name}
 
+Risk Level: <L1|L2|L3>
+<!-- required: this cycle's max risk — the higher of the user-declared level and the risk the change globs
+     imply. Replace <...> with one of L1/L2/L3. Knowledge write-back reads this exact `Risk Level: Lx` line
+     to size the note (the durable per-cycle tier that survives session resume); the 06 acceptance-evidence
+     report gate (`_cycle_risk`) also scans it as a fallback when no session-level risk was declared. Keep it current: if
+     implementation grows past what 00 planned, raise this line. An unfilled placeholder reads as unknown,
+     and write-back then defaults to a deep note. -->
+
 ## 0. Prior Knowledge
 | Type | Note | Key Takeaway |
 |------|------|--------------|

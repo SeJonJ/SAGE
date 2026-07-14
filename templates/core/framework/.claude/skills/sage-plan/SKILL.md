@@ -73,11 +73,21 @@ Hand off to the `leader` agent with this briefing:
 - Required: author a plan doc covering the task scope, distribute file ownership
   to `implementer-a` and `implementer-b` by component, and state the integration
   point
+- Required: the 00 base plan must record a `Risk Level: Lx` line — L1/L2/L3, the
+  higher of the user-declared level and the risk the change globs imply. This is the
+  durable per-cycle tier knowledge write-back reads to size the final note (and the 06
+  acceptance-evidence report gate scans as a fallback when no session-level risk was
+  declared). Fill it with a real `L1`/`L2`/`L3`; never leave the `<L1|L2|L3>` placeholder.
 
 ## Step 3 — Verify plan doc exists
 
 After the leader completes, confirm the plan doc file exists and is non-empty.
 If the leader did not create it, block and ask the leader to retry.
+
+Also confirm the 00 base plan carries a filled `Risk Level: L1`/`L2`/`L3` line (not the
+`<L1|L2|L3>` placeholder). If it is missing or unfilled, block and ask the leader to set
+it before handing off — write-back reads this tier to size the final note, and the 06
+acceptance-evidence report gate scans it only when no session-level risk was declared.
 
 ## Step 4 — Report ownership map
 
