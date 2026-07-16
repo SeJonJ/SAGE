@@ -51,6 +51,8 @@ check_msg ".claude/skills/sage-review/SKILL.md" "sage/asset_overrides/skills/sag
 check_msg ".codex/agents/leader.md" "sage/asset_overrides/agents/leader.md" "CORE agent → overlay 경로 안내"
 check_msg ".claude/skills/sage-review/SKILL.md" "/sage-asset-override" "CORE 렌더 → 작성 스킬 안내"
 check_msg ".claude/agents/my-custom.md" "sage generate" "비-CORE 산출물 → 기존 spec→generate 안내"
+check_msg "AGENT_GUIDE.md" "project-profile.yaml" "AGENT_GUIDE → project-profile 안내(overlay 아님)"
+check_msg "AGENT_GUIDE.md" "프레임워크 문서" "AGENT_GUIDE → framework 문서 메시지"
 
 echo "----"
 echo "PASS=$pass FAIL=$fail"

@@ -56,6 +56,42 @@ class TestOverlayLint(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             self.assertEqual(overlay_lint.scan_overlays(root), [])
 
+    def _framework(self, root, body):
+        d = os.path.join(root, "sage", "asset_overrides", "framework")
+        os.makedirs(d, exist_ok=True)
+        Path(os.path.join(d, "AGENT_GUIDE.md")).write_text(body, encoding="utf-8")
+
+    def _profile(self):
+        return {"risk": {"domains": [{
+            "id": "webrtc", "risk_level": "L3",
+            "path_globs": ["**/kurento/**"],
+            "content_keywords": ["RTCPeerConnection"],
+            "protocol_pointer": "sage/critical-domains/webrtc.md",
+        }]}}
+
+    def test_domain_contract_accepts_reference_only(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._framework(root, "---\ndomain_refs: [webrtc]\n---\n# Project rules\nFollow the domain protocol.\n")
+            self.assertEqual(overlay_lint.scan_domain_contract(root, self._profile()), [])
+
+    def test_domain_contract_rejects_unknown_reference(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._framework(root, "---\ndomain_refs: [payments]\n---\n# Rules\n")
+            findings = overlay_lint.scan_domain_contract(root, self._profile())
+            self.assertTrue(any("미등록" in msg for _, _, msg in findings))
+
+    def test_domain_contract_rejects_trigger_duplication(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._framework(root, "---\ndomain_refs: [webrtc]\n---\nWatch **/kurento/** and `RTCPeerConnection`.\n")
+            findings = overlay_lint.scan_domain_contract(root, self._profile())
+            self.assertGreaterEqual(len([x for x in findings if "재복제" in x[2]]), 2)
+
+    def test_domain_contract_rejects_extra_frontmatter_key(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._framework(root, "---\ndomain_refs: [webrtc]\nrisk_level: L0\n---\n# Rules\n")
+            findings = overlay_lint.scan_domain_contract(root, self._profile())
+            self.assertTrue(any("미허용 키" in msg for _, _, msg in findings))
+
 
 if __name__ == "__main__":
     unittest.main()

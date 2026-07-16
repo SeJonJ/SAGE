@@ -3,6 +3,21 @@
 - SAGE 개발 중 확인된 이슈들로 당장 개발해야하는 내용들은 아니지만, 추후 개발 필요시 참고한다.
 - 각 항목 = 배경 · 문제 · 접근 · 규모/위험 · 트리거 · 상태. 즉시 필요 아님 → 트리거 충족 시 착수.
 
+## 코드 검증 · 우선순위 (2026-07-17)
+
+전 항목 코드 재대조 완료(허위/과장 없음, 상태 그대로 유효).
+
+- **EH-1·EH-2**: 완료 확인 — 추가 작업 불필요. (EH-1: `sage/commands/generate.py` roster kind + `test_gen_roster.py` /
+  EH-2: `output_contract_check.py` `_DEFAULT_MARKERS` 중립화 + 주입 파라미터, 코드 상 실재)
+- **미착수 4건 착수 순위**:
+  1. **EH-6** — Codex CORE skill의 전역/프로젝트 로컬 설치 scope를 사용자가 명시적으로 선택하게 한다. 현재
+     ambient `CODEX_HOME`과 `--no-global-skill`만으로는 중복 노출·버전 우선순위·팀원 온보딩 계약이 불명확하다.
+  2. **EH-5** — 최근 릴리즈(v0.9.60)된 살아있는 게이팅 로직의 현재진행형 정확성 결함(`_cycle_risk` 가 여전히
+     `declared_max→snapshot→00~05 첫 매칭` 순서라 `max()` 미구현). A 트랙에서 스캔 경로가 이미 깔려 있어 신규 범위 작음.
+  3. **EH-3** — 단일 모듈(`loop_audit.py`) 격리 작업이라 다른 컴포넌트 영향 없음. 시급성은 낮으나 착수 리스크도 낮음.
+  4. **EH-4** — sage-review·PostToolUse·Stop 게이트·profile_validate 다수 컴포넌트 동시 변경(대공사). 남은 우회가
+     "과거 checked run_id 정확 복붙"뿐인 좁은 구멍이라 실이익 대비 비용 최대 — 트리거 충족 전 보류 유지.
+
 ---
 
 ## EH-1 — 동적 컴포넌트 파생 roster (F2 옵션 2)
@@ -53,6 +68,7 @@
 - **트리거**: 위협모델이 "정직한 host"에서 "적대적 host / 감사 로그 신뢰가 필요한 규제·외부 감사"로 확장될 때
   (README "완전 장악된 host runtime 은 방어하지 않음" 전제가 바뀔 때). **현 위협모델상 낮은 긴급도.**
 - **상태**: 📋 **로드맵 등재(미착수)**. 감사 표현 정직화(경계 명시)는 완료 — `ARCHITECTURE.md` 신뢰 경계 · README.
+  코드 재확인(2026-07-14): `loop_audit.py` 에 `prev_hash`/`hashlib` 부재 — 미착수 확정, 우선순위 3순위(↑ 코드 검증 참고).
 
 ---
 
@@ -72,6 +88,8 @@
   (남은 우회가 좁고, 나머지 실패모드는 이미 BLOCK).
 - **상태**: 🕗 **defer(2026-07-11, 유저 승인 "Option 1 로 진행")**. codex R2/R3 파생. 정본 vault
   `SAGE - retro 게이트 결정론 강제 개발(26.07.11)`.
+  코드 재확인(2026-07-14): `cycle_binding` 모듈 부재, `profile_validate.py` 에 review_loop coupling FAIL 부재 —
+  미착수 확정, 우선순위 4순위(다수 컴포넌트 대공사, ↑ 코드 검증 참고).
 
 ---
 
@@ -96,6 +114,27 @@
   — 미기입/불명확은 write-back 이 L2 심층 fallback 으로 안전 degrade.
 - **상태**: 🕗 **defer(2026-07-14, 유저 승인 "A 만 진행, B 는 추후")**. codex A 리뷰 파생. 정본 vault
   `SAGE - write-back 심층 노트 설계 + required_structure 배선(26.07.14)`.
+  코드 재확인(2026-07-14): `pre_implementation_gate_core.py::_cycle_risk` 여전히 첫 매칭 순서(`max()` 미구현),
+  미기입 차단 게이트 부재 — 미착수 확정, 우선순위 2순위(↑ 코드 검증 참고).
+
+---
+
+## EH-6 — Codex CORE skill 전역/프로젝트 로컬 설치 scope
+
+- **배경**: Codex CORE skill은 현재 `$CODEX_HOME/skills`에 설치하고 `--no-global-skill`로만 생략한다. SAGE를
+  계속 개발하면서 동일 프로젝트에 도그푸딩하거나 저장소 로컬 `CODEX_HOME`을 함께 쓰면 같은 `$sage-*` skill이
+  전역과 프로젝트에 중복 노출될 수 있다. 저장소를 받은 팀원이 별도 전역 설치를 해야 하는지도 명확하지 않다.
+- **문제**: 설치 위치가 ambient 환경변수와 선행 설치 상태에 의존해, 어떤 사본이 선택되는지·어느 버전이 유효한지·
+  저장소 자산만으로 팀 온보딩이 가능한지를 `install`/`doctor`/`validate`가 설명하거나 검증하지 못한다.
+- **접근**: Codex 설치 시 **global / project-local scope를 명시적으로 선택**하게 하고, 선택 결과를 설치 영수증에
+  기록한다. global은 사용자 공용 skill, local은 대상 저장소의 `.codex/skills`를 소유한다. 중복 발견 시 조용히
+  공존시키지 않고 우선순위와 정리 방법을 진단하며, 팀원 온보딩 안내도 선택 scope에 맞춰 생성한다. 정확한 CLI
+  플래그명과 기본값은 독립 설계 사이클에서 확정한다.
+- **규모/위험**: 중. `install` 경로 결정, manifest/receipt, `doctor` 중복·버전 진단, 업그레이드·제거·양 host 회귀,
+  문서와 팀 온보딩 계약을 함께 변경해야 한다.
+- **트리거**: 이미 ChatForYou 도그푸딩에서 `$sage` skill 중복 노출과 팀원 설치 여부 질문이 발생해 충족됐다.
+- **상태**: 📋 **미착수, 착수 우선순위 1순위**. 요구사항 정본은
+  `SAGE - ChatForYou 실증 2차 후속 개발 요구사항 (26.07.17)`의 `SAGE-FB-05`와 연결한다.
 
 ---
 

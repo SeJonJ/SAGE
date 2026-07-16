@@ -23,7 +23,8 @@ _RANK = {"INFO": 0, "WARN": 1, "FAIL": 2}
 _CLOSED_SECTION_FALLBACK = {
     "risk": {"desktop_block_glob", "desktop_block_hint", "generic_tokens", "l0_pass_globs",
              "l1_path_globs", "l2_content_keywords", "l2_path_globs", "l3_content_keywords",
-             "l3_filename_globs", "l3_review_strategy", "plan_glob", "review_patterns"},
+             "l3_filename_globs", "l3_review_strategy", "l3_review_glob", "content_l3_enforce",
+             "domains", "plan_glob", "review_patterns"},
     "pdca": {"approve_marker", "approve_phase", "enabled", "phases",
              "pre_implementation_required", "report_phase", "review_loop", "retro"},
     "output_contract": {"markers"},
@@ -350,11 +351,43 @@ def _semantic_issues(profile, root):
 
     # 섹션 타입 가드(codex 재리뷰) — risk/pdca/options/knowledge_capture 가 truthy 비-dict 면 이후
     #   .get() 크래시(retro 등 런타임 읽기 포함). jsonschema 없어도 제어된 FAIL 을 단일 출처로 발행.
-    for section in ("risk", "pdca", "options", "knowledge_capture", "verification"):
+    for section in ("risk", "pdca", "options", "knowledge_capture", "verification", "hooks"):
         v = profile.get(section)
         if v is not None and not isinstance(v, dict):
             issues.append(("FAIL", f"{section} 섹션은 매핑(object)이어야 함(받음: {type(v).__name__})"))
     risk = profile.get("risk") if isinstance(profile.get("risk"), dict) else {}
+    hooks = profile.get("hooks") if isinstance(profile.get("hooks"), dict) else {}
+    root_env = hooks.get("project_root_env")
+    if root_env not in (None, "", "SAGE_PROJECT_ROOT"):
+        issues.append(("FAIL", f"hooks.project_root_env={root_env!r} 는 지원되지 않음 — "
+                               "크로스런타임 표준값 SAGE_PROJECT_ROOT 만 사용 가능"))
+
+    domains = risk.get("domains")
+    if domains is not None and not isinstance(domains, list):
+        issues.append(("FAIL", "risk.domains 는 리스트여야 함"))
+        domains = []
+    seen_domains = set()
+    for idx, domain in enumerate(domains or []):
+        label = f"risk.domains[{idx}]"
+        if not isinstance(domain, dict):
+            issues.append(("FAIL", f"{label} 는 매핑(object)이어야 함"))
+            continue
+        did = domain.get("id")
+        if not isinstance(did, str) or not did:
+            issues.append(("FAIL", f"{label}.id 는 비어있지 않은 문자열이어야 함"))
+        elif did in seen_domains:
+            issues.append(("FAIL", f"risk.domains id 중복: {did}"))
+        else:
+            seen_domains.add(did)
+        if domain.get("risk_level") not in ("L1", "L2", "L3"):
+            issues.append(("FAIL", f"{label}.risk_level 은 L1/L2/L3 중 하나여야 함"))
+        for key in ("path_globs", "content_keywords"):
+            value = domain.get(key)
+            if not isinstance(value, list) or not all(isinstance(x, str) and x for x in value):
+                issues.append(("FAIL", f"{label}.{key} 는 비어있지 않은 문자열의 리스트여야 함"))
+        pointer = domain.get("protocol_pointer")
+        if not isinstance(pointer, str) or not pointer or os.path.isabs(pointer) or ".." in pointer.split("/"):
+            issues.append(("FAIL", f"{label}.protocol_pointer 는 프로젝트 상대 안전 경로여야 함"))
 
     # 0. 폐쇄 섹션 미지 키(오타) 적발 — jsonschema 선택의존과 무관하게 항상 동작(N-R1/P0-2).
     #    예: l3_filename_globs→l3_filename_glob 오타가 빈 리스트로 통과해 L3 게이트가 침묵

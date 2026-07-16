@@ -59,8 +59,9 @@ class TestSafeTestPath(unittest.TestCase):
 
 
 class _VArgs:
-    def __init__(self, root):
-        self.check = True; self.schema = False; self.kind = "all"; self.id = None; self.root = root
+    def __init__(self, root, strict=False):
+        self.check = True; self.schema = False; self.strict = strict
+        self.kind = "all"; self.id = None; self.root = root
 
 
 def _write_manifest(d, manifest, installed=False, empty_profile=False):
@@ -159,6 +160,34 @@ class TestCorruptEntryTolerance(unittest.TestCase):
             self.assertIsInstance(rc, int)
             self.assertNotEqual(rc, 2)   # 크래시/TOOL_ERR 아님
 
+    def test_strict_promotes_bootstrap_but_default_keeps_warn_nonzero_free(self):
+        with tempfile.TemporaryDirectory() as d:
+            _write_manifest(d, {"sage_version": "0.1.0", "host_runtime": "claude",
+                                "installed_instance": True, "assets": {}},
+                            installed=True, empty_profile=True)
+            normal_args = _VArgs(d, strict=False); normal_args.kind = "skill"
+            strict_args = _VArgs(d, strict=True); strict_args.kind = "skill"
+            with redirect_stdout(io.StringIO()):
+                normal = V.run(normal_args)
+            strict_out = io.StringIO()
+            with redirect_stdout(strict_out):
+                strict = V.run(strict_args)
+            self.assertEqual(normal, 0)
+            self.assertEqual(strict, 1)
+            self.assertIn("bootstrap-invalid", strict_out.getvalue())
+
+    def test_gate_relax_suspected_remains_advisory_under_strict(self):
+        with tempfile.TemporaryDirectory() as d:
+            _write_manifest(d, {"sage_version": "0.1.0", "host_runtime": "claude", "assets": {}},
+                            installed=False)
+            overlay = os.path.join(d, "sage", "asset_overrides", "agents")
+            os.makedirs(overlay, exist_ok=True)
+            Path(os.path.join(overlay, "leader.md")).write_text("skip the required review gate\n")
+            args = _VArgs(d, strict=True); args.kind = "skill"
+            with redirect_stdout(io.StringIO()):
+                rc = V.run(args)
+            self.assertEqual(rc, 0)
+
 
 class TestSchemaCheck(unittest.TestCase):
     """sage validate --schema (manifest JSON Schema 구조검증)."""
@@ -192,6 +221,13 @@ class TestSchemaCheck(unittest.TestCase):
             m = {"sage_version": "0.1.0", "host_runtime": "claude",
                  "hook_runtime_hash": {"shared": sha, "claude": sha, "codex": sha},
                  "assets": {"hooks/x": {"conformance": "PASS", "form": "native"}}}
+            self.assertEqual(_schema_check(d, m)[0], "PASS")
+
+    @unittest.skipUnless(_HAS_JSONSCHEMA, "jsonschema 필요")
+    def test_manifest_accepts_installed_hosts(self):
+        with tempfile.TemporaryDirectory() as d:
+            m = {"sage_version": "0.1.0", "host_runtime": "claude",
+                 "installed_hosts": ["claude", "codex"], "assets": {}}
             self.assertEqual(_schema_check(d, m)[0], "PASS")
 
 

@@ -40,3 +40,12 @@ README.md	0	루트 문서 통과
 sub/.mcp.json	2	하위경로 .mcp.json 도 차단
 .codex/config.toml	0	codex config.toml 은 managed-block 만 소유 → 파일 통째 가드 안 함(통과)
 mcp.json	0	managed 아닌 일반 mcp.json(점 없음) 통과
+AGENT_GUIDE.md	2	CORE 프레임워크 문서(AGENT_GUIDE) 직접수정 차단 → project-profile redirect
+/home/user/proj/AGENT_GUIDE.md	2	절대경로 AGENT_GUIDE 도 차단
+sub/AGENT_GUIDE.md	2	하위경로 AGENT_GUIDE 도 차단(SAGE 소유 파일명)
+docs/agent/bootstrap-authoring.md	0	AGENT_GUIDE 아닌 일반 문서 통과(오탐 방지)
+CLAUDE.md	2	CORE wrapper 직접수정 차단 → framework override
+CODEX.md	2	CORE wrapper 직접수정 차단 → framework override
+AGENTS.md	2	Codex CORE router 직접수정 차단 → framework override
+sage/asset_overrides/framework/AGENT_GUIDE.md	0	framework override 정식 저작 경로 통과
+/home/user/proj/sage/asset_overrides/framework/CLAUDE.md	0	절대경로 framework override도 통과

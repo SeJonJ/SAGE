@@ -16,6 +16,8 @@ import os
 import re
 from pathlib import Path
 
+import yaml
+
 # 게이트 완화로 읽히는 표현(영/한). IGNORECASE. 근접 매칭으로 문맥을 좁혀 오탐을 줄인다.
 # (id, 정규식, 사람 설명) — 설명은 WARN 메시지에 그대로 노출.
 _GATE_RELAX_PATTERNS = [
@@ -53,7 +55,7 @@ def scan_text(text):
 
 
 def scan_overlays(root):
-    """<root>/sage/asset_overrides/{agents,skills}/*.md 를 스캔.
+    """<root>/sage/asset_overrides/{agents,skills,framework}/*.md 를 스캔.
 
     반환 [(relpath, [(pattern_id, 설명), ...]), ...] — 매칭된 파일만. 디렉토리 없으면 빈 리스트.
     """
@@ -61,7 +63,7 @@ def scan_overlays(root):
     if not os.path.isdir(base):
         return []
     results = []
-    for subdir in ("agents", "skills"):
+    for subdir in ("agents", "skills", "framework"):
         d = os.path.join(base, subdir)
         if not os.path.isdir(d):
             continue
@@ -77,3 +79,73 @@ def scan_overlays(root):
             if hits:
                 results.append((os.path.join(OVERLAY_SUBDIR, subdir, fn), hits))
     return results
+
+
+def _split_frontmatter(text):
+    if not text.startswith("---\n"):
+        return None, text, "YAML frontmatter(---) 누락"
+    end = text.find("\n---\n", 4)
+    if end < 0:
+        return None, text, "YAML frontmatter 종료(---) 누락"
+    try:
+        meta = yaml.safe_load(text[4:end]) or {}
+    except yaml.YAMLError as e:
+        return None, text, f"YAML frontmatter 파싱 실패: {e}"
+    if not isinstance(meta, dict):
+        return None, text, "YAML frontmatter 는 매핑(object)이어야 함"
+    return meta, text[end + 5:], None
+
+
+def _norm(value):
+    return re.sub(r"[`\s]+", "", str(value).lower())
+
+
+def scan_domain_contract(root, profile):
+    """framework override 의 SD-4 domain_refs 계약을 검사한다.
+
+    반환 [(check_id, relpath, message)]. `critical-domain-drift` 는 strict 승격 대상이다.
+    framework override 는 domain id 만 참조할 수 있고 authoritative trigger 값을 복제할 수 없다.
+    """
+    risk = profile.get("risk") if isinstance(profile, dict) else {}
+    risk = risk if isinstance(risk, dict) else {}
+    domains = risk.get("domains") if isinstance(risk.get("domains"), list) else []
+    registry = {d.get("id"): d for d in domains if isinstance(d, dict) and isinstance(d.get("id"), str)}
+    base = os.path.join(root, OVERLAY_SUBDIR, "framework")
+    if not os.path.isdir(base):
+        return []
+    findings = []
+    for fn in sorted(os.listdir(base)):
+        if not fn.endswith(".md"):
+            continue
+        path = os.path.join(base, fn)
+        rel = os.path.relpath(path, root)
+        try:
+            text = Path(path).read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as e:
+            findings.append(("critical-domain-drift", rel, f"override 읽기 실패: {e}"))
+            continue
+        meta, body, err = _split_frontmatter(text)
+        if err:
+            findings.append(("critical-domain-drift", rel, err))
+            continue
+        unknown_keys = sorted(set(meta) - {"domain_refs"}, key=str)
+        if unknown_keys:
+            findings.append(("critical-domain-drift", rel,
+                             f"framework override frontmatter 미허용 키 {unknown_keys}; domain_refs 만 허용"))
+        refs = meta.get("domain_refs")
+        if not isinstance(refs, list) or not all(isinstance(x, str) and x for x in refs):
+            findings.append(("critical-domain-drift", rel, "domain_refs 는 비어있지 않은 문자열 리스트여야 함"))
+            continue
+        unknown = sorted(set(refs) - set(registry))
+        if unknown:
+            findings.append(("critical-domain-drift", rel, f"미등록 domain_refs {unknown}"))
+        norm_body = _norm(body)
+        for ref in refs:
+            domain = registry.get(ref) or {}
+            for field in ("path_globs", "content_keywords"):
+                for trigger in domain.get(field) or []:
+                    token = _norm(trigger)
+                    if token and token in norm_body:
+                        findings.append(("critical-domain-drift", rel,
+                                         f"domain '{ref}' {field} trigger 재복제 금지: {trigger!r}"))
+    return findings

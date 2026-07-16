@@ -338,7 +338,7 @@ def _absorb_from_retro(args) -> int:
             print(f"      overlay 후보: {_overlay_hint(p)}")
         print("  적용: CORE 렌더 직접수정 금지. `/sage-asset-override` 로 위 overlay 파일을 작성하세요")
         print("        (게이트 완화 여부를 확인하고 sage/asset_overrides/** 에 기록).")
-        print("        host 는 CORE 자산을 읽은 뒤 overlay 가 있으면 우선 적용합니다. install --force 에도 보존됩니다.")
+        print("        SAGE 가 eligible 자산의 overlay 를 렌더에 물리화하고 `sage validate` 가 게이트합니다(게이트-보유 자산은 SD-8 전까지 미지원). install --force 에도 보존됩니다.")
         print("        범용화할 내용이면 이후 spec/CORE 반영은 별도 변경으로 승격하세요.")
     if skipped:
         print(f"\n⚠️  target 미지/누락 {len(skipped)}건 — target ∈ {{profile,hook,agent,skill}} 이어야 분류됨:")

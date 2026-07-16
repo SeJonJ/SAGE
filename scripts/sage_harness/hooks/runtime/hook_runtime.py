@@ -10,6 +10,7 @@ core.decide 호출을 여기로 1회만 들어올린다(verbatim lift — 동작
 - root 밖/절대경로 glob 거부(독립성). L3 전략 크래시는 surface + fail-closed(None → core BLOCK 유지, F8b).
 """
 import calendar
+import fnmatch
 import glob
 import hashlib
 import importlib
@@ -99,6 +100,18 @@ def build_snapshot(profile, root, rel):
         plan_files.append({"path": rel(p), "content": c, "recent": (now - os.path.getmtime(p)) <= 7 * 86400})
     review_candidates = [pf for pf, p in zip(plan_files, paths) if (now - os.path.getmtime(p)) <= 30 * 86400]
 
+    review_glob = (profile.get("risk") or {}).get("l3_review_glob", "")
+    if review_glob and (os.path.isabs(review_glob) or ".." in review_glob.split("/")):
+        review_glob = ""
+    l3_review_docs = []
+    for p in sorted(glob.glob(os.path.join(root, review_glob), recursive=True)) if review_glob else []:
+        try:
+            with open(p, encoding="utf-8", errors="ignore") as fh:
+                content = fh.read()
+        except Exception:
+            content = ""
+        l3_review_docs.append({"path": rel(p), "content": content})
+
     phase_docs = {}
     pdca = profile.get("pdca") or {}
     if pdca.get("enabled"):
@@ -124,7 +137,37 @@ def build_snapshot(profile, root, rel):
     except Exception:
         la = {"runs": {}, "has_any_records": False}
     return {"plan_files": plan_files, "review_candidates": review_candidates,
+            "l3_review_docs": l3_review_docs,
             "phase_docs": phase_docs, "loop_audit": la}
+
+
+def _review_cycle_ids(event):
+    branch = (event.get("branch") or "").strip()
+    ids = set(re.findall(r"[0-9]+", branch))
+    if branch:
+        ids.add(branch)
+        ids.add(branch.rsplit("/", 1)[-1])
+    return ids
+
+
+def _matched_domains(profile, changes):
+    matched = set()
+    for domain in (profile.get("risk") or {}).get("domains") or []:
+        did = domain.get("id") or ""
+        if not did:
+            continue
+        globs = domain.get("path_globs") or []
+        keywords = [str(k).lower() for k in (domain.get("content_keywords") or []) if str(k)]
+        for change in changes:
+            path = change.get("path") or ""
+            content = (change.get("content") or "").lower()
+            if any(fnmatch.fnmatch(path.lower(), str(pattern).lower()) for pattern in globs):
+                matched.add(did)
+                break
+            if any(keyword in content for keyword in keywords):
+                matched.add(did)
+                break
+    return matched
 
 
 def run_strategy(hook_id, profile, core_dir, changes, event, snapshot):
@@ -146,6 +189,8 @@ def run_strategy(hook_id, profile, core_dir, changes, event, snapshot):
             ftoks |= {t.lower() for t in re.split(r"[^A-Za-z0-9가-힣]+", cp + " " + os.path.basename(cp)) if len(t) >= 3}
         signals = {"tickets": set(re.findall(r"[0-9]+", event.get("branch", "") or "")),
                    "plan": set(), "files": ftoks,
+                   "cycle_ids": _review_cycle_ids(event),
+                   "matched_domains": _matched_domains(profile, changes),
                    "generic_tokens": rk.get("generic_tokens") or [],   # 전략 확장(profile 주입)
                    "review_patterns": rk.get("review_patterns") or []}
         return smod.find_l3_review(signals, snapshot)
@@ -605,6 +650,25 @@ def _snapshot_changed_06(root, profile, log_dir, session_id):
     return "ok", {key for key, h in _hash_06_glob(root, profile).items() if base.get(key) != h}
 
 
+def _session_start_overlay_l1(io, root):
+    """SessionStart L1 — CORE 렌더의 오버레이 관리 블록만 재수렴한다(편의 레이어, 강제 아님).
+
+    현재 오버레이 파일 기준으로 각 CORE 렌더 블록을 재합성해, sync 를 따로 안 돌려도 새 세션이 fresh
+    오버레이를 본다. manifest 앵커는 손대지 않는다 — 권위(base 무결성·업그레이드 skew)는 install/sync 와
+    validate(L2)가 소유하고, L1 이 앵커를 덮으면 advisory 재합성이 그 권위 영수증을 오염시킨다. skew 판정도
+    안 한다(현재 오버레이→현재 base 로만 수렴). retro-gate 와 무관한 독립 스텝이라 게이트 비활성 프로젝트에서도
+    돈다. 오버레이 로직은 sage 패키지에 있어 훅 python 에서 import 안 되면 조용히 skip(권위 경로가 보증).
+    어떤 오류도 SessionStart 를 막지 않는다(fail-open)."""
+    try:
+        from sage import overlay_materialize
+    except Exception:
+        return   # sage 패키지 미도달 → 편의 레이어 skip
+    try:
+        overlay_materialize.materialize(root, io.RUNTIME)   # 반환 앵커는 버린다(블록만 재합성)
+    except Exception:
+        return
+
+
 def run_session_start_snapshot(io, root, core_dir, raw_text):
     """session-start-snapshot 오케스트레이터(SessionStart). 이번 세션의 06 baseline(존재+해시)을 기록한다.
 
@@ -612,6 +676,8 @@ def run_session_start_snapshot(io, root, core_dir, raw_text):
     (W2/P0-b). 게이트 아님 → parse 실패 silent. 스냅샷은 세션당 **1회만** 쓴다: resume/재-SessionStart 가
     세션 도중 baseline 을 덮으면 그 전 변경이 baseline 에 흡수돼 감지에서 사라진다(write-once 로 방지)."""
     hid = "session-start-snapshot"
+    # 오버레이 블록 재수렴(L1)은 retro-gate·profile·parse 와 독립인 편의 스텝이라 early-return 앞에서 먼저 돈다.
+    _session_start_overlay_l1(io, root)
     raw = parse_input_fail_open(hid, raw_text, surface=False)
     if raw is None:
         return 0

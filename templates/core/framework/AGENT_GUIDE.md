@@ -35,10 +35,12 @@ this guide and `docs/agent/*`. They are NOT manifest-tracked: the
 manifest/claims/`validate` loop is reserved for project-authored assets created
 via `generate`/`extract`. **Do not edit these CORE renders directly** — the
 write-guard blocks it and `sage install --force` would overwrite the edit anyway.
-Customize them per-project via an **overlay** at `sage/asset_overrides/{agents,skills}/<id>.md`
-(hand-authored, install never ships it so `--force` preserves it; each CORE render reads
-its overlay first). Author overlays with `/sage-asset-override`; `sage validate` lints them
-for gate-relaxation. The CORE skills ship
+Customize them per-project via an **overlay** authored with `/sage-asset-override`, stored at
+`sage/asset_overrides/{agents,skills,framework}/<id>.md` (hand-authored, install never ships it so `--force`
+preserves it). SAGE **materializes** an eligible overlay directly into its CORE render as a managed
+block — do not read external overlay files by hand or edit renders directly. `sage validate` gates
+materialization (drift/tamper) and lints overlays for gate-relaxation. Overlays for gate-bearing
+assets without an independent oracle are not yet supported (validate reports them until SD-8). The CORE skills ship
 reference specs under `docs/sage_harness/skills/` (sage-init has none), but those
 specs are not manifest-registered. Until the profile is bootstrapped
 (`project.name` set + `risk`/`components` configured), `sage generate` is BLOCKED
@@ -128,7 +130,7 @@ plan-doc + risk checks only; the phase machinery is inert.
   `{host}/hooks`) — edit the spec under `docs/sage_harness/` and regenerate.
   The hand-shipped CORE bootstrap renders (the `sage-*` skills and the six CORE roster
   agent renders) are also write-guarded: don't edit them directly — customize per-project
-  via an overlay at `sage/asset_overrides/{agents,skills}/<id>.md` (`/sage-asset-override`).
+  via an overlay at `sage/asset_overrides/{agents,skills,framework}/<id>.md` (`/sage-asset-override`).
   See the bootstrap section above.
 - Report outcomes faithfully: if tests fail, say so with the output.
 

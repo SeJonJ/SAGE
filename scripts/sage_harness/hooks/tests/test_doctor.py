@@ -189,6 +189,33 @@ class TestDoctor(unittest.TestCase):
             for sid in install.core_skill_ids():
                 self.assertIn(f"{sid}: 최신", out)
 
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
+    def test_doctor_checks_every_manifest_installed_host(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as ch:
+            os.makedirs(os.path.join(root, "sage"))
+            prof = os.path.join(root, "sage", "project-profile.yaml")
+            Path(prof).write_text(
+                'project: { name: "t", prefix: "px" }\nruntime: { host: codex }\n',
+                encoding="utf-8",
+            )
+
+            class ClaudeArgs:
+                host = "claude"; dest = root; prefix = "px"; force = True; no_global_skill = False
+
+            class CodexArgs:
+                host = "codex"; dest = root; prefix = "px"; force = True; no_global_skill = False
+
+            with mock.patch.dict(os.environ, {"CODEX_HOME": ch}):
+                install.run(ClaudeArgs())
+                install.run(CodexArgs())
+                rc, out = run_doctor(prof)
+
+            self.assertEqual(rc, 0)
+            self.assertIn("installed_hosts=['claude', 'codex']", out)
+            self.assertIn("[claude] discovery surface", out)
+            self.assertIn("[codex] discovery surface", out)
+
     def test_codex_core_skill_status_rejects_unsafe_id(self):
         status, info = install.codex_core_skill_status("../escape")
         self.assertEqual(status, "error")

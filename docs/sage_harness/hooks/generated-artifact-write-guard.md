@@ -46,6 +46,13 @@ codex CORE skill 은 전역 `$CODEX_HOME/skills` 설치라 repo 경로로 가드
 비-CORE 렌더는 기존대로 `docs/sage_harness/<kind>s/<id>.md` spec→generate redirect. 오버레이 저작은
 `/sage-asset-override` 스킬이 안내하며, 게이트 완화 여부는 `sage validate` overlay 린트가 표면화한다.
 
+## AGENT_GUIDE.md (CORE 프레임워크 문서) 차단 + project-profile redirect (exit 2)
+`AGENT_GUIDE.md`(루트·하위경로)도 CORE 렌더이자 `core_renders` 앵커 대상이라 `sage install --force` 가
+덮어쓴다. 직접수정은 업그레이드에 조용히 사라지고, 렌더에 overlay-read 지시를 재주입하는 변조 경로이기도
+하다(`sage validate` L2 가 앵커 불일치로 탐지). framework 문서는
+`sage/asset_overrides/framework/<파일명>`으로 redirect하며, 값은 `sage/project-profile.yaml`, 문서 prose는
+framework override가 소유한다. override는 `domain_refs` 계약과 validate를 통과해야 한다.
+
 ## scope 메모 (v1)
 - 가드 범위 = agents/hooks/skills 디렉토리 (설계 §5.6 다이어그램 명시 범위)
 - settings.json / hooks.json(등록 산출물) 가드는 부트스트랩 중 직접편집 필요성 때문에 v1 보류 — 후속 결정

@@ -5,10 +5,7 @@ description: "Run SAGE Phase-05 independent review. Single-pass clean-context/cr
 
 # sage-review — SAGE Phase-05 Independent Review
 
-Before acting, read optional project overlay `sage/asset_overrides/skills/sage-review.md`
-if it exists. Apply it before these CORE instructions. The overlay is project-local and
-survives `sage install --force`. It may add project-specific guidance but must not relax AGENT_GUIDE, phase, review, or verification gates. Never edit this CORE render for project-specific loop
-learning.
+Do not edit this CORE render directly (the write-guard blocks it and `sage install --force` overwrites it). For project-local customization use `/sage-asset-override`: SAGE materializes an eligible overlay into this render as a managed block and `sage validate` gates it. Overlays for gate-bearing assets without an independent oracle are not yet supported (validate reports them).
 
 ## Read these first (mandatory, in order)
 

@@ -11,7 +11,7 @@ import re
 CONTRACT_VERSION = "1"
 
 # 범용 추출 패턴(프로젝트 무관)
-CONVENTION_DOC_RE = re.compile(r"docs/[\w_]+\.md")
+CONVENTION_DOC_RE = re.compile(r"(?<![\w-])docs/[\w_]+\.md")
 NAMESPACED_REF_RE = re.compile(r"`([a-z][\w-]+:[\w-]+)`")          # backend-development:backend-architect
 SKILL_PATH_RE = re.compile(r"\.(?:claude|codex)/skills/([\w-]+)(?:/SKILL)?\.md")
 AGENT_PATH_RE = re.compile(r"\.(?:claude|codex)/agents/([\w-]+)\.md")

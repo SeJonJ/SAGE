@@ -58,6 +58,9 @@ def conformance_lint(rendered_text: str, claims: dict, contradiction_patterns=No
         ctype = c["type"]
         if ctype in _SKIP_PRESENCE_TYPES:
             continue  # 서술형 — v1 presence-gate 제외
+        if ctype == "output_contract" and c.get("value") == "output:report_format":
+            if re.search(r"(?im)^#{1,6}\s+.*(?:output|result|report|response|결과|출력|리포트|응답)", text):
+                continue
         token = _presence_token(c["value"]).lower()
         # boundary-aware 매칭 (audit 2회차 P1-6: substring 오탐 차단 — backend-test-layer-extra 등)
         if token and re.search(r"(?<![\w-])" + re.escape(token) + r"(?![\w-])", low):

@@ -33,10 +33,13 @@ risk:                            # pre-implementation-gate / stop-compliance 가
   l3_filename_globs: []          # 예: ["**/*payment*", "**/*auth*"] — 고위험 도메인(plan+리뷰 필수)
   l2_content_keywords: []        # 내용 escalation: L1 → L2
   l3_content_keywords: []        # 내용 escalation: L1/L2 → L3
+  content_l3_enforce: warn       # warn(하위호환) | block. content-only L3 를 구현 전에 차단할지
+  domains: []                    # [{ id, risk_level, path_globs, content_keywords, protocol_pointer }]
   desktop_block_glob: ""         # 동기화 산출물/금지 경로 직접수정 BLOCK. 예: "dist/**" | "**/generated/**"
   desktop_block_hint: ""         # 차단 메시지 힌트. 예: "원본 수정 후 빌드/동기화"
   plan_glob: ""                  # plan 문서 스캔 글롭(루트 상대). 예: "plan_docs/**/*.md"
   l3_review_strategy: ""         # L3 review 매칭 canonical 선택(미선택=L3 안전 BLOCK): claude_grep_first | codex_feature_signal | <모듈명>
+  l3_review_glob: ""             # current-cycle pre-implementation 2-round review 문서 전용 glob
   generic_tokens: []             # (전략 확장) codex_feature_signal stopword — 스택특화 토큰(프레임워크/언어명)
   review_patterns: []            # (전략 확장) claude_grep_first 추가 리뷰 마커 정규식
 

@@ -60,7 +60,7 @@
     },
     "hooks/pre-implementation-gate": {
       "spec_hash": "sha256:14725b34bba7d106847b9ac2816d2a7be3345dd6e1c4191e598f685927a5e200",
-      "canonical_hash": "sha256:bd612fa4c52ba479d765e96abd830e273da0b85d8497a720c24f334611ca4946",
+      "canonical_hash": "sha256:ebeee5930dab31475c50c53c0e430317acc98233c81a84805f0408f2c0030214",
       "adapter_hash": {
         "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
         "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
@@ -97,10 +97,10 @@
       "test": "scripts/sage_harness/hooks/tests/test_stop_compliance_report.py"
     },
     "hooks/generated-artifact-write-guard": {
-      "spec_hash": "sha256:e2b8e67da029ede7ac7e510f218a400f16367cb324e9251490de4af2a69b61bc",
-      "canonical_hash": "sha256:c5edde265422439e951d4f122b60cfccf33f8f791125d5ff5c427c6e33ee95d9",
+      "spec_hash": "sha256:b88416d4329bda9f31f7f0fcfc34b7c3c5f550311912eb9812940fd9444617e9",
+      "canonical_hash": "sha256:866291daeda531c2ddb9312e608d1beb847ef485e585322255d02829dd0730fc",
       "render_hash": {
-        "native": "sha256:c5edde265422439e951d4f122b60cfccf33f8f791125d5ff5c427c6e33ee95d9"
+        "native": "sha256:866291daeda531c2ddb9312e608d1beb847ef485e585322255d02829dd0730fc"
       },
       "adapter_contract_version": "1",
       "conformance": "PASS",
@@ -118,17 +118,17 @@
       "canonical_hash": "sha256:bdeb1dcf32159149493882ee8e87bb4ca4de33154f6c205333995b88543d1277",
       "adapter_contract_version": "1",
       "adapter_hash": {
-        "claude": "sha256:b26a97efa5264b2b60dd54df70b1bf65b4974cf3ca99e9f07506267937720cbc",
-        "codex": "sha256:e7a33a0f14a56461af6cba1d328b972f182697407d634e7a9610c0f561fc64d2"
+        "claude": "sha256:3fcb32b68a23d2d0629302ea1e69dcbd51ecea58315effa14642a3c1d1c4d0e5",
+        "codex": "sha256:13b24441f471a758bb8ac009c63571fc39ee9822c10aad7230424e02670fb26b"
       },
       "render_hash": {
-        "claude": "sha256:b26a97efa5264b2b60dd54df70b1bf65b4974cf3ca99e9f07506267937720cbc",
-        "codex": "sha256:e7a33a0f14a56461af6cba1d328b972f182697407d634e7a9610c0f561fc64d2"
+        "claude": "sha256:3fcb32b68a23d2d0629302ea1e69dcbd51ecea58315effa14642a3c1d1c4d0e5",
+        "codex": "sha256:13b24441f471a758bb8ac009c63571fc39ee9822c10aad7230424e02670fb26b"
       }
     }
   },
   "hook_runtime_hash": {
-    "shared": "sha256:cb33475437db49f1e07a2fcda619e1d8904616151efafb0b85e13c8a3f20c051",
+    "shared": "sha256:ed02798ed299045650855a05285885619f8967359a1728ff6868bf8d300bb15c",
     "claude": "sha256:d0af1829282e733b78b6cc3540402a9c4e746d97ec5c6319ec903cc8607cf4e5",
     "codex": "sha256:ab851a7b2e228e4b8cdbdd2599cea9d74083c1a3a6731dd648b1017ad66356ea"
   }

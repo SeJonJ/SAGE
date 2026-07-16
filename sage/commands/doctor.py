@@ -10,6 +10,7 @@ import os
 import platform
 import shutil
 import sys
+from pathlib import Path
 
 
 def register(sub):
@@ -177,22 +178,36 @@ def _check_core_render_drift(profile, prof_path):
     로컬 커스터마이즈는 CORE 렌더 직접수정이 아니라 `sage/asset_overrides/**`(install-safe)로 두어 보존한다.
     """
     from sage.commands import install
-    host = (profile.get("runtime") or {}).get("host", "claude")
     root = _project_root_from_profile(prof_path)   # None → templates 기본(프로젝트 아님)
+    host = (profile.get("runtime") or {}).get("host", "claude")
+    manifest = None
+    if root is not None:
+        import json
+        try:
+            manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
+        except Exception:
+            manifest = None
+    hosts = manifest.get("installed_hosts") if isinstance(manifest, dict) else None
+    if not isinstance(hosts, list):
+        legacy = manifest.get("host_runtime") if isinstance(manifest, dict) else host
+        hosts = [legacy]
+    hosts = list(dict.fromkeys(h for h in hosts if h in ("claude", "codex"))) or [host]
     print("## CORE 렌더 drift 점검 (스킬 + 로스터 에이전트)")
-    print(f"  host={host} · 기준: `sage install` 가 hand-ship 하는 CORE 렌더 (manifest 비추적)")
+    print(f"  installed_hosts={hosts} · 기준: `sage install` hand-shipped CORE 렌더")
     stale, missing = [], []
 
-    for sid in install.core_skill_ids():
-        if host == "codex":
-            status, dst = install.codex_core_skill_status(sid)   # 전역 $CODEX_HOME/skills 대조
-        elif root is not None:
-            status, dst = install.core_render_status(
-                install._core_skill_source(sid),
-                os.path.join(root, ".claude", "skills", sid, "SKILL.md"))
-        else:
-            continue   # claude repo 스킬은 프로젝트 루트가 있어야 점검 가능
-        _emit_core_drift("skill", sid, status, dst, stale, missing)
+    for installed_host in hosts:
+        print(f"  [{installed_host}] discovery surface")
+        for sid in install.core_skill_ids():
+            if installed_host == "codex":
+                status, dst = install.codex_core_skill_status(sid)
+            elif root is not None:
+                status, dst = install.core_render_status(
+                    install._core_skill_source(sid),
+                    os.path.join(root, ".claude", "skills", sid, "SKILL.md"))
+            else:
+                continue
+            _emit_core_drift("skill", sid, status, dst, stale, missing)
 
     # install 이 쓰기 전에 거부하는 것과 **같은 검사**. 여기서 잡히면 렌더 대조는 의미가 없다.
     invalid = [m for sev, m in install.team_runtime_issues(profile) if sev == "FAIL"]
@@ -200,17 +215,33 @@ def _check_core_render_drift(profile, prof_path):
         print(f"  ❌ [agent] {msg}")
 
     if root is not None and not invalid:
-        agent_dir = ".claude" if host == "claude" else ".codex"
-        for aid in install.core_agent_ids():
-            # claude host 만 profile 의 model/effort 를 렌더에 주입한다 → 기대 렌더도 같은 기준이어야
-            # drift 로 오판되지 않는다. codex 는 주입 기전이 없어 소스 원문이 기대값.
-            overrides = install.agent_frontmatter_overrides(profile, aid) if host == "claude" else {}
-            status, dst = install.core_render_status(
-                install._core_agent_source(aid),
-                os.path.join(root, agent_dir, "agents", f"{aid}.md"), overrides)
-            _emit_core_drift("agent", aid, status, dst, stale, missing)
+        for installed_host in hosts:
+            agent_dir = ".claude" if installed_host == "claude" else ".codex"
+            for aid in install.core_agent_ids():
+                overrides = install.agent_frontmatter_overrides(profile, aid) if installed_host == "claude" else {}
+                status, dst = install.core_render_status(
+                    install._core_agent_source(aid),
+                    os.path.join(root, agent_dir, "agents", f"{aid}.md"), overrides)
+                _emit_core_drift("agent", aid, status, dst, stale, missing)
     elif root is None:
         print("  ℹ️  프로젝트 루트 미상(templates 기본 profile) → 로스터 에이전트 점검 생략.")
+
+    # 오버레이 물리화 drift 표면화(진단용). 권위 게이트는 `sage validate`(exit 1) — 여기선 가시성만 제공.
+    if root is not None:
+        import json as _json
+        from sage import overlay_materialize as _mat
+        mpath = os.path.join(root, "docs", "sage_harness", ".manifest.json")
+        _mani = manifest
+        cr = _mani.get("core_renders") if isinstance(_mani, dict) else None
+        if cr:
+            for installed_host in hosts:
+                ov = _mat.check(root, installed_host, cr)
+                if ov:
+                    print(f"  [{installed_host}] 오버레이 물리화 drift (→ `sage validate`, `sage sync-overlays`):")
+                    for sev, key, msg in ov:
+                        print(f"    {'❌' if sev == 'FAIL' else '🕒'} {sev} [{key}] {msg}")
+        elif isinstance(_mani, dict) and "core_renders" not in _mani:
+            print("  ℹ️  overlay 물리화 앵커 없음 → `sage install --force` 로 생성 권장.")
 
     if invalid:
         # 이 profile 로는 install 이 거부한다 → `--force` 를 권하면 유저가 헛돈다. stale/missing 안내는
@@ -221,13 +252,23 @@ def _check_core_render_drift(profile, prof_path):
             print(f"      (렌더 drift {len(stale) + len(missing)}건도 있으나 profile 을 고친 뒤 다시 진단하세요)")
         return 1
     if stale or missing:
+        repair_host = hosts[0] if len(hosts) == 1 else "<host>"
         if stale:
-            print(f"  ⚠️  갱신 필요 {len(stale)}건 → `sage install --host {host} --force`")
+            print(f"  ⚠️  갱신 필요 {len(stale)}건 → `sage install --host {repair_host} --force`")
         if missing:
-            print(f"  ⚠️  미설치 {len(missing)}건 → `sage install --host {host} --force`")
+            print(f"  ⚠️  미설치 {len(missing)}건 → `sage install --host {repair_host} --force`")
         print("      (로컬 커스터마이즈는 sage/asset_overrides/** 에 두면 --force 에도 보존됩니다 — /sage-asset-override.)")
     else:
         print("  ✅ 모든 CORE 렌더 최신")
+
+    if root is not None:
+        print("## critical-domain protocol pointers")
+        for domain in (profile.get("risk") or {}).get("domains") or []:
+            pointer = domain.get("protocol_pointer") if isinstance(domain, dict) else None
+            if pointer and os.path.isfile(os.path.join(root, pointer)):
+                print(f"  ✅ {domain.get('id')}: {pointer}")
+            else:
+                print(f"  ⚠️  {domain.get('id')}: protocol pointer 없음 ({pointer or 'unset'})")
     return 0
 
 

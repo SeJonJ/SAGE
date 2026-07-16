@@ -47,6 +47,11 @@ for p in out:
 #  소유하고 비-MCP 설정 공존이라 파일 통째 가드 안 함 — staleness+소유권 검사로 보호. MCP plan §2.3 비대칭.)
 is_guarded() {
   local p; p="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  # framework override는 CORE 렌더의 정식 저작 경로다. 렌더와 basename이 같으므로
+  # 일반 framework 문서 패턴보다 먼저 예외 처리하지 않으면 redirect 대상 자체를 차단한다.
+  case "$p" in
+    sage/asset_overrides/framework/*.md|*/sage/asset_overrides/framework/*.md) return 1 ;;
+  esac
   # CORE 부트스트랩 렌더(install hand-ship: CORE skill·로스터 에이전트)도 이제 가드한다.
   #   과거엔 spec→generate 산출물이 아니라는 이유로 면제했으나, 그러면 CORE 렌더 직접수정이 무방비였고
   #   sage install --force 가 그 수정을 조용히 덮어썼다. 이제 sage/asset_overrides/** (install-safe overlay)가
@@ -56,6 +61,19 @@ is_guarded() {
     *.claude/agents/*|*.claude/hooks/*|*.claude/skills/*) return 0 ;;
     *.codex/agents/*|*.codex/hooks/*|*.codex/skills/*)    return 0 ;;
     .mcp.json|*/.mcp.json)                                 return 0 ;;
+    # AGENT_GUIDE.md 도 CORE 렌더(sage install --force 가 덮어씀)이자 core_renders 앵커 대상.
+    #   직접 편집은 업그레이드에 조용히 사라지고, overlay-read 재주입 변조 경로이기도 하다. framework
+    #   문서는 framework override 로 프로젝트 고유 규칙을 보존한다.
+    agent_guide.md|*/agent_guide.md|claude.md|*/claude.md|codex.md|*/codex.md|agents.md|*/agents.md) return 0 ;;
+  esac
+  return 1
+}
+
+# CORE 프레임워크 문서면 return 0. block() 이 framework overlay 로 안내한다.
+is_framework_doc() {
+  local p; p="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$p" in
+    agent_guide.md|*/agent_guide.md|claude.md|*/claude.md|codex.md|*/codex.md|agents.md|*/agents.md) return 0 ;;
   esac
   return 1
 }
@@ -76,6 +94,14 @@ core_overlay_hint() {
 
 block() {
   # printf 사용(heredoc temp 파일 회피 — 제한 환경에서도 exit 2 보장, audit 5회차 P1).
+  if is_framework_doc "$1"; then
+    local framework_overlay="sage/asset_overrides/framework/$(basename "$1")"
+    printf '%s\n' \
+      "⛔ SAGE write guard: '$1' 는 CORE 프레임워크 문서입니다. 직접수정 금지 (sage install --force 가 덮어씀)." \
+      "→ 프로젝트 값은 'sage/project-profile.yaml', 문서 고유 prose는 '$framework_overlay' 에 작성하세요." \
+      "→ framework override는 domain_refs frontmatter 계약과 'sage validate'를 통과해야 합니다." >&2
+    exit 2
+  fi
   local overlay=""; overlay="$(core_overlay_hint "$1")" || true
   if [ -n "$overlay" ]; then
     printf '%s\n' \

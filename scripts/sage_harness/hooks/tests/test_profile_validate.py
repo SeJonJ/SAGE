@@ -42,6 +42,35 @@ class TestProfileSchema(unittest.TestCase):
 
 
 class TestProfileSemantic(unittest.TestCase):
+    def test_standard_cross_runtime_project_root_env_is_valid(self):
+        issues = sevs({"hooks": {"project_root_env": "SAGE_PROJECT_ROOT"}})
+        self.assertNotIn("FAIL", [s for s, _ in issues])
+
+    def test_custom_project_root_env_fails_instead_of_being_ignored(self):
+        issues = sevs({"hooks": {"project_root_env": "MY_PROJECT_ROOT"}})
+        self.assertTrue(any(s == "FAIL" and "project_root_env" in m for s, m in issues))
+
+    def test_risk_domains_valid(self):
+        profile = {"risk": {"domains": [{
+            "id": "webrtc", "risk_level": "L3", "path_globs": ["**/rtc/**"],
+            "content_keywords": ["RTCPeerConnection"],
+            "protocol_pointer": "sage/critical-domains/webrtc.md",
+        }]}}
+        self.assertNotIn("FAIL", [s for s, _ in sevs(profile)])
+
+    def test_risk_domains_duplicate_id_fails(self):
+        domain = {"id": "webrtc", "risk_level": "L3", "path_globs": ["**/rtc/**"],
+                  "content_keywords": ["RTC"], "protocol_pointer": "sage/critical-domains/webrtc.md"}
+        issues = sevs({"risk": {"domains": [domain, dict(domain)]}})
+        self.assertTrue(any(s == "FAIL" and "중복" in m for s, m in issues))
+
+    def test_risk_domains_unsafe_pointer_fails(self):
+        profile = {"risk": {"domains": [{
+            "id": "webrtc", "risk_level": "L3", "path_globs": [], "content_keywords": [],
+            "protocol_pointer": "../outside.md",
+        }]}}
+        self.assertTrue(any(s == "FAIL" and "protocol_pointer" in m for s, m in sevs(profile)))
+
     def test_missing_strategy_module_fail(self):
         prof = {"risk": {"l3_review_strategy": "no_such_strategy_xyz", "l3_filename_globs": ["*x*"]}}
         issues = sevs(prof)

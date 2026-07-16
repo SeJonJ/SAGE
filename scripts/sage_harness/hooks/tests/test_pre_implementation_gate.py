@@ -47,8 +47,12 @@ class TestClassify(unittest.TestCase):
             self.assertEqual(core.classify_risk(ev(path, content), PROFILE)["risk"], exp, path)
 
     def test_content_escalation(self):
-        self.assertEqual(core.classify_risk(ev("frontend/static/js/x.js", "encrypt()"), PROFILE)["risk"], "L3")
-        self.assertEqual(core.classify_risk(ev("frontend/static/js/x.js", "Repository"), PROFILE)["risk"], "L2")
+        l3 = core.classify_risk(ev("frontend/static/js/x.js", "encrypt()"), PROFILE)
+        l2 = core.classify_risk(ev("frontend/static/js/x.js", "Repository"), PROFILE)
+        self.assertEqual(l3["risk"], "L3")
+        self.assertEqual(l3["trigger_sources"], ["path_l1", "content_l3"])
+        self.assertEqual(l2["risk"], "L2")
+        self.assertEqual(l2["trigger_sources"], ["path_l1", "content_l2"])
 
     def test_l0_content_l3_flagged(self):
         # P2-9: L0 즉시통과 문서(.md)에 L3 키워드 포함 → 위험은 L0 유지(비차단)하되 l0_l3_file 플래그.
@@ -67,7 +71,9 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(core.classify_risk(ev("generated/x.js"), PROFILE)["risk"], "DESKTOP_BLOCK")
 
     def test_declared_escalation(self):
-        self.assertEqual(core.classify_risk(ev("frontend/static/js/x.js", "", declared="L3"), PROFILE)["risk"], "L3")
+        c = core.classify_risk(ev("frontend/static/js/x.js", "", declared="L3"), PROFILE)
+        self.assertEqual(c["risk"], "L3")
+        self.assertEqual(c["trigger_sources"], ["path_l1", "declared_l3"])
 
     def test_reason_neutral_no_stack_leak(self):
         # 제약 #2: core 분류 사유는 스택/도메인 중립이어야 한다(엔진 도메인값 0).
@@ -100,12 +106,30 @@ class TestDecide(unittest.TestCase):
         self.assertEqual(d["message_key"], "block_l3_no_plan")
         self.assertEqual(d["exit_code"], 2)
 
+    def test_content_l3_block_is_opt_in_and_l0_carveout_remains(self):
+        enforcing = json.loads(json.dumps(PROFILE))
+        enforcing["risk"]["content_l3_enforce"] = "block"
+        content_event = ev("frontend/static/js/x.js", "encrypt()")
+        blocked = core.decide(content_event, enforcing, snap(plan=[]), {"found": False})
+        compatible = core.decide(content_event, PROFILE, snap(plan=[]), {"found": False})
+        l0 = core.decide(ev("docs/x.md", "encrypt()"), enforcing, snap(plan=[]), None)
+        self.assertEqual(blocked["message_key"], "block_l3_no_plan")
+        self.assertEqual(compatible["message_key"], "warn_l3_no_review")
+        self.assertEqual(l0["message_key"], "warn_l0_l3_content")
+
     def test_l3_strategy_unselected_block(self):
         # plan 있음 → no-plan block 회피, 전략 미선택 → safety BLOCK
         plan = [{"path": "plan_docs/00-base_plan/x.md", "content": "#127 feature"}]
         d = core.decide(ev("a/payment.java", branch="bug/127"), PROFILE, snap(plan=plan), None)
         self.assertEqual(d["message_key"], "block_l3_strategy_unresolved")
         self.assertTrue(d["safety_degraded"])
+        self.assertEqual(d["exit_code"], 2)
+
+    def test_sd8_strategy_not_found_blocks_instead_of_warn(self):
+        plan = [{"path": "plan_docs/00-base_plan/x.md", "content": "#127 feature"}]
+        d = core.decide(ev("a/payment.java", branch="bug/127"), PROFILE, snap(plan=plan),
+                        {"found": False, "enforce": True, "reason": "missing domain review"})
+        self.assertEqual(d["message_key"], "block_l3_review_evidence")
         self.assertEqual(d["exit_code"], 2)
 
     def test_l3_strategy_found_ok(self):

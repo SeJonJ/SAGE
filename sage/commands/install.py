@@ -20,6 +20,8 @@ from pathlib import Path
 from sage import __version__
 
 from sage import _resources   # 번들 리소스 경로 단일 해석(env override + repo fallback — 재배치/설치 대비)
+from sage import overlay_common   # 오버레이 관리 블록 프리미티브(base_of 로 렌더 base 대조)
+from sage import overlay_materialize   # CORE 렌더 오버레이 물리화 + core_renders 앵커
 
 # CORE roster (중립 6인) + CORE hook 7종(form) + CORE skill 7종. 도메인값 아님 = framework 메타.
 # skill 3분할: sage-cycle(00~06 우산) → sage-plan(00~02 기획) → sage-team(03~06 개발).
@@ -368,7 +370,16 @@ def core_render_status(src, dst, overrides=None):
         return ("missing", dst)
     try:
         expected = render_core_agent(Path(src).read_text(encoding="utf-8"), overrides)
-        return ("ok" if Path(dst).read_text(encoding="utf-8") == expected else "stale", dst)
+        # 오버레이 물리화 이후 설치본은 base + 관리 블록일 수 있다. drift 는 **base 만** 대조한다
+        # (블록 반영/변조는 overlay_materialize.check 가 별도 담당) — 정당한 오버레이가 stale 오판되지 않도록.
+        exp_base, _ = overlay_common.base_of(expected)
+        installed, rerr = overlay_common.read_text_lf(dst)
+        if rerr:
+            return ("error", rerr)
+        got_base, berr = overlay_common.base_of(installed)
+        if berr:
+            return ("error", f"{dst} ({berr})")
+        return ("ok" if got_base == exp_base else "stale", dst)
     except (OSError, UnicodeError) as e:
         return ("error", f"{dst} ({e})")
 
@@ -456,14 +467,18 @@ def _load_manifest(dest):
     return m if isinstance(m, dict) else None
 
 
-def _manifest(host, existing=None):
+def _manifest(host, existing=None, core_renders=None):
     """CORE hook 7종을 등록한 manifest(스켈레톤). hash/conformance 는 generate 가 스탬프.
 
     existing 이 주어지면(--force 재설치) 그 manifest 가 등록한 인스턴스 자산(sage generate 가 stamp 한
     mcps/agents/skills 및 사용자 추가 hook)을 보존하고 CORE hook 항목만 미스탬프 스켈레톤으로 되돌린다.
     CORE hook 은 엔진 자산이라 업그레이드 시 재스탬프 대상이지만, 다른 kind 는 인스턴스 소유라 profile.yaml
     과 같은 보존 정책을 따라야 한다 — 안 그러면 --force 가 등록을 지워 다음 validate 부터 orphan drift 가
-    난다. 최초 install(existing=None)은 빈 스켈레톤(동작 불변)."""
+    난다. 최초 install(existing=None)은 빈 스켈레톤(동작 불변).
+
+    core_renders 는 엔진 소유 최상위 맵(오버레이 base drift 영수증). CORE hook 처럼 인스턴스 보존
+    대상이 아니라 매 install 마다 최종 base 로 전량 재계산한다 — preserved 옛 앵커가 새 버전과 공존해
+    skew 를 감추지 못하도록(assets 보존에서 제외)."""
     assets = {}
     if isinstance(existing, dict) and isinstance(existing.get("assets"), dict):
         # 인스턴스 등록 자산(mcps/agents/skills 및 사용자 추가 hook)만 보존한다. 값이 dict 가 아닌 손상
@@ -475,14 +490,32 @@ def _manifest(host, existing=None):
         assets[f"hooks/{hid}"] = {
             "form": form, "conformance": "UNKNOWN", "risk": [], "unresolved": [],
         }
+    previous_primary = existing.get("host_runtime") if isinstance(existing, dict) else None
+    previous_hosts = existing.get("installed_hosts") if isinstance(existing, dict) else None
+    if not isinstance(previous_hosts, list):
+        previous_hosts = [previous_primary] if previous_primary in ("claude", "codex") else []
+    installed_hosts = list(dict.fromkeys([h for h in previous_hosts + [host]
+                                          if h in ("claude", "codex")]))
+    from sage.build_identity import source_identity
+    identity = source_identity()
+    merged_core_renders = {}
+    if isinstance(existing, dict) and isinstance(existing.get("core_renders"), dict):
+        merged_core_renders = {key: value for key, value in existing["core_renders"].items()
+                               if not key.startswith(host + "/")}
+    if isinstance(core_renders, dict):
+        merged_core_renders.update(core_renders)
     return {
         # 설치를 만든 SAGE 패키지 버전을 그대로 스탬프(sage --version 과 일치).
         # template_version 은 manifest 포맷 버전이라 패키지 버전과 독립적으로 고정.
         "sage_version": __version__, "generator_version": __version__, "template_version": "1",
-        "host_runtime": host,
+        "host_runtime": previous_primary if previous_primary in ("claude", "codex") else host,
+        "installed_hosts": installed_hosts,
+        **identity,
         # 설치 인스턴스 마커(다중 신호) — 부트스트랩 게이트가 AGENT_GUIDE 분실 시에도 설치를 인식(codex R2-P0).
         "installed_instance": True,
         "assets": assets,
+        # 엔진 소유(인스턴스 자산 아님) — 매 install 재계산, 보존 안 함.
+        "core_renders": merged_core_renders,
     }
 
 
@@ -524,8 +557,15 @@ def run(args) -> int:
     _copy_file(os.path.join(fw, wrapper), os.path.join(dest, wrapper), args.force, created, skipped)
     _copy_file(os.path.join(fw, "verification-protocol.md"),
                os.path.join(dest, "verification-protocol.md"), args.force, created, skipped)
-    _copy_file(os.path.join(fw, "scripts", "verify-changes.sh"),
-               os.path.join(dest, "scripts", "verify-changes.sh"), args.force, created, skipped)
+    verify_dst = os.path.join(dest, "scripts", "verify-changes.sh")
+    project_local_script = ((_profile.get("verification") or {}).get("project_local_script")
+                            if isinstance(_profile.get("verification"), dict) else None)
+    if project_local_script == "scripts/verify-changes.sh" and os.path.isfile(verify_dst):
+        print("보존: scripts/verify-changes.sh (profile verification.project_local_script)")
+        skipped.append(verify_dst)
+    else:
+        _copy_file(os.path.join(fw, "scripts", "verify-changes.sh"),
+                   verify_dst, args.force, created, skipped)
     _copy_tree(os.path.join(fw, "docs", "agent"), os.path.join(dest, "docs", "agent"), args.force, created, skipped)
 
     # 2b. 대화형 부트스트랩 트리거 — profile 을 대화로 채우는 설계상 진입점(런타임별 발견 메커니즘 상이).
@@ -603,11 +643,22 @@ def run(args) -> int:
         elif not getattr(args, "no_global_skill", False):
             _prune_legacy_skill(os.path.join(_codex_skills_root(), legacy), pruned)
 
-    # 6. manifest (CORE hook 등록 — generate 가 hash 스탬프). --force 재설치는 기존 manifest 의
-    #    인스턴스 등록 자산(mcps/agents/skills)을 보존하고 CORE hook 만 리셋(profile.yaml 과 동일 보존 정책).
+    # 5e. 오버레이 물리화 + core_renders 앵커 — CORE 렌더 base 에 (a)/(b) 오버레이 블록을 물리 삽입하고
+    #     (c)/미분류는 블록 없이 base 앵커만 기록. install·sync·L1·validate 가 같은 로직(overlay_materialize)을 경유.
+    core_renders, overlay_changed, overlay_errors = overlay_materialize.materialize(dest, args.host)
+    for p in sorted(overlay_changed):
+        print(f"  ~ 오버레이 물리화: {os.path.relpath(p, dest)}")
+    for p, msg in overlay_errors:
+        print(f"  ❌ 오버레이 물리화 실패({os.path.relpath(p, dest)}): {msg}", file=sys.stderr)
+    if overlay_errors:
+        print("---- sage install: FAIL (manifest 미갱신) ----", file=sys.stderr)
+        return 1
+
+    # 6. manifest (CORE hook 등록 — generate 가 hash 스탬프 + core_renders 앵커). --force 재설치는 기존
+    #    manifest 의 인스턴스 등록 자산(mcps/agents/skills)을 보존하고 CORE hook·core_renders 만 리셋.
     _write(os.path.join(dest, "docs", "sage_harness", ".manifest.json"),
-           json.dumps(_manifest(args.host, _load_manifest(dest)), ensure_ascii=False, indent=2) + "\n",
-           args.force, created, skipped)
+           json.dumps(_manifest(args.host, _load_manifest(dest), core_renders), ensure_ascii=False, indent=2) + "\n",
+           True, created, skipped)
 
     # 7. spec 템플릿(사람 작성 참고) + schema(validate 참조)
     templates = _resources.templates_dir()

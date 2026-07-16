@@ -34,12 +34,29 @@
         "l3_filename_globs": { "type": "array" },
         "l2_content_keywords": { "type": "array" },
         "l3_content_keywords": { "type": "array" },
+        "content_l3_enforce": { "enum": ["warn", "block"] },
+        "domains": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "risk_level", "path_globs", "content_keywords", "protocol_pointer"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+              "risk_level": { "enum": ["L1", "L2", "L3"] },
+              "path_globs": { "type": "array", "items": { "type": "string" } },
+              "content_keywords": { "type": "array", "items": { "type": "string" } },
+              "protocol_pointer": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
         "generic_tokens": { "type": "array" },
         "review_patterns": { "type": "array" },
         "desktop_block_glob": { "type": "string" },
         "desktop_block_hint": { "type": "string" },
         "plan_glob": { "type": "string" },
         "l3_review_strategy": { "type": "string" }
+        ,"l3_review_glob": { "type": "string" }
       }
     },
     "file_type_map": { "type": "array" },
