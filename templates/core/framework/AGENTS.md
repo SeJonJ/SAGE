@@ -8,6 +8,7 @@ at session start; it is a thin router, not a rules duplicate.
 1. `AGENT_GUIDE.md` — the single source of truth (rules, risk gate, PDCA, safety).
 2. `CODEX.md` — Codex-specific execution wrapper notes.
 3. `sage/project-profile.yaml` — project values.
+4. `sage/project-profile.local.yaml` — machine values, when present.
 
 ## Bootstrap first (if not done)
 
@@ -29,3 +30,7 @@ scope copies after confirming intent, and re-run
 `sage install --host codex --skill-scope <scope> --force`; or follow
 `docs/agent/bootstrap-authoring.md` manually. Claude
 runtime users invoke the same flow via the repo-scoped `/sage-init` skill.)
+
+If the shared profile is already bootstrapped, do not run `$sage-init` again.
+Run `$sage-init-local` to create or update only the Git-ignored local capability
+profile. Shared policy changes use `$sage-profile-modify`.

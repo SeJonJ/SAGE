@@ -71,6 +71,35 @@ def _profile_with_structure(root, vault):
 
 
 class TestKnowledge(unittest.TestCase):
+    def test_profile_loader_applies_adjacent_local_knowledge_override(self):
+        with tempfile.TemporaryDirectory() as root:
+            shared = os.path.join(root, "sage", "project-profile.yaml")
+            _profile(root, "/shared-vault")
+            Path(os.path.join(root, "sage", "project-profile.local.yaml")).write_text(
+                "knowledge_capture:\n  enabled: false\n",
+                encoding="utf-8",
+            )
+
+            profile, err = knowledge._load_profile(shared)
+
+            self.assertIsNone(err)
+            self.assertFalse(profile["knowledge_capture"]["enabled"])
+            self.assertEqual(profile["knowledge_capture"]["vault_path"], "")
+
+    def test_profile_loader_applies_adjacent_local_vault_path(self):
+        with tempfile.TemporaryDirectory() as root:
+            shared = os.path.join(root, "sage", "project-profile.yaml")
+            _profile(root, "/shared-vault")
+            Path(os.path.join(root, "sage", "project-profile.local.yaml")).write_text(
+                "knowledge_capture:\n  enabled: true\n  vault_path: /local-vault\n",
+                encoding="utf-8",
+            )
+
+            profile, err = knowledge._load_profile(shared)
+
+            self.assertIsNone(err)
+            self.assertEqual(profile["knowledge_capture"]["vault_path"], "/local-vault")
+
     def test_scan_writes_matches_deterministically(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
             os.makedirs(os.path.join(vault, "wiki"))

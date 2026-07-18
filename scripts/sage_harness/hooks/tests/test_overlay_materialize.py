@@ -35,7 +35,7 @@ def _base_renders(dest):
     for aid in ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]:
         _mk_render(dest, f".claude/agents/{aid}.md", f"# {aid}\nCORE body.\n")
     for sid in ["sage-cycle", "sage-plan", "sage-team", "sage-review", "sage-asset",
-                "sage-profile-modify", "sage-asset-override", "sage-init"]:
+                "sage-profile-modify", "sage-asset-override", "sage-init", "sage-init-local"]:
         _mk_render(dest, f".claude/skills/{sid}/SKILL.md", f"# {sid}\nCORE body.\n")
     _mk_render(dest, "AGENT_GUIDE.md", "# AGENT_GUIDE\nnon-negotiable.\n")
     _mk_render(dest, "CLAUDE.md", "# CLAUDE\nwrapper.\n")
@@ -99,7 +99,7 @@ class TestMaterialize(unittest.TestCase):
             _base_renders(d)
             cr, _, _ = m.materialize(d, "claude")
             # 6 agents + 8 skills + AGENT_GUIDE + CLAUDE wrapper = 16
-            self.assertEqual(len(cr), 16)
+            self.assertEqual(len(cr), 6 + len(m._cls.CORE_IDS["skills"]) + 2)
             self.assertIn("claude/framework/AGENT_GUIDE", cr)
             self.assertIn("claude/framework/CLAUDE", cr)
             for v in cr.values():

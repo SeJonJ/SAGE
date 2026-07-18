@@ -26,18 +26,21 @@ from sage import overlay_common   # 오버레이 관리 블록 프리미티브(b
 from sage import overlay_materialize   # CORE 렌더 오버레이 물리화 + core_renders 앵커
 from sage import install_transaction as _tx
 
-# CORE roster (중립 6인) + CORE hook 7종(form) + CORE skill 7종. 도메인값 아님 = framework 메타.
+# CORE roster (중립 6인) + CORE hook 7종(form) + CORE skill 9종. 도메인값 아님 = framework 메타.
 # skill 3분할: sage-cycle(00~06 우산) → sage-plan(00~02 기획) → sage-team(03~06 개발).
 # sage-asset-override: CORE 자산 오버레이(sage/asset_overrides/**) 저작 — CORE 렌더 직접수정 대체 경로.
 _CORE_AGENTS = ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]
 _CORE_SKILLS = ["sage-cycle", "sage-plan", "sage-team", "sage-review", "sage-asset", "sage-profile-modify", "sage-asset-override"]
-_CORE_BOOTSTRAP_SKILL = "sage-init"
+_CORE_BOOTSTRAP_SKILLS = ["sage-init", "sage-init-local"]
 # 은퇴한 CORE skill 이름 — install 시 잔존 사본을 정리(rename 수렴). 이름이 바뀌면 옛 이름을 여기 추가.
 # sage-pdca-start → sage-plan 으로 3분할 rename(옛 이름 잔존 사본 정리). pdca-start 는 그 이전 rename.
 _LEGACY_CORE_SKILLS = ["pdca-start", "sage-pdca-start"]
 # SAGE 가 hand-ship 하는 모든 CORE skill SKILL.md 에 들어있는 마커. 정리 전 SAGE 자산 확인용
 # (codex 전역처럼 공유 공간에서 동명의 사용자 skill 을 오삭제하지 않도록).
 _LEGACY_SKILL_SIGNATURE = "CORE framework bootstrap asset"
+_LOCAL_PROFILE_IGNORE_START = "# >>> SAGE LOCAL PROFILE"
+_LOCAL_PROFILE_IGNORE_END = "# <<< SAGE LOCAL PROFILE"
+_LOCAL_PROFILE_IGNORE_ENTRY = "/sage/project-profile.local.yaml"
 _CORE_HOOKS = [
     ("capture-declared-risk", "core_adapter"),
     ("post-tool-logger", "core_adapter"),
@@ -110,6 +113,46 @@ def _copy_file(src, dst, force, created, skipped, transaction=None):
     executable = src.endswith(".sh")
     _write(dst, Path(src).read_text(encoding="utf-8"), force, created, skipped, executable,
            transaction=transaction)
+
+
+def _render_local_profile_gitignore(current):
+    """Preserve user entries while owning one deterministic local-profile block."""
+    text = current.replace("\r\n", "\n").replace("\r", "\n")
+    start_count = text.count(_LOCAL_PROFILE_IGNORE_START)
+    end_count = text.count(_LOCAL_PROFILE_IGNORE_END)
+    if start_count != end_count or start_count > 1:
+        raise _tx.InstallDriftError(".gitignore SAGE LOCAL PROFILE 관리 마커가 손상됨")
+    block = (f"{_LOCAL_PROFILE_IGNORE_START}\n"
+             f"{_LOCAL_PROFILE_IGNORE_ENTRY}\n"
+             f"{_LOCAL_PROFILE_IGNORE_END}\n")
+    if start_count == 1:
+        start = text.index(_LOCAL_PROFILE_IGNORE_START)
+        end_start = text.index(_LOCAL_PROFILE_IGNORE_END)
+        if end_start < start:
+            raise _tx.InstallDriftError(".gitignore SAGE LOCAL PROFILE 관리 마커가 손상됨")
+        end = end_start + len(_LOCAL_PROFILE_IGNORE_END)
+        text = text[:start] + block + text[end:].lstrip("\n")
+    else:
+        text = text.rstrip("\n")
+        text = f"{text}\n\n{block}" if text else block
+    return text.rstrip("\n") + "\n"
+
+
+def _write_local_profile_gitignore(dest, created, skipped, transaction):
+    path = os.path.join(dest, ".gitignore")
+    if os.path.lexists(path):
+        mode = os.lstat(path).st_mode
+        if not stat.S_ISREG(mode):
+            raise _tx.InstallDriftError(f".gitignore가 일반 파일이 아님: {path}")
+        current = Path(path).read_text(encoding="utf-8")
+    else:
+        current = ""
+    rendered = _render_local_profile_gitignore(current)
+    if rendered == current:
+        skipped.append(path)
+        return
+    _atomic_write(path, rendered, transaction=transaction)
+    created.append(path)
 
 
 def _prune_legacy_skill(skill_dir, pruned, transaction=None):
@@ -214,7 +257,7 @@ def _core_skill_source(skill_id):
 
 def core_skill_ids():
     """CORE skill ids installed into the explicitly selected host discovery surface."""
-    return [_CORE_BOOTSTRAP_SKILL, *_CORE_SKILLS]
+    return [*_CORE_BOOTSTRAP_SKILLS, *_CORE_SKILLS]
 
 
 def _core_agent_source(agent_id):
@@ -969,6 +1012,8 @@ def _onboarding_text(host, skill_scope):
         f"Host: `{host}`  \n"
         f"Selected Codex CORE skill scope: `{selected}`\n\n"
         f"{detail}\n\n"
+        "Run `sage-init` only for the first shared+local bootstrap. When the shared profile is already bootstrapped, "
+        "each teammate runs `sage-init-local` to create only `sage/project-profile.local.yaml`.\n\n"
         "Do not keep duplicate global, `.codex/skills`, and `.agents/skills` copies of the same `$sage-*` CORE skill. "
         "Run `sage doctor` after installation; the manifest receipt records intent, while host precedence is treated "
         "as ambiguous when duplicate copies exist.\n"
@@ -981,6 +1026,7 @@ def _install_preconditions(dest, args, manifest_path):
         os.path.join(dest, "sage", "project-profile.json"),
         os.path.join(dest, "sage", "project-profile.yaml"),
         manifest_path,
+        os.path.join(dest, ".gitignore"),
     }
     recursive = {os.path.join(dest, "sage", "asset_overrides")}
     paths.update(recursive)
@@ -1191,6 +1237,7 @@ def _run_locked(args) -> int:
     else:
         _write(prof_dst, _profile_with_host(args.host, args.prefix), args.force, created, skipped,
                transaction=transaction)
+    _write_local_profile_gitignore(dest, created, skipped, transaction)
 
     # 2. framework 템플릿(중립): AGENT_GUIDE, {wrapper}, verification-protocol, verify-changes.sh, docs/agent/*
     _copy_file(os.path.join(fw, "AGENT_GUIDE.md"), os.path.join(dest, "AGENT_GUIDE.md"), args.force,
@@ -1214,17 +1261,17 @@ def _run_locked(args) -> int:
 
     # 2b. 대화형 부트스트랩 트리거 — profile 을 대화로 채우는 설계상 진입점(런타임별 발견 메커니즘 상이).
     agents_md_collision = False
-    codex_skill_status = None   # (status, dst) — selected Codex scope의 $sage-init 설치 결과
+    bootstrap_skill_status = []  # [(id, (status, dst))] — full/local init 배치 결과
     core_skill_status = []      # [(id, (status, dst))] — selected Codex scope의 CORE skill 결과(5c)
     _write(os.path.join(dest, "docs", "agent", "sage-onboarding.md"),
            _onboarding_text(args.host, skill_scope), True, created, skipped,
            transaction=transaction)
-    skill_src_md = _core_skill_source(_CORE_BOOTSTRAP_SKILL)   # 단일 소스(중립 내용)
     if args.host == "claude":
-        # claude: repo .claude/skills/ 자동발견 → /sage-init 스킬 배치.
-        _copy_tree(os.path.join(fw, ".claude", "skills", "sage-init"),
-                   os.path.join(dest, ".claude", "skills", "sage-init"), args.force, created, skipped,
-                   transaction=transaction)
+        # claude: repo .claude/skills/ 자동발견 → full/local init 스킬 배치.
+        for skill_id in _CORE_BOOTSTRAP_SKILLS:
+            _copy_tree(os.path.join(fw, ".claude", "skills", skill_id),
+                       os.path.join(dest, ".claude", "skills", skill_id), args.force,
+                       created, skipped, transaction=transaction)
         # claude: CORE 6인 에이전트 렌더 → .claude/agents/ (Claude Code 자동발견 경로)
         _copy_agent_renders(os.path.join(fw, ".claude", "agents"),
                             os.path.join(dest, ".claude", "agents"), agent_profile,
@@ -1234,14 +1281,17 @@ def _run_locked(args) -> int:
         #           deprecated --no-global-skill은 CI/샌드박스 호환을 위해 disabled receipt로만 보존한다.
         #        ② codex 가 auto-read 하는 AGENTS.md 라우터(세션 시작 시 부트스트랩 안내, CODEX.md 는
         #           codex auto-read 아님). create-only: 기존 AGENTS.md 보존+경고(codex 협의 R4).
-        if skill_scope == "global":
-            codex_skill_status = _install_codex_global_skill(skill_src_md, args.force,
-                                                             transaction=transaction)
-        elif skill_scope == "project-local":
-            codex_skill_status = _install_codex_project_skill(
-                dest, skill_src_md, args.force, transaction=transaction)
-        else:
-            codex_skill_status = ("disabled", None)
+        for skill_id in _CORE_BOOTSTRAP_SKILLS:
+            skill_src_md = _core_skill_source(skill_id)
+            if skill_scope == "global":
+                status = _install_codex_global_skill(
+                    skill_src_md, args.force, skill_id=skill_id, transaction=transaction)
+            elif skill_scope == "project-local":
+                status = _install_codex_project_skill(
+                    dest, skill_src_md, args.force, skill_id=skill_id, transaction=transaction)
+            else:
+                status = ("disabled", None)
+            bootstrap_skill_status.append((skill_id, status))
         agents_dst = os.path.join(dest, "AGENTS.md")
         if os.path.exists(agents_dst) and not args.force:
             agents_md_collision = True
@@ -1345,7 +1395,7 @@ def _run_locked(args) -> int:
                    created, skipped, transaction=transaction)
     # manifest + profile 스키마 모두 vendor — profile 스키마는 project-profile 구조검증과
     # 오타 키 방어가 번들 폴백에 의존하지 않고 프로젝트 안에서 자립하도록.
-    for s in ("manifest.schema.json", "profile.schema.json"):
+    for s in ("manifest.schema.json", "profile.schema.json", "profile.local.schema.json"):
         _copy_file(os.path.join(_resources.schema_dir(), s),
                    os.path.join(dest, "schema", s), args.force, created, skipped,
                    transaction=transaction)
@@ -1360,7 +1410,7 @@ def _run_locked(args) -> int:
 
     # 보고
     print(f"== sage install (host={args.host}, prefix={args.prefix}) → {dest} ==")
-    print(f"생성 {len(created)}건 (framework + CORE hook {len(_CORE_HOOKS)} + roster agent {len(_CORE_AGENTS)} + CORE agent render {len(_CORE_AGENTS)} + CORE skill {len(_CORE_SKILLS)}):")
+    print(f"생성 {len(created)}건 (framework + CORE hook {len(_CORE_HOOKS)} + roster agent {len(_CORE_AGENTS)} + CORE agent render {len(_CORE_AGENTS)} + CORE skill {len(core_skill_ids())}):")
     for p in sorted(created):
         print(f"  + {os.path.relpath(p, dest)}")
     if skipped:
@@ -1388,7 +1438,7 @@ def _run_locked(args) -> int:
     print("")
     print("다음 단계:")
     print(f"  1) 이 폴더에서 {runner} 실행 → `{init_cmd}` 입력")
-    print("     AI 가 인터뷰로 sage/project-profile.yaml 을 채웁니다.")
+    print("     AI 가 인터뷰로 공유 project-profile.yaml 과 로컬 project-profile.local.yaml 을 채웁니다.")
     print(f"  2) 완료되면: {gen_cmd} → sage validate")
     print("")
     print("   설정을 마치기 전에는 `sage generate` 가 차단됩니다 (거버넌스 게이트).")
@@ -1404,7 +1454,7 @@ def _run_locked(args) -> int:
             print(f"   ℹ️  기존 CORE 렌더 {len(skipped_core)}건 skip(이미 존재). 번들과 다를 수 있으니 "
                   "`sage doctor` 로 drift 확인 — 갱신은 `sage install --host claude --force`.")
     if args.host == "codex":
-        _print_codex_skill_summary(codex_skill_status, core_skill_status,
+        _print_codex_skill_summary(bootstrap_skill_status, core_skill_status,
                                    skill_scope)
         if agents_md_collision:
             print("")
@@ -1413,17 +1463,16 @@ def _run_locked(args) -> int:
     return 0
 
 
-def _print_codex_skill_summary(codex_skill_status, core_skill_status, skill_scope):
+def _print_codex_skill_summary(bootstrap_skill_status, core_skill_status, skill_scope):
     """Summarize the selected Codex CORE skill discovery surface."""
-    if skill_scope == "disabled" and not core_skill_status and (not codex_skill_status or codex_skill_status[0] == "disabled"):
+    if (skill_scope == "disabled" and not core_skill_status
+            and all(status[0] == "disabled" for _skill_id, status in bootstrap_skill_status)):
         print("")
         print("   CORE skill 설치 생략(--no-global-skill, deprecated). AGENTS.md 라우터만 배치됐습니다.")
         return
 
-    # (id, status) 전체 수집 — sage-init + CORE 스킬.
-    entries = []
-    if codex_skill_status:
-        entries.append(("sage-init", codex_skill_status[0]))
+    # (id, status) 전체 수집 — full/local init + CORE 스킬.
+    entries = [(sid, status[0]) for sid, status in bootstrap_skill_status]
     entries.extend((sid, st) for sid, (st, _dst) in core_skill_status)
     if not entries:
         return

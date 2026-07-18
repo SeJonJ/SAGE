@@ -22,7 +22,7 @@ class TestRosterConsistency(unittest.TestCase):
         self.assertEqual(ocl.CORE_IDS["agents"], frozenset(install._CORE_AGENTS))
 
     def test_skills_match_install(self):
-        expected = frozenset([install._CORE_BOOTSTRAP_SKILL, *install._CORE_SKILLS])
+        expected = frozenset([*install._CORE_BOOTSTRAP_SKILLS, *install._CORE_SKILLS])
         self.assertEqual(ocl.CORE_IDS["skills"], expected)
 
     def test_reference_specs_advertise_only_executable_overlay_eligibility(self):

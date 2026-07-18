@@ -59,7 +59,7 @@ PEER_EFFORTS = {
 # peer CLI 기본값에 맡기지 않는 이유: Phase 05 는 적대적 리뷰라 강도가 조용히 낮아지면 안 된다.
 DEFAULT_EFFORT = "high"
 
-CROSS_MODEL_KEYS = frozenset({"peer", "on_unavailable", "effort", "reviewer"})
+CROSS_MODEL_KEYS = frozenset({"policy", "peer", "on_unavailable", "effort", "reviewer"})
 # peer/on_unavailable 은 엔진이 값으로 분기하지 않는다 — reviewer_resolution 이 host 의 반대 런타임을
 # 계산하고, peer 미가용이면 항상 clean-context 로 폴백한다. 즉 이 키들은 그 동작을 *서술*할 뿐이다.
 # 다른 값을 쓰면(`on_unavailable: block`) 안전정책처럼 보이지만 아무 일도 안 하므로 FAIL 로 막는다.
@@ -101,6 +101,9 @@ def cross_model_issues(profile):
         # `effrot: max` 가 조용히 무시되면 기본값으로 돌면서 설정대로 돈 것처럼 보인다.
         issues.append(("FAIL", f"cross_model 의 알 수 없는 키: {', '.join(sorted(str(k) for k in unknown))} "
                                f"(허용: {', '.join(sorted(CROSS_MODEL_KEYS))})"))
+    policy = cm.get("policy")
+    if policy not in (None, "", "required", "recommended", "off"):
+        issues.append(("FAIL", f"cross_model.policy={policy!r} — required, recommended, off 중 하나여야 함"))
     for key, only in CROSS_MODEL_FIXED.items():
         val = cm.get(key)
         if val not in (None, "") and val != only:
@@ -219,21 +222,29 @@ def _invoke_peer(peer, prompt, timeout, effort=None, model=None):
 
 def _load_profile_caps(root):
     """profile + peer CLI 가용성 caps → (profile, caps, rr)."""
+    profile, caps, rr, _ = _load_profile_layers_caps(root)
+    return profile, caps, rr
+
+
+def _load_profile_layers_caps(root):
+    """Effective profile and layer diagnostics for Phase 05 routing."""
     path = os.path.join(root, "sage", "project-profile.yaml") if root else None
     profile = {}
+    layers = None
     if path and os.path.exists(path):
-        try:
-            import yaml
-            profile = yaml.safe_load(open(path, encoding="utf-8")) or {}
-            if not isinstance(profile, dict):
-                profile = {}
-        except Exception:
-            profile = {}
+        from sage.profile_layers import load_profile_layers
+        layers = load_profile_layers(path)
+        profile = layers.effective
     caps_prof = profile.get("capabilities", {}) or {}
     caps = {"codex": bool(shutil.which("codex")) or bool(caps_prof.get("codex")),
             "claude": bool(shutil.which("claude")) or bool(caps_prof.get("claude"))}
     rr = _doctor.reviewer_resolution(profile, caps)
-    return profile, caps, rr
+    return profile, caps, rr, layers
+
+
+def _blocking_layer_issues(layers):
+    return ([message for severity, message in layers.issues if severity == "FAIL"]
+            if layers is not None else [])
 
 
 def _find_root(explicit):
@@ -259,7 +270,12 @@ def run_review(args):
               file=sys.stderr)
         return 2
     root = _find_root(args.root)
-    _, _, rr = _load_profile_caps(root)
+    _, _, rr, layers = _load_profile_layers_caps(root)
+    layer_failures = _blocking_layer_issues(layers)
+    if layer_failures:
+        for message in layer_failures:
+            print(f"[sage review] TOOL ERROR: {message}", file=sys.stderr)
+        return 2
     if rr["reviewer_mode"] == "opposite_runtime":
         print("[sage review] ⚠️  profile.options.cross_model=true 이고 peer 가용 — cross-model 의도인데 "
               "same-runtime `sage review` 가 호출됨. cross_model=true 면 `sage cross-check` 를 사용하라.",
@@ -275,7 +291,12 @@ def run_review(args):
 def run_cross_check(args):
     """cross-model 경로. reviewer_resolution 으로 peer 결정 → 도달 가능하면 직접 호출, 아니면 폴백 표면화."""
     root = _find_root(args.root)
-    profile, _, rr = _load_profile_caps(root)
+    profile, _, rr, layers = _load_profile_layers_caps(root)
+    layer_failures = _blocking_layer_issues(layers)
+    if layer_failures:
+        for message in layer_failures:
+            print(f"[sage cross-check] TOOL ERROR: {message}", file=sys.stderr)
+        return 2
 
     # cross_model 검증은 폴백 판정보다 **먼저** — peer 가 마침 미가용이면 잘못된 설정이 통과해버린다.
     # `sage validate` 와 같은 규칙(cross_model_issues)을 쓴다: 다르면 한쪽이 조용히 무시된다.

@@ -13,6 +13,14 @@ build/
 # 감사 로그(.sage/override.jsonl)는 우회 이력을 추적·공유하려고 일부러 커밋한다.
 .sage/tmp/
 
+# PDCA 작업 문서는 로컬 실행 증거로 유지하고 00 base plan만 Git에서 공유한다.
+plan_docs/01-plan/
+plan_docs/02-design/
+plan_docs/03-implementation/
+plan_docs/04-analyze/
+plan_docs/05-expert-review/
+plan_docs/06-report/
+
 # editor / OS
 .DS_Store
 *.swp

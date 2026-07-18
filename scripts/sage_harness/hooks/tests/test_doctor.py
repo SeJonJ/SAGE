@@ -62,6 +62,50 @@ class TestDoctor(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertEqual(doctor._load_profile(p)[1], "ok")
 
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
+    def test_local_profile_controls_effective_cross_model(self):
+        with tempfile.TemporaryDirectory() as root:
+            sage_dir = Path(root, "sage")
+            sage_dir.mkdir()
+            profile = sage_dir / "project-profile.yaml"
+            profile.write_text(
+                "runtime: { host: codex }\n"
+                "options: { cross_model: false }\n"
+                "cross_model: { policy: recommended }\n",
+                encoding="utf-8",
+            )
+            Path(sage_dir, "project-profile.local.yaml").write_text(
+                "cross_model: { enabled: false }\n",
+                encoding="utf-8",
+            )
+
+            rc, out = run_doctor(str(profile))
+
+            self.assertEqual(0, rc, out)
+            self.assertIn("local profile", out)
+            self.assertIn("cross_model : False", out)
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
+    def test_required_policy_local_opt_out_fails_doctor(self):
+        with tempfile.TemporaryDirectory() as root:
+            sage_dir = Path(root, "sage")
+            sage_dir.mkdir()
+            profile = sage_dir / "project-profile.yaml"
+            profile.write_text(
+                "runtime: { host: codex }\n"
+                "cross_model: { policy: required }\n",
+                encoding="utf-8",
+            )
+            Path(sage_dir, "project-profile.local.yaml").write_text(
+                "cross_model: { enabled: false }\n",
+                encoding="utf-8",
+            )
+
+            rc, out = run_doctor(str(profile))
+
+            self.assertEqual(1, rc, out)
+            self.assertIn("완화할 수 없음", out)
+
     def test_env_section_reports_sage_hook(self):
         # W2b: hook 등록이 sage-hook 콘솔 스크립트에 의존 → doctor 실행환경이 이를 진단해야.
         with tempfile.TemporaryDirectory() as d:

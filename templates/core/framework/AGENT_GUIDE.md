@@ -4,15 +4,17 @@ This is the runtime-neutral single source of truth (SSOT) for common rules,
 workflow, risk routing, safety boundaries, and Definition of Done. Both host
 runtimes ({wrapper} = CLAUDE.md | CODEX.md) are thin overrides on top of this.
 
-Project-specific values (paths, risk triggers, conventions, team) live in
-`sage/project-profile.yaml`, not here. This guide stays neutral.
+Shared project policy (paths, risk triggers, conventions, team) lives in
+`sage/project-profile.yaml`. Machine capabilities and private paths live in the
+Git-ignored `sage/project-profile.local.yaml`. This guide stays neutral.
 
 ## Mandatory read (session start)
 
 1. `AGENT_GUIDE.md` (this file)
 2. `sage/project-profile.yaml` — project values
-3. Relevant plan doc under `{paths.plan_docs}`
-4. Relevant convention docs declared in `profile.conventions`
+3. `sage/project-profile.local.yaml` — machine values, when present
+4. Relevant plan doc under `{paths.plan_docs}`
+5. Relevant convention docs declared in `profile.conventions`
 
 ## Project Bootstrap (conversational authoring)
 
@@ -27,7 +29,9 @@ set up, or a new component/asset is introduced, follow
 (`generate` + `validate`) → phase-first plan docs before any code. Never add
 schema keys, never edit generated artifacts, never bypass a `validate` FAIL.
 
-The conversational entry point is the **`/sage-init` skill**. It and the other
+The conversational entry points are **`/sage-init`** for the first shared+local
+bootstrap and **`/sage-init-local`** for a teammate's local-only setup. If the
+shared profile is already bootstrapped, `/sage-init` is blocked. They and the other
 **CORE framework bootstrap assets** — the `sage-cycle` / `sage-plan` / `sage-team` / `sage-review` / `sage-asset` /
 `sage-profile-modify` / `sage-asset-override` skills and the six CORE roster agent renders (`leader`, `implementer-a`,
 `implementer-b`, `qa`, `reviewer`, `convention-checker`) — are hand-shipped by `sage install` like
@@ -41,7 +45,7 @@ ships it so `--force` preserves it). SAGE **materializes** an eligible overlay d
 managed block — do not read external overlay files by hand or edit renders directly. `sage validate` gates
 materialization (drift/tamper); `--strict` and materialization preflight reject gate-relaxation hits. Framework
 documents and other gate-bearing assets are blocked until an executable independent oracle is registered. The CORE skills ship
-reference specs under `docs/sage_harness/skills/` (sage-init has none), but those
+reference specs under `docs/sage_harness/skills/` (the two init skills have none), but those
 specs are not manifest-registered. Until the profile is bootstrapped
 (`project.name` set + `risk`/`components` configured), `sage generate` is BLOCKED
 and `sage validate` WARNs — by design, so an empty profile cannot silently

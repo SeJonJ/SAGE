@@ -15,6 +15,8 @@ import os
 import re
 import sys
 
+from sage.profile_layers import load_profile_layers
+
 
 def register(sub):
     p = sub.add_parser("retro", help="리뷰 사이클 학습을 자산 개선 제안으로 정리합니다(Loop C, 자동반영 없음)")
@@ -66,16 +68,10 @@ def _find_project_root(start):
 
 
 def _load_profile(root):
-    """<root>/sage/project-profile.yaml → dict. 없음/실패 → {}. (run 에서 1회 로드해 재사용)"""
+    """공유·로컬 profile의 유효 설정. 없음/실패 → {}."""
     ppath = os.path.join(root, "sage", "project-profile.yaml")
-    if not os.path.exists(ppath):
-        return {}
-    try:
-        import yaml
-        prof = yaml.safe_load(open(ppath, encoding="utf-8")) or {}
-        return prof if isinstance(prof, dict) else {}
-    except Exception:
-        return {}
+    layers = load_profile_layers(ppath)
+    return {} if layers.has_fail else layers.effective
 
 
 def _approve_glob(profile):

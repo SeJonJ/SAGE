@@ -109,6 +109,30 @@ class _VArgs:
         self.kind = "all"; self.id = None; self.root = root
 
 
+class TestLocalProfileValidation(unittest.TestCase):
+    def test_required_policy_local_opt_out_is_fail(self):
+        with tempfile.TemporaryDirectory() as root:
+            _write_manifest(root, {"sage_version": "0.9.60", "assets": {}})
+            sage_dir = Path(root, "sage")
+            sage_dir.mkdir()
+            Path(sage_dir, "project-profile.yaml").write_text(
+                "project: { name: demo }\n"
+                "components: [{ id: backend, paths: [src/**] }]\n"
+                "cross_model: { policy: required }\n",
+                encoding="utf-8",
+            )
+            Path(sage_dir, "project-profile.local.yaml").write_text(
+                "cross_model: { enabled: false }\n",
+                encoding="utf-8",
+            )
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = V.run(_VArgs(root))
+
+            self.assertEqual(1, rc, out.getvalue())
+            self.assertIn("완화할 수 없음", out.getvalue())
+
+
 def _write_manifest(d, manifest, installed=False, empty_profile=False):
     mp = os.path.join(d, "docs", "sage_harness")
     os.makedirs(mp, exist_ok=True)

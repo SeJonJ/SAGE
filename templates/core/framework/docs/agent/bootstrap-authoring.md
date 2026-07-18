@@ -8,9 +8,10 @@ hand-write profile values or specs; the agent does, under the user's approval.
 Some assets (agent/skill renders) still need an interpretive runtime render step
 after scaffolding — this protocol marks where.
 
-This document is runtime-neutral. Stack specifics (languages, frameworks,
+This document is runtime-neutral. Shared stack policy (languages, frameworks,
 high-risk domains, component names) come from the conversation and land in
-`sage/project-profile.yaml` — never in this file.
+`sage/project-profile.yaml`. Machine capabilities and private paths land in the
+Git-ignored `sage/project-profile.local.yaml` — never in this file.
 
 ---
 
@@ -41,7 +42,8 @@ approves. This is not a turnkey generator — intent's owner is the human.
 `sage install --host claude --dest <project>` or
 `sage install --host codex --skill-scope {global|project-local} --dest <project>` places the harness, the
 neutral docs (this file included), and an **empty** `sage/project-profile.yaml`
-(schema keys fixed, values blank). Nothing is governed yet.
+(schema keys fixed, values blank). It installs the local schema and `.gitignore`
+entry but does not create the local profile. Nothing is governed yet.
 
 Codex scope is mandatory for normal installs. `global` owns the effective
 `$CODEX_HOME/skills`; `project-local` owns `<project>/.codex/skills` and can travel
@@ -49,9 +51,15 @@ with a committed repository. Neither mode installs the SAGE CLI for another user
 each teammate installs the `sage`/`sage-hook` runtime separately. The generated
 `docs/agent/sage-onboarding.md` records the selected onboarding path.
 
-### 2. Interview → profile authoring
-The agent interviews the user for intent, then fills `project-profile.yaml`
-**values** (never adds/removes schema keys — determinism constraint).
+### 2. Interview → shared and local authoring
+`sage-init` is allowed only while the shared bootstrap predicate is false:
+`project.name` is empty, or both `components` and risk classification are unset.
+It interviews the user, fills shared policy values in `project-profile.yaml`, and
+creates `project-profile.local.yaml` for the current machine. If the predicate is
+already true it stops and routes to `sage-init-local`.
+
+`sage-init-local` requires a valid bootstrapped shared profile and creates or
+updates only `project-profile.local.yaml`. It never modifies shared policy.
 
 This is a **progressive conversation, not a form**: the agent takes one topic per
 turn — proposing concrete values inferred from a repo scan, showing the signal it
@@ -267,4 +275,5 @@ Never edit a generated artifact directly (see AGENT_GUIDE safety boundaries).
 - `docs/agent/pdca-templates.md` — phase templates + separation + component-level order
 - `docs/agent/review-protocol.md` — reviewer resolution (`sage doctor`), L3 review
 - `docs/agent/risk-classification.md` — how `profile.risk` maps to levels
-- `sage/project-profile.yaml` — the single mutable SSOT this protocol fills
+- `sage/project-profile.yaml` — committed shared policy SSOT
+- `sage/project-profile.local.yaml` — Git-ignored machine capability and private-path layer

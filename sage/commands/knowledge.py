@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from sage.commands import _vault
+from sage.profile_layers import load_profile_layers
 
 
 def register(sub):
@@ -68,16 +69,11 @@ def _profile_path(args, root):
 
 
 def _load_profile(path):
-    if not os.path.exists(path):
-        return {}, f"profile missing: {path}"
-    try:
-        import yaml
-        data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-        if not isinstance(data, dict):
-            return {}, "profile is not a mapping"
-        return data, None
-    except Exception as e:
-        return {}, f"profile load error: {type(e).__name__}"
+    layers = load_profile_layers(path)
+    if layers.has_fail:
+        detail = "; ".join(message for severity, message in layers.issues if severity == "FAIL")
+        return {}, f"profile load error: {detail}"
+    return layers.effective, None
 
 
 def _text_arg(value, file_path):

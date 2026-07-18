@@ -735,6 +735,31 @@ def run(args):
                 if _SEV_RANK[psev] > _SEV_RANK[overall]:
                     overall = psev
 
+    # Machine-local capability profile is never compiled into the shared hook JSON.
+    # Validate it independently on every run so a local policy weakening cannot hide
+    # behind --schema being disabled or an otherwise-current shared JSON.
+    shared_profile_path = os.path.join(root, "sage", "project-profile.yaml")
+    if os.path.isfile(shared_profile_path):
+        from sage.profile_layers import load_profile_layers, local_profile_git_issues
+        layers = load_profile_layers(shared_profile_path)
+        local_state = "loaded" if layers.local is not None else "missing (legacy/default behavior)"
+        print(f"ℹ️  LOCAL PROFILE {local_state}: {layers.local_path}")
+        for severity, message in layers.issues:
+            if severity == "FAIL":
+                print(f"❌ FAIL  profile-layer: {message}")
+                overall = "FAIL"
+            elif severity == "WARN":
+                print(f"⚠️  WARN  profile-layer: {message}")
+                if overall == "PASS":
+                    overall = "WARN"
+        for severity, message in local_profile_git_issues(root, layers.local_path):
+            if severity == "WARN":
+                print(f"⚠️  WARN  profile-layer: {message}")
+                if overall == "PASS":
+                    overall = "WARN"
+            else:
+                print(f"ℹ️  INFO  profile-layer: {message}")
+
     # CORE 자산 오버레이 게이트-완화 린트. default 는 heuristic 오탐 가능성 때문에 WARN, strict 는
     #   합성 preflight와 같은 check-id를 hard FAIL로 승격한다. 오버레이는 manifest 밖이라 위 루프가 못 본다.
     from sage.overlay_lint import scan_domain_contract, scan_overlays

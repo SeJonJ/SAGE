@@ -205,6 +205,25 @@ class TestGenerateInterpretive(unittest.TestCase):
             self.assertNotIn("agents/leader", m["assets"])         # CORE 부트스트랩 제외
             self.assertNotIn("agents/qa", m["assets"])
 
+    def test_skill_scan_excludes_both_init_bootstrap_renders(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_interpretive_root(d)
+            for host_dir in (".claude", ".codex"):
+                for name in ("sage-init", "sage-init-local", "myproj-skill"):
+                    skill = Path(d, host_dir, "skills", name, "SKILL.md")
+                    skill.parent.mkdir(parents=True, exist_ok=True)
+                    skill.write_text(_render_md(name), encoding="utf-8")
+
+            rc = gen._gen_interpretive(
+                Args(kind="skill", write=True, dest=d, root=d), d, "skill")
+
+            self.assertEqual(rc, 0)
+            manifest = json.loads(Path(
+                d, "docs", "sage_harness", ".manifest.json").read_text(encoding="utf-8"))
+            self.assertIn("skills/myproj-skill", manifest["assets"])
+            self.assertNotIn("skills/sage-init", manifest["assets"])
+            self.assertNotIn("skills/sage-init-local", manifest["assets"])
+
     @unittest.skipUnless(_HAS_YAML, "pyyaml 필요(deploy 는 profile.runtime.host 판독)")
     def test_skill_deploy_codex_global(self):
         # Part C: --deploy-codex → repo .codex/skills 정본을 $CODEX_HOME/skills/<prefix>-<id> 전역 배포

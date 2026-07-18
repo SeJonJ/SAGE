@@ -48,6 +48,87 @@ def _tree_snapshot(root):
 
 
 class TestInstall(unittest.TestCase):
+    def test_bootstrap_skill_inventory_contains_full_and_local_init(self):
+        self.assertIn("sage-init", install.core_skill_ids())
+        self.assertIn("sage-init-local", install.core_skill_ids())
+
+    def test_both_init_skills_deploy_to_every_supported_discovery_scope(self):
+        with tempfile.TemporaryDirectory() as claude_root:
+            self.assertEqual(install.run(Args("claude", claude_root)), 0)
+            for skill_id in ("sage-init", "sage-init-local"):
+                self.assertTrue(Path(claude_root, ".claude", "skills", skill_id, "SKILL.md").is_file())
+
+        with tempfile.TemporaryDirectory() as global_root, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                self.assertEqual(install.run(Args("codex", global_root, skill_scope="global")), 0)
+            for skill_id in ("sage-init", "sage-init-local"):
+                self.assertTrue(Path(codex_home, "skills", skill_id, "SKILL.md").is_file())
+
+        with tempfile.TemporaryDirectory() as local_root, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                self.assertEqual(
+                    install.run(Args("codex", local_root, skill_scope="project-local")), 0)
+            for skill_id in ("sage-init", "sage-init-local"):
+                self.assertTrue(Path(local_root, ".codex", "skills", skill_id, "SKILL.md").is_file())
+
+    def test_init_skill_contracts_enforce_shared_and_local_ownership(self):
+        full = Path(
+            REPO, "templates", "core", "framework", ".claude", "skills", "sage-init", "SKILL.md"
+        ).read_text(encoding="utf-8")
+        local = Path(
+            REPO, "templates", "core", "framework", ".claude", "skills", "sage-init-local", "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("project.name", full)
+        self.assertIn("risk", full)
+        self.assertIn("components", full)
+        self.assertIn("sage-init-local", full)
+        self.assertIn("project-profile.local.yaml", full)
+        self.assertIn("required", full)
+        self.assertIn("false", full)
+        self.assertIn("BLOCKED", full)
+
+        self.assertIn("bootstrapped shared", local)
+        self.assertIn("project-profile.local.yaml", local)
+        self.assertIn("project-profile.yaml을 수정하지", local)
+        self.assertIn("required", local)
+        self.assertIn("false", local)
+        self.assertIn("BLOCKED", local)
+
+    def test_install_packages_local_schema_and_ignores_but_does_not_create_local_profile(self):
+        with tempfile.TemporaryDirectory() as d:
+            rc = install.run(Args("claude", d))
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(os.path.isfile(os.path.join(d, "schema", "profile.local.schema.json")))
+            self.assertFalse(os.path.exists(os.path.join(d, "sage", "project-profile.local.yaml")))
+            ignore = Path(d, ".gitignore").read_text(encoding="utf-8")
+            self.assertIn("# >>> SAGE LOCAL PROFILE", ignore)
+            self.assertIn("/sage/project-profile.local.yaml", ignore)
+            self.assertIn("# <<< SAGE LOCAL PROFILE", ignore)
+
+    def test_install_preserves_gitignore_and_managed_block_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as d:
+            ignore_path = Path(d, ".gitignore")
+            ignore_path.write_text("node_modules/\n.env\n", encoding="utf-8")
+
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            first = ignore_path.read_text(encoding="utf-8")
+            self.assertEqual(first.count("# >>> SAGE LOCAL PROFILE"), 1)
+            self.assertIn("node_modules/\n.env\n", first)
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 0)
+            second = ignore_path.read_text(encoding="utf-8")
+            self.assertEqual(second, first)
+
+    def test_inverted_local_profile_gitignore_markers_report_install_drift(self):
+        malformed = ("# <<< SAGE LOCAL PROFILE\n"
+                     "/sage/project-profile.local.yaml\n"
+                     "# >>> SAGE LOCAL PROFILE\n")
+
+        with self.assertRaisesRegex(install._tx.InstallDriftError, "관리 마커가 손상됨"):
+            install._render_local_profile_gitignore(malformed)
+
     def test_blocked_overlay_aborts_without_manifest(self):
         with tempfile.TemporaryDirectory() as d:
             overlay = os.path.join(d, "sage", "asset_overrides", "agents", "reviewer.md")

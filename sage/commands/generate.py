@@ -665,8 +665,8 @@ def _gen_interpretive(args, root, kind):
     upsert = mu.upsert_agent if kind == "agent" else mu.upsert_skill
     core_names = set(_CORE_AGENTS if kind == "agent" else _CORE_SKILLS)
     if kind == "skill":
-        from sage.commands.install import _CORE_BOOTSTRAP_SKILL
-        core_names.add(_CORE_BOOTSTRAP_SKILL)
+        from sage.commands.install import _CORE_BOOTSTRAP_SKILLS
+        core_names.update(_CORE_BOOTSTRAP_SKILLS)
 
     if args.id:
         ids = [args.id]

@@ -19,6 +19,8 @@ import tempfile
 import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+sys.path.insert(0, REPO)
+from sage.commands import retro as retro_command  # noqa: E402
 
 
 def sage_review_loop(*args, root):
@@ -64,6 +66,17 @@ class _ProjectFixture:
 
 
 class TestRetro(_ProjectFixture, unittest.TestCase):
+    def test_profile_loader_applies_local_knowledge_disable(self):
+        with open(os.path.join(self.tmp, "sage", "project-profile.yaml"), "a", encoding="utf-8") as f:
+            f.write("knowledge_capture:\n  retro_note: true\n  vault_path: /shared-vault\n")
+        with open(os.path.join(self.tmp, "sage", "project-profile.local.yaml"), "w", encoding="utf-8") as f:
+            f.write("knowledge_capture:\n  enabled: false\n")
+
+        profile = retro_command._load_profile(self.tmp)
+
+        self.assertFalse(profile["knowledge_capture"]["enabled"])
+        self.assertEqual(profile["knowledge_capture"]["vault_path"], "")
+
     def test_full_evidence_and_prompt(self):
         rid = self._run_loop()
         self._add_05()

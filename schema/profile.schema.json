@@ -206,7 +206,11 @@
     "team": { "type": "object" },
     "cross_model": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
+        "policy": { "enum": ["required", "recommended", "off"] },
+        "peer": { "enum": ["opposite_runtime"] },
+        "on_unavailable": { "enum": ["clean_context_same_runtime"] },
         "effort": { "enum": ["minimal", "low", "medium", "high", "xhigh", "max"] },
         "reviewer": {
           "type": "object",

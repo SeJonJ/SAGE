@@ -14,6 +14,7 @@ from pathlib import Path
 
 from sage.runtime_hosts import (active_host, configured_hosts, opposite_host, profile_issues,
                                 receipt_hosts, receipt_issues)
+from sage.profile_layers import load_profile_layers, local_profile_git_issues
 
 
 def register(sub):
@@ -59,21 +60,30 @@ def reviewer_resolution(profile: dict, caps: dict) -> dict:
 _DEFAULT_PROFILE = {"runtime": {"host": "claude"}, "options": {"cross_model": False}}
 
 
-def _load_profile(path):
+def _load_profile_context(path):
     """반환 (profile|None, status). status 로 실패 원인 구분(Codex P1):
     'ok' | 'missing_file' | 'missing_pyyaml' | 'parse_error:<예외명>'.
     (이전엔 셋 다 None 으로 뭉개 사용자가 설정 무시 여부를 알 수 없었음.)"""
     if not os.path.exists(path):
-        return None, "missing_file"
+        return None, "missing_file", None
     try:
         import yaml  # pyyaml (선언 의존성)
     except ImportError:
-        return None, "missing_pyyaml"
-    try:
-        with open(path, encoding="utf-8") as f:
-            return (yaml.safe_load(f) or {}), "ok"
-    except Exception as e:
-        return None, f"parse_error:{type(e).__name__}"
+        return None, "missing_pyyaml", None
+    layers = load_profile_layers(path)
+    shared_load_error = next((message for severity, message in layers.issues
+                              if severity == "FAIL" and message.startswith("shared profile YAML 파싱 오류")), None)
+    if shared_load_error:
+        error_name = shared_load_error.split("오류(", 1)[-1].split(")", 1)[0]
+        return None, f"parse_error:{error_name}", layers
+    if layers.has_fail:
+        return layers.effective, "layer_error", layers
+    return layers.effective, "ok", layers
+
+
+def _load_profile(path):
+    profile, status, _ = _load_profile_context(path)
+    return profile, status
 
 
 def _sha256_file(path):
@@ -408,7 +418,7 @@ def run(args):
     from sage import _resources
     prof_path = (args.profile or _discover_profile()
                  or os.path.join(_resources.templates_dir(), "project-profile.yaml"))
-    profile, status = _load_profile(prof_path)
+    profile, status, layers = _load_profile_context(prof_path)
     print("== sage doctor ==")
     print(f"  profile: {prof_path}")
     rc = 0
@@ -425,6 +435,20 @@ def run(args):
         print(f"  ❌ FAIL profile YAML 파싱 오류({status.split(':', 1)[1]}): {prof_path}")
         print(f"        → 선언한 설정이 무시됩니다. YAML 수정 필요.")
         profile = dict(_DEFAULT_PROFILE)
+    elif status == "layer_error":
+        rc = 1
+        print("  ❌ FAIL shared/local profile 계층 오류")
+        for severity, message in layers.issues:
+            if severity in ("FAIL", "WARN"):
+                print(f"        {severity}: {message}")
+
+    if layers is not None:
+        local_state = "loaded" if layers.local is not None else "missing (legacy/default behavior)"
+        print(f"  local profile: {layers.local_path} — {local_state}")
+        root = _project_root_from_profile(prof_path)
+        if root is not None:
+            for severity, message in local_profile_git_issues(root, layers.local_path):
+                print(f"  {'⚠️ ' if severity == 'WARN' else 'ℹ️ '} {severity} {message}")
 
     # 실행 환경: OS / python / sage-hook / bash 점검.
     # W2b 이후 hook 등록 command 는 `sage-hook`(sage 패키지 콘솔 스크립트) — PATH 에 없으면 등록돼도

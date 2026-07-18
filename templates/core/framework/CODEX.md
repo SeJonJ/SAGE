@@ -7,14 +7,15 @@ output contract are governed solely by `AGENT_GUIDE.md`.
 
 1. `AGENT_GUIDE.md` — single source of truth
 2. `sage/project-profile.yaml` — project values
-3. Relevant plan doc + convention docs (per profile)
+3. `sage/project-profile.local.yaml` — machine values, when present
+4. Relevant plan doc + convention docs (per profile)
 
 ## Codex-specific
 
 - Use the Codex runtime asset ecosystem (`.codex/agents`, `.codex/skills`,
   `.codex/hooks`) which are generated from `docs/sage_harness/` specs.
 - Do not modify generated artifacts directly — edit the spec and run
-  `sage generate`. (The hand-shipped CORE bootstrap skills — `sage-init`,
+  `sage generate`. (The hand-shipped CORE bootstrap skills — `sage-init`, `sage-init-local`,
   `sage-cycle`, `sage-plan`, `sage-team`, `sage-review`, `sage-asset`, `sage-profile-modify`,
   `sage-asset-override` — install to the explicit global `$CODEX_HOME/skills/` or
   project-local `.codex/skills/` scope. They are install-owned CORE renders, not generated

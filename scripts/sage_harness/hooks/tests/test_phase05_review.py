@@ -113,6 +113,33 @@ class TestEffortIssue(unittest.TestCase):
 
 
 class TestReview(unittest.TestCase):
+    def test_recommended_local_opt_out_resolves_same_runtime(self):
+        with tempfile.TemporaryDirectory() as d:
+            _mkprofile(d, host="codex", cross=True)
+            with open(os.path.join(d, "sage", "project-profile.yaml"), "a", encoding="utf-8") as f:
+                f.write("cross_model: { policy: recommended }\n")
+            with open(os.path.join(d, "sage", "project-profile.local.yaml"), "w", encoding="utf-8") as f:
+                f.write("cross_model: { enabled: false }\n")
+
+            profile, _, resolution = RV._load_profile_caps(d)
+
+            self.assertFalse(profile["options"]["cross_model"])
+            self.assertEqual("clean_context_same_runtime", resolution["reviewer_mode"])
+
+    def test_required_local_opt_out_blocks_review_command(self):
+        with tempfile.TemporaryDirectory() as d:
+            _mkprofile(d, host="codex", cross=False)
+            with open(os.path.join(d, "sage", "project-profile.yaml"), "a", encoding="utf-8") as f:
+                f.write("cross_model: { policy: required }\n")
+            with open(os.path.join(d, "sage", "project-profile.local.yaml"), "w", encoding="utf-8") as f:
+                f.write("cross_model: { enabled: false }\n")
+            err = io.StringIO()
+            with redirect_stderr(err):
+                rc = RV.run_review(_Args(root=d))
+
+            self.assertEqual(2, rc)
+            self.assertIn("완화할 수 없음", err.getvalue())
+
     def test_review_same_runtime(self):
         with tempfile.TemporaryDirectory() as d:
             _mkprofile(d, cross=False)

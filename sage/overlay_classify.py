@@ -19,7 +19,7 @@ import os
 
 from sage import overlay_common as _oc
 
-# CORE 자산 정본 roster. install._CORE_AGENTS / _CORE_SKILLS / _CORE_BOOTSTRAP_SKILL 과
+# CORE 자산 정본 roster. install._CORE_AGENTS / _CORE_SKILLS / _CORE_BOOTSTRAP_SKILLS 와
 # 일치해야 한다(test_overlay_classify 가 대조). 여기 두는 이유: install 이 이 모듈을 import
 # 하므로 역참조(circular) 회피.
 CORE_IDS = {
@@ -28,7 +28,7 @@ CORE_IDS = {
     }),
     "skills": frozenset({
         "sage-cycle", "sage-plan", "sage-team", "sage-review", "sage-asset",
-        "sage-profile-modify", "sage-asset-override", "sage-init",
+        "sage-profile-modify", "sage-asset-override", "sage-init", "sage-init-local",
     }),
     "framework": frozenset({"AGENT_GUIDE", "CLAUDE", "CODEX", "AGENTS"}),
 }
