@@ -49,12 +49,19 @@ def make_root(d, with_adapter=True):
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", "codex"), exist_ok=True)
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime"), exist_ok=True)
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "policies"), exist_ok=True)
+    strategies = os.path.join(d, "scripts", "sage_harness", "hooks", "strategies", "pre_implementation_gate")
+    os.makedirs(strategies, exist_ok=True)
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "aaa-hook.md")).write_text(SPEC_A)
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "bbb-hook.md")).write_text(SPEC_B)
-    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py", "messages.py",
+    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py",
+               "acceptance_waiver.py", "messages.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
+    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "cycle_binding.py")).write_text(
+        "# cycle_binding.py\n")
     Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "retro_gate.py")).write_text("# retro_gate\n")
+    for fn in ("claude_grep_first.py", "codex_feature_signal.py", "cycle_domain_review.py"):
+        Path(os.path.join(strategies, fn)).write_text(f"# {fn}\n")
     Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).write_text(json.dumps({
         "sage_version": "0.1.0", "host_runtime": "claude", "assets": {
             "hooks/aaa-hook": {"form": "core_adapter", "spec_hash": "x", "render_hash": {"claude": "x"}, "conformance": "PASS"},
@@ -206,7 +213,8 @@ class TestGenerateInterpretive(unittest.TestCase):
             make_interpretive_root(d)
             os.makedirs(os.path.join(d, "sage"))
             Path(os.path.join(d, "sage", "project-profile.yaml")).write_text(
-                'project:\n  name: "t"\n  prefix: "px"\nruntime:\n  host: codex\n')
+                'project:\n  name: "t"\n  prefix: "px"\nruntime:\n'
+                '  installed_hosts: [claude, codex]\n  active_host: codex\n')
             os.makedirs(os.path.join(d, ".claude", "skills", "deployer"))
             os.makedirs(os.path.join(d, ".codex", "skills", "deployer"))
             Path(os.path.join(d, ".claude", "skills", "deployer", "SKILL.md")).write_text(_render_md("deployer"))
@@ -366,6 +374,21 @@ class TestGenerate(unittest.TestCase):
             rc = gen.run(Args(target="claude", dest=dest, root=d, write=True))
             self.assertEqual(rc, 2)
             self.assertFalse(os.path.exists(os.path.join(dest, "sage", "project-profile.json")))
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요(generate 빌드 의존성)")
+    def test_profile_scalar_trigger_fails_before_any_output_write(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as dest:
+            make_root(d)
+            os.makedirs(os.path.join(dest, "sage"), exist_ok=True)
+            Path(os.path.join(dest, "sage", "project-profile.yaml")).write_text(
+                "project: { name: t }\nrisk:\n  l3_filename_globs: auth\n", encoding="utf-8")
+
+            rc = gen.run(Args(target="both", dest=dest, root=d, write=True))
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(os.path.exists(os.path.join(dest, "sage", "project-profile.json")))
+            self.assertFalse(os.path.exists(os.path.join(dest, ".claude", "settings.json")))
+            self.assertFalse(os.path.exists(os.path.join(dest, ".codex", "hooks.json")))
 
     @unittest.skipUnless(_HAS_YAML, "pyyaml 필요(generate 빌드 의존성)")
     def test_profile_compiles_to_json(self):

@@ -10,9 +10,12 @@ import sys
 import textwrap
 
 from sage import __version__
-from sage.commands import install, generate, validate, asset_check, review, absorb, doctor, change, override, review_loop, retro, knowledge, sync_overlays
+from sage.commands import (install, generate, validate, asset_check, review, absorb, doctor, change,
+                           override, review_loop, retro, knowledge, sync_overlays, acceptance_waiver,
+                           authority, models, context)
 
-_COMMANDS = [install, generate, validate, asset_check, review, absorb, doctor, change, override, review_loop, retro, knowledge, sync_overlays]
+_COMMANDS = [install, generate, validate, asset_check, review, absorb, doctor, change, override,
+             review_loop, retro, knowledge, sync_overlays, acceptance_waiver, authority, models, context]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -21,7 +24,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="SAGE는 Claude/Codex 프로젝트에 규칙 파일, hook, agent spec을 설치하고 검증하는 CLI입니다.",
         epilog=textwrap.dedent("""\
             기본 사용 순서:
-              1. sage install --host codex      # 현재 프로젝트에 SAGE 기본 파일 설치
+              1. sage install --host codex --skill-scope project-local
+                                                 # 또는 --skill-scope global
               2. sage generate --kind hook --write
               3. sage validate
 

@@ -3,11 +3,16 @@
 
 self-contained: 임시 dest 에 install 후 산출물/치환/멱등 확인.
 """
+import hashlib
+import io
 import json
 import os
+import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
+from contextlib import redirect_stderr
 from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
@@ -16,9 +21,30 @@ from sage.commands import install  # noqa: E402
 
 
 class Args:
-    def __init__(self, host, dest, prefix="sage", force=False, no_global_skill=False):
+    def __init__(self, host, dest, prefix="sage", force=False, no_global_skill=False,
+                 skill_scope=None):
         self.host = host; self.dest = dest; self.prefix = prefix; self.force = force
         self.no_global_skill = no_global_skill
+        # Existing Codex test cases now state their legacy intent explicitly. Claude does not use this option.
+        self.skill_scope = ("global" if host == "codex" and skill_scope is None
+                            and not no_global_skill else skill_scope)
+
+
+def _tree_snapshot(root):
+    snapshot = {}
+    base = Path(root)
+    for path in sorted(base.rglob("*")):
+        rel = str(path.relative_to(base))
+        mode = os.lstat(path).st_mode
+        if stat.S_ISLNK(mode):
+            snapshot[rel] = ("symlink", stat.S_IMODE(mode), os.readlink(path))
+        elif stat.S_ISDIR(mode):
+            snapshot[rel] = ("dir", stat.S_IMODE(mode))
+        elif stat.S_ISREG(mode):
+            snapshot[rel] = ("file", stat.S_IMODE(mode), path.read_bytes())
+        else:
+            snapshot[rel] = ("special", stat.S_IFMT(mode), stat.S_IMODE(mode))
+    return snapshot
 
 
 class TestInstall(unittest.TestCase):
@@ -49,6 +75,7 @@ class TestInstall(unittest.TestCase):
                 "docs/sage_harness/.manifest.json",
                 "docs/sage_harness/hooks/pre-implementation-gate.md",
                 "scripts/sage_harness/hooks/pre_implementation_gate_core.py",
+                "scripts/sage_harness/hooks/cycle_binding.py",
                 "scripts/sage_harness/hooks/adapters/claude/pre-implementation-gate.sh",
                 "scripts/sage_harness/hooks/adapters/codex/pre-implementation-gate.sh",
                 "scripts/sage_harness/hooks/generated-artifact-write-guard.sh",
@@ -81,6 +108,13 @@ class TestInstall(unittest.TestCase):
                 ".claude/skills/sage-profile-modify/SKILL.md",
             ):
                 self.assertTrue(os.path.exists(os.path.join(d, rel)), rel)
+            guide = Path(d, "AGENT_GUIDE.md").read_text(encoding="utf-8")
+            review = Path(d, "docs", "agent", "review-protocol.md").read_text(encoding="utf-8")
+            verify = Path(d, "verification-protocol.md").read_text(encoding="utf-8")
+            self.assertIn("exact stem", guide)
+            self.assertIn("recent-file/mtime fallback are not cycle", guide)
+            self.assertIn("exact same-`Cycle-Stem` Phase 01", review)
+            self.assertIn("Phase 04 cannot introduce unknown IDs", verify)
             # tests/ 는 배치하지 않음(런타임 불필요)
             self.assertFalse(os.path.exists(os.path.join(d, "scripts/sage_harness/hooks/tests")))
 
@@ -88,7 +122,8 @@ class TestInstall(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("codex", d, prefix="myapp"))
             prof = Path(os.path.join(d, "sage", "project-profile.yaml")).read_text(encoding="utf-8")
-            self.assertIn("host: codex", prof)
+            self.assertIn("installed_hosts: [codex]", prof)
+            self.assertIn("active_host: codex", prof)
             self.assertIn('prefix: "myapp"', prof)
             # codex host → CODEX.md wrapper (CLAUDE.md 아님)
             self.assertTrue(os.path.exists(os.path.join(d, "CODEX.md")))
@@ -117,6 +152,27 @@ class TestInstall(unittest.TestCase):
             self.assertTrue(os.path.isdir(os.path.join(d, ".codex")))
             receipt_hosts = {key.split("/", 1)[0] for key in manifest["core_renders"]}
             self.assertEqual(receipt_hosts, {"claude", "codex"})
+            self.assertEqual(manifest["core_renders"]["claude/framework/AGENT_GUIDE"],
+                             manifest["core_renders"]["codex/framework/AGENT_GUIDE"])
+
+    def test_manifest_refreshes_shared_guide_receipt_for_both_hosts(self):
+        old_receipt = {"base_sha256": "old", "sage_version": "old"}
+        new_receipt = {"base_sha256": "new", "sage_version": "new"}
+        existing = {
+            "host_runtime": "claude",
+            "installed_hosts": ["claude", "codex"],
+            "assets": {},
+            "core_renders": {
+                "claude/framework/AGENT_GUIDE": dict(old_receipt),
+                "codex/framework/AGENT_GUIDE": dict(old_receipt),
+            },
+        }
+
+        manifest = install._manifest(
+            "codex", existing, {"codex/framework/AGENT_GUIDE": dict(new_receipt)})
+
+        self.assertEqual(manifest["core_renders"]["claude/framework/AGENT_GUIDE"], new_receipt)
+        self.assertEqual(manifest["core_renders"]["codex/framework/AGENT_GUIDE"], new_receipt)
 
     def test_second_host_without_force_still_updates_manifest_receipts(self):
         with tempfile.TemporaryDirectory() as d:
@@ -129,9 +185,20 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(receipt_hosts, {"claude", "codex"})
 
     def test_legacy_manifest_seeds_installed_hosts_before_append(self):
-        manifest = install._manifest("codex", {"host_runtime": "claude", "assets": {}}, {})
-        self.assertEqual(manifest["host_runtime"], "claude")
-        self.assertEqual(manifest["installed_hosts"], ["claude", "codex"])
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            manifest_path = os.path.join(d, "docs", "sage_harness", ".manifest.json")
+            legacy = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+            legacy.pop("installed_hosts")
+            legacy.pop("core_renders")
+            self.assertIsNone(install._manifest_structure_issue(legacy))
+            Path(manifest_path).write_text(json.dumps(legacy), encoding="utf-8")
+
+            self.assertEqual(install.run(Args("codex", d, no_global_skill=True)), 0)
+
+            manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+            self.assertEqual(manifest["host_runtime"], "claude")
+            self.assertEqual(manifest["installed_hosts"], ["claude", "codex"])
     def test_codex_host_deploys_agents_md(self):
         # codex 부트스트랩 라우터: codex 가 auto-read 하는 AGENTS.md 배치(codex 협의 c+).
         with tempfile.TemporaryDirectory() as d:
@@ -241,6 +308,21 @@ class TestInstall(unittest.TestCase):
                 install.run(Args("codex", d))
             self.assertTrue(os.path.exists(foreign), "SAGE 자산 아닌 사용자 동명 skill 을 오삭제함")
 
+    def test_legacy_prune_does_not_follow_skill_marker_symlink(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as outside:
+            skill_dir = Path(root, "pdca-start")
+            skill_dir.mkdir()
+            marker = Path(outside, "SKILL.md")
+            marker.write_text(self._LEGACY_SIG, encoding="utf-8")
+            (skill_dir / "SKILL.md").symlink_to(marker)
+            pruned = []
+
+            install._prune_legacy_skill(str(skill_dir), pruned)
+
+            self.assertTrue(skill_dir.is_dir())
+            self.assertTrue((skill_dir / "SKILL.md").is_symlink())
+            self.assertEqual(pruned, [])
+
     def test_codex_no_global_skill_does_not_prune(self):
         """--no-global-skill 이면 전역 미접근 — 은퇴한 전역 사본도 건드리지 않는다(legacy 목록 전체)."""
         import unittest.mock as mock
@@ -254,10 +336,7 @@ class TestInstall(unittest.TestCase):
                 self.assertTrue(os.path.exists(legacy), f"--no-global-skill 인데 전역 {legacy_name} 사본을 건드림")
 
     def test_codex_host_installs_core_skills_globally(self):
-        """Gap-2 P1.2: codex host 는 CORE skill 렌더를 $CODEX_HOME/skills 전역에 설치한다.
-
-        codex 는 repo-스코프 스킬을 자동발견하지 않으므로(sage-init 과 동일 비대칭),
-        CORE skill 도 전역 설치되어야 codex 프로젝트에서 호출 가능하다."""
+        """Explicit global scope installs every CORE skill under `$CODEX_HOME/skills`."""
         import unittest.mock as mock
         _CORE_SKILLS = list(install._CORE_SKILLS)   # 런타임 목록에서 파생 — rename/추가 시 자동 동기(desync 방지)
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
@@ -281,15 +360,27 @@ class TestInstall(unittest.TestCase):
                 with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
                     install.run(Args(host, d, no_global_skill=(host == "codex")))
                     self.assertFalse(os.path.exists(os.path.join(d, "sage", "asset_overrides")))
-                    overlay = os.path.join(d, "sage", "asset_overrides", "agents", "leader.md")
-                    skill_overlay = os.path.join(d, "sage", "asset_overrides", "skills", "sage-team.md")
+                    overlay = os.path.join(d, "sage", "asset_overrides", "agents", "implementer-a.md")
                     os.makedirs(os.path.dirname(overlay), exist_ok=True)
-                    os.makedirs(os.path.dirname(skill_overlay), exist_ok=True)
                     Path(overlay).write_text("PROJECT_OVERLAY\n", encoding="utf-8")
-                    Path(skill_overlay).write_text("PROJECT_SKILL_OVERLAY\n", encoding="utf-8")
-                    install.run(Args(host, d, force=True, no_global_skill=(host == "codex")))
+                    self.assertEqual(
+                        install.run(Args(host, d, force=True, no_global_skill=(host == "codex"))), 0)
                 self.assertEqual(Path(overlay).read_text(encoding="utf-8"), "PROJECT_OVERLAY\n")
-                self.assertEqual(Path(skill_overlay).read_text(encoding="utf-8"), "PROJECT_SKILL_OVERLAY\n")
+
+    def test_framework_overlay_is_preserved_but_install_blocks_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            overlay = os.path.join(d, "sage", "asset_overrides", "framework", "AGENT_GUIDE.md")
+            os.makedirs(os.path.dirname(overlay), exist_ok=True)
+            content = "---\ndomain_refs: [webrtc]\n---\nProject guidance.\n"
+            Path(overlay).write_text(content, encoding="utf-8")
+            manifest_path = os.path.join(d, "docs", "sage_harness", ".manifest.json")
+            before = Path(manifest_path).read_bytes()
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 1)
+
+            self.assertEqual(Path(overlay).read_text(encoding="utf-8"), content)
+            self.assertEqual(Path(manifest_path).read_bytes(), before)
 
     def test_force_reinstall_preserves_generated_kind_manifest_entries(self):
         """--force 재설치가 sage generate 로 등록된 mcp/agent/skill manifest 항목을 보존한다(이슈 #1).
@@ -375,6 +466,88 @@ class TestInstall(unittest.TestCase):
                 self.assertEqual(sorted(m["assets"].keys()),
                                  sorted(f"hooks/{hid}" for hid, _ in install._CORE_HOOKS))
 
+    def test_non_force_reinstall_preserves_malformed_manifest_and_blocks(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            manifest_path = os.path.join(d, "docs", "sage_harness", ".manifest.json")
+            malformed = b"{NOT JSON\n"
+            Path(manifest_path).write_bytes(malformed)
+            guide_path = os.path.join(d, "AGENT_GUIDE.md")
+            guide_before = Path(guide_path).read_bytes()
+            err = io.StringIO()
+
+            with redirect_stderr(err):
+                rc = install.run(Args("claude", d))
+
+            self.assertEqual(rc, 1)
+            self.assertEqual(Path(manifest_path).read_bytes(), malformed)
+            self.assertEqual(Path(guide_path).read_bytes(), guide_before)
+            self.assertIn("non-force install을 차단", err.getvalue())
+
+    def test_non_force_reinstall_blocks_mapping_shaped_manifest_damage(self):
+        mutations = {
+            "core_renders": lambda manifest: manifest.__setitem__("core_renders", []),
+            "assets": lambda manifest: manifest.__setitem__("assets", []),
+            "host_history": lambda manifest: manifest.__setitem__("installed_hosts", {}),
+            "asset_entry": lambda manifest: manifest["assets"].__setitem__("agents/bad", []),
+            "asset_nested_type": lambda manifest: manifest["assets"].__setitem__(
+                "agents/bad", {"form": "interpretive", "conformance": "PASS", "render_hash": []}),
+            "asset_extra_field": lambda manifest: manifest["assets"].__setitem__(
+                "agents/bad", {"form": "interpretive", "conformance": "PASS", "extra": True}),
+            "receipt_extra_field": lambda manifest: manifest["core_renders"].__setitem__(
+                "codex/agents/leader", {
+                    "base_sha256": "0" * 64,
+                    "sage_version": "1",
+                    "unexpected": True,
+                }),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as d:
+                self.assertEqual(install.run(Args("claude", d)), 0)
+                manifest_path = os.path.join(d, "docs", "sage_harness", ".manifest.json")
+                manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+                mutate(manifest)
+                damaged = (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+                Path(manifest_path).write_bytes(damaged)
+
+                rc = install.run(Args("claude", d))
+
+                self.assertEqual(rc, 1)
+                self.assertEqual(Path(manifest_path).read_bytes(), damaged)
+
+    def test_force_reinstall_sanitizes_mapping_shaped_manifest_damage(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            self.assertEqual(install.run(Args("codex", d, no_global_skill=True)), 0)
+            manifest_path = os.path.join(d, "docs", "sage_harness", ".manifest.json")
+            manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+            manifest["assets"]["agents/bad"] = {}
+            manifest["assets"]["agents/bad-nested"] = {
+                "form": "interpretive", "conformance": "PASS", "render_hash": []}
+            manifest["assets"]["agents/bad-extra"] = {
+                "form": "interpretive", "conformance": "PASS", "extra": True}
+            manifest["core_renders"]["codex/agents/leader"] = {}
+            manifest["core_renders"]["codex/agents/reviewer"] = {
+                "base_sha256": "0" * 64,
+                "sage_version": "1",
+                "unexpected": True,
+            }
+            manifest["installed_hosts"] = ["codex"]
+            Path(manifest_path).write_text(json.dumps(manifest), encoding="utf-8")
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 0)
+
+            recovered = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+            self.assertIsNone(install._manifest_structure_issue(recovered))
+            self.assertNotIn("agents/bad", recovered["assets"])
+            self.assertNotIn("agents/bad-nested", recovered["assets"])
+            self.assertNotIn("agents/bad-extra", recovered["assets"])
+            self.assertNotIn("codex/agents/leader", recovered["core_renders"])
+            self.assertNotIn("codex/agents/reviewer", recovered["core_renders"])
+            self.assertEqual(recovered["installed_hosts"], ["claude", "codex"])
+            self.assertEqual(recovered["core_renders"]["claude/framework/AGENT_GUIDE"],
+                             recovered["core_renders"]["codex/framework/AGENT_GUIDE"])
+
     def test_first_install_manifest_has_only_core_hooks(self):
         """최초 install(기존 manifest 없음)은 CORE hook 만 등록 — --force 보존 로직이 동작을 바꾸지 않는다."""
         with tempfile.TemporaryDirectory() as d:
@@ -388,7 +561,7 @@ class TestInstall(unittest.TestCase):
 
         오버레이는 SAGE 가 관리 블록으로 물리화한다(eligible 자산만). (c)/미분류 자산이 "read your
         overlay and apply it" 프로즈를 담으면 승인-조작 오버레이가 그 경로로 새므로 전부 제거됐다.
-        skill 렌더는 대신 /sage-asset-override 저작 경로를 안내한다."""
+        blocked skill 렌더는 self-overlay 미지원 경계를 안내한다."""
         import unittest.mock as mock
         forbidden = ("Before acting, read optional project overlay",
                      "Apply it before the CORE instructions",
@@ -400,7 +573,7 @@ class TestInstall(unittest.TestCase):
             for txt in (leader, team):
                 for f in forbidden:
                     self.assertNotIn(f, txt)
-            self.assertIn("/sage-asset-override", team)   # skill 은 저작 경로 안내
+            self.assertIn("Self-overlay is unsupported", team)
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
             with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
                 install.run(Args("codex", d))
@@ -409,6 +582,7 @@ class TestInstall(unittest.TestCase):
             for txt in (leader, team):
                 for f in forbidden:
                     self.assertNotIn(f, txt)
+            self.assertIn("Self-overlay is unsupported", team)
 
     def test_codex_no_global_skill_skips_core_skills(self):
         """--no-global-skill 이면 CORE skill 전역 설치도 생략(CI/샌드박스)."""
@@ -422,27 +596,787 @@ class TestInstall(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(d, "docs", "sage_harness", "skills", "sage-plan.md")))
 
     def test_claude_agent_renders_create_only(self):
-        """Gap-1 create-only 안전성: 사용자 커스터마이즈 렌더는 --force 없이 보존된다."""
+        """Modified anchored render is preserved but cannot be silently re-anchored."""
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("claude", d))
             leader_path = os.path.join(d, ".claude", "agents", "leader.md")
-            # 사용자가 렌더를 수정했다고 가정
             Path(leader_path).write_text("USER_CUSTOM_RENDER\n", encoding="utf-8")
-            install.run(Args("claude", d))  # --force 없이 재설치
+            manifest_path = os.path.join(d, "docs", "sage_harness", ".manifest.json")
+            manifest_before = Path(manifest_path).read_bytes()
+
+            self.assertEqual(install.run(Args("claude", d)), 1)
+
             self.assertIn("USER_CUSTOM_RENDER", Path(leader_path).read_text(encoding="utf-8"))
-            install.run(Args("claude", d, force=True))  # --force 는 갱신
+            self.assertEqual(Path(manifest_path).read_bytes(), manifest_before)
+            install.run(Args("claude", d, force=True))
             self.assertNotIn("USER_CUSTOM_RENDER", Path(leader_path).read_text(encoding="utf-8"))
 
-    def test_codex_agents_md_collision_preserved(self):
-        # 기존 AGENTS.md 는 create-only 로 보존(codex 협의 R4: 자동 덮어쓰기 금지)
+    def test_codex_agents_md_collision_is_preserved_but_blocks_trust(self):
+        # Existing project AGENTS remains untouched, but is not blessed as a CORE anchor.
         with tempfile.TemporaryDirectory() as d:
             agents = os.path.join(d, "AGENTS.md")
             Path(agents).write_text("USER_AGENTS_MARKER\n", encoding="utf-8")
-            install.run(Args("codex", d))
+
+            rc = install.run(Args("codex", d, no_global_skill=True))
+
+            self.assertEqual(rc, 1)
             self.assertIn("USER_AGENTS_MARKER", Path(agents).read_text(encoding="utf-8"))
+            self.assertFalse(os.path.exists(os.path.join(d, "docs", "sage_harness", ".manifest.json")))
+
+    def test_first_install_unanchored_conflict_is_no_write_and_inventoried(self):
+        with tempfile.TemporaryDirectory() as d:
+            leader = os.path.join(d, ".claude", "agents", "leader.md")
+            os.makedirs(os.path.dirname(leader), exist_ok=True)
+            Path(leader).write_text("UNTRUSTED_EXISTING_RENDER\n", encoding="utf-8")
+            err = io.StringIO()
+
+            with redirect_stderr(err):
+                rc = install.run(Args("claude", d))
+
+            self.assertEqual(rc, 1)
+            self.assertEqual(Path(leader).read_text(encoding="utf-8"), "UNTRUSTED_EXISTING_RENDER\n")
+            self.assertFalse(os.path.exists(os.path.join(d, "sage", "project-profile.yaml")))
+            self.assertFalse(os.path.exists(os.path.join(d, "AGENT_GUIDE.md")))
+            self.assertFalse(os.path.exists(os.path.join(d, "docs", "sage_harness", ".manifest.json")))
+            output = err.getvalue()
+            source = os.path.join(install._resources.core_dir(), "framework", ".claude", "agents", "leader.md")
+            expected_text = install.render_core_agent(
+                Path(source).read_text(encoding="utf-8"), {"effort": "high"})
+            expected_text = expected_text.rstrip("\n") + "\n"
+            expected_sha = hashlib.sha256(expected_text.encode("utf-8")).hexdigest()
+            actual_sha = hashlib.sha256(b"UNTRUSTED_EXISTING_RENDER\n").hexdigest()
+            self.assertIn("claude/agents/leader", output)
+            self.assertIn(".claude/agents/leader.md", output)
+            self.assertIn("reason: 신뢰 anchor가 없는 기존 CORE render가 현재 배포 base와 다름", output)
+            self.assertIn(f"expected_sha256: {expected_sha}", output)
+            self.assertIn(f"actual_sha256:   {actual_sha}", output)
+            self.assertIn("--force", output)
+
+    def test_multiple_codex_conflicts_have_exact_sorted_inventory_and_no_global_write(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            custom = {
+                "AGENT_GUIDE.md": "CUSTOM_AGENT_GUIDE\n",
+                "AGENTS.md": "CUSTOM_AGENTS\n",
+            }
+            for relpath, content in custom.items():
+                Path(os.path.join(d, relpath)).write_text(content, encoding="utf-8")
+            before_entries = sorted(str(path.relative_to(d)) for path in Path(d).rglob("*"))
+            before_bytes = {relpath: Path(os.path.join(d, relpath)).read_bytes() for relpath in custom}
+            err = io.StringIO()
+
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                with redirect_stderr(err):
+                    rc = install.run(Args("codex", d))
+
+            self.assertEqual(rc, 1)
+            self.assertEqual(sorted(str(path.relative_to(d)) for path in Path(d).rglob("*")), before_entries)
+            self.assertEqual(
+                {relpath: Path(os.path.join(d, relpath)).read_bytes() for relpath in custom}, before_bytes)
+            self.assertEqual(list(Path(codex_home).rglob("*")), [])
+
+            expected_items = []
+            for asset_id, relpath in (("AGENTS", "AGENTS.md"), ("AGENT_GUIDE", "AGENT_GUIDE.md")):
+                source = os.path.join(install._resources.core_dir(), "framework", f"{asset_id}.md")
+                expected_base = Path(source).read_text(encoding="utf-8").rstrip("\n") + "\n"
+                expected_sha = hashlib.sha256(expected_base.encode("utf-8")).hexdigest()
+                actual_sha = hashlib.sha256(custom[relpath].encode("utf-8")).hexdigest()
+                expected_items.append(
+                    f"  - [codex/framework/{asset_id}] {relpath}\n"
+                    "      reason: 신뢰 anchor가 없는 기존 CORE render가 현재 배포 base와 다름\n"
+                    f"      expected_sha256: {expected_sha}\n"
+                    f"      actual_sha256:   {actual_sha}\n")
+            expected_stderr = (
+                "❌ CORE trust preflight 충돌 — 기존 렌더를 정본 anchor로 기록하지 않습니다.\n"
+                + "".join(expected_items)
+                + "  선택 후 다시 실행하세요:\n"
+                  "    1) 기존 파일을 inventory/백업하고 프로젝트 지침을 sage/asset_overrides 또는 absorb/migration 흐름으로 이전\n"
+                  "    2) 기존 내용을 버리기로 명시한 경우에만 같은 명령에 --force 추가\n"
+                  "  preflight 단계에서 project 파일과 manifest anchor는 변경되지 않았습니다.\n")
+            self.assertEqual(err.getvalue(), expected_stderr)
+
+    def test_first_install_allows_unanchored_current_bundle_base(self):
+        with tempfile.TemporaryDirectory() as d:
+            guide = os.path.join(d, "AGENT_GUIDE.md")
+            source = os.path.join(install._resources.core_dir(), "framework", "AGENT_GUIDE.md")
+            Path(guide).write_text(Path(source).read_text(encoding="utf-8"), encoding="utf-8")
+
+            self.assertEqual(install.run(Args("claude", d)), 0)
+
+            manifest = json.loads(Path(os.path.join(d, "docs", "sage_harness", ".manifest.json"))
+                                  .read_text(encoding="utf-8"))
+            self.assertIn("claude/framework/AGENT_GUIDE", manifest["core_renders"])
+
+    def test_forged_matching_anchor_cannot_bless_non_bundle_base(self):
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            leader = os.path.join(d, ".claude", "agents", "leader.md")
+            Path(leader).write_text("OLD_OR_CUSTOM_BASE\n", encoding="utf-8")
+            manifest_path = os.path.join(d, "docs", "sage_harness", ".manifest.json")
+            manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+            manifest["core_renders"]["claude/agents/leader"]["base_sha256"] = hashlib.sha256(
+                b"OLD_OR_CUSTOM_BASE\n").hexdigest()
+            Path(manifest_path).write_text(json.dumps(manifest), encoding="utf-8")
+            manifest_before = Path(manifest_path).read_bytes()
+
+            self.assertEqual(install.run(Args("claude", d)), 1)
+
+            self.assertEqual(Path(manifest_path).read_bytes(), manifest_before)
+            self.assertEqual(Path(leader).read_text(encoding="utf-8"), "OLD_OR_CUSTOM_BASE\n")
+
+    def test_force_overwrites_unanchored_conflict_and_records_bundle_anchor(self):
+        from sage import overlay_materialize
+        with tempfile.TemporaryDirectory() as d:
+            leader = os.path.join(d, ".claude", "agents", "leader.md")
+            os.makedirs(os.path.dirname(leader), exist_ok=True)
+            Path(leader).write_text("UNTRUSTED_EXISTING_RENDER\n", encoding="utf-8")
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 0)
+
+            manifest = json.loads(Path(os.path.join(d, "docs", "sage_harness", ".manifest.json"))
+                                  .read_text(encoding="utf-8"))
+            self.assertNotIn("UNTRUSTED_EXISTING_RENDER", Path(leader).read_text(encoding="utf-8"))
+            self.assertEqual(overlay_materialize.check(d, "claude", manifest["core_renders"]), [])
+
+    def test_symlink_core_render_is_not_trusted_and_force_replaces_link_only(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as outside:
+            external = os.path.join(outside, "leader.md")
+            Path(external).write_text("OUTSIDE_MUST_SURVIVE\n", encoding="utf-8")
+            leader = os.path.join(d, ".claude", "agents", "leader.md")
+            os.makedirs(os.path.dirname(leader), exist_ok=True)
+            os.symlink(external, leader)
+
+            self.assertEqual(install.run(Args("claude", d)), 1)
+            self.assertTrue(os.path.islink(leader))
+            self.assertEqual(Path(external).read_text(encoding="utf-8"), "OUTSIDE_MUST_SURVIVE\n")
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 0)
+            self.assertFalse(os.path.islink(leader))
+            self.assertNotIn("OUTSIDE_MUST_SURVIVE", Path(leader).read_text(encoding="utf-8"))
+            self.assertEqual(Path(external).read_text(encoding="utf-8"), "OUTSIDE_MUST_SURVIVE\n")
+
+    def test_force_replaces_hard_link_without_modifying_external_inode(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as outside:
+            external = os.path.join(outside, "leader.md")
+            Path(external).write_text("OUTSIDE_HARD_LINK_MUST_SURVIVE\n", encoding="utf-8")
+            leader = os.path.join(d, ".claude", "agents", "leader.md")
+            os.makedirs(os.path.dirname(leader), exist_ok=True)
+            os.link(external, leader)
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 0)
+
+            self.assertEqual(Path(external).read_text(encoding="utf-8"), "OUTSIDE_HARD_LINK_MUST_SURVIVE\n")
+            self.assertNotIn("OUTSIDE_HARD_LINK_MUST_SURVIVE", Path(leader).read_text(encoding="utf-8"))
+            self.assertNotEqual(os.stat(external).st_ino, os.stat(leader).st_ino)
+
+    def test_atomic_force_write_preserves_regular_file_mode(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            guide = os.path.join(d, "AGENT_GUIDE.md")
+            os.chmod(guide, 0o640)
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 0)
+
+            self.assertEqual(stat.S_IMODE(os.stat(guide).st_mode), 0o640)
+
+    def test_first_install_mid_write_failure_rolls_back_all_new_paths(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            original = install._atomic_write
+            calls = {"count": 0}
+
+            def fail_after_write(path, content, executable=False, transaction=None):
+                original(path, content, executable=executable, transaction=transaction)
+                calls["count"] += 1
+                if calls["count"] == 5:
+                    raise OSError("injected first-install write failure")
+
+            with mock.patch.object(install, "_atomic_write", side_effect=fail_after_write):
+                self.assertEqual(install.run(Args("claude", d)), 1)
+
+            self.assertEqual(_tree_snapshot(d), {})
+
+    def test_keyboard_interrupt_after_write_rolls_back_and_propagates(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            original = install._atomic_write
+            interrupted = {"done": False}
+
+            def interrupt_after_write(path, content, executable=False, transaction=None):
+                original(path, content, executable=executable, transaction=transaction)
+                if not interrupted["done"]:
+                    interrupted["done"] = True
+                    raise KeyboardInterrupt("injected interrupt")
+
+            with mock.patch.object(install, "_atomic_write", side_effect=interrupt_after_write):
+                with self.assertRaises(KeyboardInterrupt):
+                    install.run(Args("claude", d))
+
+            self.assertTrue(interrupted["done"])
+            self.assertEqual(_tree_snapshot(d), {})
+
+    def test_keyboard_interrupt_between_atomic_replace_and_output_record_rolls_back(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            original = install.overlay_common.write_text_lf
+            interrupted = {"done": False}
+
+            def interrupt_after_replace(path, text, mode=None):
+                original(path, text, mode=mode)
+                if not interrupted["done"]:
+                    interrupted["done"] = True
+                    raise KeyboardInterrupt("injected after atomic replace")
+
+            with mock.patch.object(install.overlay_common, "write_text_lf",
+                                   side_effect=interrupt_after_replace):
+                with self.assertRaises(KeyboardInterrupt):
+                    install.run(Args("claude", d))
+
+            self.assertTrue(interrupted["done"])
+            self.assertEqual(_tree_snapshot(d), {})
+
+    def test_force_mid_write_failure_restores_exact_project_tree(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            before = _tree_snapshot(d)
+            original = install._atomic_write
+            calls = {"count": 0}
+
+            def fail_after_write(path, content, executable=False, transaction=None):
+                original(path, content, executable=executable, transaction=transaction)
+                calls["count"] += 1
+                if calls["count"] == 9:
+                    raise OSError("injected force write failure")
+
+            with mock.patch.object(install, "_atomic_write", side_effect=fail_after_write):
+                self.assertEqual(install.run(Args("claude", d, force=True)), 1)
+
+            self.assertEqual(_tree_snapshot(d), before)
+            self.assertFalse(any(".sage-install-backup-" in rel for rel in _tree_snapshot(d)))
+
+    def test_failure_after_manifest_replace_restores_previous_manifest_and_tree(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            before = _tree_snapshot(d)
+            manifest_path = os.path.join(d, "docs", "sage_harness", ".manifest.json")
+            original = install._atomic_write
+
+            def fail_after_manifest(path, content, executable=False, transaction=None):
+                original(path, content, executable=executable, transaction=transaction)
+                if os.path.abspath(path) == os.path.abspath(manifest_path):
+                    raise OSError("injected failure after manifest replace")
+
+            with mock.patch.object(install, "_atomic_write", side_effect=fail_after_manifest):
+                self.assertEqual(install.run(Args("claude", d, force=True)), 1)
+
+            self.assertEqual(_tree_snapshot(d), before)
+
+    def test_materialization_mid_apply_failure_restores_render_and_manifest(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            overlay = Path(d, "sage", "asset_overrides", "agents", "implementer-a.md")
+            overlay.parent.mkdir(parents=True)
+            overlay.write_text("Additive implementation rule.\n", encoding="utf-8")
+            protected = [Path(d, ".claude", "agents", "implementer-a.md"),
+                         Path(d, "docs", "sage_harness", ".manifest.json")]
+            before = {str(path): path.read_bytes() for path in protected}
+            original_apply = install.overlay_materialize.apply_materialization
+
+            def fail_after_first_plan(plans, writer=None):
+                changed_plan = next(plan for plan in plans if plan[1] != plan[2])
+                changed = original_apply([changed_plan], writer=writer)
+                self.assertTrue(changed)
+                raise OSError("injected materialization apply failure")
+
+            with mock.patch.object(install.overlay_materialize, "apply_materialization",
+                                   side_effect=fail_after_first_plan):
+                self.assertEqual(install.run(Args("claude", d)), 1)
+
+            self.assertEqual({str(path): path.read_bytes() for path in protected}, before)
+
+    def test_concurrent_render_replacement_before_second_write_is_preserved(self):
+        import unittest.mock as mock
+
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            overlay = Path(d, "sage", "asset_overrides", "agents", "implementer-a.md")
+            overlay.parent.mkdir(parents=True)
+            overlay.write_text("Additive implementation rule.\n", encoding="utf-8")
+            render = Path(d, ".claude", "agents", "implementer-a.md")
+            original_apply = install.overlay_materialize.apply_materialization
+            replaced = {"done": False}
+
+            def replace_before_apply(plans, writer=None):
+                changed_plan = next(plan for plan in plans if plan[1] != plan[2])
+                Path(changed_plan[0]).write_text("CONCURRENT_RENDER\n", encoding="utf-8")
+                replaced["done"] = True
+                return original_apply(plans, writer=writer)
+
+            with mock.patch.object(install.overlay_materialize, "apply_materialization",
+                                   side_effect=replace_before_apply):
+                self.assertEqual(install.run(Args("claude", d, force=True)), 1)
+
+            self.assertTrue(replaced["done"])
+            self.assertEqual(render.read_text(encoding="utf-8"), "CONCURRENT_RENDER\n")
+            self.assertEqual(len(list(render.parent.glob(
+                ".sage-install-backup-*-implementer-a.md"))), 1)
+
+    def test_late_failure_restores_force_pruned_legacy_skill(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            legacy = Path(d, ".claude", "skills", "pdca-start", "SKILL.md")
+            legacy.parent.mkdir(parents=True)
+            legacy.write_text("# CORE framework bootstrap asset\nlegacy\n", encoding="utf-8")
+            before = _tree_snapshot(d)
+
+            with mock.patch.object(install, "_manifest", side_effect=RuntimeError("late manifest failure")):
+                self.assertEqual(install.run(Args("claude", d, force=True)), 1)
+
+            self.assertEqual(_tree_snapshot(d), before)
+            self.assertEqual(legacy.read_text(encoding="utf-8"),
+                             "# CORE framework bootstrap asset\nlegacy\n")
+
+    def test_late_failure_restores_codex_global_skills_and_project(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                self.assertEqual(install.run(Args("codex", d)), 0)
+                global_review = Path(codex_home, "skills", "sage-review", "SKILL.md")
+                global_review.write_text("USER_GLOBAL_VERSION\n", encoding="utf-8")
+                project_before = _tree_snapshot(d)
+                global_before = _tree_snapshot(codex_home)
+
+                with mock.patch.object(install, "_manifest", side_effect=RuntimeError("late manifest failure")):
+                    self.assertEqual(install.run(Args("codex", d, force=True)), 1)
+
+                self.assertEqual(_tree_snapshot(d), project_before)
+                self.assertEqual(_tree_snapshot(codex_home), global_before)
+                self.assertEqual(global_review.read_text(encoding="utf-8"), "USER_GLOBAL_VERSION\n")
+
+    def test_late_failure_restores_codex_project_local_skills_and_project(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("codex", d, skill_scope="project-local")), 0)
+            local_review = Path(d, ".codex", "skills", "sage-review", "SKILL.md")
+            local_review.write_text("USER_PROJECT_VERSION\n", encoding="utf-8")
+            before = _tree_snapshot(d)
+
+            with mock.patch.object(install, "_manifest", side_effect=RuntimeError("late manifest failure")):
+                self.assertEqual(install.run(Args("codex", d, force=True,
+                                                  skill_scope="project-local")), 1)
+
+            self.assertEqual(_tree_snapshot(d), before)
+            self.assertEqual(local_review.read_text(encoding="utf-8"), "USER_PROJECT_VERSION\n")
+
+    def test_force_overlay_preflight_failure_is_no_write(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            overlay = Path(d, "sage", "asset_overrides", "agents", "reviewer.md")
+            overlay.parent.mkdir(parents=True)
+            overlay.write_text("unsafe reviewer\n", encoding="utf-8")
+            before = _tree_snapshot(d)
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 1)
+
+            self.assertEqual(_tree_snapshot(d), before)
+
+    def test_overlay_drift_after_preflight_rolls_back_install_owned_changes(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            overlay = Path(d, "sage", "asset_overrides", "agents", "implementer-a.md")
+            overlay.parent.mkdir(parents=True)
+            overlay.write_text("Initial additive implementation rule.\n", encoding="utf-8")
+            protected = [Path(d, "AGENT_GUIDE.md"),
+                         Path(d, ".claude", "agents", "implementer-a.md"),
+                         Path(d, "docs", "sage_harness", ".manifest.json")]
+            before = {str(path): path.read_bytes() for path in protected}
+            original_plan = install.overlay_materialize.plan_materialize
+
+            def mutate_then_plan(dest, host):
+                overlay.write_text("Changed additive implementation rule.\n", encoding="utf-8")
+                return original_plan(dest, host)
+
+            with mock.patch.object(install.overlay_materialize, "plan_materialize",
+                                   side_effect=mutate_then_plan):
+                self.assertEqual(install.run(Args("claude", d)), 1)
+
+            self.assertEqual({str(path): path.read_bytes() for path in protected}, before)
+            self.assertEqual(overlay.read_text(encoding="utf-8"),
+                             "Changed additive implementation rule.\n")
+
+    def test_source_resource_drift_before_manifest_rolls_back_first_install(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch("sage.build_identity.source_core_content_hash",
+                            side_effect=["sha256:" + "1" * 64,
+                                         "sha256:" + "2" * 64,
+                                         "sha256:" + "2" * 64]):
+                self.assertEqual(install.run(Args("claude", d)), 1)
+
+            self.assertEqual(_tree_snapshot(d), {})
+
+    def test_install_owned_output_drift_before_commit_rolls_back_force(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            before = _tree_snapshot(d)
+            original_copy = install._copy_file
+            changed = {"done": False}
+
+            def mutate_one_installed_spec(src, dst, force, created, skipped, transaction=None):
+                result = original_copy(src, dst, force, created, skipped, transaction=transaction)
+                if (not changed["done"] and dst.endswith(
+                        os.path.join("docs", "sage_harness", "hooks", "capture-declared-risk.md"))):
+                    Path(dst).write_text("CONCURRENT_OUTPUT_DRIFT\n", encoding="utf-8")
+                    changed["done"] = True
+                return result
+
+            with mock.patch.object(install, "_copy_file", side_effect=mutate_one_installed_spec):
+                self.assertEqual(install.run(Args("claude", d, force=True)), 1)
+
+            self.assertTrue(changed["done"])
+            target = Path(d, "docs", "sage_harness", "hooks", "capture-declared-risk.md")
+            self.assertEqual(target.read_text(encoding="utf-8"), "CONCURRENT_OUTPUT_DRIFT\n")
+            backups = list(target.parent.glob(".sage-install-backup-*-capture-declared-risk.md"))
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].read_bytes(), before[
+                "docs/sage_harness/hooks/capture-declared-risk.md"][2])
+
+    def test_commit_happens_before_success_reporting(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            args = Args("codex", d, no_global_skill=True)
+            observed = []
+
+            def inspect_commit(*_args, **_kwargs):
+                observed.append(args._sage_install_transaction.committed)
+
+            with mock.patch.object(install, "_print_codex_skill_summary",
+                                   side_effect=inspect_commit):
+                self.assertEqual(install.run(args), 0)
+
+            self.assertEqual(observed, [True])
+
+    def test_materialized_anchor_binding_rejects_changed_snapshot(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            original_plan = install.overlay_materialize.plan_materialize
+
+            def tampered_plan(dest, host):
+                Path(os.path.join(dest, ".claude", "agents", "leader.md")).write_text(
+                    "CHANGED_AFTER_PREFLIGHT\n", encoding="utf-8")
+                return original_plan(dest, host)
+
+            with mock.patch.object(install.overlay_materialize, "plan_materialize", side_effect=tampered_plan):
+                rc = install.run(Args("claude", d))
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(os.path.exists(os.path.join(d, "docs", "sage_harness", ".manifest.json")))
+
+    def test_parent_symlink_is_blocked_even_with_force(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as outside:
+            os.symlink(outside, os.path.join(d, ".claude"))
+
+            self.assertEqual(install.run(Args("claude", d)), 1)
+            self.assertEqual(os.listdir(outside), [])
+            self.assertFalse(os.path.exists(os.path.join(d, "sage", "project-profile.yaml")))
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 1)
+            self.assertEqual(os.listdir(outside), [])
+            self.assertFalse(os.path.exists(os.path.join(d, "docs", "sage_harness", ".manifest.json")))
+
+    def test_non_render_docs_symlink_ancestor_is_never_followed(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as outside:
+            os.symlink(outside, os.path.join(d, "docs"))
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 1)
+
+            self.assertEqual(os.listdir(outside), [])
+            self.assertTrue(os.path.islink(os.path.join(d, "docs")))
+            self.assertFalse(os.path.exists(os.path.join(d, "sage", "project-profile.yaml")))
+
+    def test_codex_global_skill_symlink_ancestor_is_never_followed(self):
+        import unittest.mock as mock
+        with (tempfile.TemporaryDirectory() as d,
+              tempfile.TemporaryDirectory() as codex_home,
+              tempfile.TemporaryDirectory() as outside):
+            skill_dir = Path(codex_home, "skills", "sage-init")
+            skill_dir.parent.mkdir(parents=True)
+            skill_dir.symlink_to(outside, target_is_directory=True)
+
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                self.assertEqual(install.run(Args("codex", d, force=True)), 1)
+
+            self.assertEqual(os.listdir(outside), [])
+            self.assertTrue(skill_dir.is_symlink())
+            self.assertEqual(_tree_snapshot(d), {})
+
+    def test_malformed_json_profile_fails_before_install_mutation(self):
+        with tempfile.TemporaryDirectory() as d:
+            profile = Path(d, "sage", "project-profile.json")
+            profile.parent.mkdir()
+            profile.write_text("{malformed", encoding="utf-8")
+            before = _tree_snapshot(d)
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 1)
+
+            self.assertEqual(_tree_snapshot(d), before)
+
+    def test_generated_json_profile_can_coexist_with_yaml_on_force_reinstall(self):
+        import yaml
+        from sage.profile_compile import materialize_profile
+
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            yaml_path = Path(d, "sage", "project-profile.yaml")
+            json_path = Path(d, "sage", "project-profile.json")
+            raw_profile = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+            json_path.write_text(
+                json.dumps(materialize_profile(raw_profile), ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8")
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 0)
+            self.assertTrue(json_path.is_file())
+
+    def test_stale_generated_json_profile_blocks_before_install_mutation(self):
+        import yaml
+        from sage.profile_compile import materialize_profile
+
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            yaml_path = Path(d, "sage", "project-profile.yaml")
+            json_path = Path(d, "sage", "project-profile.json")
+            raw_profile = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+            compiled = materialize_profile(raw_profile)
+            compiled["stale_test_marker"] = True
+            json_path.write_text(
+                json.dumps(compiled, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8")
+            before = _tree_snapshot(d)
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 1)
+
+            self.assertEqual(_tree_snapshot(d), before)
+
+    def test_type_coerced_generated_json_profile_blocks_before_install_mutation(self):
+        import yaml
+        from sage.profile_compile import materialize_profile
+
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            yaml_path = Path(d, "sage", "project-profile.yaml")
+            json_path = Path(d, "sage", "project-profile.json")
+            raw_profile = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+            compiled = materialize_profile(raw_profile)
+            compiled["team"]["core"]["leader"]["enabled"] = 1
+            json_path.write_text(
+                json.dumps(compiled, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8")
+            before = _tree_snapshot(d)
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 1)
+
+            self.assertEqual(_tree_snapshot(d), before)
+
+    def test_manifest_symlink_is_not_read_and_force_replaces_link_only(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as outside:
+            external = Path(outside, "manifest.json")
+            external_body = json.dumps({
+                "sage_version": "external",
+                "host_runtime": "claude",
+                "assets": {
+                    "agents/external": {
+                        "form": "declarative",
+                        "conformance": "PASS",
+                    },
+                },
+            })
+            external.write_text(external_body, encoding="utf-8")
+            manifest = Path(d, "docs", "sage_harness", ".manifest.json")
+            manifest.parent.mkdir(parents=True)
+            manifest.symlink_to(external)
+
+            self.assertEqual(install.run(Args("claude", d)), 1)
+            self.assertTrue(manifest.is_symlink())
+            self.assertEqual(external.read_text(encoding="utf-8"), external_body)
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 0)
+            self.assertFalse(manifest.is_symlink())
+            installed = json.loads(manifest.read_text(encoding="utf-8"))
+            self.assertNotIn("agents/external", installed["assets"])
+            self.assertEqual(external.read_text(encoding="utf-8"), external_body)
+
+    def test_new_atomic_write_does_not_query_or_mutate_process_umask(self):
+        import unittest.mock as mock
+
+        with tempfile.TemporaryDirectory() as d:
+            target = Path(d, "new.md")
+            with mock.patch("sage.commands.install.os.umask",
+                            side_effect=AssertionError("process umask must not be queried")):
+                install._atomic_write(target, "content\n")
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "content\n")
+
+    def test_symlink_profile_is_rejected_without_reading_referent(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as outside:
+            external = Path(outside, "profile.yaml")
+            external.write_text("runtime: {host: claude}\n", encoding="utf-8")
+            profile = Path(d, "sage", "project-profile.yaml")
+            profile.parent.mkdir()
+            profile.symlink_to(external)
+            before = _tree_snapshot(d)
+
+            self.assertEqual(install.run(Args("claude", d)), 1)
+
+            self.assertEqual(_tree_snapshot(d), before)
+            self.assertEqual(external.read_text(encoding="utf-8"),
+                             "runtime: {host: claude}\n")
+
+    def test_fifo_core_render_is_rejected_without_reading(self):
+        if not hasattr(os, "mkfifo"):
+            self.skipTest("FIFO is not supported on this platform")
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            leader = os.path.join(d, ".claude", "agents", "leader.md")
+            os.remove(leader)
+            os.mkfifo(leader)
+            manifest_path = os.path.join(d, "docs", "sage_harness", ".manifest.json")
+            manifest_before = Path(manifest_path).read_bytes()
+
+            self.assertEqual(install.run(Args("claude", d)), 1)
+
+            self.assertTrue(stat.S_ISFIFO(os.lstat(leader).st_mode))
+            self.assertEqual(Path(manifest_path).read_bytes(), manifest_before)
+
+    def test_non_utf8_core_render_is_rejected_and_preserved(self):
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            leader = os.path.join(d, ".claude", "agents", "leader.md")
+            Path(leader).write_bytes(b"\xff\xfeUNTRUSTED")
+            manifest_path = os.path.join(d, "docs", "sage_harness", ".manifest.json")
+            manifest_before = Path(manifest_path).read_bytes()
+            err = io.StringIO()
+
+            with redirect_stderr(err):
+                rc = install.run(Args("claude", d))
+
+            self.assertEqual(rc, 1)
+            self.assertEqual(Path(leader).read_bytes(), b"\xff\xfeUNTRUSTED")
+            self.assertEqual(Path(manifest_path).read_bytes(), manifest_before)
+            self.assertIn("오버레이/렌더 읽기 실패", err.getvalue())
+
+    def test_malformed_marker_core_render_is_rejected_and_preserved(self):
+        from sage import overlay_common
+        with tempfile.TemporaryDirectory() as d:
+            install.run(Args("claude", d))
+            guide = os.path.join(d, "AGENT_GUIDE.md")
+            malformed = f"CURRENT BASE\n{overlay_common.MARKER_START}\nUNTERMINATED\n"
+            Path(guide).write_text(malformed, encoding="utf-8")
+            manifest_path = os.path.join(d, "docs", "sage_harness", ".manifest.json")
+            manifest_before = Path(manifest_path).read_bytes()
+            err = io.StringIO()
+
+            with redirect_stderr(err):
+                rc = install.run(Args("claude", d))
+
+            self.assertEqual(rc, 1)
+            self.assertEqual(Path(guide).read_text(encoding="utf-8"), malformed)
+            self.assertEqual(Path(manifest_path).read_bytes(), manifest_before)
+            self.assertIn("blocked block 정리 실패", err.getvalue())
+            self.assertIn("오버레이 마커 짝 불일치", err.getvalue())
+
+    def test_non_force_install_cleans_blocked_block_before_overlay_failure(self):
+        from sage import overlay_common
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            reviewer = Path(d, ".claude", "agents", "reviewer.md")
+            reviewer.write_text(
+                reviewer.read_text(encoding="utf-8")
+                + "\n" + overlay_common.compose_block("unsafe reviewer", "agents", "reviewer"),
+                encoding="utf-8")
+            overlay = Path(d, "sage", "asset_overrides", "agents", "reviewer.md")
+            overlay.parent.mkdir(parents=True, exist_ok=True)
+            overlay.write_text("unsafe reviewer\n", encoding="utf-8")
+            manifest = Path(d, "docs", "sage_harness", ".manifest.json")
+            manifest_before = manifest.read_bytes()
+
+            self.assertEqual(install.run(Args("claude", d)), 1)
+
+            self.assertNotIn(overlay_common.MARKER_START, reviewer.read_text(encoding="utf-8"))
+            self.assertEqual(manifest.read_bytes(), manifest_before)
+
+    def test_non_force_install_cleans_blocked_block_before_profile_failures(self):
+        from sage import overlay_common
+        invalid_profiles = (
+            "team: { core: {\n",
+            "runtime: {host: claude}\nteam: {core: {leaderr: {runtime: {model: opus}}}}\n",
+        )
+        for body in invalid_profiles:
+            with self.subTest(body=body), tempfile.TemporaryDirectory() as d:
+                self.assertEqual(install.run(Args("claude", d)), 0)
+                reviewer = Path(d, ".claude", "agents", "reviewer.md")
+                reviewer.write_text(
+                    reviewer.read_text(encoding="utf-8")
+                    + "\n" + overlay_common.compose_block("unsafe reviewer", "agents", "reviewer"),
+                    encoding="utf-8")
+                profile = Path(d, "sage", "project-profile.yaml")
+                profile.write_text(body, encoding="utf-8")
+                manifest = Path(d, "docs", "sage_harness", ".manifest.json")
+                manifest_before = manifest.read_bytes()
+
+                self.assertEqual(install.run(Args("claude", d)), 1)
+
+                self.assertNotIn(overlay_common.MARKER_START, reviewer.read_text(encoding="utf-8"))
+                self.assertEqual(profile.read_text(encoding="utf-8"), body)
+                self.assertEqual(manifest.read_bytes(), manifest_before)
+
+    def test_non_force_install_cleans_safe_sibling_when_other_marker_is_malformed(self):
+        from sage import overlay_common
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            leader = Path(d, ".claude", "agents", "leader.md")
+            reviewer = Path(d, ".claude", "agents", "reviewer.md")
+            leader.write_text(
+                leader.read_text(encoding="utf-8")
+                + "\n" + overlay_common.compose_block("unsafe leader", "agents", "leader"),
+                encoding="utf-8")
+            reviewer.write_text(
+                reviewer.read_text(encoding="utf-8")
+                + "\n" + overlay_common.compose_block("unsafe one", "agents", "reviewer")
+                + overlay_common.compose_block("unsafe two", "agents", "reviewer"),
+                encoding="utf-8")
+            manifest = Path(d, "docs", "sage_harness", ".manifest.json")
+            manifest_before = manifest.read_bytes()
+
+            self.assertEqual(install.run(Args("claude", d)), 1)
+
+            self.assertNotIn(overlay_common.MARKER_START, leader.read_text(encoding="utf-8"))
+            self.assertIn(overlay_common.MARKER_START, reviewer.read_text(encoding="utf-8"))
+            self.assertEqual(manifest.read_bytes(), manifest_before)
+
+    def test_profile_rendered_agent_is_valid_unanchored_base(self):
+        with tempfile.TemporaryDirectory() as d:
+            profile = {"runtime": {"host": "claude"},
+                       "team": {"core": {"leader": {"runtime": {"effort": "low"}}}}}
+            os.makedirs(os.path.join(d, "sage"), exist_ok=True)
+            import yaml
+            Path(os.path.join(d, "sage", "project-profile.yaml")).write_text(
+                yaml.safe_dump(profile), encoding="utf-8")
+            source = os.path.join(install._resources.core_dir(), "framework", ".claude", "agents", "leader.md")
+            rendered = install.render_core_agent(Path(source).read_text(encoding="utf-8"), {"effort": "low"})
+            leader = os.path.join(d, ".claude", "agents", "leader.md")
+            os.makedirs(os.path.dirname(leader), exist_ok=True)
+            Path(leader).write_text(rendered, encoding="utf-8")
+
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            self.assertIn("effort: low", Path(leader).read_text(encoding="utf-8"))
 
     def test_codex_host_installs_global_skill(self):
-        # codex 는 repo-스코프 스킬 자동발견 불가 → $sage-init 을 $CODEX_HOME/skills 전역 설치
+        # Explicit global scope installs $sage-init under $CODEX_HOME/skills.
         import unittest.mock as mock
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
             with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
@@ -450,6 +1384,86 @@ class TestInstall(unittest.TestCase):
             skill = os.path.join(codex_home, "skills", "sage-init", "SKILL.md")
             self.assertTrue(os.path.exists(skill))
             self.assertIn("sage-init", Path(skill).read_text(encoding="utf-8"))
+
+    def test_codex_install_requires_explicit_normal_skill_scope(self):
+        with tempfile.TemporaryDirectory() as d:
+            args = Args("codex", d)
+            args.skill_scope = None
+            before = _tree_snapshot(d)
+
+            self.assertEqual(install.run(args), 2)
+            self.assertEqual(_tree_snapshot(d), before)
+
+    def test_codex_global_scope_acquires_shared_skills_root_lock(self):
+        with (tempfile.TemporaryDirectory() as dest,
+              tempfile.TemporaryDirectory() as codex_home,
+              mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}),
+              mock.patch.object(install, "_run_locked") as run_locked):
+            global_lock = install._tx.DestinationLock(install._codex_skills_root())
+            global_lock.acquire()
+            try:
+                err = io.StringIO()
+                with redirect_stderr(err):
+                    rc = install.run(Args("codex", dest, skill_scope="global"))
+            finally:
+                global_lock.release()
+
+            self.assertEqual(rc, 1)
+            self.assertIn("lock", err.getvalue())
+            run_locked.assert_not_called()
+            self.assertEqual(_tree_snapshot(dest), {})
+
+    def test_codex_project_local_scope_installs_and_receipts_core_skills(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                rc = install.run(Args("codex", d, skill_scope="project-local"))
+
+            self.assertEqual(rc, 0)
+            for skill_id in install.core_skill_ids():
+                self.assertTrue(Path(d, ".codex", "skills", skill_id, "SKILL.md").is_file())
+                self.assertFalse(Path(codex_home, "skills", skill_id, "SKILL.md").exists())
+            manifest = json.loads(Path(d, "docs", "sage_harness", ".manifest.json").read_text())
+            self.assertEqual(manifest["core_skill_receipts"]["codex"]["scope"], "project-local")
+            self.assertEqual(manifest["core_skill_receipts"]["codex"]["sage_version"], install.__version__)
+            onboarding = Path(d, "docs", "agent", "sage-onboarding.md").read_text()
+            self.assertIn("Selected Codex CORE skill scope: `project-local`", onboarding)
+            self.assertIn("does not install the `sage` or `sage-hook` executable", onboarding)
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlink unavailable")
+    def test_codex_project_local_scope_rejects_symlink_escape_before_write(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as outside:
+            os.symlink(outside, Path(d, ".codex"))
+            before = _tree_snapshot(d)
+
+            rc = install.run(Args("codex", d, skill_scope="project-local"))
+
+            self.assertEqual(rc, 1)
+            self.assertEqual(_tree_snapshot(d), before)
+            self.assertEqual(list(Path(outside).iterdir()), [])
+
+    def test_codex_global_scope_records_receipt_and_onboarding(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                rc = install.run(Args("codex", d, skill_scope="global"))
+
+            self.assertEqual(rc, 0)
+            manifest = json.loads(Path(d, "docs", "sage_harness", ".manifest.json").read_text())
+            self.assertEqual(manifest["core_skill_receipts"]["codex"]["scope"], "global")
+            onboarding = Path(d, "docs", "agent", "sage-onboarding.md").read_text()
+            self.assertIn("Selected Codex CORE skill scope: `global`", onboarding)
+            self.assertIn("each teammate", onboarding)
+
+    def test_codex_scope_switch_updates_receipt_without_deleting_other_copy(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                self.assertEqual(install.run(Args("codex", d, skill_scope="global")), 0)
+                self.assertEqual(install.run(Args("codex", d, force=True,
+                                                  skill_scope="project-local")), 0)
+
+            manifest = json.loads(Path(d, "docs", "sage_harness", ".manifest.json").read_text())
+            self.assertEqual(manifest["core_skill_receipts"]["codex"]["scope"], "project-local")
+            self.assertTrue(Path(d, ".codex", "skills", "sage-init", "SKILL.md").is_file())
+            self.assertTrue(Path(codex_home, "skills", "sage-init", "SKILL.md").is_file())
 
     def test_codex_global_skill_create_only_then_force(self):
         # create-only: 기존 전역 스킬 보존. --force 면 갱신.
@@ -731,7 +1745,7 @@ class TestAgentRender(unittest.TestCase):
 
     def test_corrupt_profile_aborts_install_not_silently_default_rendered(self):
         # 파싱 실패를 {} 로 삼키면 설정이 조용히 무시된 채 기본 렌더가 배포된다.
-        for body in ("team: { core: {\n", "- just\n- a list\n"):
+        for body in ("team: { core: {\n", "- just\n- a list\n", "false\n", "0\n", "[]\n", '""\n'):
             with tempfile.TemporaryDirectory() as d:
                 install.run(Args("claude", d))
                 leader = Path(os.path.join(d, ".claude", "agents", "leader.md"))

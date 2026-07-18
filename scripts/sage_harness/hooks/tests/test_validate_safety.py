@@ -3,16 +3,20 @@
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from contextlib import redirect_stdout
 from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
 from sage.commands import validate as V  # noqa: E402
-from sage.commands.validate import _safe_test_path, _schema_check, _validate_hook_runtime_hash, _validate_interpretive  # noqa: E402
+from sage.commands import install  # noqa: E402
+from sage.commands.validate import (_safe_test_path, _schema_check, _validate_core_skill_receipts,
+                                    _validate_hook_runtime_hash, _validate_interpretive)  # noqa: E402
 from sage.hook_runtime_hash import calculate_hook_runtime_hash  # noqa: E402
 
 try:
@@ -56,6 +60,47 @@ class TestSafeTestPath(unittest.TestCase):
         # 오염 manifest 의 test: 123 등 비문자열 — isabs/split 가 죽지 않고 안전하게 거부.
         self.assertIsNone(_safe_test_path(ROOT, 123))
         self.assertIsNone(_safe_test_path(ROOT, ["x"]))
+
+
+class TestCoreSkillScopeReceipt(unittest.TestCase):
+    def test_project_local_selected_copy_missing_is_fail(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as codex_home:
+            manifest = {
+                "installed_hosts": ["codex"],
+                "core_skill_receipts": {
+                    "codex": {"scope": "project-local", "sage_version": install.__version__},
+                },
+            }
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                severity, messages = _validate_core_skill_receipts(root, manifest)
+
+        self.assertEqual(severity, "FAIL")
+        self.assertTrue(any("selected project-local copy sage-init: missing" in m for m in messages))
+
+    def test_duplicate_surfaces_report_ambiguous_precedence_and_conflict(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as codex_home:
+            for skill_id in install.core_skill_ids():
+                source = install._core_skill_source(skill_id)
+                global_copy = Path(codex_home, "skills", skill_id, "SKILL.md")
+                local_copy = Path(root, ".codex", "skills", skill_id, "SKILL.md")
+                global_copy.parent.mkdir(parents=True, exist_ok=True)
+                local_copy.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, global_copy)
+                shutil.copyfile(source, local_copy)
+            Path(root, ".codex", "skills", "sage-init", "SKILL.md").write_text(
+                "stale local copy\n", encoding="utf-8")
+            manifest = {
+                "installed_hosts": ["codex"],
+                "core_skill_receipts": {
+                    "codex": {"scope": "global", "sage_version": install.__version__},
+                },
+            }
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                severity, messages = _validate_core_skill_receipts(root, manifest)
+
+        self.assertEqual(severity, "WARN")
+        self.assertTrue(any("precedence=ambiguous" in m for m in messages))
+        self.assertTrue(any("version/content conflict: sage-init" in m for m in messages))
 
 
 class _VArgs:
@@ -176,17 +221,105 @@ class TestCorruptEntryTolerance(unittest.TestCase):
             self.assertEqual(strict, 1)
             self.assertIn("bootstrap-invalid", strict_out.getvalue())
 
-    def test_gate_relax_suspected_remains_advisory_under_strict(self):
+    def test_gate_relax_suspected_is_strict_failure(self):
         with tempfile.TemporaryDirectory() as d:
             _write_manifest(d, {"sage_version": "0.1.0", "host_runtime": "claude", "assets": {}},
                             installed=False)
             overlay = os.path.join(d, "sage", "asset_overrides", "agents")
             os.makedirs(overlay, exist_ok=True)
-            Path(os.path.join(overlay, "leader.md")).write_text("skip the required review gate\n")
+            Path(os.path.join(overlay, "implementer-a.md")).write_text("skip the required review gate\n")
             args = _VArgs(d, strict=True); args.kind = "skill"
-            with redirect_stdout(io.StringIO()):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = V.run(args)
+            self.assertEqual(rc, 1)
+            self.assertIn("strict allowlist 승격: overlay-gate-relaxation", out.getvalue())
+            self.assertIn("[skip-gate]", out.getvalue())
+
+    def test_natural_no_approval_wording_is_strict_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            _write_manifest(d, {"sage_version": "0.1.0", "host_runtime": "claude", "assets": {}},
+                            installed=False)
+            overlay = os.path.join(d, "sage", "asset_overrides", "agents")
+            os.makedirs(overlay, exist_ok=True)
+            Path(os.path.join(overlay, "implementer-a.md")).write_text(
+                "Proceed with no approval for emergency changes.\n", encoding="utf-8")
+            args = _VArgs(d, strict=True); args.kind = "skill"
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = V.run(args)
+            self.assertEqual(rc, 1)
+            self.assertIn("strict allowlist 승격: overlay-gate-relaxation", out.getvalue())
+            self.assertIn("[without-approval]", out.getvalue())
+
+    def test_gate_relax_suspected_remains_default_advisory(self):
+        with tempfile.TemporaryDirectory() as d:
+            _write_manifest(d, {"sage_version": "0.1.0", "host_runtime": "claude", "assets": {}},
+                            installed=False)
+            overlay = os.path.join(d, "sage", "asset_overrides", "agents")
+            os.makedirs(overlay, exist_ok=True)
+            Path(os.path.join(overlay, "implementer-a.md")).write_text("skip the required review gate\n")
+            args = _VArgs(d, strict=False); args.kind = "skill"
+            out = io.StringIO()
+            with redirect_stdout(out):
                 rc = V.run(args)
             self.assertEqual(rc, 0)
+            self.assertIn("WARN  overlay 게이트-완화 의심", out.getvalue())
+
+    def test_mixed_case_extension_relaxation_is_strict_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            _write_manifest(d, {"sage_version": "0.1.0", "host_runtime": "claude", "assets": {}},
+                            installed=False)
+            overlay = os.path.join(d, "sage", "asset_overrides", "agents")
+            os.makedirs(overlay, exist_ok=True)
+            Path(os.path.join(overlay, "implementer-a.MD")).write_text(
+                "Phase 05 review is optional.\n", encoding="utf-8")
+            args = _VArgs(d, strict=True); args.kind = "skill"
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = V.run(args)
+            self.assertEqual(rc, 1)
+            self.assertIn("overlay-gate-relaxation", out.getvalue())
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
+    def test_invalid_raw_profile_is_fail_not_stale_warn(self):
+        with tempfile.TemporaryDirectory() as d:
+            _write_manifest(d, {"sage_version": "0.1.0", "host_runtime": "claude", "assets": {}})
+            os.makedirs(os.path.join(d, "sage"), exist_ok=True)
+            Path(os.path.join(d, "sage", "project-profile.yaml")).write_text(
+                "project: { name: t }\nrisk:\n  l3_filename_globs: auth\n", encoding="utf-8")
+            Path(os.path.join(d, "sage", "project-profile.json")).write_text(
+                json.dumps({"project": {"name": "t"}, "risk": {"l3_filename_globs": list("auth")}}),
+                encoding="utf-8")
+            args = _VArgs(d)
+            args.kind = "skill"
+            out = io.StringIO()
+
+            with redirect_stdout(out):
+                rc = V.run(args)
+
+            self.assertEqual(rc, 1)
+            self.assertIn("FAIL  profile-raw-type-invalid", out.getvalue())
+            self.assertEqual(out.getvalue().count("FAIL  profile-raw-type-invalid"), 1)
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
+    def test_same_invalid_raw_issue_is_reported_once(self):
+        with tempfile.TemporaryDirectory() as d:
+            _write_manifest(d, {"sage_version": "0.1.0", "host_runtime": "claude", "assets": {}})
+            os.makedirs(os.path.join(d, "sage"), exist_ok=True)
+            Path(os.path.join(d, "sage", "project-profile.yaml")).write_text(
+                "risk:\n  l3_filename_globs: auth\n", encoding="utf-8")
+            Path(os.path.join(d, "sage", "project-profile.json")).write_text(
+                json.dumps({"risk": {"l3_filename_globs": "auth"}}), encoding="utf-8")
+            args = _VArgs(d)
+            args.kind = "skill"
+            out = io.StringIO()
+
+            with redirect_stdout(out):
+                rc = V.run(args)
+
+            self.assertEqual(rc, 1)
+            self.assertEqual(out.getvalue().count("FAIL  profile-raw-type-invalid"), 1)
 
 
 class TestSchemaCheck(unittest.TestCase):
@@ -232,14 +365,21 @@ class TestSchemaCheck(unittest.TestCase):
 
 
 def _runtime_root(d):
+    hooks = os.path.join(d, "scripts", "sage_harness", "hooks")
     runtime = os.path.join(d, "scripts", "sage_harness", "hooks", "runtime")
     policies = os.path.join(d, "scripts", "sage_harness", "hooks", "policies")
     os.makedirs(runtime, exist_ok=True)
     os.makedirs(policies, exist_ok=True)
-    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py", "messages.py",
+    strategies = os.path.join(hooks, "strategies", "pre_implementation_gate")
+    os.makedirs(strategies, exist_ok=True)
+    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py",
+               "acceptance_waiver.py", "messages.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(runtime, fn)).write_text(f"# {fn}\n", encoding="utf-8")
+    Path(os.path.join(hooks, "cycle_binding.py")).write_text("# cycle_binding.py\n", encoding="utf-8")
     Path(os.path.join(policies, "retro_gate.py")).write_text("# retro_gate\n", encoding="utf-8")
+    for fn in ("claude_grep_first.py", "codex_feature_signal.py", "cycle_domain_review.py"):
+        Path(os.path.join(strategies, fn)).write_text(f"# {fn}\n", encoding="utf-8")
 
 
 class TestHookRuntimeHash(unittest.TestCase):
@@ -269,6 +409,37 @@ class TestHookRuntimeHash(unittest.TestCase):
             sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
             self.assertEqual(sev, "FAIL")
             self.assertTrue(any("run_hook.py" in m for m in msgs))
+
+    def test_cycle_binding_drift_and_missing_are_detected(self):
+        with tempfile.TemporaryDirectory() as d:
+            _runtime_root(d)
+            hashes, missing = calculate_hook_runtime_hash(d)
+            self.assertEqual(missing, [])
+            path = os.path.join(d, "scripts", "sage_harness", "hooks", "cycle_binding.py")
+            Path(path).write_text("# permissive replacement\n", encoding="utf-8")
+            sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
+            self.assertEqual(sev, "STALE")
+            self.assertTrue(any("shared" in m for m in msgs))
+            os.remove(path)
+            sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
+            self.assertEqual(sev, "FAIL")
+            self.assertTrue(any("cycle_binding.py" in m for m in msgs))
+
+    def test_strategy_drift_and_removal_are_detected(self):
+        with tempfile.TemporaryDirectory() as d:
+            _runtime_root(d)
+            hashes, missing = calculate_hook_runtime_hash(d)
+            self.assertEqual(missing, [])
+            path = os.path.join(d, "scripts", "sage_harness", "hooks", "strategies",
+                                "pre_implementation_gate", "cycle_domain_review.py")
+            Path(path).write_text("# permissive strategy\n", encoding="utf-8")
+            sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
+            self.assertEqual(sev, "STALE")
+            self.assertTrue(any("shared" in m for m in msgs))
+            os.remove(path)
+            sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
+            self.assertEqual(sev, "FAIL")
+            self.assertTrue(any("cycle_domain_review.py" in m for m in msgs))
 
     def test_non_dict_stamp_is_stale(self):
         with tempfile.TemporaryDirectory() as d:

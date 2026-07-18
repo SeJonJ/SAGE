@@ -30,10 +30,18 @@ Deterministic commands prove that configured checks ran; they do not prove every
 explicit user requirement was satisfied. When `profile.verification.acceptance`
 is enabled:
 
-- Phase 01 must define an acceptance matrix for explicit user requirements.
+- Phase 01 must define an acceptance matrix outside fenced code blocks for explicit user requirements.
 - Phase 03 maps implementation and tests to those acceptance IDs.
 - Phase 04 records `PASS`, `FAIL`, `NOT TESTED`, or `N/A` for each item with
   concrete evidence.
-- Phase 05 treats required `FAIL` or `NOT TESTED` items as blocking.
-- Phase 06 may warn or block, depending on `report_gate_enforce`, if Phase 04
-  evidence is missing or unresolved.
+- Phase 01/04 must be selected by the exact same `Cycle-Stem`; every acceptance
+  ID must be well formed and unique, every required Phase 01 ID needs Phase 04
+  evidence, and Phase 04 cannot introduce unknown IDs.
+- Phase 05 treats required `FAIL` or `NOT TESTED` items as blocking unless the
+  report gate records an explicit exact-ID L3 waiver as residual evidence.
+- Phase 06 defaults to advisory for L2 and enforce for L3/unknown. A local-only
+  L3 `NOT TESTED` item may become a residual WARN only after an explicit
+  `sage acceptance-waiver grant` for the exact cycle and required acceptance ID.
+  `FAIL` is never waivable, and a waiver never changes the recorded status to PASS.
+- Phase 05 approval requires exactly one `Final Status: APPROVED` declaration outside
+  fenced code blocks, and Phase 06 is written separately from every 00–05 phase update.

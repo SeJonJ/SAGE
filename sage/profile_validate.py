@@ -15,13 +15,15 @@ import json
 import os
 from pathlib import Path
 
+from sage.profile_compile import materialization_issues
+
 _RANK = {"INFO": 0, "WARN": 1, "FAIL": 2}
 
 # 폐쇄 섹션(스키마 additionalProperties:false)의 허용 키 — jsonschema 가 없어도 오타 키를
 # 항상 적발하기 위한 폴백(N-R1/P0-2). 권위 출처는 schema/profile.schema.json 이며, 스키마를
 # 읽을 수 있으면 거기서 로드해 드리프트를 막는다. 폴백은 스키마 파일이 아예 없을 때만 쓰인다.
 _CLOSED_SECTION_FALLBACK = {
-    "risk": {"desktop_block_glob", "desktop_block_hint", "generic_tokens", "l0_pass_globs",
+    "risk": {"desktop_block_glob", "desktop_block_hint", "generic_tokens", "l0_pass_globs", "l0_exclude_globs",
              "l1_path_globs", "l2_content_keywords", "l2_path_globs", "l3_content_keywords",
              "l3_filename_globs", "l3_review_strategy", "l3_review_glob", "content_l3_enforce",
              "domains", "plan_glob", "review_patterns"},
@@ -30,6 +32,7 @@ _CLOSED_SECTION_FALLBACK = {
     "output_contract": {"markers"},
     "mcp": {"enabled"},
     "extraction": {"config"},
+    "runtime": {"host", "installed_hosts", "active_host", "external_reviewer", "asset_ssot"},
 }
 
 # review_loop(Loop A) 엔진 어휘 — 스택 중립(severity·risk level 처럼 엔진 레벨 vocabulary, 도메인값 아님).
@@ -43,7 +46,8 @@ _REVIEW_LOOP_KEYS = {"enabled", "lenses", "refuters", "refute_threshold", "max_i
                      "architecture_escalation", "termination_enforce", "report_gate_enforce"}
 _TERMINATION_MODES = {"advisory", "enforce"}   # 종료 검산 모드(기본 advisory)
 _REPORT_GATE_MODES = {"off", "advisory", "enforce"}   # 06←05 audit 게이트 모드(기본 advisory)
-_ACCEPTANCE_KEYS = {"enabled", "require_for_risk", "statuses", "unresolved_statuses", "report_gate_enforce"}
+_ACCEPTANCE_KEYS = {"enabled", "require_for_risk", "statuses", "unresolved_statuses",
+                    "report_gate_enforce", "report_gate_by_risk", "waiver"}
 _ACCEPTANCE_TIERS = {"L1", "L2", "L3"}
 _CANONICAL_ACCEPTANCE_STATUSES = {"PASS", "FAIL", "NOT TESTED", "N/A"}
 
@@ -347,11 +351,12 @@ def _schema_issues(profile, root):
 
 
 def _semantic_issues(profile, root):
-    issues = []
+    issues = [("FAIL", message) for message in materialization_issues(profile)]
 
     # 섹션 타입 가드(codex 재리뷰) — risk/pdca/options/knowledge_capture 가 truthy 비-dict 면 이후
     #   .get() 크래시(retro 등 런타임 읽기 포함). jsonschema 없어도 제어된 FAIL 을 단일 출처로 발행.
-    for section in ("risk", "pdca", "options", "knowledge_capture", "verification", "hooks"):
+    # risk 루트 타입은 materialization_issues가 소유한다. 여기서 다시 발행하면 동일 FAIL이 중복된다.
+    for section in ("pdca", "options", "knowledge_capture", "verification", "hooks", "context_management"):
         v = profile.get(section)
         if v is not None and not isinstance(v, dict):
             issues.append(("FAIL", f"{section} 섹션은 매핑(object)이어야 함(받음: {type(v).__name__})"))
@@ -364,13 +369,11 @@ def _semantic_issues(profile, root):
 
     domains = risk.get("domains")
     if domains is not None and not isinstance(domains, list):
-        issues.append(("FAIL", "risk.domains 는 리스트여야 함"))
         domains = []
     seen_domains = set()
     for idx, domain in enumerate(domains or []):
         label = f"risk.domains[{idx}]"
         if not isinstance(domain, dict):
-            issues.append(("FAIL", f"{label} 는 매핑(object)이어야 함"))
             continue
         did = domain.get("id")
         if not isinstance(did, str) or not did:
@@ -381,13 +384,27 @@ def _semantic_issues(profile, root):
             seen_domains.add(did)
         if domain.get("risk_level") not in ("L1", "L2", "L3"):
             issues.append(("FAIL", f"{label}.risk_level 은 L1/L2/L3 중 하나여야 함"))
-        for key in ("path_globs", "content_keywords"):
-            value = domain.get(key)
-            if not isinstance(value, list) or not all(isinstance(x, str) and x for x in value):
-                issues.append(("FAIL", f"{label}.{key} 는 비어있지 않은 문자열의 리스트여야 함"))
         pointer = domain.get("protocol_pointer")
         if not isinstance(pointer, str) or not pointer or os.path.isabs(pointer) or ".." in pointer.split("/"):
             issues.append(("FAIL", f"{label}.protocol_pointer 는 프로젝트 상대 안전 경로여야 함"))
+
+    exclusions = risk.get("l0_exclude_globs")
+    if isinstance(exclusions, list):
+        higher = set()
+        for key in ("l1_path_globs", "l2_path_globs", "l3_filename_globs"):
+            values = risk.get(key)
+            if isinstance(values, list):
+                higher.update(value for value in values if isinstance(value, str))
+        for domain in domains or []:
+            if not isinstance(domain, dict) or domain.get("risk_level") not in ("L1", "L2", "L3"):
+                continue
+            values = domain.get("path_globs")
+            if isinstance(values, list):
+                higher.update(value for value in values if isinstance(value, str))
+        orphaned = [value for value in exclusions if isinstance(value, str) and value not in higher]
+        if orphaned:
+            issues.append(("FAIL", f"risk.l0_exclude_globs {orphaned} 는 동일한 상위 위험도(L1/L2/L3) "
+                                   "path glob과 정확히 결속되어야 함"))
 
     # 0. 폐쇄 섹션 미지 키(오타) 적발 — jsonschema 선택의존과 무관하게 항상 동작(N-R1/P0-2).
     #    예: l3_filename_globs→l3_filename_glob 오타가 빈 리스트로 통과해 L3 게이트가 침묵
@@ -463,9 +480,9 @@ def _acceptance_issues(profile):
             if bad:
                 issues.append(("FAIL", f"verification.acceptance.require_for_risk 에 미지 risk {bad}. "
                                        f"허용: {sorted(_ACCEPTANCE_TIERS)}"))
-            if enabled and not tiers:
-                issues.append(("WARN", "verification.acceptance.enabled=true 이나 require_for_risk 가 비어 있음 "
-                                       "→ 어떤 위험도에서도 acceptance evidence 기대가 불명확"))
+            if enabled and "L3" not in tiers:
+                issues.append(("FAIL", "verification.acceptance.enabled=true 이면 require_for_risk 에 L3가 "
+                                       "필수다. profile만으로 L3 acceptance gate를 비활성화할 수 없음"))
 
     statuses = ac.get("statuses")
     if statuses is None:
@@ -477,9 +494,13 @@ def _acceptance_issues(profile):
     if enabled and not statuses:
         issues.append(("FAIL", "verification.acceptance.enabled=true 인데 statuses 가 비어 있음"))
     missing_canonical = sorted(_CANONICAL_ACCEPTANCE_STATUSES - normalized_statuses)
+    extra_statuses = sorted(normalized_statuses - _CANONICAL_ACCEPTANCE_STATUSES)
     if enabled and missing_canonical:
         issues.append(("FAIL", f"verification.acceptance.statuses 에 표준 상태 {missing_canonical} 누락. "
                                "PASS/FAIL/NOT TESTED/N/A 를 명시해야 04/05 해석이 갈리지 않음"))
+    if extra_statuses:
+        issues.append(("FAIL", f"verification.acceptance.statuses 에 비표준 상태 {extra_statuses} 사용 불가. "
+                               "PASS와 사유 있는 N/A만 해결 상태이며 custom status는 허용하지 않음"))
 
     unresolved = ac.get("unresolved_statuses")
     if unresolved is None:
@@ -496,14 +517,47 @@ def _acceptance_issues(profile):
                                "— 미구현/미검증 요구사항이 APPROVED 로 통과하는 것 방지"))
 
     mode = ac.get("report_gate_enforce")
+    by_risk = ac.get("report_gate_by_risk")
+    if mode is not None and by_risk is not None:
+        issues.append(("FAIL", "verification.acceptance.report_gate_enforce 와 report_gate_by_risk 를 동시에 "
+                               "설정할 수 없음 — 정책 ambiguity"))
     if mode is not None and (not isinstance(mode, str) or mode not in _REPORT_GATE_MODES):
         issues.append(("FAIL", f"verification.acceptance.report_gate_enforce={mode!r} → {sorted(_REPORT_GATE_MODES)} 중 하나만"))
-    elif enabled and (mode or "off") == "off":
-        issues.append(("WARN", "verification.acceptance.enabled=true 이나 report_gate_enforce=off "
-                               "→ 06 report gate 에서 acceptance evidence 를 확인하지 않음"))
-    elif mode == "enforce":
-        issues.append(("WARN", "verification.acceptance.report_gate_enforce=enforce — 기존 프로젝트는 04 acceptance table "
-                               "없으면 06 오차단 가능. advisory 로 측정 후 전환 권장"))
+    elif mode is not None:
+        issues.append(("WARN", "verification.acceptance.report_gate_enforce 는 legacy 단일 mode — "
+                               "report_gate_by_risk(L2 advisory/L3 enforce)로 migration 권장. "
+                               "legacy off/advisory도 L3에서는 enforce로 안전 승격됨"))
+
+    if by_risk is not None:
+        if not isinstance(by_risk, dict):
+            issues.append(("FAIL", "verification.acceptance.report_gate_by_risk 는 매핑(object)이어야 함"))
+        else:
+            unknown_risks = sorted(set(by_risk) - _ACCEPTANCE_TIERS, key=str)
+            if unknown_risks:
+                issues.append(("FAIL", f"verification.acceptance.report_gate_by_risk 미지 risk {unknown_risks}"))
+            for risk, expected in (("L1", "advisory"), ("L2", "advisory"), ("L3", "enforce")):
+                value = by_risk.get(risk)
+                if value is not None and value not in ("advisory", "enforce"):
+                    issues.append(("FAIL", f"verification.acceptance.report_gate_by_risk.{risk}={value!r} — "
+                                           "advisory|enforce 만 허용"))
+                elif value is not None and value != expected:
+                    issues.append(("FAIL", f"verification.acceptance.report_gate_by_risk.{risk} 는 {expected} 여야 함 — "
+                                           "profile만으로 위험 정책 하향/상향 금지"))
+            if enabled and (by_risk.get("L2"), by_risk.get("L3")) != ("advisory", "enforce"):
+                issues.append(("FAIL", "verification.acceptance.report_gate_by_risk 는 enabled 시 "
+                                       "L2: advisory, L3: enforce 를 명시해야 함"))
+
+    waiver = ac.get("waiver")
+    if waiver is not None:
+        if not isinstance(waiver, dict):
+            issues.append(("FAIL", "verification.acceptance.waiver 는 매핑(object)이어야 함"))
+        else:
+            unknown_waiver = sorted(set(waiver) - {"enabled"}, key=str)
+            if unknown_waiver:
+                issues.append(("FAIL", f"verification.acceptance.waiver 에 미지 키 {unknown_waiver}"))
+            waiver_enabled = waiver.get("enabled")
+            if waiver_enabled is not None and not isinstance(waiver_enabled, bool):
+                issues.append(("FAIL", "verification.acceptance.waiver.enabled 는 bool(true/false)이어야 함"))
 
     return issues
 
@@ -561,6 +615,16 @@ def _team_agent_issues(profile):
     return team_runtime_issues(profile)
 
 
+def _runtime_host_issues(profile):
+    from sage.runtime_hosts import profile_issues
+    return profile_issues(profile)
+
+
+def _component_model_issues(profile):
+    from sage.model_routing import component_issues
+    return component_issues(profile)
+
+
 def validate_profile(profile, root):
     """구조 + 의미 검증 결과 [(severity, message)]. 어떤 입력에도 예외를 던지지 않는다(totality 계약).
 
@@ -578,9 +642,13 @@ def validate_profile(profile, root):
         return [("FAIL", f"profile 은 매핑(object)이어야 함 — 최상위가 key:value 구조여야 함(받음: {type(profile).__name__})")]
     issues = _schema_issues(profile, root)
     try:
+        from sage.context_packet import profile_issues as context_profile_issues
+
         issues = issues + _semantic_issues(profile, root) + _review_loop_issues(profile) \
             + _acceptance_issues(profile) + _knowledge_capture_issues(profile) \
             + _cross_model_issues(profile) + _team_agent_issues(profile) + _retro_gate_issues(profile)
+        issues = issues + _runtime_host_issues(profile) + _component_model_issues(profile) \
+            + context_profile_issues(profile)
     except Exception as e:
         issues.append(("FAIL", f"profile 의미검증 중 예외 — malformed profile 추정({type(e).__name__}). "
                                f"구조(중첩 값 타입) 점검 필요"))

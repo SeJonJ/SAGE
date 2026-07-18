@@ -22,6 +22,11 @@ import subprocess
 import sys
 import time
 
+HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if HOOKS_DIR not in sys.path:
+    sys.path.insert(0, HOOKS_DIR)
+import cycle_binding
+
 
 def resolve_branch(root, default=""):
     """현재 브랜치. SAGE_GATE_BRANCH 우선, 없으면 root 기준 git. git 실패 → default.
@@ -69,16 +74,27 @@ def parse_input_fail_open(hook_id, raw_text, surface=True):
 
 
 def make_rel(root):
-    """절대경로 → root 상대(독립). 비절대/빈값/실패는 그대로."""
+    """모든 도구 경로를 정규화된 root 상대 경로로 변환한다.
+
+    상대경로도 root 기준 절대경로로 해석한 뒤 다시 상대화하므로 ``.``, ``..``,
+    중복 구분자로 같은 파일을 다르게 표현해 게이트 applicability를 우회할 수 없다.
+    실제 root 밖 대상은 프로젝트 상대 namespace에서 명시적으로 제외한다.
+    """
+    root_abs = os.path.abspath(root)
+
     def rel(p):
         if not p:
             return ""
-        if not os.path.isabs(p):
-            return p
         try:
-            return os.path.relpath(p, root)
+            supplied = str(p).replace("\\", os.sep)
+            target = supplied if os.path.isabs(supplied) else os.path.join(root_abs, supplied)
+            target_abs = os.path.abspath(target)
+            if os.path.commonpath((root_abs, target_abs)) != root_abs:
+                return "<outside-project>"
+            relative = os.path.relpath(target_abs, root_abs)
+            return "" if relative == "." else _canon_relkey(relative)
         except Exception:
-            return p
+            return "<outside-project>"
     return rel
 
 
@@ -136,18 +152,22 @@ def build_snapshot(profile, root, rel):
         la = loop_audit.audit_summary(root)
     except Exception:
         la = {"runs": {}, "has_any_records": False}
+    acceptance = ((profile.get("verification") or {}).get("acceptance") or {})
+    waiver_cfg = acceptance.get("waiver") if isinstance(acceptance, dict) else {}
+    if isinstance(waiver_cfg, dict) and waiver_cfg.get("enabled") is True:
+        try:
+            import acceptance_waiver
+            acceptance_waivers = acceptance_waiver.audit_summary(root)
+        except Exception as exc:
+            acceptance_waivers = {"valid": False, "active": [],
+                                  "issues": [f"waiver snapshot failed: {type(exc).__name__}: {exc}"],
+                                  "has_any_records": False}
+    else:
+        acceptance_waivers = {"valid": True, "active": [], "issues": [], "has_any_records": False}
     return {"plan_files": plan_files, "review_candidates": review_candidates,
             "l3_review_docs": l3_review_docs,
-            "phase_docs": phase_docs, "loop_audit": la}
-
-
-def _review_cycle_ids(event):
-    branch = (event.get("branch") or "").strip()
-    ids = set(re.findall(r"[0-9]+", branch))
-    if branch:
-        ids.add(branch)
-        ids.add(branch.rsplit("/", 1)[-1])
-    return ids
+            "phase_docs": phase_docs, "loop_audit": la,
+            "acceptance_waivers": acceptance_waivers}
 
 
 def _matched_domains(profile, changes):
@@ -187,9 +207,10 @@ def run_strategy(hook_id, profile, core_dir, changes, event, snapshot):
         for c in changes:                       # whole-path 아닌 토큰으로(전략이 토큰 겹침 비교)
             cp = c["path"]
             ftoks |= {t.lower() for t in re.split(r"[^A-Za-z0-9가-힣]+", cp + " " + os.path.basename(cp)) if len(t) >= 3}
-        signals = {"tickets": set(re.findall(r"[0-9]+", event.get("branch", "") or "")),
-                   "plan": set(), "files": ftoks,
-                   "cycle_ids": _review_cycle_ids(event),
+        binding = cycle_binding.resolve(event, snapshot, profile.get("pdca") or {})
+        signals = {"plan": set(), "files": ftoks,
+                   "cycle_stem": binding.get("stem"),
+                   "cycle_binding_error": binding.get("error"),
                    "matched_domains": _matched_domains(profile, changes),
                    "generic_tokens": rk.get("generic_tokens") or [],   # 전략 확장(profile 주입)
                    "review_patterns": rk.get("review_patterns") or []}
@@ -200,6 +221,13 @@ def run_strategy(hook_id, profile, core_dir, changes, event, snapshot):
         return None
 
 
+_NON_OVERRIDABLE_BLOCKS = {
+    "block_report_without_acceptance",
+    "block_report_waiver_audit_failure",
+    "block_gate_runtime_error",
+}
+
+
 def _maybe_override(hook_id, root, decision, changes):
     """게이트 BLOCK 을 활성 override(미만료)로 합법 우회 → 통과(True) 전 bypass 를 감사로그에 기록 (P1-5).
 
@@ -208,6 +236,8 @@ def _maybe_override(hook_id, root, decision, changes):
     어느 파일에 적용했는지 .sage/override.jsonl 에 남긴다. override_audit 미가용/비-block → False(원래 흐름).
     """
     if (decision or {}).get("status") != "block":
+        return False
+    if decision.get("message_key") in _NON_OVERRIDABLE_BLOCKS:
         return False
     try:
         import override_audit as ov
@@ -224,6 +254,44 @@ def _maybe_override(hook_id, root, decision, changes):
           f"우회: {decision.get('message_key')} | 파일: {', '.join(files) or '(미상)'}",
           file=sys.stderr)
     return True
+
+
+def _record_acceptance_waiver_uses(hook_id, root, decision):
+    """Persist every waiver consumption before allowing the report write.
+
+    A pure core decision cannot perform IO. The adapter owns the append, and any append
+    failure replaces the advisory result with a BLOCK so no unaudited waiver is consumed.
+    """
+    uses = (decision or {}).get("waiver_uses") or []
+    if not uses:
+        return decision
+    try:
+        import acceptance_waiver
+        for grant in uses:
+            acceptance_waiver.record_use(root, grant, grant.get("report_path") or "")
+        return decision
+    except Exception as exc:
+        print(f"⛔ [{hook_id}] acceptance waiver use 감사 기록 실패 → fail-closed BLOCK: "
+              f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return {"status": "block", "exit_code": 2, "risk": "PDCA",
+                "message_key": "block_report_waiver_audit_failure",
+                "reason": f"acceptance waiver use 감사 기록 실패: {type(exc).__name__}: {exc}",
+                "file_short": (decision or {}).get("file_short", "")}
+
+
+def _decide_pre_implementation_fail_closed(hook_id, core, event, profile, snapshot, strategy_result):
+    """Convert any unexpected core exception into the host's blocking exit contract."""
+    try:
+        return core.decide(event, profile, snapshot, strategy_result)
+    except Exception as exc:
+        print(f"⛔ [{hook_id}] core 판정 오류 → fail-closed BLOCK: "
+              f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        files = [change.get("path") for change in (event.get("changes") or [])
+                 if isinstance(change, dict) and change.get("path")]
+        return {"status": "block", "exit_code": 2, "risk": "PDCA",
+                "message_key": "block_gate_runtime_error", "safety_degraded": True,
+                "reason": f"core 판정 오류: {type(exc).__name__}: {exc}",
+                "file_short": ", ".join(files[:3])}
 
 
 def run_pre_implementation_gate(io, root, core_dir, raw_text):
@@ -243,13 +311,16 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
     declared = io.read_declared_level(raw, root)  # ← 런타임별 ($host/logs)
     event = {"hook_id": hid, "hook_event_name": "PreToolUse", "runtime": io.RUNTIME,
              "session_id": raw.get("session_id", "") or "", "branch": resolve_branch(root, ""),
+             "cycle_stem": os.environ.get("SAGE_CYCLE_STEM", ""),
              "declared_max": declared, "changes": changes}
     snapshot = build_snapshot(profile, root, rel)
     strategy_result = run_strategy(hid, profile, core_dir, changes, event, snapshot)
 
     sys.path.insert(0, core_dir)
     import pre_implementation_gate_core as core
-    decision = core.decide(event, profile, snapshot, strategy_result)
+    decision = _decide_pre_implementation_fail_closed(
+        hid, core, event, profile, snapshot, strategy_result)
+    decision = _record_acceptance_waiver_uses(hid, root, decision)
     if _maybe_override(hid, root, decision, changes):   # P1-5: 활성 override 면 BLOCK 우회(감사 기록)
         return 0
     return io.render_gate(decision, profile)     # ← 런타임별 채널/포맷/exit
@@ -651,22 +722,32 @@ def _snapshot_changed_06(root, profile, log_dir, session_id):
 
 
 def _session_start_overlay_l1(io, root):
-    """SessionStart L1 — CORE 렌더의 오버레이 관리 블록만 재수렴한다(편의 레이어, 강제 아님).
+    """SessionStart — CORE 렌더의 오버레이 관리 블록을 재수렴한다.
 
     현재 오버레이 파일 기준으로 각 CORE 렌더 블록을 재합성해, sync 를 따로 안 돌려도 새 세션이 fresh
     오버레이를 본다. manifest 앵커는 손대지 않는다 — 권위(base 무결성·업그레이드 skew)는 install/sync 와
     validate(L2)가 소유하고, L1 이 앵커를 덮으면 advisory 재합성이 그 권위 영수증을 오염시킨다. skew 판정도
     안 한다(현재 오버레이→현재 base 로만 수렴). retro-gate 와 무관한 독립 스텝이라 게이트 비활성 프로젝트에서도
-    돈다. 오버레이 로직은 sage 패키지에 있어 훅 python 에서 import 안 되면 조용히 skip(권위 경로가 보증).
-    어떤 오류도 SessionStart 를 막지 않는다(fail-open)."""
+    돈다. 오버레이 로직을 import할 수 없는 환경은 L2 validate 권위를 남기고 skip한다. 하지만 명시적으로
+    탐지한 blocked/malformed/gate-relaxation 오류는 L3 지침 경계이므로 stderr로 표면화하고 exit 2로 막는다."""
     try:
         from sage import overlay_materialize
     except Exception:
-        return   # sage 패키지 미도달 → 편의 레이어 skip
+        return 0   # sage 패키지 미도달 → L2 권위 경로를 남기고 편의 레이어 skip
     try:
-        overlay_materialize.materialize(root, io.RUNTIME)   # 반환 앵커는 버린다(블록만 재합성)
-    except Exception:
-        return
+        _anchors, changed, errors = overlay_materialize.materialize(root, io.RUNTIME)
+    except Exception as e:
+        print(f"[session-start-overlay] WARN: overlay convenience sync 실패: {type(e).__name__}: {e}",
+              file=sys.stderr)
+        return 0
+    if errors:
+        for path, message in errors:
+            print(f"[session-start-overlay] BLOCK: {path}: {message}", file=sys.stderr)
+        if changed:
+            print("[session-start-overlay] 안전하게 식별된 blocked managed block은 제거됐습니다. "
+                  "남은 오류를 고치고 새 세션을 시작하세요.", file=sys.stderr)
+        return 2
+    return 0
 
 
 def run_session_start_snapshot(io, root, core_dir, raw_text):
@@ -677,7 +758,9 @@ def run_session_start_snapshot(io, root, core_dir, raw_text):
     세션 도중 baseline 을 덮으면 그 전 변경이 baseline 에 흡수돼 감지에서 사라진다(write-once 로 방지)."""
     hid = "session-start-snapshot"
     # 오버레이 블록 재수렴(L1)은 retro-gate·profile·parse 와 독립인 편의 스텝이라 early-return 앞에서 먼저 돈다.
-    _session_start_overlay_l1(io, root)
+    overlay_rc = _session_start_overlay_l1(io, root)
+    if overlay_rc:
+        return overlay_rc
     raw = parse_input_fail_open(hid, raw_text, surface=False)
     if raw is None:
         return 0

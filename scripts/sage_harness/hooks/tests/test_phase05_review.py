@@ -76,6 +76,11 @@ class TestParsers(unittest.TestCase):
         # effort 를 줘도 model 은 여전히 peer 몫.
         self.assertNotIn("--model", RV._peer_command("claude", "max"))
 
+    def test_peer_command_appends_explicit_model_without_shell_interpolation(self):
+        self.assertIn("gpt-picked", RV._peer_command("codex", "high", "gpt-picked"))
+        self.assertEqual(RV._peer_command("codex", "high", "gpt-picked")[-2:], ["-m", "gpt-picked"])
+        self.assertEqual(RV._peer_command("claude", "high", "opus")[-2:], ["--model", "opus"])
+
     def test_peer_command_claude_no_prompt_arg(self):
         self.assertEqual(RV._peer_command("claude"), ["claude", "-p", "--output-format", "json"])
 
@@ -190,6 +195,29 @@ class TestCrossCheck(unittest.TestCase):
                 RV._invoke_peer = orig
             self.assertEqual(rc, 0)
             self.assertEqual(seen["effort"], "low")
+
+    def test_explicit_reviewer_model_passed_to_peer(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "sage"), exist_ok=True)
+            with open(os.path.join(d, "sage", "project-profile.yaml"), "w", encoding="utf-8") as f:
+                f.write("runtime: { host: claude }\noptions: { cross_model: true }\n"
+                        "capabilities: { codex: true }\n"
+                        "cross_model: { effort: low, reviewer: { host: codex, model: gpt-picked } }\n")
+            seen = {}
+            orig = RV._invoke_peer
+
+            def fake(peer, prompt, timeout, effort=None, model=None):
+                seen.update(peer=peer, effort=effort, model=model)
+                return True, "SHIP", None
+
+            RV._invoke_peer = fake
+            try:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d)))
+            finally:
+                RV._invoke_peer = orig
+            self.assertEqual(rc, 0)
+            self.assertEqual(seen, {"peer": "codex", "effort": "low", "model": "gpt-picked"})
 
     def test_cross_effort_unset_uses_default_high(self):
         # peer CLI 기본값에 맡기지 않는다 — Phase 05 리뷰 강도가 조용히 낮아지면 안 됨.

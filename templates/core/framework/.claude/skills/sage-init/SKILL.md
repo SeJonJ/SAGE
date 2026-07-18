@@ -7,7 +7,7 @@ description: Use at the start of a SAGE project (right after `sage install`) to 
 
 Invoke as `/sage-init` (Claude) or `$sage-init` (Codex).
 
-Do not edit this CORE render directly (the write-guard blocks it and `sage install --force` overwrites it). For project-local customization use `/sage-asset-override`: SAGE materializes an eligible overlay into this render as a managed block and `sage validate` gates it. Overlays for gate-bearing assets without an independent oracle are not yet supported (validate reports them).
+Do not edit this CORE render directly (the write-guard blocks it and `sage install --force` overwrites it). Self-overlay is unsupported: `skills/sage-init` is not in `COMPOSE_ALLOWED`. Put project values in the profile and create genuinely new project assets with `/sage-asset`.
 
 This skill turns user intent into a SAGE-conformant `sage/project-profile.yaml`
 **through conversation**, then hands off to the deterministic backend
@@ -109,8 +109,13 @@ reach thoroughness through the back-and-forth, not a wall of questions.
      (design-heavy / high-complexity components), `sonnet` = standard. On a **claude-host**
      project this tier maps to the Claude subagent model; on a **codex-host** project it is
      just a nominal intensity hint (Codex uses its own model regardless). So when the host
-     is Codex, do **not** frame this as "recommending a Claude model" — say "heavier tier
-     (`opus`)" or "standard tier (`sonnet`)". Allowed values stay `opus | sonnet`.
+   is Codex, do **not** frame this as "recommending a Claude model" — say "heavier tier
+   (`opus`)" or "standard tier (`sonnet`)". Allowed values stay `opus | sonnet`.
+   - After the tier, run `sage models --host <host>` for each installed host and show
+     candidates with their verification label. Ask the user to choose an actual
+     `runtime_models.<host>` value for each component. Codex cache candidates are
+     cache-confirmed; Claude aliases are syntax-only/account-unverified. Do not claim
+     that an alias proves account entitlement or silently probe a paid endpoint.
 3. **`verification.commands`** — propose the real `build` / `test` / `lint` (and
    `syntax` for L1) from the build files you found. Empty = that check is skipped,
    so confirm only commands that genuinely exist.
@@ -187,7 +192,9 @@ toggle's detail entirely when it stays off.
     and `sage cross-check` reject it:
     - peer `codex` (claude-host): `minimal | low | medium | high | xhigh`
     - peer `claude` (codex-host): `low | medium | high | xhigh | max`
-    The peer's **model** is never configurable from SAGE — that stays the peer CLI's own setting.
+    Ask the user for `cross_model.reviewer.host` and `.model`; the host must be the
+    runtime opposite `active_host`. Show that host's `sage models` output first. If the
+    reviewer block is omitted, explain that SAGE uses the peer CLI default model.
 - **`options.obsidian` / `knowledge_capture`** — if used, set
   `knowledge_capture.vault_path` (empty path = vault features fully OFF) and the
   note convention. If a vault path is set, explicitly confirm the PDCA boundary

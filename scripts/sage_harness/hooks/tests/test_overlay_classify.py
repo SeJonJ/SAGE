@@ -25,6 +25,21 @@ class TestRosterConsistency(unittest.TestCase):
         expected = frozenset([install._CORE_BOOTSTRAP_SKILL, *install._CORE_SKILLS])
         self.assertEqual(ocl.CORE_IDS["skills"], expected)
 
+    def test_reference_specs_advertise_only_executable_overlay_eligibility(self):
+        for kind in ("agents", "skills"):
+            for asset_id in ocl.CORE_IDS[kind]:
+                spec_path = Path(REPO, "templates", "core", kind, f"{asset_id}.md")
+                if kind == "skills" and not spec_path.exists():
+                    spec_path = Path(REPO, "templates", "core", "framework", ".claude", "skills",
+                                     asset_id, "SKILL.md")
+                spec = spec_path.read_text(encoding="utf-8")
+                if (kind, asset_id) in ocl.COMPOSE_ALLOWED:
+                    self.assertIn("- overlay: optional", spec, f"{kind}/{asset_id}")
+                else:
+                    self.assertTrue("- self_overlay: unsupported" in spec
+                                    or "Self-overlay is unsupported" in spec, f"{kind}/{asset_id}")
+                    self.assertNotIn("- overlay: optional", spec, f"{kind}/{asset_id}")
+
 
 class TestClassify(unittest.TestCase):
     def test_implementers_compose(self):
@@ -42,10 +57,12 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(ocl.classify("skills", "totally-unknown"), "blocked")
         self.assertEqual(ocl.classify("framework", "UNKNOWN"), "blocked")
 
-    def test_framework_compose_after_sd4_contract(self):
+    def test_framework_blocked_without_independent_oracle(self):
         for id in ("AGENT_GUIDE", "CLAUDE", "CODEX", "AGENTS"):
             self.assertTrue(ocl.is_core("framework", id))
-            self.assertEqual(ocl.classify("framework", id), "compose")
+            self.assertIn(("framework", id), ocl.GATE_BEARING_UNBACKED)
+            self.assertNotIn(("framework", id), ocl.INDEPENDENT_ORACLE_COMPOSE_ALLOWED)
+            self.assertEqual(ocl.classify("framework", id), "blocked")
 
     def test_unclassified_core_blocked(self):
         # 미검증 CORE(convention-checker, sage-asset, sage-init 등)는 fail-closed 로 blocked.
@@ -94,14 +111,13 @@ class TestExpectedBlock(unittest.TestCase):
             self.assertIsNotNone(err)
             self.assertEqual(block, "")
 
-    def test_framework_frontmatter_not_materialized(self):
+    def test_framework_overlay_is_not_materialized(self):
         with tempfile.TemporaryDirectory() as root:
             self._write_overlay(root, "framework", "AGENT_GUIDE",
                                 "---\ndomain_refs: [webrtc]\n---\nFollow the protocol pointer.\n")
             block, err = ocl.expected_block("framework", "AGENT_GUIDE", root)
             self.assertIsNone(err)
-            self.assertIn("Follow the protocol pointer.", block)
-            self.assertNotIn("domain_refs", block)
+            self.assertEqual(block, "")
 
 
 if __name__ == "__main__":

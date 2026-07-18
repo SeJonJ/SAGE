@@ -33,24 +33,28 @@ CORE_IDS = {
     "framework": frozenset({"AGENT_GUIDE", "CLAUDE", "CODEX", "AGENTS"}),
 }
 
-# 물리 합성 허용 자산 (a)/(b). Phase 1 은 입증된 비게이트 워커만 연다:
+# 물리 합성 허용 자산 (a)/(b). 입증된 비게이트 워커만 연다:
 # implementer-a/-b 는 순수 실행 워커라 어떤 워크플로 게이트도 소유하지 않는다 → 오버레이가
-# 텍스트로 게이트를 완화해도 완화할 게이트 자체가 없다. 나머지 CORE 자산은 게이트 보유
-# 또는 미검증이라 전부 blocked(fail-closed) — (c)→(b) 개방은 SD-8 이후.
-COMPOSE_ALLOWED = frozenset({
+# 텍스트로 게이트를 완화해도 완화할 게이트 자체가 없다.
+NON_GATE_COMPOSE_ALLOWED = frozenset({
     ("agents", "implementer-a"),
     ("agents", "implementer-b"),
-    ("framework", "AGENT_GUIDE"),
-    ("framework", "CLAUDE"),
-    ("framework", "CODEX"),
-    ("framework", "AGENTS"),
 })
+
+# 자산 텍스트 밖의 executable oracle이 게이트를 독립 보장할 때만 여기에 등록한다. SD-4
+# domain_refs는 authoritative domain 값의 재복제를 막는 계약일 뿐 phase/review/verification oracle이
+# 아니므로 framework 문서를 등록하지 않는다. 등록 변경은 oracle 구현+fixture와 같은 patch여야 한다.
+INDEPENDENT_ORACLE_COMPOSE_ALLOWED = frozenset()
+
+COMPOSE_ALLOWED = NON_GATE_COMPOSE_ALLOWED | INDEPENDENT_ORACLE_COMPOSE_ALLOWED
 
 # 명시적 (c) — 게이트 보유하나 오라클 미보증(문서화용; 실제 차단은 COMPOSE_ALLOWED 미포함으로 성립).
 GATE_BEARING_UNBACKED = frozenset({
     ("agents", "leader"), ("agents", "qa"), ("agents", "reviewer"),
     ("skills", "sage-cycle"), ("skills", "sage-plan"), ("skills", "sage-team"),
     ("skills", "sage-review"), ("skills", "sage-profile-modify"),
+    ("framework", "AGENT_GUIDE"), ("framework", "CLAUDE"),
+    ("framework", "CODEX"), ("framework", "AGENTS"),
 })
 
 
@@ -82,9 +86,20 @@ def overlay_files(root):
         if not os.path.isdir(d):
             continue
         for fn in sorted(os.listdir(d)):
-            if fn.endswith(".md"):
+            # case-insensitive filesystem에서는 `x.MD`가 canonical `x.md` lookup과 같은 파일을
+            # 가리킨다. inventory가 이를 놓치면 preflight/strict scanner만 우회하고 합성은 된다.
+            if fn.lower().endswith(".md"):
                 found.append((kind, fn[:-3], os.path.join(d, fn)))
     return found
+
+
+def overlay_filename_error(kind, id, path):
+    """overlay 파일명이 canonical `<id>.md`인지 검사한다."""
+    actual = os.path.basename(path)
+    expected = f"{id}.md"
+    if actual != expected:
+        return f"비정규 overlay 파일명: '{actual}' (expected '{expected}')"
+    return None
 
 
 def overlay_text(root, kind, id):

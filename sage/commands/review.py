@@ -59,7 +59,7 @@ PEER_EFFORTS = {
 # peer CLI 기본값에 맡기지 않는 이유: Phase 05 는 적대적 리뷰라 강도가 조용히 낮아지면 안 된다.
 DEFAULT_EFFORT = "high"
 
-CROSS_MODEL_KEYS = frozenset({"peer", "on_unavailable", "effort"})
+CROSS_MODEL_KEYS = frozenset({"peer", "on_unavailable", "effort", "reviewer"})
 # peer/on_unavailable 은 엔진이 값으로 분기하지 않는다 — reviewer_resolution 이 host 의 반대 런타임을
 # 계산하고, peer 미가용이면 항상 clean-context 로 폴백한다. 즉 이 키들은 그 동작을 *서술*할 뿐이다.
 # 다른 값을 쓰면(`on_unavailable: block`) 안전정책처럼 보이지만 아무 일도 안 하므로 FAIL 로 막는다.
@@ -69,9 +69,8 @@ CROSS_MODEL_FIXED = {"peer": "opposite_runtime", "on_unavailable": "clean_contex
 def intended_peer(profile):
     """검증 대상 peer = host 의 반대 런타임. peer CLI 도달 가능성과 무관하다 —
     peer 가 마침 미가용이면 잘못된 설정이 검증 없이 통과해버린다."""
-    rt = profile.get("runtime") if isinstance(profile, dict) else None
-    host = rt.get("host", "claude") if isinstance(rt, dict) else "claude"
-    return "codex" if host == "claude" else "claude"
+    from sage.runtime_hosts import opposite_host
+    return opposite_host(profile)
 
 
 def resolve_effort(profile):
@@ -112,6 +111,8 @@ def cross_model_issues(profile):
         issue = effort_issue(intended_peer(profile), effort)
         if issue:
             issues.append(("FAIL", issue))
+    from sage.model_routing import reviewer_issues
+    issues.extend(reviewer_issues(profile))
     return issues
 
 
@@ -127,7 +128,7 @@ def effort_issue(peer, effort):
     return None
 
 
-def _peer_command(peer, effort=None):
+def _peer_command(peer, effort=None, model=None):
     """peer 런타임 비대화 리뷰 argv(프롬프트 제외). shell 미경유(주입 안전).
     프롬프트는 **stdin** 으로 전달한다(codex R1 P1): positional arg 로 넘기면 큰 diff 가 OS ARG_MAX 를
     넘겨 모든 대형 리뷰가 same_runtime 으로 degrade. codex exec/claude -p 둘 다 prompt 부재 시 stdin 을 읽는다.
@@ -138,10 +139,18 @@ def _peer_command(peer, effort=None):
     if peer == "codex":
         # codex exec: 비대화 1턴, read-only 샌드박스. PROMPT 생략 → stdin 읽기.
         cmd = ["codex", "exec", "--json", "-s", "read-only"]
-        return cmd + ["-c", f'model_reasoning_effort="{effort}"'] if effort else cmd
+        if effort:
+            cmd += ["-c", f'model_reasoning_effort="{effort}"']
+        if model:
+            cmd += ["-m", model]
+        return cmd
     if peer == "claude":
         cmd = ["claude", "-p", "--output-format", "json"]
-        return cmd + ["--effort", effort] if effort else cmd
+        if effort:
+            cmd += ["--effort", effort]
+        if model:
+            cmd += ["--model", model]
+        return cmd
     raise ValueError(f"unknown peer runtime: {peer!r}")
 
 
@@ -185,11 +194,11 @@ def _parse_peer_output(peer, text):
 
 # ---- subprocess 경계(테스트는 이 함수를 monkeypatch) ----
 
-def _invoke_peer(peer, prompt, timeout, effort=None):
+def _invoke_peer(peer, prompt, timeout, effort=None, model=None):
     """peer 런타임을 비대화 실행 → (ok, review_text, err). 미설치/타임아웃/비정상종료/파싱실패 = (False, None, 사유)."""
     if not shutil.which(peer):
         return False, None, f"{peer} CLI 미설치(PATH 없음)"
-    cmd = _peer_command(peer, effort)
+    cmd = _peer_command(peer, effort, model)
     try:
         # 프롬프트는 stdin 으로(ARG_MAX 회피, codex R1 P1). codex exec/claude -p 가 stdin 을 프롬프트로 읽음.
         # encoding 명시(codex R2 P2): text=True 만 두면 locale 인코딩 사용 → C-locale 호스트에서 한글
@@ -276,6 +285,8 @@ def run_cross_check(args):
             print(f"[sage cross-check] TOOL ERROR: {m}", file=sys.stderr)
         return 2
     effort, configured = resolve_effort(profile)
+    from sage.model_routing import reviewer_selection
+    _, reviewer_model = reviewer_selection(profile)
 
     if rr["reviewer_mode"] != "opposite_runtime":
         # cross 미설정이거나 peer CLI 미가용 → same-runtime 폴백을 침묵시키지 않고 명시(degraded 근거).
@@ -297,8 +308,13 @@ def run_cross_check(args):
         return 2
 
     eff_note = f"effort={effort}" + ("" if configured else " (기본값)")
-    print(f"[sage cross-check] {peer} 직접 호출 중(timeout {args.timeout}s, {eff_note})…", file=sys.stderr)
-    ok, review, err = _invoke_peer(peer, prompt, args.timeout, effort)
+    model_note = reviewer_model or "peer CLI default"
+    print(f"[sage cross-check] {peer} 직접 호출 중(timeout {args.timeout}s, {eff_note}, model={model_note})…", file=sys.stderr)
+    if reviewer_model:
+        ok, review, err = _invoke_peer(peer, prompt, args.timeout, effort, reviewer_model)
+    else:
+        # Keep the legacy call shape for downstream monkeypatch/adapters when no model was configured.
+        ok, review, err = _invoke_peer(peer, prompt, args.timeout, effort)
     if not ok:
         # peer 도달 실패 → 폴백을 침묵시키지 않음(6차 버그 수정). degraded 로 게이트가 잡게 한다.
         print(f"[sage cross-check] ⚠️  {peer} 리뷰 실패 → same-runtime 폴백: {err}", file=sys.stderr)

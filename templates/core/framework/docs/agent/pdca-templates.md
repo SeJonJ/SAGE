@@ -103,7 +103,7 @@ is on and reachable — `docs/agent/review-protocol.md`).
 2. Review from an independent perspective: design intent vs implementation, stack fitness, lifecycle/edge-case/security/test/UX risk.
 3. **High-risk architecture gate**: before a review-rework loop, check whether findings change a high-risk domain declared in `profile.risk` (L3). If a new architecture change is detected, stop automatic rework and get user approval. Local fixes inside the approved design are not blocked.
 4. **Cross-model invocation** (when enabled): run `sage cross-check --packet-file <packet>`, which calls the peer runtime directly (claude-host → `codex exec`, codex-host → `claude -p`) at `cross_model.effort` (default `high`). The packet carries all phase documents + implementation files. Request context-based external review (not a plain diff review) and a final recommendation: APPROVED / FAIL / BLOCKED.
-5. **Acceptance gate**: read the Phase 01 acceptance matrix and Phase 04 evidence table. Required items with `FAIL` or `NOT TESTED` block `APPROVED`; use `N/A` only with an explicit out-of-scope/deferred reason.
+5. **Acceptance gate**: read the Phase 01 acceptance matrix and Phase 04 evidence table outside fenced code blocks. Required `FAIL` always blocks. Required `NOT TESTED` blocks L3 unless an exact active waiver records user confirmation, reason, scope, and remaining evidence; even then keep the item unresolved and report a residual WARN, never PASS. Use `N/A` only with an explicit out-of-scope/deferred reason.
 6. **Review-rework loop**: L3 = mandatory iterations (default 3) in Phase 05; L2 = recommended (ask first); L1/L0 = none. One iteration = review → faithful findings record → triage → accepted rework → update 03/04.
 7. **Stop rule**: if after the final L3 iteration the status is not APPROVED, record `Final Status: BLOCKED`, do not write 06, and report to the user.
 8. **Fallback**: retry the peer path or a fresh session; if context is too large, retry with 04 Review Context + 01/02/03 + core files; if a mandatory L3 review cannot complete, record BLOCKED in 05 and do not write 06.
@@ -117,6 +117,7 @@ is on and reachable — `docs/agent/review-protocol.md`).
 ```markdown
 # [Base Plan] {Feature Name}
 
+Cycle-Stem: `{phase-document-basename}`
 Risk Level: <L1|L2|L3>
 <!-- required: this cycle's max risk — the higher of the user-declared level and the risk the change globs
      imply. Replace <...> with one of L1/L2/L3. Knowledge write-back reads this exact `Risk Level: Lx` line
@@ -149,6 +150,7 @@ Risk Level: <L1|L2|L3>
 ```markdown
 # [Plan] {Feature Name}
 
+Cycle-Stem: `{phase-document-basename}`
 ## 1. User Stories & Requirements
 
 ## 2. Data Schema (Entities, DTOs)
@@ -168,6 +170,7 @@ Risk Level: <L1|L2|L3>
 ```markdown
 # [Design] {Feature Name}
 
+Cycle-Stem: `{phase-document-basename}`
 ## 1. Architecture & Interface Design
 
 ## 2. Sequence Diagrams
@@ -182,6 +185,7 @@ Risk Level: <L1|L2|L3>
 ```markdown
 # [Implementation] {Feature Name}
 
+Cycle-Stem: `{phase-document-basename}`
 ## 0. Pre-Implementation Checklist
 - [ ] File ownership assigned before source edits
 - [ ] Acceptance IDs from Phase 01 mapped to implementation tasks
@@ -208,6 +212,7 @@ Risk Level: <L1|L2|L3>
 ```markdown
 # [Analyze] {Feature Name}
 
+Cycle-Stem: `{phase-document-basename}`
 **Reviewer:** leader (responsible)  **Contributor:** qa (coverage)  **Date:** {YYYY-MM-DD}
 
 > 04 issues no standalone verdict. The verdict is issued in 05.
@@ -239,9 +244,10 @@ Risk Level: <L1|L2|L3>
 ```markdown
 # [Expert Review] {Feature Name}
 
+Cycle-Stem: `{phase-document-basename}`
 **Reviewer Role:** reviewer (synthesis) (+ cross-model reviewer when enabled)
 **Review Date:** {YYYY-MM-DD}
-**Final Status:** APPROVED / FAIL / BLOCKED
+**Final Status:** {APPROVED | FAIL | BLOCKED — replace with exactly one value}
 **Source:** 04-analyze gap findings + team output
 
 ## External / Cross-model Review
@@ -264,7 +270,9 @@ Risk Level: <L1|L2|L3>
 | Acceptance ID | 04 Status | Reviewer Finding | Decision |
 |---|---|---|---|
 
-Required acceptance items with `FAIL` or `NOT TESTED` block `APPROVED`. Use `N/A`
+Required acceptance items with `FAIL` block `APPROVED`. `NOT TESTED` also blocks unless
+an exact active L3 waiver is recorded; a waived row remains `NOT TESTED` and the review
+must preserve its waiver ID, reason, scope, confirmer, and remaining evidence. Use `N/A`
 only when the item was explicitly out of scope, deferred, or user-approved.
 
 ### Needs User Approval
@@ -272,10 +280,12 @@ only when the item was explicitly out of scope, deferred, or user-approved.
 |---|---|---|---|
 
 ### Final Status
-APPROVED / FAIL / BLOCKED
+{APPROVED | FAIL | BLOCKED — replace with exactly one value}
 
 > If not APPROVED after the final L3 iteration → `Final Status: BLOCKED`,
 > do not write Phase 06.
+> The report gate accepts exactly one anchored `Final Status: APPROVED` line outside fenced code blocks.
+> Placeholder options, duplicate declarations, and free-text occurrences do not approve a cycle.
 
 ## 1. Code Quality (SOLID, naming, dead code)
 ## 2. Domain/Architecture (per profile.components)
@@ -299,6 +309,7 @@ APPROVED / FAIL / BLOCKED
 ```markdown
 # [Report] {Feature Name}
 
+Cycle-Stem: `{phase-document-basename}`
 Loop-Run: {run_id}
 Source-05: {root-relative path of the APPROVED Phase 05 doc}
 
@@ -319,6 +330,15 @@ Source-05: {root-relative path of the APPROVED Phase 05 doc}
 which review cycle it closes. The Stop-time retro gate reads this line to verify
 `sage retro --check` ran for that run; omit it and the gate cannot bind the report
 (warned under advisory, blocked under enforce).
+
+Every phase document must declare exactly one `Cycle-Stem` outside fenced code blocks and equal to its markdown
+filename without `.md`. Phase selection is exact by this stem; branch-number scans
+and recent-file fallback are not cycle identity. A missing, conflicting, or ambiguous
+stem blocks governed work.
+
+Write Phase 06 only after all 00–05 updates have completed. A single change that
+co-modifies 06 with any other phase is blocked because the pre-write evidence snapshot
+cannot prove the resulting state.
 
 ---
 

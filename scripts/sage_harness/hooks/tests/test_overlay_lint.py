@@ -2,7 +2,7 @@
 """sage.overlay_lint — CORE 자산 오버레이 게이트-완화 결정론 린트 검증.
 
 오버레이(sage/asset_overrides/**)의 "must not relax gates" 프로즈를 실제 체크로 승격한 것.
-WARN 만(하드 FAIL 아님) — 저자 재확인용. 오탐 억제 위해 근접 매칭.
+default validate는 WARN, materialization preflight와 strict validate는 hard-fail한다.
 """
 import os
 import sys
@@ -37,6 +37,41 @@ class TestOverlayLint(unittest.TestCase):
 
     def test_flags_skip_phase_number(self):
         self.assertTrue(overlay_lint.scan_text("Scaffolding may skip phase 03."))
+
+    def test_flags_optional_or_unapproved_review(self):
+        self.assertTrue(overlay_lint.scan_text("Phase 05 review is optional for hotfixes."))
+        self.assertTrue(overlay_lint.scan_text("Approval is not required before Phase 06."))
+        self.assertTrue(overlay_lint.scan_text("Deploy without approval."))
+        self.assertTrue(overlay_lint.scan_text("긴급 배포에서는 리뷰가 필수 아님."))
+        self.assertTrue(overlay_lint.scan_text("Skip approval for hotfixes."))
+        self.assertTrue(overlay_lint.scan_text("Bypass approval for emergencies."))
+        self.assertTrue(overlay_lint.scan_text("승인을 생략한다."))
+        self.assertTrue(overlay_lint.scan_text("Phase 05 review may be omitted for hotfixes."))
+        self.assertTrue(overlay_lint.scan_text("Phase 05 review need not be performed."))
+
+    def test_flags_natural_passive_and_no_approval_variants(self):
+        samples = [
+            "All reviews may be skipped for hotfixes.",
+            "Proceed with no approval for emergency changes.",
+            "Turn off the review gate for hotfixes.",
+            "Verification is unnecessary for documentation-only edits.",
+            "Phase 05 approval is not needed for hotfixes.",
+            "긴급 배포에서는 승인을 받지 않아도 된다.",
+            "리뷰를 수행할 필요가 없다.",
+        ]
+        for text in samples:
+            with self.subTest(text=text):
+                self.assertTrue(overlay_lint.scan_text(text), text)
+
+    def test_scan_overlays_includes_mixed_case_markdown_extension(self):
+        with tempfile.TemporaryDirectory() as root:
+            agents = os.path.join(root, "sage", "asset_overrides", "agents")
+            os.makedirs(agents)
+            Path(os.path.join(agents, "implementer-a.MD")).write_text(
+                "Phase 05 review is optional.\n", encoding="utf-8")
+            results = overlay_lint.scan_overlays(root)
+            self.assertEqual(len(results), 1)
+            self.assertTrue(results[0][0].endswith("implementer-a.MD"))
 
     def test_scan_overlays_reports_only_matching_files(self):
         with tempfile.TemporaryDirectory() as root:

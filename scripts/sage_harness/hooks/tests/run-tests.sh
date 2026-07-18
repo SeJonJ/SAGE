@@ -41,18 +41,28 @@ check_stdin '{"tool_name":"apply_patch","tool_input":{"command":"*** Update File
 check_stdin '{"tool_name":"apply_patch","tool_input":{"command":"*** Add File: src/main/java/Foo.java\n+z\n"}}' 0 "codex apply_patch 일반소스 통과"
 check_stdin '{"tool_name":"apply_patch","tool_input":{"command":"*** Add File: docs/sage_harness/hooks/x.md\n+z\n"}}' 0 "codex apply_patch spec 통과"
 
-# CORE 렌더 block 메시지는 overlay 경로로 redirect 한다(단순 exit 2 뿐 아니라 안내 내용도 검증)
+# CORE 렌더 block 메시지는 eligibility에 따라 overlay 또는 미지원 경로로 안내한다.
 check_msg() {
   local path="$1" needle="$2" desc="$3"
   local out; out="$(bash "$GUARD" --path "$path" 2>&1)"
   if printf '%s' "$out" | grep -qF "$needle"; then pass=$((pass+1)); else fail=$((fail+1)); printf '  ✗ [msg:%s] missing %q\n' "$desc" "$needle"; fi
 }
-check_msg ".claude/skills/sage-review/SKILL.md" "sage/asset_overrides/skills/sage-review.md" "CORE skill → overlay 경로 안내"
-check_msg ".codex/agents/leader.md" "sage/asset_overrides/agents/leader.md" "CORE agent → overlay 경로 안내"
-check_msg ".claude/skills/sage-review/SKILL.md" "/sage-asset-override" "CORE 렌더 → 작성 스킬 안내"
+check_not_msg() {
+  local path="$1" needle="$2" desc="$3"
+  local out; out="$(bash "$GUARD" --path "$path" 2>&1)"
+  if ! printf '%s' "$out" | grep -qF "$needle"; then pass=$((pass+1)); else fail=$((fail+1)); printf '  ✗ [msg:%s] unexpected %q\n' "$desc" "$needle"; fi
+}
+check_msg ".claude/agents/implementer-a.md" "sage/asset_overrides/agents/implementer-a.md" "eligible CORE agent → canonical overlay 경로 안내"
+check_msg ".CLAUDE/agents/IMPLEMENTER-A.md" "sage/asset_overrides/agents/implementer-a.md" "eligible CORE agent 대소문자 → canonical overlay 경로 안내"
+check_msg ".codex/agents/implementer-b.md" "/sage-asset-override" "eligible CORE agent → 작성 스킬 안내"
+check_msg ".claude/skills/sage-review/SKILL.md" "현재 overlay 비지원" "gate-bearing CORE skill → overlay 미지원 안내"
+check_msg ".codex/agents/leader.md" "현재 overlay 비지원" "gate-bearing CORE agent → overlay 미지원 안내"
+check_not_msg ".claude/skills/sage-review/SKILL.md" "sage/asset_overrides/skills/sage-review.md" "blocked CORE skill → 불가능한 overlay 경로 미안내"
+check_not_msg ".codex/agents/leader.md" "sage/asset_overrides/agents/leader.md" "blocked CORE agent → 불가능한 overlay 경로 미안내"
 check_msg ".claude/agents/my-custom.md" "sage generate" "비-CORE 산출물 → 기존 spec→generate 안내"
 check_msg "AGENT_GUIDE.md" "project-profile.yaml" "AGENT_GUIDE → project-profile 안내(overlay 아님)"
 check_msg "AGENT_GUIDE.md" "프레임워크 문서" "AGENT_GUIDE → framework 문서 메시지"
+check_msg "AGENT_GUIDE.md" "framework overlay는 독립 gate oracle이 없어 현재 차단" "framework overlay 차단 안내"
 
 echo "----"
 echo "PASS=$pass FAIL=$fail"

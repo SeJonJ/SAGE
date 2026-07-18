@@ -81,12 +81,17 @@ class TestAssetPathsKinds(unittest.TestCase):
         self.assertEqual(
             [os.path.relpath(p, ROOT) for p in groups["shared"]],
             [
+                os.path.join("scripts", "sage_harness", "hooks", "cycle_binding.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "run_hook.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "hook_runtime.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "loop_audit.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "retro_audit.py"),
+                os.path.join("scripts", "sage_harness", "hooks", "runtime", "acceptance_waiver.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "policies", "retro_gate.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "messages.py"),
+                os.path.join("scripts", "sage_harness", "hooks", "strategies", "pre_implementation_gate", "claude_grep_first.py"),
+                os.path.join("scripts", "sage_harness", "hooks", "strategies", "pre_implementation_gate", "codex_feature_signal.py"),
+                os.path.join("scripts", "sage_harness", "hooks", "strategies", "pre_implementation_gate", "cycle_domain_review.py"),
             ],
         )
         self.assertEqual(os.path.basename(groups["claude"][0]), "io_claude.py")

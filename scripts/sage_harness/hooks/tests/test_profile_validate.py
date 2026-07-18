@@ -40,8 +40,66 @@ class TestProfileSchema(unittest.TestCase):
     def test_top_level_typo_is_fail(self):
         self.assertEqual(severity_of(sevs({"file_type_maps": []})), "FAIL")   # file_type_map 오타
 
+    def test_risk_trigger_array_items_must_be_nonempty_strings(self):
+        for bad in (["ok", 1], [""], ["   "]):
+            with self.subTest(bad=bad):
+                self.assertEqual(severity_of(sevs({"risk": {"l3_filename_globs": bad}})), "FAIL")
+
+    def test_domain_trigger_array_items_must_be_nonempty_strings(self):
+        base = {"id": "auth", "risk_level": "L3", "protocol_pointer": "sage/auth.md"}
+        for field, bad in (("path_globs", [""]), ("content_keywords", ["   "]),
+                           ("path_globs", ["ok", 1])):
+            with self.subTest(field=field, bad=bad):
+                domain = dict(base)
+                domain[field] = bad
+                self.assertEqual(severity_of(sevs({"risk": {"domains": [domain]}})), "FAIL")
+
+    def test_domain_trigger_fields_remain_optional_in_schema(self):
+        domain = {"id": "auth", "risk_level": "L3", "protocol_pointer": "sage/auth.md"}
+        self.assertNotIn("FAIL", [severity for severity, _ in sevs({"risk": {"domains": [domain]}})])
+
 
 class TestProfileSemantic(unittest.TestCase):
+    def test_non_mapping_risk_type_has_one_semantic_owner(self):
+        messages = [message for severity, message in sevs({"risk": "bad"})
+                    if severity == "FAIL" and "risk 섹션은 매핑" in message]
+        self.assertEqual(len(messages), 1)
+
+    def test_scalar_risk_trigger_fails_without_relying_on_jsonschema(self):
+        for field in ("l0_pass_globs", "l0_exclude_globs", "l1_path_globs", "l2_path_globs",
+                      "l3_filename_globs", "l2_content_keywords", "l3_content_keywords"):
+            with self.subTest(field=field):
+                issues = sevs({"risk": {field: "auth"}})
+                self.assertEqual(severity_of(issues), "FAIL")
+                self.assertTrue(any(f"risk.{field}" in m for _, m in issues))
+
+    def test_l0_exclusion_requires_exact_higher_risk_path_binding(self):
+        orphan = {"risk": {"l0_pass_globs": ["**/*.png"],
+                           "l0_exclude_globs": ["assets/game/**"],
+                           "l3_filename_globs": ["assets/rtc/**"]}}
+        issues = sevs(orphan)
+        self.assertTrue(any(s == "FAIL" and "l0_exclude_globs" in m and "상위" in m
+                            for s, m in issues))
+
+        bound = {"risk": {"l0_pass_globs": ["**/*.png"],
+                          "l0_exclude_globs": ["assets/game/**"],
+                          "l3_filename_globs": ["assets/game/**"]}}
+        self.assertNotIn("FAIL", [s for s, _ in sevs(bound)])
+
+    def test_bad_risk_trigger_item_fails_semantically(self):
+        for bad in (["auth/**", 1], ["   "]):
+            with self.subTest(bad=bad):
+                issues = sevs({"risk": {"l3_filename_globs": bad}})
+                self.assertEqual(severity_of(issues), "FAIL")
+                self.assertTrue(any("risk.l3_filename_globs" in m for _, m in issues))
+
+    def test_bad_domain_trigger_item_fails_semantically(self):
+        domain = {"id": "auth", "risk_level": "L3", "path_globs": ["   "],
+                  "protocol_pointer": "sage/auth.md"}
+        issues = sevs({"risk": {"domains": [domain]}})
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("risk.domains[0].path_globs" in m for _, m in issues))
+
     def test_standard_cross_runtime_project_root_env_is_valid(self):
         issues = sevs({"hooks": {"project_root_env": "SAGE_PROJECT_ROOT"}})
         self.assertNotIn("FAIL", [s for s, _ in issues])
@@ -400,6 +458,15 @@ def _valid_acceptance(**over):
     return ac
 
 
+def _risk_acceptance(**over):
+    ac = _valid_acceptance()
+    ac.pop("report_gate_enforce")
+    ac.update({"report_gate_by_risk": {"L2": "advisory", "L3": "enforce"},
+               "waiver": {"enabled": True}})
+    ac.update(over)
+    return ac
+
+
 class TestAcceptanceValidation(unittest.TestCase):
     """verification.acceptance 의미검증 — 요구사항별 수용증거 gate 의 침묵 비활성 방지."""
 
@@ -429,6 +496,13 @@ class TestAcceptanceValidation(unittest.TestCase):
         self.assertEqual(severity_of(issues), "FAIL")
         self.assertTrue(any("NOT TESTED" in m and "N/A" in m for _, m in issues))
 
+    def test_custom_status_cannot_mint_resolved_state(self):
+        issues = sevs(self._prof(_valid_acceptance(
+            statuses=["PASS", "FAIL", "NOT TESTED", "N/A", "SKIPPED"])))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("비표준 상태" in message and "SKIPPED" in message
+                            for _, message in issues))
+
     def test_invalid_report_gate_mode_fail(self):
         issues = sevs(self._prof(_valid_acceptance(report_gate_enforce="block")))
         self.assertEqual(severity_of(issues), "FAIL")
@@ -438,6 +512,35 @@ class TestAcceptanceValidation(unittest.TestCase):
         issues = sevs(self._prof(_valid_acceptance(report_gate_enforce="enforce")))
         self.assertNotIn("FAIL", [s for s, _ in issues])
         self.assertTrue(any(s == "WARN" and "acceptance.report_gate_enforce" in m for s, m in issues))
+
+    def test_risk_policy_and_waiver_are_valid(self):
+        issues = sevs(self._prof(_risk_acceptance()))
+        self.assertNotIn("FAIL", [severity for severity, _ in issues])
+
+    def test_legacy_and_risk_policy_together_fail(self):
+        issues = sevs(self._prof(_risk_acceptance(report_gate_enforce="advisory")))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("동시에" in message for _, message in issues))
+
+    def test_l3_profile_downgrade_and_incomplete_map_fail(self):
+        for policy in ({"L2": "advisory", "L3": "advisory"}, {"L2": "advisory"}):
+            with self.subTest(policy=policy):
+                issues = sevs(self._prof(_risk_acceptance(report_gate_by_risk=policy)))
+                self.assertEqual(severity_of(issues), "FAIL")
+
+    def test_enabled_acceptance_requires_l3_tier(self):
+        for tiers in ([], ["L1"], ["L2"], ["L1", "L2"]):
+            with self.subTest(tiers=tiers):
+                issues = sevs(self._prof(_risk_acceptance(require_for_risk=tiers)))
+                self.assertEqual(severity_of(issues), "FAIL")
+                self.assertTrue(any("require_for_risk" in message and "L3" in message
+                                    for _, message in issues))
+
+    def test_waiver_schema_is_closed_and_bool_typed(self):
+        for waiver in ({"enabled": "true"}, {"enabled": True, "implicit": True}):
+            with self.subTest(waiver=waiver):
+                issues = sevs(self._prof(_risk_acceptance(waiver=waiver)))
+                self.assertEqual(severity_of(issues), "FAIL")
 
 
 class TestKnowledgeCaptureVault(unittest.TestCase):

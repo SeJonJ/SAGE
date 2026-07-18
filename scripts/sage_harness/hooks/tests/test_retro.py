@@ -74,6 +74,8 @@ class TestRetro(_ProjectFixture, unittest.TestCase):
         self.assertIn("feat-x-review.md", r.stdout)   # 05 문서
         self.assertIn("distiller", r.stdout)          # 프롬프트
         self.assertIn("자동반영", r.stdout)            # human-gate 경고
+        self.assertIn("COMPOSE_ALLOWED", r.stdout)    # blocked 자산에 overlay 경로를 권장하지 않음
+        self.assertIn("blocked/gate-bearing", r.stdout)
 
     def test_proposal_only_writes_nothing(self):
         self._run_loop()

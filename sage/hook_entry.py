@@ -83,8 +83,12 @@ def _prepare_gate_profile(root, hook):
 
     if not isinstance(yaml_profile, dict) or not isinstance(json_profile, dict):
         return "프로필 루트는 객체(mapping)여야 합니다."
-    from sage.profile_compile import materialize_profile
-    if materialize_profile(yaml_profile) != json_profile:
+    from sage.profile_compile import ProfileCompileError, materialize_profile
+    try:
+        expected_profile = materialize_profile(yaml_profile)
+    except ProfileCompileError as e:
+        return f"프로필 raw risk 필드 타입 오류: {e}"
+    if expected_profile != json_profile:
         return "project-profile.yaml과 project-profile.json이 다릅니다. sage generate를 다시 실행하세요."
 
     os.environ["SAGE_PROFILE"] = json_path

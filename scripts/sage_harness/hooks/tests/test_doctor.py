@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 import unittest
+import json
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -69,6 +70,38 @@ class TestDoctor(unittest.TestCase):
             _, out = run_doctor(p)
             self.assertIn("## 실행 환경", out)
             self.assertIn("sage-hook", out)
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
+    def test_model_routing_reports_confirmed_and_unverified_status(self):
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as ch:
+            Path(ch, "models_cache.json").write_text(json.dumps({
+                "fetched_at": "2026-07-17T00:00:00Z",
+                "models": [{"slug": "gpt-picked", "visibility": "list"}],
+            }), encoding="utf-8")
+            p = os.path.join(d, "p.yaml")
+            Path(p).write_text(
+                "runtime: { installed_hosts: [claude, codex], active_host: codex }\n"
+                "options: { cross_model: true }\n"
+                "components:\n  - id: backend\n    runtime_models: { codex: gpt-picked }\n"
+                "cross_model: { reviewer: { host: claude, model: opus } }\n",
+                encoding="utf-8")
+            with mock.patch.dict(os.environ, {"CODEX_HOME": ch}):
+                rc, out = run_doctor(p)
+        self.assertEqual(rc, 0)
+        self.assertIn("component:backend : codex/gpt-picked → confirmed", out)
+        self.assertIn("cross-reviewer : claude/opus → syntax-only/account-unverified", out)
+
+    def test_overlay_drift_hint_syncs_before_strict_validate(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(install.run(_InstallArgs("claude", root)), 0)
+            overlay = Path(root, "sage", "asset_overrides", "agents", "implementer-a.md")
+            overlay.parent.mkdir(parents=True, exist_ok=True)
+            overlay.write_text("Prefer null-safe implementation.\n", encoding="utf-8")
+
+            _, out = run_doctor(os.path.join(root, "sage", "project-profile.yaml"))
+
+            self.assertIn("`sage sync-overlays` → `sage validate --strict`", out)
 
     def _codex_skill_project(self, root):
         import json
@@ -139,13 +172,22 @@ class TestDoctor(unittest.TestCase):
             stale = os.path.join(ch, "skills", "sage-init")
             os.makedirs(stale)
             Path(os.path.join(stale, "SKILL.md")).write_text("OLD_STALE\n", encoding="utf-8")
+            manifest_dir = Path(root, "docs", "sage_harness")
+            manifest_dir.mkdir(parents=True)
+            Path(manifest_dir, ".manifest.json").write_text(json.dumps({
+                "host_runtime": "codex",
+                "installed_hosts": ["codex"],
+                "core_skill_receipts": {
+                    "codex": {"scope": "global", "sage_version": install.__version__},
+                },
+            }), encoding="utf-8")
             with mock.patch.dict(os.environ, {"CODEX_HOME": ch}):
                 rc, out = run_doctor(prof)
             self.assertEqual(rc, 0)
             self.assertIn("CORE 렌더 drift 점검", out)
             self.assertIn("sage-init", out)
             self.assertIn("stale", out)
-            self.assertIn("sage install --host codex --force", out)
+            self.assertIn("sage install --host codex --skill-scope global --force", out)
 
     @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
     def test_claude_host_core_render_drift_detected(self):
@@ -177,6 +219,7 @@ class TestDoctor(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as ch:
             class IArgs:
                 host = "codex"; dest = root; prefix = "px"; force = True; no_global_skill = False
+                skill_scope = "global"
             os.makedirs(os.path.join(root, "sage"))
             prof = os.path.join(root, "sage", "project-profile.yaml")
             Path(prof).write_text('project: { name: "t", prefix: "px" }\nruntime: { host: codex }\n')
@@ -188,6 +231,35 @@ class TestDoctor(unittest.TestCase):
             self.assertEqual(rc, 0)
             for sid in install.core_skill_ids():
                 self.assertIn(f"{sid}: 최신", out)
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
+    def test_codex_duplicate_scope_reports_ambiguous_precedence_and_cleanup(self):
+        import shutil
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as ch:
+            class IArgs:
+                host = "codex"; dest = root; prefix = "px"; force = True; no_global_skill = False
+                skill_scope = "global"
+            os.makedirs(os.path.join(root, "sage"))
+            prof = os.path.join(root, "sage", "project-profile.yaml")
+            Path(prof).write_text('project: { name: "t", prefix: "px" }\nruntime: { host: codex }\n')
+            with mock.patch.dict(os.environ, {"CODEX_HOME": ch}):
+                self.assertEqual(install.run(IArgs()), 0)
+                for sid in install.core_skill_ids():
+                    source = Path(ch, "skills", sid, "SKILL.md")
+                    duplicate = Path(root, ".codex", "skills", sid, "SKILL.md")
+                    duplicate.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(source, duplicate)
+                Path(root, ".codex", "skills", "sage-init", "SKILL.md").write_text(
+                    "stale duplicate\n", encoding="utf-8")
+                rc, out = run_doctor(prof)
+
+            self.assertEqual(rc, 0)
+            self.assertIn("intended scope: global", out)
+            self.assertIn("$sage-init: duplicate; precedence=ambiguous", out)
+            self.assertIn("version/content conflict", out)
+            self.assertIn(str(Path(root, ".codex", "skills", "sage-init")), out)
+            self.assertIn("자동 삭제하지 않습니다", out)
 
     @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
     def test_doctor_checks_every_manifest_installed_host(self):
@@ -205,6 +277,7 @@ class TestDoctor(unittest.TestCase):
 
             class CodexArgs:
                 host = "codex"; dest = root; prefix = "px"; force = True; no_global_skill = False
+                skill_scope = "global"
 
             with mock.patch.dict(os.environ, {"CODEX_HOME": ch}):
                 install.run(ClaudeArgs())
@@ -334,6 +407,7 @@ class _InstallArgs:
     def __init__(self, host, dest, prefix="sage", force=False, no_global_skill=True):
         self.host = host; self.dest = dest; self.prefix = prefix; self.force = force
         self.no_global_skill = no_global_skill
+        self.skill_scope = None
 
 
 class TestRetroGateVisibility(unittest.TestCase):
@@ -373,6 +447,32 @@ class TestRetroGateVisibility(unittest.TestCase):
             _, out = run_doctor(prof)
             self.assertIn("신뢰할 수 없음", out)
             self.assertNotIn("미완료(retro --check 누락) 사이클 없음", out)
+
+
+class TestAcceptancePolicyVisibility(unittest.TestCase):
+    def _profile(self, root, acceptance):
+        os.makedirs(os.path.join(root, "sage"), exist_ok=True)
+        path = os.path.join(root, "sage", "project-profile.yaml")
+        Path(path).write_text("runtime: { host: claude }\nverification:\n  acceptance:\n" + acceptance,
+                              encoding="utf-8")
+        return path
+
+    def test_legacy_policy_prints_migration(self):
+        with tempfile.TemporaryDirectory() as root:
+            profile = self._profile(root, "    enabled: true\n    report_gate_enforce: advisory\n")
+            _, out = run_doctor(profile)
+            self.assertIn("legacy report_gate_enforce=advisory", out)
+            self.assertIn("report_gate_by_risk", out)
+
+    def test_risk_policy_and_waiver_visibility(self):
+        with tempfile.TemporaryDirectory() as root:
+            profile = self._profile(root, "    enabled: true\n"
+                                    "    report_gate_by_risk: { L2: advisory, L3: enforce }\n"
+                                    "    waiver: { enabled: true }\n")
+            _, out = run_doctor(profile)
+            self.assertIn("L2=advisory L3=enforce", out)
+            self.assertIn("waiver  : enabled", out)
+            self.assertIn("active  : 0", out)
 
 
 if __name__ == "__main__":

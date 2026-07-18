@@ -25,8 +25,10 @@ then re-validate. The profile-editing counterpart to /sage-init (first authoring
    components both unset, the same predicate sage generate enforces → route to /sage-init,
    do not bootstrap here), AGENT_GUIDE, bootstrap-authoring (incl. shared Review loop +
    vault interview set).
-2. Identify the target section (project/components/verification/risk/pdca.review_loop/
-   options/knowledge_capture/file_type_map/compliance).
+2. Identify the target section (project/components including `runtime_models`/
+   verification/risk/pdca.review_loop/options/knowledge_capture/file_type_map/compliance/
+   `cross_model.reviewer`). For model edits, run `sage models --host <host>` and preserve
+   its verification label; reviewer host must remain opposite `runtime.active_host`.
 3. For pdca.review_loop and vault outputs, drive the SAME shared interview set as
    /sage-init (bootstrap-authoring.md) — single source, no drift. Vault turn only when
    loop on AND knowledge_capture.vault_path set.
@@ -42,12 +44,11 @@ then re-validate. The profile-editing counterpart to /sage-init (first authoring
   (routes to /sage-init when unbootstrapped)
 - uses: sage validate / sage doctor, bootstrap-authoring.md (shared interview set)
 - convention_doc: AGENT_GUIDE.md
-- overlay: optional `sage/asset_overrides/skills/sage-profile-modify.md` has project-local
-  priority over CORE guidance and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates
+- self_overlay: unsupported; this gate-bearing CORE skill is not in `COMPOSE_ALLOWED`
 
 ## runtime_bindings
 - claude: .claude/skills/sage-profile-modify/SKILL.md (repo — Claude Code auto-discovers)
-- codex:  $CODEX_HOME/skills/sage-profile-modify/SKILL.md (global — codex does not auto-discover repo-scoped skills)
+- codex:  $CODEX_HOME/skills/sage-profile-modify/SKILL.md or .codex/skills/sage-profile-modify/SKILL.md (explicit global or project-local install scope)
 
 ## drift_checks
 - conformance: procedure step 4 (consequence warning + approval) and step 6 (sage validate re-run) must be present

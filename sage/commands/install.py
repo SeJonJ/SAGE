@@ -10,10 +10,12 @@
 독립(제약 #2): 복사 리소스는 전부 도메인값 0(중립). 프로젝트 값은 profile 로만.
 멱등: 기존 파일 skip(--force 로 덮어쓰기). AI 생성 아님(고정 템플릿 복사).
 """
+import hashlib
 import json
 import os
 import re
 import shutil
+import stat
 import sys
 from pathlib import Path
 
@@ -22,6 +24,7 @@ from sage import __version__
 from sage import _resources   # 번들 리소스 경로 단일 해석(env override + repo fallback — 재배치/설치 대비)
 from sage import overlay_common   # 오버레이 관리 블록 프리미티브(base_of 로 렌더 base 대조)
 from sage import overlay_materialize   # CORE 렌더 오버레이 물리화 + core_renders 앵커
+from sage import install_transaction as _tx
 
 # CORE roster (중립 6인) + CORE hook 7종(form) + CORE skill 7종. 도메인값 아님 = framework 메타.
 # skill 3분할: sage-cycle(00~06 우산) → sage-plan(00~02 기획) → sage-team(03~06 개발).
@@ -52,7 +55,7 @@ def register(sub):
         "install",
         help="현재 프로젝트에 SAGE 기본 파일을 설치합니다",
         add_help=False,
-        usage="sage install --host {claude,codex} [--prefix PREFIX] [--dest DEST] [--force] [--no-global-skill] [--help]",
+        usage="sage install --host {claude,codex} [--skill-scope {global,project-local}] [--prefix PREFIX] [--dest DEST] [--force] [--help]",
     )
     p.add_argument("--help", action="help", help="도움말을 보여주고 종료합니다")
     p.add_argument("--host", choices=["claude", "codex"], required=True,
@@ -60,48 +63,80 @@ def register(sub):
     p.add_argument("--prefix", default="sage", help="자산 네이밍 prefix (선택, 기본값: sage)")
     p.add_argument("--dest", default=".", help="설치 대상 프로젝트 루트 (선택, 기본값: 현재 디렉토리)")
     p.add_argument("--force", action="store_true", help="기존 파일 덮어쓰기 (기본: skip)")
+    p.add_argument("--skill-scope", choices=["global", "project-local"], default=None,
+                   help="codex host: CORE skill 설치 위치를 명시적으로 선택 (필수: global 또는 project-local)")
     p.add_argument("--no-global-skill", action="store_true",
-                   help="codex host: CORE 스킬($sage-init/$sage-cycle/$sage-plan/$sage-team/$sage-review/$sage-asset/$sage-profile-modify/$sage-asset-override)의 전역(~/.codex/skills) 설치를 건너뜁니다 (CI/샌드박스용)")
+                   help="DEPRECATED codex CI/샌드박스 호환: CORE skill 설치를 완전히 생략")
     p._optionals.title = "옵션"
     p.set_defaults(func=run)
 
 
-def _write(path, content, force, created, skipped, executable=False):
-    if os.path.exists(path) and not force:
+def _atomic_write(path, content, executable=False, transaction=None):
+    """Write one leaf atomically, optionally preserving its pre-run object in a journal."""
+    previous_mode = None
+    try:
+        previous_stat = os.lstat(path)
+        if stat.S_ISREG(previous_stat.st_mode):
+            previous_mode = stat.S_IMODE(previous_stat.st_mode)
+    except FileNotFoundError:
+        pass
+    if executable:
+        desired_mode = 0o755
+    elif previous_mode is not None:
+        desired_mode = previous_mode
+    else:
+        desired_mode = None
+    if transaction is not None:
+        transaction.stage_write(path)
+        transaction.declare_file_output(path, content, desired_mode)
+    else:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    overlay_common.write_text_lf(path, content, mode=desired_mode)
+    if transaction is not None:
+        transaction.record_output(path)
+
+
+def _write(path, content, force, created, skipped, executable=False, transaction=None):
+    if os.path.lexists(path) and not force:
         skipped.append(path)
         return
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
-    if executable:
-        os.chmod(path, 0o755)
+    _atomic_write(path, content, executable=executable, transaction=transaction)
     created.append(path)
 
 
-def _copy_file(src, dst, force, created, skipped):
+def _copy_file(src, dst, force, created, skipped, transaction=None):
     if not os.path.exists(src):
         return
     executable = src.endswith(".sh")
-    _write(dst, Path(src).read_text(encoding="utf-8"), force, created, skipped, executable)
+    _write(dst, Path(src).read_text(encoding="utf-8"), force, created, skipped, executable,
+           transaction=transaction)
 
 
-def _prune_legacy_skill(skill_dir, pruned):
+def _prune_legacy_skill(skill_dir, pruned, transaction=None):
     """은퇴한 CORE skill 사본을 제거(rename 수렴). codex 전역 $CODEX_HOME/skills 는 공유 공간이라
     SKILL.md 에 SAGE hand-ship 시그니처가 있을 때만 삭제 — 같은 이름의 사용자 skill 오삭제 방지(codex R2-P2).
     비치명적: 권한/읽기전용/비-UTF-8 실패는 install 을 깨지 않는다(전역 home 쓰기와 동일 철학)."""
     skill_md = os.path.join(skill_dir, "SKILL.md")
-    if not os.path.isfile(skill_md):
+    try:
+        dir_mode = os.lstat(skill_dir).st_mode
+        marker_mode = os.lstat(skill_md).st_mode
+    except OSError:
+        return
+    if not stat.S_ISDIR(dir_mode) or not stat.S_ISREG(marker_mode):
         return
     try:
         if _LEGACY_SKILL_SIGNATURE not in Path(skill_md).read_text(encoding="utf-8"):
             return   # SAGE 가 ship 한 자산 아님 → 사용자 skill 로 보고 보존
-        shutil.rmtree(skill_dir)
+        if transaction is not None:
+            transaction.stage_remove_tree(skill_dir)
+        else:
+            shutil.rmtree(skill_dir)
         pruned.append(skill_dir)
     except (OSError, UnicodeError):
         pass
 
 
-def _copy_tree(src_dir, dst_dir, force, created, skipped):
+def _copy_tree(src_dir, dst_dir, force, created, skipped, transaction=None):
     """src_dir 하위 전체 복사(tests/__pycache__ 제외, .sh 는 실행권한)."""
     for root, dirs, files in os.walk(src_dir):
         dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
@@ -110,7 +145,7 @@ def _copy_tree(src_dir, dst_dir, force, created, skipped):
                 continue
             s = os.path.join(root, fn)
             d = os.path.join(dst_dir, os.path.relpath(s, src_dir))
-            _copy_file(s, d, force, created, skipped)
+            _copy_file(s, d, force, created, skipped, transaction=transaction)
 
 
 def _installed_profile(dest):
@@ -120,25 +155,10 @@ def _installed_profile(dest):
     파싱 실패를 `{}` 로 삼키면 **설정이 조용히 무시된 채 기본 렌더가 배포된다** → error 를 돌려
     호출자가 무변경 exit 1 하게 한다(codex 5R). 파일 부재는 첫 install 이라 정상.
     """
-    path = os.path.join(dest, "sage", "project-profile.yaml")
-    if not os.path.exists(path):
-        return {}, None
-    try:
-        import yaml
-    except ImportError:
-        return {}, f"pyyaml 미설치 — {path} 를 읽을 수 없어 에이전트 렌더를 결정할 수 없습니다 (pip install pyyaml)"
-    try:
-        data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    except Exception as e:
-        return {}, f"profile 파싱 실패: {path} ({type(e).__name__}: {e})"
-    if data is None:
-        return {}, None   # 빈 파일 = 미설정
-    if not isinstance(data, dict):
-        return {}, f"profile 최상위가 매핑이 아님: {path} (받음: {type(data).__name__})"
-    return data, None
+    return overlay_materialize.load_profile(dest)
 
 
-def _copy_agent_renders(src_dir, dst_dir, profile, force, created, skipped):
+def _copy_agent_renders(src_dir, dst_dir, profile, force, created, skipped, transaction=None):
     """CORE 에이전트 렌더 배치. claude host 만 profile 의 model/effort 를 frontmatter 로 주입한다
     (codex 는 .codex/agents/<id>.md 를 model/effort 로 해석하는 기전이 없어 주입해도 무동작)."""
     for fn in sorted(os.listdir(src_dir)) if os.path.isdir(src_dir) else []:
@@ -148,20 +168,42 @@ def _copy_agent_renders(src_dir, dst_dir, profile, force, created, skipped):
         dst = os.path.join(dst_dir, fn)
         overrides = agent_frontmatter_overrides(profile, fn[:-3])
         _write(dst, render_core_agent(Path(src).read_text(encoding="utf-8"), overrides),
-               force, created, skipped)
+               force, created, skipped, transaction=transaction)
 
 
 def _codex_skills_root():
-    """codex 스킬 전역 루트 = $CODEX_HOME/skills (미설정 시 ~/.codex/skills). codex 바이너리 규약.
+    """Codex global skill root = $CODEX_HOME/skills (or ~/.codex/skills).
 
-    codex 는 repo-스코프 스킬을 자동발견하지 않고 이 전역 디렉토리만 스캔하므로(codex 협의 실증),
-    codex host 의 $sage-init 스킬은 여기로 설치한다(claude 의 repo .claude/skills 와 비대칭)."""
+    This is only the `global` install scope. `project-local` is rooted at the target
+    repository's `.codex/skills`; callers must never infer one scope from CODEX_HOME."""
     base = os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
     return os.path.join(base, "skills")
 
 
 def _codex_global_skill_path(skill_id):
     return os.path.join(_codex_skills_root(), skill_id, "SKILL.md")
+
+
+def _codex_project_skill_path(dest, skill_id):
+    return os.path.join(os.path.abspath(dest), ".codex", "skills", skill_id, "SKILL.md")
+
+
+def _resolve_skill_scope(args):
+    """Return the effective CORE skill scope, or an actionable CLI-contract error."""
+    scope = getattr(args, "skill_scope", None)
+    disabled = bool(getattr(args, "no_global_skill", False))
+    if args.host == "claude":
+        if scope is not None:
+            return None, "--skill-scope는 --host codex에서만 사용할 수 있습니다"
+        return "project-local", None
+    if disabled and scope is not None:
+        return None, "--skill-scope와 --no-global-skill은 함께 사용할 수 없습니다"
+    if disabled:
+        return "disabled", None
+    if scope not in ("global", "project-local"):
+        return None, ("codex install은 CORE skill scope를 명시해야 합니다: "
+                      "--skill-scope global 또는 --skill-scope project-local")
+    return scope, None
 
 
 def _core_skill_source(skill_id):
@@ -171,7 +213,7 @@ def _core_skill_source(skill_id):
 
 
 def core_skill_ids():
-    """CORE skill ids that `sage install --host codex` installs into the Codex global skill dir."""
+    """CORE skill ids installed into the explicitly selected host discovery surface."""
     return [_CORE_BOOTSTRAP_SKILL, *_CORE_SKILLS]
 
 
@@ -261,8 +303,8 @@ def team_runtime_issues(profile):
         return []
     if not isinstance(core, dict):
         return [("FAIL", f"team.core 는 매핑이어야 함 (받음: {type(core).__name__})")]
-    rt_prof = profile.get("runtime")
-    host = rt_prof.get("host", "claude") if isinstance(rt_prof, dict) else "claude"
+    from sage.runtime_hosts import active_host
+    host = active_host(profile)
     issues = []
     for role, spec in core.items():
         # 키가 비-str 일 수 있다(YAML `1: {...}`) → 어떤 입력에도 크래시 없이 FAIL 로 떨어져야 한다.
@@ -384,7 +426,7 @@ def core_render_status(src, dst, overrides=None):
         return ("error", f"{dst} ({e})")
 
 
-def codex_core_skill_status(skill_id):
+def codex_core_skill_status(skill_id, dest=None, scope="global"):
     """Read-only status for a hand-shipped Codex CORE skill.
 
     status ∈ {ok, missing, stale, source_missing, error}. This intentionally mirrors the
@@ -397,7 +439,13 @@ def codex_core_skill_status(skill_id):
     src = _core_skill_source(skill_id)
     if not os.path.exists(src):
         return ("source_missing", None)
-    dst = _codex_global_skill_path(skill_id)
+    if scope == "global":
+        dst = _codex_global_skill_path(skill_id)
+    elif scope == "project-local" and dest is not None:
+        dst = _codex_project_skill_path(dest, skill_id)
+        return core_render_status(src, dst)
+    else:
+        return ("error", f"invalid Codex CORE skill scope: {scope!r}")
     if not os.path.exists(dst):
         return ("missing", dst)
     try:
@@ -408,7 +456,41 @@ def codex_core_skill_status(skill_id):
         return ("error", f"{dst} ({e})")
 
 
-def _install_codex_global_skill(src_skill_md, force, skill_id="sage-init"):
+def codex_core_skill_surfaces(root, skill_id):
+    """Inspect every known Codex-visible CORE skill surface without choosing precedence."""
+    src = _core_skill_source(skill_id)
+    return {
+        "global": codex_core_skill_status(skill_id, scope="global"),
+        "project-local": codex_core_skill_status(skill_id, dest=root, scope="project-local"),
+        "agents-local": core_render_status(
+            src, os.path.join(os.path.abspath(root), ".agents", "skills", skill_id, "SKILL.md")),
+    }
+
+
+def _install_codex_skill_at(src_skill_md, dst, force, skill_id="sage-init", transaction=None):
+    """Install one bundled CORE skill at an already selected trusted root."""
+    if not os.path.exists(src_skill_md):
+        return ("missing", None)
+    import re as _re
+    if not _re.match(r"^[A-Za-z0-9_-]+$", skill_id):
+        return ("error", f"unsafe skill_id: {skill_id!r}")
+    try:
+        src_text = Path(src_skill_md).read_text(encoding="utf-8")
+        if os.path.exists(dst) and not force:
+            cur = Path(dst).read_text(encoding="utf-8")
+            return ("skipped" if cur == src_text else "stale", dst)
+        _atomic_write(dst, src_text, transaction=transaction)
+        return ("installed", dst)
+    except (OSError, UnicodeError) as e:
+        if transaction is not None:
+            try:
+                transaction.restore_path(dst)
+            except (OSError, _tx.InstallDriftError) as restore_error:
+                raise RuntimeError(f"CORE skill write와 rollback 모두 실패: {dst} ({restore_error})") from e
+        return ("error", f"{dst} ({e})")
+
+
+def _install_codex_global_skill(src_skill_md, force, skill_id="sage-init", transaction=None):
     """codex 스킬을 $CODEX_HOME/skills/{skill_id}/SKILL.md 에 전역 설치.
 
     반환: (status, dst) — status ∈ {installed, skipped, stale, missing, error}. create-only(force 면 덮어쓰기).
@@ -416,25 +498,13 @@ def _install_codex_global_skill(src_skill_md, force, skill_id="sage-init"):
     - 비치명적(codex R1-P0): 전역 home 쓰기 실패(read-only/정책잠금)는 install 을 깨지 않고 error 반환
       → 호출부가 경고+수동 폴백(AGENTS.md) 안내. repo-로컬 산출물은 정상 배치된다.
     - drift 경고(codex R1-P1): 기존 파일이 현재 번들과 다르면(구버전/로컬수정) stale 반환 → --force 안내."""
-    if not os.path.exists(src_skill_md):
-        return ("missing", None)
-    # defense-in-depth(codex 리뷰 P2): skill_id 가 전역 경로에 직접 조립되므로 경로 안전 토큰만 허용.
-    # 호출부(generate)가 이미 검증하지만 helper 자체도 / · .. 등을 차단(독립 안전).
-    import re as _re
-    if not _re.match(r"^[A-Za-z0-9_-]+$", skill_id):
-        return ("error", f"unsafe skill_id: {skill_id!r}")
     dst = _codex_global_skill_path(skill_id)
-    try:
-        src_text = Path(src_skill_md).read_text(encoding="utf-8")
-        if os.path.exists(dst) and not force:
-            cur = Path(dst).read_text(encoding="utf-8")
-            return ("skipped" if cur == src_text else "stale", dst)
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        Path(dst).write_text(src_text, encoding="utf-8")
-        return ("installed", dst)
-    except (OSError, UnicodeError) as e:
-        # 비치명적: 권한/읽기전용(OSError) + 비-UTF-8 기존 전역 스킬(UnicodeError, codex R2-P1).
-        return ("error", f"{dst} ({e})")
+    return _install_codex_skill_at(src_skill_md, dst, force, skill_id, transaction)
+
+
+def _install_codex_project_skill(dest, src_skill_md, force, skill_id="sage-init", transaction=None):
+    dst = _codex_project_skill_path(dest, skill_id)
+    return _install_codex_skill_at(src_skill_md, dst, force, skill_id, transaction)
 
 
 def _profile_with_host(host, prefix):
@@ -444,8 +514,12 @@ def _profile_with_host(host, prefix):
     out = []
     for line in text.splitlines():
         s = line.strip()
-        if s.startswith("host: ") and "claude | codex" in line:
-            out.append(line.split("host:")[0] + f"host: {host}                   # claude | codex — 설치 시 택1")
+        if s.startswith("installed_hosts:"):
+            indent = line[:len(line) - len(line.lstrip())]
+            out.append(f"{indent}installed_hosts: [{host}]       # 원하는 discovery surface. double-host면 [claude, codex]")
+        elif s.startswith("active_host:"):
+            indent = line[:len(line) - len(line.lstrip())]
+            out.append(f"{indent}active_host: {host}              # 현재 단일 host. handoff 시 사용자가 명시 변경")
         elif s.startswith('prefix:'):
             indent = line[:len(line) - len(line.lstrip())]
             out.append(f'{indent}prefix: "{prefix}"')
@@ -455,9 +529,16 @@ def _profile_with_host(host, prefix):
 
 
 def _load_manifest(dest):
-    """기존 manifest 를 dict 로 읽어 반환(없거나 손상 시 None). --force 재설치가 인스턴스 등록 자산을
-    보존하는 데 쓰인다 — 못 읽으면 새 스켈레톤으로 폴백해 install 을 깨지 않는다(부트스트랩 fail-open)."""
+    """기존 manifest 를 dict 로 읽어 반환(없거나 손상 시 None).
+
+    호출자는 경로 존재 여부를 별도로 확인해 non-force 손상을 fail-closed 처리하고, 명시적 --force만
+    새 스켈레톤 recovery를 허용한다.
+    """
     path = os.path.join(dest, "docs", "sage_harness", ".manifest.json")
+    if os.path.lexists(path):
+        issue = overlay_materialize._project_path_issue(dest, path, leaf_kind="file")
+        if issue:
+            return None
     if not os.path.isfile(path):
         return None
     try:
@@ -467,7 +548,144 @@ def _load_manifest(dest):
     return m if isinstance(m, dict) else None
 
 
-def _manifest(host, existing=None, core_renders=None):
+_ASSET_FORMS = ("native", "core_adapter", "interpretive", "declarative")
+_CONFORMANCE_VALUES = ("PASS", "FAIL", "STALE", "UNKNOWN")
+_ASSET_KEYS = {
+    "spec_hash", "claims_hash", "canonical_hash", "adapter_hash",
+    "adapter_contract_version", "render_hash", "conformance", "form",
+    "runtime_targets", "test", "safety_degraded", "l3_review_strategy",
+    "risk", "unresolved",
+}
+_PREFIXED_SHA_RE = re.compile(r"sha256:[0-9a-f]{64}")
+
+
+def _asset_entry_issue(value):
+    """Validate one asset entry against manifest.schema.json without jsonschema."""
+    if not isinstance(value, dict):
+        return "mapping이 아님"
+    unknown = sorted(set(value) - _ASSET_KEYS)
+    if unknown:
+        return f"허용되지 않은 필드가 있음: {', '.join(unknown)}"
+    if value.get("form") not in _ASSET_FORMS:
+        return "form이 유효하지 않음"
+    if value.get("conformance") not in _CONFORMANCE_VALUES:
+        return "conformance가 유효하지 않음"
+
+    for key in ("spec_hash", "claims_hash", "canonical_hash"):
+        if key in value and (not isinstance(value[key], str)
+                             or _PREFIXED_SHA_RE.fullmatch(value[key]) is None):
+            return f"{key}가 sha256:<64 hex> 형식이 아님"
+
+    for key, allowed in (("adapter_hash", {"claude", "codex"}),
+                         ("render_hash", {"claude", "codex", "native"})):
+        if key not in value:
+            continue
+        hashes = value[key]
+        if not isinstance(hashes, dict) or not hashes:
+            return f"{key}가 non-empty mapping이 아님"
+        unknown_targets = sorted(set(hashes) - allowed)
+        if unknown_targets:
+            return f"{key}에 허용되지 않은 target이 있음: {', '.join(unknown_targets)}"
+        for target, digest in hashes.items():
+            if (not isinstance(digest, str)
+                    or _PREFIXED_SHA_RE.fullmatch(digest) is None):
+                return f"{key}/{target}가 sha256:<64 hex> 형식이 아님"
+
+    for key in ("adapter_contract_version", "test", "l3_review_strategy"):
+        if key in value and not isinstance(value[key], str):
+            return f"{key}가 string이 아님"
+    if "safety_degraded" in value and not isinstance(value["safety_degraded"], bool):
+        return "safety_degraded가 boolean이 아님"
+    if "runtime_targets" in value:
+        targets = value["runtime_targets"]
+        if (not isinstance(targets, list)
+                or any(target not in ("claude", "codex") for target in targets)):
+            return "runtime_targets가 claude/codex array가 아님"
+    for key in ("risk", "unresolved"):
+        if key in value:
+            items = value[key]
+            if not isinstance(items, list) or any(not isinstance(item, str) for item in items):
+                return f"{key}가 string array가 아님"
+    return None
+
+
+def _valid_asset_entry(value):
+    return _asset_entry_issue(value) is None
+
+
+def _valid_core_receipt(receipt):
+    if not isinstance(receipt, dict):
+        return False
+    if set(receipt) != {"base_sha256", "sage_version"}:
+        return False
+    base_sha = receipt.get("base_sha256")
+    return (isinstance(base_sha, str)
+            and re.fullmatch(r"[0-9a-f]{64}", base_sha) is not None
+            and isinstance(receipt.get("sage_version"), str))
+
+
+def _valid_core_skill_receipt(receipt):
+    return (isinstance(receipt, dict)
+            and set(receipt) == {"scope", "sage_version"}
+            and receipt.get("scope") in ("global", "project-local", "disabled")
+            and isinstance(receipt.get("sage_version"), str))
+
+
+def _manifest_structure_issue(manifest):
+    """Return a fail-closed issue for fields install would otherwise normalize or discard."""
+    if not isinstance(manifest.get("sage_version"), str):
+        return "sage_version이 string이 아님"
+    if manifest.get("host_runtime") not in ("claude", "codex"):
+        return "host_runtime이 claude/codex가 아님"
+    assets = manifest.get("assets")
+    if not isinstance(assets, dict):
+        return "assets가 mapping이 아님"
+    for key, value in assets.items():
+        if not isinstance(key, str):
+            return f"assets entry가 string -> mapping 형식이 아님: {key!r}"
+        issue = _asset_entry_issue(value)
+        if issue:
+            return f"assets/{key}/{issue}"
+
+    if "installed_hosts" in manifest:
+        hosts = manifest["installed_hosts"]
+        if (not isinstance(hosts, list) or not hosts
+                or any(host not in ("claude", "codex") for host in hosts)
+                or len(hosts) != len(set(hosts))):
+            return "installed_hosts가 non-empty unique claude/codex array가 아님"
+        if manifest["host_runtime"] not in hosts:
+            return "installed_hosts에 primary host_runtime이 포함되지 않음"
+
+    if "core_renders" in manifest:
+        renders = manifest["core_renders"]
+        if not isinstance(renders, dict):
+            return "core_renders가 mapping이 아님"
+        for key, receipt in renders.items():
+            if not isinstance(key, str) or not isinstance(receipt, dict):
+                return f"core_renders entry가 string -> mapping 형식이 아님: {key!r}"
+            if not _valid_core_receipt(receipt):
+                unknown = sorted(set(receipt) - {"base_sha256", "sage_version"})
+                if unknown:
+                    return f"core_renders/{key}/허용되지 않은 필드가 있음: {', '.join(unknown)}"
+                base_sha = receipt.get("base_sha256")
+                if isinstance(base_sha, str) and re.fullmatch(r"[0-9a-f]{64}", base_sha):
+                    return f"core_renders/{key}/sage_version이 string이 아님"
+                return f"core_renders/{key}/base_sha256가 SHA-256 형식이 아님"
+    if "core_skill_receipts" in manifest:
+        receipts = manifest["core_skill_receipts"]
+        if not isinstance(receipts, dict):
+            return "core_skill_receipts가 mapping이 아님"
+        for host, receipt in receipts.items():
+            if host not in ("claude", "codex"):
+                return f"core_skill_receipts에 알 수 없는 host가 있음: {host!r}"
+            if not _valid_core_skill_receipt(receipt):
+                return f"core_skill_receipts/{host}가 유효한 scope/sage_version 영수증이 아님"
+            if host == "claude" and receipt["scope"] != "project-local":
+                return "core_skill_receipts/claude scope는 project-local이어야 함"
+    return None
+
+
+def _manifest(host, existing=None, core_renders=None, skill_scope=None):
     """CORE hook 7종을 등록한 manifest(스켈레톤). hash/conformance 는 generate 가 스탬프.
 
     existing 이 주어지면(--force 재설치) 그 manifest 가 등록한 인스턴스 자산(sage generate 가 stamp 한
@@ -484,7 +702,8 @@ def _manifest(host, existing=None, core_renders=None):
         # 인스턴스 등록 자산(mcps/agents/skills 및 사용자 추가 hook)만 보존한다. 값이 dict 가 아닌 손상
         # 항목은 버린다 — 보존하면 --force 뒤 sage validate 가 그 항목에서 .get() 크래시로 게이트가 죽는다.
         # 버려도 실물 spec 이 남아 있으면 validate 가 orphan(WARN)으로 잡아 --force 이전 거동과 동일하다.
-        assets = {k: v for k, v in existing["assets"].items() if isinstance(v, dict)}
+        assets = {k: v for k, v in existing["assets"].items()
+                  if isinstance(k, str) and _valid_asset_entry(v)}
     for hid, form in _CORE_HOOKS:
         # CORE hook 은 엔진 자산 → 항상 미스탬프 스켈레톤으로 리셋(generate --write 가 hash/PASS 재스탬프).
         assets[f"hooks/{hid}"] = {
@@ -493,7 +712,9 @@ def _manifest(host, existing=None, core_renders=None):
     previous_primary = existing.get("host_runtime") if isinstance(existing, dict) else None
     previous_hosts = existing.get("installed_hosts") if isinstance(existing, dict) else None
     if not isinstance(previous_hosts, list):
-        previous_hosts = [previous_primary] if previous_primary in ("claude", "codex") else []
+        previous_hosts = []
+    if previous_primary in ("claude", "codex"):
+        previous_hosts = [previous_primary, *previous_hosts]
     installed_hosts = list(dict.fromkeys([h for h in previous_hosts + [host]
                                           if h in ("claude", "codex")]))
     from sage.build_identity import source_identity
@@ -501,9 +722,24 @@ def _manifest(host, existing=None, core_renders=None):
     merged_core_renders = {}
     if isinstance(existing, dict) and isinstance(existing.get("core_renders"), dict):
         merged_core_renders = {key: value for key, value in existing["core_renders"].items()
-                               if not key.startswith(host + "/")}
+                               if (isinstance(key, str) and not key.startswith(host + "/")
+                                   and _valid_core_receipt(value))}
     if isinstance(core_renders, dict):
         merged_core_renders.update(core_renders)
+    receipts = {}
+    if isinstance(existing, dict) and isinstance(existing.get("core_skill_receipts"), dict):
+        receipts = {key: value for key, value in existing["core_skill_receipts"].items()
+                    if key in ("claude", "codex") and _valid_core_skill_receipt(value)}
+    effective_scope = skill_scope or ("project-local" if host == "claude" else None)
+    if effective_scope in ("global", "project-local", "disabled"):
+        receipts[host] = {"scope": effective_scope, "sage_version": __version__}
+    # AGENT_GUIDE is one physical render shared by both hosts. Refresh every installed host's
+    # receipt together so a force upgrade cannot preserve a knowingly stale other-host hash.
+    shared_key = f"{host}/framework/AGENT_GUIDE"
+    shared_receipt = merged_core_renders.get(shared_key)
+    if isinstance(shared_receipt, dict):
+        for installed_host in installed_hosts:
+            merged_core_renders[f"{installed_host}/framework/AGENT_GUIDE"] = dict(shared_receipt)
     return {
         # 설치를 만든 SAGE 패키지 버전을 그대로 스탬프(sage --version 과 일치).
         # template_version 은 manifest 포맷 버전이라 패키지 버전과 독립적으로 고정.
@@ -514,18 +750,372 @@ def _manifest(host, existing=None, core_renders=None):
         # 설치 인스턴스 마커(다중 신호) — 부트스트랩 게이트가 AGENT_GUIDE 분실 시에도 설치를 인식(codex R2-P0).
         "installed_instance": True,
         "assets": assets,
+        "core_skill_receipts": receipts,
         # 엔진 소유(인스턴스 자산 아님) — 매 install 재계산, 보존 안 함.
         "core_renders": merged_core_renders,
     }
 
 
+def _core_render_expected_base(host, kind, asset_id, profile):
+    """Return the canonical base shipped for one overlay_materialize render target."""
+    fw = os.path.join(_resources.core_dir(), "framework")
+    if kind == "framework":
+        src = os.path.join(fw, f"{asset_id}.md")
+    elif kind == "agents":
+        src = os.path.join(fw, ".claude", "agents", f"{asset_id}.md")
+    elif kind == "skills":
+        src = _core_skill_source(asset_id)
+    else:
+        return None, f"알 수 없는 CORE render kind: {kind}"
+
+    text, read_error = overlay_common.read_text_lf(src)
+    if read_error:
+        return None, f"배포 정본 로드 실패: {read_error}"
+    if kind == "agents" and host == "claude":
+        text = render_core_agent(text, agent_frontmatter_overrides(profile, asset_id))
+    base, marker_error = overlay_common.base_of(text)
+    if marker_error:
+        return None, f"배포 정본 marker 오류: {src} ({marker_error})"
+    return base, None
+
+
+def _sha256_text(text):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _core_render_path_issue(dest, path, allow_leaf_symlink=False):
+    """Return a deterministic conflict for unsafe filesystem objects below dest."""
+    root = os.path.abspath(dest)
+    target = os.path.abspath(path)
+    try:
+        if os.path.commonpath((root, target)) != root:
+            return "CORE render 경로가 project root 밖을 가리킴", _sha256_text(f"outside:{target}")
+    except ValueError:
+        return "CORE render 경로와 project root의 filesystem이 다름", _sha256_text(f"outside:{target}")
+
+    rel_parts = Path(os.path.relpath(target, root)).parts
+    cursor = root
+    for index, part in enumerate(rel_parts):
+        cursor = os.path.join(cursor, part)
+        is_leaf = index == len(rel_parts) - 1
+        try:
+            mode = os.lstat(cursor).st_mode
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            return f"CORE render 경로 상태 확인 실패: {cursor} ({exc})", "unavailable"
+
+        rel_cursor = os.path.relpath(cursor, root)
+        if stat.S_ISLNK(mode):
+            if is_leaf and allow_leaf_symlink:
+                return None
+            try:
+                link_value = os.readlink(cursor)
+                actual_sha = _sha256_text(f"symlink:{rel_cursor}:{link_value}")
+            except OSError:
+                actual_sha = "unavailable"
+            location = "leaf" if is_leaf else "ancestor"
+            return (f"{location} symlink CORE render 경로는 project-owned base로 자동 신뢰할 수 없음: "
+                    f"{rel_cursor}", actual_sha)
+        if not is_leaf and not stat.S_ISDIR(mode):
+            return (f"CORE render 상위 경로가 directory가 아님: {rel_cursor}",
+                    _sha256_text(f"ancestor-mode:{rel_cursor}:{stat.S_IFMT(mode):o}"))
+        if is_leaf and not stat.S_ISREG(mode):
+            return (f"CORE render가 regular file이 아님: {rel_cursor}",
+                    _sha256_text(f"leaf-mode:{rel_cursor}:{stat.S_IFMT(mode):o}"))
+    return None
+
+
+def _core_trust_conflicts(dest, host, profile, existing_manifest, allow_base_replacement=False):
+    """Read-only CORE render trust preflight for non-force install.
+
+    An existing file is anchor-eligible only when its canonical base still matches any previous
+    receipt and exactly matches the render shipped by the current package/profile.
+    """
+    anchors = existing_manifest.get("core_renders") if isinstance(existing_manifest, dict) else None
+    anchors = anchors if isinstance(anchors, dict) else {}
+    conflicts = []
+
+    for kind, asset_id, path in overlay_materialize.render_targets(dest, host):
+        key = overlay_materialize.anchor_key(host, kind, asset_id)
+        expected, expected_error = _core_render_expected_base(host, kind, asset_id, profile)
+        expected_sha = _sha256_text(expected) if expected is not None else "unavailable"
+        if expected_error:
+            conflicts.append({"key": key, "path": path, "reason": expected_error,
+                              "expected_sha": expected_sha, "actual_sha": "unavailable"})
+            continue
+        path_issue = _core_render_path_issue(dest, path, allow_leaf_symlink=allow_base_replacement)
+        if path_issue:
+            reason, actual_sha = path_issue
+            conflicts.append({"key": key, "path": path, "reason": reason,
+                              "expected_sha": expected_sha, "actual_sha": actual_sha})
+            continue
+        if allow_base_replacement:
+            continue
+        if not os.path.lexists(path):
+            continue
+
+        installed, read_error = overlay_common.read_text_lf(path)
+        if read_error:
+            conflicts.append({"key": key, "path": path, "reason": read_error,
+                              "expected_sha": expected_sha, "actual_sha": "unavailable"})
+            continue
+        actual_base, marker_error = overlay_common.base_of(installed)
+        actual_sha = _sha256_text(actual_base if marker_error is None else installed)
+        if marker_error:
+            conflicts.append({"key": key, "path": path,
+                              "reason": f"기존 CORE render marker 오류: {marker_error}",
+                              "expected_sha": expected_sha, "actual_sha": actual_sha})
+            continue
+
+        anchor = anchors.get(key)
+        if anchor is not None:
+            anchor_sha = anchor.get("base_sha256") if isinstance(anchor, dict) else None
+            if not isinstance(anchor_sha, str) or anchor_sha != actual_sha:
+                conflicts.append({"key": key, "path": path,
+                                  "reason": "기존 manifest anchor와 base가 불일치하여 재축복 불가",
+                                  "expected_sha": expected_sha, "actual_sha": actual_sha})
+                continue
+        if actual_sha != expected_sha:
+            reason = ("기존 anchor는 일치하지만 현재 배포 base와 달라 non-force 업그레이드 불가"
+                      if anchor is not None else
+                      "신뢰 anchor가 없는 기존 CORE render가 현재 배포 base와 다름")
+            conflicts.append({"key": key, "path": path, "reason": reason,
+                              "expected_sha": expected_sha, "actual_sha": actual_sha})
+    return conflicts
+
+
+def _materialized_anchor_conflicts(dest, host, profile, core_renders):
+    """Bind the exact base snapshot read by plan_materialize to the current shipped render."""
+    anchors = core_renders if isinstance(core_renders, dict) else {}
+    conflicts = []
+    for kind, asset_id, path in overlay_materialize.render_targets(dest, host):
+        key = overlay_materialize.anchor_key(host, kind, asset_id)
+        expected, expected_error = _core_render_expected_base(host, kind, asset_id, profile)
+        expected_sha = _sha256_text(expected) if expected is not None else "unavailable"
+        path_issue = _core_render_path_issue(dest, path)
+        if expected_error or path_issue:
+            reason, actual_sha = (path_issue if path_issue else (expected_error, "unavailable"))
+            conflicts.append({"key": key, "path": path, "reason": reason,
+                              "expected_sha": expected_sha, "actual_sha": actual_sha})
+            continue
+        anchor = anchors.get(key)
+        actual_sha = anchor.get("base_sha256") if isinstance(anchor, dict) else "unavailable"
+        if actual_sha != expected_sha:
+            reason = ("materialization snapshot에 CORE render anchor가 없음"
+                      if actual_sha == "unavailable" else
+                      "materialization snapshot base가 현재 배포 base와 불일치")
+            conflicts.append({"key": key, "path": path, "reason": reason,
+                              "expected_sha": expected_sha, "actual_sha": actual_sha})
+    return conflicts
+
+
+def _print_core_trust_conflicts(dest, conflicts):
+    print("❌ CORE trust preflight 충돌 — 기존 렌더를 정본 anchor로 기록하지 않습니다.", file=sys.stderr)
+    for item in sorted(conflicts, key=lambda value: (value["key"], value["path"])):
+        print(f"  - [{item['key']}] {os.path.relpath(item['path'], dest)}", file=sys.stderr)
+        print(f"      reason: {item['reason']}", file=sys.stderr)
+        print(f"      expected_sha256: {item['expected_sha']}", file=sys.stderr)
+        print(f"      actual_sha256:   {item['actual_sha']}", file=sys.stderr)
+    print("  선택 후 다시 실행하세요:", file=sys.stderr)
+    print("    1) 기존 파일을 inventory/백업하고 프로젝트 지침을 sage/asset_overrides 또는 absorb/migration 흐름으로 이전",
+          file=sys.stderr)
+    print("    2) 기존 내용을 버리기로 명시한 경우에만 같은 명령에 --force 추가", file=sys.stderr)
+    print("  preflight 단계에서 project 파일과 manifest anchor는 변경되지 않았습니다.", file=sys.stderr)
+
+
+def _cleanup_blocked_core_renders(dest, host):
+    """Remove safely identifiable legacy blocked blocks before non-force install preflights."""
+    plans, errors = overlay_materialize.plan_blocked_cleanup(
+        dest, host, path_guard=lambda path: _core_render_path_issue(dest, path))
+    changed = overlay_materialize.apply_materialization(plans)
+    for path in sorted(changed):
+        print(f"  ~ blocked 관리 블록 제거: {os.path.relpath(path, dest)}")
+    for path, message in errors:
+        print(f"❌ blocked block 정리 실패({os.path.relpath(path, dest)}): {message}", file=sys.stderr)
+    if errors:
+        print("---- sage install: FAIL (안전한 blocked block만 제거, manifest 미갱신) ----",
+              file=sys.stderr)
+    return errors
+
+
+def _onboarding_text(host, skill_scope):
+    if host == "claude":
+        detail = (
+            "Claude CORE skills are repository-local under `.claude/skills` and can be committed with the project.\n"
+            "A teammate still installs the SAGE CLI/runtime separately to run `sage`, `sage-hook`, hooks, and validation."
+        )
+    elif skill_scope == "project-local":
+        detail = (
+            "Project-local CORE skills live under `.codex/skills`. When these files are committed, a teammate can "
+            "discover the prompts after cloning the repository.\n"
+            "This repository content does not install the `sage` or `sage-hook` executable. Each teammate still "
+            "installs the SAGE CLI/runtime separately and runs `sage doctor`."
+        )
+    elif skill_scope == "global":
+        detail = (
+            "Global CORE skills live under the effective `$CODEX_HOME/skills` and are not carried by the repository.\n"
+            "The SAGE CLI/runtime and CORE skill install are per-user: each teammate installs the CLI, then runs "
+            "`sage install --host codex --skill-scope global --dest <repo>`."
+        )
+    else:
+        detail = (
+            "CORE skill installation is disabled for this CI/sandbox receipt. The repository router may explain the "
+            "workflow, but no `$sage-*` discovery surface is provisioned."
+        )
+    selected = skill_scope if host == "codex" else "project-local"
+    return (
+        "# SAGE Team Onboarding\n\n"
+        f"Host: `{host}`  \n"
+        f"Selected Codex CORE skill scope: `{selected}`\n\n"
+        f"{detail}\n\n"
+        "Do not keep duplicate global, `.codex/skills`, and `.agents/skills` copies of the same `$sage-*` CORE skill. "
+        "Run `sage doctor` after installation; the manifest receipt records intent, while host precedence is treated "
+        "as ambiguous when duplicate copies exist.\n"
+    )
+
+
+def _install_preconditions(dest, args, manifest_path):
+    """Capture trust-relevant inputs used across preflight and apply."""
+    paths = {
+        os.path.join(dest, "sage", "project-profile.json"),
+        os.path.join(dest, "sage", "project-profile.yaml"),
+        manifest_path,
+    }
+    recursive = {os.path.join(dest, "sage", "asset_overrides")}
+    paths.update(recursive)
+
+    render_paths = [path for _kind, _asset_id, path
+                    in overlay_materialize.render_targets(dest, args.host)]
+    paths.update(render_paths)
+    root = os.path.abspath(dest)
+    for target in render_paths:
+        cursor = os.path.dirname(os.path.abspath(target))
+        while cursor and os.path.commonpath((root, cursor)) == root:
+            if os.path.lexists(cursor):
+                paths.add(cursor)
+            if cursor == root:
+                break
+            cursor = os.path.dirname(cursor)
+
+    skill_scope = getattr(args, "_sage_skill_scope", None)
+    if args.host == "codex" and skill_scope == "global":
+        codex_home = os.path.dirname(_codex_skills_root())
+        for ancestor in (codex_home, _codex_skills_root()):
+            if os.path.lexists(ancestor):
+                paths.add(ancestor)
+        for skill_id in core_skill_ids():
+            paths.add(_codex_global_skill_path(skill_id))
+        for legacy in _LEGACY_CORE_SKILLS:
+            legacy_path = os.path.join(_codex_skills_root(), legacy)
+            paths.add(legacy_path)
+            if os.path.isdir(legacy_path) and not os.path.islink(legacy_path):
+                recursive.add(legacy_path)
+    elif args.host == "codex" and skill_scope == "project-local":
+        local_root = os.path.join(dest, ".codex", "skills")
+        if os.path.lexists(local_root):
+            paths.add(local_root)
+        for skill_id in core_skill_ids():
+            paths.add(_codex_project_skill_path(dest, skill_id))
+        for legacy in _LEGACY_CORE_SKILLS:
+            legacy_path = os.path.join(local_root, legacy)
+            paths.add(legacy_path)
+            if os.path.isdir(legacy_path) and not os.path.islink(legacy_path):
+                recursive.add(legacy_path)
+    elif args.host == "claude":
+        for legacy in _LEGACY_CORE_SKILLS:
+            legacy_path = os.path.join(dest, ".claude", "skills", legacy)
+            paths.add(legacy_path)
+            if os.path.isdir(legacy_path) and not os.path.islink(legacy_path):
+                recursive.add(legacy_path)
+    return _tx.capture_paths(paths, recursive=recursive)
+
+
 def run(args) -> int:
+    """Acquire every write-surface lock and commit or roll back the install."""
+    skill_scope, scope_error = _resolve_skill_scope(args)
+    if scope_error:
+        print(f"[sage install] TOOL ERROR: {scope_error}", file=sys.stderr)
+        return 2
+    args._sage_skill_scope = skill_scope
+    lock_targets = [os.path.abspath(args.dest)]
+    if args.host == "codex" and skill_scope == "global":
+        lock_targets.append(_codex_skills_root())
+    locks_by_path = {}
+    for target in lock_targets:
+        candidate = _tx.DestinationLock(target)
+        locks_by_path.setdefault(candidate.path, candidate)
+    locks = sorted(locks_by_path.values(), key=lambda item: item.path)
+    acquired = []
+    transaction = None
+    try:
+        for lock in locks:
+            lock.acquire()
+            acquired.append(lock)
+    except (_tx.InstallBusyError, _tx.InstallDriftError) as exc:
+        print(f"❌ sage install lock 실패: {exc}", file=sys.stderr)
+        for lock in reversed(acquired):
+            lock.release()
+        delattr(args, "_sage_skill_scope")
+        return 1
+    try:
+        rc = _run_locked(args)
+        transaction = getattr(args, "_sage_install_transaction", None)
+        if transaction is not None and rc != 0 and not transaction.committed:
+            rollback_errors = transaction.rollback()
+            for message in rollback_errors:
+                print(f"❌ install rollback 실패: {message}", file=sys.stderr)
+        return rc
+    except BaseException as exc:
+        transaction = getattr(args, "_sage_install_transaction", transaction)
+        rollback_errors = (transaction.rollback()
+                           if transaction is not None and not transaction.committed else [])
+        print(f"❌ sage install apply 실패: {type(exc).__name__}: {exc}", file=sys.stderr)
+        if rollback_errors:
+            for message in rollback_errors:
+                print(f"❌ install rollback 실패: {message}", file=sys.stderr)
+        elif transaction is not None and transaction.committed:
+            print("   install commit 이후 보고 단계에서 실패했습니다; committed 상태는 rollback하지 않습니다.",
+                  file=sys.stderr)
+        elif transaction is not None:
+            print("   transaction rollback 완료 — install 전 상태를 복구했습니다.", file=sys.stderr)
+        else:
+            print("   preflight 단계에서 install mutation은 시작되지 않았습니다.", file=sys.stderr)
+        if not isinstance(exc, Exception):
+            raise
+        return 1
+    finally:
+        if hasattr(args, "_sage_install_transaction"):
+            delattr(args, "_sage_install_transaction")
+        if hasattr(args, "_sage_skill_scope"):
+            delattr(args, "_sage_skill_scope")
+        for lock in reversed(acquired):
+            lock.release()
+
+
+def _run_locked(args) -> int:
     dest = os.path.abspath(args.dest)
+    skill_scope = getattr(args, "_sage_skill_scope", "project-local")
     created, skipped = [], []
     pruned = []                 # 은퇴한 CORE skill 잔존 사본 정리 결과(5d)
     wrapper = "CLAUDE.md" if args.host == "claude" else "CODEX.md"
     core = _resources.core_dir()
     fw = os.path.join(core, "framework")
+    if args.host == "codex" and skill_scope == "project-local":
+        for skill_id in core_skill_ids():
+            path = _codex_project_skill_path(dest, skill_id)
+            issue = _core_render_path_issue(dest, path)
+            if issue:
+                print(f"❌ project-local CORE skill 경로가 안전하지 않습니다: {path}", file=sys.stderr)
+                print(f"   reason: {issue[0]}", file=sys.stderr)
+                return 1
+    # FB12 migration safety: non-force install은 이후 어느 preflight가 실패하더라도 과거
+    # gate-bearing managed block을 실행 상태로 남기지 않는다. profile/manifest를 읽기 전에
+    # parent/leaf path를 검증하고 exact SAGE marker만 제거한다. force install은 정본 copy가
+    # 렌더 자체를 원자 교체하므로 이 pre-step이 없다.
+    if not args.force:
+        if _cleanup_blocked_core_renders(dest, args.host):
+            return 1
     # 첫 install 은 profile 이 없어 빈 dict. 주입은 claude host 만(아래 5c) — codex 는 해석 기전이 없다.
     # 단 구조 검사는 host 무관: 오타 역할/키는 어느 host 에서든 설정을 조용히 죽인다.
     _profile, _perr = _installed_profile(dest)
@@ -543,20 +1133,73 @@ def run(args) -> int:
               file=sys.stderr)
         return 1
 
+    manifest_path = os.path.join(dest, "docs", "sage_harness", ".manifest.json")
+    existing_manifest = _load_manifest(dest)
+    manifest_issue = (_manifest_structure_issue(existing_manifest)
+                      if existing_manifest is not None else "읽을 수 없거나 최상위 mapping이 아님")
+    if os.path.lexists(manifest_path) and manifest_issue and not args.force:
+        print(f"❌ 기존 manifest 구조가 손상되었습니다: {manifest_path}", file=sys.stderr)
+        print(f"   reason: {manifest_issue}", file=sys.stderr)
+        print("   등록 자산/host/CORE anchor 유실을 막기 위해 non-force install을 차단합니다.", file=sys.stderr)
+        print("   manifest를 복구하거나, 기존 내용을 버리기로 명시한 경우에만 --force를 사용하세요.", file=sys.stderr)
+        return 1
+
+    trust_conflicts = _core_trust_conflicts(
+        dest, args.host, agent_profile, existing_manifest, allow_base_replacement=args.force)
+    if trust_conflicts:
+        _print_core_trust_conflicts(dest, trust_conflicts)
+        return 1
+
+    overlay_preflight_errors = overlay_materialize.preflight_overlays(dest, _profile)
+    for path, message in overlay_preflight_errors:
+        print(f"❌ install preflight 실패({os.path.relpath(path, dest)}): {message}", file=sys.stderr)
+    if overlay_preflight_errors:
+        print("---- sage install: FAIL (일반 install mutation 없음) ----", file=sys.stderr)
+        return 1
+
+    preconditions = _install_preconditions(dest, args, manifest_path)
+    from sage.build_identity import source_core_content_hash
+    preflight_source_hash = source_core_content_hash()
+    confirmed_profile, confirmed_profile_error = _installed_profile(dest)
+    confirmed_manifest = _load_manifest(dest)
+    confirmed_overlay_errors = overlay_materialize.preflight_overlays(dest, confirmed_profile)
+    confirmed_trust_conflicts = _core_trust_conflicts(
+        dest, args.host, confirmed_profile if args.host == "claude" else {}, confirmed_manifest,
+        allow_base_replacement=args.force)
+    if (confirmed_profile_error or confirmed_profile != _profile
+            or confirmed_manifest != existing_manifest
+            or confirmed_overlay_errors or confirmed_trust_conflicts):
+        raise _tx.InstallDriftError(
+            "install inputs changed while establishing the preflight snapshot")
+    write_roots = [dest]
+    if args.host == "codex" and getattr(args, "_sage_skill_scope", None) == "global":
+        write_roots.append(os.path.dirname(_codex_skills_root()))
+    transaction = _tx.InstallTransaction(expected=preconditions, write_roots=write_roots)
+    transaction.verify_unconsumed()
+    args._sage_install_transaction = transaction
+
     # 1. profile — 인스턴스 커스터마이즈 SSOT(위험분류/pdca/team 등). F5: 엔진 자산이 아니므로
     #    --force(엔진 업그레이드)여도 절대 덮어쓰지 않는다 — 덮으면 프로젝트 값 소실로 클린 업그레이드 불가.
     #    create-only: 새 설치 때만 빈 스키마 배치. reset 필요 시 사용자가 수동 삭제 후 재설치.
     prof_dst = os.path.join(dest, "sage", "project-profile.yaml")
-    if os.path.exists(prof_dst):
-        print("보존: sage/project-profile.yaml (인스턴스 profile — --force 라도 덮어쓰지 않음)")
+    existing_profile_path = next((os.path.join(dest, "sage", name)
+                                  for name in ("project-profile.yaml", "project-profile.json")
+                                  if os.path.lexists(os.path.join(dest, "sage", name))), None)
+    if existing_profile_path is not None:
+        print(f"보존: {os.path.relpath(existing_profile_path, dest)} "
+              "(인스턴스 profile — --force 라도 덮어쓰지 않음)")
     else:
-        _write(prof_dst, _profile_with_host(args.host, args.prefix), args.force, created, skipped)
+        _write(prof_dst, _profile_with_host(args.host, args.prefix), args.force, created, skipped,
+               transaction=transaction)
 
     # 2. framework 템플릿(중립): AGENT_GUIDE, {wrapper}, verification-protocol, verify-changes.sh, docs/agent/*
-    _copy_file(os.path.join(fw, "AGENT_GUIDE.md"), os.path.join(dest, "AGENT_GUIDE.md"), args.force, created, skipped)
-    _copy_file(os.path.join(fw, wrapper), os.path.join(dest, wrapper), args.force, created, skipped)
+    _copy_file(os.path.join(fw, "AGENT_GUIDE.md"), os.path.join(dest, "AGENT_GUIDE.md"), args.force,
+               created, skipped, transaction=transaction)
+    _copy_file(os.path.join(fw, wrapper), os.path.join(dest, wrapper), args.force, created, skipped,
+               transaction=transaction)
     _copy_file(os.path.join(fw, "verification-protocol.md"),
-               os.path.join(dest, "verification-protocol.md"), args.force, created, skipped)
+               os.path.join(dest, "verification-protocol.md"), args.force, created, skipped,
+               transaction=transaction)
     verify_dst = os.path.join(dest, "scripts", "verify-changes.sh")
     project_local_script = ((_profile.get("verification") or {}).get("project_local_script")
                             if isinstance(_profile.get("verification"), dict) else None)
@@ -565,110 +1208,155 @@ def run(args) -> int:
         skipped.append(verify_dst)
     else:
         _copy_file(os.path.join(fw, "scripts", "verify-changes.sh"),
-                   verify_dst, args.force, created, skipped)
-    _copy_tree(os.path.join(fw, "docs", "agent"), os.path.join(dest, "docs", "agent"), args.force, created, skipped)
+                   verify_dst, args.force, created, skipped, transaction=transaction)
+    _copy_tree(os.path.join(fw, "docs", "agent"), os.path.join(dest, "docs", "agent"), args.force,
+               created, skipped, transaction=transaction)
 
     # 2b. 대화형 부트스트랩 트리거 — profile 을 대화로 채우는 설계상 진입점(런타임별 발견 메커니즘 상이).
     agents_md_collision = False
-    codex_skill_status = None   # (status, dst) — codex host 전역 $sage-init 설치 결과
-    core_skill_status = []      # [(id, (status, dst))] — codex host 전역 CORE skill 설치 결과(5c)
+    codex_skill_status = None   # (status, dst) — selected Codex scope의 $sage-init 설치 결과
+    core_skill_status = []      # [(id, (status, dst))] — selected Codex scope의 CORE skill 결과(5c)
+    _write(os.path.join(dest, "docs", "agent", "sage-onboarding.md"),
+           _onboarding_text(args.host, skill_scope), True, created, skipped,
+           transaction=transaction)
     skill_src_md = _core_skill_source(_CORE_BOOTSTRAP_SKILL)   # 단일 소스(중립 내용)
     if args.host == "claude":
         # claude: repo .claude/skills/ 자동발견 → /sage-init 스킬 배치.
         _copy_tree(os.path.join(fw, ".claude", "skills", "sage-init"),
-                   os.path.join(dest, ".claude", "skills", "sage-init"), args.force, created, skipped)
+                   os.path.join(dest, ".claude", "skills", "sage-init"), args.force, created, skipped,
+                   transaction=transaction)
         # claude: CORE 6인 에이전트 렌더 → .claude/agents/ (Claude Code 자동발견 경로)
         _copy_agent_renders(os.path.join(fw, ".claude", "agents"),
                             os.path.join(dest, ".claude", "agents"), agent_profile,
-                            args.force, created, skipped)
+                            args.force, created, skipped, transaction=transaction)
     else:
-        # codex: ① repo-스코프 스킬 자동발견 불가 → $sage-init 스킬을 전역($CODEX_HOME/skills)에 설치
-        #           (--no-global-skill 로 opt-out — CI/샌드박스/타repo 검사용, codex R1-P1).
+        # codex: ① 사용자가 선택한 global 또는 project-local discovery surface에 $sage-init 설치.
+        #           deprecated --no-global-skill은 CI/샌드박스 호환을 위해 disabled receipt로만 보존한다.
         #        ② codex 가 auto-read 하는 AGENTS.md 라우터(세션 시작 시 부트스트랩 안내, CODEX.md 는
         #           codex auto-read 아님). create-only: 기존 AGENTS.md 보존+경고(codex 협의 R4).
-        if not getattr(args, "no_global_skill", False):
-            codex_skill_status = _install_codex_global_skill(skill_src_md, args.force)
+        if skill_scope == "global":
+            codex_skill_status = _install_codex_global_skill(skill_src_md, args.force,
+                                                             transaction=transaction)
+        elif skill_scope == "project-local":
+            codex_skill_status = _install_codex_project_skill(
+                dest, skill_src_md, args.force, transaction=transaction)
         else:
             codex_skill_status = ("disabled", None)
         agents_dst = os.path.join(dest, "AGENTS.md")
         if os.path.exists(agents_dst) and not args.force:
             agents_md_collision = True
         else:
-            _copy_file(os.path.join(fw, "AGENTS.md"), agents_dst, args.force, created, skipped)
+            _copy_file(os.path.join(fw, "AGENTS.md"), agents_dst, args.force, created, skipped,
+                       transaction=transaction)
         # codex: CORE 6인 에이전트 렌더 → repo .codex/agents/ (claude host 가 .claude/agents/ 받듯
         #   codex host 도 자기 렌더를 받음 — 리소스 생성 시 codex 누락 금지, 사용자 지침).
         #   codex 는 에이전트 네이티브 자동발견이 없으나 SAGE 설계상 .codex/agents/<id>.md 가 자산 정본
         #   (write-guard·reverse_extract·CODEX.md). codex AI 는 AGENTS.md 라우팅으로 역할 정의를 참조.
         #   claude 렌더와 동일 소스 재사용(skill 전역배포와 같은 단일소스 패턴).
         _copy_tree(os.path.join(fw, ".claude", "agents"),
-                   os.path.join(dest, ".codex", "agents"), args.force, created, skipped)
+                   os.path.join(dest, ".codex", "agents"), args.force, created, skipped,
+                   transaction=transaction)
 
     # 3. CORE hook spec(중립 7종) → docs/sage_harness/hooks/
     specs = _resources.hook_specs_dir()
     for hid, _form in _CORE_HOOKS:
         _copy_file(os.path.join(specs, f"{hid}.md"),
-                   os.path.join(dest, "docs", "sage_harness", "hooks", f"{hid}.md"), args.force, created, skipped)
+                   os.path.join(dest, "docs", "sage_harness", "hooks", f"{hid}.md"), args.force,
+                   created, skipped, transaction=transaction)
 
     # 4. CORE hook 정본(core+adapter+strategy+native) → scripts/sage_harness/hooks/ (도메인값 0)
-    _copy_tree(_resources.hooks_src_dir(), os.path.join(dest, "scripts", "sage_harness", "hooks"), args.force, created, skipped)
+    _copy_tree(_resources.hooks_src_dir(), os.path.join(dest, "scripts", "sage_harness", "hooks"),
+               args.force, created, skipped, transaction=transaction)
 
     # 5. CORE roster agent spec(중립 6인) → docs/sage_harness/agents/
     for aid in _CORE_AGENTS:
         _copy_file(os.path.join(core, "agents", f"{aid}.md"),
-                   os.path.join(dest, "docs", "sage_harness", "agents", f"{aid}.md"), args.force, created, skipped)
+                   os.path.join(dest, "docs", "sage_harness", "agents", f"{aid}.md"), args.force,
+                   created, skipped, transaction=transaction)
 
     # 5b. CORE skill spec(중립 6종) → docs/sage_harness/skills/ (host 무관 — CORE agent spec 과 대칭).
     #     CORE 부트스트랩 자산이라 sage-init/CORE agent spec 과 동일하게 manifest 비추적(reference spec).
     #     manifest 추적 skill(spec+claims+render hash)은 generate/extract 흐름이 소유한다.
     for sid in _CORE_SKILLS:
         _copy_file(os.path.join(core, "skills", f"{sid}.md"),
-                   os.path.join(dest, "docs", "sage_harness", "skills", f"{sid}.md"), args.force, created, skipped)
+                   os.path.join(dest, "docs", "sage_harness", "skills", f"{sid}.md"), args.force,
+                   created, skipped, transaction=transaction)
 
-    # 5c. CORE skill 렌더 — 런타임별 발견 메커니즘(sage-init 과 동일 비대칭):
-    #     claude=repo .claude/skills/ 자동발견, codex=전역 $CODEX_HOME/skills (repo-스코프 미발견).
+    # 5c. CORE skill 렌더 — claude는 repo local, codex는 명시적으로 선택한 scope를 사용한다.
     if args.host == "claude":
         for sid in _CORE_SKILLS:
             _copy_tree(os.path.join(fw, ".claude", "skills", sid),
-                       os.path.join(dest, ".claude", "skills", sid), args.force, created, skipped)
-    elif not getattr(args, "no_global_skill", False):
+                       os.path.join(dest, ".claude", "skills", sid), args.force, created, skipped,
+                       transaction=transaction)
+    elif skill_scope in ("global", "project-local"):
         for sid in _CORE_SKILLS:
             src_md = os.path.join(fw, ".claude", "skills", sid, "SKILL.md")
-            core_skill_status.append((sid, _install_codex_global_skill(src_md, args.force, skill_id=sid)))
+            installer = (_install_codex_global_skill if skill_scope == "global"
+                         else lambda src, force, skill_id, transaction: _install_codex_project_skill(
+                             dest, src, force, skill_id=skill_id, transaction=transaction))
+            core_skill_status.append((sid, installer(
+                src_md, args.force, skill_id=sid, transaction=transaction)))
 
     # 5d. 은퇴한 CORE skill 잔존 사본 정리 — 옛 이름이 새 이름과 함께 남아 호출되는 혼선 방지.
     #     설치한 host 의 발견 경로만 정리(claude=repo .claude/skills, codex=전역 $CODEX_HOME/skills).
     for legacy in _LEGACY_CORE_SKILLS:
         if args.host == "claude":
-            _prune_legacy_skill(os.path.join(dest, ".claude", "skills", legacy), pruned)
-        elif not getattr(args, "no_global_skill", False):
-            _prune_legacy_skill(os.path.join(_codex_skills_root(), legacy), pruned)
+            _prune_legacy_skill(os.path.join(dest, ".claude", "skills", legacy), pruned,
+                                transaction=transaction)
+        elif skill_scope in ("global", "project-local"):
+            skill_root = (_codex_skills_root() if skill_scope == "global"
+                          else os.path.join(dest, ".codex", "skills"))
+            _prune_legacy_skill(os.path.join(skill_root, legacy), pruned,
+                                transaction=transaction)
 
     # 5e. 오버레이 물리화 + core_renders 앵커 — CORE 렌더 base 에 (a)/(b) 오버레이 블록을 물리 삽입하고
     #     (c)/미분류는 블록 없이 base 앵커만 기록. install·sync·L1·validate 가 같은 로직(overlay_materialize)을 경유.
-    core_renders, overlay_changed, overlay_errors = overlay_materialize.materialize(dest, args.host)
-    for p in sorted(overlay_changed):
-        print(f"  ~ 오버레이 물리화: {os.path.relpath(p, dest)}")
+    core_renders, materialization_plans, overlay_errors = overlay_materialize.plan_materialize(dest, args.host)
     for p, msg in overlay_errors:
         print(f"  ❌ 오버레이 물리화 실패({os.path.relpath(p, dest)}): {msg}", file=sys.stderr)
     if overlay_errors:
         print("---- sage install: FAIL (manifest 미갱신) ----", file=sys.stderr)
         return 1
+    anchor_conflicts = _materialized_anchor_conflicts(dest, args.host, agent_profile, core_renders)
+    if anchor_conflicts:
+        _print_core_trust_conflicts(dest, anchor_conflicts)
+        return 1
+    transaction.verify_unconsumed()
+    overlay_changed = overlay_materialize.apply_materialization(
+        materialization_plans,
+        writer=lambda path, text: _atomic_write(path, text, transaction=transaction))
+    for p in sorted(overlay_changed):
+        print(f"  ~ 오버레이 물리화: {os.path.relpath(p, dest)}")
 
     # 6. manifest (CORE hook 등록 — generate 가 hash 스탬프 + core_renders 앵커). --force 재설치는 기존
     #    manifest 의 인스턴스 등록 자산(mcps/agents/skills)을 보존하고 CORE hook·core_renders 만 리셋.
-    _write(os.path.join(dest, "docs", "sage_harness", ".manifest.json"),
-           json.dumps(_manifest(args.host, _load_manifest(dest), core_renders), ensure_ascii=False, indent=2) + "\n",
-           True, created, skipped)
+    next_manifest = _manifest(args.host, existing_manifest, core_renders,
+                              skill_scope=skill_scope)
+    if next_manifest.get("source_core_content_hash") != preflight_source_hash:
+        raise _tx.InstallDriftError("SAGE source resources changed during install")
+    _write(manifest_path,
+           json.dumps(next_manifest, ensure_ascii=False, indent=2) + "\n",
+           True, created, skipped, transaction=transaction)
 
     # 7. spec 템플릿(사람 작성 참고) + schema(validate 참조)
     templates = _resources.templates_dir()
     for t in ("agent.spec.md", "hook.spec.md", "skill.spec.md", "claims.yml"):
-        _copy_file(os.path.join(templates, t), os.path.join(dest, "sage", "templates", t), args.force, created, skipped)
+        _copy_file(os.path.join(templates, t), os.path.join(dest, "sage", "templates", t), args.force,
+                   created, skipped, transaction=transaction)
     # manifest + profile 스키마 모두 vendor — profile 스키마는 project-profile 구조검증과
     # 오타 키 방어가 번들 폴백에 의존하지 않고 프로젝트 안에서 자립하도록.
     for s in ("manifest.schema.json", "profile.schema.json"):
         _copy_file(os.path.join(_resources.schema_dir(), s),
-                   os.path.join(dest, "schema", s), args.force, created, skipped)
+                   os.path.join(dest, "schema", s), args.force, created, skipped,
+                   transaction=transaction)
+
+    if source_core_content_hash() != preflight_source_hash:
+        raise _tx.InstallDriftError("SAGE source resources changed before install commit")
+    transaction.verify_unconsumed()
+    transaction.verify_outputs()
+    cleanup_errors = transaction.commit()
+    for message in cleanup_errors:
+        print(f"⚠️ install transaction backup 정리 실패: {message}", file=sys.stderr)
 
     # 보고
     print(f"== sage install (host={args.host}, prefix={args.prefix}) → {dest} ==")
@@ -717,7 +1405,7 @@ def run(args) -> int:
                   "`sage doctor` 로 drift 확인 — 갱신은 `sage install --host claude --force`.")
     if args.host == "codex":
         _print_codex_skill_summary(codex_skill_status, core_skill_status,
-                                   getattr(args, "no_global_skill", False))
+                                   skill_scope)
         if agents_md_collision:
             print("")
             print("   ⚠️  기존 AGENTS.md 가 있어 codex 부트스트랩 라우터를 배치하지 못했습니다.")
@@ -725,11 +1413,11 @@ def run(args) -> int:
     return 0
 
 
-def _print_codex_skill_summary(codex_skill_status, core_skill_status, no_global_skill):
-    """codex 전역 스킬 설치 결과를 상태별 카운트로 요약(개별 나열 대신). stale/error 만 갱신 안내."""
-    if no_global_skill and not core_skill_status and (not codex_skill_status or codex_skill_status[0] == "disabled"):
+def _print_codex_skill_summary(codex_skill_status, core_skill_status, skill_scope):
+    """Summarize the selected Codex CORE skill discovery surface."""
+    if skill_scope == "disabled" and not core_skill_status and (not codex_skill_status or codex_skill_status[0] == "disabled"):
         print("")
-        print("   전역 CORE 스킬 설치 생략(--no-global-skill). 부트스트랩은 AGENTS.md 라우터로 안내됩니다.")
+        print("   CORE skill 설치 생략(--no-global-skill, deprecated). AGENTS.md 라우터만 배치됐습니다.")
         return
 
     # (id, status) 전체 수집 — sage-init + CORE 스킬.
@@ -748,11 +1436,13 @@ def _print_codex_skill_summary(codex_skill_status, core_skill_status, no_global_
     err = counts.get("error", 0) + counts.get("missing", 0)
 
     print("")
-    print(f"   전역 스킬 {total}종: 최신 {ok}" + (f", 갱신필요 {stale}" if stale else "") + (f", 실패 {err}" if err else ""))
+    scope_label = "전역" if skill_scope == "global" else "프로젝트 로컬"
+    print(f"   {scope_label} CORE skill {total}종: 최신 {ok}" + (f", 갱신필요 {stale}" if stale else "") + (f", 실패 {err}" if err else ""))
     if stale:
         stale_ids = ", ".join(f"${sid}" for sid, st in entries if st == "stale")
         print(f"   ⚠️  갱신 필요: {stale_ids}")
-        print("       → `sage install --host codex --force` (로컬 수정은 덮어써집니다)")
+        print(f"       → `sage install --host codex --skill-scope {skill_scope} --force` "
+              "(선택 scope의 로컬 수정은 덮어써집니다)")
     if err:
         err_ids = ", ".join(f"${sid}" for sid, st in entries if st in ("error", "missing"))
         print(f"   ⚠️  설치 실패: {err_ids} (권한/읽기전용 home 또는 번들 손상?)")

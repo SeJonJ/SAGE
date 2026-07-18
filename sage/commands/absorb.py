@@ -155,7 +155,7 @@ _RETRO_SEMANTIC = {"agent", "skill"}      # interpretive — spec intent/advisor
 
 
 def _overlay_hint(p):
-    """agent/skill retro proposal 의 install-safe overlay 후보 경로.
+    """agent/skill retro proposal 의 overlay 후보 경로(eligibility 판정 전 표시용).
 
     retro JSON 은 아직 schema-less human-gate 제안이라 asset_id 가 없을 수 있다. 있으면 구체 경로,
     없으면 placeholder 로 출력해 사람이 어느 CORE 자산에 적용할지 정하게 한다.
@@ -170,6 +170,25 @@ def _overlay_hint(p):
         safe = safe.strip(".-") or f"<{target}-id>"
     subdir = "agents" if target == "agent" else "skills"
     return f"sage/asset_overrides/{subdir}/{safe}.md"
+
+
+def _overlay_resolution(p):
+    """retro proposal의 CORE overlay eligibility와 안내 문구를 단일 분류기로 판정한다."""
+    from sage.overlay_classify import classify, is_core
+
+    target = p.get("target") if isinstance(p, dict) else None
+    raw = p.get("asset_id") or p.get("id") or p.get("asset")
+    if not raw:
+        return f"대상 확인 필요: {_overlay_hint(p)} (asset_id 지정 후 COMPOSE_ALLOWED 검증)"
+
+    hint = _overlay_hint(p)
+    kind = "agents" if target == "agent" else "skills"
+    asset_id = os.path.basename(hint)[:-3]
+    if is_core(kind, asset_id) and classify(kind, asset_id) == "compose":
+        return f"eligible overlay 후보: {hint}"
+    if is_core(kind, asset_id):
+        return f"overlay 미지원: {kind}/{asset_id} (gate-bearing 또는 독립 oracle 미보증)"
+    return f"CORE 대상 아님: {kind}/{asset_id} (새 프로젝트 자산은 /sage-asset)"
 
 
 def frontmatter_value(text, key):
@@ -332,13 +351,13 @@ def _absorb_from_retro(args) -> int:
         print("  적용: profile 키 수정(/sage-profile-modify) 또는 hook spec/코드 수정 → sage generate → sage validate")
         print("  주의: hook 은 결정론 런타임이므로 overlay 파일만으로 실행 동작을 바꾸지 않습니다.")
     if sem:
-        print("\n【 의미적 누락 → agent / skill (install-safe overlay 우선) 】")
+        print("\n【 의미적 누락 → agent / skill (자산별 반영 경로 판정) 】")
         for p in sem:
             _show(p)
-            print(f"      overlay 후보: {_overlay_hint(p)}")
-        print("  적용: CORE 렌더 직접수정 금지. `/sage-asset-override` 로 위 overlay 파일을 작성하세요")
-        print("        (게이트 완화 여부를 확인하고 sage/asset_overrides/** 에 기록).")
-        print("        SAGE 가 eligible 자산의 overlay 를 렌더에 물리화하고 `sage validate` 가 게이트합니다(게이트-보유 자산은 SD-8 전까지 미지원). install --force 에도 보존됩니다.")
+            print(f"      {_overlay_resolution(p)}")
+        print("  적용: CORE 렌더 직접수정 금지. COMPOSE_ALLOWED 자산만 `/sage-asset-override` 로 작성하세요.")
+        print("        gate-bearing CORE 자산은 독립 oracle 보증 전까지 overlay 미지원이며, 새 프로젝트 자산은 `/sage-asset` 경로입니다.")
+        print("        eligible overlay는 렌더에 물리화되고 `sage validate`가 게이트하며 install --force에도 보존됩니다.")
         print("        범용화할 내용이면 이후 spec/CORE 반영은 별도 변경으로 승격하세요.")
     if skipped:
         print(f"\n⚠️  target 미지/누락 {len(skipped)}건 — target ∈ {{profile,hook,agent,skill}} 이어야 분류됨:")

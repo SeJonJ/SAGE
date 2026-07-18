@@ -59,8 +59,8 @@
       "test": "scripts/sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py"
     },
     "hooks/pre-implementation-gate": {
-      "spec_hash": "sha256:14725b34bba7d106847b9ac2816d2a7be3345dd6e1c4191e598f685927a5e200",
-      "canonical_hash": "sha256:ebeee5930dab31475c50c53c0e430317acc98233c81a84805f0408f2c0030214",
+      "spec_hash": "sha256:a92930ee52ec92ab72d286219a48d003b8a9769456598c10ea45c8c0556a0a59",
+      "canonical_hash": "sha256:077b3811d653d8af6f641b6a625348a532c927769fa122c03ef06e828c141225",
       "adapter_hash": {
         "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
         "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
@@ -97,10 +97,10 @@
       "test": "scripts/sage_harness/hooks/tests/test_stop_compliance_report.py"
     },
     "hooks/generated-artifact-write-guard": {
-      "spec_hash": "sha256:b88416d4329bda9f31f7f0fcfc34b7c3c5f550311912eb9812940fd9444617e9",
-      "canonical_hash": "sha256:866291daeda531c2ddb9312e608d1beb847ef485e585322255d02829dd0730fc",
+      "spec_hash": "sha256:f60991f25951f38ac7fc8412c0054328a5cb84f493dcd63f614ea205a1d8abce",
+      "canonical_hash": "sha256:dfd4c15f5f5be8070a19728d1951bde0e3c2b28a2dc68697e2aaabb1689be31e",
       "render_hash": {
-        "native": "sha256:866291daeda531c2ddb9312e608d1beb847ef485e585322255d02829dd0730fc"
+        "native": "sha256:dfd4c15f5f5be8070a19728d1951bde0e3c2b28a2dc68697e2aaabb1689be31e"
       },
       "adapter_contract_version": "1",
       "conformance": "PASS",
@@ -128,8 +128,8 @@
     }
   },
   "hook_runtime_hash": {
-    "shared": "sha256:ed02798ed299045650855a05285885619f8967359a1728ff6868bf8d300bb15c",
-    "claude": "sha256:d0af1829282e733b78b6cc3540402a9c4e746d97ec5c6319ec903cc8607cf4e5",
-    "codex": "sha256:ab851a7b2e228e4b8cdbdd2599cea9d74083c1a3a6731dd648b1017ad66356ea"
+    "shared": "sha256:0afdee1de4b81911ac834cc27e488d65d4bc295693bc4f7f6dfedf663a433755",
+    "claude": "sha256:6991dff9a466ef7f0fb3e926df2119c2617f8d534bdb14c5ce3d42fa2576a464",
+    "codex": "sha256:97549092cb66b9226f8766b8f229679bc8024f27a21682d96bdee49f96f4b843"
   }
 }

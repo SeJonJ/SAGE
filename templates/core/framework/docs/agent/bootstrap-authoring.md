@@ -38,9 +38,16 @@ approves. This is not a turnkey generator — intent's owner is the human.
 ## Stages
 
 ### 1. Install
-`sage install --host {claude|codex} --dest <project>` places the harness, the
+`sage install --host claude --dest <project>` or
+`sage install --host codex --skill-scope {global|project-local} --dest <project>` places the harness, the
 neutral docs (this file included), and an **empty** `sage/project-profile.yaml`
 (schema keys fixed, values blank). Nothing is governed yet.
+
+Codex scope is mandatory for normal installs. `global` owns the effective
+`$CODEX_HOME/skills`; `project-local` owns `<project>/.codex/skills` and can travel
+with a committed repository. Neither mode installs the SAGE CLI for another user;
+each teammate installs the `sage`/`sage-hook` runtime separately. The generated
+`docs/agent/sage-onboarding.md` records the selected onboarding path.
 
 ### 2. Interview → profile authoring
 The agent interviews the user for intent, then fills `project-profile.yaml`
@@ -65,6 +72,10 @@ decisions that genuinely need user intent; author the rest from them:
   model name: claude-host maps it to the Claude subagent model, codex-host treats it
   as a nominal tier (Codex uses its own model). On a codex-host project, present it as
   a tier choice, not a Claude-model recommendation.
+  Then run `sage models --host <host>` for each installed host and ask the user to
+  choose `components[].runtime_models.<host>` for every component that runs there.
+  Codex cache candidates are cache-confirmed; Claude aliases are syntax-only and
+  account entitlement remains unverified. Never present those aliases as guaranteed access.
 - `risk.*` — derived from the stack and the high-risk domains the user names
   (e.g. secrets, auth, payments → `l3_*`). Cover the tier globs
   (`l0_pass_globs` / `l1_path_globs` / `l2_path_globs` /
@@ -81,6 +92,18 @@ decisions that genuinely need user intent; author the rest from them:
   when the peer CLI is unavailable. No third-party tool is needed — SAGE calls
   the peer runtime directly (`codex exec` / `claude -p`). It is **not** resolved
   from `runtime.external_reviewer` (which records the intended preference only).
+- `runtime.installed_hosts` / `runtime.active_host` — configure every desired SAGE
+  discovery surface, but keep exactly one active host. A double-host project does
+  not run both hosts concurrently and SAGE never switches hosts or phases automatically.
+  To hand off, finish durable exact-Cycle-Stem phase documents, switch runtimes
+  manually, set the new single `active_host`, and resume from those documents.
+  `runtime.host` is a legacy alias; do not author both keys with different values.
+  Double-host projects should set `options.cross_model: true` so Phase 05 calls the
+  runtime opposite the active host.
+- `cross_model.reviewer` — when cross-model is enabled, ask the user to enter reviewer
+  `host` and `model`. The host must be opposite `active_host`; `sage validate` checks
+  that invariant and `sage doctor` checks the local catalog. A manual host handoff
+  requires revisiting this explicit reviewer selection.
 - **Review loop (Phase 05)** — the optional adversarial review-rework loop. Use the
   shared interview set below (§ Review loop + vault interview set). Both `sage-init`
   (first authoring) and `sage-profile-modify` (later editing) drive the *same* set.

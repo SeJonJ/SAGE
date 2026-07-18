@@ -65,9 +65,32 @@ def run(args):
               file=sys.stderr)
         return 2
 
+    hard_fail = False
+
+    # FB12 migration safety: 일반 preflight가 blocked overlay 파일 때문에 실패하더라도 과거에
+    # 물리화된 gate-bearing managed block은 남겨두지 않는다. SAGE 마커 구간만 제거하고 manifest는
+    # 갱신하지 않는다.
+    cleanup_plans = []
+    for host in hosts:
+        host_cleanup, cleanup_errors = _mat.plan_blocked_cleanup(root, host)
+        for p, msg in cleanup_errors:
+            print(f"❌ blocked block 정리 실패[{host}]({os.path.relpath(p, root)}): {msg}", file=sys.stderr)
+            hard_fail = True
+        cleanup_plans.extend(host_cleanup)
+    deduped_cleanup = {plan[0]: plan for plan in cleanup_plans}
+    cleanup_changed = _mat.apply_materialization(deduped_cleanup.values())
+    for p in sorted(cleanup_changed):
+        print(f"  ~ blocked 관리 블록 제거: {os.path.relpath(p, root)}")
+    if hard_fail:
+        suffix = "정리 가능한 blocked 관리 블록만 제거됨, manifest 미갱신" if cleanup_changed else "렌더/manifest 미갱신"
+        print(f"---- sync-overlays: FAIL ({suffix}) ----")
+        return 1
+
+    # cleanup은 업그레이드 source/version skew 자체가 생기는 FB12 migration에서도 먼저 수행해야 한다.
+    # 이후 검사는 일반 overlay/receipt를 재스탬프하지 못하게 기존 fail-closed 순서를 유지한다.
     installed_hash = manifest.get("installed_core_content_hash")
     if installed_hash and installed_hash != source_core_content_hash():
-        print("❌ 현재 SAGE 엔진과 install source identity가 다름 — overlay sync 전에 "
+        print("❌ 현재 SAGE 엔진과 install source identity가 다름 — blocked block 정리 후 "
               "`sage install --force` 로 base/영수증을 함께 갱신하세요", file=sys.stderr)
         return 1
 
@@ -77,16 +100,18 @@ def run(args):
             if key.split("/", 1)[0] in hosts
             and (not isinstance(value, dict) or value.get("sage_version") != __version__)]
     if skew:
-        print(f"❌ {len(skew)}개 CORE 렌더가 현재 SAGE {__version__}와 다른 버전 — "
-              "sync로 영수증을 재스탬프하지 않고 `sage install --force`를 요구합니다", file=sys.stderr)
+        print(f"❌ {len(skew)}개 CORE 렌더가 현재 SAGE {__version__}와 다른 버전 — blocked block 정리 후 "
+              "`sage install --force`를 요구합니다", file=sys.stderr)
         return 1
-
-    hard_fail = False
 
     # 1. 오버레이 파일 선열거 → 오타/미지 CORE id, (c)/미분류 자산은 하드-리포트(fail-closed).
     for kind, id, path in _cls.overlay_files(root):
         rel = os.path.relpath(path, root)
-        if not _cls.is_core(kind, id):
+        filename_error = _cls.overlay_filename_error(kind, id, path)
+        if filename_error:
+            print(f"❌ {filename_error}: {rel}", file=sys.stderr)
+            hard_fail = True
+        elif not _cls.is_core(kind, id):
             print(f"❌ 미지/오타 CORE 자산 오버레이: {rel} — '{id}' 는 CORE {kind} 가 아닙니다", file=sys.stderr)
             hard_fail = True
         elif _cls.classify(kind, id) == "blocked":
@@ -94,7 +119,8 @@ def run(args):
             hard_fail = True
 
     if hard_fail:
-        print("---- sync-overlays: FAIL (렌더/manifest 미갱신) ----")
+        suffix = "blocked 관리 블록만 제거됨, 일반 렌더/manifest 미갱신" if cleanup_changed else "렌더/manifest 미갱신"
+        print(f"---- sync-overlays: FAIL ({suffix}) ----")
         return 1
 
     # 2. 설치된 모든 host를 물리화한다. 한 host만 갱신하면 다른 discovery surface와 앵커가

@@ -174,8 +174,12 @@ def _compile_profile(root, dest):
     except Exception as e:
         print(f"   ❌ profile 컴파일 실패: YAML 파싱 오류 ({type(e).__name__}: {e}).", file=sys.stderr)
         return "fail"
-    from sage.profile_compile import materialize_profile
-    data = materialize_profile(data)
+    from sage.profile_compile import ProfileCompileError, materialize_profile
+    try:
+        data = materialize_profile(data)
+    except ProfileCompileError as e:
+        print(f"   ❌ profile 컴파일 실패: raw risk 필드 타입 오류 ({e}).", file=sys.stderr)
+        return "fail"
     outp = os.path.join(dest, "sage", "project-profile.json")
     os.makedirs(os.path.dirname(outp), exist_ok=True)
     Path(outp).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -324,7 +328,7 @@ def _load_profile_dict(root, dest):
         return None
 
 
-def _implementer_spec_md(comp_id, paths, model):
+def _implementer_spec_md(comp_id, paths, model, active_runtime="claude", runtime_model=None):
     """profile.components[comp_id] → 중립 implementer 에이전트 spec(.md) 결정론 직렬화 (EH-1).
 
     스택/경로는 profile 에서만 옴(엔진 도메인값 0). owns=component.paths, intent 는 컴포넌트 id 만 참조."""
@@ -349,6 +353,8 @@ plus production code-convention verification within its boundary.
 ## runtime_bindings
 - model: {model}   # work-intensity tier (opus=heavy / sonnet=standard); claude-host maps it to the
                    # Claude subagent model, codex-host treats it as a nominal tier (Codex uses its own model)
+- active_host: {active_runtime}
+- runtime_model: {runtime_model or 'host-default'}   # profile.components[].runtime_models selection
 - claims/allowlist are auto-derived into {{id}}.claims.yml by reverse_extract
 
 ## drift_checks
@@ -363,6 +369,7 @@ def _gen_roster(args, root):
     - 비어있지 않으면 컴포넌트당 `implementer-<id>.md` spec 을 중립 템플릿에서 결정론 scaffold.
       naming = implementer-<comp>(접두 — 함수역할 leader/qa/reviewer/convention-checker 와 충돌 회피).
     - create-only: 기존 spec(손편집 가능) 은 보존(skip). --write 없으면 dry-run 미리보기.
+    - component ID/path/runtime model 계약이 잘못되면 어떤 roster 파일도 쓰기 전에 FAIL.
     - claims/render/manifest 등록은 interpretive agent 파이프라인(`sage generate --kind agent`)이 처리
       → "중대" cross-cutting(manifest/conformance/reverse_extract) 재작성 회피, 잘 격리된 추가 경로."""
     prof = _load_profile_dict(root, args.dest)
@@ -375,6 +382,15 @@ def _gen_roster(args, root):
         print("  ℹ️  profile.components 비어있음 → 고정 implementer-a/b 폴백 유지(하위호환). 생성 없음.")
         return 0
     agents_dir = os.path.join(args.dest, "docs", "sage_harness", "agents")
+    from sage.model_routing import component_issues, component_model
+    from sage.runtime_hosts import active_host
+    failures = [message for severity, message in component_issues(prof) if severity == "FAIL"]
+    if failures:
+        for message in failures:
+            print(f"  ❌ {message}", file=sys.stderr)
+        print("  profile.components 오류를 수정한 뒤 다시 실행하세요.", file=sys.stderr)
+        return 1
+    runtime = active_host(prof)
     written, skipped, bad = [], [], []
     for comp in components:
         cid = (comp or {}).get("id")
@@ -387,7 +403,8 @@ def _gen_roster(args, root):
         if args.write:
             os.makedirs(agents_dir, exist_ok=True)
             Path(out).write_text(
-                _implementer_spec_md(cid, comp.get("paths") or [], comp.get("model") or "opus"),
+                _implementer_spec_md(cid, comp.get("paths") or [], comp.get("model") or "opus",
+                                     runtime, component_model(comp, runtime)),
                 encoding="utf-8")
         written.append(aid)
     mode = "생성" if args.write else "생성예정(dry-run — --write 로 기록)"
@@ -675,7 +692,8 @@ def _gen_interpretive(args, root, kind):
         deploy_codex = False
     prefix = ""
     if deploy_codex:
-        host = str((prof.get("runtime") or {}).get("host") or "").strip()
+        from sage.runtime_hosts import active_host
+        host = active_host(prof, default="")
         if host != "codex":
             # codex 전역 skill 발견은 codex-host 에서만 의미(claude-host 는 codex skill 미사용) — doctor 점검과 일관.
             # claude-host 가 전역에 orphan 배포를 만들지 않도록 배포 생략(등록은 진행, codex 리뷰 P2).

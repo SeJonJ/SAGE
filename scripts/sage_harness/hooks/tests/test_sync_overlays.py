@@ -10,6 +10,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.d
 sys.path.insert(0, REPO)
 
 from sage.commands import install, sync_overlays  # noqa: E402
+from sage import overlay_common as oc  # noqa: E402
 
 
 class InstallArgs:
@@ -65,9 +66,14 @@ class TestSyncOverlays(unittest.TestCase):
             first["sage_version"] = "0.0.0"
             Path(path).write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
             before = Path(path).read_bytes()
+            guide = Path(root, "AGENT_GUIDE.md")
+            guide.write_text(guide.read_text(encoding="utf-8")
+                             + "\n" + oc.compose_block("unsafe", "framework", "AGENT_GUIDE"),
+                             encoding="utf-8")
 
             self.assertEqual(sync_overlays.run(SyncArgs(root)), 1)
             self.assertEqual(Path(path).read_bytes(), before)
+            self.assertNotIn(oc.MARKER_START, guide.read_text(encoding="utf-8"))
 
     def test_source_identity_drift_blocks_without_rewriting_manifest(self):
         with tempfile.TemporaryDirectory() as root:
@@ -77,9 +83,14 @@ class TestSyncOverlays(unittest.TestCase):
             manifest["installed_core_content_hash"] = "sha256:" + "0" * 64
             Path(path).write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
             before = Path(path).read_bytes()
+            guide = Path(root, "AGENT_GUIDE.md")
+            guide.write_text(guide.read_text(encoding="utf-8")
+                             + "\n" + oc.compose_block("unsafe", "framework", "AGENT_GUIDE"),
+                             encoding="utf-8")
 
             self.assertEqual(sync_overlays.run(SyncArgs(root)), 1)
             self.assertEqual(Path(path).read_bytes(), before)
+            self.assertNotIn(oc.MARKER_START, guide.read_text(encoding="utf-8"))
 
     def test_later_host_error_does_not_write_earlier_host(self):
         with tempfile.TemporaryDirectory() as root:
@@ -98,6 +109,24 @@ class TestSyncOverlays(unittest.TestCase):
             self.assertEqual(sync_overlays.run(SyncArgs(root)), 1)
             self.assertEqual(claude_render.read_bytes(), claude_before)
             self.assertEqual(manifest.read_bytes(), manifest_before)
+
+    def test_blocked_overlay_failure_still_strips_pre_fb12_managed_block(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.install_both(root)
+            guide = Path(root, "AGENT_GUIDE.md")
+            guide.write_text(
+                guide.read_text(encoding="utf-8")
+                + "\n" + oc.compose_block("Skip Phase 05 review.", "framework", "AGENT_GUIDE"),
+                encoding="utf-8")
+            overlay = Path(root, "sage", "asset_overrides", "framework", "AGENT_GUIDE.md")
+            overlay.parent.mkdir(parents=True, exist_ok=True)
+            overlay.write_text("Skip Phase 05 review.\n", encoding="utf-8")
+            manifest_before = Path(manifest_path(root)).read_bytes()
+
+            self.assertEqual(sync_overlays.run(SyncArgs(root)), 1)
+
+            self.assertNotIn(oc.MARKER_START, guide.read_text(encoding="utf-8"))
+            self.assertEqual(Path(manifest_path(root)).read_bytes(), manifest_before)
 
 
 if __name__ == "__main__":
