@@ -23,6 +23,7 @@ _RANK = {"INFO": 0, "WARN": 1, "FAIL": 2}
 # 항상 적발하기 위한 폴백(N-R1/P0-2). 권위 출처는 schema/profile.schema.json 이며, 스키마를
 # 읽을 수 있으면 거기서 로드해 드리프트를 막는다. 폴백은 스키마 파일이 아예 없을 때만 쓰인다.
 _CLOSED_SECTION_FALLBACK = {
+    "sage": {"required_version"},
     "risk": {"desktop_block_glob", "desktop_block_hint", "generic_tokens", "l0_pass_globs", "l0_exclude_globs",
              "l1_path_globs", "l2_content_keywords", "l2_path_globs", "l3_content_keywords",
              "l3_filename_globs", "l3_review_strategy", "l3_review_glob", "content_l3_enforce",
@@ -356,10 +357,16 @@ def _semantic_issues(profile, root):
     # 섹션 타입 가드(codex 재리뷰) — risk/pdca/options/knowledge_capture 가 truthy 비-dict 면 이후
     #   .get() 크래시(retro 등 런타임 읽기 포함). jsonschema 없어도 제어된 FAIL 을 단일 출처로 발행.
     # risk 루트 타입은 materialization_issues가 소유한다. 여기서 다시 발행하면 동일 FAIL이 중복된다.
-    for section in ("pdca", "options", "knowledge_capture", "verification", "hooks", "context_management"):
+    for section in ("sage", "pdca", "options", "knowledge_capture", "verification", "hooks", "context_management"):
         v = profile.get(section)
         if v is not None and not isinstance(v, dict):
             issues.append(("FAIL", f"{section} 섹션은 매핑(object)이어야 함(받음: {type(v).__name__})"))
+    sage_section = profile.get("sage") if isinstance(profile.get("sage"), dict) else {}
+    if "required_version" in sage_section:
+        from sage.version_contract import version_is_exact
+        required_version = sage_section["required_version"]
+        if not version_is_exact(required_version):
+            issues.append(("FAIL", "sage.required_version은 exact SemVer 형식이어야 함(예: 1.2.3)"))
     risk = profile.get("risk") if isinstance(profile.get("risk"), dict) else {}
     hooks = profile.get("hooks") if isinstance(profile.get("hooks"), dict) else {}
     root_env = hooks.get("project_root_env")

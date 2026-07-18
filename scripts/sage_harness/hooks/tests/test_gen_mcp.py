@@ -10,6 +10,8 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock as mock
+from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -135,6 +137,17 @@ class TestGenerate(unittest.TestCase):
             cfg = open(os.path.join(t, ".codex", "config.toml")).read()
             self.assertIn("[mcp_servers.codegraph]", cfg)
             self.assertIn(M.CODEX_BLOCK_START, cfg)
+
+    def test_manifest_receipt_preserved_when_atomic_replace_fails(self):
+        with tempfile.TemporaryDirectory() as t:
+            _inst(t); _spec(t, "codegraph", _CODEGRAPH)
+            manifest_path = Path(t, "docs", "sage_harness", ".manifest.json")
+            before = manifest_path.read_bytes()
+
+            with mock.patch.object(G, "atomic_write_json", side_effect=OSError("injected")):
+                self.assertEqual(G._gen_mcp(GArgs(t), t), 1)
+
+            self.assertEqual(before, manifest_path.read_bytes())
 
     def test_managed_block_preserves_non_mcp(self):
         with tempfile.TemporaryDirectory() as t:

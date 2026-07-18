@@ -18,6 +18,7 @@ from pathlib import Path
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
 from sage.commands import install  # noqa: E402
+from sage import __version__  # noqa: E402
 
 
 class Args:
@@ -48,6 +49,20 @@ def _tree_snapshot(root):
 
 
 class TestInstall(unittest.TestCase):
+    def test_bundled_profile_template_matches_package_version(self):
+        template = Path(REPO, "templates", "project-profile.yaml").read_text(encoding="utf-8")
+
+        self.assertIn(f'required_version: "{__version__}"', template)
+
+    def test_new_profile_records_installed_sage_as_required_version(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(0, install.run(Args("claude", root)))
+
+            profile = Path(root, "sage", "project-profile.yaml").read_text(encoding="utf-8")
+
+            self.assertIn("sage:", profile)
+            self.assertIn(f'required_version: "{__version__}"', profile)
+
     def test_bootstrap_skill_inventory_contains_full_and_local_init(self):
         self.assertIn("sage-init", install.core_skill_ids())
         self.assertIn("sage-init-local", install.core_skill_ids())

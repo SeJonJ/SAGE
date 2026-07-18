@@ -104,6 +104,45 @@ def _render_bootstrap_block(runtime, hook, message):
     return 2
 
 
+def _notify_version_contract(root, hook):
+    if hook != "session-start-snapshot":
+        return
+    yaml_path = os.path.join(root, "sage", "project-profile.yaml")
+    manifest_path = os.path.join(root, "docs", "sage_harness", ".manifest.json")
+    try:
+        with open(yaml_path, encoding="utf-8") as fh:
+            profile = yaml.safe_load(fh) or {}
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        print(f"[sage-version] WARN source=shared-profile unreadable error={type(exc).__name__}", file=sys.stderr)
+        return
+    try:
+        with open(manifest_path, encoding="utf-8") as fh:
+            manifest = json.load(fh)
+    except (OSError, ValueError) as exc:
+        print(f"[sage-version] WARN source=manifest unreadable error={type(exc).__name__}", file=sys.stderr)
+        return
+    if not isinstance(profile, dict):
+        print("[sage-version] WARN source=shared-profile unreadable error=NonObjectRoot", file=sys.stderr)
+        return
+    if not isinstance(manifest, dict):
+        print("[sage-version] WARN source=manifest unreadable error=NonObjectRoot", file=sys.stderr)
+        return
+
+    from sage import __version__
+    from sage.version_contract import version_axes, version_contract_issues
+
+    issues = [issue for issue in version_contract_issues(profile, manifest, __version__)
+              if issue.severity in ("WARN", "FAIL")]
+    if not issues:
+        return
+    axes = version_axes(profile, manifest, __version__)
+    remediations = list(dict.fromkeys(issue.remediation for issue in issues if issue.remediation))
+    suffix = f"; 조치: {'; '.join(remediations)}" if remediations else ""
+    print("[sage-version] WARN "
+          f"required={axes.required} installed={axes.installed} "
+          f"generated={axes.generated} runtime={axes.runtime}{suffix}", file=sys.stderr)
+
+
 def main():
     ap = argparse.ArgumentParser(prog="sage-hook",
                                  description="SAGE hook 실행(크로스플랫폼, bash 비의존)")
@@ -116,6 +155,7 @@ def main():
     os.environ.setdefault(_PROJECT_ROOT_ENV, root)
     core_dir = _resolve_core_dir(root, a.core_dir)
     raw_text = sys.stdin.read() if not sys.stdin.isatty() else ""
+    _notify_version_contract(root, a.hook)
     profile_error = _prepare_gate_profile(root, a.hook)
     if profile_error:
         return _render_bootstrap_block(a.runtime, a.hook, profile_error)

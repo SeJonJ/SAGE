@@ -17,6 +17,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.d
 sys.path.insert(0, REPO)
 from sage import hook_entry  # noqa: E402
 from sage import overlay_common  # noqa: E402
+from sage import __version__  # noqa: E402
 from sage.profile_compile import materialize_profile  # noqa: E402
 
 CORE = os.path.join(REPO, "scripts", "sage_harness", "hooks")
@@ -180,6 +181,70 @@ class TestDispatchIntegration(unittest.TestCase):
             self.assertIn("[session-start-overlay] BLOCK", r.stderr)
             with open(reviewer, encoding="utf-8") as fh:
                 self.assertNotIn(overlay_common.MARKER_START, fh.read())
+
+    def test_session_start_notifies_version_mismatch_once_for_both_hosts(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._write_profile(root, {"sage": {"required_version": "9.9.9"}})
+            manifest_dir = os.path.join(root, "docs", "sage_harness")
+            os.makedirs(manifest_dir)
+            with open(os.path.join(manifest_dir, ".manifest.json"), "w", encoding="utf-8") as fh:
+                json.dump({
+                    "sage_version": "9.9.7",
+                    "generator_version": "9.9.8",
+                    "host_runtime": "claude",
+                    "assets": {},
+                }, fh)
+
+            for runtime in ("claude", "codex"):
+                with self.subTest(runtime=runtime):
+                    result = self._run("session-start-snapshot", stdin="{}", root=root,
+                                       runtime=runtime)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(1, result.stderr.count("[sage-version]"))
+                    self.assertIn("required=9.9.9", result.stderr)
+                    self.assertIn(f"runtime={__version__}", result.stderr)
+
+    def test_session_start_stays_quiet_when_all_versions_match(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._write_profile(root, {"sage": {"required_version": __version__}})
+            manifest_dir = os.path.join(root, "docs", "sage_harness")
+            os.makedirs(manifest_dir)
+            with open(os.path.join(manifest_dir, ".manifest.json"), "w", encoding="utf-8") as fh:
+                json.dump({
+                    "sage_version": __version__,
+                    "generator_version": __version__,
+                    "host_runtime": "claude",
+                    "assets": {},
+                }, fh)
+
+            result = self._run("session-start-snapshot", stdin="{}", root=root)
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertNotIn("[sage-version]", result.stderr)
+
+    def test_session_start_notifies_malformed_version_sources_without_blocking(self):
+        cases = (
+            ("shared-profile", "sage", "project-profile.yaml", "sage: [", 2),
+            ("manifest", "docs/sage_harness", ".manifest.json", "{", 0),
+        )
+        for source, directory, filename, malformed, expected_returncode in cases:
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as root:
+                self._write_profile(root, {"sage": {"required_version": __version__}})
+                manifest_dir = os.path.join(root, "docs", "sage_harness")
+                os.makedirs(manifest_dir, exist_ok=True)
+                with open(os.path.join(manifest_dir, ".manifest.json"), "w", encoding="utf-8") as fh:
+                    json.dump({"sage_version": __version__, "generator_version": __version__, "assets": {}}, fh)
+                target_dir = os.path.join(root, directory)
+                os.makedirs(target_dir, exist_ok=True)
+                with open(os.path.join(target_dir, filename), "w", encoding="utf-8") as fh:
+                    fh.write(malformed)
+
+                result = self._run("session-start-snapshot", stdin="{}", root=root)
+
+                self.assertEqual(expected_returncode, result.returncode, result.stderr)
+                self.assertEqual(1, result.stderr.count("[sage-version]"))
+                self.assertIn(f"source={source}", result.stderr)
+                self.assertIn("unreadable", result.stderr)
 
     def test_gate_blocks_core_load_failure_but_non_gate_does_not(self):
         with tempfile.TemporaryDirectory() as root:

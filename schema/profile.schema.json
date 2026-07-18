@@ -5,6 +5,16 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "sage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "required_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$"
+        }
+      }
+    },
     "project": {
       "type": "object",
       "description": "prefix 는 codex 전역 skill 네임스페이스($CODEX_HOME/skills/<prefix>-<id>)에 쓰이므로 경로 안전 토큰만 허용(경로 탈출 방지). 그 외 키는 느슨.",

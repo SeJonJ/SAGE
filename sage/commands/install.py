@@ -551,13 +551,16 @@ def _install_codex_project_skill(dest, src_skill_md, force, skill_id="sage-init"
 
 
 def _profile_with_host(host, prefix):
-    """templates/project-profile.yaml 을 읽어 host/prefix 만 치환(나머지는 빈 스키마 유지)."""
+    """templates/project-profile.yaml 을 읽어 version/host/prefix 만 치환한다."""
     src = os.path.join(_resources.templates_dir(), "project-profile.yaml")
     text = Path(src).read_text(encoding="utf-8")
     out = []
     for line in text.splitlines():
         s = line.strip()
-        if s.startswith("installed_hosts:"):
+        if s.startswith("required_version:"):
+            indent = line[:len(line) - len(line.lstrip())]
+            out.append(f'{indent}required_version: "{__version__}" # 프로젝트가 요구하는 exact SAGE 버전. local에서 변경 불가')
+        elif s.startswith("installed_hosts:"):
             indent = line[:len(line) - len(line.lstrip())]
             out.append(f"{indent}installed_hosts: [{host}]       # 원하는 discovery surface. double-host면 [claude, codex]")
         elif s.startswith("active_host:"):

@@ -3,6 +3,9 @@
 # Git에서 제외되는 sage/project-profile.local.yaml이 소유한다.
 # 전문/주석: 마스터 설계 §6.
 
+sage:
+  required_version: "0.9.60" # 프로젝트가 요구하는 exact SAGE 버전. local에서 변경 불가
+
 project:
   name: ""
   prefix: "sage"

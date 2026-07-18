@@ -15,6 +15,7 @@ from pathlib import Path
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
 from sage.commands import doctor, install  # noqa: E402
+from sage import __version__  # noqa: E402
 
 try:
     import yaml  # noqa: F401
@@ -36,6 +37,35 @@ def run_doctor(profile_path):
 
 
 class TestDoctor(unittest.TestCase):
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
+    def test_version_contract_reports_four_distinct_axes(self):
+        with tempfile.TemporaryDirectory() as root:
+            sage_dir = Path(root, "sage")
+            sage_dir.mkdir()
+            profile = sage_dir / "project-profile.yaml"
+            profile.write_text(
+                "sage: { required_version: 1.2.3 }\n"
+                "runtime: { active_host: claude }\n",
+                encoding="utf-8",
+            )
+            manifest_dir = Path(root, "docs", "sage_harness")
+            manifest_dir.mkdir(parents=True)
+            Path(manifest_dir, ".manifest.json").write_text(json.dumps({
+                "sage_version": "1.2.0",
+                "generator_version": "1.2.1",
+                "host_runtime": "claude",
+                "assets": {},
+            }), encoding="utf-8")
+
+            _, out = run_doctor(str(profile))
+
+            self.assertIn("## SAGE version contract", out)
+            self.assertIn("required  : 1.2.3", out)
+            self.assertIn("installed : 1.2.0", out)
+            self.assertIn("generated : 1.2.1", out)
+            self.assertIn(f"runtime   : {__version__}", out)
+            self.assertIn("sage install --host claude --force", out)
+
     def test_load_profile_missing_file(self):
         self.assertEqual(doctor._load_profile("/no/such/profile.yaml")[1], "missing_file")
 

@@ -115,6 +115,38 @@ def _installed_hosts(manifest):
     return list(dict.fromkeys(h for h in hosts if h in ("claude", "codex")))
 
 
+def _version_profile(root):
+    path = os.path.join(root, "sage", "project-profile.yaml")
+    if not os.path.isfile(path):
+        return {}
+    try:
+        import yaml
+        profile = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+        return profile if isinstance(profile, dict) else {}
+    except Exception:
+        return {}
+
+
+def _report_version_contract(profile, manifest):
+    from sage import __version__
+    from sage.version_contract import version_axes, version_contract_issues
+
+    axes = version_axes(profile, manifest, __version__)
+    print("ℹ️  SAGE VERSION "
+          f"required={axes.required} installed={axes.installed} "
+          f"generated={axes.generated} runtime={axes.runtime}")
+    severity = "PASS"
+    for issue in version_contract_issues(profile, manifest, __version__):
+        mark = "❌" if issue.severity == "FAIL" else ("⚠️ " if issue.severity == "WARN" else "ℹ️ ")
+        print(f"{mark} SAGE VERSION {issue.severity} [{issue.axis}] {issue.message}"
+              + (f" → `{issue.remediation}`" if issue.remediation else ""))
+        if issue.severity == "FAIL":
+            severity = "FAIL"
+        elif issue.severity == "WARN" and severity == "PASS":
+            severity = "WARN"
+    return severity
+
+
 def _validate_core_skill_receipts(root, manifest):
     """Validate repository receipts and diagnose environment-dependent Codex duplicates."""
     from sage import __version__
@@ -604,6 +636,10 @@ def run(args):
     if assets_malformed:
         overall = "FAIL"
         print("❌ FAIL  manifest.assets 구조 오류 — object(dict) 여야 함 (오염/레거시 manifest)")
+
+    version_severity = _report_version_contract(_version_profile(root), manifest)
+    if _SEV_RANK[version_severity] > _SEV_RANK[overall]:
+        overall = version_severity
 
     installed_core_hash = manifest.get("installed_core_content_hash")
     if installed_core_hash:

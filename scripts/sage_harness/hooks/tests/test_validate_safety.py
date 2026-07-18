@@ -110,6 +110,34 @@ class _VArgs:
 
 
 class TestLocalProfileValidation(unittest.TestCase):
+    def test_version_contract_mismatch_is_visible_with_remediation(self):
+        with tempfile.TemporaryDirectory() as root:
+            _write_manifest(root, {
+                "sage_version": "1.2.0",
+                "generator_version": "1.2.1",
+                "host_runtime": "claude",
+                "assets": {},
+            })
+            sage_dir = Path(root, "sage")
+            sage_dir.mkdir()
+            Path(sage_dir, "project-profile.yaml").write_text(
+                "project: { name: demo }\n"
+                "sage: { required_version: 1.2.3 }\n"
+                "runtime: { active_host: claude }\n",
+                encoding="utf-8",
+            )
+            out = io.StringIO()
+
+            with redirect_stdout(out):
+                V.run(_VArgs(root))
+
+            rendered = out.getvalue()
+            self.assertIn("SAGE VERSION WARN", rendered)
+            self.assertIn("installed=1.2.0", rendered)
+            self.assertIn("generated=1.2.1", rendered)
+            self.assertIn("sage install --host claude --force", rendered)
+            self.assertIn("sage generate --kind hook --write", rendered)
+
     def test_required_policy_local_opt_out_is_fail(self):
         with tempfile.TemporaryDirectory() as root:
             _write_manifest(root, {"sage_version": "0.9.60", "assets": {}})

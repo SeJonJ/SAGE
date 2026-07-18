@@ -14,6 +14,7 @@ from pathlib import Path
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
 from sage.commands import generate as gen  # noqa: E402
+from sage import __version__  # noqa: E402
 
 try:
     import yaml  # noqa: F401
@@ -293,6 +294,60 @@ class TestGenerateInterpretive(unittest.TestCase):
 
 
 class TestGenerate(unittest.TestCase):
+    def test_manifest_stamp_records_current_generator_version(self):
+        with tempfile.TemporaryDirectory() as root:
+            make_root(root)
+
+            self.assertTrue(gen._stamp_manifest(root, []))
+
+            manifest = json.loads(
+                Path(root, "docs", "sage_harness", ".manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(__version__, manifest["generator_version"])
+
+    def test_hook_manifest_stamp_preserves_manifest_when_atomic_replace_fails(self):
+        import unittest.mock as mock
+
+        with tempfile.TemporaryDirectory() as root:
+            make_root(root)
+            manifest_path = Path(root, "docs", "sage_harness", ".manifest.json")
+            before = manifest_path.read_bytes()
+
+            with mock.patch.object(gen, "atomic_write_json", side_effect=OSError("injected")):
+                self.assertFalse(gen._stamp_manifest(root, [], runtime_hash="sha256:test"))
+
+            self.assertEqual(before, manifest_path.read_bytes())
+
+    def test_generator_version_stamp_preserves_manifest_when_replace_fails(self):
+        import unittest.mock as mock
+        from sage import manifest_io
+
+        with tempfile.TemporaryDirectory() as root:
+            make_root(root)
+            manifest_path = Path(root, "docs", "sage_harness", ".manifest.json")
+            before = manifest_path.read_bytes()
+
+            with mock.patch.object(manifest_io.os, "replace", side_effect=OSError("injected")):
+                with self.assertRaises(OSError):
+                    gen._stamp_generator_version(root)
+
+            self.assertEqual(before, manifest_path.read_bytes())
+            self.assertEqual([], list(manifest_path.parent.glob(".sage-manifest-*")))
+
+    def test_atomic_manifest_write_works_without_fchmod(self):
+        import unittest.mock as mock
+        from sage import manifest_io
+
+        with tempfile.TemporaryDirectory() as root:
+            make_root(root)
+            manifest_path = Path(root, "docs", "sage_harness", ".manifest.json")
+
+            with mock.patch.object(manifest_io.os, "fchmod", None):
+                gen._stamp_generator_version(root)
+
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(__version__, manifest["generator_version"])
+
     def test_parse_runtime_bindings(self):
         with tempfile.TemporaryDirectory() as d:
             make_root(d)

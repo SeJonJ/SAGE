@@ -12,9 +12,11 @@ import re
 import sys
 from pathlib import Path
 
+from sage import __version__
 from sage.asset_paths import AssetPaths, docs_dir
 from sage.commands._common import contract_version_of
 from sage.hook_runtime_hash import calculate_hook_runtime_hash
+from sage.manifest_io import atomic_write_json
 
 
 def register(sub):
@@ -278,6 +280,7 @@ def _stamp_manifest(root, hook_ids, runtime_hash=None):
     def sha(p):
         return "sha256:" + hashlib.sha256(Path(p).read_bytes()).hexdigest()
     m = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
+    m["generator_version"] = __version__
     if runtime_hash is None:
         runtime_hash, missing_runtime = calculate_hook_runtime_hash(root)
         if missing_runtime:
@@ -308,10 +311,23 @@ def _stamp_manifest(root, hook_ids, runtime_hash=None):
                     ah[rt] = sha(adp)
             if ah:
                 e["adapter_hash"] = ah; e["render_hash"] = ah
-    Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).write_text(
-        json.dumps(m, ensure_ascii=False, indent=2) + "\n")
+    try:
+        atomic_write_json(os.path.join(root, "docs", "sage_harness", ".manifest.json"), m)
+    except OSError as exc:
+        print(f"[sage generate] FAIL: manifest 스탬프 원자적 교체 실패 — {exc}", file=sys.stderr)
+        return False
     print("✅ manifest 스탬프 갱신")
     return True
+
+
+def _stamp_generator_version(root):
+    """Stamp a successful non-hook generate write with the executing package version."""
+    path = os.path.join(root, "docs", "sage_harness", ".manifest.json")
+    manifest = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise ValueError("manifest root must be an object")
+    manifest["generator_version"] = __version__
+    atomic_write_json(path, manifest)
 
 
 def _load_profile_dict(root, dest):
@@ -548,7 +564,11 @@ def _gen_mcp(args, root):
                 rh[tgt] = sha(M.canonical_render(mdl, tgt))
             e["render_hash"] = rh
             e["conformance"] = "PASS"
-        Path(manifest_path).write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
+        try:
+            atomic_write_json(manifest_path, manifest)
+        except OSError as exc:
+            print(f"[sage generate] FAIL: MCP manifest 스탬프 원자적 교체 실패 — {exc}", file=sys.stderr)
+            return 1
         print("✅ manifest 스탬프 갱신 (mcps/)")
     return 0
 
@@ -791,10 +811,18 @@ def run(args) -> int:
     if args.kind == "hook":
         return _gen_hook(args, root)
     if args.kind == "roster":
-        return _gen_roster(args, root)   # EH-1: profile.components → 동적 implementer spec
-    if args.kind == "mcp":
-        return _gen_mcp(args, root)   # MCP 4번째 kind: spec md → .mcp.json + config.toml managed-block
+        rc = _gen_roster(args, root)   # EH-1: profile.components → 동적 implementer spec
+    elif args.kind == "mcp":
+        rc = _gen_mcp(args, root)   # MCP 4번째 kind: spec md → .mcp.json + config.toml managed-block
     # agent/skill: render 는 interpretive(런타임 AI 저작) → generate 가 spec+claims 추출 + manifest 등록 (Gap-3).
-    if args.kind in ("agent", "skill"):
-        return _gen_interpretive(args, root, args.kind)
-    return 0
+    elif args.kind in ("agent", "skill"):
+        rc = _gen_interpretive(args, root, args.kind)
+    else:
+        rc = 0
+    if rc == 0 and args.write:
+        try:
+            _stamp_generator_version(root)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(f"[sage generate] FAIL: generator_version 스탬프 실패 — {exc}", file=sys.stderr)
+            return 1
+    return rc

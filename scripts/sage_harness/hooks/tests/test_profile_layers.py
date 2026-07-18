@@ -93,6 +93,7 @@ class ProfileLayerContractTests(unittest.TestCase):
 
     def test_policy_owned_and_unknown_local_keys_fail_closed(self):
         cases = [
+            ({"sage": {"required_version": "0.9.60"}}, "local의 알 수 없는 최상위 키: ['sage']"),
             ({"risk": {"l3_filename_globs": ["**"]}}, "local의 알 수 없는 최상위 키: ['risk']"),
             ({"runtime": {"active_host": "claude"}}, "local runtime의 알 수 없는 키: ['active_host']"),
             ({"cross_model": {"policy": "off"}}, "local cross_model의 알 수 없는 키: ['policy']"),
@@ -212,6 +213,19 @@ class ProfileLayerLoadingTests(unittest.TestCase):
 
 
 class ProfileLayerSchemaTests(unittest.TestCase):
+    def test_shared_required_version_is_exact_and_closed(self):
+        valid = validate_profile({"sage": {"required_version": "1.2.3-rc.1+build.5"}}, str(REPO))
+        self.assertFalse(any(severity == "FAIL" for severity, _ in valid), valid)
+
+        for sage_section in (
+            {"required_version": ">=1.2.3"},
+            {"required_version": "1.2"},
+            {"required_version": "1.2.3", "required_verison": "1.2.3"},
+        ):
+            with self.subTest(sage_section=sage_section):
+                issues = validate_profile({"sage": sage_section}, str(REPO))
+                self.assertTrue(any(severity == "FAIL" for severity, _ in issues), issues)
+
     def test_shared_policy_is_accepted_by_semantic_validator(self):
         for policy in ("required", "recommended", "off"):
             with self.subTest(policy=policy):

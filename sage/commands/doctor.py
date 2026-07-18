@@ -414,6 +414,26 @@ def _report_model_routing(profile):
               f" stale={catalog.get('stale')}")
 
 
+def _report_version_contract(profile, manifest):
+    from sage import __version__
+    from sage.version_contract import version_axes, version_contract_issues
+
+    axes = version_axes(profile, manifest, __version__)
+    print("## SAGE version contract")
+    print(f"  required  : {axes.required}")
+    print(f"  installed : {axes.installed}")
+    print(f"  generated : {axes.generated}")
+    print(f"  runtime   : {axes.runtime}")
+    failed = False
+    for issue in version_contract_issues(profile, manifest, __version__):
+        mark = "❌" if issue.severity == "FAIL" else ("⚠️ " if issue.severity == "WARN" else "ℹ️ ")
+        print(f"  {mark} {issue.severity} [{issue.axis}] {issue.message}")
+        if issue.remediation:
+            print(f"      → `{issue.remediation}`")
+        failed = failed or issue.severity == "FAIL"
+    return failed
+
+
 def run(args):
     from sage import _resources
     prof_path = (args.profile or _discover_profile()
@@ -510,6 +530,8 @@ def run(args):
             manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
         except Exception:
             manifest = None
+    if _report_version_contract(profile, manifest):
+        rc = 1
     _report_codex_core_skill_scope(root, manifest)
     if _check_core_render_drift(profile, prof_path):
         rc = 1   # 에이전트 frontmatter 로 주입될 값이 무효 = 설정이 조용히 무시되는 것 방지
