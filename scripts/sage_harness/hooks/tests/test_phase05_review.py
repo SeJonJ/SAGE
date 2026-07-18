@@ -2,11 +2,12 @@
 """sage review / sage cross-check 검증 (7차 배치2).
 
 - 순수 파서/argv 빌더 직격(_parse_codex_jsonl/_parse_claude_json/_peer_command)
-- run_cross_check: cross off→폴백 / peer 성공→cross_model / peer 실패→same_runtime(침묵 안 함)
+- run_cross_check: cross off→same-runtime headless / peer 성공→cross_model / peer 실패→BLOCKED
 - run_review: same_runtime 표면화
 peer subprocess(_invoke_peer)는 monkeypatch — 실제 codex/claude 미호출.
 """
 import io
+import argparse
 import os
 import sys
 import tempfile
@@ -20,8 +21,9 @@ from sage.commands import review as RV  # noqa: E402
 
 class _Args:
     def __init__(self, root=None, packet_file=None, timeout=540, strict=False,
-                 kind=None, batch=False, gate=False):
+                 host=None, kind=None, batch=False, gate=False):
         self.root = root; self.packet_file = packet_file; self.timeout = timeout; self.strict = strict
+        self.host = host
         self.kind = kind; self.batch = batch; self.gate = gate
 
 
@@ -113,6 +115,12 @@ class TestEffortIssue(unittest.TestCase):
 
 
 class TestReview(unittest.TestCase):
+    def _packet(self, d):
+        path = os.path.join(d, "packet.txt")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("review this phase 05 packet")
+        return path
+
     def test_recommended_local_opt_out_resolves_same_runtime(self):
         with tempfile.TemporaryDirectory() as d:
             _mkprofile(d, host="codex", cross=True)
@@ -125,6 +133,29 @@ class TestReview(unittest.TestCase):
 
             self.assertFalse(profile["options"]["cross_model"])
             self.assertEqual("clean_context_same_runtime", resolution["reviewer_mode"])
+
+    def test_recommended_peer_unavailable_does_not_authorize_same_runtime(self):
+        with tempfile.TemporaryDirectory() as d:
+            _mkprofile(d, host="codex", cross=True)
+            with open(os.path.join(d, "sage", "project-profile.yaml"), "a", encoding="utf-8") as handle:
+                handle.write("cross_model: { policy: recommended }\n")
+            original_resolution = RV._doctor.reviewer_resolution
+            original_invoke = RV._invoke_peer
+            RV._doctor.reviewer_resolution = lambda profile, caps: {
+                "reviewer_mode": "clean_context_same_runtime",
+                "reviewer_runtime": "codex",
+                "reviewer_degrade_reason": "claude_cli_unavailable",
+            }
+            RV._invoke_peer = lambda *args, **kwargs: self.fail("peer outage must not authorize same-runtime")
+            out = io.StringIO()
+            try:
+                with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                    rc = RV.run_review(_Args(root=d, host="codex", packet_file=self._packet(d)))
+            finally:
+                RV._doctor.reviewer_resolution = original_resolution
+                RV._invoke_peer = original_invoke
+            self.assertEqual(3, rc)
+            self.assertIn("REVIEWER_STATUS: BLOCKED", out.getvalue())
 
     def test_required_local_opt_out_blocks_review_command(self):
         with tempfile.TemporaryDirectory() as d:
@@ -142,12 +173,111 @@ class TestReview(unittest.TestCase):
 
     def test_review_same_runtime(self):
         with tempfile.TemporaryDirectory() as d:
-            _mkprofile(d, cross=False)
+            _mkprofile(d, host="codex", cross=False)
+            seen = {}
+            original = RV._invoke_peer
+            RV._invoke_peer = lambda host, prompt, timeout, effort=None, model=None: (
+                seen.update(host=host, prompt=prompt, timeout=timeout, model=model) or (True, "APPROVED", None)
+            )
             buf = io.StringIO()
-            with redirect_stdout(buf):
-                rc = RV.run_review(_Args(root=d))
+            try:
+                with redirect_stdout(buf), redirect_stderr(io.StringIO()):
+                    rc = RV.run_review(_Args(root=d, host="codex", packet_file=self._packet(d)))
+            finally:
+                RV._invoke_peer = original
+            rendered = buf.getvalue()
             self.assertEqual(rc, 0)
-            self.assertIn("REVIEWER_ACTUAL: same_runtime", buf.getvalue())
+            self.assertEqual("codex", seen["host"])
+            self.assertIn("APPROVED", rendered)
+            self.assertIn("REVIEWER_PROCESS: codex exec", rendered)
+            self.assertIn("REVIEWER_HOST: codex", rendered)
+            self.assertIn("REVIEWER_MODEL: cli-default", rendered)
+            self.assertIn("REVIEWER_ACTUAL: same_runtime", rendered)
+            self.assertIn("REVIEWER_STATUS: COMPLETE", rendered)
+
+    def test_review_failure_is_blocked_not_false_success(self):
+        with tempfile.TemporaryDirectory() as d:
+            _mkprofile(d, host="claude", cross=False)
+            original = RV._invoke_peer
+            RV._invoke_peer = lambda *args, **kwargs: (False, None, "claude 호출 timeout(10s)")
+            out, err = io.StringIO(), io.StringIO()
+            try:
+                with redirect_stdout(out), redirect_stderr(err):
+                    rc = RV.run_review(_Args(root=d, host="claude", packet_file=self._packet(d), timeout=10))
+            finally:
+                RV._invoke_peer = original
+            self.assertNotEqual(0, rc)
+            self.assertIn("REVIEWER_STATUS: BLOCKED", out.getvalue())
+            self.assertNotIn("REVIEWER_ACTUAL: same_runtime", out.getvalue())
+            self.assertIn("timeout", err.getvalue())
+
+    def test_review_rejects_host_profile_conflict(self):
+        with tempfile.TemporaryDirectory() as d:
+            _mkprofile(d, host="claude", cross=False)
+            out = io.StringIO()
+            with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                rc = RV.run_review(_Args(root=d, host="codex", packet_file=self._packet(d)))
+            self.assertEqual(2, rc)
+            self.assertIn("REVIEWER_STATUS: BLOCKED", out.getvalue())
+
+    def test_review_rejects_non_default_host_for_legacy_profile_without_runtime(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "sage"), exist_ok=True)
+            with open(os.path.join(d, "sage", "project-profile.yaml"), "w", encoding="utf-8") as handle:
+                handle.write("options: { cross_model: false }\n")
+            original = RV._invoke_peer
+            RV._invoke_peer = lambda *args, **kwargs: self.fail("wrong host must not be invoked")
+            out = io.StringIO()
+            try:
+                with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                    rc = RV.run_review(_Args(root=d, host="codex", packet_file=self._packet(d)))
+            finally:
+                RV._invoke_peer = original
+            self.assertEqual(2, rc)
+            self.assertIn("REVIEWER_STATUS: BLOCKED", out.getvalue())
+
+    def test_review_missing_packet_is_blocked(self):
+        with tempfile.TemporaryDirectory() as d:
+            _mkprofile(d, host="codex", cross=False)
+            out = io.StringIO()
+            with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                rc = RV.run_review(_Args(root=d, host="codex", packet_file=os.path.join(d, "missing")))
+            self.assertEqual(2, rc)
+            self.assertIn("REVIEWER_STATUS: BLOCKED", out.getvalue())
+
+    def test_review_rejects_invalid_cross_model_configuration(self):
+        with tempfile.TemporaryDirectory() as d:
+            _mkprofile(d, host="codex", cross=False)
+            with open(os.path.join(d, "sage", "project-profile.yaml"), "a", encoding="utf-8") as handle:
+                handle.write("cross_model: { effrot: xhigh }\n")
+            original = RV._invoke_peer
+            RV._invoke_peer = lambda *args, **kwargs: self.fail("invalid profile must not invoke reviewer")
+            out = io.StringIO()
+            try:
+                with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                    rc = RV.run_review(_Args(root=d, host="codex", packet_file=self._packet(d)))
+            finally:
+                RV._invoke_peer = original
+            self.assertEqual(2, rc)
+            self.assertIn("REVIEWER_STATUS: BLOCKED", out.getvalue())
+
+    def test_claude_same_runtime_passes_reviewer_model(self):
+        with tempfile.TemporaryDirectory() as d:
+            _mkprofile(d, host="claude", cross=False)
+            with open(os.path.join(d, "sage", "project-profile.yaml"), "a", encoding="utf-8") as handle:
+                handle.write("team: { core: { reviewer: { runtime: { model: opus } } } }\n")
+            seen = {}
+            original = RV._invoke_peer
+            RV._invoke_peer = lambda host, prompt, timeout, effort=None, model=None: (
+                seen.update(host=host, model=model) or (True, "APPROVED", None)
+            )
+            try:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    rc = RV.run_review(_Args(root=d, host="claude", packet_file=self._packet(d)))
+            finally:
+                RV._invoke_peer = original
+            self.assertEqual(0, rc)
+            self.assertEqual({"host": "claude", "model": "opus"}, seen)
 
     def test_review_legacy_flag_migration_message(self):
         # 구 `sage review --gate`(자산분류) → 친절한 asset-check 안내 + exit 2 (codex 배치2 R3 P1).
@@ -157,6 +287,17 @@ class TestReview(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn("asset-check", err.getvalue())
 
+    def test_review_parser_allows_legacy_flag_to_reach_migration_shim(self):
+        parser = argparse.ArgumentParser()
+        sub = parser.add_subparsers(dest="command")
+        RV.register(sub)
+
+        args = parser.parse_args(["review", "--gate"])
+
+        self.assertTrue(args.gate)
+        self.assertIsNone(args.packet_file)
+        self.assertIsNone(args.host)
+
 
 class TestCrossCheck(unittest.TestCase):
     def _packet(self, d):
@@ -164,15 +305,39 @@ class TestCrossCheck(unittest.TestCase):
         open(p, "w", encoding="utf-8").write("review this diff")
         return p
 
-    def test_cross_off_fallback_surfaced(self):
+    def test_cross_off_runs_intentional_same_runtime(self):
         with tempfile.TemporaryDirectory() as d:
             _mkprofile(d, cross=False)
             out, err = io.StringIO(), io.StringIO()
-            with redirect_stdout(out), redirect_stderr(err):
-                rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d)))
+            original = RV._invoke_peer
+            RV._invoke_peer = lambda *args, **kwargs: (True, "APPROVED SAME", None)
+            try:
+                with redirect_stdout(out), redirect_stderr(err):
+                    rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d)))
+            finally:
+                RV._invoke_peer = original
             self.assertEqual(rc, 0)
             self.assertIn("REVIEWER_ACTUAL: same_runtime", out.getvalue())
-            self.assertIn("폴백", err.getvalue())   # 침묵하지 않음
+            self.assertIn("APPROVED SAME", out.getvalue())
+            self.assertIn("REVIEWER_STATUS: COMPLETE", out.getvalue())
+
+    def test_legacy_cross_off_without_runtime_uses_existing_default_host(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "sage"), exist_ok=True)
+            with open(os.path.join(d, "sage", "project-profile.yaml"), "w", encoding="utf-8") as handle:
+                handle.write("options: { cross_model: false }\n")
+            seen = {}
+            original = RV._invoke_peer
+            RV._invoke_peer = lambda host, prompt, timeout, effort=None, model=None: (
+                seen.update(host=host) or (True, "APPROVED SAME", None)
+            )
+            try:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d)))
+            finally:
+                RV._invoke_peer = original
+            self.assertEqual(0, rc)
+            self.assertEqual("claude", seen["host"])
 
     def test_cross_on_peer_success(self):
         with tempfile.TemporaryDirectory() as d:
@@ -194,6 +359,7 @@ class TestCrossCheck(unittest.TestCase):
                 RV._invoke_peer = orig
             self.assertEqual(rc, 0)
             self.assertIn("REVIEWER_ACTUAL: cross_model", v)
+            self.assertIn("REVIEWER_STATUS: COMPLETE", v)
             self.assertIn("codex says SHIP", v)
             self.assertIn("CROSS-MODEL REVIEW", v)
 
@@ -313,7 +479,7 @@ class TestCrossCheck(unittest.TestCase):
         # validate 가 FAIL 이라 부르는 설정을 cross-check 가 조용히 무시한 채 기본값으로 돌면 안 된다.
         import sage.profile_validate as pv
         for line in ("cross_model: { effrot: xhigh }",
-                     "cross_model: { on_unavailable: block }",
+                     "cross_model: { on_unavailable: clean_context_same_runtime }",
                      "cross_model: { peer: claude }",
                      "cross_model: [effort, max]"):
             with tempfile.TemporaryDirectory() as d:
@@ -349,7 +515,7 @@ class TestCrossCheck(unittest.TestCase):
             self.assertEqual(rc, 2)
             self.assertIn("max", err.getvalue())
 
-    def test_cross_on_peer_failure_falls_back_not_silent(self):
+    def test_cross_on_peer_failure_is_blocked_not_false_success(self):
         with tempfile.TemporaryDirectory() as d:
             self._profile_cross_codex(d)
             orig = RV._invoke_peer
@@ -360,26 +526,55 @@ class TestCrossCheck(unittest.TestCase):
                     rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d)))
             finally:
                 RV._invoke_peer = orig
-            self.assertEqual(rc, 0)
-            self.assertIn("REVIEWER_ACTUAL: same_runtime", out.getvalue())   # degraded 근거
+            self.assertEqual(rc, 3)
+            self.assertIn("REVIEWER_STATUS: BLOCKED", out.getvalue())
+            self.assertNotIn("REVIEWER_ACTUAL", out.getvalue())
             self.assertIn("timeout", err.getvalue())                          # 실패 사유 표면화
 
-    def test_cross_strict_nonzero_on_fallback(self):
-        # --strict: cross-model 미수행(폴백) 시 exit 3 (stdout 센티넬 못 보는 caller 용).
+    def test_required_peer_unavailable_is_blocked(self):
+        with tempfile.TemporaryDirectory() as d:
+            _mkprofile(d, host="claude", cross=True)
+            with open(os.path.join(d, "sage", "project-profile.yaml"), "a", encoding="utf-8") as handle:
+                handle.write("cross_model: { policy: required }\n")
+            original = RV._doctor.reviewer_resolution
+            RV._doctor.reviewer_resolution = lambda profile, caps: {
+                "reviewer_mode": "clean_context_same_runtime",
+                "reviewer_runtime": "claude",
+                "reviewer_degrade_reason": "codex_cli_unavailable",
+                "notice": "peer unavailable",
+            }
+            out = io.StringIO()
+            try:
+                with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                    rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d)))
+            finally:
+                RV._doctor.reviewer_resolution = original
+            self.assertEqual(3, rc)
+            self.assertIn("REVIEWER_STATUS: BLOCKED", out.getvalue())
+
+    def test_cross_strict_does_not_block_intentional_policy_off_same_runtime(self):
         with tempfile.TemporaryDirectory() as d:
             _mkprofile(d, cross=False)
-            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d), strict=True))
-            self.assertEqual(rc, 3)
+            original = RV._invoke_peer
+            RV._invoke_peer = lambda *args, **kwargs: (True, "APPROVED", None)
+            try:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d), strict=True))
+            finally:
+                RV._invoke_peer = original
+            self.assertEqual(rc, 0)
 
     def test_cross_empty_packet_toolerror(self):
         with tempfile.TemporaryDirectory() as d:
             self._profile_cross_codex(d)
             p = os.path.join(d, "empty.txt")
-            open(p, "w").write("   ")
-            with redirect_stderr(io.StringIO()):
+            with open(p, "w", encoding="utf-8") as handle:
+                handle.write("   ")
+            out = io.StringIO()
+            with redirect_stdout(out), redirect_stderr(io.StringIO()):
                 rc = RV.run_cross_check(_Args(root=d, packet_file=p))
             self.assertEqual(rc, 2)
+            self.assertIn("REVIEWER_STATUS: BLOCKED", out.getvalue())
 
 
 if __name__ == "__main__":

@@ -220,7 +220,7 @@
       "properties": {
         "policy": { "enum": ["required", "recommended", "off"] },
         "peer": { "enum": ["opposite_runtime"] },
-        "on_unavailable": { "enum": ["clean_context_same_runtime"] },
+        "on_unavailable": { "enum": ["block"] },
         "effort": { "enum": ["minimal", "low", "medium", "high", "xhigh", "max"] },
         "reviewer": {
           "type": "object",

@@ -614,12 +614,11 @@ class TestCrossModelEffort(unittest.TestCase):
         self.assertTrue(any("effrot" in m for _, m in issues))
 
     def test_known_cross_model_keys_pass(self):
-        prof = self._prof(peer="opposite_runtime", on_unavailable="clean_context_same_runtime", effort="high")
+        prof = self._prof(peer="opposite_runtime", on_unavailable="block", effort="high")
         self.assertNotIn("FAIL", [s for s, _ in sevs(prof)])
 
     def test_unimplemented_peer_or_on_unavailable_value_is_fail(self):
-        # 엔진은 값으로 분기하지 않는다 — `on_unavailable: block` 은 안전정책처럼 보이지만 무동작이다.
-        self.assertEqual(severity_of(sevs(self._prof(on_unavailable="block"))), "FAIL")
+        self.assertEqual(severity_of(sevs(self._prof(on_unavailable="clean_context_same_runtime"))), "FAIL")
         self.assertEqual(severity_of(sevs(self._prof(peer="claude"))), "FAIL")
 
     def test_retired_invocation_key_is_fail(self):

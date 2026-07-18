@@ -96,8 +96,8 @@ decisions that genuinely need user intent; author the rest from them:
 - `file_type_map` — `{ glob, type }` first-match classification used for logging.
 - `options.cross_model` — when true, Phase 05 review is opposite-runtime **only
   when reachable**; `sage doctor` resolves reachability from peer CLI availability
-  (`which codex` / `which claude`) and falls back to clean-context same-runtime
-  when the peer CLI is unavailable. No third-party tool is needed — SAGE calls
+  (`which codex` / `which claude`) and blocks Phase 05 when the peer CLI is
+  unavailable. No third-party tool is needed — SAGE calls
   the peer runtime directly (`codex exec` / `claude -p`). It is **not** resolved
   from `runtime.external_reviewer` (which records the intended preference only).
 - `runtime.installed_hosts` / `runtime.active_host` — configure every desired SAGE

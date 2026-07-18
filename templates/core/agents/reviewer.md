@@ -21,4 +21,4 @@ model bias.
   unset effort = high). claude host only — injected into .claude/agents/reviewer.md frontmatter
   by `sage install`; re-run `sage install --force` after changing them.
 - reviewer_mode: resolved by sage doctor (clean_context_same_runtime |
-  opposite_runtime), with clean-context fallback when degraded
+  opposite_runtime | blocked); unavailable cross-model peers are fail-closed

@@ -1,6 +1,6 @@
 """sage doctor — 옵션 의존성 점검 + reviewer_resolution 노출 (step10).
 
-Codex 2R 합의: cross-invocation 경로(§12 미해결, codex-host→Claude)를 v1 에서 fallback 으로 닫음.
+Cross-invocation은 반대 runtime CLI를 직접 호출하며, peer 미가용 시 Phase 05를 fail-closed로 차단한다.
 reviewer_resolution 은 순수 판정 함수, doctor 가 옵션 의존성(gstack/codegraph/vault) + reviewer mode 를 정보성 출력.
 gstack 가용성 = profile requires/capabilities + PATH which (개인경로 의존 금지).
 exit: 정상/degraded/의존성미설치 = 0, profile YAML 파싱 오류(설정 무시됨) = 1 (Codex P1: 실패 원인 구분).
@@ -34,9 +34,9 @@ def reviewer_resolution(profile: dict, caps: dict) -> dict:
     결정표:
     - cross_model off                       → clean_context_same_runtime (의도적, degraded=false)
     - cross on, claude-host, codex CLI 가용  → opposite_runtime(codex) via `codex exec`
-    - cross on, claude-host, codex CLI 불가  → clean_context fallback (degraded, codex_cli_unavailable)
+    - cross on, claude-host, codex CLI 불가  → blocked (codex_cli_unavailable)
     - cross on, codex-host, claude CLI 가용  → opposite_runtime(claude) via `claude -p`
-    - cross on, codex-host, claude CLI 불가  → clean_context fallback (degraded, claude_cli_unavailable)
+    - cross on, codex-host, claude CLI 불가  → blocked (claude_cli_unavailable)
     """
     host = active_host(profile)
     cross = bool((profile.get("options", {}) or {}).get("cross_model", False))
@@ -53,8 +53,8 @@ def reviewer_resolution(profile: dict, caps: dict) -> dict:
         invoker = "codex exec" if peer == "codex" else "claude -p"
         return res("opposite_runtime", peer, False, False, None,
                    f"{host}-host → {peer} via `{invoker}` (SAGE 직접 호출, gstack 불요)")
-    return res("clean_context_same_runtime", host, True, True, f"{peer}_cli_unavailable",
-               f"cross_model on 이나 {peer} CLI 미가용 → clean-context fallback (모델편향 못없애는 최소안전선)")
+    return res("blocked", peer, False, True, f"{peer}_cli_unavailable",
+               f"cross_model on 이나 {peer} CLI 미가용 → Phase 05 BLOCKED")
 
 
 _DEFAULT_PROFILE = {"runtime": {"host": "claude"}, "options": {"cross_model": False}}
@@ -542,7 +542,9 @@ def run(args):
     print("## Phase 05 reviewer")
     print(f"  mode    : {rr['reviewer_mode']} (runtime={rr['reviewer_runtime']})")
     print(f"  notice  : {rr['notice']}")
-    if rr["reviewer_degraded"]:
+    if rr["reviewer_mode"] == "blocked":
+        print(f"  ⛔ L3 REVIEW BLOCKED: {rr['reviewer_degrade_reason']}")
+    elif rr["reviewer_degraded"]:
         print(f"  ⚠️  L3 REVIEW DEGRADED: {rr['reviewer_degrade_reason']}")
 
     # Loop A (review_loop) — 켜졌는지 + 설정 유효성(profile_validate 의 review_loop 발 이슈만 표면화).

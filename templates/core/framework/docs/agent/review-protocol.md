@@ -7,12 +7,15 @@ L3 changes require an independent review before they are considered done.
    unrelated branch numbers, and recent-file/mtime fallback are not review identity.
 2. An independent reviewer assesses the change. The reviewer runtime is
    resolved by `sage doctor`:
-   - same-runtime clean-context (cross_model off, or fallback), or
+   - same-runtime clean-context via `sage review --packet-file <packet> --host <active_host>`
+     (recommended local opt-out or policy off), or
    - opposite-runtime review (cross_model on + reachable). If
      `cross_model.reviewer.model` is configured, `sage cross-check` passes it explicitly
      to the peer CLI; otherwise the peer CLI default remains in effect.
    The opposite runtime is derived from the profile's single `runtime.active_host`
-   (`runtime.host` only for legacy profiles), never from a shared `both` state.
+   (`runtime.host` only for legacy profiles), never from a shared `both` state. The same-runtime
+   command must match this host and must emit process/host/model/mode/status evidence. A missing
+   CLI, timeout, nonzero exit, or unparseable output is BLOCKED, not a successful fallback.
 3. The review outcome is recorded in a review/plan document.
 
 ## Acceptance evidence gate

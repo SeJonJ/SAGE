@@ -143,7 +143,7 @@ Phase 05 리뷰를 수렴할 때까지 반복 실행하는 루프입니다 (`pro
 ```
 
 - **`sage-review` 스킬**이 루프 진행과 종료 판단을 담당하고, **`sage review-loop`** CLI가 라운드별 결과를 `.sage/loop_audit.jsonl`에 기록하며 시퀀스 무결성을 검증합니다. 이 검사는 수기 기록·순서 뒤바뀜·누락 같은 게으른 우회를 잡는 sanity 검사이지 위변조 내성(해시체인)이 아닙니다 — 신뢰 경계는 [ARCHITECTURE.md](docs/ARCHITECTURE.md) 참조.
-- cross-model 요청이 same-runtime으로 폴백되면 `degraded`로 표면화됩니다.
+- cross-model reviewer에 도달하지 못하면 Phase 05는 `BLOCKED`로 표면화됩니다.
 - 루프 종료 backstop은 report←approve(06←05 APPROVED) — 루프는 이를 우회하지 않습니다.
 - **`sage retro`** (Loop C)는 사이클 완료 후 놓친 패턴의 증거를 모아 distiller 프롬프트와 함께 제시합니다 (자동 반영 없음). 노트 본문을 채우는 것은 host AI 의 몫이라 빈 템플릿으로 나가며, `sage retro --check <노트>` 가 실제로 채워졌는지 결정론적으로 검산합니다.
 
@@ -333,7 +333,9 @@ cross_model:
   effort: xhigh        # 선택. peer 에게 넘길 reasoning effort. 미설정 → high
 ```
 
-`sage doctor`로 리뷰어 가용성을 확인하세요. 반대 런타임에 도달할 수 없으면 same-runtime으로 자동 전환됩니다.
+`sage doctor`로 리뷰어 가용성을 확인하세요. cross-model이 활성화된 상태에서 반대 런타임에 도달할 수 없거나
+호출에 실패하면 Phase 05는 `BLOCKED`로 종료됩니다. same-runtime 실행은 `policy: off` 또는
+`policy: recommended`의 명시적 local opt-out 경로에서만 정상 완료로 인정됩니다.
 
 `cross_model.effort`는 `options.cross_model: true`일 때만 유효하며, peer마다 어휘가 다릅니다 — peer가 `codex`면 `minimal|low|medium|high|xhigh`, `claude`면 `low|medium|high|xhigh|max`. 미설정 시 SAGE는 `high`를 넘깁니다. `cross_model.reviewer`를 설정하면 host는 active host의 반대여야 하고 model은 peer CLI에 명시 전달됩니다. 생략하면 하위호환으로 peer CLI default model을 사용합니다.
 

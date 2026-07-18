@@ -1,13 +1,13 @@
 """sage review / sage cross-check — Phase 05 리뷰 오케스트레이션 (7차 배치2).
 
 두 명령은 sage-team 이 Phase 05 에서 profile.options.cross_model 에 따라 택일 호출한다:
-- cross_model=false → `sage review`      : host AI 자신이 clean-context 리뷰(same-runtime). peer 호출 없음.
+- cross_model=false → `sage review`      : active host의 새 headless process에서 same-runtime 리뷰.
 - cross_model=true  → `sage cross-check`  : 반대 런타임 CLI 를 **직접 호출**해 독립 리뷰 획득(cross-model).
 
 둘 다 표준 마지막 줄 `REVIEWER_ACTUAL: <mode>` 를 출력한다 — sage-team 이 이를 캡처해
 `sage review-loop close --reviewer-actual <mode>` 로 넘기면 의도(open 의 --reviewer-requested)와 대조해
-degraded 가 판정된다(배치3). cross-model 요청이 peer 미도달로 same-runtime 으로 떨어지면 침묵하지 않고
-REVIEWER_ACTUAL: same_runtime 으로 표면화 → 게이트가 degraded 로 차단/경고한다(6차 폴백 침묵 버그 수정).
+degraded 가 판정된다(배치3). cross-model 요청이 peer에 도달하지 못하면 same-runtime으로 완화하지 않고
+`REVIEWER_STATUS: BLOCKED`와 nonzero exit를 반환한다.
 
 gstack 의존 없음: claude-host→`codex exec`, codex-host→`claude -p` 를 SAGE 가 직접 호출(gstack wrapper
 기법만 차용 — read-only 샌드박스·stdin 차단·timeout·--json 최종 메시지 파싱).
@@ -27,6 +27,12 @@ _DEFAULT_TIMEOUT = 540   # codex/claude 비대화 1턴 상한(초). gstack /code
 
 def register(sub):
     pr = sub.add_parser("review", help="Phase 05 same-runtime 리뷰(cross_model=false 경로)")
+    pr.add_argument("--packet-file",
+                    help="리뷰 패킷(phase 문서 + 변경 파일) — active host headless stdin으로 전달")
+    pr.add_argument("--host", choices=["claude", "codex"],
+                    help="현재 active host. profile 값과 충돌하면 실행 차단")
+    pr.add_argument("--timeout", type=int, default=_DEFAULT_TIMEOUT,
+                    help=f"headless 호출 상한 초(기본 {_DEFAULT_TIMEOUT})")
     pr.add_argument("--root", default=None)
     # 마이그레이션 shim(codex 배치2 R3 P1): `sage review` 는 자산분류→Phase05 리뷰로 의미가 바뀌었다.
     # 구 자산분류 플래그를 hidden 으로 받아, 쓰이면 친절히 `sage asset-check` 로 안내(암호적 argparse 실패 방지).
@@ -41,7 +47,7 @@ def register(sub):
                     help="리뷰 패킷(변경 diff + 05 맥락) 파일 — peer 에게 전달할 프롬프트")
     pc.add_argument("--timeout", type=int, default=_DEFAULT_TIMEOUT, help=f"peer 호출 상한 초(기본 {_DEFAULT_TIMEOUT})")
     pc.add_argument("--strict", action="store_true",
-                    help="cross-model 미수행(폴백) 시 exit 3 (stdout 센티넬을 놓치는 자동 caller/CI 용). 기본 off")
+                    help="하위호환 플래그. reviewer 실패는 설정과 무관하게 BLOCKED/nonzero")
     pc.add_argument("--root", default=None)
     pc.set_defaults(func=run_cross_check)
 
@@ -60,10 +66,8 @@ PEER_EFFORTS = {
 DEFAULT_EFFORT = "high"
 
 CROSS_MODEL_KEYS = frozenset({"policy", "peer", "on_unavailable", "effort", "reviewer"})
-# peer/on_unavailable 은 엔진이 값으로 분기하지 않는다 — reviewer_resolution 이 host 의 반대 런타임을
-# 계산하고, peer 미가용이면 항상 clean-context 로 폴백한다. 즉 이 키들은 그 동작을 *서술*할 뿐이다.
-# 다른 값을 쓰면(`on_unavailable: block`) 안전정책처럼 보이지만 아무 일도 안 하므로 FAIL 로 막는다.
-CROSS_MODEL_FIXED = {"peer": "opposite_runtime", "on_unavailable": "clean_context_same_runtime"}
+# peer는 반대 런타임으로 고정하고, unavailable은 성공 완화 없이 fail-closed로 차단한다.
+CROSS_MODEL_FIXED = {"peer": "opposite_runtime", "on_unavailable": "block"}
 
 
 def intended_peer(profile):
@@ -86,7 +90,7 @@ def resolve_effort(profile):
 def cross_model_issues(profile):
     """profile.cross_model 검증 → [(severity, message)]. `sage validate`·`sage cross-check` **단일 소스**.
 
-    두 곳이 서로 다른 규칙을 쓰면, cross-check 가 `effrot: xhigh` 나 `on_unavailable: block` 을
+    두 곳이 서로 다른 규칙을 쓰면, cross-check 가 `effrot: xhigh` 나 `on_unavailable: clean_context_same_runtime` 을
     조용히 무시한 채 기본값으로 돌면서 설정대로 돈 것처럼 보인다(codex 7R).
     """
     cm = profile.get("cross_model") if isinstance(profile, dict) else None
@@ -260,9 +264,89 @@ def _find_root(explicit):
         cur = parent
 
 
+def _read_packet(path, command):
+    try:
+        prompt = open(path, encoding="utf-8").read()
+    except Exception as exc:
+        print(f"[{command}] TOOL ERROR: 패킷 파일 읽기 실패: {exc}", file=sys.stderr)
+        return None
+    if not prompt.strip():
+        print(f"[{command}] TOOL ERROR: 패킷이 비어 있음", file=sys.stderr)
+        return None
+    return prompt
+
+
+def _profile_active_host(profile):
+    from sage.runtime_hosts import active_host
+    runtime = profile.get("runtime") if isinstance(profile, dict) else None
+    if not isinstance(runtime, dict):
+        return active_host(profile)
+    active = runtime.get("active_host")
+    legacy = runtime.get("host")
+    return active if active in ("claude", "codex") else (
+        legacy if legacy in ("claude", "codex") else active_host(profile)
+    )
+
+
+def _same_runtime_model(profile):
+    team = profile.get("team") if isinstance(profile, dict) else None
+    core = team.get("core") if isinstance(team, dict) else None
+    reviewer = core.get("reviewer") if isinstance(core, dict) else None
+    runtime = reviewer.get("runtime") if isinstance(reviewer, dict) else None
+    model = runtime.get("model") if isinstance(runtime, dict) else None
+    return model if isinstance(model, str) and model.strip() else None
+
+
+def _same_runtime_authorized(profile, layers):
+    """True only when policy or an explicit local choice intentionally disables cross-model."""
+    from sage.profile_layers import cross_model_policy
+    policy = cross_model_policy(profile)
+    if policy == "off":
+        return True
+    if policy == "recommended":
+        local = layers.local if layers is not None else None
+        cross_model = local.get("cross_model") if isinstance(local, dict) else None
+        return isinstance(cross_model, dict) and cross_model.get("enabled") is False
+    if policy == "required":
+        return False
+    options = profile.get("options") if isinstance(profile, dict) else None
+    return not bool(options.get("cross_model")) if isinstance(options, dict) else True
+
+
+def _review_process(host):
+    return "codex exec" if host == "codex" else "claude -p"
+
+
+def _blocked_review(command, message, status_code=3):
+    print(f"[{command}] BLOCKED: {message}", file=sys.stderr)
+    print("REVIEWER_STATUS: BLOCKED")
+    return status_code
+
+
+def _run_same_runtime(profile, host, packet_file, timeout, command="sage review"):
+    prompt = _read_packet(packet_file, command)
+    if prompt is None:
+        return _blocked_review(command, "유효한 리뷰 패킷이 필요합니다", 2)
+    model = _same_runtime_model(profile)
+    if model:
+        ok, review, error = _invoke_peer(host, prompt, timeout, model=model)
+    else:
+        ok, review, error = _invoke_peer(host, prompt, timeout)
+    if not ok:
+        return _blocked_review(command, error)
+    print(f"===== {host.upper()} SAME-RUNTIME REVIEW =====")
+    print(review)
+    print(f"===== END {host.upper()} REVIEW =====")
+    print(f"REVIEWER_PROCESS: {_review_process(host)}")
+    print(f"REVIEWER_HOST: {host}")
+    print(f"REVIEWER_MODEL: {model or 'cli-default'}")
+    print("REVIEWER_ACTUAL: same_runtime")
+    print("REVIEWER_STATUS: COMPLETE")
+    return 0
+
+
 def run_review(args):
-    """same-runtime 경로. peer 호출 없음 — host AI 자신이 clean-context 로 리뷰한다(스킬이 수행).
-    cross_model=true 인데 이 명령을 부르면 의도 불일치를 경고(스킬 라우팅 오류 방지)."""
+    """Run a clean-context headless review on the explicitly active host."""
     # 구 `sage review`(자산분류) 플래그 감지 → 친절한 이름변경 안내(codex 배치2 R3 P1).
     if getattr(args, "kind", None) is not None or getattr(args, "batch", False) or getattr(args, "gate", False):
         print("[sage review] 이 명령은 Phase 05 리뷰로 의미가 바뀌었습니다. 자산 자동승인 분류는 "
@@ -270,32 +354,64 @@ def run_review(args):
               file=sys.stderr)
         return 2
     root = _find_root(args.root)
-    _, _, rr, layers = _load_profile_layers_caps(root)
+    profile, _, rr, layers = _load_profile_layers_caps(root)
     layer_failures = _blocking_layer_issues(layers)
     if layer_failures:
         for message in layer_failures:
             print(f"[sage review] TOOL ERROR: {message}", file=sys.stderr)
+        print("REVIEWER_STATUS: BLOCKED")
         return 2
+    from sage.runtime_hosts import profile_issues as runtime_profile_issues
+    runtime_failures = [message for severity, message in runtime_profile_issues(profile) if severity == "FAIL"]
+    if runtime_failures:
+        for message in runtime_failures:
+            print(f"[sage review] TOOL ERROR: {message}", file=sys.stderr)
+        print("REVIEWER_STATUS: BLOCKED")
+        return 2
+    cross_failures = [message for severity, message in cross_model_issues(profile) if severity == "FAIL"]
+    if cross_failures:
+        for message in cross_failures:
+            print(f"[sage review] TOOL ERROR: {message}", file=sys.stderr)
+        print("REVIEWER_STATUS: BLOCKED")
+        return 2
+    host = getattr(args, "host", None)
+    if host not in ("claude", "codex"):
+        return _blocked_review("sage review", "--host claude|codex 명시가 필요합니다", 2)
+    configured_host = _profile_active_host(profile)
+    if configured_host is not None and configured_host != host:
+        return _blocked_review(
+            "sage review", f"--host={host}와 profile active_host={configured_host}가 다릅니다", 2
+        )
+    from sage.profile_layers import cross_model_policy
+    policy = cross_model_policy(profile)
+    if policy == "required":
+        return _blocked_review("sage review", "cross_model.policy=required는 same-runtime 리뷰로 완화할 수 없음")
     if rr["reviewer_mode"] == "opposite_runtime":
-        print("[sage review] ⚠️  profile.options.cross_model=true 이고 peer 가용 — cross-model 의도인데 "
-              "same-runtime `sage review` 가 호출됨. cross_model=true 면 `sage cross-check` 를 사용하라.",
-              file=sys.stderr)
-    # bare `sage review` 는 옛 자산분류가 아니라 Phase 05 same-runtime 리뷰임을 명시(codex 배치2 R4 P1:
-    # 무플래그 호출의 의미 변경을 silent 로 두지 않음. 자산분류는 sage asset-check 로 이전).
-    print("[sage review] Phase 05 same-runtime 리뷰 — host 가 clean-context 로 FIND/REFUTE/TRIAGE/REWORK 수행. "
-          "(자산 자동승인 분류는 `sage asset-check` 로 이전됨)", file=sys.stderr)
-    print("REVIEWER_ACTUAL: same_runtime")
-    return 0
+        return _blocked_review("sage review", "cross-model이 활성화되어 있습니다. sage cross-check를 사용하세요")
+    if not _same_runtime_authorized(profile, layers):
+        reason = rr.get("reviewer_degrade_reason") or "cross-model reviewer unavailable"
+        return _blocked_review(
+            "sage review", f"명시적 local opt-out 없이 cross-model을 same-runtime으로 완화할 수 없음 ({reason})"
+        )
+    return _run_same_runtime(profile, host, args.packet_file, args.timeout)
 
 
 def run_cross_check(args):
-    """cross-model 경로. reviewer_resolution 으로 peer 결정 → 도달 가능하면 직접 호출, 아니면 폴백 표면화."""
+    """Cross-model 경로. peer를 직접 호출하고, 미가용/실패 시 BLOCKED를 표면화한다."""
     root = _find_root(args.root)
     profile, _, rr, layers = _load_profile_layers_caps(root)
     layer_failures = _blocking_layer_issues(layers)
     if layer_failures:
         for message in layer_failures:
             print(f"[sage cross-check] TOOL ERROR: {message}", file=sys.stderr)
+        print("REVIEWER_STATUS: BLOCKED")
+        return 2
+    from sage.runtime_hosts import profile_issues as runtime_profile_issues
+    runtime_failures = [message for severity, message in runtime_profile_issues(profile) if severity == "FAIL"]
+    if runtime_failures:
+        for message in runtime_failures:
+            print(f"[sage cross-check] TOOL ERROR: {message}", file=sys.stderr)
+        print("REVIEWER_STATUS: BLOCKED")
         return 2
 
     # cross_model 검증은 폴백 판정보다 **먼저** — peer 가 마침 미가용이면 잘못된 설정이 통과해버린다.
@@ -304,29 +420,31 @@ def run_cross_check(args):
     if fails:
         for m in fails:
             print(f"[sage cross-check] TOOL ERROR: {m}", file=sys.stderr)
+        print("REVIEWER_STATUS: BLOCKED")
         return 2
     effort, configured = resolve_effort(profile)
     from sage.model_routing import reviewer_selection
     _, reviewer_model = reviewer_selection(profile)
 
     if rr["reviewer_mode"] != "opposite_runtime":
-        # cross 미설정이거나 peer CLI 미가용 → same-runtime 폴백을 침묵시키지 않고 명시(degraded 근거).
-        reason = rr.get("reviewer_degrade_reason") or "cross_model_off"
-        print(f"[sage cross-check] ⚠️  cross-model 미수행 → same-runtime 폴백 ({reason}). "
-              f"{rr['notice']}", file=sys.stderr)
-        print("REVIEWER_ACTUAL: same_runtime")
-        return 3 if getattr(args, "strict", False) else 0
+        from sage.profile_layers import cross_model_policy
+        policy = cross_model_policy(profile)
+        enabled = bool((profile.get("options") or {}).get("cross_model"))
+        if not enabled and policy != "required":
+            host = _profile_active_host(profile)
+            if host is None:
+                return _blocked_review("sage cross-check", "same-runtime fallback의 active host를 확인할 수 없음", 2)
+            print(f"[sage cross-check] cross-model 비활성 정책 → {host} intentional same-runtime headless 실행",
+                  file=sys.stderr)
+            return _run_same_runtime(profile, host, args.packet_file, args.timeout, command="sage cross-check")
+        reason = rr.get("reviewer_degrade_reason") or "peer_unavailable"
+        return _blocked_review("sage cross-check", f"cross-model reviewer를 실행할 수 없음 ({reason})")
 
     peer = rr["reviewer_runtime"]
 
-    try:
-        prompt = open(args.packet_file, encoding="utf-8").read()
-    except Exception as e:
-        print(f"[sage cross-check] TOOL ERROR: 패킷 파일 읽기 실패: {e}", file=sys.stderr)
-        return 2
-    if not prompt.strip():
-        print("[sage cross-check] TOOL ERROR: 패킷이 비어 있음", file=sys.stderr)
-        return 2
+    prompt = _read_packet(args.packet_file, "sage cross-check")
+    if prompt is None:
+        return _blocked_review("sage cross-check", "유효한 리뷰 패킷이 필요합니다", 2)
 
     eff_note = f"effort={effort}" + ("" if configured else " (기본값)")
     model_note = reviewer_model or "peer CLI default"
@@ -337,14 +455,15 @@ def run_cross_check(args):
         # Keep the legacy call shape for downstream monkeypatch/adapters when no model was configured.
         ok, review, err = _invoke_peer(peer, prompt, args.timeout, effort)
     if not ok:
-        # peer 도달 실패 → 폴백을 침묵시키지 않음(6차 버그 수정). degraded 로 게이트가 잡게 한다.
-        print(f"[sage cross-check] ⚠️  {peer} 리뷰 실패 → same-runtime 폴백: {err}", file=sys.stderr)
-        print("REVIEWER_ACTUAL: same_runtime")
-        return 3 if getattr(args, "strict", False) else 0
+        return _blocked_review("sage cross-check", f"{peer} 리뷰 실패: {err}")
 
     # peer 리뷰 본문 = stdout(스킬이 05 문서/REWORK 입력으로 사용). 마지막 줄에 REVIEWER_ACTUAL.
     print(f"===== {peer.upper()} CROSS-MODEL REVIEW =====")
     print(review)
     print(f"===== END {peer.upper()} REVIEW =====")
+    print(f"REVIEWER_PROCESS: {_review_process(peer)}")
+    print(f"REVIEWER_HOST: {peer}")
+    print(f"REVIEWER_MODEL: {reviewer_model or 'cli-default'}")
     print("REVIEWER_ACTUAL: cross_model")
+    print("REVIEWER_STATUS: COMPLETE")
     return 0

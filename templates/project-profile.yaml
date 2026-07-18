@@ -154,14 +154,14 @@ team:                            # CORE 로스터(team.core). 역할명은 스�
     qa:            { enabled: true,  owns: ["**/test/**"] }
     reviewer: { enabled: true,
                 cross_model: { capability: from_options.cross_model,
-                               fallback: clean_context_same_runtime } }
+                               on_unavailable: block } }
   optional_reviewers: []         # roster 밖 온디맨드 (external-consultant류)
   extensions: []
 
 cross_model:                     # opposite-runtime 무상관 검증. 권장 optional
   policy: recommended            # required | recommended | off. local은 required를 완화할 수 없음
   peer: opposite_runtime         # host=claude → codex / host=codex → claude (하드코딩 금지)
-  on_unavailable: clean_context_same_runtime
+  on_unavailable: block
   # reviewer: { host: codex, model: gpt-5.6-terra } # 사용자 입력. host는 active_host의 반대.
   # effort: high                 # 선택. 미설정 → high. options.cross_model=true 일 때만 유효.
   #                              #   peer=codex  : minimal | low | medium | high | xhigh

@@ -17,8 +17,8 @@ resolved by `sage doctor` from `profile.options.cross_model`:
 
 - cross_model off → clean-context review in the same runtime.
 - cross_model on + opposite runtime reachable → opposite-runtime review.
-- cross_model on + opposite runtime unreachable → clean-context fallback
-  (degraded; surfaced by `sage doctor`).
+- cross_model on + opposite runtime unreachable → BLOCKED
+  (fail-closed; surfaced by `sage doctor` and `sage cross-check`).
 
 How an L3 change is matched to its review document is a project decision
 (`profile.risk.l3_review_strategy`). Until selected, `pre-implementation-gate`

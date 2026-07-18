@@ -18,12 +18,18 @@ a structured review report for the current implementation cycle.
   or "cross-model review"
 
 ## procedure
-1. Read `sage/project-profile.yaml` — `options.cross_model` resolves the review mode
-   (cross_model:true + peer CLI reachable → opposite-runtime via `sage cross-check`;
-   else clean-context same-runtime via `sage review`); `pdca.review_loop` resolves pass
+1. Read the effective shared/local profile — `options.cross_model` resolves the review mode
+   (`required` always uses `sage cross-check` and blocks when the peer is unavailable;
+   recommended local opt-out or `off` uses clean-context same-runtime via `sage review`);
+   `pdca.review_loop` resolves pass
    vs loop. `cross_model.reviewer.model` (optional) and `cross_model.effort` (default
    `high`) are passed to the peer CLI by `sage cross-check`; without reviewer.model the
-   peer CLI default model remains in effect.
+   peer CLI default model remains in effect. Build one UTF-8 review packet containing the
+   same-stem phase documents, implementation files, and verification evidence. Invoke exactly
+   one deterministic command: `sage cross-check --packet-file <packet>` for cross-model, or
+   `sage review --packet-file <packet> --host <active_host>` for same-runtime. A COMPLETE status
+   requires review body plus `REVIEWER_PROCESS`, `REVIEWER_HOST`, `REVIEWER_MODEL`,
+   `REVIEWER_ACTUAL`, and `REVIEWER_STATUS` evidence from the CLI.
 2. Read `docs/agent/review-protocol.md` — the authoritative output format + loop contract.
 3. Choose pass vs loop:
    - `review_loop.enabled` false/absent, or risk L0/L1 → single-pass reviewer invocation.
@@ -54,7 +60,7 @@ a structured review report for the current implementation cycle.
 ## advisory_scope
 - role_boundary: does not implement or modify code; orchestrates reviewer/implementer only
 - uses: reviewer agent, project-profile.yaml, review-protocol.md, `sage review-loop` CLI
-- cross_model: resolved by sage doctor; falls back to clean-context same-runtime
+- cross_model: resolved by policy; required peer failure is BLOCKED, while recommended local opt-out/off uses active-host headless
 - review_loop: deterministic gates (counters/budget/termination/audit) SAGE-owned; the loop
   never bypasses the report←approve (06←05) backstop
 - convention_doc: docs/agent/review-protocol.md
