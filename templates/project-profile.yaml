@@ -4,7 +4,7 @@
 # 전문/주석: 마스터 설계 §6.
 
 sage:
-  required_version: "0.9.64" # 프로젝트가 요구하는 exact SAGE 버전. local에서 변경 불가
+  required_version: "0.9.65" # 프로젝트가 요구하는 exact SAGE 버전. local에서 변경 불가
 
 project:
   name: ""
