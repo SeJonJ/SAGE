@@ -11,7 +11,7 @@ import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
-from sage.profile_validate import severity_of, validate_profile  # noqa: E402
+from sage.profile_validate import severity_of, validate_profile, _writeback_gate_issues  # noqa: E402
 
 try:
     import jsonschema  # noqa: F401
@@ -765,6 +765,61 @@ class TestRetroGateEnforce(unittest.TestCase):
         # jsonschema 없어도 pdca.retro 가 오타로 FAIL 되면 안 된다(_CLOSED_SECTION_FALLBACK 포함 확인).
         import sage.profile_validate as pv
         self.assertIn("retro", pv._CLOSED_SECTION_FALLBACK["pdca"])
+
+
+class TestWritebackGateIssues(unittest.TestCase):
+    """pdca.writeback.depth_review_gate 검증 — off|advisory|enforce, 활성 시 update_after_dev 필요."""
+
+    def _p(self, mode, update_after_dev=True):
+        return {"pdca": {"writeback": {"depth_review_gate": mode}},
+                "knowledge_capture": {"update_after_dev": update_after_dev, "vault_path": "/x"}}
+
+    def test_absent_ok(self):
+        self.assertEqual(_writeback_gate_issues({"pdca": {}}), [])
+
+    def test_valid_modes_no_fail(self):
+        for m in ("off", "advisory", "enforce"):
+            sev = [s for s, _ in _writeback_gate_issues(self._p(m))]
+            self.assertNotIn("FAIL", sev, m)
+
+    def test_invalid_mode_fail(self):
+        issues = _writeback_gate_issues(self._p("block"))
+        self.assertTrue(any(s == "FAIL" and "depth_review_gate" in m for s, m in issues))
+
+    def test_active_without_update_after_dev_warns(self):
+        issues = _writeback_gate_issues(self._p("enforce", update_after_dev=False))
+        self.assertTrue(any(s == "WARN" and "update_after_dev" in m for s, m in issues))
+
+    def test_off_with_update_after_dev_off_no_warn(self):
+        # off 는 어차피 무동작이라 update_after_dev 경고를 내지 않는다.
+        self.assertEqual(_writeback_gate_issues(self._p("off", update_after_dev=False)), [])
+
+    def test_non_dict_writeback_fail(self):
+        issues = _writeback_gate_issues({"pdca": {"writeback": "oops"}})
+        self.assertTrue(any(s == "FAIL" for s, _ in issues))
+
+    def test_unknown_key_typo_fails(self):
+        # jsonschema 미설치 시에도 오타 키(depth_review_gates)를 fail-closed 로 적발(게이트 침묵 방지).
+        issues = _writeback_gate_issues({"pdca": {"writeback": {"depth_review_gates": "enforce"}}})
+        self.assertTrue(any(s == "FAIL" and "미지 키" in m for s, m in issues))
+
+    def test_enabled_without_06_phase_warns(self):
+        # 게이트는 id=='06' phase glob 을 하드 참조한다. 그 phase 가 없으면 enforce 여도 무음 no-op →
+        # 침묵 비활성 대신 WARN 으로 표면화(config-silently-disables 갭 방지).
+        prof = {"pdca": {"writeback": {"depth_review_gate": "enforce"},
+                         "phases": [{"id": "05", "glob": "plan_docs/05-*.md"}]},
+                "knowledge_capture": {"update_after_dev": True, "vault_path": "/x"}}
+        issues = _writeback_gate_issues(prof)
+        self.assertTrue(any(s == "WARN" and "06" in m for s, m in issues))
+
+    def test_enabled_with_06_phase_no_06_warn(self):
+        # id=='06' phase 가 있으면 무음 no-op 경고는 안 난다(오탐 방지).
+        prof = {"pdca": {"writeback": {"depth_review_gate": "enforce"},
+                         "phases": [{"id": "06", "glob": "plan_docs/06-*.md"}]},
+                "knowledge_capture": {"update_after_dev": True, "vault_path": "/x"},
+                "file_type_map": {"plan": ["plan_docs/**"]}, "skip_untyped": False}
+        issues = _writeback_gate_issues(prof)
+        self.assertFalse(any("무음 no-op" in m for _, m in issues))
 
 
 if __name__ == "__main__":

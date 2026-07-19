@@ -202,6 +202,10 @@ echo "### 43. retro_gate (retro 게이트 enforce 판정 BLOCK/WARN — report_g
 python3 "$HERE/test_retro_gate.py" || rc=1
 
 echo ""
+echo "### 43a. writeback_depth_gate (L2/L3 심층 노트 self-review 자기선언 게이트 — depth_review_gate 정책)"
+python3 "$HERE/test_writeback_depth_gate.py" || rc=1
+
+echo ""
 echo "### 44. acceptance waiver (risk policy + exact L3 grant/use/revoke audit)"
 python3 "$HERE/test_acceptance_waiver.py" || rc=1
 

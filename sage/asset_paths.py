@@ -51,6 +51,10 @@ def hook_runtime_files(root: str) -> dict[str, list[str]]:
             # knowledge_capture/output_contract 는 advisory-only 라 부재해도 리포트 한 줄이 빠질 뿐이지만,
             # retro_gate 는 enforcement 라 반드시 추적한다.
             os.path.join(policies, "retro_gate.py"),
+            # policies/writeback_depth_gate.py: retro_gate 와 동일한 enforcement 판정(BLOCK/WARN).
+            # 파일 부재 시 Stop 오케스트레이터가 INFO skip 으로 낮춰 enforce 가 조용히 무동작하므로,
+            # rolling upgrade 에서 이 파일만 빠져도 게이트가 은밀히 해제되지 않게 반드시 추적한다.
+            os.path.join(policies, "writeback_depth_gate.py"),
             # messages.py: io_claude/io_codex 가 import 하는 게이트/컴플라이언스 문구 SSOT(5-3).
             # 추적 안 하면 사용자 대상 게이트 문구가 validate 미감지로 표류(loop_audit 과 동일 논리).
             os.path.join(runtime, "messages.py"),

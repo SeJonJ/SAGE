@@ -117,7 +117,7 @@
       "description": "PDCA phase 의무구조. 알 수 없는 키 = 오타로 간주(phase 강제 침묵 약화 방지).",
       "properties": {
         "enabled": { "type": "boolean" },
-        "phases": { "type": "array" },
+        "phases": { "type": "array", "items": { "type": "object" } },
         "pre_implementation_required": { "type": "object" },
         "report_phase": { "type": "string" },
         "approve_phase": { "type": "string" },
@@ -147,6 +147,14 @@
           "description": "Loop C(sage retro --check) 실행 여부를 Stop 훅이 사후 확인하는 9-C v1 게이트. 06←05 훅은 못 쓴다(06 이 retro 보다 먼저 쓰임) — 강제 지점은 세션 종료. enforce 라도 Stop 훅 플랫폼 제약(stop_hook_active)상 block 은 세션당 최대 1회.",
           "properties": {
             "report_gate_enforce": { "enum": ["off", "advisory", "enforce"] }
+          }
+        },
+        "writeback": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "L2/L3 write-back 심층 노트가 host depth self-review 를 거쳤는지 Stop 훅이 06 자기선언(`Depth-Self-Review: performed`)으로 사후 확인하는 게이트. 품질이 아니라 self-review 실행 증거만 본다(깊이 판정은 skill 지침·host 소관). enforce 라도 Stop 훅 플랫폼 제약(stop_hook_active)상 block 은 세션당 최대 1회.",
+          "properties": {
+            "depth_review_gate": { "enum": ["off", "advisory", "enforce"] }
           }
         }
       }

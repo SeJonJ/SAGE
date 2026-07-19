@@ -79,10 +79,15 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
    (`CLAUDE.md`/`AGENTS.md`/`GEMINI.md`/`AGENT_GUIDE.md`, first found) and follow its note
    conventions — choose tags/prefix and body format per it — then run `python -m sage knowledge write-back --title "<cycle-stem>" --prefix <PREFIX> --tags "<t1,t2,…>" --summary-file .sage/knowledge_writeback_summary.md --append-log` (omit --tags/--prefix for defaults when no guide).
    Record the output or skipped reason in the completion report. **Then run the host depth self-review
-   checklist (advisory, not a hook-enforced gate — the host's own review):** for L2/L3, re-open the note
-   and confirm each section has real content (변경 내역 names actual `파일:함수:line`, 검증 states
-   concrete results) — not an empty header the marker check still passes; rewrite and re-run if
-   hollow. This is an explicit
+   checklist (the host's own review — the marker check cannot judge depth, so this is where hollow
+   sections are caught):** for L2/L3, re-open the note and confirm each section has real content
+   (변경 내역 names actual `파일:함수:line`, 검증 states concrete results) — not an empty header the
+   marker check still passes; rewrite and re-run if hollow. **Then attest the outcome in the 06 header
+   metadata block (the top block with `Loop-Run:`/`Risk Level:`, before the first `##` heading) as a
+   deterministic line: `Depth-Self-Review: performed` for L2/L3, or `Depth-Self-Review: skipped` for
+   L1.** The Stop-hook `writeback_depth_gate` (`pdca.writeback.depth_review_gate`) reads that line — an
+   L2/L3 06 with no `performed` attestation warns/blocks at session end, so an unreviewed shallow note
+   cannot silently close the cycle; write `performed` only after genuinely re-reading the note. This is an explicit
    host step, not hidden automatic mutation. **One allowed hand-edit only:** if the vault's
    guide keeps a history *table* in `log.md`/index, add that row by hand (CLI appends a line,
    not a row) — limited to that existing hub table; never hand-create notes and never write

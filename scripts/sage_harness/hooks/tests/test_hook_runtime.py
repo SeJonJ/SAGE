@@ -460,6 +460,221 @@ class TestHeaderLoopRunIds(unittest.TestCase):
         self.assertEqual(hr._header_loop_run_ids("# [Report]\nLoop-Run: rl-a\n## S\n"), {"rl-a"})
 
 
+class TestHeaderFields06(unittest.TestCase):
+    """writeback_depth_gate 어댑터: 06 헤더(첫 H2 전)에서 Risk Level·Depth-Self-Review 파싱."""
+
+    def test_tier_and_declared_performed(self):
+        c = "# [Report] X\n\nLoop-Run: rl-a\nRisk Level: L2\nDepth-Self-Review: performed\n\n## 1. 결과\n"
+        self.assertEqual(hr._header_fields_06(c), ("L2", True))
+
+    def test_skipped_is_not_declared(self):
+        c = "# X\nRisk Level: L1\nDepth-Self-Review: skipped\n## S\n"
+        self.assertEqual(hr._header_fields_06(c), ("L1", False))
+
+    def test_missing_fields(self):
+        self.assertEqual(hr._header_fields_06("# X\n\n## 본문\n"), (None, False))
+
+    def test_body_line_after_h2_ignored(self):
+        # 본문 코드블록/섹션의 동명 라인은 헤더 종료 뒤라 무시된다(_header_loop_run_ids 와 동일 규약).
+        c = "# X\nRisk Level: L3\n\n## 변경\n```\nDepth-Self-Review: performed\n```\n"
+        self.assertEqual(hr._header_fields_06(c), ("L3", False))
+
+    def test_case_insensitive_performed(self):
+        c = "# X\nRisk Level: l2\nDepth-Self-Review: PERFORMED\n## S\n"
+        self.assertEqual(hr._header_fields_06(c), ("L2", True))
+
+    def test_fenced_marker_before_h2_not_declared(self):
+        # 헤더 구간의 펜스 예시 안 `Depth-Self-Review: performed` 는 실제 선언이 아니다(오인 방지).
+        c = "# X\nRisk Level: L2\n```\nDepth-Self-Review: performed\n```\n## S\n"
+        self.assertEqual(hr._header_fields_06(c), ("L2", False))
+
+    def test_performed_then_skipped_is_not_declared(self):
+        # performed/skipped 상충 → 미선언(fail-closed). skipped 우회도 마찬가지.
+        c = "# X\nRisk Level: L2\nDepth-Self-Review: performed\nDepth-Self-Review: skipped\n## S\n"
+        self.assertEqual(hr._header_fields_06(c), ("L2", False))
+
+    def test_mixed_fence_does_not_close_early(self):
+        # ``` 안의 ~~~ 는 펜스를 닫지 못한다 — 혼합 펜스로 예시 선언을 실제 선언으로 우회 불가.
+        c = "# X\nRisk Level: L2\n```\n~~~\nDepth-Self-Review: performed\n```\n## S\n"
+        self.assertEqual(hr._header_fields_06(c), ("L2", False))
+
+    def test_config_non_dict_writeback_is_off(self):
+        # 손상 profile(writeback 비-dict)에 crash 대신 off 로 안전 degrade.
+        self.assertEqual(hr._writeback_gate_config({"pdca": {"writeback": "oops"}}, ".")[0], "off")
+
+    def test_config_non_dict_pdca_is_off(self):
+        # pdca 자체가 비-dict 여도 crash 없이 off.
+        self.assertEqual(hr._writeback_gate_config({"pdca": "x"}, ".")[0], "off")
+
+
+class TestAuthoritativeCycleTier(unittest.TestCase):
+    """writeback 게이트: tier 는 06 자기선언이 아니라 결속된 00 정본에서 온다(위조 L1 우회 봉쇄)."""
+
+    def _mk(self, root, rel, body):
+        p = os.path.join(root, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(body)
+
+    def _prof(self):
+        return {"pdca": {"phases": [{"id": "00", "glob": "plan_docs/00/*.md"},
+                                     {"id": "06", "glob": "plan_docs/06/*.md"}]}}
+
+    def test_doc_risk_tier_ignores_fenced_and_takes_max(self):
+        self.assertEqual(hr._doc_risk_tier("Risk Level: L2\n```\nRisk Level: L3\n```\nRisk Level: L1\n"), "L2")
+        self.assertIsNone(hr._doc_risk_tier("no risk here\n"))
+
+    def test_doc_risk_tier_l0_no_crash(self):
+        # L0 도 _RISK_LEVEL_RE 매치 — rank 에 없으면 KeyError 로 게이트가 조용히 죽는다(codex R4 P1).
+        self.assertEqual(hr._doc_risk_tier("Risk Level: L0\nRisk Level: L2\n"), "L2")
+        self.assertEqual(hr._doc_risk_tier("Risk Level: L0\n"), "L0")
+
+    def test_doc_risk_tier_zero_width_prefixed_line_not_missed(self):
+        # 제로폭/BOM 이 라인 앞에 껴도 Risk Level 선언을 놓치지 않는다(\s 가 Cf 를 안 잡아 under-read, codex R7 P1).
+        self.assertEqual(hr._doc_risk_tier("Risk Level: L1\n﻿Risk Level: L3\n"), "L3")
+        self.assertEqual(hr._doc_risk_tier("Risk Level: L1\n​Risk Level: L3\n"), "L3")
+
+    def test_doc_risk_tier_header_only_ignores_body_prose(self):
+        # 본문 산문/루브릭의 'Risk Level: L3' 를 tier 로 오독하지 않는다 — L1 사이클 false-BLOCK 방지(self-review P2).
+        self.assertEqual(
+            hr._doc_risk_tier("# B\nRisk Level: L1\n\n## Escalation\nrejected — Risk Level: L3\n"), "L1")
+
+    def test_malformed_phases_item_no_crash(self):
+        # bare 문자열 phase 항목(들여쓰기 실수) → ph.get() 크래시로 게이트 무력화 금지(self-review P1).
+        prof = {"pdca": {"phases": ["00", {"id": "06", "glob": "plan_docs/06/*.md"}]}}
+        self.assertEqual(hr._pdca_phase_glob(prof, "06"), "plan_docs/06/*.md")
+        self.assertEqual(hr._pdca_phase_glob(prof, "00"), "")   # bare string skipped, no crash
+
+    def test_overlapping_00_06_glob_06_not_its_own_authoritative_00(self):
+        # 00/06 glob 겹침 misconfig 에서 06 이 자기 자신의 authoritative 00 이 돼 자기선언 Risk Level 이
+        # 정본으로 부활하는 우회를 막는다 — 06 은 00 조회에서 제외(self-review P2).
+        prof = {"pdca": {"phases": [{"id": "00", "glob": "plan_docs/*.md"},
+                                     {"id": "06", "glob": "plan_docs/*.md"}]}}
+        with tempfile.TemporaryDirectory() as root:
+            self._mk(root, "plan_docs/cycle.md", "# R\nRisk Level: L1\n")   # the forging 06
+            depth = hr._session_06_depth(root, prof, {"plan_docs/cycle.md"})
+            self.assertIsNone(depth["plan_docs/cycle.md"][0])
+            self.assertEqual(hr._reduce_06_depth(depth), (True, False))   # None → L2 → 우회 안 됨
+
+    def test_l0_00_not_applies(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._mk(root, "plan_docs/00/cycle.md", "# B\nCycle-Stem: `cycle`\nRisk Level: L0\n")
+            self._mk(root, "plan_docs/06/cycle.md", "# R\nCycle-Stem: `cycle`\n")
+            depth = hr._session_06_depth(root, self._prof(), {"plan_docs/06/cycle.md"})
+            self.assertEqual(hr._reduce_06_depth(depth), (False, False))   # L0 → not applies, no crash
+
+    def test_forged_cycle_stem_ignored_binds_by_path(self):
+        # 결속은 06 의 경로 basename 으로만 한다 — 자기선언 Cycle-Stem 은 무시(위조 불가한 경로가 정본).
+        # L3 사이클의 06(파일명 high.md)이 무관 L1 사이클(low)의 Cycle-Stem 을 선언해 우회하려 해도
+        # path_stem='high' → 00/high(L3) 로 결속돼 BLOCK 축(applies)이 유지된다(codex R5 P1).
+        with tempfile.TemporaryDirectory() as root:
+            self._mk(root, "plan_docs/00/high.md", "# B\nCycle-Stem: `high`\nRisk Level: L3\n")
+            self._mk(root, "plan_docs/00/low.md", "# B\nCycle-Stem: `low`\nRisk Level: L1\n")
+            self._mk(root, "plan_docs/06/high.md", "# R\nCycle-Stem: `low`\nRisk Level: L1\n")  # 위조
+            depth = hr._session_06_depth(root, self._prof(), {"plan_docs/06/high.md"})
+            self.assertEqual(depth["plan_docs/06/high.md"][0], "L3")       # 경로 basename 이 정본
+            self.assertEqual(hr._reduce_06_depth(depth), (True, False))    # 우회 안 됨
+
+    def test_authoritative_tier_from_bound_00(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._mk(root, "plan_docs/00/cycle.md", "# B\nCycle-Stem: `cycle`\nRisk Level: L3\n")
+            self.assertEqual(hr._authoritative_cycle_tier(root, self._prof(), "cycle"), "L3")
+
+    def test_forged_06_l1_resolves_to_authoritative_l3(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._mk(root, "plan_docs/00/cycle.md", "# B\nCycle-Stem: `cycle`\nRisk Level: L3\n")
+            self._mk(root, "plan_docs/06/cycle.md", "# R\nCycle-Stem: `cycle`\nRisk Level: L1\n")
+            depth = hr._session_06_depth(root, self._prof(), {"plan_docs/06/cycle.md"})
+            self.assertEqual(depth["plan_docs/06/cycle.md"][0], "L3")   # 06 위조 L1 무시
+            self.assertEqual(hr._reduce_06_depth(depth), (True, False))  # applies
+
+    def test_unreadable_or_tierless_same_stem_00_fails_closed(self):
+        # 동일 stem 00 이 여럿일 때 하나라도 Risk Level 부재/모호(또는 읽기 실패)면 낮은 동거 tier 로
+        # 확정하지 않고 None(→L2 applies)으로 fail-closed 한다 — malformed L3 + 동거 L1 우회 봉쇄(codex R6 P1).
+        prof = {"pdca": {"phases": [{"id": "00", "glob": "plan_docs/00/**/*.md"},
+                                     {"id": "06", "glob": "plan_docs/06/*.md"}]}}
+        with tempfile.TemporaryDirectory() as root:
+            self._mk(root, "plan_docs/00/a/cycle.md", "# 실제 L3 인데 Risk Level 라인 손상/부재\n")
+            self._mk(root, "plan_docs/00/b/cycle.md", "# B\nRisk Level: L1\n")
+            self._mk(root, "plan_docs/06/cycle.md", "# R\n")
+            depth = hr._session_06_depth(root, prof, {"plan_docs/06/cycle.md"})
+            self.assertIsNone(depth["plan_docs/06/cycle.md"][0])
+            self.assertEqual(hr._reduce_06_depth(depth), (True, False))   # L1 로 우회 안 됨
+
+    def test_no_bound_00_is_none_then_l2(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._mk(root, "plan_docs/06/cycle.md", "# R\nCycle-Stem: `cycle`\n")
+            depth = hr._session_06_depth(root, self._prof(), {"plan_docs/06/cycle.md"})
+            self.assertIsNone(depth["plan_docs/06/cycle.md"][0])
+            self.assertEqual(hr._reduce_06_depth(depth), (True, False))  # None → L2 → applies
+
+    def test_genuine_l1_00_exempts(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._mk(root, "plan_docs/00/cycle.md", "# B\nCycle-Stem: `cycle`\nRisk Level: L1\n")
+            self._mk(root, "plan_docs/06/cycle.md", "# R\nCycle-Stem: `cycle`\n")
+            depth = hr._session_06_depth(root, self._prof(), {"plan_docs/06/cycle.md"})
+            self.assertEqual(hr._reduce_06_depth(depth), (False, False))  # L1 → not applies
+
+
+class TestReduce06Depth(unittest.TestCase):
+    """writeback_depth_gate 어댑터: 세션 06 별 (tier, declared) → (applies, declared) 축약."""
+
+    def test_l2_declared(self):
+        self.assertEqual(hr._reduce_06_depth({"06-a.md": ("L2", True)}), (True, True))
+
+    def test_l2_undeclared(self):
+        self.assertEqual(hr._reduce_06_depth({"06-a.md": ("L2", False)}), (True, False))
+
+    def test_l1_excluded(self):
+        # L1 은 얕은 노트가 정상 → 게이트 대상 아님(applies=False).
+        self.assertEqual(hr._reduce_06_depth({"06-a.md": ("L1", False)}), (False, False))
+
+    def test_unset_tier_treated_as_l2(self):
+        # Risk Level 미기재 → 보수적으로 심층 대상(applies), 미선언이면 declared=False.
+        self.assertEqual(hr._reduce_06_depth({"06-a.md": (None, False)}), (True, False))
+
+    def test_multi_06_one_undeclared_not_declared(self):
+        # 다중 L2/L3 06 중 하나라도 미선언이면 전체 미완료.
+        self.assertEqual(
+            hr._reduce_06_depth({"06-a.md": ("L2", True), "06-b.md": ("L3", False)}), (True, False))
+
+    def test_multi_06_all_declared(self):
+        self.assertEqual(
+            hr._reduce_06_depth({"06-a.md": ("L2", True), "06-b.md": ("L3", True)}), (True, True))
+
+    def test_l1_plus_l2_only_l2_counts(self):
+        # L1 은 제외하고 L2 만 대상 — L2 가 선언되면 declared=True.
+        self.assertEqual(
+            hr._reduce_06_depth({"06-a.md": ("L1", False), "06-b.md": ("L2", True)}), (True, True))
+
+
+class TestWritebackDepthGateResult(unittest.TestCase):
+    """writeback_depth_gate_result 어댑터: degraded baseline fail-closed + 문구 보존."""
+
+    def _prof(self):
+        return {"pdca": {"writeback": {"depth_review_gate": "enforce"},
+                         "phases": [{"id": "06", "glob": "p/06-*.md"}]},
+                "knowledge_capture": {"update_after_dev": True, "vault_path": os.getcwd()}}
+
+    def test_degraded_baseline_keeps_text_even_when_severity_equal(self):
+        # logged L2 undeclared(이미 BLOCK) + corrupt baseline → severity 는 BLOCK 유지되지만
+        # 'writer-독립 감지 불가' 문구가 리포트에서 사라지지 않아야 한다(감사 신호 보존).
+        from unittest.mock import patch
+        with patch.object(hr, "_session_06_depth", return_value={"06.md": ("L2", False)}):
+            r = hr.writeback_depth_gate_result(self._prof(), ".", {"stop_hook_active": False},
+                                               [{"file": "p/06-x.md"}], set(), "corrupt")
+        self.assertEqual(r["severity"], "BLOCK")
+        self.assertIn("writer-독립", r["text"])
+
+    def test_degraded_baseline_no_06_still_fails_closed(self):
+        # 06 전무여도 baseline 손상 + enforce → 놓친 Bash 06 가능성 → fail-closed BLOCK.
+        from unittest.mock import patch
+        with patch.object(hr, "_session_06_depth", return_value={}):
+            r = hr.writeback_depth_gate_result(self._prof(), ".", {"stop_hook_active": False},
+                                               [], set(), "absent")
+        self.assertEqual(r["severity"], "BLOCK")
+
+
 class TestRunStrategyF8b(unittest.TestCase):
     def test_crash_surfaces_and_fails_closed(self):
         buf = io.StringIO()
@@ -578,6 +793,21 @@ class TestLoggerExtraction(unittest.TestCase):
         ch = io_codex.extract_logged_changes({"tool_input": {"command": cmd}}, _ID)
         ops = {(c["path"], c["op"]) for c in ch}
         self.assertEqual(ops, {("a.src", "add"), ("b.src", "update"), ("c.src", "delete"), ("d.src", "move")})
+
+
+class TestSessionLogEntries(unittest.TestCase):
+    def test_non_object_json_line_skips_only_that_line(self):
+        # 유효 JSON 이지만 object 가 아닌 라인(숫자·배열·문자열: 손상/동시쓰기/손편집)이 있어도
+        # .get 이 터져 파일 뒤 라인이 통째로 유실되면 안 된다 — 그 라인만 건너뛰고 이후는 수집.
+        import json
+        with tempfile.TemporaryDirectory() as d:
+            fp = os.path.join(d, "session-2026-07-19.jsonl")
+            with open(fp, "w", encoding="utf-8") as f:
+                for x in (json.dumps({"session": "S", "phase": "foo"}), "123", "[]", '"x"',
+                          json.dumps({"session": "S", "phase": "bar"})):
+                    f.write(x + "\n")
+            got = [e.get("phase") for e in hr._session_log_entries(d, "S")]
+        self.assertEqual(got, ["foo", "bar"])
 
 
 class TestPhase4Extraction(unittest.TestCase):

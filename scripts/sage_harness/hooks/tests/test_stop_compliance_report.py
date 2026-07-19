@@ -804,5 +804,141 @@ class TestRetroGateWiring(unittest.TestCase):
             self.assertEqual([], [r for r in self._audit_records(root) if r["event"] == "retro_check_missing"])
 
 
+class TestWritebackGateWiring(unittest.TestCase):
+    """writeback_depth_gate: Stop 훅이 L2/L3 06 의 depth self-review 자기선언 부재를 실제로
+    감지·(최대 1회)block 하는지 e2e."""
+
+    def _setup(self, root, mode="enforce", tier="L2", declared=False, update_after_dev=True,
+               log_06=True, vault_path=None, write_00=True, forged_06_tier=None):
+        # tier 는 **authoritative 00** 에 쓴다(06 의 자기선언이 아님). forged_06_tier 로 06 이 낮은 tier 를
+        # 자기선언해도 게이트가 00 정본을 쓰는지 검증한다. write_00=False → 00 부재 → None → L2 default.
+        if vault_path is None:
+            vault_path = os.path.join(root, "vault")
+            os.makedirs(vault_path, exist_ok=True)
+        prof = {"pdca": {"phases": [{"id": "00", "glob": "plan_docs/00/*.md"},
+                                     {"id": "06", "glob": "plan_docs/06/*.md"}],
+                         "writeback": {"depth_review_gate": mode}},
+                "knowledge_capture": {"update_after_dev": update_after_dev, "vault_path": vault_path}}
+        prof_path = os.path.join(root, "profile.json")
+        with open(prof_path, "w", encoding="utf-8") as f:
+            json.dump(prof, f)
+
+        if write_00:
+            abs00 = os.path.join(root, "plan_docs/00/cycle.md")
+            os.makedirs(os.path.dirname(abs00), exist_ok=True)
+            with open(abs00, "w", encoding="utf-8") as f:
+                f.write(f"# Base plan\nCycle-Stem: `cycle`\nRisk Level: {tier}\n")
+
+        log_dir = os.path.join(root, ".claude", "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        entries = []
+        if log_06:
+            doc06 = "plan_docs/06/cycle.md"
+            abs06 = os.path.join(root, doc06)
+            os.makedirs(os.path.dirname(abs06), exist_ok=True)
+            head = "# [Report] X\nCycle-Stem: `cycle`\n"
+            if forged_06_tier:
+                head += f"Risk Level: {forged_06_tier}\n"   # 무시돼야 함(정본은 00)
+            if declared:
+                head += "Depth-Self-Review: performed\n"
+            with open(abs06, "w", encoding="utf-8") as f:
+                f.write(head + "\n## 1. 결과\n\nx\n")
+            entries.append({"ts": f"{TODAY}T00:00:01Z", "tool": "Write", "file": doc06,
+                            "type": "plan-doc", "branch": "main", "session": "sess-1"})
+        with open(os.path.join(log_dir, f"session-{TODAY}.jsonl"), "w", encoding="utf-8") as f:
+            for e in entries:
+                f.write(json.dumps(e, ensure_ascii=False) + "\n")
+        return prof_path, log_dir
+
+    def _run_session_start(self, root, prof_path, session_id="sess-1"):
+        env = dict(os.environ, CLAUDE_PROJECT_DIR=root, SAGE_HOOK_CORE_DIR=HOOKS_DIR,
+                   SAGE_PROFILE=prof_path, SAGE_TODAY=TODAY, SAGE_GATE_BRANCH="main")
+        adapter = os.path.join(ADAPTERS, "claude", "session-start-snapshot.sh")
+        return subprocess.run(["bash", adapter], input=json.dumps({"session_id": session_id}),
+                              capture_output=True, text=True, env=env)
+
+    def _run(self, root, prof_path, stop_hook_active=False):
+        self._run_session_start(root, prof_path)
+        env = dict(os.environ, CLAUDE_PROJECT_DIR=root, SAGE_HOOK_CORE_DIR=HOOKS_DIR,
+                   SAGE_PROFILE=prof_path, SAGE_TODAY=TODAY, SAGE_GATE_BRANCH="main")
+        adapter = os.path.join(ADAPTERS, "claude", "stop-compliance-report.sh")
+        stdin = json.dumps({"session_id": "sess-1", "stop_hook_active": stop_hook_active})
+        return subprocess.run(["bash", adapter], input=stdin, capture_output=True, text=True, env=env)
+
+    def _report(self, log_dir):
+        return Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
+
+    def test_enforce_first_attempt_blocks_undeclared_l2(self):
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, _ = self._setup(root, mode="enforce", tier="L2", declared=False)
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 2)
+            self.assertIn("Depth-Self-Review", p.stdout)
+
+    def test_enforce_retry_never_blocks_twice(self):
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", declared=False)
+            p = self._run(root, prof_path, stop_hook_active=True)
+            self.assertEqual(p.returncode, 0)
+            self.assertIn("writeback_depth_gate", self._report(log_dir))
+
+    def test_enforce_passes_when_declared(self):
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", tier="L2", declared=True)
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 0)
+            self.assertIn("[OK] writeback_depth_gate", self._report(log_dir))
+
+    def test_advisory_never_blocks(self):
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="advisory", declared=False)
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 0)
+            self.assertIn("[WARN] writeback_depth_gate", self._report(log_dir))
+
+    def test_l1_undeclared_does_not_block(self):
+        # 정본 00 이 L1 → 얕은 노트가 정상, 선언 없어도 게이트 대상 아님.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", tier="L1", declared=False)
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 0)
+            self.assertNotIn("[BLOCK] writeback_depth_gate", self._report(log_dir))
+
+    def test_forged_06_l1_cannot_disable_gate(self):
+        # 정본 00=L3 인데 06 이 Risk Level: L1 을 자기선언(위조/stale)해도 게이트는 00 을 써 BLOCK.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, _ = self._setup(root, mode="enforce", tier="L3", declared=False, forged_06_tier="L1")
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 2)
+            self.assertIn("Depth-Self-Review", p.stdout)
+
+    def test_no_00_defaults_to_l2_and_blocks(self):
+        # 00 부재(결속 불가) → None → 보수적 L2 → 미선언이면 BLOCK(fail-closed).
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, _ = self._setup(root, mode="enforce", declared=False, write_00=False)
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 2)
+
+    def test_update_after_dev_off_is_inactive(self):
+        # write-back 이 꺼지면 심층 노트 자체가 없어 게이트 무동작(강제 대상 없음).
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", declared=False, update_after_dev=False)
+            p = self._run(root, prof_path, stop_hook_active=False)
+            self.assertEqual(p.returncode, 0)
+
+    def test_degraded_baseline_enforce_fails_closed(self):
+        # writer-독립 감지 불가(SessionStart baseline 없음) + enforce → Bash 작성 L2/L3 06 을 놓쳤을 수
+        # 있어 fail-closed BLOCK. baseline 을 만들지 않고(_run 대신 직접 Stop 호출) 재현한다.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, _ = self._setup(root, mode="enforce", declared=False, log_06=False)
+            env = dict(os.environ, CLAUDE_PROJECT_DIR=root, SAGE_HOOK_CORE_DIR=HOOKS_DIR,
+                       SAGE_PROFILE=prof_path, SAGE_TODAY=TODAY, SAGE_GATE_BRANCH="main")
+            adapter = os.path.join(ADAPTERS, "claude", "stop-compliance-report.sh")
+            stdin = json.dumps({"session_id": "sess-1", "stop_hook_active": False})
+            p = subprocess.run(["bash", adapter], input=stdin, capture_output=True, text=True, env=env)
+            self.assertEqual(p.returncode, 2)
+            self.assertIn("writer-독립", p.stdout)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

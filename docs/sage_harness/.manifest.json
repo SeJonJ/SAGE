@@ -1,6 +1,6 @@
 {
   "sage_version": "0.1.0",
-  "generator_version": "0.1.0",
+  "generator_version": "0.9.60",
   "template_version": "0.1.0",
   "host_runtime": "claude",
   "assets": {
@@ -60,7 +60,7 @@
     },
     "hooks/pre-implementation-gate": {
       "spec_hash": "sha256:a92930ee52ec92ab72d286219a48d003b8a9769456598c10ea45c8c0556a0a59",
-      "canonical_hash": "sha256:077b3811d653d8af6f641b6a625348a532c927769fa122c03ef06e828c141225",
+      "canonical_hash": "sha256:450fcc713e3def51988573768fba10f953d11584e433f88ffb8f2264b33ffb32",
       "adapter_hash": {
         "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
         "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
@@ -79,7 +79,7 @@
       "l3_review_strategy": "codex_feature_signal"
     },
     "hooks/stop-compliance-report": {
-      "spec_hash": "sha256:ec98fe34c4c947cb479dca996524c66a60b340a731c9a19631da1c821501ca60",
+      "spec_hash": "sha256:3bd448b96a083f3077837ab7c3b133f3b31bacc74e63b670fe9dbf0329c72181",
       "canonical_hash": "sha256:9722b3c9694ea0649208fb0ae021467cd872ded6b4328794aa8b08dc5690fcb6",
       "adapter_hash": {
         "claude": "sha256:031dcf4cee2de44cd3f5af5e4e38e95aa511704cfaa55b29f84d5d0b2bc7f8d0",
@@ -97,10 +97,10 @@
       "test": "scripts/sage_harness/hooks/tests/test_stop_compliance_report.py"
     },
     "hooks/generated-artifact-write-guard": {
-      "spec_hash": "sha256:f60991f25951f38ac7fc8412c0054328a5cb84f493dcd63f614ea205a1d8abce",
-      "canonical_hash": "sha256:dfd4c15f5f5be8070a19728d1951bde0e3c2b28a2dc68697e2aaabb1689be31e",
+      "spec_hash": "sha256:6606f2998fb67c6b2783444ab5df3884b40fd4239fc55575553bfe48aa40dd72",
+      "canonical_hash": "sha256:88db3f33c8fd1f6c6bc5b5ca42a71ceb644548b550c352eb2dd331e1750cb1d7",
       "render_hash": {
-        "native": "sha256:dfd4c15f5f5be8070a19728d1951bde0e3c2b28a2dc68697e2aaabb1689be31e"
+        "native": "sha256:88db3f33c8fd1f6c6bc5b5ca42a71ceb644548b550c352eb2dd331e1750cb1d7"
       },
       "adapter_contract_version": "1",
       "conformance": "PASS",
@@ -128,7 +128,7 @@
     }
   },
   "hook_runtime_hash": {
-    "shared": "sha256:0afdee1de4b81911ac834cc27e488d65d4bc295693bc4f7f6dfedf663a433755",
+    "shared": "sha256:618da47b74ccae89a6ff42e45086e767e5f61b3200b8ebdaa907fda907b8eab2",
     "claude": "sha256:6991dff9a466ef7f0fb3e926df2119c2617f8d534bdb14c5ce3d42fa2576a464",
     "codex": "sha256:97549092cb66b9226f8766b8f229679bc8024f27a21682d96bdee49f96f4b843"
   }

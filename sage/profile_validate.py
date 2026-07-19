@@ -29,7 +29,7 @@ _CLOSED_SECTION_FALLBACK = {
              "l3_filename_globs", "l3_review_strategy", "l3_review_glob", "content_l3_enforce",
              "domains", "plan_glob", "review_patterns"},
     "pdca": {"approve_marker", "approve_phase", "enabled", "phases",
-             "pre_implementation_required", "report_phase", "review_loop", "retro"},
+             "pre_implementation_required", "report_phase", "review_loop", "retro", "writeback"},
     "output_contract": {"markers"},
     "mcp": {"enabled"},
     "extraction": {"config"},
@@ -261,6 +261,60 @@ def _retro_gate_issues(profile):
         issues.append(("WARN", f"pdca.retro.report_gate_enforce={mode} 이나 06 문서('{sample}' 형태)가 "
                                f"file_type_map 에 안 걸림 → post_tool_logger 가 안 남겨 게이트가 06 작성을 "
                                f"못 봄(무동작). file_type_map 에 06 경로를 분류하는 항목을 추가하거나 skip_untyped=false"))
+    return issues
+
+
+def _writeback_gate_issues(profile):
+    """pdca.writeback.depth_review_gate 검증 — off|advisory|enforce 만(오타 침묵 무효 방지). retro 게이트와
+    동일 어휘·형태. 활성이면 write-back(update_after_dev)이 켜져 있어야 강제할 심층 노트가 생긴다."""
+    pdca = profile.get("pdca")
+    if not isinstance(pdca, dict):
+        return []   # 비-dict pdca 는 _semantic_issues 가 이미 FAIL(중복 회피)
+    wb = pdca.get("writeback")
+    if wb is None:
+        return []
+    if not isinstance(wb, dict):
+        return [("FAIL", f"pdca.writeback 는 매핑이어야 함 (받음: {type(wb).__name__})")]
+    # 닫힌 키 집합 — jsonschema 미설치 시 schema additionalProperties:false 가 안 돌아, 오타
+    # (예: depth_review_gates)가 조용히 게이트를 off 로 두는 걸 fail-closed 로 적발한다.
+    unknown = sorted(set(wb.keys()) - {"depth_review_gate"}, key=str)
+    if unknown:
+        return [("FAIL", f"pdca.writeback 에 미지 키(오타 추정) {unknown} → depth_review_gate 게이트 침묵 무시 위험")]
+    mode = wb.get("depth_review_gate")
+    if mode is None:
+        return []
+    if not isinstance(mode, str) or mode not in _REPORT_GATE_MODES:
+        return [("FAIL", f"pdca.writeback.depth_review_gate={mode!r} → {sorted(_REPORT_GATE_MODES)} 중 하나만")]
+    if mode == "off":
+        return []
+    issues = []
+    kc = profile.get("knowledge_capture")
+    kc = kc if isinstance(kc, dict) else {}
+    if kc.get("update_after_dev") is not True:
+        issues.append(("WARN", f"pdca.writeback.depth_review_gate={mode} 이나 knowledge_capture.update_after_dev "
+                               f"가 off → write-back 심층 노트 미생성 → 게이트 무동작(update_after_dev 를 켜야 유효)"))
+    # 게이트의 06 감지는 로그기반 ∪ SessionStart 스냅샷이다. 로그기반이 주경로인데 06 문서가
+    # file_type_map 으로 분류되지 않고 skip_untyped=true 면 post_tool_logger 가 안 남겨 감지가 약해진다
+    # (retro 게이트와 동일 근거). WARN 으로 표면화한다.
+    phases = pdca.get("phases")
+    glob06 = ""
+    if isinstance(phases, list):
+        for ph in phases:
+            if isinstance(ph, dict) and ph.get("id") == "06":
+                glob06 = ph.get("glob") or ""
+                break
+    # 게이트의 06 감지(로그기반·스냅샷)는 pdca.phases 의 id=="06" glob 을 하드 참조한다. 그 phase 가
+    # 없으면(또는 glob 빈값) enforce 여도 게이트가 조용히 무동작한다 — 침묵 비활성 대신 표면화한다.
+    if not glob06:
+        issues.append(("WARN", f"pdca.writeback.depth_review_gate={mode} 이나 pdca.phases 에 id=='06' phase "
+                               f"(또는 glob)가 없음 → 게이트가 06 을 못 찾아 무음 no-op (id=='06' phase 를 정의하세요)"))
+    sample = _sample_path_from_glob(glob06)
+    ftm = profile.get("file_type_map")
+    skip_untyped = profile.get("skip_untyped", True)
+    if sample and skip_untyped and not _classifies(sample, ftm):
+        issues.append(("WARN", f"pdca.writeback.depth_review_gate={mode} 이나 06 문서('{sample}' 형태)가 "
+                               f"file_type_map 에 안 걸림 → post_tool_logger 가 안 남겨 로그기반 06 감지 약화 "
+                               f"(스냅샷 backstop 은 있으나 file_type_map 에 06 경로 추가 또는 skip_untyped=false 권장)"))
     return issues
 
 
@@ -653,7 +707,8 @@ def validate_profile(profile, root):
 
         issues = issues + _semantic_issues(profile, root) + _review_loop_issues(profile) \
             + _acceptance_issues(profile) + _knowledge_capture_issues(profile) \
-            + _cross_model_issues(profile) + _team_agent_issues(profile) + _retro_gate_issues(profile)
+            + _cross_model_issues(profile) + _team_agent_issues(profile) + _retro_gate_issues(profile) \
+            + _writeback_gate_issues(profile)
         issues = issues + _runtime_host_issues(profile) + _component_model_issues(profile) \
             + context_profile_issues(profile)
     except Exception as e:

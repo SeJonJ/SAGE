@@ -108,6 +108,11 @@ pdca:                            # PDCA phase 의무구조 — pre-implementatio
   #                                  # Claude는 exit 2, Codex는 Stop decision:block wire를 사용.
   #                                  # enforce 켜려면 knowledge_capture.retro_note 도 켜야 의미가 있다(안 그러면 노트 자체가 안 생김).
 
+  # writeback:                      # L2/L3 write-back 심층 노트가 host depth self-review 를 거쳤는지 Stop 훅이 사후 확인.
+  #   depth_review_gate: off        # off | advisory(WARN) | enforce(BLOCK, 양 host·세션당 최대 1회).
+  #                                  # 06 헤더의 `Depth-Self-Review: performed` 자기선언을 검사(품질 아닌 self-review 실행 증거).
+  #                                  # enforce 켜려면 knowledge_capture.update_after_dev 도 켜야 의미가 있다(안 그러면 노트 자체가 안 생김).
+
 conventions: []                  # 예: [{ scope: backend, stack: "<stack>", doc: sage/conventions/<name>.md, file_globs: ["**/*.<ext>"] }]
 
 verification:                    # 결정론 검증 — scripts/verify-changes.sh 가 gate_policy 레벨→commands 로 실행

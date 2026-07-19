@@ -217,13 +217,18 @@ After 06 is written, run the configured knowledge write-back when it is enabled:
    boundary.)
 3. Record the command output in 06. If it reports `N/A` or fails, record the exact
    skipped/failed reason; do not claim vault capture completed. **Then run the host depth self-review
-   checklist (advisory — the marker check cannot judge depth, and there is no hook enforcing this;
-   it is your own review, not an independent human gate):** for an L2/L3 note, re-open the written
-   note and confirm each skeleton section carries *real content* — not an empty header the advisory
-   marker check would still pass. Specifically verify 변경 내역 names actual `파일:함수:line` and 검증
-   states concrete test results. If any section is a hollow placeholder, rewrite and re-run before
-   declaring the cycle done, and record in 06 that this self-review was performed (or, for L1, that
-   it was intentionally skipped).
+   checklist — the marker check cannot judge depth, so this is where hollow sections are caught (it is
+   your own review, not an independent human gate):** for an L2/L3 note, re-open the written note and
+   confirm each skeleton section carries *real content* — not an empty header the advisory marker check
+   would still pass. Specifically verify 변경 내역 names actual `파일:함수:line` and 검증 states concrete
+   test results. If any section is a hollow placeholder, rewrite and re-run before declaring the cycle
+   done. **Then attest the outcome in the 06 header metadata block (the top block with `Loop-Run:` /
+   `Risk Level:`, before the first `##` heading) as a deterministic line: `Depth-Self-Review: performed`
+   for an L2/L3 note, or `Depth-Self-Review: skipped` for an L1 note.** The Stop-hook
+   `writeback_depth_gate` (`pdca.writeback.depth_review_gate`) reads that line — an L2/L3 06 with no
+   `performed` attestation warns or blocks at session end, so an unreviewed shallow note cannot silently
+   close the cycle. Write `performed` only after you actually re-read the note and each section holds
+   real content; the line attests the review happened, not merely that headers exist.
 4. **Planning-interview note (if it exists).** If `.sage/plan_interview.md` exists (a
    planning interview ran in `sage-plan`) AND vault is enabled, capture it as a **separate**
    vault note via the same single write path. This is a raw-requirements note, **not** a deep tech
