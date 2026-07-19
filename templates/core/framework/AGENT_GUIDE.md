@@ -4,15 +4,17 @@ This is the runtime-neutral single source of truth (SSOT) for common rules,
 workflow, risk routing, safety boundaries, and Definition of Done. Both host
 runtimes ({wrapper} = CLAUDE.md | CODEX.md) are thin overrides on top of this.
 
-Project-specific values (paths, risk triggers, conventions, team) live in
-`sage/project-profile.yaml`, not here. This guide stays neutral.
+Shared project policy (paths, risk triggers, conventions, team) lives in
+`sage/project-profile.yaml`. Machine capabilities and private paths live in the
+Git-ignored `sage/project-profile.local.yaml`. This guide stays neutral.
 
 ## Mandatory read (session start)
 
 1. `AGENT_GUIDE.md` (this file)
 2. `sage/project-profile.yaml` — project values
-3. Relevant plan doc under `{paths.plan_docs}`
-4. Relevant convention docs declared in `profile.conventions`
+3. `sage/project-profile.local.yaml` — machine values, when present
+4. Relevant plan doc under `{paths.plan_docs}`
+5. Relevant convention docs declared in `profile.conventions`
 
 ## Project Bootstrap (conversational authoring)
 
@@ -27,7 +29,9 @@ set up, or a new component/asset is introduced, follow
 (`generate` + `validate`) → phase-first plan docs before any code. Never add
 schema keys, never edit generated artifacts, never bypass a `validate` FAIL.
 
-The conversational entry point is the **`/sage-init` skill**. It and the other
+The conversational entry points are **`/sage-init`** for the first shared+local
+bootstrap and **`/sage-init-local`** for a teammate's local-only setup. If the
+shared profile is already bootstrapped, `/sage-init` is blocked. They and the other
 **CORE framework bootstrap assets** — the `sage-cycle` / `sage-plan` / `sage-team` / `sage-review` / `sage-asset` /
 `sage-profile-modify` / `sage-asset-override` skills and the six CORE roster agent renders (`leader`, `implementer-a`,
 `implementer-b`, `qa`, `reviewer`, `convention-checker`) — are hand-shipped by `sage install` like
@@ -35,11 +39,13 @@ this guide and `docs/agent/*`. They are NOT manifest-tracked: the
 manifest/claims/`validate` loop is reserved for project-authored assets created
 via `generate`/`extract`. **Do not edit these CORE renders directly** — the
 write-guard blocks it and `sage install --force` would overwrite the edit anyway.
-Customize them per-project via an **overlay** at `sage/asset_overrides/{agents,skills}/<id>.md`
-(hand-authored, install never ships it so `--force` preserves it; each CORE render reads
-its overlay first). Author overlays with `/sage-asset-override`; `sage validate` lints them
-for gate-relaxation. The CORE skills ship
-reference specs under `docs/sage_harness/skills/` (sage-init has none), but those
+Customize eligible non-gate CORE workers per-project via an **overlay** authored with
+`/sage-asset-override`, stored at `sage/asset_overrides/{agents,skills}/<id>.md` (hand-authored, install never
+ships it so `--force` preserves it). SAGE **materializes** an eligible overlay directly into its CORE render as a
+managed block — do not read external overlay files by hand or edit renders directly. `sage validate` gates
+materialization (drift/tamper); `--strict` and materialization preflight reject gate-relaxation hits. Framework
+documents and other gate-bearing assets are blocked until an executable independent oracle is registered. The CORE skills ship
+reference specs under `docs/sage_harness/skills/` (the two init skills have none), but those
 specs are not manifest-registered. Until the profile is bootstrapped
 (`project.name` set + `risk`/`components` configured), `sage generate` is BLOCKED
 and `sage validate` WARNs — by design, so an empty profile cannot silently
@@ -48,13 +54,29 @@ disable the governance gate.
 Runtime discovery differs by host, and `sage install` picks one host (claude OR
 codex), so each install deploys only that host's copies. On a **claude** host,
 Claude auto-discovers repo-scoped skills and agents under `.claude/` (CORE skills →
-`.claude/skills/`, CORE agents → `.claude/agents/`). On a **codex** host, Codex does
-not auto-discover repo-scoped skills, so CORE skills install to the user-global
-`$CODEX_HOME/skills/` (`$sage-init`, `$sage-cycle`, `$sage-plan`, `$sage-team`, `$sage-review`, `$sage-asset`, `$sage-profile-modify`); and since Codex
+`.claude/skills/`, CORE agents → `.claude/agents/`). On a **codex** host, normal
+installation requires an explicit `--skill-scope global|project-local`: global owns
+`$CODEX_HOME/skills/`, while project-local owns repo `.codex/skills/`. The selected
+scope/version is recorded in the manifest receipt; `sage doctor` and `sage validate`
+diagnose duplicate or stale global, `.codex/skills`, and legacy `.agents/skills` copies
+without assuming undocumented host precedence. Since Codex
 has no native subagent auto-discovery either, the CORE roster agent renders install
 to repo `.codex/agents/<id>.md` (the SAGE-canonical asset path), which the Codex AI
 references as role definitions via the `AGENTS.md` router rather than native
 invocation. Codex users also follow `docs/agent/bootstrap-authoring.md` (see `CODEX.md`).
+Project-local skill files can travel with a committed repository, but they do not install
+the `sage`/`sage-hook` CLI runtime; teammates install that separately. See
+`docs/agent/sage-onboarding.md` generated for the selected scope.
+
+A project may install both discovery surfaces sequentially. This is a manual
+double-host model: `runtime.installed_hosts` records desired surfaces and exactly
+one `runtime.active_host` owns the current cycle execution. SAGE does not run hosts
+concurrently or switch hosts/phases automatically. A handoff resumes from completed,
+exact-Cycle-Stem phase documents after the user changes the active host. Phase 05
+cross-review is derived from the runtime opposite that active host.
+Host-specific component models live in `components[].runtime_models`; an explicit
+`cross_model.reviewer` must name that opposite host. Use `sage models` and `sage doctor`
+to distinguish cache-confirmed candidates from account-unverified aliases.
 
 ## Risk & Workflow Gate (PDCA)
 
@@ -82,6 +104,14 @@ set is:
 Phase definitions, separation rules (00 vs 01, 02 vs 03, 04 vs 05), templates,
 and component-level plan_docs are in `docs/agent/pdca-templates.md`.
 
+### Cross-session context
+
+When `profile.context_management.compaction.enabled` is true, CORE cycle skills create
+an integrity-bound packet with `sage context snapshot` after each completed phase
+boundary. A resumed session uses `sage context restore` and reads the generated briefing
+before continuing. This restores verified repository context only, never hidden model
+conversation state; see `docs/agent/context-management.md`.
+
 ### Risk → mandatory phase range
 
 | Level | Category (from `profile.risk`) | Required phases | Gate |
@@ -101,7 +131,9 @@ and component-level plan_docs are in `docs/agent/pdca-templates.md`.
   prior task's omission, never a precedent for skipping.
 - Skipping a mandatory phase requires an explicit reason in the plan and user approval.
 - Phase 06 (report) must not be written until the approve phase (05) records
-  `APPROVED` — enforced by the gate (`profile.pdca.report_phase`/`approve_phase`).
+  exactly one `Final Status: APPROVED` line — enforced by the gate
+  (`profile.pdca.report_phase`/`approve_phase`). Write all 00–05 updates first and
+  write 06 in a separate change so the gate never validates a pre-write snapshot.
 
 ### 3.0 Independent PDCA Cycle Rule (MANDATORY)
 
@@ -110,6 +142,10 @@ agent MUST start a new, independent `00-base_plan` — even if the change is
 technically adjacent to a recently completed cycle. "Technically adjacent" (same
 file / service / module) is never a reason to reuse or extend a prior cycle. A new
 cycle requires a new 00 base plan, new phase documents, and independent analysis.
+Every phase document in that cycle MUST declare exactly one `Cycle-Stem` outside
+fenced code blocks and equal to its markdown basename. All phase, review, and acceptance evidence lookups bind to
+that exact stem; branch-number scans and recent-file/mtime fallback are not cycle
+identity. Missing, conflicting, or ambiguous bindings block governed work.
 
 ### Pre-implementation declaration
 
@@ -128,7 +164,8 @@ plan-doc + risk checks only; the phase machinery is inert.
   `{host}/hooks`) — edit the spec under `docs/sage_harness/` and regenerate.
   The hand-shipped CORE bootstrap renders (the `sage-*` skills and the six CORE roster
   agent renders) are also write-guarded: don't edit them directly — customize per-project
-  via an overlay at `sage/asset_overrides/{agents,skills}/<id>.md` (`/sage-asset-override`).
+  only when eligible via an overlay at `sage/asset_overrides/{agents,skills}/<id>.md`
+  (`/sage-asset-override`). Framework documents and gate-bearing assets are not overlay-eligible.
   See the bootstrap section above.
 - Report outcomes faithfully: if tests fail, say so with the output.
 

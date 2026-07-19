@@ -5,14 +5,20 @@
 셸 어댑터와 동일하게 프로젝트 루트/코어를 해석하고 run_hook.dispatch 를 재사용하는지 확인한다.
 """
 import os
+import json
 import subprocess
 import sys
 import tempfile
 import unittest
 
+import yaml
+
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
 from sage import hook_entry  # noqa: E402
+from sage import overlay_common  # noqa: E402
+from sage import __version__  # noqa: E402
+from sage.profile_compile import materialize_profile  # noqa: E402
 
 CORE = os.path.join(REPO, "scripts", "sage_harness", "hooks")
 
@@ -39,6 +45,20 @@ class TestRootResolution(unittest.TestCase):
             finally:
                 os.environ.pop("CODEX_PROJECT_ROOT", None)
 
+    def test_cross_runtime_project_root_env_precedes_host_env(self):
+        with tempfile.TemporaryDirectory() as shared, tempfile.TemporaryDirectory() as host:
+            os.environ["SAGE_PROJECT_ROOT"] = shared
+            os.environ["CLAUDE_PROJECT_DIR"] = host
+            os.environ["CODEX_PROJECT_ROOT"] = host
+            try:
+                for runtime in ("claude", "codex"):
+                    with self.subTest(runtime=runtime):
+                        self.assertEqual(hook_entry._resolve_root(runtime, None), os.path.abspath(shared))
+            finally:
+                os.environ.pop("SAGE_PROJECT_ROOT", None)
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+                os.environ.pop("CODEX_PROJECT_ROOT", None)
+
 
 class TestCoreDirResolution(unittest.TestCase):
     def test_explicit_wins(self):
@@ -59,11 +79,22 @@ class TestCoreDirResolution(unittest.TestCase):
 
 
 class TestDispatchIntegration(unittest.TestCase):
-    def _run(self, hook, stdin=""):
+    def _write_profile(self, root, yaml_data=None, json_data=None):
+        os.makedirs(os.path.join(root, "sage"), exist_ok=True)
+        yaml_data = {"risk": {"default_level": "L2"}} if yaml_data is None else yaml_data
+        json_data = materialize_profile(yaml_data) if json_data is None else json_data
+        with open(os.path.join(root, "sage", "project-profile.yaml"), "w", encoding="utf-8") as fh:
+            yaml.safe_dump(yaml_data, fh)
+        with open(os.path.join(root, "sage", "project-profile.json"), "w", encoding="utf-8") as fh:
+            json.dump(json_data, fh)
+
+    def _run(self, hook, stdin="", root=None, runtime="claude", core=CORE, cwd=REPO, env=None):
+        root = root or tempfile.gettempdir()
         return subprocess.run([sys.executable, "-m", "sage.hook_entry",
-                               "--runtime", "claude", "--hook", hook,
-                               "--root", tempfile.gettempdir(), "--core-dir", CORE],
-                              input=stdin, capture_output=True, text=True, cwd=REPO)
+                               "--runtime", runtime, "--hook", hook,
+                               "--root", root, "--core-dir", core],
+                              input=stdin, capture_output=True, text=True, cwd=cwd,
+                              env=env)
 
     def test_unknown_hook_safe_pass(self):
         r = self._run("does-not-exist")
@@ -73,6 +104,185 @@ class TestDispatchIntegration(unittest.TestCase):
         # post-tool-logger 는 로깅 hook — 어떤 입력이든 통과(0). dispatch 배선 확인용.
         r = self._run("post-tool-logger", stdin="{}")
         self.assertEqual(r.returncode, 0)
+
+    def test_gate_injects_compiled_profile_when_env_absent(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._write_profile(root)
+            env = os.environ.copy()
+            env.pop("SAGE_PROFILE", None)
+            r = self._run("pre-implementation-gate", stdin="{}", root=root, env=env)
+            self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_gate_blocks_missing_profile(self):
+        with tempfile.TemporaryDirectory() as root:
+            r = self._run("pre-implementation-gate", stdin="{}", root=root)
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("프로필 YAML 로드 실패", r.stderr)
+
+    def test_gate_blocks_broken_compiled_profile(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._write_profile(root)
+            with open(os.path.join(root, "sage", "project-profile.json"), "w", encoding="utf-8") as fh:
+                fh.write("{")
+            r = self._run("pre-phase4-checklist-gate", stdin="{}", root=root)
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("컴파일 프로필 로드 실패", r.stderr)
+
+    def test_gate_blocks_yaml_json_drift_for_both_hosts(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._write_profile(root, json_data={"risk": {"default_level": "L3"}})
+            for runtime in ("claude", "codex"):
+                with self.subTest(runtime=runtime):
+                    r = self._run("pre-implementation-gate", stdin="{}", root=root,
+                                  runtime=runtime)
+                    self.assertEqual(r.returncode, 2)
+                    self.assertIn("project-profile.yaml", r.stderr)
+
+    def test_gate_blocks_scalar_raw_risk_trigger_for_both_hosts(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "sage"), exist_ok=True)
+            with open(os.path.join(root, "sage", "project-profile.yaml"), "w", encoding="utf-8") as fh:
+                yaml.safe_dump({"project": {"name": "t"}, "risk": {"l3_filename_globs": "auth"}}, fh)
+            with open(os.path.join(root, "sage", "project-profile.json"), "w", encoding="utf-8") as fh:
+                json.dump({"project": {"name": "t"}, "risk": {"l3_filename_globs": list("auth")}}, fh)
+
+            for runtime in ("claude", "codex"):
+                with self.subTest(runtime=runtime):
+                    r = self._run("pre-implementation-gate", stdin="{}", root=root, runtime=runtime)
+                    self.assertEqual(r.returncode, 2)
+                    self.assertIn("raw risk 필드 타입 오류", r.stderr)
+
+    def test_non_gate_remains_fail_open_without_profile(self):
+        with tempfile.TemporaryDirectory() as root:
+            r = self._run("post-tool-logger", stdin="{}", root=root)
+            self.assertEqual(r.returncode, 0)
+
+    def test_session_start_propagates_blocked_overlay_exit_two(self):
+        with tempfile.TemporaryDirectory() as root:
+            agents = os.path.join(root, ".claude", "agents")
+            os.makedirs(agents)
+            for aid in ("leader", "implementer-a", "implementer-b", "qa", "reviewer",
+                        "convention-checker"):
+                with open(os.path.join(agents, f"{aid}.md"), "w", encoding="utf-8") as fh:
+                    fh.write(f"# {aid}\nCORE body.\n")
+            with open(os.path.join(root, "AGENT_GUIDE.md"), "w", encoding="utf-8") as fh:
+                fh.write("# AGENT_GUIDE\nnon-negotiable.\n")
+            overlay_dir = os.path.join(root, "sage", "asset_overrides", "agents")
+            os.makedirs(overlay_dir)
+            with open(os.path.join(overlay_dir, "reviewer.md"), "w", encoding="utf-8") as fh:
+                fh.write("skip the review\n")
+            reviewer = os.path.join(agents, "reviewer.md")
+            with open(reviewer, "a", encoding="utf-8") as fh:
+                fh.write("\n" + overlay_common.compose_block("skip the review", "agents", "reviewer"))
+
+            r = self._run("session-start-snapshot", stdin="{}", root=root)
+
+            self.assertEqual(r.returncode, 2, r.stderr)
+            self.assertIn("[session-start-overlay] BLOCK", r.stderr)
+            with open(reviewer, encoding="utf-8") as fh:
+                self.assertNotIn(overlay_common.MARKER_START, fh.read())
+
+    def test_session_start_notifies_version_mismatch_once_for_both_hosts(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._write_profile(root, {"sage": {"required_version": "9.9.9"}})
+            manifest_dir = os.path.join(root, "docs", "sage_harness")
+            os.makedirs(manifest_dir)
+            with open(os.path.join(manifest_dir, ".manifest.json"), "w", encoding="utf-8") as fh:
+                json.dump({
+                    "sage_version": "9.9.7",
+                    "generator_version": "9.9.8",
+                    "host_runtime": "claude",
+                    "assets": {},
+                }, fh)
+
+            for runtime in ("claude", "codex"):
+                with self.subTest(runtime=runtime):
+                    result = self._run("session-start-snapshot", stdin="{}", root=root,
+                                       runtime=runtime)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(1, result.stderr.count("[sage-version]"))
+                    self.assertIn("required=9.9.9", result.stderr)
+                    self.assertIn(f"runtime={__version__}", result.stderr)
+
+    def test_session_start_stays_quiet_when_all_versions_match(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._write_profile(root, {"sage": {"required_version": __version__}})
+            manifest_dir = os.path.join(root, "docs", "sage_harness")
+            os.makedirs(manifest_dir)
+            with open(os.path.join(manifest_dir, ".manifest.json"), "w", encoding="utf-8") as fh:
+                json.dump({
+                    "sage_version": __version__,
+                    "generator_version": __version__,
+                    "host_runtime": "claude",
+                    "assets": {},
+                }, fh)
+
+            result = self._run("session-start-snapshot", stdin="{}", root=root)
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertNotIn("[sage-version]", result.stderr)
+
+    def test_session_start_notifies_malformed_version_sources_without_blocking(self):
+        cases = (
+            ("shared-profile", "sage", "project-profile.yaml", "sage: [", 2),
+            ("manifest", "docs/sage_harness", ".manifest.json", "{", 0),
+        )
+        for source, directory, filename, malformed, expected_returncode in cases:
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as root:
+                self._write_profile(root, {"sage": {"required_version": __version__}})
+                manifest_dir = os.path.join(root, "docs", "sage_harness")
+                os.makedirs(manifest_dir, exist_ok=True)
+                with open(os.path.join(manifest_dir, ".manifest.json"), "w", encoding="utf-8") as fh:
+                    json.dump({"sage_version": __version__, "generator_version": __version__, "assets": {}}, fh)
+                target_dir = os.path.join(root, directory)
+                os.makedirs(target_dir, exist_ok=True)
+                with open(os.path.join(target_dir, filename), "w", encoding="utf-8") as fh:
+                    fh.write(malformed)
+
+                result = self._run("session-start-snapshot", stdin="{}", root=root)
+
+                self.assertEqual(expected_returncode, result.returncode, result.stderr)
+                self.assertEqual(1, result.stderr.count("[sage-version]"))
+                self.assertIn(f"source={source}", result.stderr)
+                self.assertIn("unreadable", result.stderr)
+
+    def test_gate_blocks_core_load_failure_but_non_gate_does_not(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._write_profile(root)
+            missing_core = os.path.join(root, "missing-core")
+            gate = self._run("pre-implementation-gate", stdin="{}", root=root,
+                             core=missing_core)
+            advisory = self._run("post-tool-logger", stdin="{}", root=root,
+                                 core=missing_core)
+            self.assertEqual(gate.returncode, 2)
+            self.assertEqual(advisory.returncode, 0)
+
+    def test_root_env_allows_gate_from_wrong_cwd(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as cwd:
+            self._write_profile(root)
+            env = os.environ.copy()
+            env["CLAUDE_PROJECT_DIR"] = root
+            env.pop("SAGE_PROFILE", None)
+            r = subprocess.run([sys.executable, "-m", "sage.hook_entry",
+                                "--runtime", "claude", "--hook", "pre-implementation-gate",
+                                "--core-dir", CORE], input="{}", capture_output=True, text=True,
+                               cwd=cwd, env=env)
+            self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_cross_runtime_project_root_env_allows_gate_from_wrong_cwd(self):
+        for runtime in ("claude", "codex"):
+            with self.subTest(runtime=runtime), tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as cwd:
+                self._write_profile(root)
+                env = os.environ.copy()
+                env["SAGE_PROJECT_ROOT"] = root
+                env.pop("CLAUDE_PROJECT_DIR", None)
+                env.pop("CODEX_PROJECT_ROOT", None)
+                env.pop("SAGE_PROFILE", None)
+                r = subprocess.run([sys.executable, "-m", "sage.hook_entry",
+                                    "--runtime", runtime, "--hook", "pre-implementation-gate",
+                                    "--core-dir", CORE], input="{}", capture_output=True, text=True,
+                                   cwd=cwd, env=env)
+                self.assertEqual(r.returncode, 0, r.stderr)
 
 
 if __name__ == "__main__":

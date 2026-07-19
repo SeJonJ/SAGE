@@ -21,30 +21,37 @@ scripts/sage_harness/hooks/generated-artifact-write-guard.sh
 - 핵심 알고리즘 = "경로가 생성 산출물인가" 분류 (런타임별 입력 추출은 얇은 어댑터)
 
 ## enforcement
-- block(exit 2): 경로가 `*.claude/{agents,hooks,skills}/*` 또는 `*.codex/{agents,hooks,skills}/*`
-- pass(exit 0): 그 외 전부. 특히 `docs/sage_harness/**`·`scripts/sage_harness/**`(소스)는 우선 허용
+- block(exit 2): `*.claude/{agents,hooks,skills}/*`, `*.codex/{agents,hooks,skills}/*`,
+  repo의 `.mcp.json`, CORE framework 문서(`AGENT_GUIDE.md`, `CLAUDE.md`, `CODEX.md`, `AGENTS.md`)
+- pass(exit 0): 위 소유 경계 밖의 경로. 특히 `docs/sage_harness/**`·`scripts/sage_harness/**` 소스
 - 경로 없음/파싱 실패 → pass (가드 대상 아님, 조용한 오작동 방지)
 - 예외 처리 불필요: `sage generate` CLI 는 편집도구(Write/Edit/apply_patch)를 거치지 않으므로
   애초에 이 PreToolUse 가드에 걸리지 않는다 (설계 §5.6 G3)
 
-## CORE 부트스트랩 렌더 차단 + overlay redirect (exit 2)
+## CORE 부트스트랩 렌더 차단 + eligibility-aware 안내 (exit 2)
 CORE hand-shipped 렌더(CORE skill·로스터 에이전트)도 다른 산출물과 동일하게 block 한다. 과거엔
 spec→generate 산출물이 아니라는 이유로 면제했으나, 그러면 CORE 렌더 직접수정이 무방비였고
 `sage install --force` 가 그 수정을 조용히 덮어썼다(첫 실 사이클 실증에서 드러난 갭).
 
-이제 프로젝트 로컬 커스터마이즈의 정식 경로는 `sage/asset_overrides/**`(install 미ship, `--force`
-생존)이며, block 메시지가 CORE 경로면 그 overlay 경로로 redirect 한다(`core_overlay_hint`). redirect
-대상:
-- `*.claude/skills/{sage-init,sage-cycle,sage-plan,sage-team,sage-review,sage-asset,sage-profile-modify,sage-asset-override}/*`
-  → `sage/asset_overrides/skills/<id>.md` (CORE skill 렌더, claude)
-- `*.claude/agents/{leader,implementer-a,implementer-b,qa,reviewer,convention-checker}.md`
-  → `sage/asset_overrides/agents/<id>.md` (CORE 로스터 렌더, claude)
-- `*.codex/agents/{...}.md` → 동일 (CORE 로스터 렌더, codex)
+프로젝트 로컬 overlay 경로는 executable eligibility가 입증된 자산에만 안내한다. 현재 대상은
+양 host의 `implementer-a`와 `implementer-b`이며 canonical lowercase 경로
+`sage/asset_overrides/agents/<id>.md`로 redirect 한다(`core_overlay_hint`). CORE skill과
+`leader`/`qa`/`reviewer`/`convention-checker`는 gate-bearing 자산으로 독립 oracle이 없어 현재
+overlay 비지원임을 안내한다. 따라서 보존되지만 합성할 수 없는 overlay 파일 생성을 유도하지 않는다.
 
-codex CORE skill 은 전역 `$CODEX_HOME/skills` 설치라 repo 경로로 가드에 오지 않는다. repo
-`.codex/skills/` 는 프로젝트 skill 영역이라 CORE 이름이어도 일반 산출물로 block(spec→generate 안내).
-비-CORE 렌더는 기존대로 `docs/sage_harness/<kind>s/<id>.md` spec→generate redirect. 오버레이 저작은
-`/sage-asset-override` 스킬이 안내하며, 게이트 완화 여부는 `sage validate` overlay 린트가 표면화한다.
+codex CORE skill은 선택 scope가 global이면 `$CODEX_HOME/skills`, project-local이면 repo `.codex/skills/`에
+설치된다. project-local CORE 이름은 일반 생성 skill이 아니라 install-owned CORE render로 식별해 직접수정을
+block하고, 같은 `--skill-scope project-local --force` 재설치 또는 지원되는 overlay 흐름으로 안내한다.
+비-CORE `.codex/skills/`는 기존대로 일반 프로젝트 skill 산출물로 block(spec→generate 안내).
+비-CORE 렌더는 기존대로 `docs/sage_harness/<kind>s/<id>.md` spec→generate redirect. eligible 오버레이 저작은
+`/sage-asset-override` 스킬이 현재 eligible non-gate 자산만 안내하며, 게이트 완화는 materialization
+preflight와 `sage validate --strict`가 hard-fail한다.
+
+## AGENT_GUIDE.md (CORE 프레임워크 문서) 차단 + project-profile redirect (exit 2)
+`AGENT_GUIDE.md`(루트·하위경로)도 CORE 렌더이자 `core_renders` 앵커 대상이라 `sage install --force` 가
+덮어쓴다. 직접수정은 업그레이드에 조용히 사라지고, 렌더에 overlay-read 지시를 재주입하는 변조 경로이기도
+하다(`sage validate` L2 가 앵커 불일치로 탐지). framework overlay는 독립 gate oracle이 없어 차단한다.
+프로젝트 값은 `sage/project-profile.yaml`, 규칙은 conventions/critical-domain/project-local 문서가 소유한다.
 
 ## scope 메모 (v1)
 - 가드 범위 = agents/hooks/skills 디렉토리 (설계 §5.6 다이어그램 명시 범위)

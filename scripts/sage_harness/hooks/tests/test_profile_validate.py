@@ -11,7 +11,7 @@ import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
-from sage.profile_validate import severity_of, validate_profile  # noqa: E402
+from sage.profile_validate import severity_of, validate_profile, _writeback_gate_issues  # noqa: E402
 
 try:
     import jsonschema  # noqa: F401
@@ -40,8 +40,95 @@ class TestProfileSchema(unittest.TestCase):
     def test_top_level_typo_is_fail(self):
         self.assertEqual(severity_of(sevs({"file_type_maps": []})), "FAIL")   # file_type_map 오타
 
+    def test_risk_trigger_array_items_must_be_nonempty_strings(self):
+        for bad in (["ok", 1], [""], ["   "]):
+            with self.subTest(bad=bad):
+                self.assertEqual(severity_of(sevs({"risk": {"l3_filename_globs": bad}})), "FAIL")
+
+    def test_domain_trigger_array_items_must_be_nonempty_strings(self):
+        base = {"id": "auth", "risk_level": "L3", "protocol_pointer": "sage/auth.md"}
+        for field, bad in (("path_globs", [""]), ("content_keywords", ["   "]),
+                           ("path_globs", ["ok", 1])):
+            with self.subTest(field=field, bad=bad):
+                domain = dict(base)
+                domain[field] = bad
+                self.assertEqual(severity_of(sevs({"risk": {"domains": [domain]}})), "FAIL")
+
+    def test_domain_trigger_fields_remain_optional_in_schema(self):
+        domain = {"id": "auth", "risk_level": "L3", "protocol_pointer": "sage/auth.md"}
+        self.assertNotIn("FAIL", [severity for severity, _ in sevs({"risk": {"domains": [domain]}})])
+
 
 class TestProfileSemantic(unittest.TestCase):
+    def test_non_mapping_risk_type_has_one_semantic_owner(self):
+        messages = [message for severity, message in sevs({"risk": "bad"})
+                    if severity == "FAIL" and "risk 섹션은 매핑" in message]
+        self.assertEqual(len(messages), 1)
+
+    def test_scalar_risk_trigger_fails_without_relying_on_jsonschema(self):
+        for field in ("l0_pass_globs", "l0_exclude_globs", "l1_path_globs", "l2_path_globs",
+                      "l3_filename_globs", "l2_content_keywords", "l3_content_keywords"):
+            with self.subTest(field=field):
+                issues = sevs({"risk": {field: "auth"}})
+                self.assertEqual(severity_of(issues), "FAIL")
+                self.assertTrue(any(f"risk.{field}" in m for _, m in issues))
+
+    def test_l0_exclusion_requires_exact_higher_risk_path_binding(self):
+        orphan = {"risk": {"l0_pass_globs": ["**/*.png"],
+                           "l0_exclude_globs": ["assets/game/**"],
+                           "l3_filename_globs": ["assets/rtc/**"]}}
+        issues = sevs(orphan)
+        self.assertTrue(any(s == "FAIL" and "l0_exclude_globs" in m and "상위" in m
+                            for s, m in issues))
+
+        bound = {"risk": {"l0_pass_globs": ["**/*.png"],
+                          "l0_exclude_globs": ["assets/game/**"],
+                          "l3_filename_globs": ["assets/game/**"]}}
+        self.assertNotIn("FAIL", [s for s, _ in sevs(bound)])
+
+    def test_bad_risk_trigger_item_fails_semantically(self):
+        for bad in (["auth/**", 1], ["   "]):
+            with self.subTest(bad=bad):
+                issues = sevs({"risk": {"l3_filename_globs": bad}})
+                self.assertEqual(severity_of(issues), "FAIL")
+                self.assertTrue(any("risk.l3_filename_globs" in m for _, m in issues))
+
+    def test_bad_domain_trigger_item_fails_semantically(self):
+        domain = {"id": "auth", "risk_level": "L3", "path_globs": ["   "],
+                  "protocol_pointer": "sage/auth.md"}
+        issues = sevs({"risk": {"domains": [domain]}})
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("risk.domains[0].path_globs" in m for _, m in issues))
+
+    def test_standard_cross_runtime_project_root_env_is_valid(self):
+        issues = sevs({"hooks": {"project_root_env": "SAGE_PROJECT_ROOT"}})
+        self.assertNotIn("FAIL", [s for s, _ in issues])
+
+    def test_custom_project_root_env_fails_instead_of_being_ignored(self):
+        issues = sevs({"hooks": {"project_root_env": "MY_PROJECT_ROOT"}})
+        self.assertTrue(any(s == "FAIL" and "project_root_env" in m for s, m in issues))
+
+    def test_risk_domains_valid(self):
+        profile = {"risk": {"domains": [{
+            "id": "webrtc", "risk_level": "L3", "path_globs": ["**/rtc/**"],
+            "content_keywords": ["RTCPeerConnection"],
+            "protocol_pointer": "sage/critical-domains/webrtc.md",
+        }]}}
+        self.assertNotIn("FAIL", [s for s, _ in sevs(profile)])
+
+    def test_risk_domains_duplicate_id_fails(self):
+        domain = {"id": "webrtc", "risk_level": "L3", "path_globs": ["**/rtc/**"],
+                  "content_keywords": ["RTC"], "protocol_pointer": "sage/critical-domains/webrtc.md"}
+        issues = sevs({"risk": {"domains": [domain, dict(domain)]}})
+        self.assertTrue(any(s == "FAIL" and "중복" in m for s, m in issues))
+
+    def test_risk_domains_unsafe_pointer_fails(self):
+        profile = {"risk": {"domains": [{
+            "id": "webrtc", "risk_level": "L3", "path_globs": [], "content_keywords": [],
+            "protocol_pointer": "../outside.md",
+        }]}}
+        self.assertTrue(any(s == "FAIL" and "protocol_pointer" in m for s, m in sevs(profile)))
+
     def test_missing_strategy_module_fail(self):
         prof = {"risk": {"l3_review_strategy": "no_such_strategy_xyz", "l3_filename_globs": ["*x*"]}}
         issues = sevs(prof)
@@ -371,6 +458,15 @@ def _valid_acceptance(**over):
     return ac
 
 
+def _risk_acceptance(**over):
+    ac = _valid_acceptance()
+    ac.pop("report_gate_enforce")
+    ac.update({"report_gate_by_risk": {"L2": "advisory", "L3": "enforce"},
+               "waiver": {"enabled": True}})
+    ac.update(over)
+    return ac
+
+
 class TestAcceptanceValidation(unittest.TestCase):
     """verification.acceptance 의미검증 — 요구사항별 수용증거 gate 의 침묵 비활성 방지."""
 
@@ -400,6 +496,13 @@ class TestAcceptanceValidation(unittest.TestCase):
         self.assertEqual(severity_of(issues), "FAIL")
         self.assertTrue(any("NOT TESTED" in m and "N/A" in m for _, m in issues))
 
+    def test_custom_status_cannot_mint_resolved_state(self):
+        issues = sevs(self._prof(_valid_acceptance(
+            statuses=["PASS", "FAIL", "NOT TESTED", "N/A", "SKIPPED"])))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("비표준 상태" in message and "SKIPPED" in message
+                            for _, message in issues))
+
     def test_invalid_report_gate_mode_fail(self):
         issues = sevs(self._prof(_valid_acceptance(report_gate_enforce="block")))
         self.assertEqual(severity_of(issues), "FAIL")
@@ -409,6 +512,35 @@ class TestAcceptanceValidation(unittest.TestCase):
         issues = sevs(self._prof(_valid_acceptance(report_gate_enforce="enforce")))
         self.assertNotIn("FAIL", [s for s, _ in issues])
         self.assertTrue(any(s == "WARN" and "acceptance.report_gate_enforce" in m for s, m in issues))
+
+    def test_risk_policy_and_waiver_are_valid(self):
+        issues = sevs(self._prof(_risk_acceptance()))
+        self.assertNotIn("FAIL", [severity for severity, _ in issues])
+
+    def test_legacy_and_risk_policy_together_fail(self):
+        issues = sevs(self._prof(_risk_acceptance(report_gate_enforce="advisory")))
+        self.assertEqual(severity_of(issues), "FAIL")
+        self.assertTrue(any("동시에" in message for _, message in issues))
+
+    def test_l3_profile_downgrade_and_incomplete_map_fail(self):
+        for policy in ({"L2": "advisory", "L3": "advisory"}, {"L2": "advisory"}):
+            with self.subTest(policy=policy):
+                issues = sevs(self._prof(_risk_acceptance(report_gate_by_risk=policy)))
+                self.assertEqual(severity_of(issues), "FAIL")
+
+    def test_enabled_acceptance_requires_l3_tier(self):
+        for tiers in ([], ["L1"], ["L2"], ["L1", "L2"]):
+            with self.subTest(tiers=tiers):
+                issues = sevs(self._prof(_risk_acceptance(require_for_risk=tiers)))
+                self.assertEqual(severity_of(issues), "FAIL")
+                self.assertTrue(any("require_for_risk" in message and "L3" in message
+                                    for _, message in issues))
+
+    def test_waiver_schema_is_closed_and_bool_typed(self):
+        for waiver in ({"enabled": "true"}, {"enabled": True, "implicit": True}):
+            with self.subTest(waiver=waiver):
+                issues = sevs(self._prof(_risk_acceptance(waiver=waiver)))
+                self.assertEqual(severity_of(issues), "FAIL")
 
 
 class TestKnowledgeCaptureVault(unittest.TestCase):
@@ -482,12 +614,11 @@ class TestCrossModelEffort(unittest.TestCase):
         self.assertTrue(any("effrot" in m for _, m in issues))
 
     def test_known_cross_model_keys_pass(self):
-        prof = self._prof(peer="opposite_runtime", on_unavailable="clean_context_same_runtime", effort="high")
+        prof = self._prof(peer="opposite_runtime", on_unavailable="block", effort="high")
         self.assertNotIn("FAIL", [s for s, _ in sevs(prof)])
 
     def test_unimplemented_peer_or_on_unavailable_value_is_fail(self):
-        # 엔진은 값으로 분기하지 않는다 — `on_unavailable: block` 은 안전정책처럼 보이지만 무동작이다.
-        self.assertEqual(severity_of(sevs(self._prof(on_unavailable="block"))), "FAIL")
+        self.assertEqual(severity_of(sevs(self._prof(on_unavailable="clean_context_same_runtime"))), "FAIL")
         self.assertEqual(severity_of(sevs(self._prof(peer="claude"))), "FAIL")
 
     def test_retired_invocation_key_is_fail(self):
@@ -634,6 +765,61 @@ class TestRetroGateEnforce(unittest.TestCase):
         # jsonschema 없어도 pdca.retro 가 오타로 FAIL 되면 안 된다(_CLOSED_SECTION_FALLBACK 포함 확인).
         import sage.profile_validate as pv
         self.assertIn("retro", pv._CLOSED_SECTION_FALLBACK["pdca"])
+
+
+class TestWritebackGateIssues(unittest.TestCase):
+    """pdca.writeback.depth_review_gate 검증 — off|advisory|enforce, 활성 시 update_after_dev 필요."""
+
+    def _p(self, mode, update_after_dev=True):
+        return {"pdca": {"writeback": {"depth_review_gate": mode}},
+                "knowledge_capture": {"update_after_dev": update_after_dev, "vault_path": "/x"}}
+
+    def test_absent_ok(self):
+        self.assertEqual(_writeback_gate_issues({"pdca": {}}), [])
+
+    def test_valid_modes_no_fail(self):
+        for m in ("off", "advisory", "enforce"):
+            sev = [s for s, _ in _writeback_gate_issues(self._p(m))]
+            self.assertNotIn("FAIL", sev, m)
+
+    def test_invalid_mode_fail(self):
+        issues = _writeback_gate_issues(self._p("block"))
+        self.assertTrue(any(s == "FAIL" and "depth_review_gate" in m for s, m in issues))
+
+    def test_active_without_update_after_dev_warns(self):
+        issues = _writeback_gate_issues(self._p("enforce", update_after_dev=False))
+        self.assertTrue(any(s == "WARN" and "update_after_dev" in m for s, m in issues))
+
+    def test_off_with_update_after_dev_off_no_warn(self):
+        # off 는 어차피 무동작이라 update_after_dev 경고를 내지 않는다.
+        self.assertEqual(_writeback_gate_issues(self._p("off", update_after_dev=False)), [])
+
+    def test_non_dict_writeback_fail(self):
+        issues = _writeback_gate_issues({"pdca": {"writeback": "oops"}})
+        self.assertTrue(any(s == "FAIL" for s, _ in issues))
+
+    def test_unknown_key_typo_fails(self):
+        # jsonschema 미설치 시에도 오타 키(depth_review_gates)를 fail-closed 로 적발(게이트 침묵 방지).
+        issues = _writeback_gate_issues({"pdca": {"writeback": {"depth_review_gates": "enforce"}}})
+        self.assertTrue(any(s == "FAIL" and "미지 키" in m for s, m in issues))
+
+    def test_enabled_without_06_phase_warns(self):
+        # 게이트는 id=='06' phase glob 을 하드 참조한다. 그 phase 가 없으면 enforce 여도 무음 no-op →
+        # 침묵 비활성 대신 WARN 으로 표면화(config-silently-disables 갭 방지).
+        prof = {"pdca": {"writeback": {"depth_review_gate": "enforce"},
+                         "phases": [{"id": "05", "glob": "plan_docs/05-*.md"}]},
+                "knowledge_capture": {"update_after_dev": True, "vault_path": "/x"}}
+        issues = _writeback_gate_issues(prof)
+        self.assertTrue(any(s == "WARN" and "06" in m for s, m in issues))
+
+    def test_enabled_with_06_phase_no_06_warn(self):
+        # id=='06' phase 가 있으면 무음 no-op 경고는 안 난다(오탐 방지).
+        prof = {"pdca": {"writeback": {"depth_review_gate": "enforce"},
+                         "phases": [{"id": "06", "glob": "plan_docs/06-*.md"}]},
+                "knowledge_capture": {"update_after_dev": True, "vault_path": "/x"},
+                "file_type_map": {"plan": ["plan_docs/**"]}, "skip_untyped": False}
+        issues = _writeback_gate_issues(prof)
+        self.assertFalse(any("무음 no-op" in m for _, m in issues))
 
 
 if __name__ == "__main__":

@@ -4,9 +4,9 @@
 결정표:
   cross off → same-runtime(degraded=false, 의도적)
   cross on + claude-host + codex CLI 가용 → opposite(codex) via `codex exec`
-  cross on + claude-host + codex CLI 불가 → fallback(degraded, codex_cli_unavailable)
+  cross on + claude-host + codex CLI 불가 → blocked(codex_cli_unavailable)
   cross on + codex-host + claude CLI 가용 → opposite(claude) via `claude -p`
-  cross on + codex-host + claude CLI 불가 → fallback(degraded, claude_cli_unavailable)
+  cross on + codex-host + claude CLI 불가 → blocked(claude_cli_unavailable)
 """
 import io
 import os
@@ -36,11 +36,12 @@ class TestReviewerResolution(unittest.TestCase):
         self.assertEqual(r["reviewer_runtime"], "codex")
         self.assertFalse(r["reviewer_degraded"])
 
-    def test_claude_host_no_codex_fallback(self):
+    def test_claude_host_no_codex_blocks(self):
         r = D.reviewer_resolution(prof("claude", True), {"codex": False})
-        self.assertEqual(r["reviewer_mode"], "clean_context_same_runtime")
-        self.assertTrue(r["fallback_used"])
+        self.assertEqual(r["reviewer_mode"], "blocked")
+        self.assertFalse(r["fallback_used"])
         self.assertTrue(r["reviewer_degraded"])
+        self.assertEqual(r["reviewer_runtime"], "codex")
         self.assertEqual(r["reviewer_degrade_reason"], "codex_cli_unavailable")
 
     def test_codex_host_claude_avail_opposite(self):
@@ -49,10 +50,12 @@ class TestReviewerResolution(unittest.TestCase):
         self.assertEqual(r["reviewer_runtime"], "claude")
         self.assertFalse(r["reviewer_degraded"])
 
-    def test_codex_host_no_claude_cli_fallback(self):
+    def test_codex_host_no_claude_cli_blocks(self):
         r = D.reviewer_resolution(prof("codex", True), {"claude": False})
-        self.assertEqual(r["reviewer_mode"], "clean_context_same_runtime")
+        self.assertEqual(r["reviewer_mode"], "blocked")
+        self.assertFalse(r["fallback_used"])
         self.assertTrue(r["reviewer_degraded"])
+        self.assertEqual(r["reviewer_runtime"], "claude")
         self.assertEqual(r["reviewer_degrade_reason"], "claude_cli_unavailable")
 
     def test_peer_runtime_independent_of_caps_keys(self):

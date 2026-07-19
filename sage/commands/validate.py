@@ -30,6 +30,8 @@ def register(sub):
     p = sub.add_parser("validate", help="spec과 생성 파일이 서로 어긋났는지 검사합니다")
     p.add_argument("--check", action="store_true", help="staleness 만 (regression 미실행, 빠른 CI/hook용)")
     p.add_argument("--schema", action="store_true", help="manifest 를 JSON Schema 로 구조검증 (jsonschema 선택의존, 미설치 시 WARN skip)")
+    p.add_argument("--strict", action="store_true",
+                   help="안전 allowlist check-id의 WARN을 FAIL로 승격(CI 자산 무결성용)")
     p.add_argument("--kind", choices=["hook", "agent", "skill", "mcp", "all"], default="hook")
     p.add_argument("--id", default=None, help="단일 자산 검사")
     p.add_argument("--root", default=None, help="SAGE 레포 루트 (기본: cwd 에서 탐색)")
@@ -104,6 +106,107 @@ def _find_root(start):
         if parent == cur:
             return None
         cur = parent
+
+
+def _installed_hosts(manifest):
+    hosts = manifest.get("installed_hosts") if isinstance(manifest, dict) else None
+    if not isinstance(hosts, list):
+        hosts = [manifest.get("host_runtime")] if isinstance(manifest, dict) else []
+    return list(dict.fromkeys(h for h in hosts if h in ("claude", "codex")))
+
+
+def _version_profile(root):
+    path = os.path.join(root, "sage", "project-profile.yaml")
+    if not os.path.isfile(path):
+        return {}
+    try:
+        import yaml
+        profile = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+        return profile if isinstance(profile, dict) else {}
+    except Exception:
+        return {}
+
+
+def _report_version_contract(profile, manifest):
+    from sage import __version__
+    from sage.version_contract import version_axes, version_contract_issues
+
+    axes = version_axes(profile, manifest, __version__)
+    print("ℹ️  SAGE VERSION "
+          f"required={axes.required} installed={axes.installed} "
+          f"generated={axes.generated} runtime={axes.runtime}")
+    severity = "PASS"
+    for issue in version_contract_issues(profile, manifest, __version__):
+        mark = "❌" if issue.severity == "FAIL" else ("⚠️ " if issue.severity == "WARN" else "ℹ️ ")
+        print(f"{mark} SAGE VERSION {issue.severity} [{issue.axis}] {issue.message}"
+              + (f" → `{issue.remediation}`" if issue.remediation else ""))
+        if issue.severity == "FAIL":
+            severity = "FAIL"
+        elif issue.severity == "WARN" and severity == "PASS":
+            severity = "WARN"
+    return severity
+
+
+def _validate_core_skill_receipts(root, manifest):
+    """Validate repository receipts and diagnose environment-dependent Codex duplicates."""
+    from sage import __version__
+    from sage.commands import install
+
+    receipts = manifest.get("core_skill_receipts") if isinstance(manifest, dict) else None
+    if receipts is None:
+        return "WARN", ["CORE skill scope 영수증 없음(legacy) — 명시적 --skill-scope로 sage install 재실행 권장"]
+    if not isinstance(receipts, dict):
+        return "FAIL", ["core_skill_receipts가 mapping이 아님"]
+
+    severity = "PASS"
+    messages = []
+    for host, receipt in receipts.items():
+        if host not in ("claude", "codex") or not install._valid_core_skill_receipt(receipt):
+            severity = "FAIL"
+            messages.append(f"손상된 CORE skill 영수증: {host!r}")
+            continue
+        if host == "claude" and receipt["scope"] != "project-local":
+            severity = "FAIL"
+            messages.append("claude CORE skill scope는 project-local이어야 함")
+        if receipt["sage_version"] != __version__ and _SEV_RANK["STALE"] > _SEV_RANK[severity]:
+            severity = "STALE"
+            messages.append(
+                f"{host} CORE skill receipt version={receipt['sage_version']} != runtime={__version__}")
+
+    if "codex" in _installed_hosts(manifest) and "codex" not in receipts:
+        if _SEV_RANK["WARN"] > _SEV_RANK[severity]:
+            severity = "WARN"
+        messages.append("codex installed_host에 scope 영수증이 없음 — 선택 scope를 추정하지 않음")
+
+    codex_receipt = receipts.get("codex")
+    if not install._valid_core_skill_receipt(codex_receipt):
+        return severity, messages
+    selected = codex_receipt["scope"]
+    messages.append(f"Codex CORE skill intended scope: {selected}")
+    duplicate_ids = []
+    conflict_ids = []
+    for skill_id in install.core_skill_ids():
+        surfaces = install.codex_core_skill_surfaces(root, skill_id)
+        present = {name: status for name, (status, _path) in surfaces.items()
+                   if status != "missing"}
+        if len(present) > 1:
+            duplicate_ids.append(skill_id)
+            if any(status != "ok" for status in present.values()):
+                conflict_ids.append(skill_id)
+        if selected in ("global", "project-local"):
+            status, path = surfaces[selected]
+            if status != "ok":
+                selected_severity = "FAIL" if selected == "project-local" else "WARN"
+                if _SEV_RANK[selected_severity] > _SEV_RANK[severity]:
+                    severity = selected_severity
+                messages.append(f"selected {selected} copy {skill_id}: {status} ({path})")
+    if duplicate_ids:
+        if _SEV_RANK["WARN"] > _SEV_RANK[severity]:
+            severity = "WARN"
+        messages.append("Codex CORE skill duplicate precedence=ambiguous: " + ", ".join(duplicate_ids))
+    if conflict_ids:
+        messages.append("duplicate version/content conflict: " + ", ".join(conflict_ids))
+    return severity, messages
 
 
 def _hook_paths(root, asset_id):
@@ -529,13 +632,49 @@ def run(args):
             return 2
 
     overall = "PASS"
+    strict_hits = []
     if assets_malformed:
         overall = "FAIL"
         print("❌ FAIL  manifest.assets 구조 오류 — object(dict) 여야 함 (오염/레거시 manifest)")
+
+    version_severity = _report_version_contract(_version_profile(root), manifest)
+    if _SEV_RANK[version_severity] > _SEV_RANK[overall]:
+        overall = version_severity
+
+    installed_core_hash = manifest.get("installed_core_content_hash")
+    if installed_core_hash:
+        try:
+            from sage.build_identity import source_core_content_hash
+            current_source_hash = source_core_content_hash()
+            if current_source_hash != installed_core_hash:
+                print("🔶 STALE source-build-identity: 현재 SAGE CORE와 install 시 배치 CORE가 다름 — "
+                      "sage install --force 필요")
+                if _SEV_RANK["STALE"] > _SEV_RANK[overall]:
+                    overall = "STALE"
+            else:
+                print("✅ PASS  source-build-identity")
+        except Exception as e:
+            print(f"⚠️  WARN  source-build-identity 검사 실패: {type(e).__name__}: {e}")
+            if overall == "PASS":
+                overall = "WARN"
+    else:
+        print("ℹ️  source-build-identity 미스탬프(legacy) — sage install --force 권장")
+    if manifest.get("dirty_flag"):
+        print("⚠️  WARN  install source가 dirty worktree였음(개발 도그푸딩 빌드)")
+        if overall == "PASS":
+            overall = "WARN"
+    cssev, csmsgs = _validate_core_skill_receipts(root, manifest)
+    csmark = {"PASS": "✅", "WARN": "⚠️ ", "STALE": "🔶", "FAIL": "❌"}[cssev]
+    print(f"{csmark} {cssev:5} CORE skill scope receipt")
+    for message in csmsgs:
+        print(f"  {message}")
+    if _SEV_RANK[cssev] > _SEV_RANK[overall]:
+        overall = cssev
     # 미부트스트랩 경고: profile 이 배치됐으나 project.name 빈값이면 거버넌스 inert(risk globs 0).
     # validate 는 읽기전용 진단이므로 차단(FAIL)이 아니라 WARN 으로 표면화 — 차단은 generate 게이트가 담당.
     bw = _bootstrap_warn(root)
     if bw:
+        strict_hits.append("bootstrap-invalid")
         print(bw)
         if _SEV_RANK["WARN"] > _SEV_RANK[overall]:   # bump: 손상 assets FAIL 등 상위 severity 를 덮지 않는다
             overall = "WARN"
@@ -557,6 +696,8 @@ def run(args):
                 overall = "FAIL"
             print(f"❌ FAIL  {aid} — manifest entry 구조 오류(object 아님)")
             continue
+        if entry.get("safety_degraded"):
+            strict_hits.append("safety-degraded")
         if aid.startswith("hooks/"):
             sev, msgs = _validate_hook(root, aid, entry, run_regression=not args.check)
         elif aid.startswith("mcps/"):
@@ -606,6 +747,8 @@ def run(args):
             print(m)
         if _SEV_RANK[ssev] > _SEV_RANK[overall]:
             overall = ssev
+        if ssev == "WARN":
+            strict_hits.append("schema-unavailable")
 
         # profile 구조+의미 검증 (R2/P0-2): 오타 키·전략 부재·미정의 phase = 게이트 침묵 비활성.
         prof_path = os.path.join(root, "sage", "project-profile.json")
@@ -628,19 +771,164 @@ def run(args):
                 if _SEV_RANK[psev] > _SEV_RANK[overall]:
                     overall = psev
 
-    # CORE 자산 오버레이 게이트-완화 린트 (WARN — 결정론). 오버레이는 manifest 밖이라 위 루프가
-    #   못 본다. CORE 렌더의 "must not relax ... gates" 프로즈를 실제 체크로 승격(/sage-asset-override 저작 백스톱).
-    from sage.overlay_lint import scan_overlays
+    # Machine-local capability profile is never compiled into the shared hook JSON.
+    # Validate it independently on every run so a local policy weakening cannot hide
+    # behind --schema being disabled or an otherwise-current shared JSON.
+    shared_profile_path = os.path.join(root, "sage", "project-profile.yaml")
+    if os.path.isfile(shared_profile_path):
+        from sage.profile_layers import load_profile_layers, local_profile_git_issues
+        layers = load_profile_layers(shared_profile_path)
+        local_state = "loaded" if layers.local is not None else "missing (legacy/default behavior)"
+        print(f"ℹ️  LOCAL PROFILE {local_state}: {layers.local_path}")
+        for severity, message in layers.issues:
+            if severity == "FAIL":
+                print(f"❌ FAIL  profile-layer: {message}")
+                overall = "FAIL"
+            elif severity == "WARN":
+                print(f"⚠️  WARN  profile-layer: {message}")
+                if overall == "PASS":
+                    overall = "WARN"
+        for severity, message in local_profile_git_issues(root, layers.local_path):
+            if severity == "WARN":
+                print(f"⚠️  WARN  profile-layer: {message}")
+                if overall == "PASS":
+                    overall = "WARN"
+            else:
+                print(f"ℹ️  INFO  profile-layer: {message}")
+
+    # CORE 자산 오버레이 게이트-완화 린트. default 는 heuristic 오탐 가능성 때문에 WARN, strict 는
+    #   합성 preflight와 같은 check-id를 hard FAIL로 승격한다. 오버레이는 manifest 밖이라 위 루프가 못 본다.
+    from sage.overlay_lint import scan_domain_contract, scan_overlays
     ov = scan_overlays(root)
     if ov:
         if overall == "PASS":
             overall = "WARN"
         for relpath, hits in ov:
             print(f"⚠️  WARN  overlay 게이트-완화 의심: {relpath}")
-            for _pid, desc in hits:
-                print(f"        - {desc}")
+            for pattern_id, desc in hits:
+                print(f"        - [{pattern_id}] {desc}")
         print("        오버레이는 AGENT_GUIDE/phase/review/verification 게이트를 완화할 수 없습니다. "
-              "의도한 것이 맞는지 확인하세요(오탐이면 무시).")
+              "오탐이면 문구를 수정하고 다시 검증하세요.")
+        strict_hits.append("overlay-gate-relaxation")
 
+    profile_for_overlay = {}
+    yaml_profile = None
+    json_profile = None
+    for candidate in (os.path.join(root, "sage", "project-profile.json"),
+                      os.path.join(root, "sage", "project-profile.yaml")):
+        if not os.path.isfile(candidate):
+            continue
+        try:
+            if candidate.endswith(".json"):
+                profile_for_overlay = json.loads(Path(candidate).read_text(encoding="utf-8"))
+                json_profile = profile_for_overlay
+            else:
+                import yaml
+                profile_for_overlay = yaml.safe_load(Path(candidate).read_text(encoding="utf-8")) or {}
+                yaml_profile = profile_for_overlay
+            break
+        except Exception as e:
+            print(f"❌ FAIL  critical-domain-drift: profile 로드 실패({candidate}): {e}")
+            overall = "FAIL"
+            break
+    try:
+        from sage.profile_compile import materialization_issues
+        raw_issues = materialization_issues(profile_for_overlay)
+    except Exception as e:
+        raw_issues = [f"profile raw 타입 검사 실패({type(e).__name__}: {e})"]
+    emitted_raw_issues = set()
+    if raw_issues:
+        for message in raw_issues:
+            print(f"❌ FAIL  profile-raw-type-invalid: {message}")
+            emitted_raw_issues.add(message)
+        overall = "FAIL"
+        profile_for_overlay = {}
+    # Freshness는 schema 옵션과 무관하게 검사한다. domains 파생 flat 값을 동일 compiler로 비교해야
+    # 정상 materialization을 drift로 오판하지 않는다.
+    try:
+        import yaml
+        yaml_path = os.path.join(root, "sage", "project-profile.yaml")
+        json_path = os.path.join(root, "sage", "project-profile.json")
+        if os.path.isfile(yaml_path) and os.path.isfile(json_path):
+            yaml_profile = yaml.safe_load(Path(yaml_path).read_text(encoding="utf-8")) or {}
+            json_profile = json.loads(Path(json_path).read_text(encoding="utf-8"))
+            from sage.profile_compile import ProfileCompileError, materialize_profile
+            try:
+                expected_profile = materialize_profile(yaml_profile)
+            except ProfileCompileError as e:
+                for message in e.issues:
+                    if message not in emitted_raw_issues:
+                        print(f"❌ FAIL  profile-raw-type-invalid: {message}")
+                        emitted_raw_issues.add(message)
+                overall = "FAIL"
+                expected_profile = None
+            if expected_profile is not None and expected_profile != json_profile:
+                print("⚠️  WARN  profile-yaml-json-stale: YAML과 컴파일 JSON 불일치 — sage generate 필요")
+                if overall == "PASS":
+                    overall = "WARN"
+                strict_hits.append("profile-yaml-json-stale")
+        elif os.path.isfile(yaml_path) != os.path.isfile(json_path):
+            print("⚠️  WARN  profile-yaml-json-stale: YAML/JSON 중 하나가 없음 — sage generate 필요")
+            if overall == "PASS":
+                overall = "WARN"
+            strict_hits.append("profile-yaml-json-stale")
+    except Exception as e:
+        print(f"⚠️  WARN  profile-yaml-json-stale: freshness 검사 실패: {type(e).__name__}: {e}")
+        if overall == "PASS":
+            overall = "WARN"
+        strict_hits.append("profile-yaml-json-stale")
+
+    for check_id, relpath, message in scan_domain_contract(root, profile_for_overlay):
+        print(f"⚠️  WARN  {check_id}: {relpath}: {message}")
+        if overall == "PASS":
+            overall = "WARN"
+        strict_hits.append(check_id)
+
+    for domain in ((profile_for_overlay.get("risk") or {}).get("domains") or []
+                   if isinstance(profile_for_overlay, dict) else []):
+        pointer = domain.get("protocol_pointer") if isinstance(domain, dict) else None
+        if pointer and not os.path.isfile(os.path.join(root, pointer)):
+            print(f"⚠️  WARN  critical-domain-drift: {domain.get('id')}: protocol pointer 없음: {pointer}")
+            if overall == "PASS":
+                overall = "WARN"
+            strict_hits.append("critical-domain-drift")
+
+    # L2 materialize 게이트 (FAIL — 권위). 오버레이가 (a)/(b) CORE 렌더에 물리 반영됐는지, (c)/미분류에
+    #   오버레이가 없는지(SD-8 전까지 미지원), base 가 core_renders 앵커와 일치하는지 검사. 로컬 앵커는
+    #   accidental-drift 영수증(위조 가능)이지만 exit1 로 CI 를 막고, tamper-proof 권위는 CI-pinned
+    #   canonical 재계산이 담당한다(설계 §3). scan_overlays 결과는 default WARN/strict FAIL이고,
+    #   이 materialize drift 검사는 실행 모드와 무관한 하드 게이트다.
+    # --id(단일 자산 대상)가 아니면 항상 실행 — materialize 게이트는 CORE 렌더 전체를 보므로 asset-kind
+    #   prefix 와 무관하다(기본 `sage validate`(--kind hook)에서도 돌아야 CI 가 drift 를 잡는다).
+    #   core_renders 앵커가 아예 없으면(이 기능 이전 설치) pre-migration 으로 보고 per-render FAIL 대신
+    #   1줄 안내만 한다(기존 green 설치를 깨지 않음). `sage install --force` 로 앵커 생성 후 게이트 활성.
+    if args.id is None:
+        from sage import overlay_materialize
+        if "core_renders" not in manifest:
+            # 키 자체가 없음 = 이 기능 이전 설치 → pre-migration 안내(기존 green 설치 보존).
+            print("ℹ️  overlay materialize 게이트 비활성 — `sage install --force` 로 core_renders 앵커 생성 권장")
+        else:
+            cr = manifest.get("core_renders")
+            if not isinstance(cr, dict) or not cr:
+                # 키는 있는데 비었거나 dict 아님 = 손상/변조로 게이트가 조용히 무력화된 상태. 앵커 부재를
+                #   per-render FAIL 로 흘리는 대신 한 줄로 명확히 FAIL 한다(조용한 bypass 금지).
+                print("❌ FAIL  overlay-materialize-drift: core_renders 앵커가 비었거나 손상됨(게이트 무력화) — `sage install --force` 필요")
+                overall = "FAIL"
+            else:
+                for host in (_installed_hosts(manifest) or [manifest.get("host_runtime") or "claude"]):
+                    surface = os.path.join(root, f".{host}")
+                    if not os.path.isdir(surface):
+                        print(f"❌ FAIL  installed-host-missing [{host}]: discovery surface 없음: .{host}")
+                        overall = "FAIL"
+                    for sev, key, msg in overlay_materialize.check(root, host, cr):
+                        mark = {"FAIL": "❌", "STALE": "🕒"}.get(sev, "⚠️ ")
+                        print(f"{mark} {sev}  overlay-materialize-drift [{host}:{key}]: {msg}")
+                        if _SEV_RANK[sev] > _SEV_RANK[overall]:
+                            overall = sev
+
+    if getattr(args, "strict", False) and strict_hits:
+        ids = sorted(set(strict_hits))
+        print(f"❌ FAIL  strict allowlist 승격: {', '.join(ids)}")
+        overall = "FAIL"
     print(f"---- 종합: {overall} (exit {_EXIT[overall]}) ----")
     return _EXIT[overall]

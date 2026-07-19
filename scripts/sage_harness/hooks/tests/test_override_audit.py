@@ -187,6 +187,23 @@ class TestMaybeOverrideWiring(unittest.TestCase):
             ov.grant(tmp, "r", 10000, gate=GATE)
             self.assertFalse(hr._maybe_override(GATE, tmp, OK, CHANGES))   # ok → 우회 대상 아님
 
+    def test_acceptance_and_fail_closed_blocks_are_not_overridable(self):
+        protected = (
+            "block_report_without_acceptance",
+            "block_report_waiver_audit_failure",
+            "block_gate_runtime_error",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            ov.grant(tmp, "generic emergency override", 10000, gate="all")
+            for message_key in protected:
+                with self.subTest(message_key=message_key):
+                    decision = {"status": "block", "exit_code": 2,
+                                "message_key": message_key}
+                    self.assertFalse(hr._maybe_override(GATE, tmp, decision, CHANGES))
+            bypasses = [record for record in ov.read_records(tmp)
+                        if record.get("event") == "bypass"]
+            self.assertEqual(bypasses, [])
+
     def test_expired_override_blocks(self):
         with tempfile.TemporaryDirectory() as tmp:
             ov.grant(tmp, "r", 1, gate=GATE, now=1000)   # 즉시 만료(실시간 now >> 1001)

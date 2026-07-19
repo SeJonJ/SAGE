@@ -15,6 +15,8 @@ import os
 import re
 import sys
 
+from sage.profile_layers import load_profile_layers
+
 
 def register(sub):
     p = sub.add_parser("retro", help="리뷰 사이클 학습을 자산 개선 제안으로 정리합니다(Loop C, 자동반영 없음)")
@@ -66,16 +68,10 @@ def _find_project_root(start):
 
 
 def _load_profile(root):
-    """<root>/sage/project-profile.yaml → dict. 없음/실패 → {}. (run 에서 1회 로드해 재사용)"""
+    """공유·로컬 profile의 유효 설정. 없음/실패 → {}."""
     ppath = os.path.join(root, "sage", "project-profile.yaml")
-    if not os.path.exists(ppath):
-        return {}
-    try:
-        import yaml
-        prof = yaml.safe_load(open(ppath, encoding="utf-8")) or {}
-        return prof if isinstance(prof, dict) else {}
-    except Exception:
-        return {}
+    layers = load_profile_layers(ppath)
+    return {} if layers.has_fail else layers.effective
 
 
 def _approve_glob(profile):
@@ -104,7 +100,7 @@ _DISTILLER_PROMPT = """\
 - `risk.review_patterns` = **L3 리뷰 대상 문서 탐지용**(`claude_grep_first` 전략, scripts/sage_harness/hooks/strategies/). **코드 안티패턴 탐지가 아니다** — 여기에 코드 규칙을 넣지 말 것.
 - `hook` = pre-implementation-gate 등 결정론 게이트(phase/risk 순서 강제) — **실제 결정론 차단은 여기**. 단 "범용 코드 안티패턴 grep" 전용 필드는 현재 없으므로, 그런 하드 차단이 필요하면 hook/전략 신설이 별도 과제다.
 - `agent|skill` = 페르소나/체크리스트로 판단 유도(패턴화 불가한 것).
-- `sage/asset_overrides/agents/*.md` · `sage/asset_overrides/skills/*.md` = 프로젝트 로컬 overlay. CORE agent/skill 렌더가 이를 먼저 읽고, `sage install --force` 가 ship 하지 않아 loop 학습이 보존된다. agent/skill 개선은 CORE 렌더 직접수정이 아니라 overlay 로 제안하라.
+- `sage/asset_overrides/agents/*.md` · `sage/asset_overrides/skills/*.md` = 프로젝트 로컬 overlay. SAGE 가 `COMPOSE_ALLOWED` 자산의 overlay 만 CORE 렌더에 관리 블록으로 물리화(install/sync)하고 `sage validate` 가 게이트한다. `sage install --force` 가 ship 하지 않아 loop 학습이 보존된다. eligible 자산 개선은 CORE 렌더 직접수정이 아니라 `/sage-asset-override` overlay 로 제안한다. 게이트-보유/blocked 자산은 overlay 를 제안하지 말고 profile/convention/project-local doc 또는 별도 CORE/spec 변경으로 라우팅한다.
 [VERIFY] 제안한 target 이 실제로 그 결함을 다음부터 잡을 수 있는지, 해당 메커니즘의 소스(전략 스크립트/profile 스키마)를 확인한 뒤 확정하라.
 [OUTPUT] 제안 목록(자동반영 아님):
 [{ "pattern":"...", "evidence":["finding 근거/파일:라인"], "target":"hook|profile|agent|skill",
@@ -140,8 +136,8 @@ _APPLY_PATH = (
     "【 적용 경로 (absorb 철학 — 자동 반영 절대 없음) 】\n"
     "  제안 → 사람 승인 → 자산 수정:\n"
     "    · 기계적(hook/profile): spec/profile 수정 → sage generate → sage validate\n"
-    "    · 의미적(agent/skill):  sage/asset_overrides/agents|skills/<id>.md 작성(install-safe) → 다음 host 실행이 CORE+overlay 로 읽음\n"
-    "      범용화할 내용이면 별도 CORE/spec 변경으로 승격\n"
+    "    · 의미적(agent/skill): COMPOSE_ALLOWED 자산만 /sage-asset-override 로 overlay 작성(install-safe)\n"
+    "      blocked/gate-bearing 자산은 profile/convention/project-local doc 또는 별도 CORE/spec 변경으로 라우팅\n"
     "  feed-forward: 다음 feature 의 00 Prior-Knowledge Scan 이 반영분을 읽음."
 )
 

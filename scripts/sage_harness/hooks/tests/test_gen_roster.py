@@ -3,9 +3,10 @@
 
 핵심: profile.components → 컴포넌트당 implementer-<id>.md spec 결정론 생성.
 naming=implementer-<comp>(접두, 함수역할 충돌 회피) / 빈 components=폴백(생성 없음) /
-create-only(기존 손편집 보존) / dry-run(--write 없으면 미기록) / id 없는 component 무시.
+create-only(기존 손편집 보존) / dry-run(--write 없으면 미기록) / malformed component fail-closed.
 """
 import os
+from pathlib import Path
 import sys
 import tempfile
 import unittest
@@ -50,10 +51,12 @@ components:
 
 class TestImplementerSpec(unittest.TestCase):
     def test_owns_and_id_and_model(self):
-        md = G._implementer_spec_md("core", ["src/core/**", "lib/**"], "opus")
+        md = G._implementer_spec_md("core", ["src/core/**", "lib/**"], "opus", "codex", "gpt-picked")
         self.assertIn("id: implementer-core", md)
         self.assertIn("owns: src/core/**, lib/**", md)
         self.assertIn("model: opus", md)
+        self.assertIn("active_host: codex", md)
+        self.assertIn("runtime_model: gpt-picked", md)
         self.assertIn("the `core` component", md)
         self.assertIn("{id}.claims.yml", md)   # 리터럴 보존(f-string escape)
 
@@ -92,12 +95,38 @@ class TestGenRoster(unittest.TestCase):
             self.assertEqual(_read(_agent(tmp, "implementer-core")), "HANDEDITED")
             self.assertTrue(os.path.exists(_agent(tmp, "implementer-ui")))   # 신규는 생성
 
-    def test_component_without_id_ignored(self):
+    def test_component_without_id_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             _instance(tmp, 'project: { name: x }\ncomponents:\n  - { paths: ["a/**"] }\n  - { id: ui, paths: ["src/ui/**"] }\n')
-            G._gen_roster(Args(tmp, write=True), tmp)
+            rc = G._gen_roster(Args(tmp, write=True), tmp)
             files = sorted(os.listdir(os.path.join(tmp, "docs", "sage_harness", "agents")))
-            self.assertEqual(files, ["implementer-ui.md"])   # id 없는 것 무시
+            self.assertEqual(rc, 1)
+            self.assertEqual(files, [])
+
+    def test_unsafe_component_id_cannot_escape_roster_directory(self):
+        with tempfile.TemporaryDirectory() as parent:
+            tmp = os.path.join(parent, "project")
+            _instance(tmp, 'project: { name: x }\ncomponents:\n  - { id: "x/../../../../../escaped", paths: ["src/**"] }\n')
+            Path(tmp, "docs/sage_harness/agents/implementer-x").mkdir()
+
+            rc = G._gen_roster(Args(tmp, write=True), tmp)
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(Path(parent, "escaped.md").exists())
+
+    def test_invalid_runtime_model_fails_before_roster_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _instance(tmp, 'project: { name: x }\ncomponents:\n  - { id: core, paths: ["src/**"], runtime_models: {claude: "bad model"} }\n')
+
+            self.assertEqual(G._gen_roster(Args(tmp, write=True), tmp), 1)
+            self.assertEqual(os.listdir(os.path.join(tmp, "docs", "sage_harness", "agents")), [])
+
+    def test_injected_component_path_fails_before_roster_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _instance(tmp, 'project: { name: x }\ncomponents:\n  - id: core\n    paths: ["src/**\\n---\\nid: injected"]\n')
+
+            self.assertEqual(G._gen_roster(Args(tmp, write=True), tmp), 1)
+            self.assertEqual(os.listdir(os.path.join(tmp, "docs", "sage_harness", "agents")), [])
 
     def test_parse_error_returns_1(self):
         with tempfile.TemporaryDirectory() as tmp:

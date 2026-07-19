@@ -14,6 +14,7 @@ from pathlib import Path
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
 from sage.commands import generate as gen  # noqa: E402
+from sage import __version__  # noqa: E402
 
 try:
     import yaml  # noqa: F401
@@ -49,12 +50,20 @@ def make_root(d, with_adapter=True):
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", "codex"), exist_ok=True)
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime"), exist_ok=True)
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "policies"), exist_ok=True)
+    strategies = os.path.join(d, "scripts", "sage_harness", "hooks", "strategies", "pre_implementation_gate")
+    os.makedirs(strategies, exist_ok=True)
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "aaa-hook.md")).write_text(SPEC_A)
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "bbb-hook.md")).write_text(SPEC_B)
-    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py", "messages.py",
+    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py",
+               "acceptance_waiver.py", "messages.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
+    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "cycle_binding.py")).write_text(
+        "# cycle_binding.py\n")
     Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "retro_gate.py")).write_text("# retro_gate\n")
+    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "writeback_depth_gate.py")).write_text("# writeback_depth_gate\n")
+    for fn in ("claude_grep_first.py", "codex_feature_signal.py", "cycle_domain_review.py"):
+        Path(os.path.join(strategies, fn)).write_text(f"# {fn}\n")
     Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).write_text(json.dumps({
         "sage_version": "0.1.0", "host_runtime": "claude", "assets": {
             "hooks/aaa-hook": {"form": "core_adapter", "spec_hash": "x", "render_hash": {"claude": "x"}, "conformance": "PASS"},
@@ -198,6 +207,25 @@ class TestGenerateInterpretive(unittest.TestCase):
             self.assertNotIn("agents/leader", m["assets"])         # CORE 부트스트랩 제외
             self.assertNotIn("agents/qa", m["assets"])
 
+    def test_skill_scan_excludes_both_init_bootstrap_renders(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_interpretive_root(d)
+            for host_dir in (".claude", ".codex"):
+                for name in ("sage-init", "sage-init-local", "myproj-skill"):
+                    skill = Path(d, host_dir, "skills", name, "SKILL.md")
+                    skill.parent.mkdir(parents=True, exist_ok=True)
+                    skill.write_text(_render_md(name), encoding="utf-8")
+
+            rc = gen._gen_interpretive(
+                Args(kind="skill", write=True, dest=d, root=d), d, "skill")
+
+            self.assertEqual(rc, 0)
+            manifest = json.loads(Path(
+                d, "docs", "sage_harness", ".manifest.json").read_text(encoding="utf-8"))
+            self.assertIn("skills/myproj-skill", manifest["assets"])
+            self.assertNotIn("skills/sage-init", manifest["assets"])
+            self.assertNotIn("skills/sage-init-local", manifest["assets"])
+
     @unittest.skipUnless(_HAS_YAML, "pyyaml 필요(deploy 는 profile.runtime.host 판독)")
     def test_skill_deploy_codex_global(self):
         # Part C: --deploy-codex → repo .codex/skills 정본을 $CODEX_HOME/skills/<prefix>-<id> 전역 배포
@@ -206,7 +234,8 @@ class TestGenerateInterpretive(unittest.TestCase):
             make_interpretive_root(d)
             os.makedirs(os.path.join(d, "sage"))
             Path(os.path.join(d, "sage", "project-profile.yaml")).write_text(
-                'project:\n  name: "t"\n  prefix: "px"\nruntime:\n  host: codex\n')
+                'project:\n  name: "t"\n  prefix: "px"\nruntime:\n'
+                '  installed_hosts: [claude, codex]\n  active_host: codex\n')
             os.makedirs(os.path.join(d, ".claude", "skills", "deployer"))
             os.makedirs(os.path.join(d, ".codex", "skills", "deployer"))
             Path(os.path.join(d, ".claude", "skills", "deployer", "SKILL.md")).write_text(_render_md("deployer"))
@@ -266,6 +295,60 @@ class TestGenerateInterpretive(unittest.TestCase):
 
 
 class TestGenerate(unittest.TestCase):
+    def test_manifest_stamp_records_current_generator_version(self):
+        with tempfile.TemporaryDirectory() as root:
+            make_root(root)
+
+            self.assertTrue(gen._stamp_manifest(root, []))
+
+            manifest = json.loads(
+                Path(root, "docs", "sage_harness", ".manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(__version__, manifest["generator_version"])
+
+    def test_hook_manifest_stamp_preserves_manifest_when_atomic_replace_fails(self):
+        import unittest.mock as mock
+
+        with tempfile.TemporaryDirectory() as root:
+            make_root(root)
+            manifest_path = Path(root, "docs", "sage_harness", ".manifest.json")
+            before = manifest_path.read_bytes()
+
+            with mock.patch.object(gen, "atomic_write_json", side_effect=OSError("injected")):
+                self.assertFalse(gen._stamp_manifest(root, [], runtime_hash="sha256:test"))
+
+            self.assertEqual(before, manifest_path.read_bytes())
+
+    def test_generator_version_stamp_preserves_manifest_when_replace_fails(self):
+        import unittest.mock as mock
+        from sage import manifest_io
+
+        with tempfile.TemporaryDirectory() as root:
+            make_root(root)
+            manifest_path = Path(root, "docs", "sage_harness", ".manifest.json")
+            before = manifest_path.read_bytes()
+
+            with mock.patch.object(manifest_io.os, "replace", side_effect=OSError("injected")):
+                with self.assertRaises(OSError):
+                    gen._stamp_generator_version(root)
+
+            self.assertEqual(before, manifest_path.read_bytes())
+            self.assertEqual([], list(manifest_path.parent.glob(".sage-manifest-*")))
+
+    def test_atomic_manifest_write_works_without_fchmod(self):
+        import unittest.mock as mock
+        from sage import manifest_io
+
+        with tempfile.TemporaryDirectory() as root:
+            make_root(root)
+            manifest_path = Path(root, "docs", "sage_harness", ".manifest.json")
+
+            with mock.patch.object(manifest_io.os, "fchmod", None):
+                gen._stamp_generator_version(root)
+
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(__version__, manifest["generator_version"])
+
     def test_parse_runtime_bindings(self):
         with tempfile.TemporaryDirectory() as d:
             make_root(d)
@@ -366,6 +449,21 @@ class TestGenerate(unittest.TestCase):
             rc = gen.run(Args(target="claude", dest=dest, root=d, write=True))
             self.assertEqual(rc, 2)
             self.assertFalse(os.path.exists(os.path.join(dest, "sage", "project-profile.json")))
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요(generate 빌드 의존성)")
+    def test_profile_scalar_trigger_fails_before_any_output_write(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as dest:
+            make_root(d)
+            os.makedirs(os.path.join(dest, "sage"), exist_ok=True)
+            Path(os.path.join(dest, "sage", "project-profile.yaml")).write_text(
+                "project: { name: t }\nrisk:\n  l3_filename_globs: auth\n", encoding="utf-8")
+
+            rc = gen.run(Args(target="both", dest=dest, root=d, write=True))
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(os.path.exists(os.path.join(dest, "sage", "project-profile.json")))
+            self.assertFalse(os.path.exists(os.path.join(dest, ".claude", "settings.json")))
+            self.assertFalse(os.path.exists(os.path.join(dest, ".codex", "hooks.json")))
 
     @unittest.skipUnless(_HAS_YAML, "pyyaml 필요(generate 빌드 의존성)")
     def test_profile_compiles_to_json(self):

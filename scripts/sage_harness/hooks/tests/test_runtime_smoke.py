@@ -71,7 +71,8 @@ def write_instance(root, profile, phases=(), approve_content=None):
         sub = PHASE_GLOBS[pid].split("/**", 1)[0]            # 예: plan_docs/00-base_plan
         d = os.path.join(root, sub)
         os.makedirs(d, exist_ok=True)
-        body = approve_content if (pid == "05" and approve_content) else f"# phase {pid} 합성 문서\n"
+        phase_body = approve_content if (pid == "05" and approve_content) else f"# phase {pid} 합성 문서\n"
+        body = f"Cycle-Stem: `feature`\n{phase_body}"
         with open(os.path.join(d, "feature.md"), "w", encoding="utf-8") as f:
             f.write(body)
     return prof_path
@@ -125,7 +126,7 @@ class TestPdcaEnforcementAlive(unittest.TestCase):
         def check(rt):
             with tempfile.TemporaryDirectory() as root:
                 prof = write_instance(root, make_profile(), phases=("00", "01", "02"))
-                p = run_adapter(rt, event(rt, L2_FILE), root, prof)
+                p = run_adapter(rt, event(rt, L2_FILE), root, prof, branch="feature")
                 self.assertEqual(p.returncode, 0, f"{rt} phase 충족 통과 기대\n{p.stdout}\n{p.stderr}")
                 self.assertNotIn("phase 미작성", p.stdout + p.stderr)
         both(self, check)
@@ -162,7 +163,8 @@ class TestReportApproveGate(unittest.TestCase):
             with tempfile.TemporaryDirectory() as root:
                 prof = write_instance(root, make_profile(), phases=("05",),
                                       approve_content="Final Status: FAIL\n")
-                p = run_adapter(rt, event(rt, "plan_docs/06-report/feature.md"), root, prof)
+                p = run_adapter(rt, event(rt, "plan_docs/06-report/feature.md",
+                                          "Cycle-Stem: `feature`\n"), root, prof)
                 self.assertEqual(p.returncode, 2, f"{rt} 05 미승인 → 06 차단 기대\n{p.stdout}\n{p.stderr}")
         both(self, check)
 
@@ -171,7 +173,8 @@ class TestReportApproveGate(unittest.TestCase):
             with tempfile.TemporaryDirectory() as root:
                 prof = write_instance(root, make_profile(), phases=("05",),
                                       approve_content="Final Status: APPROVED\n")
-                p = run_adapter(rt, event(rt, "plan_docs/06-report/feature.md"), root, prof)
+                p = run_adapter(rt, event(rt, "plan_docs/06-report/feature.md",
+                                          "Cycle-Stem: `feature`\n"), root, prof)
                 self.assertEqual(p.returncode, 0, f"{rt} 05 APPROVED → 06 통과 기대\n{p.stdout}\n{p.stderr}")
         both(self, check)
 

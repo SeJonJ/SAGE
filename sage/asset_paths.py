@@ -21,8 +21,18 @@ def hook_runtime_files(root: str) -> dict[str, list[str]]:
     """
     runtime = os.path.join(root, _HOOKS_REL, "runtime")
     policies = os.path.join(root, _HOOKS_REL, "policies")
+    strategies = os.path.join(root, _HOOKS_REL, "strategies", "pre_implementation_gate")
+    required_strategies = [os.path.join(strategies, name) for name in (
+        "claude_grep_first.py", "codex_feature_signal.py", "cycle_domain_review.py")]
+    strategy_files = list(required_strategies)
+    if os.path.isdir(strategies):
+        strategy_files.extend(
+            os.path.join(strategies, name) for name in sorted(os.listdir(strategies))
+            if name.endswith(".py") and os.path.isfile(os.path.join(strategies, name))
+            and os.path.join(strategies, name) not in required_strategies)
     return {
         "shared": [
+            os.path.join(root, _HOOKS_REL, "cycle_binding.py"),
             os.path.join(runtime, "run_hook.py"),
             os.path.join(runtime, "hook_runtime.py"),
             # loop_audit.py: hook_runtime.build_snapshot 가 audit_summary 를 호출하는 전이 의존이자
@@ -32,16 +42,23 @@ def hook_runtime_files(root: str) -> dict[str, list[str]]:
             # retro_audit.py: retro_gate_result 가 신뢰하는 Loop C 감사 트레일. loop_audit.py 와
             # 동일 근거로 추적 — 이 파일 없이는 retro_gate 의 BLOCK 판정 자체가 성립 안 한다(9-C v1).
             os.path.join(runtime, "retro_audit.py"),
+            # acceptance_waiver.py: build_snapshot 과 report gate가 신뢰하는 L3 waiver 감사/검증 정본.
+            # 미추적 시 이 파일만 변조해도 hook_runtime_hash가 PASS하여 acceptance enforce를 우회할 수 있다.
+            os.path.join(runtime, "acceptance_waiver.py"),
             # policies/retro_gate.py: enforce 판정 그 자체(BLOCK/WARN). 파일이 없으면 Stop 오케스트레이터가
             # import 실패를 INFO skip 으로 낮춰 **enforce 가 조용히 무동작**한다 → validate 가 못 잡으면
             # 설치본에서 이 파일만 빠진 rolling upgrade 가 게이트를 은밀히 해제한다(codex 구현리뷰 2R P0).
             # knowledge_capture/output_contract 는 advisory-only 라 부재해도 리포트 한 줄이 빠질 뿐이지만,
             # retro_gate 는 enforcement 라 반드시 추적한다.
             os.path.join(policies, "retro_gate.py"),
+            # policies/writeback_depth_gate.py: retro_gate 와 동일한 enforcement 판정(BLOCK/WARN).
+            # 파일 부재 시 Stop 오케스트레이터가 INFO skip 으로 낮춰 enforce 가 조용히 무동작하므로,
+            # rolling upgrade 에서 이 파일만 빠져도 게이트가 은밀히 해제되지 않게 반드시 추적한다.
+            os.path.join(policies, "writeback_depth_gate.py"),
             # messages.py: io_claude/io_codex 가 import 하는 게이트/컴플라이언스 문구 SSOT(5-3).
             # 추적 안 하면 사용자 대상 게이트 문구가 validate 미감지로 표류(loop_audit 과 동일 논리).
             os.path.join(runtime, "messages.py"),
-        ],
+        ] + strategy_files,
         "claude": [os.path.join(runtime, "io_claude.py")],
         "codex": [os.path.join(runtime, "io_codex.py")],
     }

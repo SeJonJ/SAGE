@@ -10,6 +10,7 @@ core.decide 호출을 여기로 1회만 들어올린다(verbatim lift — 동작
 - root 밖/절대경로 glob 거부(독립성). L3 전략 크래시는 surface + fail-closed(None → core BLOCK 유지, F8b).
 """
 import calendar
+import fnmatch
 import glob
 import hashlib
 import importlib
@@ -20,6 +21,11 @@ import re
 import subprocess
 import sys
 import time
+
+HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if HOOKS_DIR not in sys.path:
+    sys.path.insert(0, HOOKS_DIR)
+import cycle_binding
 
 
 def resolve_branch(root, default=""):
@@ -68,16 +74,27 @@ def parse_input_fail_open(hook_id, raw_text, surface=True):
 
 
 def make_rel(root):
-    """절대경로 → root 상대(독립). 비절대/빈값/실패는 그대로."""
+    """모든 도구 경로를 정규화된 root 상대 경로로 변환한다.
+
+    상대경로도 root 기준 절대경로로 해석한 뒤 다시 상대화하므로 ``.``, ``..``,
+    중복 구분자로 같은 파일을 다르게 표현해 게이트 applicability를 우회할 수 없다.
+    실제 root 밖 대상은 프로젝트 상대 namespace에서 명시적으로 제외한다.
+    """
+    root_abs = os.path.abspath(root)
+
     def rel(p):
         if not p:
             return ""
-        if not os.path.isabs(p):
-            return p
         try:
-            return os.path.relpath(p, root)
+            supplied = str(p).replace("\\", os.sep)
+            target = supplied if os.path.isabs(supplied) else os.path.join(root_abs, supplied)
+            target_abs = os.path.abspath(target)
+            if os.path.commonpath((root_abs, target_abs)) != root_abs:
+                return "<outside-project>"
+            relative = os.path.relpath(target_abs, root_abs)
+            return "" if relative == "." else _canon_relkey(relative)
         except Exception:
-            return p
+            return "<outside-project>"
     return rel
 
 
@@ -98,6 +115,18 @@ def build_snapshot(profile, root, rel):
             c = ""
         plan_files.append({"path": rel(p), "content": c, "recent": (now - os.path.getmtime(p)) <= 7 * 86400})
     review_candidates = [pf for pf, p in zip(plan_files, paths) if (now - os.path.getmtime(p)) <= 30 * 86400]
+
+    review_glob = (profile.get("risk") or {}).get("l3_review_glob", "")
+    if review_glob and (os.path.isabs(review_glob) or ".." in review_glob.split("/")):
+        review_glob = ""
+    l3_review_docs = []
+    for p in sorted(glob.glob(os.path.join(root, review_glob), recursive=True)) if review_glob else []:
+        try:
+            with open(p, encoding="utf-8", errors="ignore") as fh:
+                content = fh.read()
+        except Exception:
+            content = ""
+        l3_review_docs.append({"path": rel(p), "content": content})
 
     phase_docs = {}
     pdca = profile.get("pdca") or {}
@@ -123,8 +152,42 @@ def build_snapshot(profile, root, rel):
         la = loop_audit.audit_summary(root)
     except Exception:
         la = {"runs": {}, "has_any_records": False}
+    acceptance = ((profile.get("verification") or {}).get("acceptance") or {})
+    waiver_cfg = acceptance.get("waiver") if isinstance(acceptance, dict) else {}
+    if isinstance(waiver_cfg, dict) and waiver_cfg.get("enabled") is True:
+        try:
+            import acceptance_waiver
+            acceptance_waivers = acceptance_waiver.audit_summary(root)
+        except Exception as exc:
+            acceptance_waivers = {"valid": False, "active": [],
+                                  "issues": [f"waiver snapshot failed: {type(exc).__name__}: {exc}"],
+                                  "has_any_records": False}
+    else:
+        acceptance_waivers = {"valid": True, "active": [], "issues": [], "has_any_records": False}
     return {"plan_files": plan_files, "review_candidates": review_candidates,
-            "phase_docs": phase_docs, "loop_audit": la}
+            "l3_review_docs": l3_review_docs,
+            "phase_docs": phase_docs, "loop_audit": la,
+            "acceptance_waivers": acceptance_waivers}
+
+
+def _matched_domains(profile, changes):
+    matched = set()
+    for domain in (profile.get("risk") or {}).get("domains") or []:
+        did = domain.get("id") or ""
+        if not did:
+            continue
+        globs = domain.get("path_globs") or []
+        keywords = [str(k).lower() for k in (domain.get("content_keywords") or []) if str(k)]
+        for change in changes:
+            path = change.get("path") or ""
+            content = (change.get("content") or "").lower()
+            if any(fnmatch.fnmatch(path.lower(), str(pattern).lower()) for pattern in globs):
+                matched.add(did)
+                break
+            if any(keyword in content for keyword in keywords):
+                matched.add(did)
+                break
+    return matched
 
 
 def run_strategy(hook_id, profile, core_dir, changes, event, snapshot):
@@ -144,8 +207,11 @@ def run_strategy(hook_id, profile, core_dir, changes, event, snapshot):
         for c in changes:                       # whole-path 아닌 토큰으로(전략이 토큰 겹침 비교)
             cp = c["path"]
             ftoks |= {t.lower() for t in re.split(r"[^A-Za-z0-9가-힣]+", cp + " " + os.path.basename(cp)) if len(t) >= 3}
-        signals = {"tickets": set(re.findall(r"[0-9]+", event.get("branch", "") or "")),
-                   "plan": set(), "files": ftoks,
+        binding = cycle_binding.resolve(event, snapshot, profile.get("pdca") or {})
+        signals = {"plan": set(), "files": ftoks,
+                   "cycle_stem": binding.get("stem"),
+                   "cycle_binding_error": binding.get("error"),
+                   "matched_domains": _matched_domains(profile, changes),
                    "generic_tokens": rk.get("generic_tokens") or [],   # 전략 확장(profile 주입)
                    "review_patterns": rk.get("review_patterns") or []}
         return smod.find_l3_review(signals, snapshot)
@@ -153,6 +219,13 @@ def run_strategy(hook_id, profile, core_dir, changes, event, snapshot):
         print(f"[{hook_id}] L3 전략 '{strat}' 실행 오류 → fail-closed BLOCK: "
               f"{type(e).__name__}: {e}", file=sys.stderr)
         return None
+
+
+_NON_OVERRIDABLE_BLOCKS = {
+    "block_report_without_acceptance",
+    "block_report_waiver_audit_failure",
+    "block_gate_runtime_error",
+}
 
 
 def _maybe_override(hook_id, root, decision, changes):
@@ -163,6 +236,8 @@ def _maybe_override(hook_id, root, decision, changes):
     어느 파일에 적용했는지 .sage/override.jsonl 에 남긴다. override_audit 미가용/비-block → False(원래 흐름).
     """
     if (decision or {}).get("status") != "block":
+        return False
+    if decision.get("message_key") in _NON_OVERRIDABLE_BLOCKS:
         return False
     try:
         import override_audit as ov
@@ -179,6 +254,44 @@ def _maybe_override(hook_id, root, decision, changes):
           f"우회: {decision.get('message_key')} | 파일: {', '.join(files) or '(미상)'}",
           file=sys.stderr)
     return True
+
+
+def _record_acceptance_waiver_uses(hook_id, root, decision):
+    """Persist every waiver consumption before allowing the report write.
+
+    A pure core decision cannot perform IO. The adapter owns the append, and any append
+    failure replaces the advisory result with a BLOCK so no unaudited waiver is consumed.
+    """
+    uses = (decision or {}).get("waiver_uses") or []
+    if not uses:
+        return decision
+    try:
+        import acceptance_waiver
+        for grant in uses:
+            acceptance_waiver.record_use(root, grant, grant.get("report_path") or "")
+        return decision
+    except Exception as exc:
+        print(f"⛔ [{hook_id}] acceptance waiver use 감사 기록 실패 → fail-closed BLOCK: "
+              f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return {"status": "block", "exit_code": 2, "risk": "PDCA",
+                "message_key": "block_report_waiver_audit_failure",
+                "reason": f"acceptance waiver use 감사 기록 실패: {type(exc).__name__}: {exc}",
+                "file_short": (decision or {}).get("file_short", "")}
+
+
+def _decide_pre_implementation_fail_closed(hook_id, core, event, profile, snapshot, strategy_result):
+    """Convert any unexpected core exception into the host's blocking exit contract."""
+    try:
+        return core.decide(event, profile, snapshot, strategy_result)
+    except Exception as exc:
+        print(f"⛔ [{hook_id}] core 판정 오류 → fail-closed BLOCK: "
+              f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        files = [change.get("path") for change in (event.get("changes") or [])
+                 if isinstance(change, dict) and change.get("path")]
+        return {"status": "block", "exit_code": 2, "risk": "PDCA",
+                "message_key": "block_gate_runtime_error", "safety_degraded": True,
+                "reason": f"core 판정 오류: {type(exc).__name__}: {exc}",
+                "file_short": ", ".join(files[:3])}
 
 
 def run_pre_implementation_gate(io, root, core_dir, raw_text):
@@ -198,13 +311,16 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
     declared = io.read_declared_level(raw, root)  # ← 런타임별 ($host/logs)
     event = {"hook_id": hid, "hook_event_name": "PreToolUse", "runtime": io.RUNTIME,
              "session_id": raw.get("session_id", "") or "", "branch": resolve_branch(root, ""),
+             "cycle_stem": os.environ.get("SAGE_CYCLE_STEM", ""),
              "declared_max": declared, "changes": changes}
     snapshot = build_snapshot(profile, root, rel)
     strategy_result = run_strategy(hid, profile, core_dir, changes, event, snapshot)
 
     sys.path.insert(0, core_dir)
     import pre_implementation_gate_core as core
-    decision = core.decide(event, profile, snapshot, strategy_result)
+    decision = _decide_pre_implementation_fail_closed(
+        hid, core, event, profile, snapshot, strategy_result)
+    decision = _record_acceptance_waiver_uses(hid, root, decision)
     if _maybe_override(hid, root, decision, changes):   # P1-5: 활성 override 면 BLOCK 우회(감사 기록)
         return 0
     return io.render_gate(decision, profile)     # ← 런타임별 채널/포맷/exit
@@ -358,8 +474,11 @@ _LOOP_RUN_RE = re.compile(r"(?im)^\s*Loop-Run:\s*(\S+)\s*$")   # pre_implementat
 
 def _pdca_phase_glob(profile, phase_id):
     for ph in ((profile.get("pdca") or {}).get("phases") or []):
-        if ph.get("id") == phase_id:
-            return ph.get("glob") or ""
+        # 비-dict phase 항목(예: 들여쓰기 실수로 bare 문자열 "00")은 건너뛴다 — ph.get() 가 AttributeError 로
+        # Stop 게이트를 조용히 죽여 enforce 를 무력화한다(validate 가 phases items 를 강제하지 않아 통과).
+        if isinstance(ph, dict) and ph.get("id") == phase_id:
+            glob = ph.get("glob")
+            return glob if isinstance(glob, str) else ""
     return ""
 
 
@@ -501,7 +620,10 @@ def _session_log_entries(log_dir, session_id):
                         e = json.loads(line)
                     except Exception:
                         continue
-                    if e.get("session") == session_id:
+                    # object 가 아닌 유효 JSON 라인(숫자·배열·문자열: 손상/동시쓰기/손편집)은
+                    # .get 이 터져 outer except 로 새면 이 파일의 뒤 라인이 통째로 유실된다.
+                    # 그 라인만 건너뛰어 이후 이번-세션 엔트리를 놓치지 않는다.
+                    if isinstance(e, dict) and e.get("session") == session_id:
                         out.append(e)
         except Exception:
             continue
@@ -530,6 +652,194 @@ def _retro_gate_active(profile, root):
     마다 06 전체를 해싱하는 낭비를 피하려고 스냅샷 IO 를 이 조건 뒤에 둔다."""
     mode, notes_enabled = _retro_gate_config(profile, root)
     return mode in ("advisory", "enforce") and notes_enabled
+
+
+_RISK_LEVEL_RE = re.compile(r"\s*Risk Level:\s*(L[0-3])\b", re.I)   # 00/06 헤더의 사이클 risk tier
+_DEPTH_REVIEW_RE = re.compile(r"\s*Depth-Self-Review:\s*(\S+)", re.I)   # 06 의 self-review 자기선언
+# 제로폭/BOM 포맷 문자(유니코드 Cf) — `\s` 는 이들을 매치하지 못해, 라인 앞에 끼면 정규식이 선언을 놓친다
+# (BOM'd `Risk Level: L3` 이 무시돼 낮은 tier 로 under-read, codex R7 P1). 스캔 전 전역 제거로 봉쇄한다.
+_ZERO_WIDTH_STRIP = {c: None for c in (0xFEFF, 0x200B, 0x200C, 0x200D, 0x2060)}
+
+
+def _header_fields_06(content):
+    """06 최상단 메타블록에서 (Risk Level tier, depth self-review performed 여부)를 뽑는다.
+
+    첫 H2 이상 헤딩 전까지만 본다 — _header_loop_run_ids 와 동일 규약(선두 BOM 제거). 추가로 헤더
+    구간의 펜스 코드블록(``` / ~~~) 안은 건너뛴다: 헤더에 든 예시 블록의 `Depth-Self-Review:
+    performed`·`Risk Level:` 예시 라인이 실제 선언으로 오인돼 게이트가 조용히 OK 되는 걸 막는다.
+    tier ∈ {"L1","L2","L3"} 또는 None(미기재). declared 는 'performed' 선언이 있고 'skipped' 선언은
+    없을 때만 True — performed/skipped 상충이나 skipped 우회는 미선언(fail-closed)으로 본다."""
+    tier = None
+    performed = False
+    skipped = False
+    in_fence = None   # None 또는 연 펜스 마커("```"/"~~~") — 같은 종류로만 닫는다(혼합 펜스 우회 방지)
+    for line in content.translate(_ZERO_WIDTH_STRIP).splitlines():
+        stripped = line.lstrip()
+        fence = "```" if stripped.startswith("```") else ("~~~" if stripped.startswith("~~~") else None)
+        if in_fence is not None:
+            if fence == in_fence:   # 다른 종류(``` 안의 ~~~)는 닫지 못한다
+                in_fence = None
+            continue
+        if fence is not None:
+            in_fence = fence
+            continue
+        if _H2_PLUS_RE.match(stripped):
+            break
+        if tier is None:
+            m = _RISK_LEVEL_RE.match(line)
+            if m:
+                tier = m.group(1).upper()
+        m = _DEPTH_REVIEW_RE.match(line)
+        if m:
+            v = m.group(1).strip().casefold()
+            if v == "performed":
+                performed = True
+            elif v == "skipped":
+                skipped = True
+    return tier, (performed and not skipped)
+
+
+_TIER_RANK = {"L0": 0, "L1": 1, "L2": 2, "L3": 3}   # _RISK_LEVEL_RE 가 L0 도 매치 — 누락 시 KeyError
+
+
+def _doc_risk_tier(content):
+    """문서 **헤더 메타블록**(첫 H2 이상 헤딩 전)의 Risk Level 최대 tier(L0<L1<L2<L3). 없으면 None.
+
+    _header_fields_06 와 동일하게 첫 H2 에서 멈춘다 — 본문의 산문/루브릭 라인('escalation rejected —
+    Risk Level: L3' 등)을 tier 로 오독해 실제 L1 사이클을 하드 BLOCK 하는 false-positive 를 막는다.
+    Risk Level 은 규약상 헤더 필드다. 펜스 코드블록(``` / ~~~ 종류별)과 제로폭/BOM 은 이미 제거·제외."""
+    rank = _TIER_RANK
+    best = None
+    in_fence = None
+    for line in content.translate(_ZERO_WIDTH_STRIP).splitlines():
+        stripped = line.lstrip()
+        fence = "```" if stripped.startswith("```") else ("~~~" if stripped.startswith("~~~") else None)
+        if in_fence is not None:
+            if fence == in_fence:
+                in_fence = None
+            continue
+        if fence is not None:
+            in_fence = fence
+            continue
+        if _H2_PLUS_RE.match(stripped):
+            break   # 헤더 블록 종료 — 본문 산문의 Risk Level 을 tier 로 읽지 않는다
+        m = _RISK_LEVEL_RE.match(line)
+        if m:
+            t = m.group(1).upper()
+            if best is None or rank[t] > rank[best]:
+                best = t
+    return best
+
+
+def _authoritative_cycle_tier(root, profile, stem, exclude_keys=None):
+    """cycle stem 에 결속된 00 base plan 의 authoritative Risk tier(다중 일치 시 최대). 결속 불가·부재 None.
+
+    tier 의 정본은 00 이다 — 06 의 자기선언(Risk Level·Cycle-Stem 라인)은 전부 신뢰하지 않는다(위조로
+    enforce 우회 가능, codex R1/R3/R5 P1). 00 문서는 **경로 basename(path_stem)** 이 이 stem 과 일치하는
+    것만 본다: 자기선언이 아니라 파일이 실제 놓인 경로라 위조 불가. 다중 일치(동일 basename)는 보수적으로
+    최대 tier. 부재/불일치는 None → _reduce_06_depth 가 보수적으로 L2 로 취급(fail-closed).
+
+    **일치하는 00 중 하나라도 읽기 실패·Risk Level 부재/모호면 None 을 반환한다**(codex R6 P1): 그런
+    00 에 숨은 상위 tier 가 있을 수 있는데, 그걸 건너뛰고 함께 놓인 낮은 tier 00 로 확정하면 실제 L3
+    사이클이 malformed L3 + 동거 L1 조합으로 게이트를 우회한다. 확신 없으면 낮은 tier 를 신뢰하지 않고
+    L2(applies)로 떨어뜨린다.
+
+    exclude_keys = tier 정본으로 인정하지 않을 경로(정규 키). 06 phase 문서를 넘겨, 00/06 glob 이 겹치는
+    misconfig 에서 06 이 자기 자신의 authoritative 00 이 돼(자기선언 Risk Level 이 정본으로 부활) 우회되는
+    것을 막는다(자체 clean-context 리뷰 P2)."""
+    if not stem:
+        return None
+    exclude_keys = exclude_keys or frozenset()
+    best = None
+    for key, path in _glob_relmap(root, _pdca_phase_glob(profile, "00")).items():
+        if key in exclude_keys or cycle_binding.path_stem(key) != stem:
+            continue
+        try:
+            with open(path, encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+        except Exception:
+            return None   # 결속 대상 00 을 못 읽음 → 숨은 상위 tier 가능 → fail-closed
+        t = _doc_risk_tier(content)
+        if t is None:
+            return None   # 결속 대상 00 에 Risk Level 없음/모호 → fail-closed(낮은 동거 tier 로 확정 금지)
+        if best is None or _TIER_RANK[t] > _TIER_RANK[best]:
+            best = t
+    return best
+
+
+def _session_06_depth(root, profile, session_files):
+    """이번 세션에 쓰인 06 문서별 (authoritative tier, declared). {정규 키: (tier, bool)}.
+
+    tier 는 06 의 자기선언이 아니라 **결속된 00 의 authoritative Risk Level** 이다 — 06 이 낮은 tier 를
+    자기선언(위조/stale)해도 enforcement 를 못 끄게 한다(codex R1/R3/R5 P1). declared 는 06 자신의
+    Depth-Self-Review 선언(위조해도 게이트를 *통과*시키는 방향이라 06 자기선언으로 충분 — 낮추는 게 아니라
+    스스로 완료를 주장하는 축). 06 glob·정규 키·세션 교집합 규약은 _session_06_run_ids 와 동일.
+
+    결속 identity 는 06 의 **경로 basename**(path_stem) 이다 — Risk Level·Cycle-Stem 같은 자기선언 라인은
+    모두 위조 가능하지만 파일이 실제 놓인 경로는 세션 로그가 기록한 사실이라 위조 불가. 06 이 무관 저-tier
+    사이클을 가리키려면 파일명을 그 사이클로 바꿔야 하는데, 그러면 실제 사이클의 06 이 사라져
+    retro/acceptance/review 게이트가 잡는다(codex R5: 자기선언 Cycle-Stem 우회 봉쇄)."""
+    out = {}
+    six = _glob_relmap(root, _pdca_phase_glob(profile, "06"))
+    six_keys = frozenset(six)   # 00 tier 조회에서 제외 — 06 은 자기 자신의 authoritative 00 이 될 수 없다
+    for key, path in six.items():
+        if key not in session_files:
+            continue
+        try:
+            with open(path, encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+        except Exception:
+            content = ""
+        _self_tier, declared = _header_fields_06(content)   # self_tier 는 무시(교차검증용) — 정본은 00
+        stem = cycle_binding.path_stem(key)
+        out[key] = (_authoritative_cycle_tier(root, profile, stem, six_keys), declared)
+    return out
+
+
+def _reduce_06_depth(per06):
+    """이번 세션 06 들을 writeback_depth_gate.check 용 (applies, declared)로 축약.
+
+    심층 대상 = tier in {L2,L3} 또는 tier 미기재(보수적으로 L2 취급 — sage-team 기본값과 일치:
+    00 에 Risk Level 이 없으면 심층 노트를 쓰라는 규약). L1 은 얕은 노트가 정상이라 제외한다.
+    declared 는 대상 06 이 **전부** performed 선언일 때만 True(다중 L2/L3 06 중 하나라도 미선언이면
+    미완료로 잡는다)."""
+    applies_keys = [k for k, (tier, _) in per06.items() if tier in (None, "L2", "L3")]
+    applies = bool(applies_keys)
+    declared = applies and all(per06[k][1] for k in applies_keys)
+    return applies, declared
+
+
+def _writeback_gate_config(profile, root):
+    """(mode, vault_enabled) — writeback_depth_gate 활성 판정 요소.
+
+    mode ∈ off|advisory|enforce (pdca.writeback.depth_review_gate). vault_enabled 는 write-back 이
+    실제로 노트를 쓰는 조건: knowledge_capture.update_after_dev is True + vault 가 usable 디렉토리
+    (isdir, 상대경로는 project root 기준). write-back 이 꺼지면 강제할 심층 노트 자체가 없으므로 이
+    조합이 참일 때만 게이트가 동작한다(retro_gate_config 와 동형)."""
+    pdca = profile.get("pdca")
+    pdca = pdca if isinstance(pdca, dict) else {}            # pdca 비-dict → off (crash 대신 안전 degrade)
+    pdca_wb = pdca.get("writeback")
+    pdca_wb = pdca_wb if isinstance(pdca_wb, dict) else {}   # writeback 비-dict → off (crash 대신 안전 degrade)
+    mode = pdca_wb.get("depth_review_gate") or "off"
+    kc = profile.get("knowledge_capture")
+    kc = kc if isinstance(kc, dict) else {}
+    vp = kc.get("vault_path")
+    vault = vp.strip() if isinstance(vp, str) else ""
+    vault_abs = vault if os.path.isabs(vault) else os.path.join(root, vault)
+    vault_enabled = (kc.get("update_after_dev") is True) and bool(vault) and os.path.isdir(vault_abs)
+    return mode, vault_enabled
+
+
+def _writeback_gate_active(profile, root):
+    """writeback_depth_gate 가 실제로 동작하는가(mode advisory/enforce + vault_enabled)."""
+    mode, vault_enabled = _writeback_gate_config(profile, root)
+    return mode in ("advisory", "enforce") and vault_enabled
+
+
+def _any_stop_gate_active(profile, root):
+    """Stop 계열 게이트(retro_gate·writeback_depth_gate) 중 하나라도 활성인가. 둘 다 SessionStart
+    06 baseline(writer-독립 감지)을 공유하므로, baseline 기록/감지 활성 조건을 이 합집합으로 판정한다."""
+    return _retro_gate_active(profile, root) or _writeback_gate_active(profile, root)
 
 
 def _snapshot_path(log_dir, session_id):
@@ -605,6 +915,35 @@ def _snapshot_changed_06(root, profile, log_dir, session_id):
     return "ok", {key for key, h in _hash_06_glob(root, profile).items() if base.get(key) != h}
 
 
+def _session_start_overlay_l1(io, root):
+    """SessionStart — CORE 렌더의 오버레이 관리 블록을 재수렴한다.
+
+    현재 오버레이 파일 기준으로 각 CORE 렌더 블록을 재합성해, sync 를 따로 안 돌려도 새 세션이 fresh
+    오버레이를 본다. manifest 앵커는 손대지 않는다 — 권위(base 무결성·업그레이드 skew)는 install/sync 와
+    validate(L2)가 소유하고, L1 이 앵커를 덮으면 advisory 재합성이 그 권위 영수증을 오염시킨다. skew 판정도
+    안 한다(현재 오버레이→현재 base 로만 수렴). retro-gate 와 무관한 독립 스텝이라 게이트 비활성 프로젝트에서도
+    돈다. 오버레이 로직을 import할 수 없는 환경은 L2 validate 권위를 남기고 skip한다. 하지만 명시적으로
+    탐지한 blocked/malformed/gate-relaxation 오류는 L3 지침 경계이므로 stderr로 표면화하고 exit 2로 막는다."""
+    try:
+        from sage import overlay_materialize
+    except Exception:
+        return 0   # sage 패키지 미도달 → L2 권위 경로를 남기고 편의 레이어 skip
+    try:
+        _anchors, changed, errors = overlay_materialize.materialize(root, io.RUNTIME)
+    except Exception as e:
+        print(f"[session-start-overlay] WARN: overlay convenience sync 실패: {type(e).__name__}: {e}",
+              file=sys.stderr)
+        return 0
+    if errors:
+        for path, message in errors:
+            print(f"[session-start-overlay] BLOCK: {path}: {message}", file=sys.stderr)
+        if changed:
+            print("[session-start-overlay] 안전하게 식별된 blocked managed block은 제거됐습니다. "
+                  "남은 오류를 고치고 새 세션을 시작하세요.", file=sys.stderr)
+        return 2
+    return 0
+
+
 def run_session_start_snapshot(io, root, core_dir, raw_text):
     """session-start-snapshot 오케스트레이터(SessionStart). 이번 세션의 06 baseline(존재+해시)을 기록한다.
 
@@ -612,6 +951,10 @@ def run_session_start_snapshot(io, root, core_dir, raw_text):
     (W2/P0-b). 게이트 아님 → parse 실패 silent. 스냅샷은 세션당 **1회만** 쓴다: resume/재-SessionStart 가
     세션 도중 baseline 을 덮으면 그 전 변경이 baseline 에 흡수돼 감지에서 사라진다(write-once 로 방지)."""
     hid = "session-start-snapshot"
+    # 오버레이 블록 재수렴(L1)은 retro-gate·profile·parse 와 독립인 편의 스텝이라 early-return 앞에서 먼저 돈다.
+    overlay_rc = _session_start_overlay_l1(io, root)
+    if overlay_rc:
+        return overlay_rc
     raw = parse_input_fail_open(hid, raw_text, surface=False)
     if raw is None:
         return 0
@@ -621,7 +964,7 @@ def run_session_start_snapshot(io, root, core_dir, raw_text):
     session_id = raw.get("session_id") or ""
     # 게이트 비활성 프로젝트에선 baseline 이 무의미 → 06 전체 해싱 IO 를 하지 않는다(off 가 기본). session_id 가
     # 없으면 상관키가 없어 "nosession" 공유 파일이 세션 간 오염되므로 아예 안 쓴다(Stop 이 no_session 으로 표면화).
-    if not _retro_gate_active(profile, root) or not session_id:
+    if not _any_stop_gate_active(profile, root) or not session_id:
         return 0
     log_dir = os.path.join(root, io.HOST_DIR, "logs")
     path = _snapshot_path(log_dir, session_id)
@@ -724,6 +1067,42 @@ def retro_gate_result(profile, root, raw, session_entries, snapshot_06=None, sna
     return result
 
 
+def writeback_depth_gate_result(profile, root, raw, session_entries, snapshot_06=None, snapshot_status="ok"):
+    """writeback_depth_gate 정책 결과(양 런타임 공유). retro_gate_result 와 동형으로 같은 세션 06
+    감지(로그기반 ∪ 스냅샷기반 writer-독립)를 재사용한다 — Bash 로만 쓴 06 도 포착한다.
+
+    retro_gate 와 달리 run_id 결속·감사 jsonl 은 없다: 이 게이트는 사이클을 run 으로 특정할 필요
+    없이 '이번 세션 L2/L3 06 이 self-review 선언을 달았는가'만 본다. 미완료는 이 Stop 이 쓰는
+    compliance-<날짜>.md 에 WARN/BLOCK 으로 남아 사후 확인 가능하다.
+
+    snapshot_status = SessionStart baseline 신뢰도. degraded(no_session/absent/corrupt)면 로그·스냅샷
+    둘 다로 못 본 Bash 작성 L2/L3 06 이 있을 수 있어, retro_gate 와 동일하게 게이트 활성 시 fail-closed
+    로 승격(enforce 첫Stop=BLOCK / advisory·재시도=WARN) — 놓친 06 가능성을 조용히 통과시키지 않는다."""
+    import writeback_depth_gate as gate
+
+    mode, vault_enabled = _writeback_gate_config(profile, root)
+    session_files = {_canon_relkey(e.get("file", "")) for e in session_entries}
+    session_files |= set(snapshot_06 or ())
+    per06 = _session_06_depth(root, profile, session_files) if session_files else {}
+    applies, declared = _reduce_06_depth(per06) if per06 else (False, False)
+    result = gate.check(mode, applies, declared, _stop_hook_active(raw), vault_enabled)
+
+    gate_active = mode in ("advisory", "enforce") and vault_enabled
+    if gate_active and snapshot_status in ("no_session", "absent", "corrupt"):
+        reason = {"no_session": "session_id 없음(상관 불가)", "absent": "SessionStart baseline 없음(훅 미발화?)",
+                  "corrupt": "baseline 손상"}[snapshot_status]
+        deg_sev = gate._unchecked_severity(mode, _stop_hook_active(raw))
+        result = dict(result)
+        if _SEV_ORDER[deg_sev] > _SEV_ORDER[result["severity"]]:
+            result["severity"] = deg_sev
+        # baseline degraded 사실은 severity 를 올리지 못해도(이미 동급 BLOCK/WARN) 항상 리포트에 남긴다 —
+        # retro_gate 와 동일. 안 그러면 '이미 BLOCK 인' 케이스에서 writer-독립 감지 실패가 조용히 사라진다.
+        verb = "차단" if result["severity"] == "BLOCK" else "경고"
+        result["text"] += (f" (⚠️ writer-독립 06 감지 불가 — {reason}. Bash 로 작성한 L2/L3 06 을 놓쳤을 수 "
+                           f"있어 {verb} — SessionStart 훅 동작을 확인하세요)")
+    return result
+
+
 def run_stop_compliance_report(io, root, core_dir, raw_text):
     """stop-compliance-report 오케스트레이터(Stop). session JSONL → report.md.
 
@@ -756,7 +1135,7 @@ def run_stop_compliance_report(io, root, core_dir, raw_text):
     # 엔트리가 아예 없어(로거 미매칭) 아래 早期 return 에 걸려 게이트가 무동작하므로, 이 감지 결과도 종료판정에
     # 넣는다. baseline 이 degraded(부재/손상/상관불가)여도 게이트 활성이면 早期 return 대신 리포트를 내
     # writer-독립 감지 불가를 표면화한다(무음 bypass 금지).
-    gate_active = _retro_gate_active(profile, root)
+    gate_active = _any_stop_gate_active(profile, root)
     if gate_active:
         snapshot_status, snapshot_06 = _snapshot_changed_06(root, profile, log_dir, session_id)
     else:
@@ -794,14 +1173,26 @@ def run_stop_compliance_report(io, root, core_dir, raw_text):
                      "text": f"N/A — 게이트 판정 중 오류로 skip ({type(e).__name__})"}
     model["sections"]["policy_results"].append(rg_result)
 
+    try:
+        wb_result = writeback_depth_gate_result(profile, root, raw, session_entries, snapshot_06, snapshot_status)
+    except Exception as e:
+        wb_result = {"name": "writeback_depth_gate", "severity": "INFO",
+                     "text": f"N/A — 게이트 판정 중 오류로 skip ({type(e).__name__})"}
+    model["sections"]["policy_results"].append(wb_result)
+
     md = core.render_markdown(model)
     report = os.path.join(log_dir, f"compliance-{today}.md")
     with open(report, "a", encoding="utf-8") as f:
         f.write(md)
     exit_code = model["exit_code"]
-    if rg_result["severity"] == "BLOCK":
+    # Stop 계열 게이트(retro_gate·writeback_depth_gate)는 플랫폼 제약상 세션당 최대 1회만 block 가능하다.
+    # 둘 다 BLOCK 이면 한 번의 block 에 두 문구를 합쳐 싣는다 — 하나로 묶지 않으면 두 번째 block 이
+    # 무시돼 한 미완료가 사용자에게 안 보인다. 각 게이트는 stop_hook_active 재시도에서 스스로 WARN 으로
+    # 낮추므로 재호출은 자연히 exit 0 으로 수렴한다.
+    blocking = [r for r in (rg_result, wb_result) if r["severity"] == "BLOCK"]
+    if blocking:
         # 정책 의미는 양 host 동일하고 wire만 IO 모듈이 소유한다. Claude는 exit 2, Codex는
         # stdout decision:block + exit 0으로 같은 turn을 한 번 더 실행한다.
-        return io.render_stop_result(today, rg_result["text"])
+        return io.render_stop_result(today, "\n\n".join(r["text"] for r in blocking))
     io.render_stop_result(today)
     return exit_code

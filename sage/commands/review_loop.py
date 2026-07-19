@@ -13,6 +13,7 @@ import sys
 import re
 
 from sage import _resources
+from sage.profile_layers import load_profile_layers
 
 # result↔reason 의미 짝(설계 §3) — APPROVED 는 수렴/dry 로만, BLOCKED 는 예산초과/아키텍처로만.
 _APPROVED_REASONS = {"CONVERGED", "DRY"}
@@ -108,21 +109,33 @@ def _root(args):
 
 
 def _load_profile(root):
-    """<root>/sage/project-profile.yaml → dict. 없음/실패 → {}."""
+    """공유·로컬 profile의 유효 설정. 로컬 실패 시 공유 정책을 보존한다."""
     ppath = os.path.join(root, "sage", "project-profile.yaml")
     if not os.path.exists(ppath):
         return {}
-    try:
-        import yaml
-        prof = yaml.safe_load(open(ppath, encoding="utf-8")) or {}
-        return prof if isinstance(prof, dict) else {}
-    except Exception:
+    layers = load_profile_layers(ppath)
+    return layers.shared if layers.has_fail else layers.effective
+
+
+def _validated_profile(root):
+    """게이트 판단용 profile. 설치되지 않은 저장소는 legacy {}, 손상된 계층은 FAIL."""
+    ppath = os.path.join(root, "sage", "project-profile.yaml")
+    if not os.path.exists(ppath):
         return {}
+    layers = load_profile_layers(ppath)
+    failures = [message for severity, message in layers.issues if severity == "FAIL"]
+    if not failures:
+        return layers.effective
+    for message in failures:
+        print(f"[sage review-loop] profile 계층 FAIL: {message} "
+              f"(shared={layers.shared_path}, local={layers.local_path})", file=sys.stderr)
+    return None
 
 
-def _cfg_snapshot(root):
+def _cfg_snapshot(root, profile=None):
     """profile.pdca.review_loop 스냅샷(있으면) — open 레코드에 적용 설정 기록용. 없으면 {}."""
-    rl = ((_load_profile(root).get("pdca") or {}).get("review_loop")) or {}
+    profile = _load_profile(root) if profile is None else profile
+    rl = ((profile.get("pdca") or {}).get("review_loop")) or {}
     return rl if isinstance(rl, dict) else {}
 
 
@@ -139,11 +152,14 @@ def _is_closed(la, root, run_id):
 def _run_open(args):
     la = _load_loop_audit()
     root = _root(args)
+    profile = _validated_profile(root)
+    if profile is None:
+        return 2
     # 명시 run_id 중복 open 거부(integrity 불변식을 write 시점에 강제 — strict CLI 레이어).
     if args.run_id and _is_open(la, root, args.run_id):
         print(f"[sage review-loop] run_id '{args.run_id}' 이미 open 됨 — 중복 open 거부(integrity)", file=sys.stderr)
         return 2
-    rid = la.open_loop(root, args.risk, cfg=_cfg_snapshot(root), run_id=args.run_id,
+    rid = la.open_loop(root, args.risk, cfg=_cfg_snapshot(root, profile), run_id=args.run_id,
                        reviewer_requested=args.reviewer_requested)
     print(rid)   # stdout = run_id 만(스킬이 캡처해 후속 round/close 에 전달)
     print(f"[sage review-loop] open run_id={rid} risk={args.risk} → {la.audit_path(root)}", file=sys.stderr)
@@ -263,8 +279,12 @@ def _run_close(args):
         print(f"[sage review-loop] run_id '{args.run_id}' 이미 종료됨 — 중복 close 거부", file=sys.stderr)
         return 2
 
+    profile = _validated_profile(root)
+    if profile is None:
+        return 2
+
     # 7.8단계 A — 종료 결정론 검산: 기록된 라운드 + cfg 로 close 가 사실과 일관한지 검산(codex 리뷰 A 반영).
-    cfg = ((_load_profile(root).get("pdca") or {}).get("review_loop")) or {}
+    cfg = ((profile.get("pdca") or {}).get("review_loop")) or {}
     cfg = cfg if isinstance(cfg, dict) else {}
     raw_mode = cfg.get("termination_enforce", "advisory")
     mode = raw_mode if raw_mode in ("advisory", "enforce") else "advisory"
@@ -383,7 +403,10 @@ def _run_next(args):
         print(f"[sage review-loop] run_id '{args.run_id}' 이미 종료됨: {close['result']}/{close['reason']}", file=sys.stderr)
         print("NEXT: DONE")
         return 0
-    cfg = _cfg_snapshot(root)
+    profile = _validated_profile(root)
+    if profile is None:
+        return 2
+    cfg = _cfg_snapshot(root, profile)
     risk = _run_risk(la, root, args.run_id)
     action, result, reason, why, skips = _next_recommendation(la, root, args.run_id, cfg, risk)
     for s in skips:

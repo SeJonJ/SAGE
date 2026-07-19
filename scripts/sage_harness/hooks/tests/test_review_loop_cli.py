@@ -16,6 +16,8 @@ import tempfile
 import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+sys.path.insert(0, REPO)
+from sage.commands import review_loop as review_loop_command  # noqa: E402
 
 
 def sage(*args, root=None):
@@ -34,6 +36,17 @@ class TestReviewLoopCli(unittest.TestCase):
         r = sage("open", "--risk", risk, root=self.tmp)
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout.strip().splitlines()[0]   # 첫 줄 = run_id
+
+    def test_profile_loader_applies_local_vault_path(self):
+        os.makedirs(os.path.join(self.tmp, "sage"), exist_ok=True)
+        with open(os.path.join(self.tmp, "sage", "project-profile.yaml"), "w", encoding="utf-8") as f:
+            f.write("knowledge_capture:\n  loop_audit_dashboard: true\n  vault_path: /shared-vault\n")
+        with open(os.path.join(self.tmp, "sage", "project-profile.local.yaml"), "w", encoding="utf-8") as f:
+            f.write("knowledge_capture:\n  enabled: true\n  vault_path: /local-vault\n")
+
+        profile = review_loop_command._load_profile(self.tmp)
+
+        self.assertEqual(profile["knowledge_capture"]["vault_path"], "/local-vault")
 
     def test_open_emits_run_id_and_records(self):
         rid = self._open()
@@ -106,6 +119,19 @@ class TestReviewLoopCli(unittest.TestCase):
             rec = json.loads(f.readline())
         self.assertEqual(rec["cfg"]["refuters"], 3)
         self.assertEqual(rec["cfg"]["lenses"], ["security"])
+
+    def test_open_blocks_malformed_local_profile(self):
+        os.makedirs(os.path.join(self.tmp, "sage"), exist_ok=True)
+        with open(os.path.join(self.tmp, "sage", "project-profile.yaml"), "w", encoding="utf-8") as f:
+            f.write("pdca:\n  review_loop:\n    termination_enforce: enforce\n")
+        with open(os.path.join(self.tmp, "sage", "project-profile.local.yaml"), "w", encoding="utf-8") as f:
+            f.write("capabilties: {}\n")
+
+        r = sage("open", "--risk", "L3", root=self.tmp)
+
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("project-profile.local.yaml", r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, ".sage", "loop_audit.jsonl")))
 
     # --- codex S3 후속: CLI 가 integrity 를 write 시점에 강제 ---
     def test_round_orphan_run_id_rejected(self):
@@ -207,6 +233,19 @@ class TestTerminationEnforcement(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("불일치", r.stderr)
         # 거부됐으니 close 레코드 없음
+        self.assertNotIn("loop_close", open(os.path.join(self.tmp, ".sage", "loop_audit.jsonl"), encoding="utf-8").read())
+
+    def test_close_blocks_when_local_profile_becomes_malformed(self):
+        self._profile("enforce")
+        rid = self._open_round(survived=2)
+        with open(os.path.join(self.tmp, "sage", "project-profile.local.yaml"), "w", encoding="utf-8") as f:
+            f.write("capabilties: {}\n")
+
+        r = sage("close", "--run-id", rid, "--result", "APPROVED", "--reason", "CONVERGED",
+                 "--iterations", "1", root=self.tmp)
+
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("project-profile.local.yaml", r.stderr)
         self.assertNotIn("loop_close", open(os.path.join(self.tmp, ".sage", "loop_audit.jsonl"), encoding="utf-8").read())
 
     def test_advisory_warns_but_proceeds(self):

@@ -28,11 +28,15 @@ class TestGateText(unittest.TestCase):
     def test_all_legacy_keys_render_nonempty(self):
         # 옛 io_claude/io_codex 테이블의 모든 message_key 가 여전히 렌더된다(silent drop 방지).
         keys = ["block_desktop", "block_l3_no_plan", "block_l3_strategy_unresolved",
+                "block_l3_review_evidence",
                 "warn_l3_no_review", "warn_l2_no_plan", "warn_l0_l3_content",
                 "block_phase_incomplete", "warn_phase_incomplete",
-                "block_report_without_approval", "block_report_without_audit",
+                "block_report_without_approval", "block_report_mixed_evidence",
+                "block_report_without_audit",
                 "warn_report_without_audit", "block_report_without_acceptance",
-                "warn_report_without_acceptance", "ok_l3", "ok_l2"]
+                "warn_report_without_acceptance", "warn_report_with_l3_waiver",
+                "block_report_waiver_audit_failure", "block_gate_runtime_error",
+                "ok_l3", "ok_l2"]
         for k in keys:
             for rt in ("claude", "codex"):
                 self.assertTrue(M.gate_text(self._d(k), {}, rt), f"{k}/{rt} empty")

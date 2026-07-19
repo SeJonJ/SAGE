@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from sage.commands import _vault
+from sage.profile_layers import load_profile_layers
 
 
 def register(sub):
@@ -68,16 +69,11 @@ def _profile_path(args, root):
 
 
 def _load_profile(path):
-    if not os.path.exists(path):
-        return {}, f"profile missing: {path}"
-    try:
-        import yaml
-        data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-        if not isinstance(data, dict):
-            return {}, "profile is not a mapping"
-        return data, None
-    except Exception as e:
-        return {}, f"profile load error: {type(e).__name__}"
+    layers = load_profile_layers(path)
+    if layers.has_fail:
+        detail = "; ".join(message for severity, message in layers.issues if severity == "FAIL")
+        return {}, f"profile load error: {detail}"
+    return layers.effective, None
 
 
 def _text_arg(value, file_path):
@@ -342,13 +338,103 @@ def _line_marker_match(line, marker):
     return s == marker or s.startswith(marker + " ")
 
 
+def _fence_live_flags(lines):
+    """각 라인이 펜스 코드블록 밖(True)인지의 리스트. ``` / ~~~ 토글, 펜스 경계 줄 자체도 False.
+
+    마커 판정이 예시 코드블록에 낚이지 않게 한다 — 노트 본문의 ```예시``` 안에 든 '## 증상' 같은
+    문자열을 실제 섹션 헤더로 오인해 _missing_structure 가 present 로, _hollow_sections 가 경계로
+    잘못 보는 것을 막는다."""
+    flags = []
+    in_fence = None   # None 또는 연 펜스 마커("```"/"~~~") — 같은 종류로만 닫는다(혼합 펜스 우회 방지)
+    for ln in lines:
+        s = ln.lstrip()
+        fence = "```" if s.startswith("```") else ("~~~" if s.startswith("~~~") else None)
+        if in_fence is not None:
+            flags.append(False)
+            if fence == in_fence:
+                in_fence = None
+        elif fence is not None:
+            flags.append(False)
+            in_fence = fence
+        else:
+            flags.append(True)
+    return flags
+
+
 def _missing_structure(note_path, markers):
-    """note 에서 빠진 필수 마커 목록. 읽기 실패는 빈 목록(fail-open — advisory 가 예외로 write-back 을 깨지 않는다)."""
+    """note 에서 빠진 필수 마커 목록. 마커는 펜스 밖 라인에서만 인정한다(예시 블록의 동명 문자열을
+    실제 헤더로 오인 방지). 읽기 실패는 빈 목록(fail-open — advisory 가 예외로 write-back 을 깨지 않는다)."""
     try:
         lines = Path(note_path).read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError):
         return []
-    return [m for m in markers if not any(_line_marker_match(ln, m) for ln in lines)]
+    live = _fence_live_flags(lines)
+    return [m for m in markers
+            if not any(live[i] and _line_marker_match(ln, m) for i, ln in enumerate(lines))]
+
+
+def _hollow_sections(note_path, markers):
+    """존재하는 필수 마커 중 '빈 헤더' 섹션 목록 — 마커 라인에 인라인 내용도 없고, 다음 필수 마커(또는
+    EOF) 전까지 본문 라인도 하나 없는 경우. 마커 부재는 _missing_structure 소관이라 존재하는 마커만 본다.
+
+    섹션 경계는 **다음 필수 마커(펜스 밖)만** 본다 — 일반 하위 헤딩(`### ...`)이나 펜스 코드블록은 섹션
+    본문으로 인정한다(그렇지 않으면 하위 섹션·코드 예시로 채운 정상 섹션을 hollow 로 오판한다). 내용의
+    *질/깊이*는 판정하지 않는다(skill·host self-review 영역, false-assurance 회피) — 순수 구조적 hollow
+    (헤더만 있고 내용 0)만 결정론으로 잡는다. 읽기 실패는 빈 목록(fail-open)."""
+    try:
+        lines = Path(note_path).read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return []
+    live = _fence_live_flags(lines)
+
+    def _marker_at(i):
+        return live[i] and any(_line_marker_match(lines[i], mk) for mk in markers)
+
+    hollow = []
+    for m in markers:
+        idx = next((i for i in range(len(lines)) if live[i] and _line_marker_match(lines[i], m)), None)
+        if idx is None:
+            continue   # 부재(또는 펜스 안에만 존재) 마커는 _missing_structure 소관
+        head = lines[idx].strip()
+        # 인라인 내용 인정은 **콜아웃 마커**('> [!summary] 요약')에 한정한다. 헤딩 마커의 접미사
+        # ('## 검증 (details)')는 섹션 제목이지 본문이 아니므로 본문 라인을 별도로 요구한다.
+        if m.strip().startswith(">") and head != m and head.startswith(m) and head[len(m):].strip():
+            continue
+        has_body = False
+        in_comment = False   # 여러 줄 HTML 주석('<!--' … 다음 줄들 … '-->') 추적
+        for j in range(idx + 1, len(lines)):
+            s = lines[j].strip()
+            if not s:
+                continue
+            if in_comment:
+                # 주석 종료 줄. '-->' 뒤에 실내용이 붙어 있으면 본문으로 인정.
+                if "-->" in s:
+                    in_comment = False
+                    if s.split("-->", 1)[1].strip():
+                        has_body = True
+                        break
+                continue
+            # 콜아웃 빈 계속줄('>' 또는 '> ')은 본문이 아니다 — 빈 Obsidian 콜아웃을 통과시키지 않는다.
+            if s == ">" or (s.startswith(">") and not s[1:].strip()):
+                continue
+            # HTML 주석 자리표시자('<!-- TODO -->' 및 여러 줄 주석)는 본문이 아니다 — 빈 골격을
+            # 주석 placeholder 로 통과시키지 않는다(hollow lint 의 취지). 한 줄에서 닫히면 '-->' 뒤
+            # 잔여 실내용만 본문으로 보고, 여는 줄에 '-->'가 없으면 여러 줄 주석으로 이후 줄을 건너뛴다.
+            if s.startswith("<!--"):
+                if "-->" in s:
+                    if s.split("-->", 1)[1].strip():
+                        has_body = True
+                        break
+                    continue
+                in_comment = True
+                continue
+            if _marker_at(j):
+                break   # 다음 필수 마커 = 섹션 경계, 본문 없음
+            has_body = True   # 하위 헤딩·코드블록 포함 어떤 실내용이든 본문으로 인정
+            break
+        if not has_body:
+            hollow.append(m)
+    return hollow
 
 
 def _note_path(vault, folder, filename):
@@ -462,9 +548,14 @@ def _run_write_back(args):
             if missing:
                 print(f"[sage knowledge write-back] ⚠️  advisory: authoring guide 필수 구조 누락 "
                       f"({args.prefix}) — {', '.join(missing)}")
-            else:
-                print(f"[sage knowledge write-back] ✅ 골격 마커 존재 확인 ({args.prefix}) — "
-                      f"내용 깊이는 미검증(skill 지침·host depth self-review 영역)")
+            # 존재하는 마커 중 '빈 헤더'(내용 0) 섹션도 표면화 — 마커 존재만으론 hollow 골격을 통과시킨다.
+            hollow = _hollow_sections(path, markers)
+            if hollow:
+                print(f"[sage knowledge write-back] ⚠️  advisory: 필수 섹션이 빈 헤더 "
+                      f"({args.prefix}) — {', '.join(hollow)} (헤더만 있고 본문 없음 → depth self-review 로 채우세요)")
+            if not missing and not hollow:
+                print(f"[sage knowledge write-back] ✅ 골격 마커 존재+본문 확인 ({args.prefix}) — "
+                      f"내용 깊이(질)는 미검증(skill 지침·host depth self-review 영역)")
         if args.append_log:
             log_path, added = _append_log_once(vault, folder, note_stem, title)
             print(f"[sage knowledge write-back] log {'updated' if added else 'already linked'}: {log_path}")

@@ -8,6 +8,8 @@ import json
 import os
 import sys
 
+from sage.manifest_io import atomic_write_json
+
 MANIFEST_REL = os.path.join("docs", "sage_harness", ".manifest.json")
 
 
@@ -61,8 +63,7 @@ def load(root: str) -> dict:
 
 
 def save(root: str, manifest: dict) -> None:
-    with open(os.path.join(root, MANIFEST_REL), "w", encoding="utf-8") as f:
-        json.dump(manifest, f, ensure_ascii=False, indent=2)
+    atomic_write_json(os.path.join(root, MANIFEST_REL), manifest)
 
 
 def upsert_agent(root: str, agent_id: str, *, claude_render: str, codex_render: str,

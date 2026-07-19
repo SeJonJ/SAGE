@@ -10,6 +10,17 @@
     "generator_version": { "type": "string" },
     "template_version": { "type": "string" },
     "host_runtime": { "enum": ["claude", "codex"] },
+    "installed_hosts": {
+      "type": "array",
+      "items": { "enum": ["claude", "codex"] },
+      "uniqueItems": true,
+      "minItems": 1,
+      "description": "설치된 discovery surface 전체. host_runtime은 하위호환 primary 값이다."
+    },
+    "sage_source_commit": { "type": "string" },
+    "source_core_content_hash": { "$ref": "#/$defs/sha" },
+    "installed_core_content_hash": { "$ref": "#/$defs/sha" },
+    "dirty_flag": { "type": "boolean" },
     "hook_runtime_hash": {
       "type": "object",
       "description": "hook 공용 런타임(run_hook.py/hook_runtime.py/io_*.py) top-level drift 추적. per-hook 중복 금지.",
@@ -19,6 +30,20 @@
         "codex": { "$ref": "#/$defs/sha" }
       },
       "required": ["shared", "claude", "codex"],
+      "additionalProperties": false
+    },
+    "core_renders": {
+      "type": "object",
+      "description": "설치된 CORE 렌더의 canonical base 영수증. 엔진 소유이며 install --force 때 재계산한다.",
+      "additionalProperties": { "$ref": "#/$defs/coreRenderReceipt" }
+    },
+    "core_skill_receipts": {
+      "type": "object",
+      "description": "host별 hand-shipped CORE skill 설치 scope/version 영수증.",
+      "properties": {
+        "claude": { "$ref": "#/$defs/coreSkillReceipt" },
+        "codex": { "$ref": "#/$defs/coreSkillReceipt" }
+      },
       "additionalProperties": false
     },
     "assets": {
@@ -31,6 +56,27 @@
     "sha": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "coreRenderReceipt": {
+      "type": "object",
+      "required": ["base_sha256", "sage_version"],
+      "properties": {
+        "base_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "sage_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "coreSkillReceipt": {
+      "type": "object",
+      "required": ["scope", "sage_version"],
+      "properties": {
+        "scope": { "enum": ["global", "project-local", "disabled"] },
+        "sage_version": { "type": "string" }
+      },
+      "additionalProperties": false
     },
     "assetEntry": {
       "type": "object",

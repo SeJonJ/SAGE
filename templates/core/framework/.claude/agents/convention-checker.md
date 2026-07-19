@@ -10,9 +10,6 @@ description: "SAGE convention checker — verify recently changed files against 
 1. `docs/sage_harness/agents/convention-checker.md` — authoritative intent, advisory_scope, runtime_bindings
 2. `AGENT_GUIDE.md` — risk gate, phase-first rule, safety boundaries
 3. `sage/project-profile.yaml` — `conventions` (the convention docs to check against)
-4. Optional project overlay: `sage/asset_overrides/agents/convention-checker.md`
-   if it exists. Apply it before the CORE instructions below; it is project-local
-   and survives `sage install --force`. It may add project-specific guidance but must not relax AGENT_GUIDE, phase, review, or verification gates.
 
 ## Role
 

@@ -14,10 +14,7 @@ conversation. It is the third conversational entry point:
 
 Authoritative protocol: `docs/agent/bootstrap-authoring.md`. Rules: `AGENT_GUIDE.md`.
 
-Before acting, read optional project overlay `sage/asset_overrides/skills/sage-profile-modify.md`
-if it exists. Apply it before these CORE instructions. The overlay is project-local and
-survives `sage install --force`. It may add project-specific guidance but must not relax AGENT_GUIDE, phase, review, or verification gates. Never edit this CORE render for project-specific loop
-learning.
+Do not edit this CORE render directly (the write-guard blocks it and `sage install --force` overwrites it). Self-overlay is unsupported: `skills/sage-profile-modify` is not in `COMPOSE_ALLOWED`. Put project values in the profile and create genuinely new project assets with `/sage-asset`.
 
 > This skill is a **CORE framework bootstrap asset** — hand-shipped by `sage install`,
 > NOT manifest-tracked. Its reference spec lives at
@@ -65,7 +62,8 @@ From the user's stated intent, or by asking, pin the **section**:
   **`pdca.review_loop`** (the Phase-05 loop — use the shared interview set) ·
   `options.*` · **`knowledge_capture`** (vault_path + `loop_audit_dashboard` / `retro_note`) ·
   `file_type_map` · `compliance` / `output_contract` ·
-  **`team.core.<role>.runtime`** (`model` / `effort`) · **`cross_model.effort`**.
+  **`team.core.<role>.runtime`** (`model` / `effort`) ·
+  **`components[].runtime_models`** · **`cross_model.reviewer` / `.effort`**.
 
 **`team.core.<role>.runtime.{model,effort}`** are injected into `.claude/agents/<id>.md`
 frontmatter, so editing the profile alone does nothing — finish with
@@ -76,6 +74,11 @@ frontmatter, so editing the profile alone does nothing — finish with
 **`cross_model.effort`** only matters when `options.cross_model: true`. Unset → `high`.
 The vocabulary is peer-specific (`codex`: `minimal|low|medium|high|xhigh`;
 `claude`: `low|medium|high|xhigh|max`) and a wrong value is rejected by `sage validate`.
+
+For component or reviewer model edits, run `sage models --host <host>` before proposing
+the value and preserve its verification label. `cross_model.reviewer.host` must remain
+opposite `runtime.active_host`; a manual host handoff therefore requires a reviewer update.
+`sage doctor` reports cache-confirmed, syntax-only/account-unverified, or unknown selections.
 
 For **`pdca.review_loop`** and the **vault outputs**, drive the *same* questions as
 `/sage-init` via `docs/agent/bootstrap-authoring.md` (§ Review loop + vault interview

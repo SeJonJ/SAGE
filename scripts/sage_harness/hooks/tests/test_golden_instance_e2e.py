@@ -79,8 +79,8 @@ def _sage(args, cwd):
                           capture_output=True, text=True)
 
 
-def _run_shim(inst, hook_id, raw):
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=inst, SAGE_GATE_BRANCH="main")
+def _run_shim(inst, hook_id, raw, branch="main"):
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=inst, SAGE_GATE_BRANCH=branch)
     shim = os.path.join(inst, ".claude", "hooks", f"{hook_id}.sh")
     return subprocess.run(["bash", shim], input=json.dumps(raw), capture_output=True, text=True, env=env)
 
@@ -151,9 +151,11 @@ class TestGoldenInstanceE2E(unittest.TestCase):
     def test_installed_shim_phases_present_passes(self):
         # 인스턴스에 00/01/02 phase 문서를 두면 shim glob 스캔이 잡아 phase 게이트 통과
         for pid, sub in (("00", "00-base_plan"), ("01", "01-plan"), ("02", "02-design")):
-            _write(os.path.join(self.inst, "plan_docs", sub, "feature.md"), f"# phase {pid}\n")
+            _write(os.path.join(self.inst, "plan_docs", sub, "feature.md"),
+                   f"# phase {pid}\n\nCycle-Stem: `feature`\n")
         try:
-            p = _run_shim(self.inst, "pre-implementation-gate", _claude_write("app/core/data.src"))
+            p = _run_shim(self.inst, "pre-implementation-gate", _claude_write("app/core/data.src"),
+                          branch="feature")
             self.assertEqual(p.returncode, 0, f"phase 충족 통과 기대\n{p.stdout}\n{p.stderr}")
             self.assertNotIn("phase 미작성", p.stdout + p.stderr)
         finally:

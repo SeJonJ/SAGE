@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock as mock
 from pathlib import Path
 
 SAGE_SCRIPTS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -57,6 +58,25 @@ class TestManifestUtil(unittest.TestCase):
             e1 = mu.upsert_agent(d, "demo", claude_render="", codex_render="", test="t.py", unresolved=[])
             e2 = mu.upsert_agent(d, "demo", claude_render="", codex_render="", test="t.py", unresolved=[])
             self.assertEqual(e1, e2)
+
+    def test_agent_and_skill_upsert_preserve_manifest_when_atomic_replace_fails(self):
+        for kind in ("agent", "skill"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as d:
+                make_root(d)
+                if kind == "skill":
+                    skill_dir = Path(d, "docs", "sage_harness", "skills")
+                    skill_dir.mkdir(parents=True)
+                    Path(skill_dir, "demo.md").write_text("# demo spec")
+                    Path(skill_dir, "demo.claims.yml").write_text("required_claims: []\n")
+                manifest_path = Path(d, mu.MANIFEST_REL)
+                before = manifest_path.read_bytes()
+                upsert = mu.upsert_agent if kind == "agent" else mu.upsert_skill
+
+                with mock.patch.object(mu, "atomic_write_json", side_effect=OSError("injected")):
+                    with self.assertRaises(OSError):
+                        upsert(d, "demo", claude_render="", codex_render="", test="t.py", unresolved=[])
+
+                self.assertEqual(before, manifest_path.read_bytes())
 
     def test_refresh_hashes_nested(self):
         with tempfile.TemporaryDirectory() as d:

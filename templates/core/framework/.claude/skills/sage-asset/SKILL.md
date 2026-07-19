@@ -18,10 +18,7 @@ To **customize an existing CORE agent/skill** (leader/reviewer/sage-review/…) 
 project without creating a new asset, use `/sage-asset-override` instead — it writes a
 project-local overlay (`sage/asset_overrides/**`, `--force`-safe), not a new spec.
 
-Before acting, read optional project overlay `sage/asset_overrides/skills/sage-asset.md`
-if it exists. Apply it before these CORE instructions. The overlay is project-local and
-survives `sage install --force`. It may add project-specific guidance but must not relax AGENT_GUIDE, phase, review, or verification gates. Never edit this CORE render for project-specific loop
-learning.
+Do not edit this CORE render directly (the write-guard blocks it and `sage install --force` overwrites it). Self-overlay is unsupported: `skills/sage-asset` is not in `COMPOSE_ALLOWED`. Put project rules in profile/conventions and use this skill to create genuinely new project assets.
 
 > This skill is a **CORE framework bootstrap asset** — hand-shipped by `sage install`,
 > NOT manifest-tracked. Its reference spec lives at

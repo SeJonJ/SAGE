@@ -75,6 +75,15 @@ class TestExtract(unittest.TestCase):
             self.assertNotIn("경력", c.get("value", ""))
             self.assertNotIn("시니어", c.get("value", ""))
 
+    def test_plan_docs_is_not_misread_as_docs_convention_path(self):
+        claims = rx.extract_claims(
+            "plan_docs/ARCHITECT_GUIDE.md와 docs/backend.md를 읽는다",
+            "plan_docs/ARCHITECT_GUIDE.md와 docs/backend.md를 읽는다",
+            GUIDE, CFG)
+        docs = {c["value"] for c in claims["required_claims"]
+                if c.get("type") == "convention_doc"}
+        self.assertEqual(docs, {"docs/backend.md"})
+
     def test_gstack_runtime_allowed(self):
         vals = [c["value"] for c in self.claims["runtime_delta_allowlist"]]
         self.assertTrue(any("gstack" in v for v in vals), "gstack=runtime_allowed")

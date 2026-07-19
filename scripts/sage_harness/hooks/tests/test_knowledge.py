@@ -71,6 +71,35 @@ def _profile_with_structure(root, vault):
 
 
 class TestKnowledge(unittest.TestCase):
+    def test_profile_loader_applies_adjacent_local_knowledge_override(self):
+        with tempfile.TemporaryDirectory() as root:
+            shared = os.path.join(root, "sage", "project-profile.yaml")
+            _profile(root, "/shared-vault")
+            Path(os.path.join(root, "sage", "project-profile.local.yaml")).write_text(
+                "knowledge_capture:\n  enabled: false\n",
+                encoding="utf-8",
+            )
+
+            profile, err = knowledge._load_profile(shared)
+
+            self.assertIsNone(err)
+            self.assertFalse(profile["knowledge_capture"]["enabled"])
+            self.assertEqual(profile["knowledge_capture"]["vault_path"], "")
+
+    def test_profile_loader_applies_adjacent_local_vault_path(self):
+        with tempfile.TemporaryDirectory() as root:
+            shared = os.path.join(root, "sage", "project-profile.yaml")
+            _profile(root, "/shared-vault")
+            Path(os.path.join(root, "sage", "project-profile.local.yaml")).write_text(
+                "knowledge_capture:\n  enabled: true\n  vault_path: /local-vault\n",
+                encoding="utf-8",
+            )
+
+            profile, err = knowledge._load_profile(shared)
+
+            self.assertIsNone(err)
+            self.assertEqual(profile["knowledge_capture"]["vault_path"], "/local-vault")
+
     def test_scan_writes_matches_deterministically(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
             os.makedirs(os.path.join(vault, "wiki"))
@@ -242,18 +271,107 @@ class TestKnowledge(unittest.TestCase):
             self.assertIn("증상", out.getvalue())   # 누락 마커가 표면화됨
 
     def test_write_back_structure_advisory_passes_when_complete(self):
-        # 필수 마커를 모두 담은 요약 → 구조 검증 통과, advisory WARN 없음.
+        # 필수 마커를 모두 담고 각 섹션에 본문이 있는 요약 → 구조 검증 통과, advisory WARN 없음.
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
             _profile_with_structure(root, vault)
-            summary = "> [!summary]\n\n## 증상\n\nx\n\n## 원인\n\nx\n\n## 수정\n\nx\n\n## 재발 방지\n\nx"
+            summary = "> [!summary]\n> 한 줄 요약\n\n## 증상\n\nx\n\n## 원인\n\nx\n\n## 수정\n\nx\n\n## 재발 방지\n\nx"
             args = WriteArgs(root, "Full", summary)
             args.prefix = "BUG"
             out = io.StringIO()
             with redirect_stdout(out):
                 self.assertEqual(knowledge._run_write_back(args), 0)
-            self.assertIn("골격 마커 존재 확인", out.getvalue())
-            self.assertIn("깊이는 미검증", out.getvalue())   # 깊이 미검증 명시(false-assurance 방지)
+            self.assertIn("골격 마커 존재", out.getvalue())
+            self.assertIn("깊이(질)는 미검증", out.getvalue())   # 깊이 미검증 명시(false-assurance 방지)
             self.assertNotIn("advisory", out.getvalue())
+
+    def test_write_back_structure_advisory_warns_on_hollow_section(self):
+        # 마커는 전부 있으나 한 섹션(summary 콜아웃)이 빈 헤더 → advisory WARN(차단 안 함, rc 0).
+        # 마커 '존재'만으론 hollow 골격을 통과시키던 갭을 _hollow_sections 가 표면화한다.
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            _profile_with_structure(root, vault)
+            summary = "> [!summary]\n\n## 증상\n\nx\n\n## 원인\n\nx\n\n## 수정\n\nx\n\n## 재발 방지\n\nx"
+            args = WriteArgs(root, "Hollow", summary)
+            args.prefix = "BUG"
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(knowledge._run_write_back(args), 0)
+            output = out.getvalue()
+            self.assertIn("빈 헤더", output)
+            self.assertIn("[!summary]", output)          # 빈 섹션이 지목됨
+            self.assertNotIn("골격 마커 존재+본문 확인", output)   # 깨끗 통과 문구는 안 나온다
+
+    def test_hollow_sections_detects_heading_title_suffix_and_empty_callout(self):
+        # #5: 헤딩 제목 접미사('## 증상 (상세)')는 본문이 아니다 → 뒤에 바로 다음 섹션이면 hollow.
+        # #6: 빈 콜아웃 계속줄('>')만 있는 섹션도 hollow.
+        note = ("> [!summary]\n>\n\n"          # 콜아웃 + 빈 계속줄만 → hollow(#6)
+                "## 증상 (상세)\n"              # 제목 접미사만, 본문 없음 → hollow(#5)
+                "## 원인\n\n실제 원인\n")        # 본문 있음 → 정상
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "note.md"
+            p.write_text(note, encoding="utf-8")
+            hollow = knowledge._hollow_sections(str(p), ["> [!summary]", "## 증상", "## 원인"])
+        self.assertIn("> [!summary]", hollow)
+        self.assertIn("## 증상", hollow)
+        self.assertNotIn("## 원인", hollow)
+
+    def test_hollow_sections_subheading_and_code_are_body_not_boundary(self):
+        # 하위 헤딩(### )·펜스 코드블록으로 채운 섹션은 본문 있음 → hollow 아님(경계는 필수 마커만).
+        note = ("## 변경 내역\n### 파일 A\n상세\n\n"       # 하위 헤딩 본문 → 정상
+                "## 검증\n```\ncode\n```\n\n"              # 코드블록 본문 → 정상
+                "## 원인\n\n원인\n")
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "note.md"
+            p.write_text(note, encoding="utf-8")
+            hollow = knowledge._hollow_sections(str(p), ["## 변경 내역", "## 검증", "## 원인"])
+        self.assertEqual(hollow, [])
+
+    def test_hollow_sections_html_comment_placeholder_is_not_body(self):
+        # 순수 HTML 주석 한 줄('<!-- TODO -->')은 자리표시자지 본문이 아니다 → hollow.
+        # 단, 주석 뒤 실내용이 붙은 줄('<!-- x --> 실제 텍스트')은 본문으로 인정(오탐 방지).
+        note = ("## 증상\n<!-- TODO fill later -->\n"       # 주석 placeholder → hollow
+                "## 수정\n<!-- x --> 실제 수정 내용\n"       # 주석+실내용 → 정상
+                "## 원인\n\n실제 원인\n")
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "note.md"
+            p.write_text(note, encoding="utf-8")
+            hollow = knowledge._hollow_sections(str(p), ["## 증상", "## 수정", "## 원인"])
+        self.assertIn("## 증상", hollow)
+        self.assertNotIn("## 수정", hollow)
+        self.assertNotIn("## 원인", hollow)
+
+    def test_hollow_sections_multiline_html_comment_placeholder_is_not_body(self):
+        # 여러 줄 HTML 주석('<!--' / TODO / '-->')만 있는 섹션도 자리표시자지 본문이 아니다 → hollow.
+        # 단, '-->' 뒤 실내용이 붙은 종료줄은 본문으로 인정(오탐 방지).
+        note = ("## 증상\n<!--\nTODO fill later\n-->\n"        # 여러 줄 주석만 → hollow
+                "## 수정\n<!--\nc\n--> 실제 수정 내용\n"        # 종료줄에 실내용 → 정상
+                "## 원인\n\n실제 원인\n")
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "note.md"
+            p.write_text(note, encoding="utf-8")
+            hollow = knowledge._hollow_sections(str(p), ["## 증상", "## 수정", "## 원인"])
+        self.assertIn("## 증상", hollow)
+        self.assertNotIn("## 수정", hollow)
+        self.assertNotIn("## 원인", hollow)
+
+    def test_missing_structure_ignores_marker_inside_fence(self):
+        # 예시 코드블록 안에만 있는 마커는 실제 섹션이 아니다 → missing 으로 잡아야 한다.
+        note = "# T\n```\n## 증상\nexample\n```\n\n## 원인\n\n원인\n"
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "note.md"
+            p.write_text(note, encoding="utf-8")
+            missing = knowledge._missing_structure(str(p), ["## 증상", "## 원인"])
+        self.assertIn("## 증상", missing)
+        self.assertNotIn("## 원인", missing)
+
+    def test_missing_structure_mixed_fence_not_closed_early(self):
+        # ``` 안의 ~~~ 는 펜스를 닫지 못한다 — 그 뒤 '## 증상'은 여전히 펜스 안(예시)이라 missing.
+        note = "# T\n```\n~~~\n## 증상\n```\n\n## 원인\n\n원인\n"
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "note.md"
+            p.write_text(note, encoding="utf-8")
+            missing = knowledge._missing_structure(str(p), ["## 증상", "## 원인"])
+        self.assertIn("## 증상", missing)
+        self.assertNotIn("## 원인", missing)
 
     def test_write_back_no_structure_config_skips_check(self):
         # required_structure 미설정(기본) → 구조 검증 자체를 하지 않는다(동작 불변).

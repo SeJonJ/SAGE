@@ -9,18 +9,27 @@ bash·python 경로 추측 없이 어느 OS 에서도 동일하게 hook 이 돈�
 """
 import argparse
 import importlib.util
+import json
 import os
 import subprocess
 import sys
 
+import yaml
+
 # 셸 어댑터와 동일: --root 없으면 host 별 env → git 루트 → cwd 순으로 프로젝트 루트 해석.
 _ROOT_ENV = {"claude": "CLAUDE_PROJECT_DIR", "codex": "CODEX_PROJECT_ROOT"}
+_PROJECT_ROOT_ENV = "SAGE_PROJECT_ROOT"
+_GATE_HOOKS = {
+    "pre-implementation-gate",
+    "pre-phase4-checklist-gate",
+    "stop-compliance-report",
+}
 
 
 def _resolve_root(runtime, explicit):
     if explicit:
         return os.path.abspath(explicit)
-    env = os.environ.get(_ROOT_ENV.get(runtime, ""))
+    env = os.environ.get(_PROJECT_ROOT_ENV) or os.environ.get(_ROOT_ENV.get(runtime, ""))
     if env:
         return os.path.abspath(env)
     try:
@@ -54,6 +63,86 @@ def _load_run_hook(core_dir):
     return mod
 
 
+def _prepare_gate_profile(root, hook):
+    """Gate hooks require a current compiled profile; advisory hooks stay fail-open."""
+    if hook not in _GATE_HOOKS:
+        return None
+
+    yaml_path = os.path.join(root, "sage", "project-profile.yaml")
+    json_path = os.path.join(root, "sage", "project-profile.json")
+    try:
+        with open(yaml_path, encoding="utf-8") as fh:
+            yaml_profile = yaml.safe_load(fh) or {}
+    except Exception as e:
+        return f"프로필 YAML 로드 실패({yaml_path}): {type(e).__name__}: {e}"
+    try:
+        with open(json_path, encoding="utf-8") as fh:
+            json_profile = json.load(fh)
+    except Exception as e:
+        return f"컴파일 프로필 로드 실패({json_path}): {type(e).__name__}: {e}"
+
+    if not isinstance(yaml_profile, dict) or not isinstance(json_profile, dict):
+        return "프로필 루트는 객체(mapping)여야 합니다."
+    from sage.profile_compile import ProfileCompileError, materialize_profile
+    try:
+        expected_profile = materialize_profile(yaml_profile)
+    except ProfileCompileError as e:
+        return f"프로필 raw risk 필드 타입 오류: {e}"
+    if expected_profile != json_profile:
+        return "project-profile.yaml과 project-profile.json이 다릅니다. sage generate를 다시 실행하세요."
+
+    os.environ["SAGE_PROFILE"] = json_path
+    return None
+
+
+def _render_bootstrap_block(runtime, hook, message):
+    text = f"[sage-hook] {hook} 차단: {message}"
+    if runtime == "codex" and hook == "stop-compliance-report":
+        print(json.dumps({"decision": "block", "reason": text}, ensure_ascii=False))
+        return 0
+    print(text, file=sys.stderr)
+    return 2
+
+
+def _notify_version_contract(root, hook):
+    if hook != "session-start-snapshot":
+        return
+    yaml_path = os.path.join(root, "sage", "project-profile.yaml")
+    manifest_path = os.path.join(root, "docs", "sage_harness", ".manifest.json")
+    try:
+        with open(yaml_path, encoding="utf-8") as fh:
+            profile = yaml.safe_load(fh) or {}
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        print(f"[sage-version] WARN source=shared-profile unreadable error={type(exc).__name__}", file=sys.stderr)
+        return
+    try:
+        with open(manifest_path, encoding="utf-8") as fh:
+            manifest = json.load(fh)
+    except (OSError, ValueError) as exc:
+        print(f"[sage-version] WARN source=manifest unreadable error={type(exc).__name__}", file=sys.stderr)
+        return
+    if not isinstance(profile, dict):
+        print("[sage-version] WARN source=shared-profile unreadable error=NonObjectRoot", file=sys.stderr)
+        return
+    if not isinstance(manifest, dict):
+        print("[sage-version] WARN source=manifest unreadable error=NonObjectRoot", file=sys.stderr)
+        return
+
+    from sage import __version__
+    from sage.version_contract import version_axes, version_contract_issues
+
+    issues = [issue for issue in version_contract_issues(profile, manifest, __version__)
+              if issue.severity in ("WARN", "FAIL")]
+    if not issues:
+        return
+    axes = version_axes(profile, manifest, __version__)
+    remediations = list(dict.fromkeys(issue.remediation for issue in issues if issue.remediation))
+    suffix = f"; 조치: {'; '.join(remediations)}" if remediations else ""
+    print("[sage-version] WARN "
+          f"required={axes.required} installed={axes.installed} "
+          f"generated={axes.generated} runtime={axes.runtime}{suffix}", file=sys.stderr)
+
+
 def main():
     ap = argparse.ArgumentParser(prog="sage-hook",
                                  description="SAGE hook 실행(크로스플랫폼, bash 비의존)")
@@ -63,14 +152,19 @@ def main():
     ap.add_argument("--core-dir", default=None, help="hook 코어 경로(기본: 프로젝트 로컬→번들)")
     a = ap.parse_args()
     root = _resolve_root(a.runtime, a.root)
+    os.environ.setdefault(_PROJECT_ROOT_ENV, root)
     core_dir = _resolve_core_dir(root, a.core_dir)
     raw_text = sys.stdin.read() if not sys.stdin.isatty() else ""
+    _notify_version_contract(root, a.hook)
+    profile_error = _prepare_gate_profile(root, a.hook)
+    if profile_error:
+        return _render_bootstrap_block(a.runtime, a.hook, profile_error)
     try:
         run_hook = _load_run_hook(core_dir)
     except Exception as e:
         # 코어 로드 실패 = hook 무력화 → 조용히 통과 말고 surface(gate-disable 은 시끄럽게).
         print(f"⛔ [sage-hook] hook 코어 로드 실패({core_dir}) → {type(e).__name__}: {e}", file=sys.stderr)
-        return 0
+        return 2 if a.hook in _GATE_HOOKS else 0
     return run_hook.dispatch(a.runtime, a.hook, root, core_dir, raw_text)
 
 

@@ -5,6 +5,16 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "sage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "required_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$"
+        }
+      }
+    },
     "project": {
       "type": "object",
       "description": "prefix 는 codex 전역 skill 네임스페이스($CODEX_HOME/skills/<prefix>-<id>)에 쓰이므로 경로 안전 토큰만 허용(경로 탈출 방지). 그 외 키는 느슨.",
@@ -14,7 +24,34 @@
     },
     "options": { "type": "object" },
     "paths": { "type": "object" },
-    "components": { "type": "array" },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$" },
+          "paths": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^[^\\r\\n]+$" }
+          },
+          "model": {
+            "type": "string", "minLength": 1, "maxLength": 200,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$"
+          },
+          "runtime_models": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": false,
+            "properties": {
+              "claude": { "type": "string", "minLength": 1 },
+              "codex": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
     "extraction": {
       "type": "object",
       "additionalProperties": false,
@@ -28,18 +65,36 @@
       "additionalProperties": false,
       "description": "pre-implementation-gate 위험 분류 입력. 알 수 없는 키 = 오타로 간주(게이트 침묵 비활성 방지).",
       "properties": {
-        "l0_pass_globs": { "type": "array" },
-        "l1_path_globs": { "type": "array" },
-        "l2_path_globs": { "type": "array" },
-        "l3_filename_globs": { "type": "array" },
-        "l2_content_keywords": { "type": "array" },
-        "l3_content_keywords": { "type": "array" },
+        "l0_pass_globs": { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" } },
+        "l0_exclude_globs": { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" } },
+        "l1_path_globs": { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" } },
+        "l2_path_globs": { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" } },
+        "l3_filename_globs": { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" } },
+        "l2_content_keywords": { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" } },
+        "l3_content_keywords": { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" } },
+        "content_l3_enforce": { "enum": ["warn", "block"] },
+        "domains": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "risk_level", "protocol_pointer"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+              "risk_level": { "enum": ["L1", "L2", "L3"] },
+              "path_globs": { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" } },
+              "content_keywords": { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" } },
+              "protocol_pointer": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
         "generic_tokens": { "type": "array" },
         "review_patterns": { "type": "array" },
         "desktop_block_glob": { "type": "string" },
         "desktop_block_hint": { "type": "string" },
         "plan_glob": { "type": "string" },
         "l3_review_strategy": { "type": "string" }
+        ,"l3_review_glob": { "type": "string" }
       }
     },
     "file_type_map": { "type": "array" },
@@ -62,7 +117,7 @@
       "description": "PDCA phase 의무구조. 알 수 없는 키 = 오타로 간주(phase 강제 침묵 약화 방지).",
       "properties": {
         "enabled": { "type": "boolean" },
-        "phases": { "type": "array" },
+        "phases": { "type": "array", "items": { "type": "object" } },
         "pre_implementation_required": { "type": "object" },
         "report_phase": { "type": "string" },
         "approve_phase": { "type": "string" },
@@ -93,6 +148,14 @@
           "properties": {
             "report_gate_enforce": { "enum": ["off", "advisory", "enforce"] }
           }
+        },
+        "writeback": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "L2/L3 write-back 심층 노트가 host depth self-review 를 거쳤는지 Stop 훅이 06 자기선언(`Depth-Self-Review: performed`)으로 사후 확인하는 게이트. 품질이 아니라 self-review 실행 증거만 본다(깊이 판정은 skill 지침·host 소관). enforce 라도 Stop 훅 플랫폼 제약(stop_hook_active)상 block 은 세션당 최대 1회.",
+          "properties": {
+            "depth_review_gate": { "enum": ["off", "advisory", "enforce"] }
+          }
         }
       }
     },
@@ -113,30 +176,98 @@
             },
             "statuses": {
               "type": "array",
-              "items": { "type": "string" }
+              "uniqueItems": true,
+              "items": { "enum": ["PASS", "FAIL", "NOT TESTED", "N/A"] }
             },
             "unresolved_statuses": {
               "type": "array",
-              "items": { "type": "string" }
+              "uniqueItems": true,
+              "items": { "enum": ["FAIL", "NOT TESTED"] }
             },
-            "report_gate_enforce": { "enum": ["off", "advisory", "enforce"] }
+            "report_gate_enforce": { "enum": ["off", "advisory", "enforce"] },
+            "report_gate_by_risk": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "L1": { "enum": ["advisory"] },
+                "L2": { "enum": ["advisory"] },
+                "L3": { "enum": ["enforce"] }
+              },
+              "required": ["L2", "L3"]
+            },
+            "waiver": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" }
+              },
+              "required": ["enabled"]
+            }
           }
         }
       }
     },
-    "runtime": { "type": "object" },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": { "enum": ["claude", "codex"], "description": "legacy alias for active_host" },
+        "installed_hosts": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "enum": ["claude", "codex"] }
+        },
+        "active_host": { "enum": ["claude", "codex"] },
+        "external_reviewer": { "type": "string" },
+        "asset_ssot": { "type": "string" }
+      }
+    },
     "team": { "type": "object" },
     "cross_model": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "effort": { "enum": ["minimal", "low", "medium", "high", "xhigh", "max"] }
+        "policy": { "enum": ["required", "recommended", "off"] },
+        "peer": { "enum": ["opposite_runtime"] },
+        "on_unavailable": { "enum": ["block"] },
+        "effort": { "enum": ["minimal", "low", "medium", "high", "xhigh", "max"] },
+        "reviewer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["host", "model"],
+          "properties": {
+            "host": { "enum": ["claude", "codex"] },
+            "model": { "type": "string", "minLength": 1 }
+          }
+        }
       }
     },
     "capabilities": { "type": "object" },
     "hooks": { "type": "object" },
     "codegraph": { "type": "object" },
     "knowledge_capture": { "type": "object" },
-    "context_management": { "type": "object" },
+    "context_management": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Explicit context snapshot/restore consumer. Host hidden context is never implied.",
+      "properties": {
+        "compaction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "preserve"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "preserve": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": ["architectural_decisions", "open_bugs", "file_ownership", "pending_verifications"]
+              }
+            },
+            "max_snapshot_bytes": { "type": "integer", "minimum": 1024, "maximum": 8388608 }
+          }
+        }
+      }
+    },
     "mcp": {
       "type": "object",
       "description": "MCP 자산(4번째 kind) enable 토글. payload 아님 — payload SSOT 는 docs/sage_harness/mcps/{id}.md spec. enabled 없으면 mcps/ 전체 생성(default-on).",

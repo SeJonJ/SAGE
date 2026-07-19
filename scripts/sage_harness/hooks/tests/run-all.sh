@@ -2,6 +2,8 @@
 # SAGE hook 전체 회귀 테스트 — write guard(bash) + reverse_extract hook(python).
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$HERE/../../../.." && pwd)"
+export PYTHONPATH="$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 rc=0
 
 echo "### 1. generated-artifact write guard"
@@ -22,6 +24,14 @@ python3 "$HERE/test_pre_phase4_checklist_gate.py" || rc=1
 echo ""
 echo "### 5. pre-implementation-gate reverse_extract 폐루프 (부분추출 + unresolved 전략슬롯)"
 python3 "$HERE/test_pre_implementation_gate.py" || rc=1
+
+echo ""
+echo "### 5a. deterministic Cycle-Stem binding"
+python3 "$HERE/test_cycle_binding.py" || rc=1
+
+echo ""
+echo "### 5b. exact cycle/domain L3 review strategy"
+python3 "$HERE/test_cycle_domain_review.py" || rc=1
 
 echo ""
 echo "### 6. stop-compliance-report reverse_extract 폐루프 (부분추출 + policy_delta 보존)"
@@ -116,6 +126,14 @@ echo "### 26. profile_validate (R2 profile 스키마+의미검증 — 오타키 
 python3 "$HERE/test_profile_validate.py" || rc=1
 
 echo ""
+echo "### 26b. shared/local profile layering (정책 완화 차단 + capability projection)"
+python3 "$HERE/test_profile_layers.py" || rc=1
+
+echo ""
+echo "### 26c. project SAGE version contract (required/install/generate/runtime axes)"
+python3 "$HERE/test_version_contract.py" || rc=1
+
+echo ""
 echo "### 27. validate conformance 배선 (P1-4 agent/skill 폐루프 — render 누락 required claim/금지위반 → validate FAIL)"
 python3 "$HERE/test_validate_conformance.py" || rc=1
 
@@ -182,6 +200,35 @@ python3 "$HERE/test_retro_audit.py" || rc=1
 echo ""
 echo "### 43. retro_gate (retro 게이트 enforce 판정 BLOCK/WARN — report_gate_enforce 정책)"
 python3 "$HERE/test_retro_gate.py" || rc=1
+
+echo ""
+echo "### 43a. writeback_depth_gate (L2/L3 심층 노트 self-review 자기선언 게이트 — depth_review_gate 정책)"
+python3 "$HERE/test_writeback_depth_gate.py" || rc=1
+
+echo ""
+echo "### 44. acceptance waiver (risk policy + exact L3 grant/use/revoke audit)"
+python3 "$HERE/test_acceptance_waiver.py" || rc=1
+
+echo ""
+echo "### 45. install transaction (preflight-first + rollback + lock/CAS)"
+python3 "$HERE/test_install_transaction.py" || rc=1
+
+echo ""
+echo "### 46. protected CI authority (base/head max-risk + exact evidence + attestation)"
+python3 "$HERE/test_ci_authority.py" || rc=1
+
+echo ""
+echo "### 47. manual double-host (desired/actual/active host + opposite reviewer)"
+python3 "$HERE/test_runtime_hosts.py" || rc=1
+
+echo ""
+echo "### 48. host model catalog/routing (provenance + component/reviewer selection)"
+python3 "$HERE/test_model_catalog.py" || rc=1
+python3 "$HERE/test_model_routing.py" || rc=1
+
+echo ""
+echo "### 49. context snapshot/restore (phase binding + compaction consumer + manual host handoff)"
+python3 "$HERE/test_context.py" || rc=1
 
 echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi

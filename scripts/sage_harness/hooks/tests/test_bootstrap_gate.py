@@ -47,10 +47,18 @@ def _root(d):
     # 없으면 registration 은 되나 manifest 미스탬프로 rc 1 이 되어, 게이트 통과 케이스가 rc 0 을 못 받는다.
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime"), exist_ok=True)
     os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "policies"), exist_ok=True)
-    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py", "messages.py",
+    strategies = os.path.join(d, "scripts", "sage_harness", "hooks", "strategies", "pre_implementation_gate")
+    os.makedirs(strategies, exist_ok=True)
+    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py",
+               "acceptance_waiver.py", "messages.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
+    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "cycle_binding.py")).write_text(
+        "# cycle_binding.py\n")
     Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "retro_gate.py")).write_text("# retro_gate\n")
+    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "writeback_depth_gate.py")).write_text("# writeback_depth_gate\n")
+    for fn in ("claude_grep_first.py", "codex_feature_signal.py", "cycle_domain_review.py"):
+        Path(os.path.join(strategies, fn)).write_text(f"# {fn}\n")
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "aaa-hook.md")).write_text(_SPEC)
     Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).write_text(json.dumps({
         "sage_version": "0.1.0", "host_runtime": "claude", "assets": {

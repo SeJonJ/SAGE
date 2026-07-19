@@ -87,6 +87,14 @@ class TestConformance(unittest.TestCase):
         self.assertEqual(r["status"], "FAIL")  # skill:backend-test-layer 미검출 → FAIL
         self.assertTrue(any("backend-test-layer" in m["value"] for m in r["missing_required"]))
 
+    def test_synthetic_output_contract_matches_report_heading(self):
+        claims = {"required_claims": [{"type": "output_contract",
+                                        "value": "output:report_format", "confidence": "high"}],
+                  "forbidden_claims": [], "runtime_delta_allowlist": [], "unresolved": []}
+        for heading in ("## 리포트 형식", "## 10. 리포트 형식 (체커 모드)", "### 응답 형식 (필수)"):
+            result = cf.conformance_lint(heading + "\n", claims)
+            self.assertEqual(result["status"], "PASS", result)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

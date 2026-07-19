@@ -1,6 +1,6 @@
 """sage doctor — 옵션 의존성 점검 + reviewer_resolution 노출 (step10).
 
-Codex 2R 합의: cross-invocation 경로(§12 미해결, codex-host→Claude)를 v1 에서 fallback 으로 닫음.
+Cross-invocation은 반대 runtime CLI를 직접 호출하며, peer 미가용 시 Phase 05를 fail-closed로 차단한다.
 reviewer_resolution 은 순수 판정 함수, doctor 가 옵션 의존성(gstack/codegraph/vault) + reviewer mode 를 정보성 출력.
 gstack 가용성 = profile requires/capabilities + PATH which (개인경로 의존 금지).
 exit: 정상/degraded/의존성미설치 = 0, profile YAML 파싱 오류(설정 무시됨) = 1 (Codex P1: 실패 원인 구분).
@@ -10,6 +10,11 @@ import os
 import platform
 import shutil
 import sys
+from pathlib import Path
+
+from sage.runtime_hosts import (active_host, configured_hosts, opposite_host, profile_issues,
+                                receipt_hosts, receipt_issues)
+from sage.profile_layers import load_profile_layers, local_profile_git_issues
 
 
 def register(sub):
@@ -29,12 +34,11 @@ def reviewer_resolution(profile: dict, caps: dict) -> dict:
     결정표:
     - cross_model off                       → clean_context_same_runtime (의도적, degraded=false)
     - cross on, claude-host, codex CLI 가용  → opposite_runtime(codex) via `codex exec`
-    - cross on, claude-host, codex CLI 불가  → clean_context fallback (degraded, codex_cli_unavailable)
+    - cross on, claude-host, codex CLI 불가  → blocked (codex_cli_unavailable)
     - cross on, codex-host, claude CLI 가용  → opposite_runtime(claude) via `claude -p`
-    - cross on, codex-host, claude CLI 불가  → clean_context fallback (degraded, claude_cli_unavailable)
+    - cross on, codex-host, claude CLI 불가  → blocked (claude_cli_unavailable)
     """
-    runtime = profile.get("runtime", {}) or {}
-    host = runtime.get("host", "claude")
+    host = active_host(profile)
     cross = bool((profile.get("options", {}) or {}).get("cross_model", False))
 
     def res(mode, rt, fb, deg, reason, notice):
@@ -44,33 +48,42 @@ def reviewer_resolution(profile: dict, caps: dict) -> dict:
     if not cross:
         return res("clean_context_same_runtime", host, False, False, None,
                    "cross_model off — 의도적 same-runtime (degraded 아님)")
-    peer = "codex" if host == "claude" else "claude"
+    peer = opposite_host(profile)
     if caps.get(peer):
         invoker = "codex exec" if peer == "codex" else "claude -p"
         return res("opposite_runtime", peer, False, False, None,
                    f"{host}-host → {peer} via `{invoker}` (SAGE 직접 호출, gstack 불요)")
-    return res("clean_context_same_runtime", host, True, True, f"{peer}_cli_unavailable",
-               f"cross_model on 이나 {peer} CLI 미가용 → clean-context fallback (모델편향 못없애는 최소안전선)")
+    return res("blocked", peer, False, True, f"{peer}_cli_unavailable",
+               f"cross_model on 이나 {peer} CLI 미가용 → Phase 05 BLOCKED")
 
 
 _DEFAULT_PROFILE = {"runtime": {"host": "claude"}, "options": {"cross_model": False}}
 
 
-def _load_profile(path):
+def _load_profile_context(path):
     """반환 (profile|None, status). status 로 실패 원인 구분(Codex P1):
     'ok' | 'missing_file' | 'missing_pyyaml' | 'parse_error:<예외명>'.
     (이전엔 셋 다 None 으로 뭉개 사용자가 설정 무시 여부를 알 수 없었음.)"""
     if not os.path.exists(path):
-        return None, "missing_file"
+        return None, "missing_file", None
     try:
         import yaml  # pyyaml (선언 의존성)
     except ImportError:
-        return None, "missing_pyyaml"
-    try:
-        with open(path, encoding="utf-8") as f:
-            return (yaml.safe_load(f) or {}), "ok"
-    except Exception as e:
-        return None, f"parse_error:{type(e).__name__}"
+        return None, "missing_pyyaml", None
+    layers = load_profile_layers(path)
+    shared_load_error = next((message for severity, message in layers.issues
+                              if severity == "FAIL" and message.startswith("shared profile YAML 파싱 오류")), None)
+    if shared_load_error:
+        error_name = shared_load_error.split("오류(", 1)[-1].split(")", 1)[0]
+        return None, f"parse_error:{error_name}", layers
+    if layers.has_fail:
+        return layers.effective, "layer_error", layers
+    return layers.effective, "ok", layers
+
+
+def _load_profile(path):
+    profile, status, _ = _load_profile_context(path)
+    return profile, status
 
 
 def _sha256_file(path):
@@ -91,7 +104,7 @@ def _check_codex_skill_deployment(prof_path, profile):
     import json
     # codex 전역 skill 발견은 codex-host 에서만 의미(claude-host 는 codex skill 미사용 → N/A 스킵).
     # 전역 배포는 opt-in(--deploy-codex)이므로 claude-host 에 거짓 WARN 을 내지 않는다(codex 리뷰 P1).
-    if (profile.get("runtime") or {}).get("host") != "codex":
+    if "codex" not in configured_hosts(profile):
         return
     # root 파생: 실제 프로젝트 profile(<root>/sage/project-profile.yaml)에서만. templates 기본은 스킵.
     # realpath 정규화(상대 --profile·심링크도 cwd 무관하게 올바른 root 파생 — codex 리뷰 P2).
@@ -165,6 +178,51 @@ def _emit_core_drift(kind, id_, status, dst, stale, missing):
         print(f"  ⚠️  [{kind}] {id_}: 점검 실패 ({dst})")
 
 
+def _report_codex_core_skill_scope(root, manifest):
+    """Report live Codex CORE skill copies without claiming undocumented host precedence."""
+    print("## Codex CORE skill scope")
+    if root is None or "codex" not in receipt_hosts(manifest, "claude"):
+        print("  N/A (Codex installed surface 없음 또는 프로젝트 루트 미상)")
+        return
+    from sage.commands import install
+    receipts = manifest.get("core_skill_receipts") if isinstance(manifest, dict) else None
+    receipt = receipts.get("codex") if isinstance(receipts, dict) else None
+    if not install._valid_core_skill_receipt(receipt):
+        print("  ⚠️  scope receipt 없음/손상 — 우선순위를 추정하지 않음; 명시적 --skill-scope로 재설치")
+        selected = None
+    else:
+        selected = receipt["scope"]
+        print(f"  intended scope: {selected} (receipt SAGE {receipt['sage_version']})")
+
+    duplicates = []
+    conflicts = []
+    cleanup_paths = set()
+    for skill_id in install.core_skill_ids():
+        surfaces = install.codex_core_skill_surfaces(root, skill_id)
+        present = [(name, status, path) for name, (status, path) in surfaces.items()
+                   if status != "missing"]
+        if len(present) > 1:
+            duplicates.append(skill_id)
+            if any(status != "ok" for _name, status, _path in present):
+                conflicts.append(skill_id)
+            print(f"  ⚠️  ${skill_id}: duplicate; precedence=ambiguous")
+            for name, status, path in present:
+                intended = " (intended)" if name == selected else ""
+                print(f"      {name}{intended}: {status} — {path}")
+                if name != selected and path:
+                    cleanup_paths.add(os.path.dirname(path))
+    if not duplicates:
+        print("  ✅ 중복 CORE skill discovery surface 없음")
+    else:
+        print(f"  ⚠️  duplicate {len(duplicates)}종; manifest scope는 의도일 뿐 실제 host precedence를 증명하지 않음")
+        if conflicts:
+            print("  ❌ version/content conflict: " + ", ".join(f"${sid}" for sid in conflicts))
+        print("  정리: 선택 scope를 확인한 뒤 아래 반대 사본 디렉터리를 제거하고 `sage doctor` 재실행")
+        for path in sorted(cleanup_paths):
+            print(f"    - {path}")
+        print("  SAGE는 공유 home/저장소 사본을 자동 삭제하지 않습니다.")
+
+
 def _check_core_render_drift(profile, prof_path):
     """Hand-shipped CORE renders (CORE skills 7종 + roster agents 6종) are not
     manifest-tracked. A stale copy silently runs outdated profile/review-loop rules, and
@@ -177,22 +235,43 @@ def _check_core_render_drift(profile, prof_path):
     로컬 커스터마이즈는 CORE 렌더 직접수정이 아니라 `sage/asset_overrides/**`(install-safe)로 두어 보존한다.
     """
     from sage.commands import install
-    host = (profile.get("runtime") or {}).get("host", "claude")
     root = _project_root_from_profile(prof_path)   # None → templates 기본(프로젝트 아님)
+    host = active_host(profile)
+    manifest = None
+    if root is not None:
+        import json
+        try:
+            manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
+        except Exception:
+            manifest = None
+    hosts = receipt_hosts(manifest, host)
+    desired_hosts = configured_hosts(profile)
     print("## CORE 렌더 drift 점검 (스킬 + 로스터 에이전트)")
-    print(f"  host={host} · 기준: `sage install` 가 hand-ship 하는 CORE 렌더 (manifest 비추적)")
+    print(f"  installed_hosts={hosts} · 기준: `sage install` hand-shipped CORE 렌더")
+    for _, message in receipt_issues(profile, manifest):
+        print(f"  ⚠️  {message} — 누락 host는 `sage install --host <host>`로 설치하고 profile/receipt를 재대조")
     stale, missing = [], []
 
-    for sid in install.core_skill_ids():
-        if host == "codex":
-            status, dst = install.codex_core_skill_status(sid)   # 전역 $CODEX_HOME/skills 대조
-        elif root is not None:
-            status, dst = install.core_render_status(
-                install._core_skill_source(sid),
-                os.path.join(root, ".claude", "skills", sid, "SKILL.md"))
-        else:
-            continue   # claude repo 스킬은 프로젝트 루트가 있어야 점검 가능
-        _emit_core_drift("skill", sid, status, dst, stale, missing)
+    for installed_host in hosts:
+        print(f"  [{installed_host}] discovery surface")
+        for sid in install.core_skill_ids():
+            if installed_host == "codex":
+                receipts = manifest.get("core_skill_receipts") if isinstance(manifest, dict) else None
+                receipt = receipts.get("codex") if isinstance(receipts, dict) else None
+                scope = receipt.get("scope") if install._valid_core_skill_receipt(receipt) else None
+                if scope == "disabled":
+                    continue
+                if scope not in ("global", "project-local"):
+                    print(f"  ⚠️  [skill] {sid}: scope receipt 없음 — 위치 추정 생략")
+                    continue
+                status, dst = install.codex_core_skill_status(sid, dest=root, scope=scope)
+            elif root is not None:
+                status, dst = install.core_render_status(
+                    install._core_skill_source(sid),
+                    os.path.join(root, ".claude", "skills", sid, "SKILL.md"))
+            else:
+                continue
+            _emit_core_drift("skill", sid, status, dst, stale, missing)
 
     # install 이 쓰기 전에 거부하는 것과 **같은 검사**. 여기서 잡히면 렌더 대조는 의미가 없다.
     invalid = [m for sev, m in install.team_runtime_issues(profile) if sev == "FAIL"]
@@ -200,17 +279,34 @@ def _check_core_render_drift(profile, prof_path):
         print(f"  ❌ [agent] {msg}")
 
     if root is not None and not invalid:
-        agent_dir = ".claude" if host == "claude" else ".codex"
-        for aid in install.core_agent_ids():
-            # claude host 만 profile 의 model/effort 를 렌더에 주입한다 → 기대 렌더도 같은 기준이어야
-            # drift 로 오판되지 않는다. codex 는 주입 기전이 없어 소스 원문이 기대값.
-            overrides = install.agent_frontmatter_overrides(profile, aid) if host == "claude" else {}
-            status, dst = install.core_render_status(
-                install._core_agent_source(aid),
-                os.path.join(root, agent_dir, "agents", f"{aid}.md"), overrides)
-            _emit_core_drift("agent", aid, status, dst, stale, missing)
+        for installed_host in hosts:
+            agent_dir = ".claude" if installed_host == "claude" else ".codex"
+            for aid in install.core_agent_ids():
+                overrides = install.agent_frontmatter_overrides(profile, aid) if installed_host == "claude" else {}
+                status, dst = install.core_render_status(
+                    install._core_agent_source(aid),
+                    os.path.join(root, agent_dir, "agents", f"{aid}.md"), overrides)
+                _emit_core_drift("agent", aid, status, dst, stale, missing)
     elif root is None:
         print("  ℹ️  프로젝트 루트 미상(templates 기본 profile) → 로스터 에이전트 점검 생략.")
+
+    # 오버레이 물리화 drift 표면화(진단용). 권위 게이트는 `sage validate`(exit 1) — 여기선 가시성만 제공.
+    if root is not None:
+        import json as _json
+        from sage import overlay_materialize as _mat
+        mpath = os.path.join(root, "docs", "sage_harness", ".manifest.json")
+        _mani = manifest
+        cr = _mani.get("core_renders") if isinstance(_mani, dict) else None
+        if cr:
+            for installed_host in hosts:
+                ov = _mat.check(root, installed_host, cr)
+                if ov:
+                    print(f"  [{installed_host}] 오버레이 물리화 drift "
+                          "(→ `sage sync-overlays` → `sage validate --strict`):")
+                    for sev, key, msg in ov:
+                        print(f"    {'❌' if sev == 'FAIL' else '🕒'} {sev} [{key}] {msg}")
+        elif isinstance(_mani, dict) and "core_renders" not in _mani:
+            print("  ℹ️  overlay 물리화 앵커 없음 → `sage install --force` 로 생성 권장.")
 
     if invalid:
         # 이 profile 로는 install 이 거부한다 → `--force` 를 권하면 유저가 헛돈다. stale/missing 안내는
@@ -221,13 +317,31 @@ def _check_core_render_drift(profile, prof_path):
             print(f"      (렌더 drift {len(stale) + len(missing)}건도 있으나 profile 을 고친 뒤 다시 진단하세요)")
         return 1
     if stale or missing:
+        repair_host = hosts[0] if len(hosts) == 1 else "<host>"
+        repair_scope = None
+        if repair_host == "codex" and isinstance(manifest, dict):
+            receipts = manifest.get("core_skill_receipts")
+            receipt = receipts.get("codex") if isinstance(receipts, dict) else None
+            if install._valid_core_skill_receipt(receipt):
+                repair_scope = receipt["scope"]
+        scope_arg = (f" --skill-scope {repair_scope}"
+                     if repair_scope in ("global", "project-local") else "")
         if stale:
-            print(f"  ⚠️  갱신 필요 {len(stale)}건 → `sage install --host {host} --force`")
+            print(f"  ⚠️  갱신 필요 {len(stale)}건 → `sage install --host {repair_host}{scope_arg} --force`")
         if missing:
-            print(f"  ⚠️  미설치 {len(missing)}건 → `sage install --host {host} --force`")
-        print("      (로컬 커스터마이즈는 sage/asset_overrides/** 에 두면 --force 에도 보존됩니다 — /sage-asset-override.)")
+            print(f"  ⚠️  미설치 {len(missing)}건 → `sage install --host {repair_host}{scope_arg} --force`")
+        print("      (eligible non-gate CORE worker만 sage/asset_overrides/** 로 커스터마이즈할 수 있습니다 — /sage-asset-override.)")
     else:
         print("  ✅ 모든 CORE 렌더 최신")
+
+    if root is not None:
+        print("## critical-domain protocol pointers")
+        for domain in (profile.get("risk") or {}).get("domains") or []:
+            pointer = domain.get("protocol_pointer") if isinstance(domain, dict) else None
+            if pointer and os.path.isfile(os.path.join(root, pointer)):
+                print(f"  ✅ {domain.get('id')}: {pointer}")
+            else:
+                print(f"  ⚠️  {domain.get('id')}: protocol pointer 없음 ({pointer or 'unset'})")
     return 0
 
 
@@ -261,11 +375,70 @@ def _discover_profile(start=None):
         cur = parent
 
 
+def _report_model_routing(profile):
+    """Compare explicit profile model selections with read-only local catalogs."""
+    from sage.model_catalog import discover
+    from sage.model_routing import catalog_status, profile_issues as routing_issues, reviewer_selection
+
+    print("## host model routing")
+    for severity, message in routing_issues(profile):
+        print(f"  {'❌' if severity == 'FAIL' else '⚠️ '} {severity} {message}")
+
+    selected = []
+    components = profile.get("components") if isinstance(profile, dict) else None
+    if isinstance(components, list):
+        for index, component in enumerate(components):
+            if not isinstance(component, dict):
+                continue
+            cid = component.get("id") or f"index-{index}"
+            models = component.get("runtime_models")
+            if isinstance(models, dict):
+                for host, model in models.items():
+                    if host in ("claude", "codex") and isinstance(model, str) and model:
+                        selected.append((f"component:{cid}", host, model))
+    cross = profile.get("cross_model") if isinstance(profile, dict) else None
+    if isinstance(cross, dict) and cross.get("reviewer") is not None:
+        host, model = reviewer_selection(profile)
+        if model:
+            selected.append(("cross-reviewer", host, model))
+    if not selected:
+        print("  (명시적 runtime model 선택 없음 — host CLI defaults)")
+        return
+
+    catalogs = {host: discover(host) for host in {host for _, host, _ in selected}}
+    for owner, host, model in selected:
+        status = catalog_status(catalogs[host], model)
+        print(f"  {owner} : {host}/{model} → {status}")
+    for host, catalog in sorted(catalogs.items()):
+        print(f"  catalog:{host} source={catalog['source']} verification={catalog['verification']}"
+              f" stale={catalog.get('stale')}")
+
+
+def _report_version_contract(profile, manifest):
+    from sage import __version__
+    from sage.version_contract import version_axes, version_contract_issues
+
+    axes = version_axes(profile, manifest, __version__)
+    print("## SAGE version contract")
+    print(f"  required  : {axes.required}")
+    print(f"  installed : {axes.installed}")
+    print(f"  generated : {axes.generated}")
+    print(f"  runtime   : {axes.runtime}")
+    failed = False
+    for issue in version_contract_issues(profile, manifest, __version__):
+        mark = "❌" if issue.severity == "FAIL" else ("⚠️ " if issue.severity == "WARN" else "ℹ️ ")
+        print(f"  {mark} {issue.severity} [{issue.axis}] {issue.message}")
+        if issue.remediation:
+            print(f"      → `{issue.remediation}`")
+        failed = failed or issue.severity == "FAIL"
+    return failed
+
+
 def run(args):
     from sage import _resources
     prof_path = (args.profile or _discover_profile()
                  or os.path.join(_resources.templates_dir(), "project-profile.yaml"))
-    profile, status = _load_profile(prof_path)
+    profile, status, layers = _load_profile_context(prof_path)
     print("== sage doctor ==")
     print(f"  profile: {prof_path}")
     rc = 0
@@ -282,6 +455,20 @@ def run(args):
         print(f"  ❌ FAIL profile YAML 파싱 오류({status.split(':', 1)[1]}): {prof_path}")
         print(f"        → 선언한 설정이 무시됩니다. YAML 수정 필요.")
         profile = dict(_DEFAULT_PROFILE)
+    elif status == "layer_error":
+        rc = 1
+        print("  ❌ FAIL shared/local profile 계층 오류")
+        for severity, message in layers.issues:
+            if severity in ("FAIL", "WARN"):
+                print(f"        {severity}: {message}")
+
+    if layers is not None:
+        local_state = "loaded" if layers.local is not None else "missing (legacy/default behavior)"
+        print(f"  local profile: {layers.local_path} — {local_state}")
+        root = _project_root_from_profile(prof_path)
+        if root is not None:
+            for severity, message in local_profile_git_issues(root, layers.local_path):
+                print(f"  {'⚠️ ' if severity == 'WARN' else 'ℹ️ '} {severity} {message}")
 
     # 실행 환경: OS / python / sage-hook / bash 점검.
     # W2b 이후 hook 등록 command 는 `sage-hook`(sage 패키지 콘솔 스크립트) — PATH 에 없으면 등록돼도
@@ -308,12 +495,18 @@ def run(args):
     codex_avail = bool(shutil.which("codex")) or bool(caps_prof.get("codex"))
     claude_avail = bool(shutil.which("claude")) or bool(caps_prof.get("claude"))
     opts = profile.get("options", {}) or {}
-    host = (profile.get("runtime", {}) or {}).get("host", "claude")
-    peer = "codex" if host == "claude" else "claude"
+    host = active_host(profile)
+    peer = opposite_host(profile)
     peer_avail = codex_avail if peer == "codex" else claude_avail
     _kc = profile.get("knowledge_capture")
     vault = _kc.get("vault_path", "") if isinstance(_kc, dict) else ""   # 비-dict kc 방어(codex A)
     print("## 옵션 의존성")
+    desired_hosts = configured_hosts(profile)
+    print(f"  active_host : {host}")
+    print(f"  desired_hosts: {desired_hosts} (동시 실행/자동 handoff 없음)")
+    for severity, message in profile_issues(profile):
+        if severity in ("FAIL", "WARN"):
+            print(f"  {'❌' if severity == 'FAIL' else '⚠️ '} {severity} {message}")
     from sage.commands.review import effort_issue, resolve_effort   # review→doctor import 순환 회피(함수 지역)
     _eff, _set = resolve_effort(profile)   # `or` 로 판정하면 effort: false/0 을 "기본값" 이라 거짓 보고한다
     _issue = effort_issue(peer, _eff) if _set is not None else None
@@ -324,10 +517,22 @@ def run(args):
           f"(PATH which {peer} | capabilities.{peer}) — cross-model 시 `{_invoker}` 직접 호출")
     print(f"  codegraph   : {opts.get('codegraph', 'optional')} (MCP 필요 — 미연결 시 rg/read degrade)")
     print(f"  obsidian    : vault_path={'set' if vault else 'empty → 기능 OFF(N/A)'}")
+    _report_model_routing(profile)
 
     # codex skill 전역 배포 점검(Part C) — manifest-추적 프로젝트 skill 이 codex 전역에 배포됐는지.
     #   정본 = repo .codex/skills/<id>/SKILL.md (manifest 추적), 전역 = $CODEX_HOME/skills/<prefix>-<id> (발견용 캐시).
     #   validate 는 전역을 무시(clone-stable repo 정본만) → 전역 staleness 는 여기(환경 진단)에서 WARN.
+    root = _project_root_from_profile(prof_path)
+    manifest = None
+    if root is not None:
+        try:
+            import json
+            manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
+        except Exception:
+            manifest = None
+    if _report_version_contract(profile, manifest):
+        rc = 1
+    _report_codex_core_skill_scope(root, manifest)
     if _check_core_render_drift(profile, prof_path):
         rc = 1   # 에이전트 frontmatter 로 주입될 값이 무효 = 설정이 조용히 무시되는 것 방지
     _check_codex_skill_deployment(prof_path, profile)
@@ -337,12 +542,15 @@ def run(args):
     print("## Phase 05 reviewer")
     print(f"  mode    : {rr['reviewer_mode']} (runtime={rr['reviewer_runtime']})")
     print(f"  notice  : {rr['notice']}")
-    if rr["reviewer_degraded"]:
+    if rr["reviewer_mode"] == "blocked":
+        print(f"  ⛔ L3 REVIEW BLOCKED: {rr['reviewer_degrade_reason']}")
+    elif rr["reviewer_degraded"]:
         print(f"  ⚠️  L3 REVIEW DEGRADED: {rr['reviewer_degrade_reason']}")
 
     # Loop A (review_loop) — 켜졌는지 + 설정 유효성(profile_validate 의 review_loop 발 이슈만 표면화).
     # 환경 진단이라 정보성. 강제(fail-closed)는 generate/validate 가 담당(같은 validate_profile 경유).
     _report_review_loop(profile)
+    _report_acceptance_policy(profile, _project_root_from_profile(prof_path))
     # Loop C (retro gate) — 미완료로 종료된 사이클(retro --check 안 하고 06 완료)을 표면화(9-C v1).
     _report_retro_gate(profile, _project_root_from_profile(prof_path))
     return rc
@@ -398,3 +606,39 @@ def _report_review_loop(profile):
                 print(f"  {'❌' if sev == 'FAIL' else '⚠️ '} {sev} {msg}")
     except Exception:
         pass
+
+
+def _report_acceptance_policy(profile, root):
+    acceptance = ((profile.get("verification") or {}).get("acceptance") or {})
+    print("## Acceptance report policy")
+    if not isinstance(acceptance, dict) or acceptance.get("enabled") is not True:
+        print("  enabled : false/unset")
+        return
+    by_risk = acceptance.get("report_gate_by_risk")
+    legacy = acceptance.get("report_gate_enforce")
+    if legacy is not None:
+        behavior = "전 위험도 enforce 유지" if legacy == "enforce" else "L2 advisory/L3 enforce로 안전 승격"
+        print(f"  ⚠️  legacy report_gate_enforce={legacy} — {behavior}")
+        print("      migration: report_gate_by_risk: { L2: advisory, L3: enforce }")
+    elif isinstance(by_risk, dict):
+        print(f"  policy  : L2={by_risk.get('L2')} L3={by_risk.get('L3')} "
+              "(unknown=enforce)")
+    else:
+        print("  policy  : default L2=advisory L3=enforce (unknown=enforce)")
+    waiver = acceptance.get("waiver") if isinstance(acceptance.get("waiver"), dict) else {}
+    enabled = waiver.get("enabled") is True
+    print(f"  waiver  : {'enabled' if enabled else 'disabled'} "
+          "(exact cycle + required acceptance ID, explicit CLI grant only)")
+    if not enabled or root is None:
+        return
+    try:
+        from sage.commands.acceptance_waiver import _load_runtime_modules
+        aw, _, _ = _load_runtime_modules()
+        summary = aw.audit_summary(root)
+    except Exception as exc:
+        print(f"  ⚠️  waiver audit 조회 실패: {type(exc).__name__}: {exc}")
+        return
+    if not summary["valid"]:
+        print("  ❌ waiver audit invalid — L3 waiver는 fail-closed: " + "; ".join(summary["issues"][:3]))
+    else:
+        print(f"  active  : {len(summary['active'])} ({aw.audit_path(root)})")

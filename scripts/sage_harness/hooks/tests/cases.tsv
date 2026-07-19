@@ -5,22 +5,22 @@
 .codex/agents/backend.md	2	codex agent 산출물 block
 .codex/hooks/pre-gate.sh	2	codex hook 산출물 block
 .codex/skills/backend-convention/SKILL.md	2	codex skill 산출물 block
-.claude/skills/sage-init/SKILL.md	2	CORE skill 렌더(sage-init) 직접수정 차단 → asset_overrides redirect
-.claude/skills/sage-cycle/SKILL.md	2	CORE skill 렌더(sage-cycle) 직접수정 차단 → overlay redirect
-.claude/skills/sage-plan/SKILL.md	2	CORE skill 렌더(sage-plan) 직접수정 차단 → overlay redirect
-.claude/skills/sage-team/SKILL.md	2	CORE skill 렌더(sage-team) 직접수정 차단 → overlay redirect
-.claude/skills/sage-review/SKILL.md	2	CORE skill 렌더(sage-review) 직접수정 차단 → overlay redirect
-.claude/skills/sage-asset/SKILL.md	2	CORE skill 렌더(sage-asset) 직접수정 차단 → overlay redirect
-.claude/skills/sage-profile-modify/SKILL.md	2	CORE skill 렌더(sage-profile-modify) 직접수정 차단 → overlay redirect
-.claude/skills/sage-asset-override/SKILL.md	2	CORE skill 렌더(sage-asset-override) 직접수정 차단 → overlay redirect
+.claude/skills/sage-init/SKILL.md	2	CORE skill 렌더(sage-init) 직접수정 차단 → overlay 미지원 안내
+.claude/skills/sage-cycle/SKILL.md	2	CORE skill 렌더(sage-cycle) 직접수정 차단 → overlay 미지원 안내
+.claude/skills/sage-plan/SKILL.md	2	CORE skill 렌더(sage-plan) 직접수정 차단 → overlay 미지원 안내
+.claude/skills/sage-team/SKILL.md	2	CORE skill 렌더(sage-team) 직접수정 차단 → overlay 미지원 안내
+.claude/skills/sage-review/SKILL.md	2	CORE skill 렌더(sage-review) 직접수정 차단 → overlay 미지원 안내
+.claude/skills/sage-asset/SKILL.md	2	CORE skill 렌더(sage-asset) 직접수정 차단 → overlay 미지원 안내
+.claude/skills/sage-profile-modify/SKILL.md	2	CORE skill 렌더(sage-profile-modify) 직접수정 차단 → overlay 미지원 안내
+.claude/skills/sage-asset-override/SKILL.md	2	CORE skill 렌더(sage-asset-override) 직접수정 차단 → overlay 미지원 안내
 .codex/skills/sage-cycle/SKILL.md	2	repo-local .codex/skills 는 프로젝트 영역 → 동명이라도 차단(과잉면제 방지)
 .codex/skills/sage-plan/SKILL.md	2	repo-local .codex/skills 는 프로젝트 영역 → 동명이라도 차단(과잉면제 방지)
 .codex/skills/sage-team/SKILL.md	2	repo-local .codex/skills 는 프로젝트 영역 → 동명이라도 차단(과잉면제 방지)
-.claude/agents/leader.md	2	CORE 로스터 에이전트 렌더(leader) 직접수정 차단 → overlay redirect
-.claude/agents/convention-checker.md	2	CORE 로스터 에이전트 렌더(convention-checker) 직접수정 차단 → overlay redirect
+.claude/agents/leader.md	2	CORE 로스터 에이전트 렌더(leader) 직접수정 차단 → overlay 미지원 안내
+.claude/agents/convention-checker.md	2	CORE 로스터 에이전트 렌더(convention-checker) 직접수정 차단 → overlay 미지원 안내
 .claude/agents/implementer-backend.md	2	프로젝트 에이전트(비-CORE 이름)는 계속 차단
-.codex/agents/leader.md	2	codex CORE 로스터 에이전트 렌더(leader) 직접수정 차단 → overlay redirect
-.codex/agents/reviewer.md	2	codex CORE 로스터 에이전트 렌더(reviewer) 직접수정 차단 → overlay redirect
+.codex/agents/leader.md	2	codex CORE 로스터 에이전트 렌더(leader) 직접수정 차단 → overlay 미지원 안내
+.codex/agents/reviewer.md	2	codex CORE 로스터 에이전트 렌더(reviewer) 직접수정 차단 → overlay 미지원 안내
 .codex/agents/implementer-backend.md	2	codex 프로젝트 에이전트(비-CORE 이름)는 계속 차단
 /home/user/myproject/.claude/agents/x.md	2	절대경로 산출물도 block (범용 경로 — 작성자 fs 비의존)
 ./.codex/agents/y.md	2	상대 ./ prefix 정규화 후 block
@@ -40,3 +40,12 @@ README.md	0	루트 문서 통과
 sub/.mcp.json	2	하위경로 .mcp.json 도 차단
 .codex/config.toml	0	codex config.toml 은 managed-block 만 소유 → 파일 통째 가드 안 함(통과)
 mcp.json	0	managed 아닌 일반 mcp.json(점 없음) 통과
+AGENT_GUIDE.md	2	CORE 프레임워크 문서(AGENT_GUIDE) 직접수정 차단 → project-profile redirect
+/home/user/proj/AGENT_GUIDE.md	2	절대경로 AGENT_GUIDE 도 차단
+sub/AGENT_GUIDE.md	2	하위경로 AGENT_GUIDE 도 차단(SAGE 소유 파일명)
+docs/agent/bootstrap-authoring.md	0	AGENT_GUIDE 아닌 일반 문서 통과(오탐 방지)
+CLAUDE.md	2	CORE wrapper 직접수정 차단 → project-local SSOT 안내
+CODEX.md	2	CORE wrapper 직접수정 차단 → project-local SSOT 안내
+AGENTS.md	2	Codex CORE router 직접수정 차단 → project-local SSOT 안내
+sage/asset_overrides/framework/AGENT_GUIDE.md	0	기존 blocked framework override migration/removal 경로는 편집 가능
+/home/user/proj/sage/asset_overrides/framework/CLAUDE.md	0	절대경로 blocked framework override도 migration/removal 가능

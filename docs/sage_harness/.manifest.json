@@ -1,6 +1,6 @@
 {
   "sage_version": "0.1.0",
-  "generator_version": "0.1.0",
+  "generator_version": "0.9.60",
   "template_version": "0.1.0",
   "host_runtime": "claude",
   "assets": {
@@ -59,8 +59,8 @@
       "test": "scripts/sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py"
     },
     "hooks/pre-implementation-gate": {
-      "spec_hash": "sha256:14725b34bba7d106847b9ac2816d2a7be3345dd6e1c4191e598f685927a5e200",
-      "canonical_hash": "sha256:bd612fa4c52ba479d765e96abd830e273da0b85d8497a720c24f334611ca4946",
+      "spec_hash": "sha256:a92930ee52ec92ab72d286219a48d003b8a9769456598c10ea45c8c0556a0a59",
+      "canonical_hash": "sha256:450fcc713e3def51988573768fba10f953d11584e433f88ffb8f2264b33ffb32",
       "adapter_hash": {
         "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
         "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
@@ -79,7 +79,7 @@
       "l3_review_strategy": "codex_feature_signal"
     },
     "hooks/stop-compliance-report": {
-      "spec_hash": "sha256:ec98fe34c4c947cb479dca996524c66a60b340a731c9a19631da1c821501ca60",
+      "spec_hash": "sha256:3bd448b96a083f3077837ab7c3b133f3b31bacc74e63b670fe9dbf0329c72181",
       "canonical_hash": "sha256:9722b3c9694ea0649208fb0ae021467cd872ded6b4328794aa8b08dc5690fcb6",
       "adapter_hash": {
         "claude": "sha256:031dcf4cee2de44cd3f5af5e4e38e95aa511704cfaa55b29f84d5d0b2bc7f8d0",
@@ -97,10 +97,10 @@
       "test": "scripts/sage_harness/hooks/tests/test_stop_compliance_report.py"
     },
     "hooks/generated-artifact-write-guard": {
-      "spec_hash": "sha256:e2b8e67da029ede7ac7e510f218a400f16367cb324e9251490de4af2a69b61bc",
-      "canonical_hash": "sha256:c5edde265422439e951d4f122b60cfccf33f8f791125d5ff5c427c6e33ee95d9",
+      "spec_hash": "sha256:6606f2998fb67c6b2783444ab5df3884b40fd4239fc55575553bfe48aa40dd72",
+      "canonical_hash": "sha256:88db3f33c8fd1f6c6bc5b5ca42a71ceb644548b550c352eb2dd331e1750cb1d7",
       "render_hash": {
-        "native": "sha256:c5edde265422439e951d4f122b60cfccf33f8f791125d5ff5c427c6e33ee95d9"
+        "native": "sha256:88db3f33c8fd1f6c6bc5b5ca42a71ceb644548b550c352eb2dd331e1750cb1d7"
       },
       "adapter_contract_version": "1",
       "conformance": "PASS",
@@ -118,18 +118,18 @@
       "canonical_hash": "sha256:bdeb1dcf32159149493882ee8e87bb4ca4de33154f6c205333995b88543d1277",
       "adapter_contract_version": "1",
       "adapter_hash": {
-        "claude": "sha256:b26a97efa5264b2b60dd54df70b1bf65b4974cf3ca99e9f07506267937720cbc",
-        "codex": "sha256:e7a33a0f14a56461af6cba1d328b972f182697407d634e7a9610c0f561fc64d2"
+        "claude": "sha256:3fcb32b68a23d2d0629302ea1e69dcbd51ecea58315effa14642a3c1d1c4d0e5",
+        "codex": "sha256:13b24441f471a758bb8ac009c63571fc39ee9822c10aad7230424e02670fb26b"
       },
       "render_hash": {
-        "claude": "sha256:b26a97efa5264b2b60dd54df70b1bf65b4974cf3ca99e9f07506267937720cbc",
-        "codex": "sha256:e7a33a0f14a56461af6cba1d328b972f182697407d634e7a9610c0f561fc64d2"
+        "claude": "sha256:3fcb32b68a23d2d0629302ea1e69dcbd51ecea58315effa14642a3c1d1c4d0e5",
+        "codex": "sha256:13b24441f471a758bb8ac009c63571fc39ee9822c10aad7230424e02670fb26b"
       }
     }
   },
   "hook_runtime_hash": {
-    "shared": "sha256:cb33475437db49f1e07a2fcda619e1d8904616151efafb0b85e13c8a3f20c051",
-    "claude": "sha256:d0af1829282e733b78b6cc3540402a9c4e746d97ec5c6319ec903cc8607cf4e5",
-    "codex": "sha256:ab851a7b2e228e4b8cdbdd2599cea9d74083c1a3a6731dd648b1017ad66356ea"
+    "shared": "sha256:618da47b74ccae89a6ff42e45086e767e5f61b3200b8ebdaa907fda907b8eab2",
+    "claude": "sha256:6991dff9a466ef7f0fb3e926df2119c2617f8d534bdb14c5ce3d42fa2576a464",
+    "codex": "sha256:97549092cb66b9226f8766b8f229679bc8024f27a21682d96bdee49f96f4b843"
   }
 }
