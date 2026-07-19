@@ -1,6 +1,6 @@
 {
   "sage_version": "0.1.0",
-  "generator_version": "0.9.60",
+  "generator_version": "0.9.64",
   "template_version": "0.1.0",
   "host_runtime": "claude",
   "assets": {
