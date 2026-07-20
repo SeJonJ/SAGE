@@ -894,7 +894,7 @@ def run(args):
             strict_hits.append("critical-domain-drift")
 
     # L2 materialize 게이트 (FAIL — 권위). 오버레이가 (a)/(b) CORE 렌더에 물리 반영됐는지, (c)/미분류에
-    #   오버레이가 없는지(SD-8 전까지 미지원), base 가 core_renders 앵커와 일치하는지 검사. 로컬 앵커는
+    #   오버레이가 없는지(독립 오라클 미보증 blocked), base 가 core_renders 앵커와 일치하는지 검사. 로컬 앵커는
     #   accidental-drift 영수증(위조 가능)이지만 exit1 로 CI 를 막고, tamper-proof 권위는 CI-pinned
     #   canonical 재계산이 담당한다(설계 §3). scan_overlays 결과는 default WARN/strict FAIL이고,
     #   이 materialize drift 검사는 실행 모드와 무관한 하드 게이트다.

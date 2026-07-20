@@ -83,8 +83,12 @@ is_framework_doc() {
 core_overlay_hint() {
   local p; p="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
   case "$p" in
-    *.claude/agents/implementer-a.md|*.claude/agents/implementer-b.md|*.codex/agents/implementer-a.md|*.codex/agents/implementer-b.md)
+    # non-gate 워커 + FB23 재분류(oracle-backed gate-bearing) 에이전트 → agents overlay 경로.
+    *.claude/agents/implementer-a.md|*.claude/agents/implementer-b.md|*.codex/agents/implementer-a.md|*.codex/agents/implementer-b.md|*.claude/agents/leader.md|*.claude/agents/reviewer.md|*.codex/agents/leader.md|*.codex/agents/reviewer.md)
       printf 'sage/asset_overrides/agents/%s' "$(basename "$p")"; return 0 ;;
+    # FB23 재분류 skill → skills overlay 경로(overlay id = skill 디렉터리명, SKILL.md basename 아님).
+    *.claude/skills/sage-cycle/*|*.claude/skills/sage-plan/*|*.claude/skills/sage-review/*|*.claude/skills/sage-team/*|*.codex/skills/sage-cycle/*|*.codex/skills/sage-plan/*|*.codex/skills/sage-review/*|*.codex/skills/sage-team/*)
+      local d; d="${p%/*}"; printf 'sage/asset_overrides/skills/%s.md' "${d##*/}"; return 0 ;;
   esac
   return 1
 }
@@ -93,10 +97,12 @@ core_overlay_hint() {
 # agent/skill과 구분해 존재하지 않는 overlay 경로로 사용자를 보내지 않기 위한 안내용이다.
 is_blocked_core_render() {
   local p; p="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  # FB23 로 leader/reviewer/sage-cycle/sage-plan/sage-review/sage-team 은 overlay-eligible 로 이동 →
+  # core_overlay_hint 가 먼저 처리한다. 여기 남는 건 여전히 oracle-미보증인 (c) 자산뿐이다.
   case "$p" in
-    *.claude/skills/sage-init/*|*.claude/skills/sage-cycle/*|*.claude/skills/sage-plan/*|*.claude/skills/sage-team/*|*.claude/skills/sage-review/*|*.claude/skills/sage-asset/*|*.claude/skills/sage-profile-modify/*|*.claude/skills/sage-asset-override/*|*.codex/skills/sage-init/*|*.codex/skills/sage-cycle/*|*.codex/skills/sage-plan/*|*.codex/skills/sage-team/*|*.codex/skills/sage-review/*|*.codex/skills/sage-asset/*|*.codex/skills/sage-profile-modify/*|*.codex/skills/sage-asset-override/*)
+    *.claude/skills/sage-init/*|*.claude/skills/sage-asset/*|*.claude/skills/sage-profile-modify/*|*.claude/skills/sage-asset-override/*|*.codex/skills/sage-init/*|*.codex/skills/sage-asset/*|*.codex/skills/sage-profile-modify/*|*.codex/skills/sage-asset-override/*)
       return 0 ;;
-    *.claude/agents/leader.md|*.claude/agents/qa.md|*.claude/agents/reviewer.md|*.claude/agents/convention-checker.md|*.codex/agents/leader.md|*.codex/agents/qa.md|*.codex/agents/reviewer.md|*.codex/agents/convention-checker.md)
+    *.claude/agents/qa.md|*.claude/agents/convention-checker.md|*.codex/agents/qa.md|*.codex/agents/convention-checker.md)
       return 0 ;;
   esac
   return 1

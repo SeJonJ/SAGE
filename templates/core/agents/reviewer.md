@@ -14,7 +14,7 @@ model bias.
 - role_boundary: does not implement or modify code; assesses others' work
 - uses: `sage cross-check` (peer runtime called directly; mode resolved by sage doctor)
 - convention_doc: docs/agent/review-protocol.md
-- self_overlay: unsupported; this gate-bearing CORE agent is not in `COMPOSE_ALLOWED`
+- overlay: optional `sage/asset_overrides/agents/reviewer.md` has project-local priority over CORE guidance and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates (they stay floored by independent oracles)
 
 ## runtime_bindings
 - model / effort: (from profile.team.core.reviewer.runtime; unset model = host CLI default,

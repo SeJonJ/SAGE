@@ -10,7 +10,7 @@
   `signals["review_patterns"]`(profile 주입)로 확장.
 - `codex_feature_signal.py` — feature-signal 토큰 스코어링. 범용 stopword +
   `signals["generic_tokens"]`(profile 주입, 스택특화 토큰)로 확장.
-- `cycle_domain_review.py` — SD-8 결정론 전략. 전용 review glob의 frontmatter에서
+- `cycle_domain_review.py` — 결정론 review 전략(FB23 backing 오라클 계열). 전용 review glob의 frontmatter에서
   exact `cycle_stem`, `round: [1, 2]`, 변경으로 매치된 모든 `domain_ref`를 AND로 검증한다.
   current stem은 phase `Cycle-Stem`/path 또는 exact branch leaf에서 한 번만 결정되며, branch의 숫자를
   분해하지 않는다. `cycle_id`는 이 전략의 증거 필드가 아니다.

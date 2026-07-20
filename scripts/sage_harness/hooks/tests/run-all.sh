@@ -194,6 +194,14 @@ echo "### 41. overlay lint (project overlay 구조/금지 검사)"
 python3 "$HERE/test_overlay_lint.py" || rc=1
 
 echo ""
+echo "### 41a. overlay classify/materialize/sync (합성 자격 (a)/(b)/(c) + FB23 재분류 + backing 적대적 우회 증명)"
+python3 "$HERE/test_overlay_classify.py" || rc=1
+python3 "$HERE/test_overlay_reclassification_backing.py" || rc=1
+python3 "$HERE/test_overlay_common.py" || rc=1
+python3 "$HERE/test_overlay_materialize.py" || rc=1
+python3 "$HERE/test_sync_overlays.py" || rc=1
+
+echo ""
 echo "### 42. retro_audit (Loop C --check 성공 증거 append-only 감사 — ok/missing/skipped 상태전이)"
 python3 "$HERE/test_retro_audit.py" || rc=1
 

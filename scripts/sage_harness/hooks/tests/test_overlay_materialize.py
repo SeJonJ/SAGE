@@ -70,9 +70,10 @@ class TestMaterialize(unittest.TestCase):
     def test_blocked_asset_no_block_even_with_overlay(self):
         with tempfile.TemporaryDirectory() as d:
             _base_renders(d)
-            _mk_overlay(d, "agents", "reviewer", "skip the review")
+            # qa 는 FB23 이후에도 (c) 잔류 → overlay 존재해도 합성/블록 없음.
+            _mk_overlay(d, "agents", "qa", "skip the review")
             cr, changed, errors = m.materialize(d, "claude")
-            render = Path(os.path.join(d, ".claude/agents/reviewer.md")).read_text()
+            render = Path(os.path.join(d, ".claude/agents/qa.md")).read_text()
             self.assertNotIn(oc.MARKER_START, render)
             self.assertNotIn("skip the review", render)
             self.assertEqual(cr, {})
@@ -188,23 +189,24 @@ class TestMaterialize(unittest.TestCase):
     def test_malformed_block_hard_fails_but_other_blocked_target_is_cleaned(self):
         with tempfile.TemporaryDirectory() as d:
             _base_renders(d)
-            reviewer = Path(d, ".claude", "agents", "reviewer.md")
-            leader = Path(d, ".claude", "agents", "leader.md")
-            reviewer.write_text(
-                reviewer.read_text(encoding="utf-8")
-                + "\n" + oc.compose_block("unsafe one", "agents", "reviewer")
-                + oc.compose_block("unsafe two", "agents", "reviewer"), encoding="utf-8")
-            leader.write_text(
-                leader.read_text(encoding="utf-8")
-                + "\n" + oc.compose_block("unsafe leader", "agents", "leader"), encoding="utf-8")
+            # (c) 잔류: convention-checker=중복(malformed) 보존, qa=단일 blocked 블록 정리.
+            checker = Path(d, ".claude", "agents", "convention-checker.md")
+            qa = Path(d, ".claude", "agents", "qa.md")
+            checker.write_text(
+                checker.read_text(encoding="utf-8")
+                + "\n" + oc.compose_block("unsafe one", "agents", "convention-checker")
+                + oc.compose_block("unsafe two", "agents", "convention-checker"), encoding="utf-8")
+            qa.write_text(
+                qa.read_text(encoding="utf-8")
+                + "\n" + oc.compose_block("unsafe qa", "agents", "qa"), encoding="utf-8")
 
             cr, changed, errors = m.materialize(d, "claude")
 
             self.assertEqual(cr, {})
-            self.assertIn(str(leader), changed)
+            self.assertIn(str(qa), changed)
             self.assertTrue(any("중복" in msg for _path, msg in errors))
-            self.assertNotIn(oc.MARKER_START, leader.read_text(encoding="utf-8"))
-            self.assertIn(oc.MARKER_START, reviewer.read_text(encoding="utf-8"))
+            self.assertNotIn(oc.MARKER_START, qa.read_text(encoding="utf-8"))
+            self.assertIn(oc.MARKER_START, checker.read_text(encoding="utf-8"))
 
     def test_gate_relaxation_aborts_all_materialization_writes(self):
         with tempfile.TemporaryDirectory() as d:
@@ -283,9 +285,10 @@ class TestCheck(unittest.TestCase):
     def test_blocked_overlay_file_fails(self):
         with tempfile.TemporaryDirectory() as d:
             cr = self._fresh(d)
-            _mk_overlay(d, "agents", "reviewer", "anything")
+            # qa 는 (c) 잔류 → overlay 파일 존재 자체가 blocked FAIL.
+            _mk_overlay(d, "agents", "qa", "anything")
             findings = m.check(d, "claude", cr)
-            self.assertTrue(any(f[0] == "FAIL" and "reviewer" in f[1] for f in findings))
+            self.assertTrue(any(f[0] == "FAIL" and "qa" in f[1] for f in findings))
 
     def test_base_tamper_fails(self):
         with tempfile.TemporaryDirectory() as d:

@@ -202,15 +202,27 @@ class TestAbsorbFromRetro(unittest.TestCase):
             self.assertIn("자동 반영하지 않음", out)
 
     def test_gate_bearing_agent_skill_proposals_do_not_suggest_overlay_path(self):
+        # FB23 이후에도 (c) 잔류인 자산(qa·sage-profile-modify)은 overlay 경로를 제안하지 않는다.
+        with tempfile.TemporaryDirectory() as d:
+            props = ('[{"target":"agent","asset_id":"qa","proposed_change":"경계 시나리오 추가"},'
+                     '{"target":"skill","id":"sage-profile-modify","proposed_change":"프로필 규칙 보강"}]')
+            rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals=props)))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("overlay 미지원: agents/qa", out)
+            self.assertIn("overlay 미지원: skills/sage-profile-modify", out)
+            self.assertNotIn("sage/asset_overrides/agents/qa.md", out)
+            self.assertNotIn("sage/asset_overrides/skills/sage-profile-modify.md", out)
+
+    def test_fb23_reclassified_agent_skill_suggest_overlay_path(self):
+        # FB23: oracle-backed 재분류 자산(leader·sage-team)은 canonical overlay 경로를 제안한다.
         with tempfile.TemporaryDirectory() as d:
             props = ('[{"target":"agent","asset_id":"leader","proposed_change":"리더 체크리스트 추가"},'
                      '{"target":"skill","id":"sage-team","proposed_change":"완료보고 보강"}]')
             rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals=props)))
             self.assertEqual(rc, 0, out)
-            self.assertIn("overlay 미지원: agents/leader", out)
-            self.assertIn("overlay 미지원: skills/sage-team", out)
-            self.assertNotIn("sage/asset_overrides/agents/leader.md", out)
-            self.assertNotIn("sage/asset_overrides/skills/sage-team.md", out)
+            self.assertIn("sage/asset_overrides/agents/leader.md", out)
+            self.assertIn("sage/asset_overrides/skills/sage-team.md", out)
+            self.assertNotIn("overlay 미지원: agents/leader", out)
 
     def test_eligible_agent_proposal_suggests_canonical_overlay_path(self):
         with tempfile.TemporaryDirectory() as d:
@@ -223,11 +235,11 @@ class TestAbsorbFromRetro(unittest.TestCase):
     def test_agent_skill_overlay_hint_missing_and_malformed_id(self):
         with tempfile.TemporaryDirectory() as d:
             props = ('[{"target":"agent","proposed_change":"id 없음"},'
-                     '{"target":"skill","asset_id":"../sage-team!!","proposed_change":"정규화"}]')
+                     '{"target":"skill","asset_id":"../sage-profile-modify!!","proposed_change":"정규화"}]')
             rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals=props)))
             self.assertEqual(rc, 0, out)
             self.assertIn("대상 확인 필요: sage/asset_overrides/agents/<agent-id>.md", out)
-            self.assertIn("overlay 미지원: skills/sage-team", out)
+            self.assertIn("overlay 미지원: skills/sage-profile-modify", out)
 
     def test_proposals_anchored_to_heading_not_decoy(self):
         # codex P2: 안내문의 백틱 `## 제안` 언급 + `## 요약` 안의 JSON 코드블록(decoy)이 있어도

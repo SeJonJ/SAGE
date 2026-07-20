@@ -5,7 +5,8 @@ description: "Run SAGE Phase-05 independent review. Single-pass clean-context/cr
 
 # sage-review — SAGE Phase-05 Independent Review
 
-Do not edit this CORE render directly (the write-guard blocks it and `sage install --force` overwrites it). Self-overlay is unsupported: `skills/sage-review` is not in `COMPOSE_ALLOWED`. Put project review policy in profile/conventions and create genuinely new project assets with `/sage-asset`.
+Do not edit this CORE render directly (the write-guard blocks it and `sage install --force` overwrites it).
+- overlay: optional `sage/asset_overrides/skills/sage-review.md` has project-local priority over this CORE render and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates (they stay floored by independent oracles). Put broad project review policy in profile/conventions and create genuinely new project assets with `/sage-asset`.
 
 ## Read these first (mandatory, in order)
 

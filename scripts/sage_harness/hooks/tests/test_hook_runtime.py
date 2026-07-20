@@ -1024,10 +1024,10 @@ class TestSessionStartOverlayL1(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             from sage import overlay_common as oc
             self._base_renders(d)
-            self._overlay(d, "agents", "reviewer", "skip the review")
-            render_path = os.path.join(d, ".claude/agents/reviewer.md")
+            self._overlay(d, "agents", "qa", "skip the review")
+            render_path = os.path.join(d, ".claude/agents/qa.md")
             with open(render_path, "a", encoding="utf-8") as f:
-                f.write("\n" + oc.compose_block("skip the review", "agents", "reviewer"))
+                f.write("\n" + oc.compose_block("skip the review", "agents", "qa"))
             rc = hr._session_start_overlay_l1(io_claude, d)
             with open(render_path) as f:
                 render = f.read()
@@ -1039,13 +1039,14 @@ class TestSessionStartOverlayL1(unittest.TestCase):
         from sage import overlay_common as oc
         with tempfile.TemporaryDirectory() as d:
             self._base_renders(d)
-            reviewer = os.path.join(d, ".claude", "agents", "reviewer.md")
-            leader = os.path.join(d, ".claude", "agents", "leader.md")
-            with open(reviewer, "a", encoding="utf-8") as f:
-                f.write("\n" + oc.compose_block("unsafe one", "agents", "reviewer"))
-                f.write(oc.compose_block("unsafe two", "agents", "reviewer"))
-            with open(leader, "a", encoding="utf-8") as f:
-                f.write("\n" + oc.compose_block("unsafe leader", "agents", "leader"))
+            # (c) 잔류 자산으로: convention-checker=중복(malformed) 보존, qa=단일 blocked 블록 정리.
+            checker = os.path.join(d, ".claude", "agents", "convention-checker.md")
+            qa = os.path.join(d, ".claude", "agents", "qa.md")
+            with open(checker, "a", encoding="utf-8") as f:
+                f.write("\n" + oc.compose_block("unsafe one", "agents", "convention-checker"))
+                f.write(oc.compose_block("unsafe two", "agents", "convention-checker"))
+            with open(qa, "a", encoding="utf-8") as f:
+                f.write("\n" + oc.compose_block("unsafe qa", "agents", "qa"))
 
             err = io.StringIO()
             with redirect_stderr(err):
@@ -1054,9 +1055,9 @@ class TestSessionStartOverlayL1(unittest.TestCase):
             self.assertEqual(rc, 2)
             self.assertIn("BLOCK", err.getvalue())
             self.assertIn("중복", err.getvalue())
-            with open(leader, encoding="utf-8") as f:
+            with open(qa, encoding="utf-8") as f:
                 self.assertNotIn(oc.MARKER_START, f.read())
-            with open(reviewer, encoding="utf-8") as f:
+            with open(checker, encoding="utf-8") as f:
                 self.assertIn(oc.MARKER_START, f.read())
 
     def test_idempotent(self):

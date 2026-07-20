@@ -7,7 +7,8 @@ description: "Plan the first half of a SAGE PDCA cycle (Phases 00–02) — veri
 
 Invoke as `/sage-plan` (Claude) or `$sage-plan` (Codex).
 
-Do not edit this CORE render directly (the write-guard blocks it and `sage install --force` overwrites it). Self-overlay is unsupported: `skills/sage-plan` is not in `COMPOSE_ALLOWED`. Put project rules in profile/conventions and create genuinely new project assets with `/sage-asset`.
+Do not edit this CORE render directly (the write-guard blocks it and `sage install --force` overwrites it).
+- overlay: optional `sage/asset_overrides/skills/sage-plan.md` has project-local priority over this CORE render and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates (they stay floored by independent oracles). Put broad project rules in profile/conventions and create genuinely new project assets with `/sage-asset`.
 
 This skill owns the **planning half** of a PDCA cycle: it produces the plan doc
 (Phases 00–02) and the file-ownership map, then hands back. Implementation through

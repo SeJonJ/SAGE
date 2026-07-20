@@ -7,7 +7,8 @@ description: "Drive the implementation half of a SAGE PDCA cycle (Phases 03–06
 
 Invoke as `/sage-team` (Claude) or `$sage-team` (Codex).
 
-Do not edit this CORE render directly (the write-guard blocks it and `sage install --force` overwrites it). Self-overlay is unsupported: `skills/sage-team` is not in `COMPOSE_ALLOWED`. Put project rules in profile/conventions and create genuinely new project assets with `/sage-asset`.
+Do not edit this CORE render directly (the write-guard blocks it and `sage install --force` overwrites it).
+- overlay: optional `sage/asset_overrides/skills/sage-team.md` has project-local priority over this CORE render and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates (they stay floored by independent oracles). Put broad project rules in profile/conventions and create genuinely new project assets with `/sage-asset`.
 
 This skill takes the plan + ownership map that `/sage-plan` produced and drives
 the cycle to completion: implementation → deterministic verification → QA → Phase-05

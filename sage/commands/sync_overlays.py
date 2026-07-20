@@ -115,7 +115,7 @@ def run(args):
             print(f"❌ 미지/오타 CORE 자산 오버레이: {rel} — '{id}' 는 CORE {kind} 가 아닙니다", file=sys.stderr)
             hard_fail = True
         elif _cls.classify(kind, id) == "blocked":
-            print(f"❌ 오버레이 미지원 자산: {rel} — {kind}/{id} 는 게이트-미보증(SD-8 전까지 blocked)", file=sys.stderr)
+            print(f"❌ 오버레이 미지원 자산: {rel} — {kind}/{id} 는 게이트-미보증(독립 오라클 미보증 blocked)", file=sys.stderr)
             hard_fail = True
 
     if hard_fail:

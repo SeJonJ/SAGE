@@ -128,7 +128,7 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
 - role_boundary: does not implement code; orchestrates leader/implementers/qa/reviewer
 - uses: leader, implementer agents, qa agent, sage-review skill, verify-changes, project-profile.yaml
 - convention_doc: AGENT_GUIDE.md, docs/agent/pdca-templates.md
-- self_overlay: unsupported; this gate-bearing CORE skill is not in `COMPOSE_ALLOWED`
+- overlay: optional `sage/asset_overrides/skills/sage-team.md` has project-local priority over this CORE render and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates (they stay floored by independent oracles)
 
 ## enforcement
 - SOFT-ENFORCED: the loop/verification are non-skippable only when this skill is followed.

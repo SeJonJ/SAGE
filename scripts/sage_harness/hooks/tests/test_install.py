@@ -146,7 +146,8 @@ class TestInstall(unittest.TestCase):
 
     def test_blocked_overlay_aborts_without_manifest(self):
         with tempfile.TemporaryDirectory() as d:
-            overlay = os.path.join(d, "sage", "asset_overrides", "agents", "reviewer.md")
+            # qa 는 (c) 잔류 → overlay 파일 존재 자체가 install abort(합성 미지원).
+            overlay = os.path.join(d, "sage", "asset_overrides", "agents", "qa.md")
             os.makedirs(os.path.dirname(overlay), exist_ok=True)
             Path(overlay).write_text("skip required review\n", encoding="utf-8")
 
@@ -666,19 +667,22 @@ class TestInstall(unittest.TestCase):
             install.run(Args("claude", d))
             leader = Path(os.path.join(d, ".claude", "agents", "leader.md")).read_text(encoding="utf-8")
             team = Path(os.path.join(d, ".claude", "skills", "sage-team", "SKILL.md")).read_text(encoding="utf-8")
-            for txt in (leader, team):
+            # sage-profile-modify 는 FB23 이후에도 (c) 잔류 → self-overlay 미지원 경계 안내 유지.
+            pmod = Path(os.path.join(d, ".claude", "skills", "sage-profile-modify", "SKILL.md")).read_text(encoding="utf-8")
+            for txt in (leader, team, pmod):
                 for f in forbidden:
                     self.assertNotIn(f, txt)
-            self.assertIn("Self-overlay is unsupported", team)
+            self.assertIn("Self-overlay is unsupported", pmod)
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
             with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
                 install.run(Args("codex", d))
             leader = Path(os.path.join(d, ".codex", "agents", "leader.md")).read_text(encoding="utf-8")
             team = Path(os.path.join(codex_home, "skills", "sage-team", "SKILL.md")).read_text(encoding="utf-8")
-            for txt in (leader, team):
+            pmod = Path(os.path.join(codex_home, "skills", "sage-profile-modify", "SKILL.md")).read_text(encoding="utf-8")
+            for txt in (leader, team, pmod):
                 for f in forbidden:
                     self.assertNotIn(f, txt)
-            self.assertIn("Self-overlay is unsupported", team)
+            self.assertIn("Self-overlay is unsupported", pmod)
 
     def test_codex_no_global_skill_skips_core_skills(self):
         """--no-global-skill 이면 CORE skill 전역 설치도 생략(CI/샌드박스)."""
@@ -1070,9 +1074,10 @@ class TestInstall(unittest.TestCase):
     def test_force_overlay_preflight_failure_is_no_write(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(install.run(Args("claude", d)), 0)
-            overlay = Path(d, "sage", "asset_overrides", "agents", "reviewer.md")
+            # qa 는 (c) 잔류 → overlay 파일 존재 자체가 preflight FAIL(합성 미지원).
+            overlay = Path(d, "sage", "asset_overrides", "agents", "qa.md")
             overlay.parent.mkdir(parents=True)
-            overlay.write_text("unsafe reviewer\n", encoding="utf-8")
+            overlay.write_text("unsafe qa\n", encoding="utf-8")
             before = _tree_snapshot(d)
 
             self.assertEqual(install.run(Args("claude", d, force=True)), 1)
@@ -1389,20 +1394,20 @@ class TestInstall(unittest.TestCase):
         from sage import overlay_common
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(install.run(Args("claude", d)), 0)
-            reviewer = Path(d, ".claude", "agents", "reviewer.md")
-            reviewer.write_text(
-                reviewer.read_text(encoding="utf-8")
-                + "\n" + overlay_common.compose_block("unsafe reviewer", "agents", "reviewer"),
+            qa = Path(d, ".claude", "agents", "qa.md")
+            qa.write_text(
+                qa.read_text(encoding="utf-8")
+                + "\n" + overlay_common.compose_block("unsafe qa", "agents", "qa"),
                 encoding="utf-8")
-            overlay = Path(d, "sage", "asset_overrides", "agents", "reviewer.md")
+            overlay = Path(d, "sage", "asset_overrides", "agents", "qa.md")
             overlay.parent.mkdir(parents=True, exist_ok=True)
-            overlay.write_text("unsafe reviewer\n", encoding="utf-8")
+            overlay.write_text("unsafe qa\n", encoding="utf-8")
             manifest = Path(d, "docs", "sage_harness", ".manifest.json")
             manifest_before = manifest.read_bytes()
 
             self.assertEqual(install.run(Args("claude", d)), 1)
 
-            self.assertNotIn(overlay_common.MARKER_START, reviewer.read_text(encoding="utf-8"))
+            self.assertNotIn(overlay_common.MARKER_START, qa.read_text(encoding="utf-8"))
             self.assertEqual(manifest.read_bytes(), manifest_before)
 
     def test_non_force_install_cleans_blocked_block_before_profile_failures(self):
@@ -1414,10 +1419,10 @@ class TestInstall(unittest.TestCase):
         for body in invalid_profiles:
             with self.subTest(body=body), tempfile.TemporaryDirectory() as d:
                 self.assertEqual(install.run(Args("claude", d)), 0)
-                reviewer = Path(d, ".claude", "agents", "reviewer.md")
-                reviewer.write_text(
-                    reviewer.read_text(encoding="utf-8")
-                    + "\n" + overlay_common.compose_block("unsafe reviewer", "agents", "reviewer"),
+                qa = Path(d, ".claude", "agents", "qa.md")
+                qa.write_text(
+                    qa.read_text(encoding="utf-8")
+                    + "\n" + overlay_common.compose_block("unsafe qa", "agents", "qa"),
                     encoding="utf-8")
                 profile = Path(d, "sage", "project-profile.yaml")
                 profile.write_text(body, encoding="utf-8")
@@ -1426,7 +1431,7 @@ class TestInstall(unittest.TestCase):
 
                 self.assertEqual(install.run(Args("claude", d)), 1)
 
-                self.assertNotIn(overlay_common.MARKER_START, reviewer.read_text(encoding="utf-8"))
+                self.assertNotIn(overlay_common.MARKER_START, qa.read_text(encoding="utf-8"))
                 self.assertEqual(profile.read_text(encoding="utf-8"), body)
                 self.assertEqual(manifest.read_bytes(), manifest_before)
 
@@ -1434,24 +1439,25 @@ class TestInstall(unittest.TestCase):
         from sage import overlay_common
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(install.run(Args("claude", d)), 0)
-            leader = Path(d, ".claude", "agents", "leader.md")
-            reviewer = Path(d, ".claude", "agents", "reviewer.md")
-            leader.write_text(
-                leader.read_text(encoding="utf-8")
-                + "\n" + overlay_common.compose_block("unsafe leader", "agents", "leader"),
+            # (c) 잔류 자산으로: qa=단일 blocked 블록 정리, convention-checker=중복(malformed) 보존.
+            qa = Path(d, ".claude", "agents", "qa.md")
+            checker = Path(d, ".claude", "agents", "convention-checker.md")
+            qa.write_text(
+                qa.read_text(encoding="utf-8")
+                + "\n" + overlay_common.compose_block("unsafe qa", "agents", "qa"),
                 encoding="utf-8")
-            reviewer.write_text(
-                reviewer.read_text(encoding="utf-8")
-                + "\n" + overlay_common.compose_block("unsafe one", "agents", "reviewer")
-                + overlay_common.compose_block("unsafe two", "agents", "reviewer"),
+            checker.write_text(
+                checker.read_text(encoding="utf-8")
+                + "\n" + overlay_common.compose_block("unsafe one", "agents", "convention-checker")
+                + overlay_common.compose_block("unsafe two", "agents", "convention-checker"),
                 encoding="utf-8")
             manifest = Path(d, "docs", "sage_harness", ".manifest.json")
             manifest_before = manifest.read_bytes()
 
             self.assertEqual(install.run(Args("claude", d)), 1)
 
-            self.assertNotIn(overlay_common.MARKER_START, leader.read_text(encoding="utf-8"))
-            self.assertIn(overlay_common.MARKER_START, reviewer.read_text(encoding="utf-8"))
+            self.assertNotIn(overlay_common.MARKER_START, qa.read_text(encoding="utf-8"))
+            self.assertIn(overlay_common.MARKER_START, checker.read_text(encoding="utf-8"))
             self.assertEqual(manifest.read_bytes(), manifest_before)
 
     def test_profile_rendered_agent_is_valid_unanchored_base(self):

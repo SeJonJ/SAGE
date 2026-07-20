@@ -7,7 +7,8 @@ description: "Run a full SAGE PDCA cycle (Phases 00–06) end to end from one en
 
 Invoke as `/sage-cycle` (Claude) or `$sage-cycle` (Codex).
 
-Do not edit this CORE render directly (the write-guard blocks it and `sage install --force` overwrites it). Self-overlay is unsupported: `skills/sage-cycle` is not in `COMPOSE_ALLOWED`. Put project rules in profile/conventions and create genuinely new project assets with `/sage-asset`.
+Do not edit this CORE render directly (the write-guard blocks it and `sage install --force` overwrites it).
+- overlay: optional `sage/asset_overrides/skills/sage-cycle.md` has project-local priority over this CORE render and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates (they stay floored by independent oracles). Put broad project rules in profile/conventions and create genuinely new project assets with `/sage-asset`.
 
 This is the **umbrella** entry point for a whole PDCA cycle. It runs the two halves
 in order:

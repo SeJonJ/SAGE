@@ -232,7 +232,7 @@ def preflight_overlays(dest, profile=None):
             errors.append((path, f"미지/오타 CORE 자산 오버레이: '{id}' 는 CORE {kind} 아님"))
             continue
         if _cls.classify(kind, id) == "blocked":
-            errors.append((path, f"{kind}/{id} 는 오버레이 미지원(SD-8 전까지 blocked)"))
+            errors.append((path, f"{kind}/{id} 는 오버레이 미지원(독립 게이트 오라클 미보증 blocked)"))
             continue
         text, read_error = _oc.read_text_lf(path)
         if read_error:
@@ -357,7 +357,7 @@ def check(dest, host, core_renders):
       - 앵커 부재/손상 → FAIL(명시적 force-migration 예외는 호출측이 판단).
       - base 해시 불일치 → FAIL(변조/미물화, 로컬은 advisory·권위는 CI 재계산).
       - 마커 구간 != expected_block → FAIL(오버레이 미반영/stale, (c)=마커 0 이어야 통과).
-      - (c)/미분류 자산에 오버레이 파일 존재 → FAIL("SD-8 전까지 미지원").
+      - (c)/미분류 자산에 오버레이 파일 존재 → FAIL("독립 오라클 미보증 — FB24(qa·profile-modify)/FB25(framework) 대기").
       - 앵커 sage_version != 실행 __version__ → STALE(업그레이드 안내).
     """
     findings = []
@@ -383,7 +383,7 @@ def check(dest, host, core_renders):
             op = _cls.overlay_path(dest, kind, id)
             if os.path.isfile(op):
                 findings.append(("FAIL", key,
-                                 f"{kind}/{id} 는 오버레이 미지원(SD-8 전까지 gate-classification blocked): {op} 삭제 필요"))
+                                 f"{kind}/{id} 는 오버레이 미지원(독립 게이트 오라클 미보증 blocked): {op} 삭제 필요"))
         if not os.path.isfile(path):
             findings.append(("FAIL", key, f"CORE 렌더 없음: {path}"))
             continue

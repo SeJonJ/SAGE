@@ -39,7 +39,7 @@ this guide and `docs/agent/*`. They are NOT manifest-tracked: the
 manifest/claims/`validate` loop is reserved for project-authored assets created
 via `generate`/`extract`. **Do not edit these CORE renders directly** — the
 write-guard blocks it and `sage install --force` would overwrite the edit anyway.
-Customize eligible non-gate CORE workers per-project via an **overlay** authored with
+Customize eligible CORE assets — non-gate workers, or gate-bearing assets whose gates are floored by a registered independent oracle (FB23) — per-project via an **overlay** authored with
 `/sage-asset-override`, stored at `sage/asset_overrides/{agents,skills}/<id>.md` (hand-authored, install never
 ships it so `--force` preserves it). SAGE **materializes** an eligible overlay directly into its CORE render as a
 managed block — do not read external overlay files by hand or edit renders directly. `sage validate` gates
@@ -165,7 +165,7 @@ plan-doc + risk checks only; the phase machinery is inert.
   The hand-shipped CORE bootstrap renders (the `sage-*` skills and the six CORE roster
   agent renders) are also write-guarded: don't edit them directly — customize per-project
   only when eligible via an overlay at `sage/asset_overrides/{agents,skills}/<id>.md`
-  (`/sage-asset-override`). Framework documents and gate-bearing assets are not overlay-eligible.
+  (`/sage-asset-override`). Framework documents and oracle-unbacked gate-bearing assets (qa, sage-profile-modify) are not overlay-eligible.
   See the bootstrap section above.
 - Report outcomes faithfully: if tests fail, say so with the output.
 

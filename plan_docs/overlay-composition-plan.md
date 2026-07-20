@@ -246,6 +246,7 @@ Phase 2 — framework kind (선행: SD-4 설계문서 + framework=FAIL, AGENT_GU
 
 - **L1 self-heal 의 SessionStart 삽입 지점**: retro-gate 무관 독립 스텝으로 early-return 이전(`hook_runtime.py:615-625`) 실행하도록 구조 조정(또는 별도 훅). 세션당 1회·fail-open 규율 구현 시 확정.
 - **gate-classification (a)/(b)/(c) 확정(R3 P0-3)**: 각 CORE agent/skill 의 게이트 보유 여부 + 그 게이트가 독립 결정론 오라클로 강제되는지 판정 — **SD-8(review/phase 오라클) 설계에 의존**. 그 전까지 보수 기본값=(c)제외. leader/sage-cycle/sage-plan/sage-profile-modify/sage-team/reviewer/qa/sage-review 는 현재 (c).
+  - **RESOLVED by FB23** (`plan_docs/fb23-*-plan.md`): backing 오라클(`pre_implementation_gate_core`: `_report_gate`/`_acceptance_gate`/`_audit_gate`/`_missing_pre_impl_phases`)이 게이트를 자산-불read 로 floor 하고 적대적 우회 테스트가 GREEN 인 **leader·reviewer·sage-cycle·sage-plan·sage-review·sage-team → (b) 재분류**(`INDEPENDENT_ORACLE_COMPOSE_ALLOWED`). **qa 는 04 fake-PASS 를 잡는 실행 오라클이 없어 (c) 잔류(FB24 후보)**, sage-profile-modify(오라클 입력 profile 편집→FB24/SD-9), framework ×4(FB25) 는 범위 밖.
 - **영수증 독립 바인딩 vs advisory(R3 P0-1)**: 로컬 `core_renders` 를 tamper-proof 로 만들려면 write-guard 편입+서명 등 별도 바인딩 필요 → SD-9(서버측) 영역. 그 전까지 로컬=advisory drift 영수증, 권위=CI 재계산.
 - **codex 전역 skill 근본 해결**: repo-scoped 전환(SD-6 인접) 전까지 미해결 잔존 — upstream 백로그.
 

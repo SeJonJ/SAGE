@@ -10,7 +10,18 @@
       프로즈-read 도 없음. 오버레이 파일이 있으면 validate FAIL.
 
 기본값은 fail-closed: **입증된 (a)/(b)만 compose**, 미분류/미지 자산은 전부 blocked.
-(c)→(b) 재분류(오버레이 개방)는 SD-8 결정론 review/phase 오라클 완성에 의존한다.
+(c)→(b) 재분류는 자산-불read 결정론 오라클(pre_implementation_gate_core)이 게이트를 floor 하고
+적대적 우회 테스트가 GREEN 일 때만 이뤄진다(FB23). 미보증분은 GATE_BEARING_UNBACKED 로 남는다.
+
+**(b) 멤버십 기준 = "primary 게이트가 floored"** (FB23 R3 정밀화): 자산의 *주된* 워크플로 기여가
+자산-불read 오라클로 강제되면 (b). 여기서 오라클이 검증하는 것은 **구조**다 — 06←05 APPROVED 마커
+존재, loop_audit 레코드 무결성, 04 evidence row/status 존재, bound phase 문서 존재. **내용의
+진위**(04 PASS 가 실제 통과인지, 01 acceptance matrix 가 완전한지)는 어떤 오라클도 재검하지 않는다.
+그래서 내용을 위조하는 forge(leader 가 01 matrix 를 축소, sage-team 이 qa 우회해 fake-PASS 04 대필,
+qa 가 fake-PASS 기입)는 전부 미포착이다. 그러나 이것은 **오버레이 없이 base 자산도 동일하게 가진
+선존 품질/LLM-신뢰 갭**이라 합성 delta=0 — 합성이 새로 여는 우회가 아니므로 합성 위협모델 밖이다.
+leader/sage-cycle/sage-team 은 primary 기여(plan/phase 존재·사이클 시퀀싱)가 floored 라 (b);
+**qa 는 primary 기여 자체가 그 미검증 내용(04 진위)**이라 (c) 로 남긴다(실행 재검 오라클=FB24/SD-9 대기).
 
 install·sync·session-start(L1)·validate 는 오버레이를 다룰 때 반드시 이 모듈의 classify /
 expected_block 을 경유한다 — 분류를 우회하는 합성 경로가 없어야 한다.
@@ -41,18 +52,50 @@ NON_GATE_COMPOSE_ALLOWED = frozenset({
     ("agents", "implementer-b"),
 })
 
-# 자산 텍스트 밖의 executable oracle이 게이트를 독립 보장할 때만 여기에 등록한다. SD-4
-# domain_refs는 authoritative domain 값의 재복제를 막는 계약일 뿐 phase/review/verification oracle이
-# 아니므로 framework 문서를 등록하지 않는다. 등록 변경은 oracle 구현+fixture와 같은 patch여야 한다.
-INDEPENDENT_ORACLE_COMPOSE_ALLOWED = frozenset()
+# 자산 텍스트 밖의 executable oracle이 게이트를 독립 보장할 때만 여기에 등록한다. 등록 자격은
+# 선언이 아니라 적대적 우회 테스트(GREEN)로 판정한다 — 오라클이 malicious overlay 를 BLOCK 해야 한다.
+# 오라클은 (event, profile, snapshot) 순수함수라 asset 텍스트를 입력받지 않으므로, 오버레이가
+# 물리 반영돼도 floor(loop_audit·05 APPROVED·04 evidence·bound phase docs)를 낮출 수 없다.
+INDEPENDENT_ORACLE_COMPOSE_ALLOWED = frozenset({
+    ("agents", "leader"), ("agents", "reviewer"),
+    ("skills", "sage-cycle"), ("skills", "sage-plan"),
+    ("skills", "sage-review"), ("skills", "sage-team"),
+})
+
+# 등록 항목별 backing 근거(오라클)와 적대적 테스트(test_overlay_reclassification_backing.py).
+# 메타테스트가 "등록=BACKING+테스트 보유" 를 강제한다. 여기 오라클은 **구조**를 floor 한다(내용 진위
+# 아님 — docstring 참조). 아래 자산의 primary 기여는 구조로 강제되고, 잔여 내용-forge 는 delta-0 선존 갭.
+# 제외: qa(primary 기여=04 진위, 이를 재검하는 실행 오라클 부재→FB24/SD-9 후보),
+# sage-profile-modify(오라클 입력 profile 을 편집→FB24/SD-9), framework ×4(FB25).
+BACKING = {
+    ("agents", "leader"): {
+        "oracles": ["_missing_pre_impl_phases", "_acceptance_gate", "_report_gate"],
+        "adversarial_tests": ["test_leader_phase_skip_blocked"]},
+    ("agents", "reviewer"): {
+        "oracles": ["_audit_gate", "_report_gate"],
+        "adversarial_tests": ["test_reviewer_forge_blocked_loop_on",
+                              "test_reviewer_forge_blocked_loop_off"]},
+    ("skills", "sage-cycle"): {
+        "oracles": ["_report_gate", "_acceptance_gate", "_missing_pre_impl_phases"],
+        "adversarial_tests": ["test_sage_cycle_report_without_approve_blocked"]},
+    ("skills", "sage-plan"): {
+        "oracles": ["_missing_pre_impl_phases"],
+        "adversarial_tests": ["test_sage_plan_unbound_plan_blocked"]},
+    ("skills", "sage-review"): {
+        "oracles": ["_audit_gate", "_report_gate"],
+        "adversarial_tests": ["test_sage_review_degraded_run_blocked",
+                              "test_sage_review_seq_forged_run_blocked"]},
+    ("skills", "sage-team"): {
+        "oracles": ["_report_gate", "_acceptance_gate", "_missing_pre_impl_phases"],
+        "adversarial_tests": ["test_sage_team_skip_review_blocked_loop_off"]},
+}
 
 COMPOSE_ALLOWED = NON_GATE_COMPOSE_ALLOWED | INDEPENDENT_ORACLE_COMPOSE_ALLOWED
 
 # 명시적 (c) — 게이트 보유하나 오라클 미보증(문서화용; 실제 차단은 COMPOSE_ALLOWED 미포함으로 성립).
 GATE_BEARING_UNBACKED = frozenset({
-    ("agents", "leader"), ("agents", "qa"), ("agents", "reviewer"),
-    ("skills", "sage-cycle"), ("skills", "sage-plan"), ("skills", "sage-team"),
-    ("skills", "sage-review"), ("skills", "sage-profile-modify"),
+    ("agents", "qa"),
+    ("skills", "sage-profile-modify"),
     ("framework", "AGENT_GUIDE"), ("framework", "CLAUDE"),
     ("framework", "CODEX"), ("framework", "AGENTS"),
 })

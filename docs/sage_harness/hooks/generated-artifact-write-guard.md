@@ -34,10 +34,13 @@ spec→generate 산출물이 아니라는 이유로 면제했으나, 그러면 C
 `sage install --force` 가 그 수정을 조용히 덮어썼다(첫 실 사이클 실증에서 드러난 갭).
 
 프로젝트 로컬 overlay 경로는 executable eligibility가 입증된 자산에만 안내한다. 현재 대상은
-양 host의 `implementer-a`와 `implementer-b`이며 canonical lowercase 경로
-`sage/asset_overrides/agents/<id>.md`로 redirect 한다(`core_overlay_hint`). CORE skill과
-`leader`/`qa`/`reviewer`/`convention-checker`는 gate-bearing 자산으로 독립 oracle이 없어 현재
-overlay 비지원임을 안내한다. 따라서 보존되지만 합성할 수 없는 overlay 파일 생성을 유도하지 않는다.
+양 host의 non-gate 워커 `implementer-a`/`implementer-b`와, FB23 로 재분류된 gate-bearing 자산
+`leader`/`reviewer`(agents)·`sage-cycle`/`sage-plan`/`sage-review`/`sage-team`(skills)이며,
+canonical lowercase overlay 경로로 redirect 한다(`core_overlay_hint`; skill overlay id 는 skill
+디렉터리명). 이들은 게이트를 자산-불read 결정론 오라클이 floor 하므로 overlay 물리 합성이 안전하다.
+남은 `qa`/`convention-checker`(agents)·`sage-init`/`sage-asset`/`sage-asset-override`/
+`sage-profile-modify`(skills)는 독립 oracle이 없어 현재 overlay 비지원임을 안내한다(`is_blocked_core_render`).
+따라서 보존되지만 합성할 수 없는 overlay 파일 생성을 유도하지 않는다.
 
 codex CORE skill은 선택 scope가 global이면 `$CODEX_HOME/skills`, project-local이면 repo `.codex/skills/`에
 설치된다. project-local CORE 이름은 일반 생성 skill이 아니라 install-owned CORE render로 식별해 직접수정을

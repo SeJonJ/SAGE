@@ -57,7 +57,7 @@ resumes at the right half.
   sequences `/sage-plan` (00–02) then `/sage-team` (03–06)
 - uses: sage-plan skill, sage-team skill, project-profile.yaml, AGENT_GUIDE.md
 - convention_doc: AGENT_GUIDE.md
-- self_overlay: unsupported; this gate-bearing CORE skill is not in `COMPOSE_ALLOWED`
+- overlay: optional `sage/asset_overrides/skills/sage-cycle.md` has project-local priority over this CORE render and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates (they stay floored by independent oracles)
 
 ## runtime_bindings
 - claude: .claude/skills/sage-cycle/SKILL.md (repo — Claude Code auto-discovers)

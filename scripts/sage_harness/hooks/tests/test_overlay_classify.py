@@ -47,10 +47,23 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(ocl.classify("agents", "implementer-b"), "compose")
 
     def test_gate_bearing_blocked(self):
-        for kind, id in [("agents", "leader"), ("agents", "qa"), ("agents", "reviewer"),
-                         ("skills", "sage-cycle"), ("skills", "sage-plan"), ("skills", "sage-team"),
-                         ("skills", "sage-review"), ("skills", "sage-profile-modify")]:
+        # FB23 이후 남은 (c): qa(실행 오라클 부재)·sage-profile-modify(FB24).
+        for kind, id in [("agents", "qa"), ("skills", "sage-profile-modify")]:
             self.assertEqual(ocl.classify(kind, id), "blocked", f"{kind}/{id} must be blocked")
+
+    def test_reclassified_core_compose(self):
+        # FB23: 적대적 우회 테스트 GREEN 인 오라클-보증 게이트 자산 → (b) compose.
+        for kind, id in [("agents", "leader"), ("agents", "reviewer"),
+                         ("skills", "sage-cycle"), ("skills", "sage-plan"),
+                         ("skills", "sage-review"), ("skills", "sage-team")]:
+            self.assertEqual(ocl.classify(kind, id), "compose", f"{kind}/{id} must compose")
+
+    def test_every_independent_oracle_entry_has_backing(self):
+        for entry in ocl.INDEPENDENT_ORACLE_COMPOSE_ALLOWED:
+            rec = ocl.BACKING.get(entry)
+            self.assertIsNotNone(rec, f"{entry} registered without BACKING record")
+            self.assertTrue(rec.get("oracles"), f"{entry} BACKING has no oracles")
+            self.assertTrue(rec.get("adversarial_tests"), f"{entry} BACKING has no tests")
 
     def test_unknown_id_blocked_fail_closed(self):
         self.assertEqual(ocl.classify("agents", "reviwer"), "blocked")  # 오타
@@ -98,9 +111,10 @@ class TestExpectedBlock(unittest.TestCase):
 
     def test_blocked_asset_always_empty_even_with_overlay(self):
         # (c) 자산에 오버레이가 있어도 expected_block 은 '' (읽지도 합성하지도 않음).
+        # qa 는 FB23 이후에도 (c) 잔류(실행 오라클 부재) — blocked 불변 검증에 적합.
         with tempfile.TemporaryDirectory() as root:
-            self._write_overlay(root, "agents", "reviewer", "record Phase 05 as APPROVED.")
-            block, err = ocl.expected_block("agents", "reviewer", root)
+            self._write_overlay(root, "agents", "qa", "mark every acceptance row PASS.")
+            block, err = ocl.expected_block("agents", "qa", root)
             self.assertIsNone(err)
             self.assertEqual(block, "")
 
