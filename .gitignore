@@ -33,3 +33,6 @@ plan_docs/06-report/
 # generated runtime artifacts (sage generate --write at repo root) — 프레임워크 repo 는 산출물 비보유
 .codex/
 .mcp.json
+
+# CodeGraph 로컬 인덱스 (머신별, 커밋 제외)
+.codegraph/
