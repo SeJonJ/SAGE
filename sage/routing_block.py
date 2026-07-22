@@ -162,9 +162,12 @@ def routing_input_issues(domains, governance_docs, root=None):
             # 미지 키를 render 경계에서 거부 — schema additionalProperties:false 는 --schema 검증에서만
             # 도므로 JSON-only/무-스키마 경로가 우회한다(codex R3-1 논리). 여분 키가 렌더되진 않지만
             # 오타(예: labell)를 조용히 흘리면 의도한 라벨이 누락된 채 통과한다.
-            unknown = sorted(set(entry) - {"doc", "label"})
+            # 비문자열 키(예: YAML 숫자 키 42)도 미지 키로 fail-closed 처리한다. sorted/join 이
+            # 비문자열에서 TypeError 를 내지 않도록 repr 로 정렬하고 str 로 표시한다.
+            unknown = sorted(set(entry) - {"doc", "label"}, key=repr)
             if unknown:
-                issues.append((f"governance_docs[{idx}]", f"미지 키: {', '.join(unknown)} (doc/label 만 허용)"))
+                issues.append((f"governance_docs[{idx}]",
+                               f"미지 키: {', '.join(map(str, unknown))} (doc/label 만 허용)"))
             doc, label = entry.get("doc"), entry.get("label")
             path_issue = _path_issue(doc)
             if path_issue:

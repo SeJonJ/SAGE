@@ -123,7 +123,12 @@ preserving the fixed schema keys. Do not reformat unrelated sections.
 
 ## Step 4 — Re-validate (always)
 
+If you changed a routing-block source (`governance_docs` or `risk.domains`), first
+re-materialize the AGENT_GUIDE routing block with `sage sync-overlays` — otherwise
+`validate` reports drift.
+
 ```
+sage sync-overlays          # only if governance_docs / risk.domains changed
 sage validate --schema --kind all
 sage doctor
 ```
@@ -137,6 +142,7 @@ re-run, never bypass**. If you changed `components[]`, note that
 ## Done
 
 The change is complete when the profile reflects the user's intent, the consequence was
-surfaced and accepted, and `sage validate` passes (or only WARNs the user accepted). If
+surfaced and accepted, the routing block was re-synced if `governance_docs`/`risk.domains`
+changed (`sage sync-overlays`), and `sage validate` passes (or only WARNs the user accepted). If
 the change tuned the review loop, the next Phase-05 run picks it up; if it touched a
 gate-affecting section, the new gate behavior is live immediately.

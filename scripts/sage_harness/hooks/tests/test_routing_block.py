@@ -401,6 +401,11 @@ class TestCodexHardening(unittest.TestCase):
         self.assertEqual(block, "")
         self.assertIsNotNone(err)
 
+    def test_non_string_unknown_key_fails_without_crash(self):
+        # YAML 숫자 키 등 비문자열 미지 키는 TypeError 없이 FAIL 을 반환해야 한다.
+        iss = routing_input_issues(None, [{42: "v", "doc": "README.md", "label": "guide"}], root=None)
+        self.assertTrue(any("미지 키" in reason for _w, reason in iss), iss)
+
     def test_hidden_path_segments_allowed(self):
         # 숨김 경로(.github/.well-known 등 leading dot 세그먼트)를 governance doc/pointer 로 허용.
         with tempfile.TemporaryDirectory() as d:

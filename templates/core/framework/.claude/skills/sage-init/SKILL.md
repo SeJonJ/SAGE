@@ -268,6 +268,7 @@ After approval, ask the user how to generate the registration artifacts:
 ```
 sage generate --kind hook --write --target <claude|codex|both>
 sage generate --kind roster --write                   # only if components[] is set
+sage sync-overlays                                    # profile(risk.domains + governance_docs)을 AGENT_GUIDE 라우팅 블록에 반영
 sage validate --check --schema --kind all
 ```
 
@@ -280,6 +281,9 @@ Notes that matter (from bootstrap-authoring.md):
   runtime AI render + `extract_agent --register` before they are manifest-registered.
 - `sage validate` defaults to `--kind hook`; pass `--kind all` to also check
   agent/skill renders.
+- `sage sync-overlays` materializes the AGENT_GUIDE **project routing block** from the
+  profile (`risk.domains` + `governance_docs`). Run it after authoring, before `validate` —
+  otherwise the block is empty while the profile has entries and `validate` reports drift.
 - A `validate` FAIL points at the value/spec to fix — fix and re-run, never bypass.
 
 ## Step 5 — Asset additions later (same loop)
@@ -292,6 +296,7 @@ runtime render plus extraction/registration.
 ## Done
 
 Bootstrap is complete when `project.name` is set, the profile reflects the user's
-intent, and `sage validate` passes (or only WARNs the user has accepted). From
+intent, the routing block is synced (`sage sync-overlays`), and `sage validate` passes
+(or only WARNs the user has accepted). From
 here the normal PDCA phase-first flow applies — author plan docs before any L2/L3
 code, or the `pre-implementation-gate` will block.

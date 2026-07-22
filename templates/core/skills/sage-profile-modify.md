@@ -27,22 +27,28 @@ then re-validate. The profile-editing counterpart to /sage-init (first authoring
    vault interview set).
 2. Identify the target section (project/components including `runtime_models`/
    verification/risk/pdca.review_loop/options/knowledge_capture/file_type_map/compliance/
-   `cross_model.reviewer`). For model edits, run `sage models --host <host>` and preserve
-   its verification label; reviewer host must remain opposite `runtime.active_host`.
+   `governance_docs`/`cross_model.reviewer`). For model edits, run `sage models --host <host>`
+   and preserve its verification label; reviewer host must remain opposite `runtime.active_host`.
+   `governance_docs` renders into the AGENT_GUIDE routing block (path + label only, never
+   classification triggers).
 3. For pdca.review_loop and vault outputs, drive the SAME shared interview set as
    /sage-init (bootstrap-authoring.md) — single source, no drift. Vault turn only when
    loop on AND knowledge_capture.vault_path set.
 4. Propose before→after diff and **state the gate consequence** in plain terms
    (loosen/tighten); get explicit approval. (Consequence warnings are mandatory.)
 5. Edit profile.yaml in place — change only approved values, never add/remove schema keys.
-6. Re-validate: `sage validate --schema --kind all` + `sage doctor`; never bypass a FAIL.
-   (components[] change may need `sage generate --kind roster` — an asset step.)
+6. If a routing-block source changed (`governance_docs` or `risk.domains`), run
+   `sage sync-overlays` first to re-materialize the AGENT_GUIDE routing block — else
+   `validate` reports drift. Then re-validate: `sage validate --schema --kind all` +
+   `sage doctor`; never bypass a FAIL. (components[] change may need
+   `sage generate --kind roster` — an asset step.)
 
 ## advisory_scope
 - role_boundary: edits the profile (SSOT) directly, NOT via generate (that is for assets);
   does not add/remove schema keys; does not bypass a validate FAIL; does not bootstrap
   (routes to /sage-init when unbootstrapped)
-- uses: sage validate / sage doctor, bootstrap-authoring.md (shared interview set)
+- uses: sage sync-overlays (routing-block source edits) / sage validate / sage doctor,
+  bootstrap-authoring.md (shared interview set)
 - convention_doc: AGENT_GUIDE.md
 - self_overlay: unsupported; this gate-bearing CORE skill is not in `COMPOSE_ALLOWED`
 

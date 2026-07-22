@@ -94,6 +94,15 @@ decisions that genuinely need user intent; author the rest from them:
   until one is selected.
 - `verification.commands` — the deterministic build/test/lint commands for the stack.
 - `file_type_map` — `{ glob, type }` first-match classification used for logging.
+- `governance_docs` (optional) — project governance/reference docs the agent should
+  discover at session start: architecture notes, security policy (including hidden
+  paths like `.github/SECURITY.md`), domain protocol or convention docs **not already
+  wired** through `risk.domains[].protocol_pointer`. Each entry is
+  `{ doc: <relative path that exists>, label: <short one-line description ≤80 chars> }`.
+  It renders into the AGENT_GUIDE **project routing block** as a read-pointer — path +
+  label only, **never** classification triggers (`path_globs`/`content_keywords` stay in
+  `risk.*`). Propose entries inferred from the repo scan for a single confirm; leave empty
+  (`[]`) if none. Editing it later requires `sage sync-overlays` to re-materialize the block.
 - `options.cross_model` — when true, Phase 05 review is opposite-runtime **only
   when reachable**; `sage doctor` resolves reachability from peer CLI availability
   (`which codex` / `which claude`) and blocks Phase 05 when the peer CLI is
@@ -205,6 +214,8 @@ On approval, hand off — do not keep authoring registration artifacts by hand:
 sage generate --kind hook --write --target claude     # or: --target both (claude + codex)
 # component implementer SCAFFOLDS (only if components[] is set):
 sage generate --kind roster --write
+# materialize the AGENT_GUIDE routing block from the profile (risk.domains + governance_docs):
+sage sync-overlays
 # verification (default --kind hook; use --kind all to also check agent/skill):
 sage validate --check --schema --kind all
 ```
@@ -220,6 +231,9 @@ Notes that matter:
   `sage generate --kind agent --id <id> --write` reverse-extracts spec+claims and
   registers them in the manifest (render_hash for both runtimes) — roster alone
   does not complete them.
+- `sage sync-overlays` materializes the AGENT_GUIDE **project routing block** from the
+  profile (`risk.domains` + `governance_docs`). Run it before `validate` — otherwise the
+  block stays empty while the profile has entries and `validate` reports drift.
 - `sage validate` defaults to `--kind hook`; pass `--kind all` to also validate
   agent/skill renders (only meaningful once they are registered).
 
