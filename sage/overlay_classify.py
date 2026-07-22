@@ -176,3 +176,58 @@ def expected_block(kind, id, root):
     if verr:
         return "", verr
     return _oc.compose_block(text, kind, id), None
+
+
+# 라우팅 블록(FB25)을 실을 유일한 렌더 대상. AGENT_GUIDE 는 양 host 가 세션 시작 read order 로
+# 읽는 공유 정본이라 여기 한 곳에만 주입하면 codex(AGENTS.md 먼저 읽음)도 라우터를 통해 도달한다.
+# framework overlay 는 blocked(FB-12) 로 남으며 — 이 블록은 오버레이 파일이 아니라 profile 에서
+# 생성되므로 overlay 개방과 무관하다.
+_ROUTING_TARGET = ("framework", "AGENT_GUIDE")
+
+
+def expected_routing_block(kind, id, root, profile=None):
+    """이 렌더 대상에 반영돼야 할 라우팅 블록 문자열 → (block, error).
+
+    AGENT_GUIDE 이외 대상은 항상 '' (라우팅 블록 미대상). profile 의 risk.domains + governance_docs
+    로부터 결정론 생성하며, profile 이 None 이면 root 에서 로드한다(materialize/check 공용). 규칙 본문·
+    분류 trigger 는 렌더하지 않는다(routing_block 모듈 경계).
+    """
+    if (kind, id) != _ROUTING_TARGET:
+        return "", None
+    if profile is None:
+        from sage.overlay_materialize import load_profile
+        profile, perr = load_profile(root)
+        if perr:
+            return "", perr
+    profile = profile if isinstance(profile, dict) else {}
+    risk = profile.get("risk")
+    # 명시적 null(키는 있고 값이 None)은 malformed 이며 silent-strip 경로다(codex R3-2/R4-1). risk 비-dict
+    # 도 fail-closed(codex R3-1) — JSON-only profile 은 materialize_profile 타입검증을 우회하기 때문.
+    if "risk" in profile and risk is None:
+        return "", "라우팅 입력 오류(risk): null 불가(미설정은 키 생략 또는 {})"
+    if risk is not None and not isinstance(risk, dict):
+        return "", "라우팅 입력 오류(risk): 매핑(object)이어야 함"
+    if "governance_docs" in profile and profile.get("governance_docs") is None:
+        return "", "라우팅 입력 오류(governance_docs): null 불가(미설정은 키 생략 또는 [])"
+    if isinstance(risk, dict) and "domains" in risk and risk.get("domains") is None:
+        return "", "라우팅 입력 오류(risk.domains): null 불가(미설정은 키 생략 또는 [])"
+    domains = risk.get("domains") if isinstance(risk, dict) else None
+    governance_docs = profile.get("governance_docs")
+
+    from sage.routing_block import render_routing_body, routing_input_issues
+    # render 경계에서 입력 안전성을 강제한다 — profile_validate 는 install --force / `validate --check`
+    # 경로에서 항상 돌지 않으므로(codex R1-2), 여기서 fail-closed 로 막아야 injection/봉쇄가 실질 경계가
+    # 된다. 하나라도 걸리면 이 렌더 대상(AGENT_GUIDE) 물화가 실패해 오염 블록이 기록되지 않는다.
+    input_issues = routing_input_issues(domains, governance_docs, root)
+    if input_issues:
+        where, reason = input_issues[0]
+        return "", f"라우팅 입력 오류({where}): {reason}"
+    body = render_routing_body(domains, governance_docs)
+    if not body:
+        return "", None
+    # 조립된 본문 전체 마커 토큰 backstop — 어느 필드가 마커를 심어도 raw parser 가 관리 구간으로
+    # 오집계하는 것을 막는다(codex R2-4 whole-body 방어). per-field _scan 과 이중 차단.
+    token_error = _oc.routing_block_token_error(body)
+    if token_error:
+        return "", token_error
+    return _oc.wrap_routing_block(body), None

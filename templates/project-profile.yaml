@@ -4,7 +4,7 @@
 # 전문/주석: 마스터 설계 §6.
 
 sage:
-  required_version: "0.9.66" # 프로젝트가 요구하는 exact SAGE 버전. local에서 변경 불가
+  required_version: "0.9.67" # 프로젝트가 요구하는 exact SAGE 버전. local에서 변경 불가
 
 project:
   name: ""
@@ -51,6 +51,11 @@ risk:                            # pre-implementation-gate / stop-compliance 가
   l3_review_glob: ""             # current-cycle pre-implementation 2-round review 문서 전용 glob
   generic_tokens: []             # (전략 확장) codex_feature_signal stopword — 스택특화 토큰(프레임워크/언어명)
   review_patterns: []            # (전략 확장) claude_grep_first 추가 리뷰 마커 정규식
+
+# 프로젝트 거버넌스 문서 라우팅(선택). risk.domains 의 protocol_pointer 와 함께 AGENT_GUIDE 세션
+# 시작 라우팅 블록으로 결정론 렌더돼, 에이전트가 프로젝트 고유 규칙 문서를 발견하게 한다(경로+라벨만,
+# 규칙 본문 아님). 부재 시 도메인 블록만 렌더. shared 정책 계층 전용(local override 금지).
+governance_docs: []              # [{ doc: "docs/agent/output-contract.md", label: "output contract" }]
 
 # --- hook 런타임 계약 (cores 가 직접 읽는 top-level 키. 어댑터가 profile 전체를 core 에 전달) ---
 file_type_map: []                # post-tool-logger: [{ glob: "src/**", type: backend }] 첫매치 분류

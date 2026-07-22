@@ -62,6 +62,7 @@ From the user's stated intent, or by asking, pin the **section**:
   **`pdca.review_loop`** (the Phase-05 loop — use the shared interview set) ·
   `options.*` · **`knowledge_capture`** (vault_path + `loop_audit_dashboard` / `retro_note`) ·
   `file_type_map` · `compliance` / `output_contract` ·
+  **`governance_docs`** (session-start read-pointers rendered into the AGENT_GUIDE routing block) ·
   **`team.core.<role>.runtime`** (`model` / `effort`) ·
   **`components[].runtime_models`** · **`cross_model.reviewer` / `.effort`**.
 
@@ -70,6 +71,13 @@ frontmatter, so editing the profile alone does nothing — finish with
 `sage install --force` to re-render, then `sage doctor` to confirm no agent reports
 `stale`. They bind on a claude host only. A bare `model:`/`effort:` directly on the role
 (no `runtime:`) is a legacy dead field; move it under `runtime:`.
+
+**`governance_docs`** entries render into the AGENT_GUIDE **project routing block**, so editing
+the profile alone does nothing until the block is re-materialized — finish with
+`sage sync-overlays` (or `sage install --force`), then `sage validate --kind all` to confirm no
+render drift. Each entry is `{ doc, label }`: `doc` a project-relative path that must exist,
+`label` a short (≤80 chars) one-line description. Only path + label render — **never**
+classification triggers (`path_globs`/`content_keywords` stay in `risk.*`).
 
 **`cross_model.effort`** only matters when `options.cross_model: true`. Unset → `high`.
 The vocabulary is peer-specific (`codex`: `minimal|low|medium|high|xhigh`;
@@ -104,6 +112,7 @@ the loop is on AND `knowledge_capture.vault_path` is set.)
 | lower `review_loop.budget_tokens` | the loop may BLOCK earlier on budget |
 | narrow `review_loop.severity_block` | lower-severity findings no longer block APPROVED |
 | empty `knowledge_capture.vault_path` | all vault features OFF |
+| remove a `governance_docs` entry | agents no longer discover that doc at session start (not a gate change) |
 
 4. Get **explicit approval** before writing.
 

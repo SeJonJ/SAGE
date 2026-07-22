@@ -157,7 +157,17 @@ reach thoroughness through the back-and-forth, not a wall of questions.
      module name). The review protocol blocks L3 until this is set.
 6. **`file_type_map`** — propose `{ glob, type }` first-match classification for
    logging from the stack you've established.
-7. **`team.core.<role>.runtime.model` / `.effort`** — optional per-agent runtime settings
+7. **`governance_docs`** (optional) — project governance/reference docs the agent should
+   discover at session start. Propose from the Step 0 repo scan: architecture notes,
+   security policy (including hidden paths like `.github/SECURITY.md`), domain protocol
+   docs, or convention docs **not already wired** through `risk.domains[].protocol_pointer`.
+   Each entry is `{ doc: <relative path>, label: <short one-line description ≤80 chars> }`
+   and renders into the AGENT_GUIDE **project routing block** as a read-pointer —
+   **path + label only, never classification triggers** (`path_globs`/`content_keywords`
+   stay in `risk.*`, the hook's authoritative source). One turn: propose the entries you
+   inferred for a single confirm; leave empty (`[]`) if the project has none. `doc` must be
+   a project-relative path that exists; the label says why the agent should read it.
+8. **`team.core.<role>.runtime.model` / `.effort`** — optional per-agent runtime settings
    for the CORE roles (`leader`, `implementer-a`, `implementer-b`, `qa`, `reviewer`,
    `convention-checker`). Ask once, as a single topic; leaving both unset is a fine answer.
    Note the nesting: these live under `runtime:`, *not* directly on the role — a bare

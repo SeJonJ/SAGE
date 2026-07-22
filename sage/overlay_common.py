@@ -28,6 +28,17 @@ _MARKER_TOKENS = (">>> SAGE OVERLAY", "<<< SAGE OVERLAY")
 # 마커 구간(START..END, 뒤 개행 1개 흡수) 매칭. mcp_common.replace_codex_block 과 동일 방식.
 _BLOCK_RE = re.compile(re.escape(MARKER_START) + r".*?" + re.escape(MARKER_END) + r"\n?", re.DOTALL)
 
+# 프로젝트 라우팅 블록(FB25) 마커 — 오버레이와 별개 관리 구간. 오버레이 블록이 프로젝트 로컬
+# 오버레이 파일에서 오는 반면, 라우팅 블록은 sage/project-profile.yaml 에서 결정론 생성된다.
+# framework overlay 는 blocked(FB-12) 이므로 framework 렌더의 이 슬롯만 라우팅 블록이 채우고,
+# 오버레이 블록과 절대 공존하지 않는다. base 해시 앵커는 두 관리 구간을 모두 제거한 base 로 잡아야
+# 프로젝트별 라우팅 값이 앵커를 오염시키지 않는다(base_of 가 두 구간을 함께 strip).
+ROUTING_MARKER_START = "<!-- >>> SAGE PROJECT ROUTING v1 START (sage/project-profile.yaml 에서 생성, 여기서 수정 금지) -->"
+ROUTING_MARKER_END = "<!-- <<< SAGE PROJECT ROUTING v1 END -->"
+_ROUTING_TOKENS = (">>> SAGE PROJECT ROUTING", "<<< SAGE PROJECT ROUTING")
+_ROUTING_BLOCK_RE = re.compile(
+    re.escape(ROUTING_MARKER_START) + r".*?" + re.escape(ROUTING_MARKER_END) + r"\n?", re.DOTALL)
+
 
 def _normalize_trailing(text):
     """말미 개행을 정확히 1개로 정규화(빈 문자열은 그대로). base·블록·본문 결합의 결정론 확보."""
@@ -93,10 +104,33 @@ def validate_overlay(text):
     저작·compose·lint 어디서든 선검사한다 — 마커 토큰이 본문에 섞이면 합성 후 마커 짝이
     깨져 base_of/insert_block 이 malformed 로 오판한다.
     """
-    for tok in _MARKER_TOKENS:
+    for tok in _MARKER_TOKENS + _ROUTING_TOKENS:
         if tok in text:
             return f"오버레이 본문에 예약 마커 토큰('{tok}')이 있어 합성할 수 없습니다"
     return None
+
+
+def routing_block_token_error(text):
+    """라우팅 블록 본문에 예약 마커 토큰이 있는지 검사 → error | None.
+
+    profile 유래 문자열(도메인 id·경로·label)이 마커 토큰을 포함하면 합성 후 마커 짝이 깨져
+    base_of/insert_routing_block 이 malformed 로 오판한다. 렌더 직전 fail-closed 로 막는다.
+    """
+    for tok in _MARKER_TOKENS + _ROUTING_TOKENS:
+        if tok in text:
+            return f"라우팅 블록 본문에 예약 마커 토큰('{tok}')이 있어 생성할 수 없습니다"
+    return None
+
+
+def wrap_routing_block(body):
+    """라우팅 블록 본문 → 마커로 감싼 관리 블록 문자열. 본문이 비면 '' 반환.
+
+    base 는 건드리지 않고 블록만 만든다(오버레이 compose_block 과 동형). idempotent.
+    """
+    body = body.strip()
+    if not body:
+        return ""
+    return f"{ROUTING_MARKER_START}\n{body}\n{ROUTING_MARKER_END}\n"
 
 
 def compose_block(overlay_text, kind, id):
@@ -116,29 +150,56 @@ def compose_block(overlay_text, kind, id):
     return f"{MARKER_START}\n{header}\n{body}\n{MARKER_END}\n"
 
 
-def _marker_counts_ok(text):
-    """마커 짝 검사 → error | None. 중복(>1)·짝불일치는 malformed."""
-    starts = text.count(MARKER_START)
-    ends = text.count(MARKER_END)
+def _counts_ok(text, start, end, block_re, label):
+    """마커 구간 정합 검사 → error | None. 중복(>1)·짝불일치·순서역전을 malformed 로 잡는다.
+
+    count 만 보면 END 가 START 앞에 온 역순(각 1개)이 통과하지만, block_re(START..END DOTALL)는
+    추출에 실패해 base_of 가 그 마커를 base 에 남긴다 → 앵커 오염 + drift 미감지. count 가 1-and-1
+    이면 실제 정규식 추출이 되는지까지 확인해 이 괴리를 없앤다(codex R1-1).
+    """
+    starts = text.count(start)
+    ends = text.count(end)
     if starts > 1 or ends > 1:
-        return "오버레이 마커 중복(관리 블록이 2개 이상)"
+        return f"{label} 마커 중복(관리 블록이 2개 이상)"
     if (starts == 1) != (ends == 1):
-        return "오버레이 마커 짝 불일치(malformed)"
+        return f"{label} 마커 짝 불일치(malformed)"
+    if starts == 1 and not block_re.search(text):
+        return f"{label} 마커 순서/중첩 오류(START..END 추출 불가)"
     return None
 
 
+def _marker_counts_ok(text):
+    """오버레이 마커 짝 검사 → error | None."""
+    return _counts_ok(text, MARKER_START, MARKER_END, _BLOCK_RE, "오버레이")
+
+
+def _routing_marker_counts_ok(text):
+    """라우팅 마커 짝 검사 → error | None."""
+    return _counts_ok(text, ROUTING_MARKER_START, ROUTING_MARKER_END, _ROUTING_BLOCK_RE, "라우팅")
+
+
 def base_of(installed_text):
-    """설치본에서 마커 구간을 제거한 base 를 반환 → (base, error).
+    """설치본에서 관리 구간(오버레이 + 라우팅)을 모두 제거한 base 를 반환 → (base, error).
 
     마커 0쌍이면 원문 그대로(정상). >1 또는 짝불일치면 error(해시 대조 불가). base 해시
-    앵커 대조·expected_render 의 base' 계산에 쓴다.
+    앵커 대조·expected_render 의 base' 계산에 쓴다. **두 관리 구간을 함께 제거**해야 프로젝트별
+    라우팅 값이 base 앵커를 오염시키지 않는다(FB25) — 라우팅 블록이 없던 기존 설치본은 라우팅
+    정규식이 무매칭이라 거동 불변.
     """
-    err = _marker_counts_ok(installed_text)
+    err = _marker_counts_ok(installed_text) or _routing_marker_counts_ok(installed_text)
     if err:
         return installed_text, err
     # 말미 개행 1개로 정규화 = canonical base. base_of 는 install/validate 양쪽에서 앵커
     # 해시원으로 쓰이므로, 블록 삽입 시 생긴 구분 개행을 흡수해 round-trip 을 안정화한다.
-    return _normalize_trailing(_BLOCK_RE.sub("", installed_text)), None
+    stripped = _ROUTING_BLOCK_RE.sub("", _BLOCK_RE.sub("", installed_text))
+    # 오버레이·라우팅 마커가 교차 중첩(예: OVERLAY_START·ROUTING_START·OVERLAY_END·ROUTING_END)하면
+    # 각 count/regex 는 통과하나 한 구간을 먼저 지운 뒤 다른 구간의 짝이 깨져 잔여 마커가 base 에 남는다
+    # → 앵커 오염(codex R2-1). 두 구간을 지운 뒤에도 마커 문자열이 남으면 malformed 로 거부한다. base 는
+    # SAGE 예약 마커를 담지 않으며(오버레이/라우팅 본문도 마커 토큰을 reject) 정상 입력엔 무영향.
+    if any(mark in stripped for mark in (MARKER_START, MARKER_END,
+                                         ROUTING_MARKER_START, ROUTING_MARKER_END)):
+        return installed_text, "오버레이·라우팅 마커 교차 중첩(관리 구간 겹침)"
+    return _normalize_trailing(stripped), None
 
 
 def insert_block(installed_text, block):
@@ -168,4 +229,31 @@ def insert_block(installed_text, block):
 def extract_block(text):
     """설치본에서 관리 블록 문자열을 추출(없으면 None). 마커 구간 대조·존재 판정용."""
     m = _BLOCK_RE.search(text)
+    return m.group(0) if m else None
+
+
+def insert_routing_block(installed_text, block):
+    """설치본의 라우팅 마커 구간을 block 으로 교체 → (new_text, error). base·오버레이 구간 불변.
+
+    insert_block 과 동형이나 라우팅 마커만 다룬다. block 이 비면 기존 라우팅 구간을 제거(스트립),
+    없으면 base 말미에 append. 마커 중복/짝불일치 → error(아무것도 안 바꿈).
+    """
+    err = _routing_marker_counts_ok(installed_text)
+    if err:
+        return installed_text, err
+    has_block = installed_text.count(ROUTING_MARKER_START) == 1
+    if not block:
+        if not has_block:
+            return installed_text, None
+        return _normalize_trailing(_ROUTING_BLOCK_RE.sub("", installed_text)), None
+    if has_block:
+        return _ROUTING_BLOCK_RE.sub(block, installed_text, count=1), None
+    base = _normalize_trailing(installed_text)
+    joiner = "\n" if base else ""
+    return base + joiner + block, None
+
+
+def extract_routing_block(text):
+    """설치본에서 라우팅 관리 블록 문자열을 추출(없으면 None)."""
+    m = _ROUTING_BLOCK_RE.search(text)
     return m.group(0) if m else None

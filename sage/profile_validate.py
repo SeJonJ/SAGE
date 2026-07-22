@@ -445,9 +445,12 @@ def _semantic_issues(profile, root):
             seen_domains.add(did)
         if domain.get("risk_level") not in ("L1", "L2", "L3"):
             issues.append(("FAIL", f"{label}.risk_level 은 L1/L2/L3 중 하나여야 함"))
-        pointer = domain.get("protocol_pointer")
-        if not isinstance(pointer, str) or not pointer or os.path.isabs(pointer) or ".." in pointer.split("/"):
-            issues.append(("FAIL", f"{label}.protocol_pointer 는 프로젝트 상대 안전 경로여야 함"))
+        # authoring↔render 파리티: pointer 는 render 와 동일한 helper 로 검사한다(codex R2-6/R3-4).
+        # 이렇게 해야 validate OK·install FAIL(또는 그 역)로 갈리지 않는다. root 봉쇄까지 공유.
+        from sage.routing_block import pointer_issue
+        pe = pointer_issue(domain.get("protocol_pointer"), root)
+        if pe:
+            issues.append(("FAIL", f"{label}.protocol_pointer: {pe}"))
 
     exclusions = risk.get("l0_exclude_globs")
     if isinstance(exclusions, list):
@@ -649,6 +652,34 @@ def _knowledge_capture_issues(profile):
     return issues
 
 
+def _governance_docs_issues(profile, root):
+    """governance_docs(FB25 라우팅 블록 소스) 의미검증 — fail-closed.
+
+    라우팅 블록은 auto-loaded AGENT_GUIDE 에 주입되므로, 여기 담긴 문자열은 gate-relaxation
+    프로즈나 마커 토큰을 심는 경로가 될 수 있다. jsonschema 미설치에서도 동작하도록 순수 파이썬으로
+    키 어휘·타입·안전 경로를 강제하고, doc 은 프로젝트 상대 실재 파일이어야 하며(부재 시 라우팅이
+    허깨비 경로를 가리킴), label/doc 에 오버레이 gate-relaxation 스캔과 예약 마커 토큰 검사를
+    적용한다(overlay 저작과 동일 방어). 규칙 본문이 아니라 경로 포인터만 담기게 한다.
+    """
+    if "governance_docs" not in profile:
+        return []
+    docs = profile.get("governance_docs")
+    if docs is None:
+        # 명시적 null 은 malformed non-list — silent-strip 방지(codex R3-2). 키 부재만 정상.
+        return [("FAIL", "governance_docs: null 불가(미설정은 키 생략 또는 [])")]
+    if not isinstance(docs, list):
+        return [("FAIL", "governance_docs 는 리스트여야 함")]
+
+    # entry 타입·미지 키·필드 안전성(문법·단일라인·gate-relaxation·마커 토큰·경로 봉쇄+실재)은 모두
+    # render 경계와 동일 함수를 단일 소스로 공유한다 — 검증과 render 가 어긋나면 한쪽만 통과하는 갭이
+    # 생기고, 여기에 별도 미지-키 검사를 두면 같은 오타를 두 번 보고한다.
+    from sage.routing_block import routing_input_issues
+    issues = []
+    for where, reason in routing_input_issues(None, docs, root):
+        issues.append(("FAIL", f"{where}: {reason}"))
+    return issues
+
+
 def _cross_model_issues(profile):
     """cross_model 검증. 판정은 review 의 `cross_model_issues` 가 소유한다 — validate 와 cross-check 가
     서로 다른 규칙을 쓰면, cross-check 가 오타 키/미구현 값을 조용히 무시한 채 기본값으로 돈다(codex 7R).
@@ -708,7 +739,7 @@ def validate_profile(profile, root):
         issues = issues + _semantic_issues(profile, root) + _review_loop_issues(profile) \
             + _acceptance_issues(profile) + _knowledge_capture_issues(profile) \
             + _cross_model_issues(profile) + _team_agent_issues(profile) + _retro_gate_issues(profile) \
-            + _writeback_gate_issues(profile)
+            + _writeback_gate_issues(profile) + _governance_docs_issues(profile, root)
         issues = issues + _runtime_host_issues(profile) + _component_model_issues(profile) \
             + context_profile_issues(profile)
     except Exception as e:

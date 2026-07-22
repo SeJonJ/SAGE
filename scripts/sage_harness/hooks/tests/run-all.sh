@@ -202,6 +202,10 @@ python3 "$HERE/test_overlay_materialize.py" || rc=1
 python3 "$HERE/test_sync_overlays.py" || rc=1
 
 echo ""
+echo "### 41b. routing block (FB25 profile 유래 라우팅 블록 — trigger 미렌더/앵커 불변/drift/shared-only)"
+python3 "$HERE/test_routing_block.py" || rc=1
+
+echo ""
 echo "### 42. retro_audit (Loop C --check 성공 증거 append-only 감사 — ok/missing/skipped 상태전이)"
 python3 "$HERE/test_retro_audit.py" || rc=1
 

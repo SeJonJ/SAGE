@@ -166,11 +166,12 @@ def _load_profile(dest):
     return load_profile(dest)
 
 
-def _materialized_render(installed_text, kind, id, dest):
-    """설치본 → (물리화된 렌더, canonical base, error). 마커 구간을 expected_block 으로 수렴.
+def _materialized_render(installed_text, kind, id, dest, profile=None):
+    """설치본 → (물리화된 렌더, canonical base, error). 관리 구간을 expected_block 으로 수렴.
 
     (a)/(b)=오버레이 블록 삽입/갱신, (c)/미분류=expected_block=''→기존 블록 제거(스트립).
-    base 영역은 절대 재작성하지 않는다.
+    이어서 라우팅 블록(FB25)을 수렴한다 — AGENT_GUIDE 만 채워지고 나머지는 ''(스트립). base 영역은
+    절대 재작성하지 않으며, base_of 가 두 관리 구간을 함께 제거하므로 앵커는 라우팅 값에 불변.
     """
     base, berr = _oc.base_of(installed_text)
     if berr:
@@ -179,6 +180,12 @@ def _materialized_render(installed_text, kind, id, dest):
     if cerr:
         return None, base, cerr
     new_text, ierr = _oc.insert_block(base, block)
+    if ierr:
+        return None, base, ierr
+    routing, rerr = _cls.expected_routing_block(kind, id, dest, profile)
+    if rerr:
+        return None, base, rerr
+    new_text, ierr = _oc.insert_routing_block(new_text, routing)
     if ierr:
         return None, base, ierr
     return new_text, base, None
@@ -271,7 +278,7 @@ def plan_materialize(dest, host):
         if rerr:
             errors.append((path, rerr))
             continue
-        new_text, base, merr = _materialized_render(installed, kind, id, dest)
+        new_text, base, merr = _materialized_render(installed, kind, id, dest, profile)
         if merr:
             errors.append((path, merr))
             continue
@@ -362,6 +369,13 @@ def check(dest, host, core_renders):
     """
     findings = []
     core_renders = core_renders if isinstance(core_renders, dict) else {}
+    # 라우팅 블록(FB25) drift 판정용 profile 을 한 번 로드. 로드 실패는 개별 render 대조가 아니라
+    # 별도 FAIL 로 표면화(profile 손상 시 라우팅 값 판정 불가). expected_routing_block 에 넘겨 재로딩 회피.
+    routing_profile, routing_profile_error = load_profile(dest)
+    if routing_profile_error:
+        findings.append(("FAIL", f"{host}/framework/AGENT_GUIDE",
+                         f"라우팅 블록 profile 로드 실패: {routing_profile_error}"))
+        routing_profile = {}
     # 오버레이 파일 선스캔 — 오타/미지 CORE id, 읽기 실패를 하드-리포트(R1 #5·#12). render_targets 는
     #   유효 CORE id 만 돌므로 여기서 별도로 실제 파일을 열어 typo 를 잡는다.
     for kind, id, opath in _cls.overlay_files(dest):
@@ -409,6 +423,15 @@ def check(dest, host, core_renders):
         actual = _oc.extract_block(installed) or ""
         if actual != block:
             findings.append(("FAIL", key, f"오버레이 미반영/stale: {path} (`sage sync-overlays` 필요)"))
+            continue
+        routing_block, routing_err = _cls.expected_routing_block(kind, id, dest, routing_profile)
+        if routing_err:
+            findings.append(("FAIL", key, f"{path}: 라우팅 블록 계산 실패({routing_err})"))
+            continue
+        routing_actual = _oc.extract_routing_block(installed) or ""
+        if routing_actual != routing_block:
+            findings.append(("FAIL", key,
+                             f"라우팅 블록 미반영/stale: {path} (`sage sync-overlays` 필요)"))
             continue
         if anchor.get("sage_version") != __version__:
             findings.append(("STALE", key,

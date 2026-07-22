@@ -114,7 +114,8 @@ block() {
     printf '%s\n' \
       "⛔ SAGE write guard: '$1' 는 CORE 프레임워크 문서입니다. 직접수정 금지 (sage install --force 가 덮어씀)." \
       "→ framework overlay는 독립 gate oracle이 없어 현재 차단됩니다." \
-      "→ 프로젝트 값은 'sage/project-profile.yaml', 규칙은 conventions/critical-domain/project-local 문서에 작성하세요." >&2
+      "→ 프로젝트 값은 'sage/project-profile.yaml', 규칙은 conventions/critical-domain/project-local 문서에 작성하세요." \
+      "→ 그 문서를 세션 시작 라우팅 블록에 노출하려면 profile 의 'governance_docs'(경로+라벨)에 등록하세요." >&2
     exit 2
   fi
   local overlay=""; overlay="$(core_overlay_hint "$1")" || true

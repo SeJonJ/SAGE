@@ -1,6 +1,6 @@
 {
   "sage_version": "0.1.0",
-  "generator_version": "0.9.66",
+  "generator_version": "0.9.67",
   "template_version": "0.1.0",
   "host_runtime": "claude",
   "assets": {
@@ -98,9 +98,9 @@
     },
     "hooks/generated-artifact-write-guard": {
       "spec_hash": "sha256:d1337a20c73d2a02dfcf1219bddf2e0f41cb5e05f9de1a26d365911e9d70862f",
-      "canonical_hash": "sha256:032acae725f38e12226f348074e19d36cd27b1285e2cfb8132fefa7085759a3e",
+      "canonical_hash": "sha256:f8d4feaaaebc49cafbee52918afd9e13679e4d0208d6547ab621d3fb15b20524",
       "render_hash": {
-        "native": "sha256:032acae725f38e12226f348074e19d36cd27b1285e2cfb8132fefa7085759a3e"
+        "native": "sha256:f8d4feaaaebc49cafbee52918afd9e13679e4d0208d6547ab621d3fb15b20524"
       },
       "adapter_contract_version": "1",
       "conformance": "PASS",
