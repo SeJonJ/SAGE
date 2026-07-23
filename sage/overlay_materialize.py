@@ -29,12 +29,76 @@ def anchor_key(host, kind, id):
     return f"{host}/{kind}/{id}"
 
 
-def render_targets(dest, host):
+_CODEX_SKILL_SCOPES = frozenset(("global", "project-local", "disabled"))
+_CODEX_SKILL_SCOPE_AUTO = object()
+
+
+def _known_scope_or_none(value):
+    """`value` if it's one of the recognized scope strings, else `None`.
+
+    `value in _CODEX_SKILL_SCOPES` raises TypeError for unhashable JSON values (a manifest or
+    CLI caller can hand us a list/dict) — membership must go through `isinstance` first so a
+    malformed receipt resolves conservatively instead of crashing sync/validate/install.
+    """
+    return value if isinstance(value, str) and value in _CODEX_SKILL_SCOPES else None
+
+
+def codex_skill_scope_receipt_state(manifest):
+    """Return (state, scope) for the Codex receipt without conflating malformed with legacy.
+
+    state is one of:
+      - ``valid``: a recognized scope is present
+      - ``missing``: no Codex receipt exists, so legacy file evidence may be consulted
+      - ``malformed``: the receipt exists but its shape/scope is invalid
+    """
+    if not isinstance(manifest, dict) or "core_skill_receipts" not in manifest:
+        return "missing", None
+    receipts = manifest.get("core_skill_receipts")
+    if not isinstance(receipts, dict):
+        return "malformed", None
+    if "codex" not in receipts:
+        return "missing", None
+    codex_receipt = receipts.get("codex")
+    if not isinstance(codex_receipt, dict) or "scope" not in codex_receipt:
+        return "malformed", None
+    scope = _known_scope_or_none(codex_receipt.get("scope"))
+    return ("valid", scope) if scope is not None else ("malformed", None)
+
+
+def resolve_codex_skill_scope(dest, manifest=None, explicit=None):
+    """Resolve Codex CORE skill scope without treating custom skills as CORE receipts.
+
+    Priority:
+      1. explicit install-time scope
+      2. manifest.core_skill_receipts.codex.scope
+      3. legacy compatibility: any exact local CORE skill render implies project-local
+
+    ``None`` means the legacy manifest does not prove either global or project-local.
+    Callers retain the existing legacy receipt warning and must not enumerate project-local
+    CORE skills in that state.
+    """
+    if explicit is not None:
+        return _known_scope_or_none(explicit)
+
+    receipt_state, receipt_scope = codex_skill_scope_receipt_state(manifest)
+    if receipt_state == "valid":
+        return receipt_scope
+    if receipt_state == "malformed":
+        return None
+
+    skill_root = os.path.join(dest, ".codex", "skills")
+    for sid in _cls.CORE_IDS["skills"]:
+        if os.path.lexists(os.path.join(skill_root, sid, "SKILL.md")):
+            return "project-local"
+    return None
+
+
+def render_targets(dest, host, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
     """이 host 의 CORE 렌더 대상 [(kind, id, path)] 열거. base 무결성 앵커·물리화 대상.
 
     - agents: 양 host. claude=.claude/agents/<id>.md, codex=.codex/agents/<id>.md.
-    - skills: claude repo scope와 존재하는 codex project-local scope. Codex global scope는 프로젝트 간
-      누출을 막기 위해 제외한다.
+    - skills: claude repo scope와 명시/영수증/legacy CORE 실물로 확인된 codex project-local scope.
+      Codex global/disabled/미확정 legacy scope는 프로젝트 간 누출을 막기 위해 제외한다.
     - framework: 공통 AGENT_GUIDE + host wrapper + codex AGENTS router. base receipt 대상에는
       포함하지만 독립 gate oracle이 없어 project overlay composition은 blocked다.
     """
@@ -42,8 +106,12 @@ def render_targets(dest, host):
     agents_dir = os.path.join(dest, ".claude" if host == "claude" else ".codex", "agents")
     for aid in sorted(_cls.CORE_IDS["agents"]):
         targets.append(("agents", aid, os.path.join(agents_dir, f"{aid}.md")))
-    codex_local_skills = (host == "codex"
-                          and os.path.isdir(os.path.join(dest, ".codex", "skills")))
+    resolved_scope = None
+    if host == "codex":
+        resolved_scope = (resolve_codex_skill_scope(dest)
+                          if codex_skill_scope is _CODEX_SKILL_SCOPE_AUTO
+                          else _known_scope_or_none(codex_skill_scope))
+    codex_local_skills = host == "codex" and resolved_scope == "project-local"
     if host == "claude" or codex_local_skills:
         for sid in sorted(_cls.CORE_IDS["skills"]):
             host_dir = ".claude" if host == "claude" else ".codex"
@@ -257,7 +325,7 @@ def preflight_overlays(dest, profile=None):
     return errors
 
 
-def plan_materialize(dest, host):
+def plan_materialize(dest, host, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
     """모든 CORE 렌더의 물리화 계획과 앵커를 쓰기 없이 계산한다.
 
     반환 (core_renders, plans, errors). plans 항목은
@@ -271,7 +339,7 @@ def plan_materialize(dest, host):
         errors.append((os.path.join(dest, "sage", "project-profile.yaml"), profile_error))
     errors.extend(preflight_overlays(dest, profile))
 
-    for kind, id, path in render_targets(dest, host):
+    for kind, id, path in render_targets(dest, host, codex_skill_scope):
         if not os.path.isfile(path):
             continue
         installed, rerr = _oc.read_text_lf(path)
@@ -303,7 +371,8 @@ def apply_materialization(plans, writer=None):
     return changed
 
 
-def plan_blocked_cleanup(dest, host, path_guard=None):
+def plan_blocked_cleanup(dest, host, path_guard=None,
+                         codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
     """blocked CORE 자산에 남은 SAGE managed block 제거 계획을 계산한다.
 
     FB12 이전에 materialize된 framework/gate-bearing block은 현재 overlay 파일의 오류 때문에
@@ -312,7 +381,7 @@ def plan_blocked_cleanup(dest, host, path_guard=None):
     반환하면 파일을 읽기 전에 해당 target을 거부한다. 반환은 (plans, errors).
     """
     plans, errors = [], []
-    for kind, id, path in render_targets(dest, host):
+    for kind, id, path in render_targets(dest, host, codex_skill_scope):
         if _cls.classify(kind, id) != "blocked":
             continue
         if path_guard is not None:
@@ -336,7 +405,7 @@ def plan_blocked_cleanup(dest, host, path_guard=None):
     return plans, errors
 
 
-def materialize(dest, host):
+def materialize(dest, host, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
     """단일 host의 CORE 렌더를 물리화(블록 수렴) + 앵커 계산.
 
     반환 (core_renders, changed_paths, errors).
@@ -345,19 +414,20 @@ def materialize(dest, host):
       errors: [(path, msg)] — 오버레이 토큰 주입/읽기 실패/malformed 마커 등.
     렌더 파일이 없으면 skip(앵커 없음) — install 이 base 를 먼저 쓰므로 정상 경로엔 다 존재.
     """
-    cleanup_plans, cleanup_errors = plan_blocked_cleanup(dest, host)
+    cleanup_plans, cleanup_errors = plan_blocked_cleanup(
+        dest, host, codex_skill_scope=codex_skill_scope)
     # 안전하게 경계를 식별한 다른 blocked managed block은 한 target의 malformed marker와
     # 독립적으로 제거한다. 제거 불가능한 target의 오류는 그대로 hard-stop으로 반환한다.
     cleanup_changed = apply_materialization(cleanup_plans)
     if cleanup_errors:
         return {}, cleanup_changed, cleanup_errors
-    core_renders, plans, errors = plan_materialize(dest, host)
+    core_renders, plans, errors = plan_materialize(dest, host, codex_skill_scope)
     if errors:
         return {}, cleanup_changed, errors
     return core_renders, cleanup_changed + apply_materialization(plans), []
 
 
-def check(dest, host, core_renders):
+def check(dest, host, core_renders, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
     """읽기 전용 drift 검사 → [(severity, key, msg)]. validate L2 게이트가 소비.
 
     severity ∈ {FAIL, STALE}. 검사:
@@ -390,7 +460,7 @@ def check(dest, host, core_renders):
         _, rerr = _oc.read_text_lf(opath)
         if rerr:
             findings.append(("FAIL", f"{host}/{kind}/{id}", rerr))
-    for kind, id, path in render_targets(dest, host):
+    for kind, id, path in render_targets(dest, host, codex_skill_scope):
         key = anchor_key(host, kind, id)
         # (c)/미분류에 오버레이 파일이 있으면 미지원 — 물화 여부와 무관한 저자 오류 신호.
         if _cls.classify(kind, id) == "blocked":

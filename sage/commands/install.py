@@ -872,7 +872,8 @@ def _core_render_path_issue(dest, path, allow_leaf_symlink=False):
     return None
 
 
-def _core_trust_conflicts(dest, host, profile, existing_manifest, allow_base_replacement=False):
+def _core_trust_conflicts(dest, host, profile, existing_manifest, allow_base_replacement=False,
+                          codex_skill_scope=None):
     """Read-only CORE render trust preflight for non-force install.
 
     An existing file is anchor-eligible only when its canonical base still matches any previous
@@ -882,7 +883,8 @@ def _core_trust_conflicts(dest, host, profile, existing_manifest, allow_base_rep
     anchors = anchors if isinstance(anchors, dict) else {}
     conflicts = []
 
-    for kind, asset_id, path in overlay_materialize.render_targets(dest, host):
+    for kind, asset_id, path in overlay_materialize.render_targets(
+            dest, host, codex_skill_scope):
         key = overlay_materialize.anchor_key(host, kind, asset_id)
         expected, expected_error = _core_render_expected_base(host, kind, asset_id, profile)
         expected_sha = _sha256_text(expected) if expected is not None else "unavailable"
@@ -931,11 +933,12 @@ def _core_trust_conflicts(dest, host, profile, existing_manifest, allow_base_rep
     return conflicts
 
 
-def _materialized_anchor_conflicts(dest, host, profile, core_renders):
+def _materialized_anchor_conflicts(dest, host, profile, core_renders, codex_skill_scope=None):
     """Bind the exact base snapshot read by plan_materialize to the current shipped render."""
     anchors = core_renders if isinstance(core_renders, dict) else {}
     conflicts = []
-    for kind, asset_id, path in overlay_materialize.render_targets(dest, host):
+    for kind, asset_id, path in overlay_materialize.render_targets(
+            dest, host, codex_skill_scope):
         key = overlay_materialize.anchor_key(host, kind, asset_id)
         expected, expected_error = _core_render_expected_base(host, kind, asset_id, profile)
         expected_sha = _sha256_text(expected) if expected is not None else "unavailable"
@@ -970,10 +973,11 @@ def _print_core_trust_conflicts(dest, conflicts):
     print("  preflight 단계에서 project 파일과 manifest anchor는 변경되지 않았습니다.", file=sys.stderr)
 
 
-def _cleanup_blocked_core_renders(dest, host):
+def _cleanup_blocked_core_renders(dest, host, codex_skill_scope=None):
     """Remove safely identifiable legacy blocked blocks before non-force install preflights."""
     plans, errors = overlay_materialize.plan_blocked_cleanup(
-        dest, host, path_guard=lambda path: _core_render_path_issue(dest, path))
+        dest, host, path_guard=lambda path: _core_render_path_issue(dest, path),
+        codex_skill_scope=codex_skill_scope)
     changed = overlay_materialize.apply_materialization(plans)
     for path in sorted(changed):
         print(f"  ~ blocked 관리 블록 제거: {os.path.relpath(path, dest)}")
@@ -1034,8 +1038,9 @@ def _install_preconditions(dest, args, manifest_path):
     recursive = {os.path.join(dest, "sage", "asset_overrides")}
     paths.update(recursive)
 
+    skill_scope = getattr(args, "_sage_skill_scope", None)
     render_paths = [path for _kind, _asset_id, path
-                    in overlay_materialize.render_targets(dest, args.host)]
+                    in overlay_materialize.render_targets(dest, args.host, skill_scope)]
     paths.update(render_paths)
     root = os.path.abspath(dest)
     for target in render_paths:
@@ -1047,7 +1052,6 @@ def _install_preconditions(dest, args, manifest_path):
                 break
             cursor = os.path.dirname(cursor)
 
-    skill_scope = getattr(args, "_sage_skill_scope", None)
     if args.host == "codex" and skill_scope == "global":
         codex_home = os.path.dirname(_codex_skills_root())
         for ancestor in (codex_home, _codex_skills_root()):
@@ -1163,7 +1167,7 @@ def _run_locked(args) -> int:
     # parent/leaf path를 검증하고 exact SAGE marker만 제거한다. force install은 정본 copy가
     # 렌더 자체를 원자 교체하므로 이 pre-step이 없다.
     if not args.force:
-        if _cleanup_blocked_core_renders(dest, args.host):
+        if _cleanup_blocked_core_renders(dest, args.host, skill_scope):
             return 1
     # 첫 install 은 profile 이 없어 빈 dict. 주입은 claude host 만(아래 5c) — codex 는 해석 기전이 없다.
     # 단 구조 검사는 host 무관: 오타 역할/키는 어느 host 에서든 설정을 조용히 죽인다.
@@ -1194,7 +1198,8 @@ def _run_locked(args) -> int:
         return 1
 
     trust_conflicts = _core_trust_conflicts(
-        dest, args.host, agent_profile, existing_manifest, allow_base_replacement=args.force)
+        dest, args.host, agent_profile, existing_manifest, allow_base_replacement=args.force,
+        codex_skill_scope=skill_scope)
     if trust_conflicts:
         _print_core_trust_conflicts(dest, trust_conflicts)
         return 1
@@ -1214,7 +1219,7 @@ def _run_locked(args) -> int:
     confirmed_overlay_errors = overlay_materialize.preflight_overlays(dest, confirmed_profile)
     confirmed_trust_conflicts = _core_trust_conflicts(
         dest, args.host, confirmed_profile if args.host == "claude" else {}, confirmed_manifest,
-        allow_base_replacement=args.force)
+        allow_base_replacement=args.force, codex_skill_scope=skill_scope)
     if (confirmed_profile_error or confirmed_profile != _profile
             or confirmed_manifest != existing_manifest
             or confirmed_overlay_errors or confirmed_trust_conflicts):
@@ -1364,13 +1369,15 @@ def _run_locked(args) -> int:
 
     # 5e. 오버레이 물리화 + core_renders 앵커 — CORE 렌더 base 에 (a)/(b) 오버레이 블록을 물리 삽입하고
     #     (c)/미분류는 블록 없이 base 앵커만 기록. install·sync·L1·validate 가 같은 로직(overlay_materialize)을 경유.
-    core_renders, materialization_plans, overlay_errors = overlay_materialize.plan_materialize(dest, args.host)
+    core_renders, materialization_plans, overlay_errors = overlay_materialize.plan_materialize(
+        dest, args.host, skill_scope)
     for p, msg in overlay_errors:
         print(f"  ❌ 오버레이 물리화 실패({os.path.relpath(p, dest)}): {msg}", file=sys.stderr)
     if overlay_errors:
         print("---- sage install: FAIL (manifest 미갱신) ----", file=sys.stderr)
         return 1
-    anchor_conflicts = _materialized_anchor_conflicts(dest, args.host, agent_profile, core_renders)
+    anchor_conflicts = _materialized_anchor_conflicts(
+        dest, args.host, agent_profile, core_renders, skill_scope)
     if anchor_conflicts:
         _print_core_trust_conflicts(dest, anchor_conflicts)
         return 1

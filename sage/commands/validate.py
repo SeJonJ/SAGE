@@ -920,7 +920,10 @@ def run(args):
                     if not os.path.isdir(surface):
                         print(f"❌ FAIL  installed-host-missing [{host}]: discovery surface 없음: .{host}")
                         overall = "FAIL"
-                    for sev, key, msg in overlay_materialize.check(root, host, cr):
+                    skill_scope = (overlay_materialize.resolve_codex_skill_scope(
+                        root, manifest=manifest) if host == "codex" else None)
+                    for sev, key, msg in overlay_materialize.check(
+                            root, host, cr, skill_scope):
                         mark = {"FAIL": "❌", "STALE": "🕒"}.get(sev, "⚠️ ")
                         print(f"{mark} {sev}  overlay-materialize-drift [{host}:{key}]: {msg}")
                         if _SEV_RANK[sev] > _SEV_RANK[overall]:

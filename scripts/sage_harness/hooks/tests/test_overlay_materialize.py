@@ -55,6 +55,84 @@ def _profile_with_domain(dest):
         encoding="utf-8")
 
 
+class TestCodexSkillScopeTargets(unittest.TestCase):
+    @staticmethod
+    def _skill_ids(targets):
+        return [asset_id for kind, asset_id, _path in targets if kind == "skills"]
+
+    def test_global_and_disabled_exclude_project_local_core_skills(self):
+        with tempfile.TemporaryDirectory() as d:
+            _mk_render(d, ".codex/skills/custom-project-skill/SKILL.md", "# custom\n")
+            for scope in ("global", "disabled"):
+                targets = m.render_targets(d, "codex", scope)
+                self.assertEqual(self._skill_ids(targets), [])
+
+    def test_project_local_enumerates_all_core_skills_even_when_missing(self):
+        with tempfile.TemporaryDirectory() as d:
+            targets = m.render_targets(d, "codex", "project-local")
+            self.assertEqual(set(self._skill_ids(targets)), set(m._cls.CORE_IDS["skills"]))
+
+    def test_legacy_custom_skill_directory_does_not_imply_project_local(self):
+        with tempfile.TemporaryDirectory() as d:
+            _mk_render(d, ".codex/skills/custom-project-skill/SKILL.md", "# custom\n")
+            targets = m.render_targets(d, "codex")
+            self.assertEqual(self._skill_ids(targets), [])
+            self.assertIsNone(m.resolve_codex_skill_scope(d))
+
+    def test_legacy_one_local_core_skill_implies_full_project_local_inventory(self):
+        with tempfile.TemporaryDirectory() as d:
+            one = next(iter(m._cls.CORE_IDS["skills"]))
+            _mk_render(d, f".codex/skills/{one}/SKILL.md", "# legacy core\n")
+            targets = m.render_targets(d, "codex")
+            self.assertEqual(set(self._skill_ids(targets)), set(m._cls.CORE_IDS["skills"]))
+            self.assertEqual(m.resolve_codex_skill_scope(d), "project-local")
+
+    def test_explicit_unknown_scope_does_not_fall_back_to_legacy_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            one = next(iter(m._cls.CORE_IDS["skills"]))
+            _mk_render(d, f".codex/skills/{one}/SKILL.md", "# legacy core\n")
+
+            self.assertEqual(self._skill_ids(m.render_targets(d, "codex", None)), [])
+
+    def test_malformed_manifest_receipt_does_not_fall_back_to_legacy_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            one = next(iter(m._cls.CORE_IDS["skills"]))
+            _mk_render(d, f".codex/skills/{one}/SKILL.md", "# legacy core\n")
+            manifest = {"core_skill_receipts": {"codex": {"scope": "bogus"}}}
+
+            scope = m.resolve_codex_skill_scope(d, manifest=manifest)
+
+            self.assertIsNone(scope)
+            self.assertEqual(self._skill_ids(m.render_targets(d, "codex", scope)), [])
+
+    def test_non_string_receipt_scope_resolves_none_without_crash(self):
+        # codex 리뷰: JSON-valid 이지만 비문자열 scope(list/dict/int)는 `in frozenset`에서
+        # TypeError(unhashable)로 죽는 대신 conservatively None으로 풀려야 한다.
+        with tempfile.TemporaryDirectory() as d:
+            for bogus in ([], {}, 3, True):
+                manifest = {"core_skill_receipts": {"codex": {"scope": bogus}}}
+                self.assertIsNone(m.resolve_codex_skill_scope(d, manifest=manifest))
+
+    def test_non_string_explicit_scope_resolves_none_without_crash(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(m.resolve_codex_skill_scope(d, explicit=[]))
+
+    def test_render_targets_non_string_codex_skill_scope_arg_does_not_crash(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self._skill_ids(m.render_targets(d, "codex", codex_skill_scope={})), [])
+
+    def test_manifest_receipt_is_authoritative_over_legacy_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            one = next(iter(m._cls.CORE_IDS["skills"]))
+            _mk_render(d, f".codex/skills/{one}/SKILL.md", "# stale local core\n")
+            manifest = {"core_skill_receipts": {
+                "codex": {"scope": "global", "sage_version": __version__},
+            }}
+            scope = m.resolve_codex_skill_scope(d, manifest=manifest)
+            self.assertEqual(scope, "global")
+            self.assertEqual(self._skill_ids(m.render_targets(d, "codex", scope)), [])
+
+
 class TestMaterialize(unittest.TestCase):
     def test_compose_allowed_gets_block(self):
         with tempfile.TemporaryDirectory() as d:

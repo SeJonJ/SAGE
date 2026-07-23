@@ -109,6 +109,47 @@ class _VArgs:
         self.kind = "all"; self.id = None; self.root = root
 
 
+class _InstallArgs:
+    def __init__(self, root, skill_scope):
+        self.host = "codex"
+        self.dest = root
+        self.prefix = "sage"
+        self.force = False
+        self.no_global_skill = False
+        self.skill_scope = skill_scope
+
+
+class TestCodexSkillScopeMaterializeValidation(unittest.TestCase):
+    def test_global_scope_with_project_custom_skill_does_not_require_local_core_skills(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as codex_home:
+            custom = Path(root, ".codex", "skills", "project-custom", "SKILL.md")
+            custom.parent.mkdir(parents=True)
+            custom.write_text("# project custom\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                self.assertEqual(install.run(_InstallArgs(root, "global")), 0)
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    rc = V.run(_VArgs(root))
+
+            self.assertNotEqual(rc, 1, out.getvalue())
+            self.assertNotIn("CORE 렌더 없음", out.getvalue())
+            self.assertNotIn("codex/skills/sage-", out.getvalue())
+
+    def test_project_local_deleted_core_skill_fails_as_missing_render(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                self.assertEqual(install.run(_InstallArgs(root, "project-local")), 0)
+                missing_skill = install.core_skill_ids()[0]
+                Path(root, ".codex", "skills", missing_skill, "SKILL.md").unlink()
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    rc = V.run(_VArgs(root))
+
+            self.assertEqual(rc, 1, out.getvalue())
+            self.assertIn("CORE 렌더 없음", out.getvalue())
+            self.assertIn(f"codex/skills/{missing_skill}", out.getvalue())
+
+
 class TestLocalProfileValidation(unittest.TestCase):
     def test_version_contract_mismatch_is_visible_with_remediation(self):
         with tempfile.TemporaryDirectory() as root:

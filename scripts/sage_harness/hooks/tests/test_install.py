@@ -1097,9 +1097,9 @@ class TestInstall(unittest.TestCase):
             before = {str(path): path.read_bytes() for path in protected}
             original_plan = install.overlay_materialize.plan_materialize
 
-            def mutate_then_plan(dest, host):
+            def mutate_then_plan(dest, host, codex_skill_scope=None):
                 overlay.write_text("Changed additive implementation rule.\n", encoding="utf-8")
-                return original_plan(dest, host)
+                return original_plan(dest, host, codex_skill_scope)
 
             with mock.patch.object(install.overlay_materialize, "plan_materialize",
                                    side_effect=mutate_then_plan):
@@ -1527,6 +1527,13 @@ class TestInstall(unittest.TestCase):
             manifest = json.loads(Path(d, "docs", "sage_harness", ".manifest.json").read_text())
             self.assertEqual(manifest["core_skill_receipts"]["codex"]["scope"], "project-local")
             self.assertEqual(manifest["core_skill_receipts"]["codex"]["sage_version"], install.__version__)
+            expected_skill_anchors = {
+                f"codex/skills/{skill_id}" for skill_id in install.core_skill_ids()
+            }
+            actual_skill_anchors = {
+                key for key in manifest["core_renders"] if key.startswith("codex/skills/")
+            }
+            self.assertEqual(actual_skill_anchors, expected_skill_anchors)
             onboarding = Path(d, "docs", "agent", "sage-onboarding.md").read_text()
             self.assertIn("Selected Codex CORE skill scope: `project-local`", onboarding)
             self.assertIn("does not install the `sage` or `sage-hook` executable", onboarding)
@@ -1555,6 +1562,28 @@ class TestInstall(unittest.TestCase):
             self.assertIn("Selected Codex CORE skill scope: `global`", onboarding)
             self.assertIn("each teammate", onboarding)
 
+    def test_codex_global_scope_ignores_project_custom_skills_on_install_and_force(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            custom = Path(d, ".codex", "skills", "project-custom", "SKILL.md")
+            custom.parent.mkdir(parents=True)
+            custom.write_text("# project custom\n", encoding="utf-8")
+
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                self.assertEqual(
+                    install.run(Args("codex", d, skill_scope="global")), 0)
+                self.assertEqual(
+                    install.run(Args("codex", d, force=True, skill_scope="global")), 0)
+
+            for skill_id in install.core_skill_ids():
+                self.assertTrue(Path(codex_home, "skills", skill_id, "SKILL.md").is_file())
+                self.assertFalse(Path(d, ".codex", "skills", skill_id, "SKILL.md").exists())
+            self.assertEqual(custom.read_text(encoding="utf-8"), "# project custom\n")
+
+            manifest = json.loads(Path(d, "docs", "sage_harness", ".manifest.json").read_text())
+            self.assertEqual(manifest["core_skill_receipts"]["codex"]["scope"], "global")
+            self.assertFalse(any(
+                key.startswith("codex/skills/") for key in manifest["core_renders"]))
+
     def test_codex_scope_switch_updates_receipt_without_deleting_other_copy(self):
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
             with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
@@ -1566,6 +1595,22 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(manifest["core_skill_receipts"]["codex"]["scope"], "project-local")
             self.assertTrue(Path(d, ".codex", "skills", "sage-init", "SKILL.md").is_file())
             self.assertTrue(Path(codex_home, "skills", "sage-init", "SKILL.md").is_file())
+
+    def test_codex_scope_switch_to_global_removes_local_render_anchors(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                self.assertEqual(
+                    install.run(Args("codex", d, skill_scope="project-local")), 0)
+                self.assertEqual(
+                    install.run(Args("codex", d, force=True, skill_scope="global")), 0)
+
+            manifest = json.loads(Path(d, "docs", "sage_harness", ".manifest.json").read_text())
+            self.assertEqual(manifest["core_skill_receipts"]["codex"]["scope"], "global")
+            self.assertFalse(any(
+                key.startswith("codex/skills/") for key in manifest["core_renders"]))
+            for skill_id in install.core_skill_ids():
+                self.assertTrue(Path(d, ".codex", "skills", skill_id, "SKILL.md").is_file())
+                self.assertTrue(Path(codex_home, "skills", skill_id, "SKILL.md").is_file())
 
     def test_codex_global_skill_create_only_then_force(self):
         # create-only: 기존 전역 스킬 보존. --force 면 갱신.

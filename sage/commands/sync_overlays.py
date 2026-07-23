@@ -66,13 +66,26 @@ def run(args):
         return 2
 
     hard_fail = False
+    skill_scopes = {}
+    for host in hosts:
+        if host != "codex":
+            skill_scopes[host] = None
+            continue
+        receipt_state, _receipt_scope = _mat.codex_skill_scope_receipt_state(manifest)
+        if receipt_state == "malformed":
+            print("❌ 손상된 Codex CORE skill scope 영수증 — "
+                  "`sage install --host codex --skill-scope <global|project-local|disabled> --force` 필요",
+                  file=sys.stderr)
+            hard_fail = True
+        skill_scopes[host] = _mat.resolve_codex_skill_scope(root, manifest=manifest)
 
     # FB12 migration safety: 일반 preflight가 blocked overlay 파일 때문에 실패하더라도 과거에
     # 물리화된 gate-bearing managed block은 남겨두지 않는다. SAGE 마커 구간만 제거하고 manifest는
     # 갱신하지 않는다.
     cleanup_plans = []
     for host in hosts:
-        host_cleanup, cleanup_errors = _mat.plan_blocked_cleanup(root, host)
+        host_cleanup, cleanup_errors = _mat.plan_blocked_cleanup(
+            root, host, codex_skill_scope=skill_scopes[host])
         for p, msg in cleanup_errors:
             print(f"❌ blocked block 정리 실패[{host}]({os.path.relpath(p, root)}): {msg}", file=sys.stderr)
             hard_fail = True
@@ -128,7 +141,8 @@ def run(args):
     merged_renders = dict(existing_renders)
     all_plans = []
     for host in hosts:
-        host_renders, host_plans, errors = _mat.plan_materialize(root, host)
+        host_renders, host_plans, errors = _mat.plan_materialize(
+            root, host, skill_scopes[host])
         for p, msg in errors:
             print(f"❌ 물리화 실패[{host}]({os.path.relpath(p, root)}): {msg}", file=sys.stderr)
             hard_fail = True

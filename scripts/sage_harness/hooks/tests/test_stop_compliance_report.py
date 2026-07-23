@@ -679,6 +679,18 @@ class TestRetroGateWiring(unittest.TestCase):
         return subprocess.run(["bash", adapter], input=json.dumps({"session_id": session_id}),
                               capture_output=True, text=True, env=env)
 
+    def _run_user_prompt(self, root, prof_path, session_id="sess-1"):
+        env = dict(os.environ, CLAUDE_PROJECT_DIR=root, SAGE_HOOK_CORE_DIR=HOOKS_DIR,
+                   SAGE_PROFILE=prof_path, SAGE_TODAY=TODAY, SAGE_GATE_BRANCH="main")
+        adapter = os.path.join(ADAPTERS, "claude", "capture-declared-risk.sh")
+        return subprocess.run(
+            ["bash", adapter],
+            input=json.dumps({"session_id": session_id, "prompt": "계속 진행해줘"}),
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
     def _bash_write_06(self, root, name="06-cycle.md", run_id=None):
         # post-tool-logger 를 거치지 않는 06 작성(Bash 리다이렉트 모사) — 세션 로그에 엔트리가 안 남는다.
         with open(os.path.join(root, "plan_docs", name), "w", encoding="utf-8") as f:
@@ -727,6 +739,19 @@ class TestRetroGateWiring(unittest.TestCase):
             prof_path, log_dir = self._setup(root, mode="enforce", log_06=False)
             self._run_session_start(root, prof_path)      # baseline 정상 기록
             p = self._run(root, prof_path, baseline=False)
+            self.assertEqual(p.returncode, 0, p.stdout)
+            report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
+            self.assertNotIn("writer-독립 06 감지 불가", report)
+
+    def test_user_prompt_fallback_prevents_false_block_when_session_start_is_missing(self):
+        # Codex lifecycle 이상으로 SessionStart가 누락돼도 첫 prompt가 baseline을 먼저 확보한다.
+        with tempfile.TemporaryDirectory() as root:
+            prof_path, log_dir = self._setup(root, mode="enforce", log_06=False)
+            prompt = self._run_user_prompt(root, prof_path)
+            self.assertEqual(prompt.returncode, 0, prompt.stderr)
+
+            p = self._run(root, prof_path, baseline=False)
+
             self.assertEqual(p.returncode, 0, p.stdout)
             report = Path(os.path.join(log_dir, f"compliance-{TODAY}.md")).read_text(encoding="utf-8")
             self.assertNotIn("writer-독립 06 감지 불가", report)

@@ -10,6 +10,7 @@ core.decide 호출을 여기로 1회만 들어올린다(verbatim lift — 동작
 - root 밖/절대경로 glob 거부(독립성). L3 전략 크래시는 surface + fail-closed(None → core BLOCK 유지, F8b).
 """
 import calendar
+import errno
 import fnmatch
 import glob
 import hashlib
@@ -18,6 +19,7 @@ import json
 import os
 import posixpath
 import re
+import stat
 import subprocess
 import sys
 import time
@@ -327,11 +329,16 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
 
 
 def run_capture_declared_risk(io, root, core_dir, raw_text):
-    """capture-declared-risk 오케스트레이터(UserPromptSubmit). 게이트 아님 → parse 실패 silent(원본 보존).
+    """capture-declared-risk 오케스트레이터(UserPromptSubmit). risk 포착은 비차단, parse 실패 silent.
 
+    SessionStart 누락·지연에 대비해 같은 입력의 session_id 로 06 baseline 을 먼저 write-once 확보한다.
+    단 first-opportunity claim I/O 실패는 늦은 baseline 방지를 증명할 수 없어 exit 2로 작업 시작을 막는다.
     cleanup(만료 state 삭제)·state write 는 런타임 무관 공유. 포착 메시지 렌더만 io 위임.
     """
     hid = "capture-declared-risk"
+    snapshot_rc = _ensure_session_06_snapshot(io, root, core_dir, raw_text)
+    if snapshot_rc:
+        return snapshot_rc
     raw = parse_input_fail_open(hid, raw_text, surface=False)
     if raw is None:
         return 0
@@ -848,27 +855,92 @@ def _snapshot_path(log_dir, session_id):
     return os.path.join(log_dir, f"session-snapshot-{sid}.json")
 
 
-_SNAPSHOT_TTL_SECONDS = 14 * 86400   # 오래된 session-snapshot-*.json 정리 상한(무한 누적 방지)
+def _snapshot_claim_path(log_dir, session_id):
+    """첫 baseline 기회를 원자적으로 선점하는 파일. snapshot과 같은 정규화된 session key를 쓴다."""
+    return _snapshot_path(log_dir, session_id) + ".attempt"
+
+
+_SNAPSHOT_TTL_SECONDS = 14 * 86400   # claim 없는 legacy baseline·중단된 temp 정리 상한
 _SEV_ORDER = {"INFO": 0, "OK": 1, "WARN": 2, "BLOCK": 3}   # retro_gate._SEVERITIES 순위(degraded 승격 비교용)
 
 
-def _cleanup_old_snapshots(log_dir, keep_path=None):
-    """TTL 초과 session-snapshot-*.json 삭제. 세션마다 파일 하나가 남아 무한 누적되는 걸 막는다
-    (capture-declared-risk 가 declared-risk state 를 정리하는 것과 동일). 실패는 무시(best-effort).
+def _cleanup_old_snapshots(log_dir, keep_path=None, keep_paths=()):
+    """TTL 초과 claim 없는 legacy baseline·중단된 temp 삭제. 실패는 무시(best-effort).
 
-    keep_path(이번 세션 baseline)는 TTL 초과여도 지우지 않는다: TTL 보다 오래 사는 세션이 재-SessionStart
-    될 때 자기 baseline 을 지웠다가 write-once 로 현재(이미 변경된) 06 상태를 새 baseline 으로 굳혀 초기 변경을
-    잃는 걸 막는다(그 세션의 감지는 원래 baseline 이 유지돼야 성립)."""
+    attempt claim은 재개 가능한 세션의 첫 baseline 기회를 영구 소비하므로 자동 삭제하지 않는다. claim과
+    결속된 baseline도 함께 보존한다. 이를 지우면 장기 중단 세션이 resume될 때 이미 변경된 06 상태를 늦은
+    baseline으로 굳혀 초기 변경을 잃는다."""
     now = time.time()
-    keep = os.path.abspath(keep_path) if keep_path else None
-    for f in glob.glob(os.path.join(log_dir, "session-snapshot-*.json")):
+    keep = {os.path.abspath(p) for p in keep_paths if p}
+    if keep_path:
+        keep.add(os.path.abspath(keep_path))
+    for f in glob.glob(os.path.join(log_dir, "session-snapshot-*")):
         try:
-            if keep and os.path.abspath(f) == keep:
+            if os.path.abspath(f) in keep:
                 continue
-            if now - os.path.getmtime(f) > _SNAPSHOT_TTL_SECONDS:
+            if f.endswith(".attempt"):
+                continue
+            if f.endswith(".json") and os.path.lexists(f + ".attempt"):
+                continue
+            if now - os.lstat(f).st_mtime > _SNAPSHOT_TTL_SECONDS:
                 os.remove(f)
         except Exception:
             pass
+
+
+def _claim_snapshot_opportunity(log_dir, session_id):
+    """첫 baseline 시도 상태: True=선점, False=기존 claim, None=claim 기록 실패."""
+    path = _snapshot_claim_path(log_dir, session_id)
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return False
+    except Exception as e:
+        print("[session-start-snapshot] 06 baseline first-opportunity 선점 실패 → "
+              f"안전하게 작업을 시작할 수 없음: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({
+                "session_id": session_id,
+                "claimed_at": os.environ.get("SAGE_NOW_UTC")
+                or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }, f, ensure_ascii=False)
+    except Exception as e:
+        # claim은 남겨 재시도를 막는다. 지우면 이미 agent 작업이 시작된 뒤 늦은 baseline을 만들 수 있다.
+        print("[session-start-snapshot] 06 baseline first-opportunity 기록 실패 → "
+              f"writer-독립 감지 이번 세션 skip: {type(e).__name__}: {e}", file=sys.stderr)
+        return False
+    return True
+
+
+def _mark_snapshot_opportunity_resolved(claim_path, session_id, outcome):
+    """claim 소유자만 호출: 첫 시도가 끝났음("noop"|"written")을 claim 파일에 덧쓴다.
+
+    소유자 외 어떤 프로세스도 이 claim_path 에 쓰지 않으므로(패자는 읽기만) 동시쓰기 경합이 없다.
+    best-effort — 못 쓰면 대기 중인 loser 는 미해결로 보고 fail-closed 를 유지한다(안전한 쪽으로 열화)."""
+    if outcome not in ("noop", "written"):
+        return
+    try:
+        tmp = claim_path + f".tmp-{os.getpid()}-{time.time_ns()}"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"session_id": session_id, "resolved": outcome}, f, ensure_ascii=False)
+        os.replace(tmp, claim_path)
+    except Exception:
+        pass
+
+
+def _snapshot_opportunity_resolved(claim_path, session_id):
+    """claim 소유자의 첫 시도가 끝났다고 증명 가능한가. 못 읽거나(미기록/경합/손상) session_id 가
+    다르면(파일명 정규화 충돌·잔여 claim 재사용) 미해결로 간주한다."""
+    try:
+        doc = _load_regular_snapshot(claim_path)
+        return (isinstance(doc, dict)
+                and doc.get("session_id") == session_id
+                and doc.get("resolved") in ("noop", "written"))
+    except Exception:
+        return False
 
 
 def _hash_06_glob(root, profile):
@@ -886,11 +958,104 @@ def _hash_06_glob(root, profile):
     return out
 
 
+def _load_regular_snapshot(path):
+    """심볼릭 링크와 경로 교체를 신뢰하지 않고 정규 snapshot JSON만 읽는다."""
+    before = os.lstat(path)
+    if not stat.S_ISREG(before.st_mode):
+        raise ValueError("snapshot is not a regular file")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        after = os.fstat(fd)
+        if (not stat.S_ISREG(after.st_mode)
+                or before.st_dev != after.st_dev
+                or before.st_ino != after.st_ino):
+            raise ValueError("snapshot path changed while opening")
+        with os.fdopen(fd, encoding="utf-8") as f:
+            fd = -1
+            return json.load(f)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def _load_session_snapshot(path, session_id):
+    """Load a trusted baseline bound to exactly one session."""
+    doc = _load_regular_snapshot(path)
+    if not isinstance(doc, dict) or doc.get("session_id") != session_id:
+        raise ValueError("snapshot session_id mismatch")
+    if not isinstance(doc.get("sha256"), dict):
+        raise ValueError("snapshot sha256 is not a mapping")
+    return doc
+
+
+def _trusted_session_snapshot_exists(path, session_id):
+    if not os.path.lexists(path):
+        return False
+    try:
+        _load_session_snapshot(path, session_id)
+        return True
+    except Exception:
+        return False
+
+
+def _publish_snapshot_create_once(path, record):
+    """완결된 JSON을 기존 경로 교체 없이 원자적으로 게시한다. 이미 존재하면 False."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + f".tmp-{os.getpid()}-{time.time_ns()}"
+    flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
+             | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0))
+    fd = os.open(tmp, flags, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            fd = -1
+            json.dump(record, f, ensure_ascii=False)
+        try:
+            try:
+                os.link(tmp, path, follow_symlinks=False)
+            except TypeError:  # 일부 Python/플랫폼은 follow_symlinks 인자를 지원하지 않는다.
+                os.link(tmp, path)
+        except FileExistsError:
+            return False
+        except OSError as e:
+            unsupported = {
+                getattr(errno, "EACCES", -1),
+                getattr(errno, "ENOSYS", -1),
+                getattr(errno, "ENOTSUP", -1),
+                getattr(errno, "EOPNOTSUPP", -1),
+                getattr(errno, "EPERM", -1),
+                getattr(errno, "EXDEV", -1),
+            }
+            if e.errno not in unsupported:
+                raise
+            # 일부 외장/네트워크 파일시스템은 hard link를 지원하지 않는다. O_EXCL 직접 쓰기는
+            # 완성 전 Stop과 경합하면 corrupt로 fail-closed되지만 기존 baseline은 교체하지 않는다.
+            try:
+                direct_fd = os.open(path, flags, 0o600)
+            except FileExistsError:
+                return False
+            try:
+                with os.fdopen(direct_fd, "w", encoding="utf-8") as direct:
+                    direct_fd = -1
+                    json.dump(record, direct, ensure_ascii=False)
+            finally:
+                if direct_fd >= 0:
+                    os.close(direct_fd)
+        return True
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        try:
+            os.remove(tmp)
+        except FileNotFoundError:
+            pass
+
+
 def _snapshot_changed_06(root, profile, log_dir, session_id):
-    """(status, changed) — SessionStart baseline 대비 이번 세션에 신규/변경된 06 정규 키 집합(writer-독립).
+    """(status, changed) — 세션 baseline 대비 이번 세션에 신규/변경된 06 정규 키 집합(writer-독립).
 
     post-tool-logger 는 Write/Edit(claude)·apply_patch(codex)만 로깅해 **Bash 로 쓴 06 을 놓친다**(P0-b:
-    로그기반 감지만으로는 게이트가 조용히 무동작). 파일시스템 상태(SessionStart baseline ↔ Stop 현재)를
+    로그기반 감지만으로는 게이트가 조용히 무동작). 파일시스템 상태(세션 baseline ↔ Stop 현재)를
     직접 비교하면 작성 도구와 무관하게 이번 세션 작성 06 을 잡는다.
 
     status ∈ {"ok","no_session","absent","corrupt"}. baseline 이 없거나(no_session/absent) 손상(corrupt)이면
@@ -899,19 +1064,13 @@ def _snapshot_changed_06(root, profile, log_dir, session_id):
     if not session_id:
         return "no_session", set()   # 상관키 없음 → "nosession" 공유 파일 오염 대신 신뢰불가로 처리
     path = _snapshot_path(log_dir, session_id)
-    if not os.path.exists(path):
+    if not os.path.lexists(path):
         return "absent", set()
     try:
-        with open(path, encoding="utf-8") as f:
-            doc = json.load(f)
-        base = (doc or {}).get("sha256")
+        doc = _load_session_snapshot(path, session_id)
+        base = doc["sha256"]
     except Exception:
         return "corrupt", set()   # 잘린/손상 JSON — 부분기록 방지(원자쓰기)와 별개로 읽기측도 안전 처리
-    if not isinstance(base, dict):
-        # sha256 이 dict 가 아닌(문자열 등) 유효-JSON-그러나-스키마위반 baseline: base.get(...) 이 던지기 전에
-        # corrupt 로 분류한다. 이 함수는 retro_gate 의 try 밖(run_stop_compliance_report)에서 불려 예외가
-        # 세션을 죽일 수 있으므로, 여기서 반드시 안전 반환한다.
-        return "corrupt", set()
     return "ok", {key for key, h in _hash_06_glob(root, profile).items() if base.get(key) != h}
 
 
@@ -929,7 +1088,23 @@ def _session_start_overlay_l1(io, root):
     except Exception:
         return 0   # sage 패키지 미도달 → L2 권위 경로를 남기고 편의 레이어 skip
     try:
-        _anchors, changed, errors = overlay_materialize.materialize(root, io.RUNTIME)
+        skill_scope = None
+        if io.RUNTIME == "codex":
+            manifest_path = os.path.join(root, "docs", "sage_harness", ".manifest.json")
+            manifest = None
+            if os.path.exists(manifest_path):
+                try:
+                    with open(manifest_path, encoding="utf-8") as f:
+                        manifest = json.load(f)
+                    if not isinstance(manifest, dict):
+                        manifest = {"core_skill_receipts": None}
+                except Exception:
+                    # 손상 manifest를 legacy로 오인해 로컬 CORE를 추론하지 않는다. L2 validate가 권위 오류를 낸다.
+                    manifest = {"core_skill_receipts": None}
+            skill_scope = overlay_materialize.resolve_codex_skill_scope(
+                root, manifest=manifest)
+        _anchors, changed, errors = overlay_materialize.materialize(
+            root, io.RUNTIME, skill_scope)
     except Exception as e:
         print(f"[session-start-overlay] WARN: overlay convenience sync 실패: {type(e).__name__}: {e}",
               file=sys.stderr)
@@ -944,58 +1119,98 @@ def _session_start_overlay_l1(io, root):
     return 0
 
 
+def _ensure_session_06_snapshot(io, root, core_dir, raw_text):
+    """SessionStart 또는 첫 UserPromptSubmit에서 세션별 06 baseline을 write-once 확보한다."""
+    hid = "session-start-snapshot"
+    raw = parse_input_fail_open(hid, raw_text, surface=False)
+    if raw is None:
+        return 0
+    session_id = raw.get("session_id") or ""
+    # session_id가 없으면 상관키가 없어 "nosession" 공유 파일이 세션 간 오염되므로 claim도 쓰지 않는다.
+    if not session_id:
+        return 0
+    log_dir = os.path.join(root, io.HOST_DIR, "logs")
+    path = _snapshot_path(log_dir, session_id)
+    claim_path = _snapshot_claim_path(log_dir, session_id)
+    _cleanup_old_snapshots(log_dir, keep_paths=(path, claim_path))
+    if os.path.lexists(path):
+        if _trusted_session_snapshot_exists(path, session_id):
+            return 0
+        print(f"[{hid}] 기존 06 baseline이 현재 session_id에 결속된 정규 snapshot이 아님 → "
+              "안전하게 작업을 시작할 수 없음", file=sys.stderr)
+        return 2
+    # profile 로드/게이트 활성 판정보다 먼저 첫 기회를 소비한다. 첫 prompt 때 비활성·오류였는데 나중에
+    # 활성화됐다고 이미 변경된 06을 늦은 baseline으로 승인하면 fail-open이므로, 실패 claim도 세션 끝까지 유지한다.
+    claim_status = _claim_snapshot_opportunity(log_dir, session_id)
+    if claim_status is None:
+        # claim이 없으면 다음 hook이 이미 작업 후 늦은 baseline을 만들 수 있다. 그 상태로 진행하지 않는다.
+        return 2
+    if not claim_status:
+        # 다른 프로세스(대개 SessionStart)가 먼저 claim했다. 그 시도가 아직 끝났다고 증명되지 않으면(진행
+        # 중 또는 완료 표시 없이 중단) 지금 진행은 이번 세션 06 이 이미 바뀐 뒤에 baseline 이 늦게 게시돼
+        # 그 변경을 흡수하는 상황을 배제할 수 없다 — 그 경우에만 첫 claim 과 동일하게 fail-closed 한다.
+        if _trusted_session_snapshot_exists(path, session_id):
+            return 0
+        if _snapshot_opportunity_resolved(claim_path, session_id):
+            return 0
+        return 2
+    resolved = None
+    try:
+        profile = load_profile_fail_open(hid)
+        if profile is None or not _any_stop_gate_active(profile, root):
+            resolved = "noop"
+            return 0
+        # 다른 버전의 writer가 claim을 모른 채 baseline을 만들었을 가능성까지 고려해 다시 확인한다.
+        if os.path.lexists(path):
+            if _trusted_session_snapshot_exists(path, session_id):
+                resolved = "written"
+                return 0
+            print(f"[{hid}] 경합 중 게시된 06 baseline의 session 결속 검증 실패 → "
+                  "안전하게 작업을 시작할 수 없음", file=sys.stderr)
+            return 2
+        sha = _hash_06_glob(root, profile)
+        event = {"session_id": session_id,
+                 "now_utc": os.environ.get("SAGE_NOW_UTC") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        sys.path.insert(0, core_dir)
+        import session_start_snapshot_core as core
+        decision = core.decide(event, {"exists": False, "sha256": sha})
+        if decision["action"] != "write":
+            resolved = "noop"
+            return 0
+        try:
+            # temp 정규 파일을 완결한 뒤 hard-link로 게시한다. destination이 일반 파일·symlink 어느 쪽으로든
+            # 먼저 생기면 EEXIST로 유지해 baseline write-once를 보장하며, Stop 읽기측이 신뢰 여부를 판정한다.
+            published = _publish_snapshot_create_once(path, decision["record"])
+            if not published and not _trusted_session_snapshot_exists(path, session_id):
+                print(f"[{hid}] baseline 게시 경합 승자의 session 결속 검증 실패 → "
+                      "안전하게 작업을 시작할 수 없음", file=sys.stderr)
+                return 2
+            resolved = "written"
+        except Exception as e:
+            # baseline 기록 실패 = 이번 세션 writer-독립 감지 불가 → 로그기반 감지로 폴백(회귀 아님). silent 금지.
+            print(f"[{hid}] 06 baseline 스냅샷 기록 실패 → writer-독립 감지 이번 세션 skip: {type(e).__name__}: {e}",
+                  file=sys.stderr)
+            resolved = "noop"
+        return 0
+    finally:
+        # claim 을 쥔 이번 시도가 끝났음을 대기 중인 loser 에게 알린다(노력수준 — 못 쓰면 loser 는
+        # 미해결로 보고 안전한 쪽으로 열화). winner 만 이 claim_path 에 쓴다(단일 writer, 경합 없음).
+        if resolved is not None:
+            _mark_snapshot_opportunity_resolved(claim_path, session_id, resolved)
+
+
 def run_session_start_snapshot(io, root, core_dir, raw_text):
     """session-start-snapshot 오케스트레이터(SessionStart). 이번 세션의 06 baseline(존재+해시)을 기록한다.
 
     Stop 훅의 retro_gate 가 이 baseline 대비 변경분으로 **작성 도구와 무관하게** 이번 세션 작성 06 을 감지
     (W2/P0-b). 게이트 아님 → parse 실패 silent. 스냅샷은 세션당 **1회만** 쓴다: resume/재-SessionStart 가
-    세션 도중 baseline 을 덮으면 그 전 변경이 baseline 에 흡수돼 감지에서 사라진다(write-once 로 방지)."""
-    hid = "session-start-snapshot"
+    세션 도중 baseline 을 덮으면 그 전 변경이 baseline 에 흡수돼 감지에서 사라진다(write-once 로 방지).
+    Codex lifecycle 이상으로 SessionStart가 누락돼도 UserPromptSubmit 경로가 같은 helper를 재호출한다."""
     # 오버레이 블록 재수렴(L1)은 retro-gate·profile·parse 와 독립인 편의 스텝이라 early-return 앞에서 먼저 돈다.
     overlay_rc = _session_start_overlay_l1(io, root)
     if overlay_rc:
         return overlay_rc
-    raw = parse_input_fail_open(hid, raw_text, surface=False)
-    if raw is None:
-        return 0
-    profile = load_profile_fail_open(hid)
-    if profile is None:
-        return 0
-    session_id = raw.get("session_id") or ""
-    # 게이트 비활성 프로젝트에선 baseline 이 무의미 → 06 전체 해싱 IO 를 하지 않는다(off 가 기본). session_id 가
-    # 없으면 상관키가 없어 "nosession" 공유 파일이 세션 간 오염되므로 아예 안 쓴다(Stop 이 no_session 으로 표면화).
-    if not _any_stop_gate_active(profile, root) or not session_id:
-        return 0
-    log_dir = os.path.join(root, io.HOST_DIR, "logs")
-    path = _snapshot_path(log_dir, session_id)
-    _cleanup_old_snapshots(log_dir, keep_path=path)   # 오래된 스냅샷 정리(이번 세션 baseline 은 보존)
-    # write-once 판정은 core 가 소유한다. 이미 존재하면 06 해시(디스크 읽기)를 생략해 불필요한 IO 를 피한다.
-    exists = os.path.exists(path)
-    sha = {} if exists else _hash_06_glob(root, profile)
-    event = {"session_id": session_id,
-             "now_utc": os.environ.get("SAGE_NOW_UTC") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
-    sys.path.insert(0, core_dir)
-    import session_start_snapshot_core as core
-    decision = core.decide(event, {"exists": exists, "sha256": sha})
-    if decision["action"] != "write":
-        return 0
-    tmp = path + f".tmp-{os.getpid()}"   # try 밖에서 바인딩(예외 시 cleanup 이 UnboundLocalError 안 나게)
-    try:
-        os.makedirs(log_dir, exist_ok=True)
-        # 원자적 기록(temp+replace): 쓰기 도중 프로세스 종료로 잘린 JSON 이 남으면 Stop 이 corrupt 로 읽어
-        # writer-독립 감지가 무음 bypass 된다. temp 에 완결 후 os.replace 로 원자 교체해 부분파일을 없앤다.
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(decision["record"], f, ensure_ascii=False)
-        os.replace(tmp, path)
-    except Exception as e:
-        # baseline 기록 실패 = 이번 세션 writer-독립 감지 불가 → 로그기반 감지로 폴백(회귀 아님). silent 금지.
-        print(f"[{hid}] 06 baseline 스냅샷 기록 실패 → writer-독립 감지 이번 세션 skip: {type(e).__name__}: {e}",
-              file=sys.stderr)
-        try:
-            os.remove(tmp)
-        except Exception:
-            pass
-    return 0
+    return _ensure_session_06_snapshot(io, root, core_dir, raw_text)
 
 
 def retro_gate_result(profile, root, raw, session_entries, snapshot_06=None, snapshot_status="ok"):
@@ -1054,7 +1269,8 @@ def retro_gate_result(profile, root, raw, session_entries, snapshot_06=None, sna
     # WARN 으로 완화(무한 Stop 재호출 방지 — 미확인 케이스와 동일 정책). off 는 애초에 gate_active=False.
     gate_active = mode in ("advisory", "enforce") and notes_enabled
     if gate_active and snapshot_status in ("no_session", "absent", "corrupt"):
-        reason = {"no_session": "session_id 없음(상관 불가)", "absent": "SessionStart baseline 없음(훅 미발화?)",
+        reason = {"no_session": "session_id 없음(상관 불가)",
+                  "absent": "SessionStart/UserPromptSubmit baseline 없음(훅 미발화?)",
                   "corrupt": "baseline 손상"}[snapshot_status]
         deg_sev = retro_gate._unchecked_severity(mode, _stop_hook_active(raw))   # enforce 첫Stop=BLOCK / advisory·재시도=WARN
         result = dict(result)
@@ -1062,7 +1278,7 @@ def retro_gate_result(profile, root, raw, session_entries, snapshot_06=None, sna
             result["severity"] = deg_sev
         verb = "차단" if deg_sev == "BLOCK" else "경고"
         result["text"] += (f" (⚠️ writer-독립 06 감지 불가 — {reason}. Bash 로 작성한 06 을 놓쳤을 수 있어 "
-                           f"{verb} — SessionStart 훅 동작을 확인하세요)")
+                           f"{verb} — SessionStart/UserPromptSubmit 훅 동작을 확인하세요)")
 
     return result
 
@@ -1089,7 +1305,8 @@ def writeback_depth_gate_result(profile, root, raw, session_entries, snapshot_06
 
     gate_active = mode in ("advisory", "enforce") and vault_enabled
     if gate_active and snapshot_status in ("no_session", "absent", "corrupt"):
-        reason = {"no_session": "session_id 없음(상관 불가)", "absent": "SessionStart baseline 없음(훅 미발화?)",
+        reason = {"no_session": "session_id 없음(상관 불가)",
+                  "absent": "SessionStart/UserPromptSubmit baseline 없음(훅 미발화?)",
                   "corrupt": "baseline 손상"}[snapshot_status]
         deg_sev = gate._unchecked_severity(mode, _stop_hook_active(raw))
         result = dict(result)
@@ -1099,7 +1316,7 @@ def writeback_depth_gate_result(profile, root, raw, session_entries, snapshot_06
         # retro_gate 와 동일. 안 그러면 '이미 BLOCK 인' 케이스에서 writer-독립 감지 실패가 조용히 사라진다.
         verb = "차단" if result["severity"] == "BLOCK" else "경고"
         result["text"] += (f" (⚠️ writer-독립 06 감지 불가 — {reason}. Bash 로 작성한 L2/L3 06 을 놓쳤을 수 "
-                           f"있어 {verb} — SessionStart 훅 동작을 확인하세요)")
+                           f"있어 {verb} — SessionStart/UserPromptSubmit 훅 동작을 확인하세요)")
     return result
 
 

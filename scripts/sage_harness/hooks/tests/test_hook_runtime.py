@@ -5,12 +5,14 @@
 직접 검증 가능해졌다. 입력추출(런타임별)·snapshot·전략 F8b·렌더 채널을 픽스처로 못박는다.
 """
 import io
+import errno
 import os
 import sys
 import tempfile
 import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 HOOKS_DIR = os.path.join(REPO, "scripts", "sage_harness", "hooks")
@@ -920,6 +922,99 @@ class TestSnapshotChanged06(unittest.TestCase):
             self.assertEqual(status, "ok")
             self.assertEqual(changed, {"plan_docs/06-old.md", "plan_docs/06-new.md"})
 
+    def test_user_prompt_submit_backfills_missing_session_start_snapshot(self):
+        # Codex SessionStart 가 누락/지연돼도 첫 UserPromptSubmit 은 agent 작업 전에 도착한다.
+        # capture-declared-risk 경로가 같은 write-once baseline 을 확보해야 Stop 이 false-block 하지 않는다.
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".codex", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            prof_path = os.path.join(root, "profile.json")
+            profile = self._profile(root)
+            with open(prof_path, "w", encoding="utf-8") as f:
+                json.dump(profile, f)
+            old = os.environ.get("SAGE_PROFILE")
+            os.environ["SAGE_PROFILE"] = prof_path
+            try:
+                hr.run_capture_declared_risk(
+                    io_codex,
+                    root,
+                    HOOKS_DIR,
+                    json.dumps({"session_id": "s1", "prompt": "코드 리뷰 해줘"}),
+                )
+                self.assertEqual(
+                    hr._snapshot_changed_06(root, profile, log_dir, "s1"), ("ok", set()))
+                self._write06(root, "06-new.md", "brand new")
+                hr.run_capture_declared_risk(
+                    io_codex,
+                    root,
+                    HOOKS_DIR,
+                    json.dumps({"session_id": "s1", "prompt": "계속 진행해줘"}),
+                )
+            finally:
+                os.environ.pop("SAGE_PROFILE", None) if old is None else os.environ.__setitem__(
+                    "SAGE_PROFILE", old)
+
+            self.assertEqual(
+                hr._snapshot_changed_06(root, profile, log_dir, "s1"),
+                ("ok", {"plan_docs/06-new.md"}),
+            )
+            self.assertTrue(os.path.exists(hr._snapshot_claim_path(log_dir, "s1")))
+
+    def test_first_inactive_prompt_prevents_late_baseline_after_gate_activation(self):
+        # 첫 prompt 때 게이트가 비활성이면 snapshot은 만들지 않되 기회는 소비한다. 이후 설정이 활성화돼도
+        # 이미 06 변경이 일어난 뒤 늦은 baseline을 만들면 false-pass이므로 absent를 유지해야 한다.
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".codex", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            prof_path = os.path.join(root, "profile.json")
+            inactive = self._profile(root)
+            inactive["pdca"]["retro"]["report_gate_enforce"] = "off"
+            with open(prof_path, "w", encoding="utf-8") as f:
+                json.dump(inactive, f)
+            old = os.environ.get("SAGE_PROFILE")
+            os.environ["SAGE_PROFILE"] = prof_path
+            try:
+                hr.run_capture_declared_risk(
+                    io_codex,
+                    root,
+                    HOOKS_DIR,
+                    json.dumps({"session_id": "s1", "prompt": "첫 요청"}),
+                )
+                self.assertEqual(
+                    hr._snapshot_changed_06(root, inactive, log_dir, "s1"), ("absent", set()))
+                self._write06(root, "06-late.md", "already changed")
+                active = self._profile(root)
+                with open(prof_path, "w", encoding="utf-8") as f:
+                    json.dump(active, f)
+                hr.run_capture_declared_risk(
+                    io_codex,
+                    root,
+                    HOOKS_DIR,
+                    json.dumps({"session_id": "s1", "prompt": "다음 요청"}),
+                )
+            finally:
+                os.environ.pop("SAGE_PROFILE", None) if old is None else os.environ.__setitem__(
+                    "SAGE_PROFILE", old)
+
+            self.assertTrue(os.path.exists(hr._snapshot_claim_path(log_dir, "s1")))
+            self.assertEqual(
+                hr._snapshot_changed_06(root, active, log_dir, "s1"), ("absent", set()))
+
+    def test_snapshot_opportunity_claim_has_exactly_one_concurrent_winner(self):
+        from concurrent.futures import ThreadPoolExecutor
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".codex", "logs")
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                won = list(pool.map(
+                    lambda _i: hr._claim_snapshot_opportunity(log_dir, "s1"),
+                    range(24),
+                ))
+
+            self.assertEqual(sum(won), 1)
+            self.assertTrue(os.path.exists(hr._snapshot_claim_path(log_dir, "s1")))
+
     def test_corrupt_snapshot_returns_corrupt_status(self):
         with tempfile.TemporaryDirectory() as root:
             log_dir = os.path.join(root, ".claude", "logs")
@@ -938,21 +1033,260 @@ class TestSnapshotChanged06(unittest.TestCase):
                 f.write('{"sha256": "not-a-map"}')
             self.assertEqual(hr._snapshot_changed_06(root, self._profile(root), log_dir, "s1"), ("corrupt", set()))
 
+    def test_snapshot_symlink_is_corrupt_and_never_trusted(self):
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".claude", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            target = os.path.join(root, "attacker.json")
+            with open(target, "w", encoding="utf-8") as f:
+                json.dump({"sha256": {}}, f)
+            os.symlink(target, hr._snapshot_path(log_dir, "s1"))
+
+            self.assertEqual(
+                hr._snapshot_changed_06(root, self._profile(root), log_dir, "s1"),
+                ("corrupt", set()),
+            )
+
+    def test_snapshot_publish_is_create_once(self):
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "session-snapshot-s1.json")
+            original = {"session_id": "existing", "sha256": {"06.md": "old"}}
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(original, f)
+
+            self.assertFalse(hr._publish_snapshot_create_once(
+                path, {"session_id": "replacement", "sha256": {}}))
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(json.load(f), original)
+
+    def test_snapshot_publish_falls_back_when_hardlinks_are_unsupported(self):
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "session-snapshot-s1.json")
+            record = {"session_id": "s1", "sha256": {"06.md": "hash"}}
+            unsupported = OSError(errno.EOPNOTSUPP, "hard links unsupported")
+
+            with mock.patch.object(hr.os, "link", side_effect=unsupported):
+                self.assertTrue(hr._publish_snapshot_create_once(path, record))
+
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(json.load(f), record)
+
+    def test_claim_creation_error_blocks_user_prompt_fallback(self):
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            with mock.patch.object(hr, "_claim_snapshot_opportunity", return_value=None):
+                rc = hr.run_capture_declared_risk(
+                    io_codex,
+                    root,
+                    HOOKS_DIR,
+                    json.dumps({"session_id": "s1", "prompt": "첫 요청"}),
+                )
+
+            self.assertEqual(rc, 2)
+
+    def test_claim_open_error_is_not_treated_as_existing_claim(self):
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".codex", "logs")
+            with mock.patch.object(
+                    hr.os, "open", side_effect=PermissionError(errno.EACCES, "denied")):
+                self.assertIsNone(hr._claim_snapshot_opportunity(log_dir, "s1"))
+
+    def test_user_prompt_does_not_replace_dangling_snapshot_symlink(self):
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".codex", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            path = hr._snapshot_path(log_dir, "s1")
+            missing_target = os.path.join(root, "missing-attacker.json")
+            os.symlink(missing_target, path)
+
+            prof_path = os.path.join(root, "profile.json")
+            profile = self._profile(root)
+            with open(prof_path, "w", encoding="utf-8") as f:
+                json.dump(profile, f)
+            old = os.environ.get("SAGE_PROFILE")
+            os.environ["SAGE_PROFILE"] = prof_path
+            try:
+                hr.run_capture_declared_risk(
+                    io_codex,
+                    root,
+                    HOOKS_DIR,
+                    json.dumps({"session_id": "s1", "prompt": "첫 요청"}),
+                )
+            finally:
+                os.environ.pop("SAGE_PROFILE", None) if old is None else os.environ.__setitem__(
+                    "SAGE_PROFILE", old)
+
+            self.assertTrue(os.path.islink(path))
+            self.assertFalse(os.path.exists(missing_target))
+            self.assertEqual(
+                hr._snapshot_changed_06(root, profile, log_dir, "s1"),
+                ("corrupt", set()),
+            )
+
     def test_ttl_cleanup_preserves_current_session(self):
         # codex R2 P1: TTL 초과여도 이번 세션 baseline 은 지우지 않는다(장수 세션이 자기 baseline 을 잃지 않게).
         with tempfile.TemporaryDirectory() as root:
             log_dir = os.path.join(root, ".claude", "logs")
             os.makedirs(log_dir, exist_ok=True)
             cur = hr._snapshot_path(log_dir, "s1")
+            claim = hr._snapshot_claim_path(log_dir, "s1")
             old = hr._snapshot_path(log_dir, "s-old")
-            for p in (cur, old):
+            for p in (cur, claim, old):
                 with open(p, "w", encoding="utf-8") as f:
                     f.write("{}")
             stale = time.time() - (hr._SNAPSHOT_TTL_SECONDS + 3600)
-            os.utime(cur, (stale, stale)); os.utime(old, (stale, stale))   # 둘 다 TTL 초과
-            hr._cleanup_old_snapshots(log_dir, keep_path=cur)
+            for p in (cur, claim, old):
+                os.utime(p, (stale, stale))
+            hr._cleanup_old_snapshots(log_dir, keep_paths=(cur, claim))
             self.assertTrue(os.path.exists(cur), "이번 세션 baseline 은 보존")
+            self.assertTrue(os.path.exists(claim), "이번 세션 first-opportunity claim 은 보존")
             self.assertFalse(os.path.exists(old), "다른 세션 오래된 baseline 은 삭제")
+
+    def test_ttl_cleanup_preserves_claimed_resumable_session(self):
+        # 다른 세션이 14일 지난 claim+baseline을 지우면 resume 시 늦은 baseline을 만들 수 있다.
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".claude", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            old = hr._snapshot_path(log_dir, "s-old")
+            old_claim = hr._snapshot_claim_path(log_dir, "s-old")
+            for p in (old, old_claim):
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write("{}")
+                stale = time.time() - (hr._SNAPSHOT_TTL_SECONDS + 3600)
+                os.utime(p, (stale, stale))
+
+            hr._cleanup_old_snapshots(log_dir)
+
+            self.assertTrue(os.path.exists(old))
+            self.assertTrue(os.path.exists(old_claim))
+
+    def test_unresolved_claim_blocks_instead_of_silently_proceeding(self):
+        # codex 리뷰: winner 가 claim 만 하고(O_EXCL 성공) resolved 마킹 전에 죽으면(중단/크래시),
+        # loser 가 "누가 이미 claim 했으니 안전"으로 착각해 조용히 진행하면 안 된다 — 그 사이 agent 가
+        # 06 을 바꿔도 winner 가 뒤늦게 게시하는 baseline 이 이미 바뀐 상태를 흡수할 수 있다.
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".codex", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            claim = hr._snapshot_claim_path(log_dir, "s1")
+            with open(claim, "w", encoding="utf-8") as f:
+                json.dump({"session_id": "s1", "claimed_at": "t"}, f)   # resolved 없음 = 미해결
+
+            rc = hr._ensure_session_06_snapshot(
+                io_codex, root, HOOKS_DIR, json.dumps({"session_id": "s1", "prompt": "p"}))
+
+            self.assertEqual(rc, 2)
+            self.assertFalse(os.path.exists(hr._snapshot_path(log_dir, "s1")))
+
+    def test_resolved_noop_claim_lets_loser_proceed(self):
+        # 첫 시도가 게이트 비활성으로 noop 확정되면, 대기 중이던 loser 는 매 prompt 마다 막히지 않고
+        # 정상 진행해야 한다(steady-state 게이트-비활성 세션이 영구 차단되면 안 됨).
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".codex", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            claim = hr._snapshot_claim_path(log_dir, "s1")
+            with open(claim, "w", encoding="utf-8") as f:
+                json.dump({"session_id": "s1", "resolved": "noop"}, f)
+
+            rc = hr._ensure_session_06_snapshot(
+                io_codex, root, HOOKS_DIR, json.dumps({"session_id": "s1", "prompt": "p"}))
+
+            self.assertEqual(rc, 0)
+            self.assertFalse(os.path.exists(hr._snapshot_path(log_dir, "s1")))
+
+    def test_malformed_truthy_resolved_claim_still_blocks(self):
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".codex", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            claim = hr._snapshot_claim_path(log_dir, "s1")
+            for malformed in ("pending", True, 1):
+                with open(claim, "w", encoding="utf-8") as f:
+                    json.dump({"session_id": "s1", "resolved": malformed}, f)
+                rc = hr._ensure_session_06_snapshot(
+                    io_codex, root, HOOKS_DIR, json.dumps({"session_id": "s1", "prompt": "p"}))
+                self.assertEqual(rc, 2, malformed)
+
+    def test_resolved_claim_from_different_session_id_still_blocks(self):
+        # 파일명 정규화 충돌(다른 session_id 가 같은 claim 경로로 접힘)로 남의 resolved 마커를 내
+        # 세션의 완료 신호로 오인하면 안 된다.
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".codex", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            claim = hr._snapshot_claim_path(log_dir, "s1")
+            with open(claim, "w", encoding="utf-8") as f:
+                json.dump({"session_id": "some-other-session", "resolved": "noop"}, f)
+
+            rc = hr._ensure_session_06_snapshot(
+                io_codex, root, HOOKS_DIR, json.dumps({"session_id": "s1", "prompt": "p"}))
+
+            self.assertEqual(rc, 2)
+
+    def test_snapshot_session_id_mismatch_is_treated_as_corrupt(self):
+        # 파일명 정규화(sanitize+truncate)로 다른 session_id 가 같은 경로에 접히거나 잔여파일이
+        # 재사용되는 상황에서, 내용의 session_id 가 다르면 남의 baseline 을 "ok"로 신뢰하면 안 된다.
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".claude", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            with open(hr._snapshot_path(log_dir, "s1"), "w", encoding="utf-8") as f:
+                json.dump({"session_id": "s2", "taken": "t", "sha256": {}}, f)
+
+            self.assertEqual(
+                hr._snapshot_changed_06(root, self._profile(root), log_dir, "s1"),
+                ("corrupt", set()))
+
+    def test_existing_baseline_from_different_session_blocks_before_agent_work(self):
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".codex", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            path = hr._snapshot_path(log_dir, "s1")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"session_id": "other", "taken": "t", "sha256": {}}, f)
+
+            rc = hr._ensure_session_06_snapshot(
+                io_codex, root, HOOKS_DIR, json.dumps({"session_id": "s1", "prompt": "p"}))
+
+            self.assertEqual(rc, 2)
+            self.assertFalse(os.path.exists(hr._snapshot_claim_path(log_dir, "s1")))
+
+    def test_publish_race_with_mismatched_baseline_keeps_claim_unresolved_and_blocks(self):
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            log_dir = os.path.join(root, ".codex", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            prof_path = os.path.join(root, "profile.json")
+            with open(prof_path, "w", encoding="utf-8") as f:
+                json.dump(self._profile(root), f)
+            path = hr._snapshot_path(log_dir, "s1")
+
+            def lose_publish_race(_path, _record):
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump({"session_id": "other", "taken": "t", "sha256": {}}, f)
+                return False
+
+            old = os.environ.get("SAGE_PROFILE")
+            os.environ["SAGE_PROFILE"] = prof_path
+            try:
+                with mock.patch.object(hr, "_publish_snapshot_create_once",
+                                       side_effect=lose_publish_race):
+                    rc = hr._ensure_session_06_snapshot(
+                        io_codex, root, HOOKS_DIR,
+                        json.dumps({"session_id": "s1", "prompt": "p"}))
+            finally:
+                os.environ.pop("SAGE_PROFILE", None) if old is None else os.environ.__setitem__(
+                    "SAGE_PROFILE", old)
+
+            claim = hr._snapshot_claim_path(log_dir, "s1")
+            self.assertEqual(rc, 2)
+            self.assertFalse(hr._snapshot_opportunity_resolved(claim, "s1"))
 
     def test_off_mode_stop_does_not_hash_06(self):
         # codex R2 P2: mode=off 면 Stop 이 06 을 해싱하지 않는다(_snapshot_changed_06 미호출).
@@ -1002,6 +1336,19 @@ class TestSessionStartOverlayL1(unittest.TestCase):
         with open(os.path.join(d, f"{id}.md"), "w", encoding="utf-8") as f:
             f.write(text)
 
+    def _codex_skill_and_manifest(self, dest, scope):
+        import json
+        skill = os.path.join(dest, ".codex", "skills", "sage-team", "SKILL.md")
+        os.makedirs(os.path.dirname(skill), exist_ok=True)
+        with open(skill, "w", encoding="utf-8") as f:
+            f.write("# sage-team\nCORE body.\n")
+        manifest = os.path.join(dest, "docs", "sage_harness", ".manifest.json")
+        os.makedirs(os.path.dirname(manifest), exist_ok=True)
+        with open(manifest, "w", encoding="utf-8") as f:
+            json.dump({"core_skill_receipts": {"codex": {"scope": scope}}}, f)
+        self._overlay(dest, "skills", "sage-team", "project skill rule")
+        return skill
+
     def test_recomposes_allowed_overlay_block(self):
         with tempfile.TemporaryDirectory() as d:
             self._base_renders(d)
@@ -1018,6 +1365,24 @@ class TestSessionStartOverlayL1(unittest.TestCase):
             self._overlay(d, "agents", "implementer-a", "note")
             hr._session_start_overlay_l1(io_claude, d)
             self.assertFalse(os.path.exists(os.path.join(d, "docs/sage_harness/.manifest.json")))
+
+    def test_codex_global_receipt_excludes_preserved_local_core_skill(self):
+        with tempfile.TemporaryDirectory() as d:
+            skill = self._codex_skill_and_manifest(d, "global")
+
+            self.assertEqual(hr._session_start_overlay_l1(io_codex, d), 0)
+
+            with open(skill, encoding="utf-8") as f:
+                self.assertNotIn("project skill rule", f.read())
+
+    def test_codex_project_local_receipt_materializes_local_core_skill(self):
+        with tempfile.TemporaryDirectory() as d:
+            skill = self._codex_skill_and_manifest(d, "project-local")
+
+            self.assertEqual(hr._session_start_overlay_l1(io_codex, d), 0)
+
+            with open(skill, encoding="utf-8") as f:
+                self.assertIn("project skill rule", f.read())
 
     def test_strips_blocked_asset_injected_block(self):
         # (c) 게이트-미보증 자산에 과거 물리화된 조작 블록은 blocked overlay 오류와 무관하게 제거한다.

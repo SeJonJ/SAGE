@@ -1,11 +1,11 @@
 {
   "sage_version": "0.1.0",
-  "generator_version": "0.9.68",
+  "generator_version": "0.9.69",
   "template_version": "0.1.0",
   "host_runtime": "claude",
   "assets": {
     "hooks/capture-declared-risk": {
-      "spec_hash": "sha256:b0d38a4480d7cacf863b40a0e8753707a6935db154440118a70aa5b4adb8b9e9",
+      "spec_hash": "sha256:00175ddf67e2ba9a492e73a5cfd259283164b653808092081accdb82ad3f7d74",
       "canonical_hash": "sha256:eaf95e8df3c5521a3b1f3eabd735a8e8937573090a6a60e8ac0c0f80dfba9e7a",
       "adapter_hash": {
         "claude": "sha256:dd4155c7a38974f513d9fdadeccbe9b914e9a2dd40ab5b6002dc976699be4b56",
@@ -79,7 +79,7 @@
       "l3_review_strategy": "codex_feature_signal"
     },
     "hooks/stop-compliance-report": {
-      "spec_hash": "sha256:3bd448b96a083f3077837ab7c3b133f3b31bacc74e63b670fe9dbf0329c72181",
+      "spec_hash": "sha256:8ea6a8dd1d9207f27259aee7e9479725d02fa70fce5de46bf6d30c61d01d9a47",
       "canonical_hash": "sha256:9722b3c9694ea0649208fb0ae021467cd872ded6b4328794aa8b08dc5690fcb6",
       "adapter_hash": {
         "claude": "sha256:031dcf4cee2de44cd3f5af5e4e38e95aa511704cfaa55b29f84d5d0b2bc7f8d0",
@@ -114,7 +114,7 @@
       "conformance": "UNKNOWN",
       "risk": [],
       "unresolved": [],
-      "spec_hash": "sha256:ba50d5e662f3870ec6b2f677e2cff2955e85d1cf1258555ab36c1f87efe7dddc",
+      "spec_hash": "sha256:8f2a83ca8956f23050fafd12261745a0dacbb1c18c6505f2e6efe0f197c0e113",
       "canonical_hash": "sha256:bdeb1dcf32159149493882ee8e87bb4ca4de33154f6c205333995b88543d1277",
       "adapter_contract_version": "1",
       "adapter_hash": {
@@ -128,7 +128,7 @@
     }
   },
   "hook_runtime_hash": {
-    "shared": "sha256:618da47b74ccae89a6ff42e45086e767e5f61b3200b8ebdaa907fda907b8eab2",
+    "shared": "sha256:384c5245089c92aa54c97a9ce98e1e14befbc32a08cc76b84e54c09bce850fc5",
     "claude": "sha256:6991dff9a466ef7f0fb3e926df2119c2617f8d534bdb14c5ce3d42fa2576a464",
     "codex": "sha256:97549092cb66b9226f8766b8f229679bc8024f27a21682d96bdee49f96f4b843"
   }

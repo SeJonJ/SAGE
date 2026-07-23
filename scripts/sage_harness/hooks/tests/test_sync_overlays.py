@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
@@ -14,12 +15,13 @@ from sage import overlay_common as oc  # noqa: E402
 
 
 class InstallArgs:
-    def __init__(self, host, dest):
+    def __init__(self, host, dest, skill_scope=None):
         self.host = host
         self.dest = dest
         self.prefix = "test"
         self.force = False
-        self.no_global_skill = True
+        self.no_global_skill = host == "codex" and skill_scope is None
+        self.skill_scope = skill_scope
 
 
 class SyncArgs:
@@ -127,6 +129,65 @@ class TestSyncOverlays(unittest.TestCase):
 
             self.assertNotIn(oc.MARKER_START, guide.read_text(encoding="utf-8"))
             self.assertEqual(Path(manifest_path(root)).read_bytes(), manifest_before)
+
+    def test_global_scope_with_project_custom_skill_does_not_require_local_core_skills(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as codex_home:
+            custom = Path(root, ".codex", "skills", "project-custom", "SKILL.md")
+            custom.parent.mkdir(parents=True)
+            custom.write_text("# project custom\n", encoding="utf-8")
+
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                self.assertEqual(
+                    install.run(InstallArgs("codex", root, skill_scope="global")), 0)
+                self.assertEqual(sync_overlays.run(SyncArgs(root)), 0)
+
+            manifest = load_manifest(root)
+            self.assertEqual(manifest["core_skill_receipts"]["codex"]["scope"], "global")
+            self.assertFalse(any(
+                key.startswith("codex/skills/") for key in manifest["core_renders"]))
+            self.assertEqual(custom.read_text(encoding="utf-8"), "# project custom\n")
+
+    def test_legacy_custom_skill_only_does_not_imply_project_local_scope(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as codex_home:
+            custom = Path(root, ".codex", "skills", "project-custom", "SKILL.md")
+            custom.parent.mkdir(parents=True)
+            custom.write_text("# project custom\n", encoding="utf-8")
+
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                self.assertEqual(
+                    install.run(InstallArgs("codex", root, skill_scope="global")), 0)
+                manifest = load_manifest(root)
+                manifest.pop("core_skill_receipts")
+                Path(manifest_path(root)).write_text(
+                    json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+                self.assertEqual(sync_overlays.run(SyncArgs(root)), 0)
+
+            manifest = load_manifest(root)
+            self.assertNotIn("core_skill_receipts", manifest)
+            self.assertFalse(any(
+                key.startswith("codex/skills/") for key in manifest["core_renders"]))
+            self.assertEqual(custom.read_text(encoding="utf-8"), "# project custom\n")
+
+    def test_malformed_codex_scope_receipt_fails_before_writing(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
+                self.assertEqual(
+                    install.run(InstallArgs("codex", root, skill_scope="global")), 0)
+                path = Path(manifest_path(root))
+                manifest = load_manifest(root)
+                manifest["core_skill_receipts"]["codex"]["scope"] = []
+                path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+                before = path.read_bytes()
+                guide = Path(root, "AGENT_GUIDE.md")
+                guide.write_text(
+                    guide.read_text(encoding="utf-8")
+                    + "\n" + oc.compose_block("unsafe", "framework", "AGENT_GUIDE"),
+                    encoding="utf-8")
+
+                self.assertEqual(sync_overlays.run(SyncArgs(root)), 1)
+
+            self.assertEqual(path.read_bytes(), before)
+            self.assertNotIn(oc.MARKER_START, guide.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
