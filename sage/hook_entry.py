@@ -24,6 +24,12 @@ _GATE_HOOKS = {
     "pre-phase4-checklist-gate",
     "stop-compliance-report",
 }
+_BASELINE_HOOKS = {
+    "capture-declared-risk",
+    "session-start-snapshot",
+}
+_PROFILE_HOOKS = _GATE_HOOKS | _BASELINE_HOOKS | {"post-tool-logger"}
+_PROFILE_REQUIRED_HOOKS = _GATE_HOOKS | _BASELINE_HOOKS
 
 
 def _resolve_root(runtime, explicit):
@@ -64,32 +70,42 @@ def _load_run_hook(core_dir):
 
 
 def _prepare_gate_profile(root, hook):
-    """Gate hooks require a current compiled profile; advisory hooks stay fail-open."""
-    if hook not in _GATE_HOOKS:
+    """Inject the compiled profile for every consumer; safety hooks fail closed on drift."""
+    if hook not in _PROFILE_HOOKS:
         return None
+    # Hook subprocess가 상위 shell의 다른 프로젝트 profile을 상속하더라도 현재 root의 정책만 사용한다.
+    os.environ.pop("SAGE_PROFILE", None)
+    required = hook in _PROFILE_REQUIRED_HOOKS
 
     yaml_path = os.path.join(root, "sage", "project-profile.yaml")
     json_path = os.path.join(root, "sage", "project-profile.json")
+    if hook in _BASELINE_HOOKS and not os.path.exists(yaml_path) and not os.path.exists(json_path):
+        return None
     try:
         with open(yaml_path, encoding="utf-8") as fh:
             yaml_profile = yaml.safe_load(fh) or {}
     except Exception as e:
-        return f"프로필 YAML 로드 실패({yaml_path}): {type(e).__name__}: {e}"
+        message = f"프로필 YAML 로드 실패({yaml_path}): {type(e).__name__}: {e}"
+        return message if required else None
     try:
         with open(json_path, encoding="utf-8") as fh:
             json_profile = json.load(fh)
     except Exception as e:
-        return f"컴파일 프로필 로드 실패({json_path}): {type(e).__name__}: {e}"
+        message = f"컴파일 프로필 로드 실패({json_path}): {type(e).__name__}: {e}"
+        return message if required else None
 
     if not isinstance(yaml_profile, dict) or not isinstance(json_profile, dict):
-        return "프로필 루트는 객체(mapping)여야 합니다."
+        message = "프로필 루트는 객체(mapping)여야 합니다."
+        return message if required else None
     from sage.profile_compile import ProfileCompileError, materialize_profile
     try:
         expected_profile = materialize_profile(yaml_profile)
     except ProfileCompileError as e:
-        return f"프로필 raw risk 필드 타입 오류: {e}"
+        message = f"프로필 raw risk 필드 타입 오류: {e}"
+        return message if required else None
     if expected_profile != json_profile:
-        return "project-profile.yaml과 project-profile.json이 다릅니다. sage generate를 다시 실행하세요."
+        message = "project-profile.yaml과 project-profile.json이 다릅니다. sage generate를 다시 실행하세요."
+        return message if required else None
 
     os.environ["SAGE_PROFILE"] = json_path
     return None

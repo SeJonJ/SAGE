@@ -15,6 +15,7 @@ from pathlib import Path
 from sage import __version__
 from sage.asset_paths import AssetPaths, docs_dir
 from sage.commands._common import contract_version_of
+from sage.hook_launcher import command_template as hook_command_template, valid_hook_id
 from sage.hook_runtime_hash import calculate_hook_runtime_hash
 from sage.manifest_io import atomic_write_json
 
@@ -76,10 +77,12 @@ def _parse_runtime_bindings(spec_path):
 
 
 def _command_template(target, hook_id):
-    """런타임별 등록 command 문자열. `sage-hook` 콘솔 엔트리포인트(pip 설치)로 호출 —
-    bash·python 경로 추측 없이 크로스플랫폼(Windows 포함) 동작. root/core-dir 은 sage-hook 이
-    env/git/cwd 로 자동 해석하므로 host 별 래퍼가 불필요하다. (`.sh` shim 은 수동 폴백으로 유지.)"""
-    return f"sage-hook --runtime {target} --hook {hook_id}"
+    """런타임별 등록 command 문자열.
+
+    Windows는 bash 비의존 console entrypoint를 유지한다. POSIX는 GUI/IDE가 사용자 PATH를
+    상속하지 않는 경우에도 pipx 기본 app 경로를 찾고, 커스텀 설치는 SAGE_HOOK_BIN으로 지정한다.
+    """
+    return hook_command_template(target, hook_id, platform_name=os.name)
 
 
 def _build_registration(root, target, hook_ids):
@@ -90,6 +93,9 @@ def _build_registration(root, target, hook_ids):
     # event → matcher → [command블록]  (matcher 안정 정렬)
     by_event = {}
     for hid in sorted(hook_ids):   # lexicographic 정렬(결정론)
+        if not valid_hook_id(hid):
+            missing.append(f"hook-id:{hid}")
+            continue
         ap = AssetPaths(root, "hook", hid)
         if not os.path.exists(ap.spec):
             missing.append(f"spec:{hid}"); continue

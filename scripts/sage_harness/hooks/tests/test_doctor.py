@@ -11,6 +11,7 @@ import unittest
 import json
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -144,6 +145,71 @@ class TestDoctor(unittest.TestCase):
             _, out = run_doctor(p)
             self.assertIn("## 실행 환경", out)
             self.assertIn("sage-hook", out)
+
+    @unittest.skipIf(os.name == "nt", "POSIX launcher contract")
+    def test_env_section_accepts_sage_hook_bin_outside_path(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d, "p.yaml")
+            p.write_text("runtime: { host: codex }\noptions: { cross_model: false }\n")
+            launcher = Path(d, "custom-sage-hook")
+            launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            launcher.chmod(0o755)
+            env = {
+                "HOME": d,
+                "PATH": "/usr/bin:/bin",
+                "SAGE_HOOK_BIN": str(launcher),
+            }
+
+            with mock.patch.dict(os.environ, env, clear=True):
+                _, out = run_doctor(str(p))
+
+            self.assertIn(f"sage-hook: {launcher}", out)
+            self.assertIn("source=SAGE_HOOK_BIN", out)
+            self.assertNotIn("게이트 무력화", out)
+
+    @unittest.skipIf(os.name == "nt", "POSIX launcher contract")
+    def test_env_section_accepts_pipx_default_bin_outside_path(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d, "p.yaml")
+            p.write_text("runtime: { host: codex }\noptions: { cross_model: false }\n")
+            launcher = Path(d, ".local", "bin", "sage-hook")
+            launcher.parent.mkdir(parents=True)
+            launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            launcher.chmod(0o755)
+
+            with mock.patch.dict(
+                os.environ, {"HOME": d, "PATH": "/usr/bin:/bin"}, clear=True
+            ):
+                _, out = run_doctor(str(p))
+
+            self.assertIn(f"sage-hook: {launcher}", out)
+            self.assertIn("source=pipx-default", out)
+            self.assertNotIn("게이트 무력화", out)
+
+    @unittest.skipIf(os.name == "nt", "POSIX launcher contract")
+    def test_env_section_ignores_relative_sage_hook_bin(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d, "p.yaml")
+            p.write_text("runtime: { host: codex }\noptions: { cross_model: false }\n")
+            launcher = Path(d, ".local", "bin", "sage-hook")
+            launcher.parent.mkdir(parents=True)
+            launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            launcher.chmod(0o755)
+
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HOME": d,
+                    "PATH": "/usr/bin:/bin",
+                    "SAGE_HOOK_BIN": "relative-sage-hook",
+                },
+                clear=True,
+            ):
+                _, out = run_doctor(str(p))
+
+            self.assertIn(f"sage-hook: {launcher}", out)
+            self.assertIn("source=pipx-default", out)
+            self.assertNotIn("source=SAGE_HOOK_BIN", out)
 
     @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
     def test_model_routing_reports_confirmed_and_unverified_status(self):

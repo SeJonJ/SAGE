@@ -1,6 +1,6 @@
 {
   "sage_version": "0.1.0",
-  "generator_version": "0.9.69",
+  "generator_version": "0.9.70",
   "template_version": "0.1.0",
   "host_runtime": "claude",
   "assets": {
@@ -118,12 +118,12 @@
       "canonical_hash": "sha256:bdeb1dcf32159149493882ee8e87bb4ca4de33154f6c205333995b88543d1277",
       "adapter_contract_version": "1",
       "adapter_hash": {
-        "claude": "sha256:3fcb32b68a23d2d0629302ea1e69dcbd51ecea58315effa14642a3c1d1c4d0e5",
-        "codex": "sha256:13b24441f471a758bb8ac009c63571fc39ee9822c10aad7230424e02670fb26b"
+        "claude": "sha256:0913cee5abff18c7dc7b09025f1d6e9844392d8a48311d38065f5f5b2b7db313",
+        "codex": "sha256:080cb526553aa3ee9e6383e0664e5f2a35cdffdde426b7b6f0aa9936c4615527"
       },
       "render_hash": {
-        "claude": "sha256:3fcb32b68a23d2d0629302ea1e69dcbd51ecea58315effa14642a3c1d1c4d0e5",
-        "codex": "sha256:13b24441f471a758bb8ac009c63571fc39ee9822c10aad7230424e02670fb26b"
+        "claude": "sha256:0913cee5abff18c7dc7b09025f1d6e9844392d8a48311d38065f5f5b2b7db313",
+        "codex": "sha256:080cb526553aa3ee9e6383e0664e5f2a35cdffdde426b7b6f0aa9936c4615527"
       }
     }
   },

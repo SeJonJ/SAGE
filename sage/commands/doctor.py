@@ -14,6 +14,7 @@ from pathlib import Path
 
 from sage.runtime_hosts import (active_host, configured_hosts, opposite_host, profile_issues,
                                 receipt_hosts, receipt_issues)
+from sage.hook_launcher import resolve_sage_hook
 from sage.profile_layers import load_profile_layers, local_profile_git_issues
 
 
@@ -470,18 +471,17 @@ def run(args):
             for severity, message in local_profile_git_issues(root, layers.local_path):
                 print(f"  {'⚠️ ' if severity == 'WARN' else 'ℹ️ '} {severity} {message}")
 
-    # 실행 환경: OS / python / sage-hook / bash 점검.
-    # W2b 이후 hook 등록 command 는 `sage-hook`(sage 패키지 콘솔 스크립트) — PATH 에 없으면 등록돼도
-    # hook 실행이 실패한다(조용한 gate-disable). bash 는 이제 hook 주경로가 아니라 verify-changes.sh(L2/L3 검증)와
-    # `.sh` 수동 폴백 구동용 — hook 실행 자체는 sage-hook 이 bash 없이 담당.
-    sage_hook = shutil.which("sage-hook")
+    # 실행 환경: generate 가 등록한 command와 같은 launcher 후보를 점검한다.
+    sage_hook, sage_hook_source = resolve_sage_hook()
     bash_path = shutil.which("bash")
     print("## 실행 환경")
     print(f"  OS       : {platform.system()} ({os.name})")
     print(f"  python   : {platform.python_version()} (sys.executable={sys.executable})")
     print(f"  sage-hook: {sage_hook or 'NOT FOUND'}"
-          + ("" if sage_hook else "  ⚠️  hook 실행 진입점이 PATH 에 없음 → 등록돼도 hook 이 안 돎(게이트 무력화). "
-             "`pipx install sage-harness`(또는 `pip install -e .`)로 재설치 — sage-hook 은 sage 패키지 콘솔 스크립트."))
+          + (f" (source={sage_hook_source})" if sage_hook else
+             "  ⚠️  hook 실행 진입점을 찾지 못함 → 등록돼도 hook 이 안 돎(게이트 무력화). "
+             "`pipx install sage-harness`(또는 `pip install -e .`)로 재설치"
+             + ("하거나 SAGE_HOOK_BIN을 지정." if os.name != "nt" else ".")))
     print(f"  bash     : {bash_path or 'NOT FOUND'}"
           + ("" if bash_path else "  ⚠️  scripts/verify-changes.sh(L2/L3 검증)와 `.sh` 수동 폴백 구동 불가 — Git Bash/WSL 필요"
              "(hook 실행 자체는 sage-hook 이 담당)."))

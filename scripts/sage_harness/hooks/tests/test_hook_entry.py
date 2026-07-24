@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 import yaml
 
@@ -112,6 +113,120 @@ class TestDispatchIntegration(unittest.TestCase):
             env.pop("SAGE_PROFILE", None)
             r = self._run("pre-implementation-gate", stdin="{}", root=root, env=env)
             self.assertEqual(r.returncode, 0, r.stderr)
+
+    def _active_baseline_profile(self, root):
+        vault = os.path.join(root, "vault")
+        os.makedirs(vault, exist_ok=True)
+        return {
+            "pdca": {"retro": {"report_gate_enforce": "enforce"}},
+            "knowledge_capture": {
+                "retro_note": True,
+                "vault_path": vault,
+            },
+        }
+
+    def test_session_start_injects_profile_and_writes_baseline_when_env_absent(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._write_profile(root, self._active_baseline_profile(root))
+            env = os.environ.copy()
+            env.pop("SAGE_PROFILE", None)
+            session_id = "entry-session-start"
+
+            result = self._run(
+                "session-start-snapshot",
+                stdin=json.dumps({"session_id": session_id}),
+                root=root,
+                runtime="codex",
+                env=env,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            snapshot = os.path.join(
+                root, ".codex", "logs", f"session-snapshot-{session_id}.json")
+            self.assertTrue(os.path.isfile(snapshot))
+            self.assertEqual(
+                session_id,
+                json.loads(Path(snapshot).read_text(encoding="utf-8"))["session_id"],
+            )
+
+    def test_user_prompt_injects_profile_and_backfills_baseline_when_env_absent(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._write_profile(root, self._active_baseline_profile(root))
+            env = os.environ.copy()
+            env.pop("SAGE_PROFILE", None)
+            session_id = "entry-user-prompt"
+
+            result = self._run(
+                "capture-declared-risk",
+                stdin=json.dumps({"session_id": session_id, "prompt": "continue"}),
+                root=root,
+                runtime="codex",
+                env=env,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            snapshot = os.path.join(
+                root, ".codex", "logs", f"session-snapshot-{session_id}.json")
+            claim = snapshot + ".attempt"
+            self.assertTrue(os.path.isfile(snapshot))
+            self.assertEqual(
+                "written",
+                json.loads(Path(claim).read_text(encoding="utf-8"))["resolved"],
+            )
+
+    def test_profileless_baseline_hook_does_not_consume_inherited_profile(self):
+        with tempfile.TemporaryDirectory() as stale_root, tempfile.TemporaryDirectory() as root:
+            self._write_profile(stale_root, self._active_baseline_profile(stale_root))
+            env = os.environ.copy()
+            env["SAGE_PROFILE"] = os.path.join(stale_root, "sage", "project-profile.json")
+            session_id = "entry-stale-profile"
+
+            result = self._run(
+                "session-start-snapshot",
+                stdin=json.dumps({"session_id": session_id}),
+                root=root,
+                runtime="codex",
+                env=env,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            snapshot = os.path.join(
+                root, ".codex", "logs", f"session-snapshot-{session_id}.json")
+            self.assertFalse(os.path.exists(snapshot))
+
+    def test_advisory_profile_consumer_clears_inherited_profile_on_local_failure(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "sage"), exist_ok=True)
+            Path(root, "sage", "project-profile.yaml").write_text(
+                "risk: [invalid\n", encoding="utf-8")
+            old = os.environ.get("SAGE_PROFILE")
+            os.environ["SAGE_PROFILE"] = "/stale/project-profile.json"
+            try:
+                error = hook_entry._prepare_gate_profile(root, "post-tool-logger")
+                self.assertIsNone(error)
+                self.assertNotIn("SAGE_PROFILE", os.environ)
+            finally:
+                if old is not None:
+                    os.environ["SAGE_PROFILE"] = old
+                else:
+                    os.environ.pop("SAGE_PROFILE", None)
+
+    def test_advisory_profile_consumer_receives_valid_compiled_profile(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._write_profile(root)
+            old = os.environ.pop("SAGE_PROFILE", None)
+            try:
+                error = hook_entry._prepare_gate_profile(root, "post-tool-logger")
+                self.assertIsNone(error)
+                self.assertEqual(
+                    os.path.join(root, "sage", "project-profile.json"),
+                    os.environ.get("SAGE_PROFILE"),
+                )
+            finally:
+                if old is not None:
+                    os.environ["SAGE_PROFILE"] = old
+                else:
+                    os.environ.pop("SAGE_PROFILE", None)
 
     def test_gate_blocks_missing_profile(self):
         with tempfile.TemporaryDirectory() as root:

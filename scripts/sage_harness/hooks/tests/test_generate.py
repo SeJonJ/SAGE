@@ -6,10 +6,12 @@ self-contained: 임시 SAGE 루트(hook spec frontmatter + adapter stub + manife
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -368,6 +370,120 @@ class TestGenerate(unittest.TestCase):
             self.assertIn("Stop", reg)
             self.assertIn("aaa-hook", reg["PreToolUse"][0]["hooks"][0]["command"])
 
+    def test_command_template_rejects_shell_metacharacters_in_hook_id(self):
+        with self.assertRaisesRegex(ValueError, "hook id"):
+            gen._command_template("codex", "x$(printf injected)")
+
+    @unittest.skipIf(os.name == "nt", "POSIX launcher contract")
+    def test_posix_command_finds_pipx_default_bin_when_path_is_restricted(self):
+        with tempfile.TemporaryDirectory() as home:
+            bin_dir = Path(home, ".local", "bin")
+            bin_dir.mkdir(parents=True)
+            launcher = bin_dir / "sage-hook"
+            launcher.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$@" > "$HOME/invocation.txt"\n',
+                encoding="utf-8",
+            )
+            launcher.chmod(0o755)
+            env = {"HOME": home, "PATH": "/usr/bin:/bin"}
+
+            result = subprocess.run(
+                gen._command_template("codex", "capture-declared-risk"),
+                shell=True,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(
+                ["--runtime", "codex", "--hook", "capture-declared-risk"],
+                Path(home, "invocation.txt").read_text(encoding="utf-8").splitlines(),
+            )
+
+    @unittest.skipIf(os.name == "nt", "POSIX launcher contract")
+    def test_posix_command_uses_absolute_sage_hook_bin(self):
+        with tempfile.TemporaryDirectory() as home:
+            launcher = Path(home, "custom-sage-hook")
+            launcher.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$@" > "$HOME/invocation.txt"\n',
+                encoding="utf-8",
+            )
+            launcher.chmod(0o755)
+            env = {
+                "HOME": home,
+                "PATH": "/usr/bin:/bin",
+                "SAGE_HOOK_BIN": str(launcher),
+            }
+
+            result = subprocess.run(
+                gen._command_template("codex", "capture-declared-risk"),
+                shell=True,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(
+                ["--runtime", "codex", "--hook", "capture-declared-risk"],
+                Path(home, "invocation.txt").read_text(encoding="utf-8").splitlines(),
+            )
+
+    @unittest.skipIf(os.name == "nt", "POSIX launcher contract")
+    def test_posix_command_ignores_relative_sage_hook_bin(self):
+        with tempfile.TemporaryDirectory() as home:
+            bin_dir = Path(home, ".local", "bin")
+            bin_dir.mkdir(parents=True)
+            launcher = bin_dir / "sage-hook"
+            launcher.write_text(
+                '#!/bin/sh\nprintf "fallback\\n" > "$HOME/source.txt"\n',
+                encoding="utf-8",
+            )
+            launcher.chmod(0o755)
+            env = {
+                "HOME": home,
+                "PATH": "/usr/bin:/bin",
+                "SAGE_HOOK_BIN": "relative-sage-hook",
+            }
+
+            result = subprocess.run(
+                gen._command_template("codex", "capture-declared-risk"),
+                shell=True,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(
+                "fallback\n",
+                Path(home, "source.txt").read_text(encoding="utf-8"),
+            )
+
+    @unittest.skipIf(os.name == "nt", "POSIX launcher contract")
+    def test_posix_command_reports_missing_launcher_before_exit_127(self):
+        with tempfile.TemporaryDirectory() as home:
+            result = subprocess.run(
+                gen._command_template("codex", "capture-declared-risk"),
+                shell=True,
+                capture_output=True,
+                text=True,
+                env={"HOME": home, "PATH": "/usr/bin:/bin"},
+            )
+
+            self.assertEqual(127, result.returncode)
+            self.assertIn("set absolute SAGE_HOOK_BIN", result.stderr)
+
+    def test_windows_command_keeps_console_entrypoint_without_bash(self):
+        with mock.patch.object(gen.os, "name", "nt"):
+            command = gen._command_template("codex", "capture-declared-risk")
+
+        self.assertEqual(
+            "sage-hook --runtime codex --hook capture-declared-risk",
+            command,
+        )
+
     def test_missing_adapter_fail(self):
         with tempfile.TemporaryDirectory() as d:
             make_root(d, with_adapter=False)
@@ -383,12 +499,31 @@ class TestGenerate(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(dest, ".codex", "hooks.json")))
             s = json.loads(Path(os.path.join(dest, ".claude", "settings.json")).read_text())
             self.assertIn("hooks", s)
-            # 등록 command 는 sage-hook 콘솔 엔트리포인트(bash 비의존, 크로스플랫폼)
             x = json.loads(Path(os.path.join(dest, ".codex", "hooks.json")).read_text())
             cmd = x["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-            self.assertIn("sage-hook", cmd)
-            self.assertIn("--runtime codex", cmd)
-            self.assertNotIn("bash", cmd)
+            self.assertEqual(gen._command_template("codex", "aaa-hook"), cmd)
+
+            if os.name != "nt":
+                home = Path(dest, "home")
+                launcher = home / ".local" / "bin" / "sage-hook"
+                launcher.parent.mkdir(parents=True)
+                launcher.write_text(
+                    '#!/bin/sh\nprintf "%s\\n" "$@" > "$HOME/invocation.txt"\n',
+                    encoding="utf-8",
+                )
+                launcher.chmod(0o755)
+                result = subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    env={"HOME": str(home), "PATH": "/usr/bin:/bin"},
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(
+                    ["--runtime", "codex", "--hook", "aaa-hook"],
+                    Path(home, "invocation.txt").read_text(encoding="utf-8").splitlines(),
+                )
 
     def test_single_id_preserves_all_registrations(self):
         # F6 회귀: generate --id <단일hook> 가 settings.json 을 그 hook 하나로 재생성하면 나머지
