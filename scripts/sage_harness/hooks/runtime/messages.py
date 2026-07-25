@@ -31,6 +31,11 @@ def _gate_record(decision, profile):
     miss = ", ".join(decision.get("missing_phases") or [])
     return {
         "block_desktop": ("BLOCK", "", "동기화 산출물/금지 경로 직접수정 금지.", False, desktop_hint(profile)),
+        # §10-a-C: 미해결 차단성 마커를 남긴 채 그 파일에 쓰는 것을 막는다. 마커를 걷어내는
+        # 편집은 통과하므로(자기차단 방지) 안내는 "해소하라" 가 정확한 탈출 경로다.
+        "block_feedback_unresolved": ("BLOCK", "", "미해결 개발자 피드백 마커(!sage-feedback) 위에 새 구현 금지.", True,
+                             "`/sage-feedback` 으로 마커를 해소하거나(마커를 걷어내는 편집은 통과), "
+                             "진행이 급하면 사유·기한을 남기는 waiver 를 발급"),
         "block_l3_no_plan": ("BLOCK", "L3", "L3 작업 + plan 문서 없음.", True,
                              "plan 문서 생성 + L3 리뷰 프로토콜(2라운드) 수행"),
         "block_l3_strategy_unresolved": ("BLOCK", "L3", "L3 review 매칭 전략 미선택(unresolved) → 리뷰 확인 불가.", True,

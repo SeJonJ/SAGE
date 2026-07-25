@@ -739,6 +739,40 @@ def _select_pending_gate_decision(decisions):
     return selected
 
 
+def _feedback_gate(event, profile, snapshot):
+    """§10-a-C: 미해결 차단성 마커(`!sage-feedback ::`)를 남긴 채 그 파일에 쓰는 것을 막는다.
+
+    규칙은 "마커 있는 파일은 못 고침" 이 아니라 **"고친 뒤에도 마커가 남는가"** 다. 전자로
+    만들면 마커를 해소하려는 편집까지 막혀 영원히 못 푸는 자기차단이 된다. 해소하는 방향의
+    쓰기(마커를 걷어내는 편집·마커 없는 전체 재작성)는 통과시킨다.
+
+    snapshot["feedback"] 은 어댑터가 주입한다(core 는 순수 — IO 없음). 없으면 skip.
+    """
+    state = (snapshot or {}).get("feedback")
+    if not isinstance(state, dict) or not state.get("enabled"):
+        return None
+    targets = state.get("targets") or {}
+    if not targets:
+        return None
+    try:
+        import feedback_markers
+    except Exception:
+        return None                     # 모듈 부재 → 판정 불가, 다른 게이트에 맡김
+
+    unresolved = []
+    for change in (event.get("changes") or []):
+        target = targets.get((change or {}).get("path") or "")
+        if not target:
+            continue
+        if feedback_markers.resolves_blocking(change, target.get("on_disk") or ""):
+            continue                    # 해소하는 쓰기 → 통과
+        unresolved.append((change.get("path"), target.get("markers") or []))
+    if not unresolved:
+        return None
+    return {"files": [path for path, _ in unresolved],
+            "markers": [m for _, markers in unresolved for m in markers]}
+
+
 def decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:
     """risk-gate 판정. strategy_result: None=미선택 / {found:bool, path?} = 선택된 전략 실행결과."""
     c = classify_risk(event, profile)
@@ -747,6 +781,16 @@ def decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:
     if risk == "DESKTOP_BLOCK":
         return {"status": "block", "exit_code": 2, "risk": "DESKTOP",
                 "message_key": "block_desktop", "reason": c["reason"], "file_short": c["file_short"]}
+
+    # §10-a-C 개발자 피드백 마커: 미해결 차단성 마커를 남긴 채 그 파일에 쓰면 차단.
+    # 위험도와 무관하게 적용한다 — "묵은 의문 위에 새 구현을 쌓지 마라" 는 L1 이든 L3 이든 같다.
+    fg = _feedback_gate(event, profile, snapshot)
+    if fg is not None:
+        detail = "; ".join(f"{m['path']}:{m['line']} {m['text']}" for m in fg["markers"][:3])
+        return {"status": "block", "exit_code": 2, "risk": "FEEDBACK",
+                "message_key": "block_feedback_unresolved",
+                "reason": f"미해결 차단성 마커 {len(fg['markers'])}건 — {detail}",
+                "file_short": ", ".join(fg["files"][:3])}
 
     # PDCA cycle identity is a prerequisite for governed source changes and every phase write.
     # Do not infer from branch numbers or recent mtimes: zero/multiple/conflicting candidates block.

@@ -158,5 +158,92 @@ class TestCli(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout), {"enabled": False, "markers": []})
 
 
+class TestGateResolutionRule(unittest.TestCase):
+    """게이트 규칙 = "마커 있는 파일 금지" 가 아니라 "고친 뒤에도 마커가 남는가".
+
+    전자로 만들면 마커를 걷어내려는 편집까지 막혀 영원히 해소할 수 없다(자기차단).
+    """
+
+    def setUp(self):
+        runtime = os.path.join(REPO, "scripts", "sage_harness", "hooks", "runtime")
+        if runtime not in sys.path:
+            sys.path.insert(0, runtime)
+        import feedback_markers
+        self.fm = feedback_markers
+        self.marker = "# !sage-feedback :: 설계와 다름\n"
+        self.on_disk = self.marker + "def retry(): pass\n"
+
+    def test_write_that_keeps_marker_is_not_resolving(self):
+        change = {"full_content": True, "content": self.marker + "def retry(): pass\ndef extra(): pass\n"}
+        self.assertFalse(self.fm.resolves_blocking(change, self.on_disk))
+
+    def test_write_that_drops_marker_is_resolving(self):
+        change = {"full_content": True, "content": "def retry():\n    backoff()\n"}
+        self.assertTrue(self.fm.resolves_blocking(change, self.on_disk))
+
+    def test_edit_removing_the_marker_is_resolving(self):
+        change = {"content": "", "removed_content": self.marker}
+        self.assertTrue(self.fm.resolves_blocking(change, self.on_disk))
+
+    def test_edit_elsewhere_leaves_marker_and_is_blocked(self):
+        change = {"content": "def retry(): pass\ndef extra(): pass",
+                  "removed_content": "def retry(): pass"}
+        self.assertFalse(self.fm.resolves_blocking(change, self.on_disk))
+
+    def test_edit_that_reintroduces_a_marker_is_not_resolving(self):
+        # 마커를 지우면서 다른 차단성 마커를 새로 심는 편집은 해소가 아니다.
+        change = {"content": "# !sage-feedback :: 새 의문", "removed_content": self.marker}
+        self.assertFalse(self.fm.resolves_blocking(change, self.on_disk))
+
+    def test_file_without_blocking_marker_is_always_allowed(self):
+        # advisory 마커만 있는 파일은 아무것도 막지 않는다.
+        change = {"full_content": True, "content": "# sage-feedback :: advisory 그대로"}
+        self.assertTrue(self.fm.resolves_blocking(change, "# sage-feedback :: advisory\n"))
+
+
+class TestGateDecision(unittest.TestCase):
+    """core.decide 가 snapshot 주입만으로 판정하는지(순수 함수 계약 유지)."""
+
+    def setUp(self):
+        hooks = os.path.join(REPO, "scripts", "sage_harness", "hooks")
+        for path in (os.path.join(hooks, "runtime"), hooks):
+            if path not in sys.path:
+                sys.path.insert(0, path)
+        import pre_implementation_gate_core
+        self.core = pre_implementation_gate_core
+        self.on_disk = "# !sage-feedback :: 설계와 다름\ndef retry(): pass\n"
+        self.snapshot = {"feedback": {"enabled": True, "targets": {"src/pay.py": {
+            "on_disk": self.on_disk,
+            "markers": [{"path": "src/pay.py", "line": 1, "blocking": True, "text": "설계와 다름"}]}}}}
+
+    def _event(self, change):
+        change.setdefault("path", "src/pay.py")
+        return {"changes": [change]}
+
+    def test_blocks_write_that_keeps_marker(self):
+        result = self.core._feedback_gate(
+            self._event({"full_content": True, "content": self.on_disk + "def extra(): pass"}),
+            {}, self.snapshot)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["files"], ["src/pay.py"])
+
+    def test_allows_write_that_removes_marker(self):
+        result = self.core._feedback_gate(
+            self._event({"full_content": True, "content": "def retry(): pass"}), {}, self.snapshot)
+        self.assertIsNone(result)
+
+    def test_skips_when_snapshot_has_no_feedback_state(self):
+        # 어댑터가 주입 안 함(기능 off·구형 코어) → 판정하지 않는다(하위호환).
+        event = self._event({"full_content": True, "content": self.on_disk})
+        self.assertIsNone(self.core._feedback_gate(event, {}, {}))
+        self.assertIsNone(self.core._feedback_gate(event, {}, {"feedback": {"enabled": False}}))
+
+    def test_untouched_files_do_not_block(self):
+        result = self.core._feedback_gate(
+            {"changes": [{"path": "src/other.py", "full_content": True, "content": "x"}]},
+            {}, self.snapshot)
+        self.assertIsNone(result)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

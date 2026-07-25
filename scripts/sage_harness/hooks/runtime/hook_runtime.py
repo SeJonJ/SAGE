@@ -296,6 +296,48 @@ def _decide_pre_implementation_fail_closed(hook_id, core, event, profile, snapsh
                 "file_short": ", ".join(files[:3])}
 
 
+def _build_feedback_state(profile, root, changes):
+    """§10-a-C: 변경 대상 파일의 현재(디스크) 차단성 마커를 core 에 주입.
+
+    core.decide 는 순수 함수라 IO 를 할 수 없으므로 어댑터가 읽는다. 저장소 전체가 아니라
+    **지금 쓰려는 파일만** 읽는다 — 게이트는 모든 Write/Edit 마다 돌기 때문에 전체 스캔은
+    비용이 크고, 판정에 필요한 것도 대상 파일뿐이다.
+    """
+    section = profile.get("feedback")
+    if not isinstance(section, dict) or section.get("enabled") is not True:
+        return None                      # 섹션 없음/꺼짐 = 하위호환 무동작
+    try:
+        import feedback_markers
+    except Exception:
+        return None                      # 구형 hook 코어(모듈 부재) → graceful skip
+    # CLI 스캔과 동일하게 plan_docs 제외 — 계획·설계 문서는 마커 예시를 담는 오탐원이라,
+    # 거기 적힌 예시가 그 문서 편집을 막으면 안 된다.
+    plan_prefix = ""
+    paths_cfg = profile.get("paths")
+    if isinstance(paths_cfg, dict) and isinstance(paths_cfg.get("plan_docs"), str):
+        value = paths_cfg["plan_docs"].strip().strip("/")
+        plan_prefix = (value + "/") if value else ""
+
+    targets = {}
+    for change in changes or []:
+        rel_path = (change or {}).get("path") or ""
+        if not rel_path or rel_path in targets:
+            continue
+        if plan_prefix and rel_path.startswith(plan_prefix):
+            continue
+        absolute = os.path.join(root, rel_path)
+        try:
+            with open(absolute, "rb") as handle:
+                raw = handle.read()
+            text = "" if b"\0" in raw else raw.decode("utf-8")
+        except (OSError, UnicodeDecodeError):
+            text = ""                    # 신규 파일·바이너리 → 기존 마커 없음
+        markers = feedback_markers.blocking_markers(text, rel_path)
+        if markers:
+            targets[rel_path] = {"markers": markers, "on_disk": text}
+    return {"enabled": True, "targets": targets}
+
+
 def run_pre_implementation_gate(io, root, core_dir, raw_text):
     """pre-implementation-gate 오케스트레이터. io = io_claude | io_codex (런타임별 IO만 위임)."""
     hid = "pre-implementation-gate"
@@ -316,6 +358,9 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
              "cycle_stem": os.environ.get("SAGE_CYCLE_STEM", ""),
              "declared_max": declared, "changes": changes}
     snapshot = build_snapshot(profile, root, rel)
+    feedback_state = _build_feedback_state(profile, root, changes)
+    if feedback_state is not None:
+        snapshot["feedback"] = feedback_state
     strategy_result = run_strategy(hid, profile, core_dir, changes, event, snapshot)
 
     sys.path.insert(0, core_dir)
