@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from sage import __version__
+from sage import overlay_common as _oc
 from sage.asset_paths import AssetPaths, docs_dir
 from sage.commands._common import contract_version_of
 from sage.hook_launcher import command_template as hook_command_template, valid_hook_id
@@ -29,6 +30,9 @@ def register(sub):
                    help="등록 대상 런타임 (both 는 cross_model on)")
     p.add_argument("--dest", default=".", help="등록 산출물 기록 루트 (기본 cwd)")
     p.add_argument("--root", default=None, help="SAGE 루트 (manifest 탐색)")
+    p.add_argument("--from-existing", default=None, metavar="AGENT_ID",
+                   help="(--kind roster) 기존 implementer 의 렌더+프로젝트 오버레이를 새 "
+                        "implementer-<component> 정체성으로 시드한다(create-only). 예: implementer-a")
     p.add_argument("--deploy-codex", action="store_true",
                    help="(--kind skill) repo .codex/skills 정본을 codex 전역 $CODEX_HOME/skills 에 배포(prefix 네임스페이스). "
                         "codex 는 repo-스코프 skill 미자동발견 → 전역 배포해야 호출 가능. 명시적 opt-in(환경 부작용 분리).")
@@ -395,6 +399,170 @@ plus production code-convention verification within its boundary.
 """
 
 
+def _overlay_source_path(dest, aid):
+    return os.path.join(dest, "sage", "asset_overrides", "agents", f"{aid}.md")
+
+
+# compose_block 이 본문 앞에 붙이는 고정 헤더(additive-only 고지). 시드에는 옮기지 않는다 —
+# 새 렌더는 CORE 에 "더하는" 관리 구간이 아니라 그 자체가 프로젝트 소유 본문이기 때문이다.
+_OVERLAY_HEADER_PREFIXES = ("## Project-Local Additions", "아래는 이 프로젝트", "AGENT_GUIDE·phase")
+
+
+def _overlay_body_from_render(src_text):
+    """설치본 렌더에 물리 합성된 오버레이 본문만 뽑는다(마커·고지 헤더 제외).
+
+    오버레이 원본(`sage/asset_overrides/`)이 사라진 프로젝트에서는 규칙이 합성 결과에만 남아
+    있다. 원본만 보고 시드하면 그 프로젝트의 규칙이 조용히 증발한다.
+    """
+    block = _oc.extract_block(src_text or "")
+    if not block:
+        return ""
+    lines = [ln for ln in block.splitlines()
+             if ln not in (_oc.MARKER_START, _oc.MARKER_END)]
+    while lines and lines[0].startswith(_OVERLAY_HEADER_PREFIXES):
+        lines.pop(0)
+    return "\n".join(lines).strip()
+
+
+def _seed_description(new_id, comp):
+    """시드 렌더의 frontmatter description(호출 트리거 문장) 결정론 생성.
+
+    description 은 자유 산문이 아니라 **host 가 이 워커를 언제 부를지** 판정하는 트리거 문장이다.
+    원본 것을 물려주면 결제 워커가 자기를 "Implementer A"·"구현자A" 로 소개해, 호출 트리거가 새
+    정체성이 아니라 원본을 가리킨다. id·컴포넌트만으로 완전히 재생성할 수 있는 자리라 추측이 없다.
+    """
+    return (f"SAGE implementer for the `{comp}` component — design, implementation, and "
+            f"component-level unit tests within its ownership boundary. Invoke when the leader "
+            f"distributes a `{comp}` task, or when the user says /{new_id}, {new_id} agent.")
+
+
+def _with_seed_description(text, new_id, comp):
+    """frontmatter 의 description 한 줄을 재생성값으로 교체(없으면 원문 그대로).
+
+    첫 `---` 블록 안의 단일 라인만 다룬다 — CORE 렌더 규약이 그렇고, 블록 스칼라(`>`/`|`)까지
+    다루려다 잘못 자르면 frontmatter 가 깨져 host 가 렌더를 통째로 못 읽는다.
+    """
+    if not text.startswith("---\n"):
+        return text
+    end = text.find("\n---\n", 4)
+    if end == -1:
+        return text
+    head, rest = text[4:end], text[end:]
+    value = _seed_description(new_id, comp).replace("\\", "\\\\").replace('"', '\\"')
+    new_head, count = re.subn(r'(?m)^description:[ \t]*\S.*$', f'description: "{value}"', head, count=1)
+    return "---\n" + (new_head if count else head) + rest
+
+
+def _promoted_render(src_text, overlay_text, src_id, new_id, comp, paths=()):
+    """CORE 렌더(+프로젝트 오버레이) → 새 컴포넌트 정체성의 **프로젝트 소유 렌더 시드** → (text, error).
+
+    `implementer-a` 의 렌더는 CORE 라 `sage install --force` 가 덮어쓴다. 그래서 프로젝트 규칙은
+    오버레이로 쌓인다. 새 `implementer-<comp>` 는 반대로 프로젝트 소유 자산이라 오버레이 대상이
+    아니고 렌더를 직접 편집한다 — 그러므로 승계는 **합성 결과(base + 오버레이)를 마커 없는 평문
+    렌더로 펴서** 넘기는 것이다. 마커를 그대로 옮기면 install/validate 가 이걸 CORE 관리 구간으로
+    오인한다.
+
+    정체성 치환은 id 토큰만 결정론으로 한다. 산문에 남는 원본 언급(`implementer A` 같은 표현,
+    다른 워커와의 협업 문장)은 호출자가 잔존 목록으로 보고한다 — 여기서 자연어를 추측해 고치면
+    틀린 문장을 조용히 심게 되고, 그건 시드가 아니라 오염이다.
+    """
+    base, err = _oc.base_of(src_text)
+    if err:
+        return None, [], f"원본 렌더의 관리 구간이 손상됨({err})"
+    text = re.sub(rf"(?<![\w-]){re.escape(src_id)}(?![\w-])", new_id, base.rstrip("\n"))
+    # CORE 렌더는 소유 경계를 죽은 필드(`team.core.<id>.owns`)로 가리킨다. 승격 대상은 어떤
+    # 컴포넌트인지 이미 확정돼 있으므로 살아있는 출처로 바꿔준다 — 시드가 죽은 지시를 물려주면
+    # 새 워커가 읽을 수 없는 값을 소유 경계로 삼는다.
+    text = re.sub(rf"`?profile\.team\.core\.{re.escape(new_id)}\.owns`?",
+                  f"`profile.components[{comp}].paths`", text)
+    text = re.sub(rf"`?team\.core\.{re.escape(new_id)}\.owns`?",
+                  f"`components[{comp}].paths`", text)
+    # description 은 원본 산문을 물려받으면 안 되는 자리다(호출 트리거) — 통째로 재생성한다.
+    text = _with_seed_description(text, new_id, comp)
+    # 제목도 같은 자기소개 자리다. 새 id 로 시작하는 첫 H1 만, id·컴포넌트로 재생성한다
+    # (다른 H1 은 원본 문서 구조라 건드리지 않는다).
+    text = re.sub(rf"(?m)^# {re.escape(new_id)} —.*$",
+                  f"# {new_id} — SAGE implementer for the `{comp}` component", text, count=1)
+    # 잔존 판정은 배너·오버레이 절을 붙이기 **전에** 한다 — 둘 다 원본 id 를 담고 있어
+    # (provenance) 나중에 재면 자기 자신을 잔존으로 보고한다.
+    residuals = _residual_identity(text, src_id)
+    body = (overlay_text or "").strip()
+    if body:
+        text += f"\n\n## Inherited Project Rules (seeded from {src_id} overlay)\n{body}"
+    text += "\n"
+    owned = ", ".join(f"`{p}`" for p in paths) or f"(profile.components[{comp}].paths)"
+    banner = (f"<!-- seeded by `sage generate --kind roster --from-existing {src_id}` "
+              f"for profile.components[{comp}]. This render is project-owned: edit it directly "
+              f"(no overlay), then run `sage generate --kind agent --id {new_id} --write`. -->\n"
+              # 소유 경계를 시드 시점에 못박는다 — 원본 렌더의 문장은 "네게 배정된 컴포넌트"
+              # 라는 일반형이라, 그대로 물려주면 새 워커가 자기 경계를 스스로 추측한다.
+              f"\n> **Ownership (seeded from profile.components[{comp}].paths):** {owned}\n")
+    # frontmatter 는 맨 앞이어야 하므로 배너는 그 뒤에 넣는다.
+    if text.startswith("---\n"):
+        end = text.find("\n---\n", 4)
+        if end != -1:
+            head, rest = text[:end + 5], text[end + 5:]
+            return head + banner + rest, residuals, None
+    return banner + text, residuals, None
+
+
+def _residual_identity(text, src_id):
+    """치환 후에도 남은 원본 정체성 언급(산문·다른 워커 참조) → 정렬된 토큰 목록."""
+    found = set()
+    for match in re.finditer(r"[Ii]mplementer[- ][A-Za-z][\w-]*", text):
+        token = match.group(0)
+        if token.lower().replace(" ", "-") != src_id.lower():
+            continue
+        found.add(token)
+    # 다른 CORE 워커 참조(협업 문장)는 컴포넌트 로스터에선 대개 틀린 지시다.
+    for other in ("implementer-a", "implementer-b"):
+        if other != src_id and re.search(rf"(?<![\w-]){other}(?![\w-])", text):
+            found.add(other)
+    return sorted(found)
+
+
+def _seed_from_existing(args, dest, src_id, comp_id, paths):
+    """새 implementer 의 양 host 렌더를 원본에서 시드한다 → (written, notes, error).
+
+    create-only: 이미 있는 렌더는 건드리지 않는다(손편집 보존).
+    """
+    new_id = f"implementer-{comp_id}"
+    overlay_path = _overlay_source_path(dest, src_id)
+    overlay_text = ""
+    if os.path.isfile(overlay_path):
+        overlay_text, err = _oc.read_text_lf(overlay_path)
+        if err:
+            return [], [], err            # 오버레이를 못 읽으면 규칙이 조용히 빠진 시드가 된다
+    written, notes = [], []
+    src_paths = _interpretive_render_paths(dest, "agent", src_id)
+    new_paths = _interpretive_render_paths(dest, "agent", new_id)
+    seeded_any = False
+    for src, out in zip(src_paths, new_paths):
+        if not os.path.isfile(src):
+            continue                      # 그 host 는 설치돼 있지 않음
+        if os.path.exists(out):
+            notes.append(f"    skip(기존 렌더 보존): {os.path.relpath(out, dest)}")
+            continue
+        src_text, err = _oc.read_text_lf(src)
+        if err:
+            return [], notes, err
+        # 원본 파일이 없으면 설치본에 합성돼 있는 본문으로 폴백한다(규칙 증발 방지).
+        body = overlay_text or _overlay_body_from_render(src_text)
+        text, residuals, err = _promoted_render(src_text, body, src_id, new_id, comp_id, paths)
+        if err:
+            return [], notes, f"{os.path.relpath(src, dest)}: {err}"
+        if args.write:
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            _oc.write_text_lf(out, text)
+        written.append(os.path.relpath(out, dest))
+        seeded_any = True
+        for token in residuals:
+            notes.append(f"    ⚠️  {os.path.relpath(out, dest)}: 원본 정체성 잔존 — `{token}`")
+    if not seeded_any and not notes:
+        return [], notes, f"원본 렌더를 찾지 못함: {src_id} (.claude/.codex agents 어디에도 없음)"
+    return written, notes, None
+
+
 def _gen_roster(args, root):
     """EH-1: profile.components 기반 동적 implementer 에이전트 spec 생성 (install-time 고정 → generate-time 파생).
 
@@ -424,7 +592,11 @@ def _gen_roster(args, root):
         print("  profile.components 오류를 수정한 뒤 다시 실행하세요.", file=sys.stderr)
         return 1
     runtime = active_host(prof)
-    written, skipped, bad = [], [], []
+    source = getattr(args, "from_existing", None)
+    if source and not re.fullmatch(r"[A-Za-z0-9][\w-]{0,79}", source):
+        print(f"  ❌ --from-existing id 형식 오류: {source!r}", file=sys.stderr)
+        return 1
+    written, skipped, bad, seeded, seed_notes = [], [], [], [], []
     for comp in components:
         cid = (comp or {}).get("id")
         if not cid:
@@ -432,25 +604,52 @@ def _gen_roster(args, root):
         aid = f"implementer-{cid}"
         out = os.path.join(agents_dir, f"{aid}.md")
         if os.path.exists(out):
-            skipped.append(aid); continue   # create-only — 기존(손편집 가능) spec 보존
-        if args.write:
-            os.makedirs(agents_dir, exist_ok=True)
-            Path(out).write_text(
-                _implementer_spec_md(cid, comp.get("paths") or [], comp.get("model") or "opus",
-                                     runtime, component_model(comp, runtime)),
-                encoding="utf-8")
-        written.append(aid)
+            skipped.append(aid)             # create-only — 기존(손편집 가능) spec 보존
+        else:
+            if args.write:
+                os.makedirs(agents_dir, exist_ok=True)
+                Path(out).write_text(
+                    _implementer_spec_md(cid, comp.get("paths") or [], comp.get("model") or "opus",
+                                         runtime, component_model(comp, runtime)),
+                    encoding="utf-8")
+            written.append(aid)
+        # 시드는 spec 생성 여부와 **독립**이다. 이미 `--kind roster` 를 한 번 돌린 프로젝트는
+        # spec 만 있고 렌더는 없는 상태인데, spec 이 있다고 건너뛰면 승격 경로가 영원히 닫힌다
+        # (게다가 rc=0 · 시드 0건이라 사용자는 승계가 끝났다고 오인한다). 렌더 쪽 create-only 는
+        # _seed_from_existing 이 따로 판정한다.
+        if source:
+            files, notes, err = _seed_from_existing(args, args.dest, source, cid,
+                                                    comp.get("paths") or [])
+            if err:
+                print(f"  ❌ {aid} 시드 실패 — {err}", file=sys.stderr)
+                return 1
+            seeded.extend(files)
+            seed_notes.extend(notes)
     mode = "생성" if args.write else "생성예정(dry-run — --write 로 기록)"
     print(f"  {mode}: {len(written)}건 — {', '.join(written) or '없음'}")
     if skipped:
         print(f"  skip(기존 보존): {len(skipped)}건 — {', '.join(skipped)}")
     if bad:
         print(f"  ⚠️  id 없는 component {len(bad)}건 무시: {', '.join(bad)}")
+    if source:
+        label = "시드" if args.write else "시드예정(dry-run)"
+        print(f"  {label}(--from-existing {source}): {len(seeded)}건 — {', '.join(seeded) or '없음'}")
+        for note in seed_notes:
+            print(note)
+        if not seeded:
+            # 0 건을 조용히 성공으로 끝내면 승계가 끝났다고 오인한다. 이유를 못박아 출력한다.
+            print("  ℹ️  승격된 렌더 없음 — 대상 렌더가 이미 존재합니다(create-only). "
+                  "다시 시드하려면 해당 렌더를 지우고 재실행하세요.")
+        print("  다음(2단계): 시드된 렌더는 **프로젝트 소유**입니다 — 오버레이가 아니라 렌더를 직접 편집하세요.")
+        print("    1) 위 잔존 항목을 포함해 `/sage-asset` 으로 컴포넌트 정체성에 맞게 다듬고,")
+        print("    2) `sage generate --kind agent --id implementer-<comp> --write` 로 spec+claims 추출 + manifest 등록.")
+        return 0
     print("  다음(2단계): 이 명령은 spec 만 scaffold 합니다. 렌더는 런타임 AI 가 저작합니다 —")
     print("    1) `/sage-asset`(claude) 또는 `$sage-asset`(codex)로 각 implementer 의 양 host 렌더")
     print("       (.claude/agents/<id>.md + .codex/agents/<id>.md)를 저작하고,")
     print("    2) 저작 후 `sage generate --kind agent --id <id> --write` 로 spec+claims 추출 + manifest 등록.")
     print("    (1 없이 2 를 먼저 실행하면 '렌더 누락' 으로 실패합니다 — 이 명령은 렌더를 만들지 않습니다.)")
+    print("    (기존 implementer 의 프로젝트 규칙을 물려받으려면 `--from-existing implementer-a`.)")
     return 0
 
 
