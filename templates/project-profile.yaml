@@ -148,7 +148,7 @@ runtime:                         # host runtime 모델 (§2.2). Claude 특권화
   external_reviewer: clean_context_same_runtime   # opposite_runtime | clean_context_same_runtime
   asset_ssot: deferred
 
-team:                            # CORE 로스터(team.core). 역할명은 스택 중립 — 컴포넌트 매핑은 owns 가 담당. reviewer = Phase 05
+team:                            # CORE 로스터(team.core). 역할명은 스택 중립. reviewer = Phase 05
   # 아래 5인 외에 convention-checker 도 CORE 에이전트다(기본값으로 충분해 항목을 생략).
   # runtime 을 주려면 `convention-checker: { runtime: { effort: low } }` 처럼 추가하면 된다.
   # `runtime: { model, effort }` 은 선택. 넣으면 claude host 의 .claude/agents/<id>.md frontmatter 로
@@ -158,10 +158,13 @@ team:                            # CORE 로스터(team.core). 역할명은 스�
   #   effort : low | medium | high | xhigh | max | 양의 정수            (미설정 → high)
   # 예) reviewer: { enabled: true, runtime: { model: opus, effort: max }, cross_model: {...} }
   core:
+    # owns: 는 현재 어떤 코드도 값을 읽지 않는 죽은 필드다(알려진 키라 통과만 될 뿐 무동작).
+    # 실제 컴포넌트→경로 소유는 profile.components[].paths 가 담당하고, `sage generate --kind roster`
+    # 가 그 paths 로 implementer-<컴포넌트id> 에이전트의 owns 렌더를 만든다.
     leader:        { enabled: true }
-    implementer-a: { enabled: true,  owns: [] }   # profile.components 의 컴포넌트 id 1개 할당(예: [core])
-    implementer-b: { enabled: true,  owns: [] }   # 두 번째 컴포넌트(단일 컴포넌트면 enabled:false 로 끔)
-    qa:            { enabled: true,  owns: ["**/test/**"] }
+    implementer-a: { enabled: true }   # 컴포넌트 소유는 profile.components[].paths 로 지정
+    implementer-b: { enabled: true }   # 단일 컴포넌트면 enabled:false 로 끔
+    qa:            { enabled: true }
     reviewer: { enabled: true,
                 cross_model: { capability: from_options.cross_model,
                                on_unavailable: block } }
