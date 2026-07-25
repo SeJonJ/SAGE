@@ -1088,6 +1088,14 @@ def _install_preconditions(dest, args, manifest_path):
 
 def run(args) -> int:
     """Acquire every write-surface lock and commit or roll back the install."""
+    # 엔진 저장소에 자기 자신을 설치하면 프로필 없는 루트에 게이트 hook 이 등록돼 SAGE 자신의
+    # 게이트가 SAGE 개발을 막는다(2026-06-17·07-24 두 번 발생). --dest 기본값이 cwd 라 엔진
+    # 저장소에서 무인자 실행이 곧 이 사고다. 예외 플래그를 두지 않는다 — 플래그가 곧 우회로다.
+    if _resources.is_engine_source_tree(args.dest):
+        print("[sage install] BLOCK: 설치 대상이 SAGE 엔진 저장소입니다 — 엔진 저장소는 프레임워크와 "
+              "CORE 만 담고 설치 산출물을 보유하지 않습니다.\n"
+              "  소비 프로젝트 디렉토리에서 실행하거나 --dest 로 그 경로를 지정하세요.", file=sys.stderr)
+        return 2
     skill_scope, scope_error = _resolve_skill_scope(args)
     if scope_error:
         print(f"[sage install] TOOL ERROR: {scope_error}", file=sys.stderr)

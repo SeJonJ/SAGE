@@ -63,6 +63,13 @@ class TestInstall(unittest.TestCase):
             self.assertIn("sage:", profile)
             self.assertIn(f'required_version: "{__version__}"', profile)
 
+    def test_install_into_the_engine_repo_is_refused(self):
+        # 엔진 저장소에 자기 자신을 설치하면 프로필 없는 루트에 게이트 hook 이 등록돼 SAGE 자신의
+        # 게이트가 SAGE 개발을 막는다(2026-06-17·07-24 두 번 발생). --dest 기본값이 cwd 라 엔진
+        # 저장소에서 무인자 실행이 곧 이 사고다.
+        self.assertEqual(install.run(Args("claude", REPO)), 2)
+        self.assertFalse(Path(REPO, ".claude", "settings.json").exists())
+
     def test_bootstrap_skill_inventory_contains_full_and_local_init(self):
         self.assertIn("sage-init", install.core_skill_ids())
         self.assertIn("sage-init-local", install.core_skill_ids())

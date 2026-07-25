@@ -45,3 +45,21 @@ def hooks_src_dir() -> str:
 
 def hook_specs_dir() -> str:
     return os.path.join(sage_root(), "docs", "sage_harness", "hooks")
+
+
+def is_engine_source_tree(path) -> bool:
+    """path 가 SAGE 엔진 저장소(프레임워크 소스)인지. 설치 대상 프로젝트면 False.
+
+    엔진 저장소는 프레임워크와 CORE 만 담고 소비 프로젝트 인스턴스를 두지 않는다. 그래서 host
+    등록 산출물(`.claude/settings.json`·`.claude/hooks/*.sh`)이 여기 생기면 SAGE 자신의 게이트가
+    프로필 없는 디렉터리에서 fail-closed 되어 SAGE 개발을 막는다(2026-06-17·07-24 두 번 발생).
+
+    판별은 두 표식의 결합이다 — `templates/core/framework/`(엔진만 보유: 설치 대상은 이 트리의
+    **내용**을 루트에 받는다)와 패키지 소스 `sage/cli.py`. 설치 산출물에는 둘 다 없다. 마커 파일이
+    아니라 트리 구조로 판별하는 이유는, 지울 수 있는 마커는 곧 우회로가 되기 때문이다.
+    """
+    if not path:
+        return False
+    root = os.path.abspath(path)
+    return (os.path.isdir(os.path.join(root, "templates", "core", "framework"))
+            and os.path.isfile(os.path.join(root, "sage", "cli.py")))

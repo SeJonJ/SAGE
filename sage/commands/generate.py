@@ -242,6 +242,16 @@ def _gen_hook(args, root):
                   ", ".join(os.path.relpath(p, root) for p in missing_runtime), file=sys.stderr)
             return 1
 
+    # 엔진 저장소에서 릴리즈 스탬프용으로 generate 를 돌리면(정당한 용도) 부수적으로 host 등록
+    # 산출물이 저장소 루트에 생겼다. 그러면 다음 세션에서 SAGE 자신의 게이트가 프로필 없는
+    # 디렉터리를 fail-closed 로 막아 SAGE 개발이 멈춘다(2026-06-17·07-24 두 번). 스탬프는 그대로
+    # 하고 등록·shim 쓰기만 막는다 — 검증(누락 adapter FAIL)은 유지하고 내용은 dry-run 으로 보인다.
+    from sage import _resources
+    engine_tree = _resources.is_engine_source_tree(args.dest)
+    if args.write and engine_tree:
+        print("  ℹ️  엔진 저장소 — host 등록 산출물(.claude/settings.json · hooks/*.sh) 쓰기 생략. "
+              "엔진 저장소는 설치 산출물을 보유하지 않습니다(manifest 스탬프는 그대로 수행).")
+
     targets = ["claude", "codex"] if args.target == "both" else [args.target]
     rc = 0
     for tgt in targets:
@@ -257,7 +267,7 @@ def _gen_hook(args, root):
             doc = {"hooks": reg}
             outp = os.path.join(args.dest, ".codex", "hooks.json")
         body = json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
-        if args.write:
+        if args.write and not engine_tree:
             os.makedirs(os.path.dirname(outp), exist_ok=True)
             # 기존 settings.json 에 hooks 키만 갱신(다른 설정 보존)
             if tgt == "claude" and os.path.exists(outp):
@@ -272,7 +282,8 @@ def _gen_hook(args, root):
             # 등록만으로는 실행 불가 → hook 실행 shim 을 {host}/hooks/ 에 배치(P0-2)
             _write_hook_shims(args, root, manifest, reg_ids, tgt)
         else:
-            print(f"== generate {tgt} (dry-run) ==\n{body}")
+            label = "engine-skip" if engine_tree else "dry-run"
+            print(f"== generate {tgt} ({label}) ==\n{body}")
 
     # manifest 스탬프 (--write) — profile 컴파일은 위에서 fail-closed 처리됨. --id 면 그 hook 만 재스탬프.
     if args.write and rc == 0:
@@ -525,7 +536,13 @@ def _gen_mcp(args, root):
     # 3. 쓰기(전 target 검증 통과 후에만) 또는 dry-run.
     #    ★ codex R4 P1: temp 파일에 전부 쓴 뒤 os.replace 로 일괄 승격(all-or-nothing). 중간 OSError 시
     #    기존 파일 무손상(temp 만 정리) — 부분상태 방지.
-    if args.write:
+    from sage import _resources
+    # hook 등록과 같은 이유로 엔진 저장소에는 host 산출물을 쓰지 않는다(.mcp.json·config.toml).
+    # manifest 스탬프(4단계)는 그대로 수행한다 — 그건 엔진 저장소가 소유하는 파일이다.
+    write_host = args.write and not _resources.is_engine_source_tree(args.dest)
+    if args.write and not write_host:
+        print("  ℹ️  엔진 저장소 — host MCP 산출물 쓰기 생략(엔진 저장소는 설치 산출물을 보유하지 않습니다).")
+    if write_host:
         staged = []  # [(tmp, final, label)]
         try:
             for label, outp, body, _dry in plan:
@@ -549,8 +566,9 @@ def _gen_mcp(args, root):
             print(f"[sage generate] FAIL: 산출물 쓰기 실패 — {e} (기존 파일 무손상).", file=sys.stderr)
             return 1
     else:
+        label_kind = "engine-skip" if args.write else "dry-run"
         for label, _outp, body, dry in plan:
-            print(f"== generate {label} (dry-run) ==\n{dry if dry is not None else body}")
+            print(f"== generate {label} ({label_kind}) ==\n{dry if dry is not None else body}")
 
     # 4. manifest 스탬프 (--write)
     if args.write:
