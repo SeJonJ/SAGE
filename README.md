@@ -3,7 +3,7 @@
 [![CI](https://github.com/SeJonJ/SAGE/actions/workflows/ci.yml/badge.svg)](https://github.com/SeJonJ/SAGE/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/sage-harness)](https://pypi.org/project/sage-harness/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/sage-harness/)
-[![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 **AI 코딩 에이전트를 위한 거버넌스 하네스.** 자산마다 spec 파일 하나 — SAGE가 런타임 설정을 생성하고, drift를 검증하고, hook이 실행 시점에 위반을 차단합니다. Claude Code와 Codex 양쪽에서 동작합니다.
 
@@ -129,6 +129,7 @@ docs/.../mcps/{id}.md               .mcp.json                           │
 - **단일 모델 편향 방지** — cross-model 리뷰로 반대 런타임이 독립 리뷰합니다
 - **침묵 비활성 방지** — profile 오타가 게이트를 조용히 끄는 것을 `sage validate`가 fail-closed로 적발합니다
 - **도메인별 L0 예외** — 일반 이미지/문서는 L0로 두면서 `risk.domains[].path_globs`에 속한 자산은 해당 L1–L3 위험도로 승격합니다
+- **묵은 의문 위에 새 구현 금지** — 미해결 `!sage-feedback` 마커가 남은 파일에 새 구현을 쌓는 쓰기를 `pre-implementation-gate`가 막습니다
 
 판단(리뷰·분석)은 AI가, 경계(게이트·무결성)는 SAGE가 결정론으로 — 판단이 틀려도 게이트는 무너지지 않습니다. 2층 불변식·실패 정책(fail-open/closed)·신뢰 경계(막지 않는 것 포함)는 [ARCHITECTURE.md](docs/ARCHITECTURE.md)에 정리돼 있습니다.
 
@@ -214,6 +215,7 @@ Hook은 정책 판정(`{id}_core.py`)과 런타임 I/O(어댑터)가 분리되�
 | `sage-asset` | 자산 추가·수정 (대화 → `sage generate`) |
 | `sage-asset-override` | 기존 CORE 에이전트/스킬을 프로젝트 로컬 overlay로 덮어쓰기 (`sage install --force`에도 보존) |
 | `sage-profile-modify` | profile 값 대화형 수정 (`governance_docs` 포함) |
+| `sage-feedback` | 완료된 사이클 코드에 남긴 개발자 의문 마커를 그 사이클의 plan 문서 근거로 판정·해소 |
 
 ---
 
@@ -227,6 +229,7 @@ Hook은 정책 판정(`{id}_core.py`)과 런타임 I/O(어댑터)가 분리되�
 |---|---|
 | `sage install --host claude` / `sage install --host codex --skill-scope {global,project-local}` | 현재 프로젝트에 SAGE 기본 파일과 명시적 CORE skill scope 설치 |
 | `sage generate --kind {hook,agent,skill,roster,mcp}` | spec → 설정 파일 생성 (`--write` 없으면 미리보기만) |
+| `sage generate --kind roster --from-existing implementer-a` | 기존 implementer의 렌더+프로젝트 overlay를 새 `implementer-<component>` 정체성으로 승격 시드 |
 
 ### 검증 · 관리
 
@@ -239,6 +242,7 @@ Hook은 정책 판정(`{id}_core.py`)과 런타임 I/O(어댑터)가 분리되�
 | `sage doctor` | 실행 환경 · 리뷰 설정 · cross-model 가용성 점검 |
 | `sage models --host HOST` | host 모델 후보와 출처/검증 수준 표시(네트워크 probe 없음) |
 | `sage change "설명"` | 변경 의도에 맞는 SAGE 명령 안내 |
+| `sage feedback` | `sage-feedback ::` 개발자 마커 스캔 (`--blocking-only`, `--exit-code`, `--release-gate`, `--record`) |
 | `sage override --reason R --ttl T` | 게이트 임시 우회 (사유+기간 필수, 감사 기록) |
 | `sage acceptance-waiver {grant,list,revoke}` | exact L3 acceptance ID의 운영 검증 유예와 grant/use/revoke 감사 |
 | `sage authority {inspect,attest,gate}` | 보호된 CI의 base/head 최고 위험도, exact PDCA 증거, attestation 권위 게이트 |
@@ -317,6 +321,12 @@ options:
   cross_model: true    # Phase 05 리뷰를 반대 런타임에서 독립 실행
   obsidian: optional   # Obsidian vault 지식 캡처
   codegraph: optional  # CodeGraph MCP 연동
+
+feedback:              # 개발자 피드백 마커 (/sage-feedback)
+  enabled: false       # 마커 스캔·처리 기능
+  block_release: false # 미해결 !마커로 릴리즈 차단 (CI가 `sage feedback --release-gate` 호출)
+  record: false        # 처리 이력 기록 (.sage/feedback.jsonl은 켜면 항상 기록)
+  record_target: auto  # vault_path 있으면 사이클 노트도 작성
 ```
 
 ### 거버넌스 문서 라우팅 (`governance_docs`)
@@ -471,6 +481,13 @@ sage validate
 
 ## 라이선스
 
-CC BY-NC-SA 4.0 — [LICENSE](LICENSE) 참조.
+Apache License 2.0 — [LICENSE](LICENSE) · [NOTICE](NOTICE) 참조.
+
+상업적 이용·수정·재배포가 모두 허용되며, 조건은 **저작자 표시**입니다: 배포물에 라이선스 사본과
+`NOTICE`를 포함하고, 파일을 수정했다면 그 사실을 명시하세요. `sage install`이 대상 저장소로 복사하는
+프레임워크 자산(`AGENT_GUIDE.md`·`docs/agent/**`·CORE 렌더·`scripts/sage_harness/hooks/**`)도 같은
+라이선스를 따릅니다.
+
+> v0.9.71 이전 배포분은 CC BY-NC-SA 4.0으로 공개됐습니다. 라이선스 변경은 이후 버전부터 적용됩니다.
 
 비상업적 사용 및 동일 조건 재배포 허용. 상업적 이용은 저작권자와 별도 협의.

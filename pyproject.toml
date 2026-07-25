@@ -3,7 +3,8 @@ name = "sage-harness"
 version = "0.9.71"
 description = "Governance harness for AI coding agents — spec-SSOT closed loop for Claude Code and Codex"
 readme = "README.md"
-license = { text = "CC BY-NC-SA 4.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "SeJonJ", email = "wkdtpwhs@gmail.com" }]
 requires-python = ">=3.10"
 keywords = [
@@ -13,7 +14,6 @@ keywords = [
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
-  "License :: Other/Proprietary License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
@@ -42,7 +42,7 @@ sage = "sage.cli:main"
 sage-hook = "sage.hook_entry:main"
 
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
