@@ -243,5 +243,9 @@ echo "### 49. context snapshot/restore (phase binding + compaction consumer + ma
 python3 "$HERE/test_context.py" || rc=1
 
 echo ""
+echo "### 50. sage-feedback markers (language-agnostic token scan + git-tracked scope + profile gate)"
+python3 "$HERE/test_feedback.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

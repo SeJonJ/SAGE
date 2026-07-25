@@ -51,6 +51,9 @@ _ACCEPTANCE_KEYS = {"enabled", "require_for_risk", "statuses", "unresolved_statu
                     "report_gate_enforce", "report_gate_by_risk", "waiver"}
 _ACCEPTANCE_TIERS = {"L1", "L2", "L3"}
 _CANONICAL_ACCEPTANCE_STATUSES = {"PASS", "FAIL", "NOT TESTED", "N/A"}
+# §10-a-C sage-feedback: 닫힌 키 어휘. 미지 키는 오타로 게이트가 조용히 꺼지는 걸 막으려 FAIL.
+_FEEDBACK_KEYS = {"enabled", "block_release", "record", "record_target"}
+_FEEDBACK_RECORD_TARGETS = {"auto", "sage", "vault"}
 
 
 def _review_loop_issues(profile):
@@ -652,6 +655,47 @@ def _knowledge_capture_issues(profile):
     return issues
 
 
+def _feedback_issues(profile):
+    """feedback(§10-a-C sage-feedback 마커) 섹션 검증 — 키 어휘 닫힘 + 타입 + 의존.
+
+    `enabled`/`block_release` 는 게이트 강제력에 직접 관여하므로 비-bool 은 `is True` 로
+    침묵 off 되는 걸 막아 FAIL 로 올린다(knowledge_capture 의 부가 출력 플래그가 WARN 인 것과 대비).
+    `record`/`record_target` 은 기록 부가 기능이라 WARN.
+    """
+    section = profile.get("feedback")
+    if section is None:
+        return []                      # 섹션 미설정 = 기능 off (하위호환)
+    if not isinstance(section, dict):
+        return [("FAIL", f"feedback={section!r} 는 매핑이어야 함(feedback: {{enabled: ...}})")]
+
+    issues = []
+    unknown = sorted((str(k) for k in section if k not in _FEEDBACK_KEYS))
+    if unknown:
+        issues.append(("FAIL", f"feedback 미지 키: {', '.join(unknown)} — "
+                               f"허용 키는 {', '.join(sorted(_FEEDBACK_KEYS))}"))
+
+    for key in ("enabled", "block_release"):
+        value = section.get(key)
+        if value is not None and not isinstance(value, bool):
+            issues.append(("FAIL", f"feedback.{key}={value!r} 는 bool 이어야 함(true/false). "
+                                   f"비-bool 은 침묵 off 되어 게이트가 사라짐"))
+
+    record = section.get("record")
+    if record is not None and not isinstance(record, bool):
+        issues.append(("WARN", f"feedback.record={record!r} 는 bool 이어야 함(true/false). 비-bool 은 침묵 off 됨"))
+
+    target = section.get("record_target")
+    if target is not None and target not in _FEEDBACK_RECORD_TARGETS:
+        issues.append(("WARN", f"feedback.record_target={target!r} 는 "
+                               f"{'|'.join(sorted(_FEEDBACK_RECORD_TARGETS))} 중 하나여야 함"))
+
+    # block_release 는 enabled 없이는 무동작 — 침묵 무시 대신 명시적으로 알린다.
+    if section.get("block_release") is True and section.get("enabled") is not True:
+        issues.append(("WARN", "feedback.block_release=true 이나 feedback.enabled 가 true 가 아님 → "
+                               "마커를 스캔하지 않으므로 릴리즈 차단 무동작"))
+    return issues
+
+
 def _governance_docs_issues(profile, root):
     """governance_docs(FB25 라우팅 블록 소스) 의미검증 — fail-closed.
 
@@ -739,7 +783,8 @@ def validate_profile(profile, root):
         issues = issues + _semantic_issues(profile, root) + _review_loop_issues(profile) \
             + _acceptance_issues(profile) + _knowledge_capture_issues(profile) \
             + _cross_model_issues(profile) + _team_agent_issues(profile) + _retro_gate_issues(profile) \
-            + _writeback_gate_issues(profile) + _governance_docs_issues(profile, root)
+            + _writeback_gate_issues(profile) + _governance_docs_issues(profile, root) \
+            + _feedback_issues(profile)
         issues = issues + _runtime_host_issues(profile) + _component_model_issues(profile) \
             + context_profile_issues(profile)
     except Exception as e:

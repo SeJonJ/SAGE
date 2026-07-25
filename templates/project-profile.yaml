@@ -219,6 +219,15 @@ knowledge_capture:               # obsidian
   loop_audit_dashboard: false    # 루프 종료 시 vault 에 Loop A 감사 대시보드 자동 갱신(sage review-loop show --vault). vault_path 필요
   retro_note: false              # sage retro 시 vault 에 human-gate 회고 노트 자동 작성(--vault). vault_path 필요
 
+feedback:                        # /sage-feedback — 완료된 사이클 코드에 개발자가 남기는 의문 마커
+  # 마커는 `sage-feedback ::` 토큰으로 남긴다. 주석 기호는 그 언어 것을 쓰면 되고(`//`·`#`·`--`·`<!-- -->`)
+  # 스캔은 토큰만 보므로 언어 무관하다. `!sage-feedback ::` 는 차단성(미해결이면 03 구현 진입 차단).
+  enabled: false                 # 마커 스캔·처리 기능. false 면 sage feedback 이 무동작
+  block_release: false           # !마커 미해결 시 릴리즈도 차단(03 구현 진입 차단은 마커 의미라 항상 유효)
+  record: false                  # 처리 이력 기록. 기본은 가볍게(채팅 응답만, 기록 없음)
+  record_target: auto            # auto = vault_path 있으면 vault(사이클 stem 단위 노트),
+                                 #        없으면 .sage/feedback.jsonl(append-only)
+
 context_management:
   compaction:
     enabled: true
