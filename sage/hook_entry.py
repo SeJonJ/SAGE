@@ -69,7 +69,25 @@ def _load_run_hook(core_dir):
     return mod
 
 
-def _prepare_gate_profile(root, hook):
+def _missing_profile_hint(root, runtime):
+    """프로필이 아예 없을 때의 복구 안내.
+
+    게이트는 그대로 fail-closed 로 막는다(설치 마커 유무로 게이트를 통과시키면
+    마커 하나만 지워도 게이트가 사라지는 우회로가 생긴다). 다만 원인이
+    '설치가 깨짐' 인지 '애초에 SAGE 설치 대상이 아닌 디렉터리' 인지에 따라
+    할 일이 정반대라, 안내 문구만 갈라준다.
+    """
+    manifest = os.path.join(root, "docs", "sage_harness", ".manifest.json")
+    if os.path.exists(manifest):
+        return ("설치 흔적(manifest)은 있으나 프로필이 없다 — 설치가 손상됐다. "
+                "`sage install --force` 로 복구한 뒤 `sage doctor` 로 확인하라.")
+    settings = {"claude": ".claude/settings.json", "codex": ".codex/config.toml"}.get(runtime, "hook 설정")
+    return (f"설치 흔적(manifest)도 없다 — 이 디렉터리는 SAGE 설치 대상이 아닐 수 있다. "
+            f"의도한 설치라면 `sage install` 을, 아니라면 {settings} 의 sage-hook 등록을 제거하라 "
+            f"(설치 대상이 아닌 곳에 hook 만 남으면 모든 편집이 이렇게 차단된다).")
+
+
+def _prepare_gate_profile(root, hook, runtime=None):
     """Inject the compiled profile for every consumer; safety hooks fail closed on drift."""
     if hook not in _PROFILE_HOOKS:
         return None
@@ -86,6 +104,8 @@ def _prepare_gate_profile(root, hook):
             yaml_profile = yaml.safe_load(fh) or {}
     except Exception as e:
         message = f"프로필 YAML 로드 실패({yaml_path}): {type(e).__name__}: {e}"
+        if isinstance(e, FileNotFoundError):
+            message = f"{message}\n  → {_missing_profile_hint(root, runtime)}"
         return message if required else None
     try:
         with open(json_path, encoding="utf-8") as fh:
@@ -172,7 +192,7 @@ def main():
     core_dir = _resolve_core_dir(root, a.core_dir)
     raw_text = sys.stdin.read() if not sys.stdin.isatty() else ""
     _notify_version_contract(root, a.hook)
-    profile_error = _prepare_gate_profile(root, a.hook)
+    profile_error = _prepare_gate_profile(root, a.hook, a.runtime)
     if profile_error:
         return _render_bootstrap_block(a.runtime, a.hook, profile_error)
     try:

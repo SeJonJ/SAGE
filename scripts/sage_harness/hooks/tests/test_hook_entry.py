@@ -234,6 +234,35 @@ class TestDispatchIntegration(unittest.TestCase):
             self.assertEqual(r.returncode, 2)
             self.assertIn("프로필 YAML 로드 실패", r.stderr)
 
+    def test_missing_profile_hint_distinguishes_uninstalled_from_broken(self):
+        """10-b-B: 프로필 부재 시에도 차단은 유지하되, 원인별 복구 안내를 가른다.
+
+        설치 마커 유무로 게이트를 '통과' 시키면 마커 하나만 지워도 게이트가
+        사라지므로, 갈라지는 것은 exit code 가 아니라 안내 문구뿐이어야 한다.
+        """
+        with tempfile.TemporaryDirectory() as root:  # manifest 없음 = 설치 대상 아님
+            r = self._run("pre-implementation-gate", stdin="{}", root=root)
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("SAGE 설치 대상이 아닐 수 있다", r.stderr)
+            self.assertIn(".claude/settings.json", r.stderr)
+
+        with tempfile.TemporaryDirectory() as root:  # manifest 있음 = 설치 손상
+            os.makedirs(os.path.join(root, "docs", "sage_harness"), exist_ok=True)
+            with open(os.path.join(root, "docs", "sage_harness", ".manifest.json"),
+                      "w", encoding="utf-8") as fh:
+                json.dump({"generator_version": __version__}, fh)
+            r = self._run("pre-implementation-gate", stdin="{}", root=root)
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("설치가 손상됐다", r.stderr)
+            self.assertNotIn("설치 대상이 아닐 수 있다", r.stderr)
+
+    def test_missing_profile_hint_names_host_specific_registration(self):
+        with tempfile.TemporaryDirectory() as root:
+            r = self._run("pre-implementation-gate", stdin="{}", root=root, runtime="codex")
+            self.assertEqual(r.returncode, 2)
+            self.assertIn(".codex/config.toml", r.stderr)
+            self.assertNotIn(".claude/settings.json", r.stderr)
+
     def test_gate_blocks_broken_compiled_profile(self):
         with tempfile.TemporaryDirectory() as root:
             self._write_profile(root)
