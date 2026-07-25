@@ -39,7 +39,8 @@ CORE_IDS = {
     }),
     "skills": frozenset({
         "sage-cycle", "sage-plan", "sage-team", "sage-review", "sage-asset",
-        "sage-profile-modify", "sage-asset-override", "sage-init", "sage-init-local",
+        "sage-profile-modify", "sage-asset-override", "sage-feedback",
+        "sage-init", "sage-init-local",
     }),
     "framework": frozenset({"AGENT_GUIDE", "CLAUDE", "CODEX", "AGENTS"}),
 }

@@ -26,8 +26,8 @@ def _base_renders(dest):
         p = os.path.join(dest, f".claude/agents/{aid}.md")
         os.makedirs(os.path.dirname(p), exist_ok=True)
         Path(p).write_text(f"# {aid}\nCORE body.\n", encoding="utf-8")
-    for sid in ["sage-cycle", "sage-plan", "sage-team", "sage-review", "sage-asset",
-                "sage-profile-modify", "sage-asset-override", "sage-init", "sage-init-local"]:
+    # CORE_IDS 에서 파생 — 하드코딩하면 CORE skill 추가 시 픽스처만 조용히 뒤처진다.
+    for sid in sorted(cls.CORE_IDS["skills"]):
         p = os.path.join(dest, f".claude/skills/{sid}/SKILL.md")
         os.makedirs(os.path.dirname(p), exist_ok=True)
         Path(p).write_text(f"# {sid}\nCORE body.\n", encoding="utf-8")

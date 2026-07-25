@@ -196,6 +196,7 @@ class TestInstall(unittest.TestCase):
                 "docs/sage_harness/skills/sage-review.md",
                 "docs/sage_harness/skills/sage-asset.md",
                 "docs/sage_harness/skills/sage-profile-modify.md",
+                "docs/sage_harness/skills/sage-feedback.md",
                 # CORE skill 렌더 (Claude Code .claude/skills/ 자동발견)
                 ".claude/skills/sage-cycle/SKILL.md",
                 ".claude/skills/sage-plan/SKILL.md",
@@ -203,6 +204,7 @@ class TestInstall(unittest.TestCase):
                 ".claude/skills/sage-review/SKILL.md",
                 ".claude/skills/sage-asset/SKILL.md",
                 ".claude/skills/sage-profile-modify/SKILL.md",
+                ".claude/skills/sage-feedback/SKILL.md",
             ):
                 self.assertTrue(os.path.exists(os.path.join(d, rel)), rel)
             guide = Path(d, "AGENT_GUIDE.md").read_text(encoding="utf-8")

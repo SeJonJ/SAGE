@@ -34,8 +34,9 @@ def _base_renders(dest):
     # 최소 CORE 렌더 base 배치(agents 6 + AGENT_GUIDE). 테스트는 claude host.
     for aid in ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]:
         _mk_render(dest, f".claude/agents/{aid}.md", f"# {aid}\nCORE body.\n")
-    for sid in ["sage-cycle", "sage-plan", "sage-team", "sage-review", "sage-asset",
-                "sage-profile-modify", "sage-asset-override", "sage-init", "sage-init-local"]:
+    # CORE_IDS 에서 파생 — 하드코딩하면 CORE skill 추가 시 픽스처만 조용히 뒤처진다
+    # (아래 test_all_renders_anchored 는 len(CORE_IDS["skills"]) 로 단언하므로 불일치가 난다).
+    for sid in sorted(m._cls.CORE_IDS["skills"]):
         _mk_render(dest, f".claude/skills/{sid}/SKILL.md", f"# {sid}\nCORE body.\n")
     _mk_render(dest, "AGENT_GUIDE.md", "# AGENT_GUIDE\nnon-negotiable.\n")
     _mk_render(dest, "CLAUDE.md", "# CLAUDE\nwrapper.\n")
