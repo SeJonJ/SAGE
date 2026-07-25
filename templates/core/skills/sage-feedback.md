@@ -42,8 +42,9 @@ Runs independently of the PDCA cycle — it never re-runs a cycle and never edit
 6. Record each outcome with `sage feedback --record --path <p> --line <n> --verdict
    fixed|intentional|undetermined --note "<one line>" --cycle-stem <stem>`. Call it
    unconditionally — the profile decides: `feedback.record: false` (default) is a no-op that
-   says so, and `record_target` picks the destination (`.sage/feedback.jsonl` append-only audit
-   always; `auto` adds a per-cycle vault note when `vault_path` is set).
+   says so. When on, the `.sage/feedback.jsonl` append-only audit is always written and
+   `record_target` only adds the human-readable per-cycle vault note (`auto` = when
+   `vault_path` is set, `sage` = never, `vault` = required).
 
 ## advisory_scope
 - This skill may edit source code — unlike `/sage-review`'s reviewer, which is read-only by

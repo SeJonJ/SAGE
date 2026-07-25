@@ -260,7 +260,10 @@ class TestDispatchIntegration(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             r = self._run("pre-implementation-gate", stdin="{}", root=root, runtime="codex")
             self.assertEqual(r.returncode, 2)
-            self.assertIn(".codex/config.toml", r.stderr)
+            # codex 의 hook 등록은 hooks.json 이다. config.toml 은 MCP managed-block 소유라
+            # 그걸 지워도 차단이 풀리지 않는다(안내가 가리켜야 할 파일이 아님).
+            self.assertIn(".codex/hooks.json", r.stderr)
+            self.assertNotIn("config.toml", r.stderr)
             self.assertNotIn(".claude/settings.json", r.stderr)
 
     def test_gate_blocks_broken_compiled_profile(self):
@@ -427,6 +430,56 @@ class TestDispatchIntegration(unittest.TestCase):
                                     "--core-dir", CORE], input="{}", capture_output=True, text=True,
                                    cwd=cwd, env=env)
                 self.assertEqual(r.returncode, 0, r.stderr)
+
+
+class TestStopRetryNotBlockedForever(unittest.TestCase):
+    """프로필 부재는 재시도해도 낫지 않는다 — Stop 재시도까지 막으면 세션이 영원히 안 끝난다.
+
+    플랫폼은 Stop hook 이 한 번 막으면 다음 입력에 `stop_hook_active: true` 를 실어 보낸다.
+    다른 게이트(retro_gate 등)는 이미 재시도에서 WARN 으로 낮추는데, 프로필 preflight 만
+    그 규칙 밖에 있어 무한 차단이 됐다.
+    """
+
+    def _run(self, stdin, runtime="claude"):
+        with tempfile.TemporaryDirectory() as root:      # 프로필 없는 루트
+            return subprocess.run([sys.executable, "-m", "sage.hook_entry",
+                                   "--runtime", runtime, "--hook", "stop-compliance-report",
+                                   "--root", root, "--core-dir", CORE],
+                                  input=stdin, capture_output=True, text=True, cwd=REPO)
+
+    def test_first_stop_still_blocks(self):
+        r = self._run(json.dumps({"stop_hook_active": False}))
+        self.assertEqual(r.returncode, 2, r.stderr)
+
+    def test_retry_passes_with_reason_on_stderr(self):
+        r = self._run(json.dumps({"stop_hook_active": True}))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("stop_hook_active", r.stderr)      # 조용히 통과하지 않는다
+
+    def test_string_true_is_a_retry_but_string_false_is_not(self):
+        # bool("false") 가 True 라 문자열을 그대로 믿으면 첫 차단이 사라진다.
+        self.assertEqual(self._run(json.dumps({"stop_hook_active": "true"})).returncode, 0)
+        self.assertEqual(self._run(json.dumps({"stop_hook_active": "false"})).returncode, 2)
+
+    def test_malformed_input_is_treated_as_first_attempt(self):
+        self.assertEqual(self._run("{not json").returncode, 2)
+
+    def test_other_gate_hooks_are_unaffected_by_the_flag(self):
+        # 재시도 완화는 Stop 프로토콜에만 있는 것 — 구현 게이트가 이 플래그로 열리면 안 된다.
+        with tempfile.TemporaryDirectory() as root:
+            r = subprocess.run([sys.executable, "-m", "sage.hook_entry",
+                                "--runtime", "claude", "--hook", "pre-implementation-gate",
+                                "--root", root, "--core-dir", CORE],
+                               input=json.dumps({"stop_hook_active": True}),
+                               capture_output=True, text=True, cwd=REPO)
+            self.assertEqual(r.returncode, 2, r.stderr)
+
+    def test_codex_recovery_hint_points_at_the_real_registration_file(self):
+        # `.codex/config.toml` 은 MCP managed-block 소유다. 안내가 엉뚱한 파일을 가리키면
+        # 사용자가 지워도 차단이 안 풀린다.
+        hint = hook_entry._missing_profile_hint(tempfile.gettempdir(), "codex")
+        self.assertIn(".codex/hooks.json", hint)
+        self.assertNotIn("config.toml", hint)
 
 
 if __name__ == "__main__":

@@ -81,7 +81,9 @@ def _missing_profile_hint(root, runtime):
     if os.path.exists(manifest):
         return ("설치 흔적(manifest)은 있으나 프로필이 없다 — 설치가 손상됐다. "
                 "`sage install --force` 로 복구한 뒤 `sage doctor` 로 확인하라.")
-    settings = {"claude": ".claude/settings.json", "codex": ".codex/config.toml"}.get(runtime, "hook 설정")
+    # codex 의 hook 등록은 `.codex/hooks.json` 이다(`config.toml` 은 MCP managed-block 소유).
+    # 안내가 엉뚱한 파일을 가리키면 사용자가 지워도 차단이 안 풀린다.
+    settings = {"claude": ".claude/settings.json", "codex": ".codex/hooks.json"}.get(runtime, "hook 설정")
     return (f"설치 흔적(manifest)도 없다 — 이 디렉터리는 SAGE 설치 대상이 아닐 수 있다. "
             f"의도한 설치라면 `sage install` 을, 아니라면 {settings} 의 sage-hook 등록을 제거하라 "
             f"(설치 대상이 아닌 곳에 hook 만 남으면 모든 편집이 이렇게 차단된다).")
@@ -129,6 +131,31 @@ def _prepare_gate_profile(root, hook, runtime=None):
 
     os.environ["SAGE_PROFILE"] = json_path
     return None
+
+
+def _is_stop_retry(hook, raw_text):
+    """Stop 재시도(`stop_hook_active`)인가 — 프로필 preflight 차단을 풀어야 하는 유일한 경우.
+
+    플랫폼은 Stop hook 이 한 번 막으면 다음 Stop 입력에 `stop_hook_active: true` 를 실어 보낸다.
+    거기서도 막으면 에이전트가 영원히 종료하지 못한다. 프로필 부재는 **재시도해도 저절로 낫지
+    않는** 조건이라, 여기서 계속 막으면 그 무한루프가 확정된다. 그래서 재시도 1회는 통과시키되
+    조용히 넘기지 않고 stderr 로 원인을 남긴다(다른 게이트들의 재시도 degrade 와 같은 방향).
+
+    판정은 runtime 의 `_stop_hook_active` 와 같은 규칙 — bool True 와 문자열 "true" 만 active.
+    `bool("false")` 가 True 라 문자열 "false" 를 재시도로 오인하면 첫 차단이 사라진다.
+    """
+    if hook != "stop-compliance-report":
+        return False
+    try:
+        raw = json.loads(raw_text or "{}")
+    except Exception:
+        return False                      # 파싱 불가 = 재시도 근거 없음 → 첫 시도로 취급(teeth 보존)
+    if not isinstance(raw, dict):
+        return False
+    value = raw.get("stop_hook_active")
+    if value is True:
+        return True
+    return isinstance(value, str) and value.strip().lower() == "true"
 
 
 def _render_bootstrap_block(runtime, hook, message):
@@ -194,6 +221,10 @@ def main():
     _notify_version_contract(root, a.hook)
     profile_error = _prepare_gate_profile(root, a.hook, a.runtime)
     if profile_error:
+        if _is_stop_retry(a.hook, raw_text):
+            print(f"[sage-hook] {a.hook} 재시도(stop_hook_active) — 프로필 문제로 차단하지 않고 통과: "
+                  f"{profile_error}", file=sys.stderr)
+            return 0
         return _render_bootstrap_block(a.runtime, a.hook, profile_error)
     try:
         run_hook = _load_run_hook(core_dir)

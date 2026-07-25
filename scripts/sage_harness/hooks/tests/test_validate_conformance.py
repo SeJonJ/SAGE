@@ -211,14 +211,29 @@ class TestManifestTestPath(unittest.TestCase):
         source = open(os.path.join(REPO, "sage", "commands", "generate.py"), encoding="utf-8").read()
         self.assertNotIn('f"scripts/sage_harness/hooks/tests/test_reverse_extract_{kind}.py"', source)
 
-    def test_manifest_util_drops_empty_test_key(self):
+    def _mu(self):
         sys.path.insert(0, os.path.join(REPO, "scripts", "sage_harness"))
         import manifest_util as mu
-        entry = {"test": "scripts/sage_harness/hooks/tests/test_reverse_extract_agent.py"}
+        return mu
+
+    def test_manifest_util_drops_only_the_legacy_engine_path(self):
+        mu = self._mu()
+        entry = {"test": mu.LEGACY_ENGINE_TESTS[0]}
         mu._set_test(entry, None)
         self.assertNotIn("test", entry)          # None 을 넣으면 schema(string) 위반
         mu._set_test(entry, "scripts/sage_harness/tests/t.py")
         self.assertEqual(entry["test"], "scripts/sage_harness/tests/t.py")
+
+    def test_restamp_preserves_a_project_declared_test(self):
+        # 재스탬프는 해시를 갱신하는 동작이지, 프로젝트가 선언한 회귀 테스트를 지우는 동작이 아니다.
+        mu = self._mu()
+        entry = {"test": "scripts/sage_harness/tests/test_my_agent.py"}
+        mu._set_test(entry, None)
+        self.assertEqual(entry["test"], "scripts/sage_harness/tests/test_my_agent.py")
+
+    def test_validate_reads_the_legacy_list_from_manifest_util(self):
+        # 정책 목록이 두 곳에 복제되면 한쪽만 바뀌어 완화 범위가 어긋난다.
+        self.assertEqual(tuple(V._legacy_engine_tests()), tuple(self._mu().LEGACY_ENGINE_TESTS))
 
 
 if __name__ == "__main__":

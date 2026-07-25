@@ -53,12 +53,21 @@ def _bootstrap_warn(root):
     return bootstrap_warn_text(reason) if reason else None
 
 
-# 엔진이 자기 추출기를 합성 입력으로 검증하는 테스트. 프로젝트 자산의 회귀가 아니고 설치되지도
-# 않으므로 프로젝트 manifest 의 test 로는 무효다(과거 generate 가 여기를 가리켰다).
-_ENGINE_ONLY_TESTS = (
-    "scripts/sage_harness/hooks/tests/test_reverse_extract_agent.py",
-    "scripts/sage_harness/hooks/tests/test_reverse_extract_skill.py",
-)
+def _legacy_engine_tests():
+    """엔진 소유 legacy 테스트 경로 목록 — 이 값을 쓰는 manifest_util 이 정본이다.
+
+    로드 실패 시 빈 튜플 = 완화 없음(기존 FAIL 유지). 완화 규칙이 로드 실패로 조용히
+    넓어지지 않도록 fail-closed 방향으로 폴백한다.
+    """
+    try:
+        from sage import _resources
+        harness = os.path.join(_resources.sage_root(), "scripts", "sage_harness")
+        if harness not in sys.path:
+            sys.path.insert(0, harness)
+        import manifest_util
+        return tuple(manifest_util.LEGACY_ENGINE_TESTS)
+    except Exception:
+        return ()
 
 
 def _safe_test_path(root, test):
@@ -469,7 +478,7 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True):
     msgs.extend(cmsgs)
     # render_hash 는 interpretive/외부 산출물이라 v1 staleness 재계산 제외(정보성)
     test = entry.get("test")
-    if test in _ENGINE_ONLY_TESTS and not os.path.exists(os.path.join(root, test)):
+    if test in _legacy_engine_tests() and not os.path.exists(os.path.join(root, test)):
         # 과거 generate 가 엔진 자체 회귀 테스트 경로를 프로젝트 manifest 에 박았다. 그 테스트는
         # 합성 입력으로 추출기를 검증하는 엔진 소유물이라 설치되지 않고, 프로젝트 자산의 회귀도
         # 아니다. 없는 경로를 FAIL 로 세우면 프로젝트가 고칠 수 없는 실패가 되므로 안내로 바꾼다.

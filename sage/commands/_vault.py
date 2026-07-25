@@ -58,18 +58,31 @@ def _fm_value(v):
     return f'"{s}"'
 
 
-def write_note(vault, folder, filename, frontmatter, body, create_only=False):
-    """vault/folder/filename 에 frontmatter+body 노트 작성 → 절대경로(또는 create_only 로 스킵 시 None).
+def note_dir(vault, folder):
+    """vault 안에 갇힌 노트 디렉토리(생성 포함) → 절대경로.
 
-    folder 는 vault_target 에서 정규화되나, 방어적으로 컨테인먼트를 재확인(escape 시 vault 루트로). filename 은
-    basename 만(경로 주입 방지). create_only=True 면 기존 파일을 덮지 않는다(retro human-gate 상태 보존, codex S5 P2)."""
-    # realpath: 심링크까지 해석해 containment 판정(codex S5 — abspath 는 심링크 escape 를 못 잡음).
+    realpath 로 판정해야 중간 디렉토리 심링크로 vault 밖을 가리키는 escape 를 잡는다(abspath 는
+    심링크를 못 본다). escape 면 vault 루트로 접는다. **노트 경로를 만드는 모든 곳이 이 함수를
+    거쳐야 한다** — 한 곳이라도 os.path.join 으로 직접 조립하면 그 경로가 곧 우회로다."""
     vault_abs = os.path.realpath(vault)
     d = os.path.realpath(os.path.join(vault_abs, folder))
     if vault_abs != d and os.path.commonpath([vault_abs, d]) != vault_abs:   # escape(심링크 포함) → vault 루트
         d = vault_abs
     os.makedirs(d, exist_ok=True)
-    path = os.path.join(d, os.path.basename(filename))
+    return d
+
+
+def note_path(vault, folder, filename):
+    """containment 검사를 거친 노트 절대경로. filename 은 basename 만(경로 주입 방지)."""
+    return os.path.join(note_dir(vault, folder), os.path.basename(filename))
+
+
+def write_note(vault, folder, filename, frontmatter, body, create_only=False):
+    """vault/folder/filename 에 frontmatter+body 노트 작성 → 절대경로(또는 create_only 로 스킵 시 None).
+
+    folder 는 vault_target 에서 정규화되나, 방어적으로 컨테인먼트를 재확인(escape 시 vault 루트로). filename 은
+    basename 만(경로 주입 방지). create_only=True 면 기존 파일을 덮지 않는다(retro human-gate 상태 보존, codex S5 P2)."""
+    path = note_path(vault, folder, filename)
     # frontmatter 키도 안전 식별자만(codex S5) — 키에 개행/콜론이 있으면 구조 주입 가능. 값은 _fm_value 가 보호.
     fm = "---\n" + "".join(f"{_safe_key(k)}: {_fm_value(v)}\n" for k, v in frontmatter.items()) + "---\n\n"
     content = fm + body

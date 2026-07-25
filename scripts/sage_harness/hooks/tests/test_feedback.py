@@ -12,6 +12,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -99,6 +101,42 @@ class TestScanScope(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             self._write(root, "a.py", "# sage-feedback :: git 아님")
             self.assertEqual(fb.scan(root, {}), [])
+
+    def test_git_failure_raises_instead_of_looking_empty(self):
+        # 실패를 빈 결과로 뭉개면 "마커를 못 본 것" 이 "마커가 없는 것" 으로 둔갑해 게이트가 통과한다.
+        with tempfile.TemporaryDirectory() as root:
+            with mock.patch.object(fb.subprocess, "run",
+                                   side_effect=fb.subprocess.TimeoutExpired("git", 30)):
+                with self.assertRaises(fb.ScanError):
+                    fb.scan(root, {})
+            with mock.patch.object(fb.subprocess, "run", side_effect=OSError("git 없음")):
+                with self.assertRaises(fb.ScanError):
+                    fb.scan(root, {})
+
+    def test_unreadable_tracked_file_raises(self):
+        # 존재하는데 못 읽는 파일은 "마커 없음" 이 아니라 모름이다.
+        with tempfile.TemporaryDirectory() as root:
+            self._repo(root)
+            self._write(root, "a.py", "# sage-feedback :: x")
+            self._commit(root)
+            os.chmod(os.path.join(root, "a.py"), 0o000)
+            try:
+                if os.access(os.path.join(root, "a.py"), os.R_OK):
+                    self.skipTest("root 권한 — 권한 거부를 재현할 수 없음")
+                with self.assertRaises(fb.ScanError):
+                    fb.scan(root, {})
+            finally:
+                os.chmod(os.path.join(root, "a.py"), 0o644)
+
+    def test_staged_deletion_is_not_a_scan_failure(self):
+        # 인덱스에 있고 워크트리에 없는 파일은 흔한 정상 상태다 — 여기서 막으면 오차단.
+        with tempfile.TemporaryDirectory() as root:
+            self._repo(root)
+            self._write(root, "a.py", "# sage-feedback :: 남는 마커")
+            self._write(root, "gone.py", "x = 1")
+            self._commit(root)
+            os.remove(os.path.join(root, "gone.py"))
+            self.assertEqual([m.path for m in fb.scan(root, {})], ["a.py"])
 
 
 class TestProfileGate(unittest.TestCase):
@@ -222,14 +260,65 @@ class TestCli(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             note = os.path.join(vault, "wiki", "SAGE - demo feedback 2026-07-25-x.md")
             self.assertTrue(os.path.exists(note), os.listdir(os.path.join(vault, "wiki")))
-            body = open(note, encoding="utf-8").read()
+            body = Path(note).read_text(encoding="utf-8")
             self.assertIn("TTL 로 복구", body)
             # 같은 사이클의 두 번째 마커는 새 노트가 아니라 같은 노트에 누적된다.
             self._run(root, "--record", "--path", "a.py", "--line", "2",
                       "--verdict", "undetermined", "--note", "근거 없음",
                       "--cycle-stem", "2026-07-25-x", "--vault", vault)
             self.assertEqual(len(os.listdir(os.path.join(vault, "wiki"))), 1)
-            self.assertIn("근거 없음", open(note, encoding="utf-8").read())
+            self.assertIn("근거 없음", Path(note).read_text(encoding="utf-8"))
+
+    def test_scan_failure_is_fail_closed_for_enforcing_callers(self):
+        # git 이 없는 PATH 로 실행해 스캔 불능을 만든다. "마커 0건" 으로 통과시키면 안 된다.
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as empty_bin:
+            self._project(root)
+            env = os.environ.copy()
+            env["PATH"] = empty_bin                    # git 실행 불가
+            def run(*extra):
+                return subprocess.run([sys.executable, "-m", "sage.cli", "feedback",
+                                       "--root", root, *extra],
+                                      capture_output=True, text=True, cwd=REPO, env=env)
+            self.assertEqual(run("--exit-code").returncode, 2)
+            self.assertEqual(run("--release-gate").returncode, 2)
+            self.assertEqual(run().returncode, 1)      # 단순 조회도 성공(0)으로 위장하지 않는다
+
+    def test_record_always_writes_the_audit_log_even_for_vault_target(self):
+        # vault 는 저장소 밖(별도 git)이라 노트만 남기면 이 저장소엔 이력이 하나도 안 남는다.
+        with tempfile.TemporaryDirectory() as root:
+            self._project(root, record=True, record_target="vault")
+            vault = os.path.join(root, "vault")
+            result = self._run(root, "--record", "--path", "a.py", "--line", "1",
+                               "--verdict", "fixed", "--note", "고침",
+                               "--cycle-stem", "s", "--vault", vault)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(len(fb.read_records(root)), 1)
+            self.assertTrue(os.path.isdir(os.path.join(vault, "wiki")))
+
+    def test_vault_target_without_a_vault_warns_and_exits_non_zero(self):
+        # 조용한 폴백은 설정이 지켜졌다고 오인하게 만든다.
+        with tempfile.TemporaryDirectory() as root:
+            self._project(root, record=True, record_target="vault")
+            result = self._run(root, "--record", "--path", "a.py", "--line", "1",
+                               "--verdict", "fixed", "--note", "고침")
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertEqual(len(fb.read_records(root)), 1)   # 감사 로그는 그대로 남는다
+
+    def test_vault_note_cannot_escape_through_a_symlinked_folder(self):
+        # 중간 디렉토리 심링크로 vault 밖을 가리키면 append 가 그대로 밖으로 샌다.
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as outside:
+            self._project(root, record=True)
+            vault = os.path.join(root, "vault")
+            os.makedirs(vault)
+            os.symlink(outside, os.path.join(vault, "wiki"))   # wiki/ → vault 밖
+            for line, note in (("1", "첫"), ("2", "둘")):       # 생성 경로 + append 경로 둘 다
+                result = self._run(root, "--record", "--path", "a.py", "--line", line,
+                                   "--verdict", "fixed", "--note", note,
+                                   "--cycle-stem", "s", "--vault", vault)
+                self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(os.listdir(outside), [], "vault 밖에 기록이 새어나갔다")
+            # 노트는 vault 루트로 접혀 저장된다(기록 자체는 유실되지 않는다).
+            self.assertTrue(any(n.endswith(".md") for n in os.listdir(vault)), os.listdir(vault))
 
     def test_disabled_profile_does_not_scan(self):
         with tempfile.TemporaryDirectory() as root:
@@ -315,6 +404,28 @@ class TestGateResolutionRule(unittest.TestCase):
         # 마커를 지우면서 다른 차단성 마커를 새로 심는 편집은 해소가 아니다.
         change = {"content": "# !sage-feedback :: 새 의문", "removed_content": self.marker}
         self.assertFalse(self.fm.resolves_blocking(change, self.on_disk))
+
+    def test_removing_one_of_several_markers_is_not_resolving(self):
+        # 마커 3개 중 1개만 지우는 편집이 통과하면 나머지 2개 위에 새 구현을 쌓게 된다(우회).
+        on_disk = ("# !sage-feedback :: 첫째\n"
+                   "def a(): pass\n"
+                   "# !sage-feedback :: 둘째\n"
+                   "def b(): pass\n"
+                   "# !sage-feedback :: 셋째\n")
+        change = {"content": "", "removed_content": "# !sage-feedback :: 첫째\n"}
+        self.assertFalse(self.fm.resolves_blocking(change, on_disk))
+
+    def test_removing_every_marker_is_resolving(self):
+        on_disk = "# !sage-feedback :: 첫째\ndef a(): pass\n# !sage-feedback :: 둘째\n"
+        change = {"content": "",
+                  "removed_content": "# !sage-feedback :: 첫째\n# !sage-feedback :: 둘째\n"}
+        self.assertTrue(self.fm.resolves_blocking(change, on_disk))
+
+    def test_advisory_markers_do_not_raise_the_bar(self):
+        # advisory 는 세지 않는다 — 강제력은 `!` 에만 있다.
+        on_disk = "# sage-feedback :: 참고\n# !sage-feedback :: 차단\n"
+        change = {"content": "", "removed_content": "# !sage-feedback :: 차단\n"}
+        self.assertTrue(self.fm.resolves_blocking(change, on_disk))
 
     def test_file_without_blocking_marker_is_always_allowed(self):
         # advisory 마커만 있는 파일은 아무것도 막지 않는다.

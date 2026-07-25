@@ -40,27 +40,38 @@ def scan_text(text, path="<text>"):
     return found
 
 
+def count_blocking(text):
+    return sum(1 for m in scan_text(text or "") if m["blocking"])
+
+
 def has_blocking(text):
-    return any(m["blocking"] for m in scan_text(text or ""))
+    return count_blocking(text) > 0
 
 
 def resolves_blocking(change, on_disk_text):
-    """이 쓰기가 차단성 마커를 **해소하는 방향**인가?
+    """이 쓰기가 차단성 마커를 **전부** 해소하는가?
 
     게이트 규칙은 "마커 있는 파일은 못 고침" 이 아니라 **"고친 뒤에도 마커가 남는가"** 다.
     전자로 만들면 마커를 지우려는 편집까지 막혀서 영원히 해소할 수 없다(자기차단).
 
     - Write(full_content): 새 전체 내용에 차단성 마커가 없으면 해소.
-    - Edit: 지워지는 조각(removed_content)에 차단성 마커가 있고 새 조각(content)에 없으면 해소.
+    - Edit: 지워지는 조각이 **파일에 있는 차단성 마커를 남김없이** 담고, 새 조각이 새 마커를
+      들이지 않을 때만 해소. "지워지는 쪽에 하나라도 있으면 통과" 로 두면 마커 3개 중 1개만
+      지우는 편집이 통과해 나머지 2개 위에 새 구현을 쌓게 된다(우회).
+
+    개수 비교가 성립하는 근거: `removed_content` 는 파일에서 실제로 사라지는 조각(들)이라
+    거기 담긴 차단성 마커는 파일 안 서로 다른 실물이다. 따라서 removed 개수 ≥ 파일 개수는
+    "전부 지워진다" 와 같다. MultiEdit 는 조각을 개행으로 이어 붙이므로 이어 붙이는 과정에서
+    없던 마커가 생기지도 않는다(마커는 한 줄 안에서만 성립).
     """
-    if not has_blocking(on_disk_text):
+    remaining = count_blocking(on_disk_text)
+    if remaining == 0:
         return True                       # 애초에 차단할 마커가 없음
     if change.get("full_content"):
         return not has_blocking(change.get("content") or "")
-    removed = change.get("removed_content") or ""
-    if has_blocking(removed) and not has_blocking(change.get("content") or ""):
-        return True
-    return False
+    if has_blocking(change.get("content") or ""):
+        return False                      # 새 조각이 마커를 (다시) 심는다
+    return count_blocking(change.get("removed_content") or "") >= remaining
 
 
 def blocking_markers(text, path):

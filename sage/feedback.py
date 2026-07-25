@@ -68,15 +68,32 @@ class Marker:
         return f"<Marker {self.path}:{self.line} {bang}sage-feedback :: {self.text[:40]!r}>"
 
 
+class ScanError(RuntimeError):
+    """스캔 대상 목록을 확정하지 못했다 — "마커 0건" 과 구분해야 하는 상태.
+
+    둘을 같은 빈 리스트로 뭉개면 git 부재·timeout·손상 저장소에서 게이트가 조용히 통과한다
+    (마커를 못 본 것이지 없는 것이 아니다). 호출자가 fail-closed 로 다룰 수 있게 예외로 올린다.
+    """
+
+
+# git 이 "저장소가 아니다" 라고 답하는 경우만 정상적인 빈 결과다. 그 외 실패는 스캔 불능이다.
+_NOT_A_REPO = ("not a git repository", "not a working tree")
+
+
 def tracked_files(root):
-    """git 추적 파일 목록. git 저장소가 아니거나 git 이 없으면 빈 리스트(스캔 대상 없음)."""
+    """git 추적 파일 목록. git 저장소가 아니면 빈 리스트, 그 외 실패는 ScanError."""
     try:
         proc = subprocess.run(["git", "-C", root, "ls-files", "-z"],
                               capture_output=True, timeout=30)
-    except (OSError, subprocess.SubprocessError):
-        return []
+    except subprocess.TimeoutExpired as exc:
+        raise ScanError(f"git ls-files timeout({root})") from exc
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ScanError(f"git ls-files 실행 실패({root}): {type(exc).__name__}: {exc}") from exc
     if proc.returncode != 0:
-        return []
+        stderr = proc.stderr.decode("utf-8", "replace").strip()
+        if any(token in stderr.lower() for token in _NOT_A_REPO):
+            return []                     # git 저장소가 아님 = 스캔 대상 없음(정상)
+        raise ScanError(f"git ls-files 실패(exit {proc.returncode}): {stderr or '(stderr 없음)'}")
     out = proc.stdout.decode("utf-8", "surrogateescape")
     return [p for p in out.split("\0") if p]
 
@@ -103,13 +120,15 @@ def scan_text(text, path="<text>"):
 
 
 def scan(root, profile=None):
-    """저장소에서 마커를 스캔한다. 반환은 path, line 순 정렬."""
+    """저장소에서 마커를 스캔한다. 반환은 path, line 순 정렬. 목록 확정 실패는 ScanError."""
     prefixes = _excluded_prefixes(profile)
     markers = []
     for rel in tracked_files(root):
         if _is_excluded(rel, prefixes):
             continue
         absolute = os.path.join(root, rel)
+        if not os.path.exists(absolute):
+            continue                      # 인덱스에는 있고 워크트리엔 없음(삭제 스테이징 전) = 정상
         try:
             if os.path.getsize(absolute) > _MAX_BYTES:
                 continue
@@ -120,8 +139,12 @@ def scan(root, profile=None):
             if b"\0" in raw:
                 continue
             text = raw.decode("utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue          # 읽기 불가·비 UTF-8 파일은 조용히 건너뛴다
+        except UnicodeDecodeError:
+            continue          # 비 UTF-8 = 마커 규약 밖(토큰은 ASCII)
+        except OSError as exc:
+            # 존재하는데 못 읽는 파일은 "마커 없음" 이 아니라 **모름** 이다. 조용히 넘기면
+            # 권한 하나로 게이트가 통과하므로 스캔 실패로 올린다.
+            raise ScanError(f"추적 파일 읽기 실패({rel}): {type(exc).__name__}: {exc}") from exc
         markers.extend(scan_text(text, rel))
     markers.sort(key=lambda m: (m.path, m.line))
     return markers

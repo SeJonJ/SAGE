@@ -66,15 +66,27 @@ def save(root: str, manifest: dict) -> None:
     atomic_write_json(os.path.join(root, MANIFEST_REL), manifest)
 
 
+# 예전 generate 가 프로젝트 manifest 에 박던 엔진 소유 회귀 테스트 경로. 합성 입력으로 추출기를
+# 검증하는 엔진 소유물이라 install 이 배포하지 않고, 프로젝트 자산의 회귀도 아니다. 재스탬프 때
+# 이것만 걷어낸다. validate 도 같은 목록을 읽는다(정책 이중정의 금지).
+LEGACY_ENGINE_TESTS = (
+    "scripts/sage_harness/hooks/tests/test_reverse_extract_agent.py",
+    "scripts/sage_harness/hooks/tests/test_reverse_extract_skill.py",
+)
+
+
 def _set_test(entry: dict, test) -> None:
     """manifest.test 는 프로젝트 자산의 회귀 테스트만 담는다(schema: string).
 
-    test 가 비면 키 자체를 지운다 — `None` 을 넣으면 schema 위반이고, 남겨두면 예전 generate 가
-    박아둔 엔진 소유 테스트 경로가 계속 살아 validate 가 없는 파일로 FAIL 한다.
+    - 값이 주어지면 그대로 설정.
+    - 값이 없으면 **기존 값을 보존**한다. 재스탬프는 해시를 갱신하는 동작이지 프로젝트가 선언한
+      회귀 테스트를 지우는 동작이 아니다(지우면 그 자산의 회귀가 조용히 사라진다).
+    - 단, 보존 대상에서 엔진 소유 legacy 경로만 예외로 걷어낸다 — 그건 프로젝트가 선언한 적 없는
+      값이고 배포되지도 않아 validate 를 고칠 수 없게 만든다.
     """
     if test:
         entry["test"] = test
-    else:
+    elif entry.get("test") in LEGACY_ENGINE_TESTS:
         entry.pop("test", None)
 
 

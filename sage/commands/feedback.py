@@ -75,7 +75,21 @@ def run(args):
                   "(sage/project-profile.yaml 의 feedback.enabled 를 true 로).")
         return 0
 
-    markers = fb.scan(root, profile)
+    try:
+        markers = fb.scan(root, profile)
+    except fb.ScanError as exc:
+        # 스캔 불능은 "마커 없음" 이 아니다. 판정을 요구한 호출(--exit-code·--release-gate)에는
+        # 통과를 줄 수 없으므로 fail-closed 로 막고, 단순 조회에는 오류만 알린다.
+        enforcing = args.exit_code or args.release_gate
+        print(f"[sage feedback] 스캔 실패 — {exc}", file=sys.stderr)
+        if args.output == "json":
+            print(json.dumps({"enabled": True, "error": str(exc), "markers": []},
+                             ensure_ascii=False, indent=2))
+        if enforcing:
+            print("  스캔 결과를 확정할 수 없어 통과시키지 않습니다(fail-closed).", file=sys.stderr)
+            return 2
+        return 1
+
     shown = fb.blocking(markers) if args.blocking_only else markers
     blockers = fb.blocking(markers)
 
@@ -160,19 +174,22 @@ def _run_record(args, root, profile):
                              marker_text=marker.text if marker else None,
                              cycle_stem=args.cycle_stem)
     target = fb.record_target(profile)
-    note_path = None
-    if target in ("auto", "vault"):
-        # `--vault` bare("") 는 profile vault_path 사용(retro 와 동일 관례) — override 는 명시 경로만.
-        note_path = _write_vault_entry(profile, root, record, args.vault or None)
-    # 감사 로그는 기본 축이다. 명시 `vault` 여도 vault 가 비활성이면 여기로 떨어뜨린다 —
-    # 기록하라고 켠 설정이 조용히 아무것도 안 남기는 것이 최악이다.
-    if target != "vault" or note_path is None:
-        print(f"  ✅ 기록: {fb.append_record(root, record)}")
+    # 감사 로그는 **항상** 쓴다. vault 는 저장소 밖(별도 git)이라 노트만 남기면 이 저장소에는
+    # 처리 이력이 하나도 없어지고, 커밋되는 감사 축(override.jsonl 과 같은 관례)이 끊긴다.
+    # record_target 은 "감사 로그 대신 어디" 가 아니라 "사람이 읽는 노트를 더 쓸지" 를 정한다.
+    print(f"  ✅ 기록: {fb.append_record(root, record)}")
+    if target == "sage":
+        return 0
+    # `--vault` bare("") 는 profile vault_path 사용(retro 와 동일 관례) — override 는 명시 경로만.
+    note_path = _write_vault_entry(profile, root, record, args.vault or None)
     if note_path:
         print(f"  ✅ vault 사이클 노트: {note_path}")
-    elif target == "vault":
-        print("  ℹ️  vault 비활성(knowledge_capture.vault_path 미설정) → 감사 로그에만 기록",
-              file=sys.stderr)
+        return 0
+    if target == "vault":
+        # 명시 vault 는 노트가 요구사항이다 — 조용한 폴백은 설정이 지켜졌다고 오인하게 만든다.
+        print("  ⚠️  record_target=vault 이나 vault 가 비활성입니다"
+              "(knowledge_capture.vault_path 미설정) — 감사 로그만 남았습니다.", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -202,9 +219,11 @@ def _write_vault_entry(profile, root, record, override):
               "## 처리 이력\n\n")
     path = _vault.write_note(vault, folder, fname, fm, header, create_only=True)
     if path is None:                     # 이미 있는 노트에 누적
-        path = os.path.join(vault, folder, os.path.basename(fname))
+        # 경로를 직접 조립하지 않는다 — 중간 디렉토리 심링크로 vault 밖을 가리키면 append 가
+        # 그대로 밖으로 새기 때문이다. write_note 와 같은 containment 판정을 거친다.
+        path = _vault.note_path(vault, folder, fname)
         if os.path.islink(path):
-            # 심링크면 따라가지 않는다 — vault 밖을 가리키는 링크로 기록이 새는 것을 막는다.
+            # leaf 심링크도 따라가지 않는다(링크만 끊고 target 내용은 보존).
             os.unlink(path)
             path = _vault.write_note(vault, folder, fname, fm, header, create_only=True) or path
     with open(path, "a", encoding="utf-8") as handle:

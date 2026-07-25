@@ -86,10 +86,11 @@ sage feedback --record --path <path> --line <line> \
 ```
 
 Call it the same way every time. The profile decides what happens: `feedback.record: false`
-(the default) makes it a no-op that says so, and `record_target` picks the destination —
-`.sage/feedback.jsonl` is the append-only machine-readable audit (committed, like
-`.sage/override.jsonl`), and `auto` adds a per-cycle vault note for the human-readable prose
-when `vault_path` is set. The verdict determines `resolved`, so it cannot be asserted
+(the default) makes it a no-op that says so. When recording is on, `.sage/feedback.jsonl` —
+the append-only machine-readable audit, committed like `.sage/override.jsonl` — is **always**
+written; `record_target` only decides whether a human-readable per-cycle vault note is written
+too (`auto` = when `vault_path` is set, `sage` = never, `vault` = required, warns and exits
+non-zero if the vault is off). The verdict determines `resolved`, so it cannot be asserted
 separately; recording `fixed` while the marker is still in the file gets a warning.
 
 ## What this skill is NOT

@@ -226,9 +226,10 @@ feedback:                        # /sage-feedback — 완료된 사이클 코드
   block_release: false           # !마커 미해결 시 릴리즈도 차단(03 구현 진입 차단은 마커 의미라 항상 유효).
                                  # 릴리즈 CI 가 `sage feedback --release-gate` 를 호출하면 이 값이 판정한다
   record: false                  # 처리 이력 기록. 기본은 가볍게(채팅 응답만, 기록 없음)
-  record_target: auto            # 기계 판독·감사는 항상 .sage/feedback.jsonl(append-only, 커밋 대상).
-                                 # auto = 거기에 더해 vault_path 있으면 사이클 stem 단위 노트도 작성
-                                 # sage = 감사 로그만 / vault = 노트만(vault 없으면 감사 로그로 폴백)
+  record_target: auto            # 감사 로그 .sage/feedback.jsonl(append-only, 커밋 대상)은 **항상** 쓴다.
+                                 # 이 값은 "사람이 읽는 vault 노트를 더 쓸지"만 정한다:
+                                 # auto = vault_path 있으면 사이클 stem 단위 노트도 작성 / sage = 감사 로그만
+                                 # vault = 노트 필수(vault 비활성이면 경고 + non-zero)
 
 context_management:
   compaction:
