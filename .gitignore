@@ -27,9 +27,12 @@ plan_docs/06-report/
 
 # prior bkit/claude local state (not part of SAGE)
 .bkit/
-.claude/settings.local.json
-.claude/settings.json
-.claude/hooks/
+# 저장소 루트의 .claude/ 전체 무시 — 엔진 저장소는 설치 산출물을 보유하지 않는다
+# (아래 .codex/ 와 같은 원칙). 개별 경로만 나열하면 새 산출물(logs/·*.bak 등)이
+# 매번 추적 후보로 새어 나온다.
+# `/` 앵커 필수: 앵커가 없으면 모든 깊이에 매칭돼
+# templates/core/framework/.claude/ 의 프레임워크 렌더가 추적 대상에서 빠진다.
+/.claude/
 # generated runtime artifacts (sage generate --write at repo root) — 프레임워크 repo 는 산출물 비보유
 .codex/
 .mcp.json
