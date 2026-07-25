@@ -84,6 +84,17 @@ class TestScanScope(unittest.TestCase):
             markers = fb.scan(root, profile)
             self.assertEqual([m.path for m in markers], ["src/a.py"])
 
+    def test_audit_log_is_excluded_even_though_it_is_tracked(self):
+        # 기록은 override.jsonl 과 같이 커밋된다 → 추적 파일이 되고, 레코드에 담긴 마커 원문이
+        # 다음 스캔에서 새 마커가 되는 자기증식이 생긴다. `.sage/` 상시 제외로 구조적으로 막는다.
+        with tempfile.TemporaryDirectory() as root:
+            self._repo(root)
+            self._write(root, "src/a.py", "# sage-feedback :: 실제 마커")
+            self._write(root, ".sage/feedback.jsonl",
+                        json.dumps({"marker_text": "sage-feedback :: 기록된 원문"}) + "\n")
+            self._commit(root)
+            self.assertEqual([m.path for m in fb.scan(root, {})], ["src/a.py"])
+
     def test_non_git_directory_yields_no_markers(self):
         with tempfile.TemporaryDirectory() as root:
             self._write(root, "a.py", "# sage-feedback :: git 아님")
@@ -123,14 +134,17 @@ class TestCli(unittest.TestCase):
         return subprocess.run([sys.executable, "-m", "sage.cli", "feedback", "--root", root, *extra],
                               capture_output=True, text=True, cwd=REPO)
 
-    def _project(self, root, enabled=True):
+    def _project(self, root, enabled=True, **feedback):
         subprocess.run(["git", "init", "-q", root], check=True)
         for key, value in (("user.email", "t@t"), ("user.name", "t")):
             subprocess.run(["git", "-C", root, "config", key, value], check=True)
         os.makedirs(os.path.join(root, "sage"), exist_ok=True)
+        section = {"enabled": enabled, **feedback}
+        rendered = ", ".join(f"{k}: {str(v).lower() if isinstance(v, bool) else v}"
+                             for k, v in section.items())
         with open(os.path.join(root, "sage", "project-profile.yaml"), "w", encoding="utf-8") as handle:
             handle.write("project: { name: demo }\npaths: { plan_docs: plan_docs }\n"
-                         f"feedback: {{ enabled: {'true' if enabled else 'false'} }}\n")
+                         f"feedback: {{ {rendered} }}\n")
         with open(os.path.join(root, "a.py"), "w", encoding="utf-8") as handle:
             handle.write("# !sage-feedback :: 차단성\n# sage-feedback :: advisory\n")
         subprocess.run(["git", "-C", root, "add", "-A"], check=True)
@@ -150,12 +164,119 @@ class TestCli(unittest.TestCase):
             self.assertEqual(self._run(root).returncode, 0)              # 기본은 보고만
             self.assertEqual(self._run(root, "--exit-code").returncode, 2)
 
+    def test_release_gate_defers_to_profile(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._project(root)                      # block_release 미설정 = false
+            self.assertEqual(self._run(root, "--release-gate").returncode, 0)
+        with tempfile.TemporaryDirectory() as root:
+            # CI 는 항상 같은 명령을 호출하고, 막을지는 프로필이 정한다.
+            self._project(root, block_release=True)
+            self.assertEqual(self._run(root, "--release-gate").returncode, 2)
+
+    def test_record_is_noop_when_record_is_false(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._project(root)
+            result = self._run(root, "--record", "--path", "a.py", "--line", "1",
+                               "--verdict", "fixed", "--note", "고침")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(os.path.exists(fb.record_path(root)))
+
+    def test_record_writes_audit_log(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._project(root, record=True)
+            result = self._run(root, "--record", "--path", "a.py", "--line", "2",
+                               "--verdict", "intentional", "--note", "00 설계 근거 있음",
+                               "--cycle-stem", "2026-07-25-x")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            records = fb.read_records(root)
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0]["cycle_stem"], "2026-07-25-x")
+            # advisory 마커가 그 줄에 살아있으므로 심각도·원문이 레코드에 잡힌다.
+            self.assertEqual(records[0]["marker_text"], "advisory")
+            self.assertFalse(records[0]["blocking"])
+
+    def test_record_rejects_incomplete_and_escaping_arguments(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._project(root, record=True)
+            self.assertEqual(self._run(root, "--record", "--path", "a.py").returncode, 2)
+            self.assertEqual(self._run(root, "--record", "--path", "../outside.py", "--line", "1",
+                                       "--verdict", "fixed", "--note", "x").returncode, 2)
+            self.assertFalse(os.path.exists(fb.record_path(root)))
+
+    def test_record_is_refused_when_feature_is_disabled(self):
+        # 스캔은 조용히 무동작이지만 기록은 명시 요청 — 침묵하면 기록됐다고 오인한다.
+        with tempfile.TemporaryDirectory() as root:
+            self._project(root, enabled=False, record=True)
+            result = self._run(root, "--record", "--path", "a.py", "--line", "1",
+                               "--verdict", "fixed", "--note", "x")
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse(os.path.exists(fb.record_path(root)))
+
+    def test_record_writes_vault_cycle_note(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._project(root, record=True)
+            vault = os.path.join(root, "vault")
+            result = self._run(root, "--record", "--path", "a.py", "--line", "1",
+                               "--verdict", "fixed", "--note", "TTL 로 복구",
+                               "--cycle-stem", "2026-07-25-x", "--vault", vault)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            note = os.path.join(vault, "wiki", "SAGE - demo feedback 2026-07-25-x.md")
+            self.assertTrue(os.path.exists(note), os.listdir(os.path.join(vault, "wiki")))
+            body = open(note, encoding="utf-8").read()
+            self.assertIn("TTL 로 복구", body)
+            # 같은 사이클의 두 번째 마커는 새 노트가 아니라 같은 노트에 누적된다.
+            self._run(root, "--record", "--path", "a.py", "--line", "2",
+                      "--verdict", "undetermined", "--note", "근거 없음",
+                      "--cycle-stem", "2026-07-25-x", "--vault", vault)
+            self.assertEqual(len(os.listdir(os.path.join(vault, "wiki"))), 1)
+            self.assertIn("근거 없음", open(note, encoding="utf-8").read())
+
     def test_disabled_profile_does_not_scan(self):
         with tempfile.TemporaryDirectory() as root:
             self._project(root, enabled=False)
             result = self._run(root, "--output", "json")
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout), {"enabled": False, "markers": []})
+
+
+class TestRecord(unittest.TestCase):
+    """기록은 감사 축이라 verdict 와 어긋난 주장이 남을 수 없어야 한다."""
+
+    def test_resolved_is_derived_from_verdict_not_asserted(self):
+        for verdict, resolved in ((fb.VERDICT_FIXED, True), (fb.VERDICT_INTENTIONAL, True),
+                                  (fb.VERDICT_UNDETERMINED, False)):
+            with self.subTest(verdict=verdict):
+                record = fb.build_record("a.py", 3, verdict, "근거")
+                self.assertEqual(record["resolved"], resolved)
+
+    def test_append_only_accumulates(self):
+        with tempfile.TemporaryDirectory() as root:
+            fb.append_record(root, fb.build_record("a.py", 1, fb.VERDICT_FIXED, "첫"))
+            fb.append_record(root, fb.build_record("a.py", 2, fb.VERDICT_UNDETERMINED, "둘"))
+            records = fb.read_records(root)
+            self.assertEqual([r["note"] for r in records], ["첫", "둘"])
+            self.assertTrue(os.path.exists(fb.record_path(root)))
+
+    def test_corrupt_line_is_skipped_not_fatal(self):
+        with tempfile.TemporaryDirectory() as root:
+            fb.append_record(root, fb.build_record("a.py", 1, fb.VERDICT_FIXED, "정상"))
+            with open(fb.record_path(root), "a", encoding="utf-8") as handle:
+                handle.write("{깨진 줄\n\n")
+            self.assertEqual([r["note"] for r in fb.read_records(root)], ["정상"])
+
+    def test_record_requires_both_enabled_and_record(self):
+        self.assertFalse(fb.record_enabled({"feedback": {"record": True}}))          # enabled off
+        self.assertFalse(fb.record_enabled({"feedback": {"enabled": True}}))
+        self.assertTrue(fb.record_enabled({"feedback": {"enabled": True, "record": True}}))
+
+    def test_block_release_requires_enabled(self):
+        self.assertFalse(fb.block_release({"feedback": {"block_release": True}}))
+        self.assertTrue(fb.block_release({"feedback": {"enabled": True, "block_release": True}}))
+
+    def test_invalid_record_target_degrades_to_auto(self):
+        self.assertEqual(fb.record_target({"feedback": {"record_target": "wiki"}}), "auto")
+        self.assertEqual(fb.record_target({}), "auto")
+        self.assertEqual(fb.record_target({"feedback": {"record_target": "sage"}}), "sage")
 
 
 class TestGateResolutionRule(unittest.TestCase):

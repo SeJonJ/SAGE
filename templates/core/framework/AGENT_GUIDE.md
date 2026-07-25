@@ -33,7 +33,7 @@ The conversational entry points are **`/sage-init`** for the first shared+local
 bootstrap and **`/sage-init-local`** for a teammate's local-only setup. If the
 shared profile is already bootstrapped, `/sage-init` is blocked. They and the other
 **CORE framework bootstrap assets** — the `sage-cycle` / `sage-plan` / `sage-team` / `sage-review` / `sage-asset` /
-`sage-profile-modify` / `sage-asset-override` skills and the six CORE roster agent renders (`leader`, `implementer-a`,
+`sage-profile-modify` / `sage-asset-override` / `sage-feedback` skills and the six CORE roster agent renders (`leader`, `implementer-a`,
 `implementer-b`, `qa`, `reviewer`, `convention-checker`) — are hand-shipped by `sage install` like
 this guide and `docs/agent/*`. They are NOT manifest-tracked: the
 manifest/claims/`validate` loop is reserved for project-authored assets created

@@ -5,13 +5,16 @@
 `scripts/sage_harness/hooks/runtime/feedback_markers.py` 에 있고, 여기서는 그것을 로드해
 쓴다 — acceptance_waiver 와 같은 구조. 복제하면 게이트와 CLI 가 서로 다른 마커를 보게 된다.
 
-이 모듈이 담당하는 것은 **스캔 범위**다: git 추적 파일로 한정하고 plan_docs 를 제외한다.
+이 모듈이 담당하는 것은 **스캔 범위**와 **처리 이력 기록**이다. 스캔은 git 추적 파일로 한정하고
+plan_docs 를 제외한다.
 vault·빌드 산출물·.sage 로그가 자동으로 빠져, 기록 노트에 적힌 토큰이 다음 스캔에서
 새 마커로 잡히는 자기증식을 구조적으로 막는다.
 """
+import json
 import os
 import subprocess
 import sys
+import time
 
 from sage import _resources
 
@@ -29,6 +32,20 @@ MARKER_RE = _fm.MARKER_RE
 
 # 바이너리·초대형 파일 방어. 소스 주석에 마커를 다는 용도라 이 상한이면 충분하다.
 _MAX_BYTES = 2 * 1024 * 1024
+
+# 기록은 감사 목적이라 `.sage/override.jsonl` 과 같이 **커밋된다**. 그래서 추적 파일이 되고,
+# 레코드에 담긴 마커 원문이 다음 스캔에서 새 마커로 잡혀 자기증식한다 — `.sage/` 를 항상
+# 제외해 구조적으로 막는다. 감사 로그는 마커를 다는 자리가 아니므로 잃는 것이 없다.
+_ALWAYS_EXCLUDED = (".sage/",)
+
+RECORD_REL = os.path.join(".sage", "feedback.jsonl")
+
+# 3분기 판정(스킬 워크플로와 1:1). undetermined 는 마커를 남기므로 미해소다.
+VERDICT_FIXED = "fixed"                  # 실제 불일치 → 계획에 맞게 수정, 마커 제거
+VERDICT_INTENTIONAL = "intentional"      # 불일치 아님(의도적·정당) → 코드 불변, 마커 제거
+VERDICT_UNDETERMINED = "undetermined"    # 판단 불가 → 코드·마커 불변, 사용자에게 되질문
+VERDICTS = (VERDICT_FIXED, VERDICT_INTENTIONAL, VERDICT_UNDETERMINED)
+_RESOLVING = (VERDICT_FIXED, VERDICT_INTENTIONAL)
 
 
 class Marker:
@@ -66,7 +83,7 @@ def tracked_files(root):
 
 def _excluded_prefixes(profile):
     """스캔에서 제외할 경로 접두. plan_docs 는 마커 예시·설계 서술을 담아 오탐원이다."""
-    prefixes = []
+    prefixes = list(_ALWAYS_EXCLUDED)
     paths = (profile or {}).get("paths") or {}
     if isinstance(paths, dict):
         value = paths.get("plan_docs")
@@ -114,9 +131,79 @@ def blocking(markers):
     return [m for m in markers if m.blocking]
 
 
+def _section(profile):
+    section = (profile or {}).get("feedback")
+    return section if isinstance(section, dict) else {}
+
+
 def enabled(profile):
     """profile.feedback.enabled. 섹션이 없으면 비활성(하위호환 — 기존 프로필 무손상)."""
-    section = (profile or {}).get("feedback")
-    if not isinstance(section, dict):
-        return False
-    return bool(section.get("enabled"))
+    return bool(_section(profile).get("enabled"))
+
+
+def record_enabled(profile):
+    """profile.feedback.record. enabled 가 꺼져 있으면 기록도 없다(기능 자체가 off)."""
+    return enabled(profile) and _section(profile).get("record") is True
+
+
+def block_release(profile):
+    """profile.feedback.block_release — 미해결 차단성 마커로 릴리즈를 막을지."""
+    return enabled(profile) and _section(profile).get("block_release") is True
+
+
+def record_target(profile):
+    """profile.feedback.record_target. 무효값은 auto 로 degrade(검증기가 별도 WARN)."""
+    value = _section(profile).get("record_target")
+    return value if value in ("auto", "sage", "vault") else "auto"
+
+
+def record_path(root):
+    return os.path.join(root, RECORD_REL)
+
+
+def build_record(path, line, verdict, note, blocking=False,
+                 marker_text=None, cycle_stem=None, user=None, now=None):
+    """기록 레코드 1건. `resolved` 는 verdict 에서 파생된다 — 호출자가 따로 주장하지 못하게
+    한다(판단 불가인데 해소됨으로 기록되면 감사가 거짓이 된다)."""
+    epoch = time.time() if now is None else now
+    return {"event": "feedback", "ts": _iso(epoch), "epoch": int(epoch),
+            "path": path, "line": int(line), "blocking": bool(blocking),
+            "verdict": verdict, "resolved": verdict in _RESOLVING,
+            "note": note, "marker_text": marker_text or "",
+            "cycle_stem": cycle_stem or "",
+            "user": user or os.environ.get("USER") or "unknown"}
+
+
+def append_record(root, record):
+    """감사 로그에 append-only 로 1건 추가 → 기록된 절대경로.
+
+    마커는 해소되면 코드에서 사라지는 짧은 수명이라 파일 단위 기록은 죽은 파일만 쌓인다.
+    append-only 는 해소 레코드를 덧붙이면 되므로 수명 문제가 없다(override.jsonl 과 같은 관례).
+    """
+    path = record_path(root)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return path
+
+
+def read_records(root):
+    """기록 전 레코드(파싱 실패 줄은 skip). 부재 → []."""
+    path = record_path(root)
+    if not os.path.exists(path):
+        return []
+    out = []
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                pass
+    return out
+
+
+def _iso(epoch):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))

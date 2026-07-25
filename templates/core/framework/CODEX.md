@@ -17,7 +17,7 @@ output contract are governed solely by `AGENT_GUIDE.md`.
 - Do not modify generated artifacts directly — edit the spec and run
   `sage generate`. (The hand-shipped CORE bootstrap skills — `sage-init`, `sage-init-local`,
   `sage-cycle`, `sage-plan`, `sage-team`, `sage-review`, `sage-asset`, `sage-profile-modify`,
-  `sage-asset-override` — install to the explicit global `$CODEX_HOME/skills/` or
+  `sage-asset-override`, `sage-feedback` — install to the explicit global `$CODEX_HOME/skills/` or
   project-local `.codex/skills/` scope. They are install-owned CORE renders, not generated
   project assets; update them with `sage install --host codex --skill-scope <scope> --force`.)
 - The CORE roster agent renders (`leader`, `implementer-a`, `implementer-b`, `qa`,

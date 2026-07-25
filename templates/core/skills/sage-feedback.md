@@ -38,9 +38,12 @@ Runs independently of the PDCA cycle — it never re-runs a cycle and never edit
      plan justifies the current code, leave the code untouched.
    - **Undecidable** (no basis in the plan, or the design intent itself is ambiguous) → leave
      BOTH code and marker untouched and ask the user what is unclear. NEVER guess-fix.
-5. Report per marker: path:line, verdict, action taken. When `feedback.record` is true, the
-   record is written to `record_target` (`auto` → vault cycle note if `vault_path` is set,
-   otherwise `.sage/feedback.jsonl`).
+5. Report per marker: path:line, verdict, action taken.
+6. Record each outcome with `sage feedback --record --path <p> --line <n> --verdict
+   fixed|intentional|undetermined --note "<one line>" --cycle-stem <stem>`. Call it
+   unconditionally — the profile decides: `feedback.record: false` (default) is a no-op that
+   says so, and `record_target` picks the destination (`.sage/feedback.jsonl` append-only audit
+   always; `auto` adds a per-cycle vault note when `vault_path` is set).
 
 ## advisory_scope
 - This skill may edit source code — unlike `/sage-review`'s reviewer, which is read-only by
@@ -57,7 +60,10 @@ Runs independently of the PDCA cycle — it never re-runs a cycle and never edit
 - agent: reuse `reviewer` (diagnosis is its proven strength); no new role.
 - profile: `feedback.{enabled,block_release,record,record_target}`, `paths.plan_docs`,
   `knowledge_capture.vault_path`.
-- CLI: `sage feedback [--blocking-only] [--exit-code] [--output json]`.
+- CLI: `sage feedback [--blocking-only] [--exit-code] [--release-gate] [--output json]`
+  and `sage feedback --record --path/--line/--verdict/--note [--cycle-stem] [--vault]`.
+- release CI: `sage feedback --release-gate` — always callable, blocks only when
+  `feedback.block_release` is true (the policy read lives in the profile, not in each CI file).
 
 ## drift_checks
 - The marker token and severity rule are owned by

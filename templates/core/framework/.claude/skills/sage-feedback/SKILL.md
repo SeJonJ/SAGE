@@ -74,9 +74,23 @@ know what "the original design" was either.
 The third branch is the important one. When the plan gives no basis, **do not guess-fix** —
 that is the failure mode that quietly damages working code. Leave the marker and ask.
 
-**5. Report** per marker: `path:line`, verdict, action. When `feedback.record` is true the
-outcome is recorded to `record_target` (`auto` → vault cycle note when `vault_path` is set,
-otherwise `.sage/feedback.jsonl`).
+**5. Report** per marker: `path:line`, verdict, action.
+
+**6. Record the outcome** — once per marker, after the code edit and marker removal:
+
+```
+sage feedback --record --path <path> --line <line> \
+  --verdict fixed|intentional|undetermined \
+  --note "<one line: what changed, or which part of the plan justifies it>" \
+  --cycle-stem <stem from step 3>
+```
+
+Call it the same way every time. The profile decides what happens: `feedback.record: false`
+(the default) makes it a no-op that says so, and `record_target` picks the destination —
+`.sage/feedback.jsonl` is the append-only machine-readable audit (committed, like
+`.sage/override.jsonl`), and `auto` adds a per-cycle vault note for the human-readable prose
+when `vault_path` is set. The verdict determines `resolved`, so it cannot be asserted
+separately; recording `fixed` while the marker is still in the file gets a warning.
 
 ## What this skill is NOT
 
