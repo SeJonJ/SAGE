@@ -66,6 +66,18 @@ def save(root: str, manifest: dict) -> None:
     atomic_write_json(os.path.join(root, MANIFEST_REL), manifest)
 
 
+def _set_test(entry: dict, test) -> None:
+    """manifest.test 는 프로젝트 자산의 회귀 테스트만 담는다(schema: string).
+
+    test 가 비면 키 자체를 지운다 — `None` 을 넣으면 schema 위반이고, 남겨두면 예전 generate 가
+    박아둔 엔진 소유 테스트 경로가 계속 살아 validate 가 없는 파일로 FAIL 한다.
+    """
+    if test:
+        entry["test"] = test
+    else:
+        entry.pop("test", None)
+
+
 def upsert_agent(root: str, agent_id: str, *, claude_render: str, codex_render: str,
                  test: str, unresolved: list) -> dict:
     """agent(form:interpretive) 엔트리 갱신. spec/claims 는 docs/sage_harness/agents 에서 해시.
@@ -88,10 +100,10 @@ def upsert_agent(root: str, agent_id: str, *, claude_render: str, codex_render: 
         "adapter_contract_version": _derived_contract_version("reverse_extract_agent"),
         "conformance": "PASS",
         "form": "interpretive",
-        "test": test,
         "risk": entry.get("risk", []),
         "unresolved": unresolved,
     })
+    _set_test(entry, test)
     if render:
         entry["render_hash"] = render
     elif "render_hash" not in entry:
@@ -119,10 +131,10 @@ def upsert_skill(root: str, skill_id: str, *, claude_render: str, codex_render: 
         "adapter_contract_version": _derived_contract_version("reverse_extract_skill"),
         "conformance": "PASS",
         "form": "interpretive",
-        "test": test,
         "risk": entry.get("risk", []),
         "unresolved": unresolved,
     })
+    _set_test(entry, test)
     entry["render_hash"] = render or {"claude": entry["spec_hash"]}
     m["assets"][f"skills/{skill_id}"] = entry
     save(root, m)

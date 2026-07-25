@@ -55,8 +55,9 @@ def main(argv=None):
                    help="--write 시 manifest 자동 등록 (spec/claims hash + render_hash). --render-claude/-codex 로 렌더경로 지정")
     p.add_argument("--render-claude", default="", help="manifest render_hash.claude 산출물 경로(있으면 해시)")
     p.add_argument("--render-codex", default="", help="manifest render_hash.codex 산출물 경로(있으면 해시)")
-    p.add_argument("--test", default="scripts/sage_harness/hooks/tests/test_reverse_extract_agent.py",
-                   help="manifest.test 경로(regression)")
+    p.add_argument("--test", default=None,
+                   help="manifest.test 경로(이 자산의 회귀 테스트). 기본 없음 — 엔진 테스트를 "
+                        "가리키면 설치되지 않은 경로라 validate 가 FAIL 한다")
     args = p.parse_args(argv)
 
     config = load_config(args.config)

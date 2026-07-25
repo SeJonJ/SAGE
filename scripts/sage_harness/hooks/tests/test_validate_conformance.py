@@ -180,5 +180,46 @@ class TestConformanceWiring(unittest.TestCase):
             self.assertTrue(any("INFO interpretive 계약버전 검사 skip" in m for m in msgs), msgs)
 
 
+class TestManifestTestPath(unittest.TestCase):
+    """manifest.test 는 프로젝트 자산의 회귀 테스트만 담는다.
+
+    과거 generate 는 엔진의 reverse_extract 회귀 테스트 경로를 박았다. 그 테스트는 install 이
+    배포하지 않으므로(프로젝트엔 scripts/sage_harness/hooks/ 만 온다) validate 가 없는 파일로
+    FAIL 했고, 프로젝트가 고칠 수 없는 실패였다.
+    """
+
+    def test_undeployed_engine_test_path_warns_instead_of_failing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _mk_instance(tmp, "agents/x", _CLAIMS, render_text=None)
+            entry = _stamped_entry(root, "agents/x")
+            entry["test"] = "scripts/sage_harness/hooks/tests/test_reverse_extract_agent.py"
+            sev, msgs = V._validate_interpretive(root, "agents/x", entry, run_regression=True)
+            self.assertEqual(sev, "WARN", msgs)
+            self.assertTrue(any("엔진 소유 테스트 경로" in m for m in msgs), msgs)
+
+    def test_project_owned_missing_test_path_still_fails(self):
+        # 프로젝트가 스스로 선언한 회귀 테스트가 없는 것은 여전히 프로젝트가 고칠 결함이다.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _mk_instance(tmp, "agents/x", _CLAIMS, render_text=None)
+            entry = _stamped_entry(root, "agents/x")
+            entry["test"] = "scripts/sage_harness/tests/test_my_agent.py"
+            sev, msgs = V._validate_interpretive(root, "agents/x", entry, run_regression=True)
+            self.assertEqual(sev, "FAIL", msgs)
+
+    def test_generate_no_longer_stamps_an_engine_test_path(self):
+        # 회귀 방지: 소스에 엔진 테스트 경로를 다시 박으면 배포 안 된 경로가 되살아난다.
+        source = open(os.path.join(REPO, "sage", "commands", "generate.py"), encoding="utf-8").read()
+        self.assertNotIn('f"scripts/sage_harness/hooks/tests/test_reverse_extract_{kind}.py"', source)
+
+    def test_manifest_util_drops_empty_test_key(self):
+        sys.path.insert(0, os.path.join(REPO, "scripts", "sage_harness"))
+        import manifest_util as mu
+        entry = {"test": "scripts/sage_harness/hooks/tests/test_reverse_extract_agent.py"}
+        mu._set_test(entry, None)
+        self.assertNotIn("test", entry)          # None 을 넣으면 schema(string) 위반
+        mu._set_test(entry, "scripts/sage_harness/tests/t.py")
+        self.assertEqual(entry["test"], "scripts/sage_harness/tests/t.py")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

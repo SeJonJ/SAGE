@@ -743,7 +743,11 @@ def _gen_interpretive(args, root, kind):
 
     guide = os.path.join(dest, "AGENT_GUIDE.md")
     out_dir = docs_dir(root, kind)
-    test_path = f"scripts/sage_harness/hooks/tests/test_reverse_extract_{kind}.py"
+    # manifest.test 는 비운다. 예전에는 엔진의 reverse_extract 회귀 테스트를 가리켰는데, 그 테스트는
+    # 합성 입력으로 추출기를 검증하는 엔진 소유물이라 install 이 배포하지 않고(프로젝트엔
+    # scripts/sage_harness/hooks/ 만 온다) 프로젝트 자산의 회귀도 아니다. 결과는 validate 가
+    # 없는 경로로 FAIL 하는 것뿐이었다. 자산별 회귀가 실제로 있으면 프로젝트가 직접 채운다.
+    test_path = None
     written, failed, deployed = [], [], []
     for aid in ids:
         if aid in core_names:

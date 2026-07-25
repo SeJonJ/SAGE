@@ -53,6 +53,14 @@ def _bootstrap_warn(root):
     return bootstrap_warn_text(reason) if reason else None
 
 
+# 엔진이 자기 추출기를 합성 입력으로 검증하는 테스트. 프로젝트 자산의 회귀가 아니고 설치되지도
+# 않으므로 프로젝트 manifest 의 test 로는 무효다(과거 generate 가 여기를 가리켰다).
+_ENGINE_ONLY_TESTS = (
+    "scripts/sage_harness/hooks/tests/test_reverse_extract_agent.py",
+    "scripts/sage_harness/hooks/tests/test_reverse_extract_skill.py",
+)
+
+
 def _safe_test_path(root, test):
     """manifest.test 를 안전 실행 경로로만 허용 (audit 4회차 P1: 오염 manifest 임의 실행 차단).
 
@@ -461,6 +469,14 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True):
     msgs.extend(cmsgs)
     # render_hash 는 interpretive/외부 산출물이라 v1 staleness 재계산 제외(정보성)
     test = entry.get("test")
+    if test in _ENGINE_ONLY_TESTS and not os.path.exists(os.path.join(root, test)):
+        # 과거 generate 가 엔진 자체 회귀 테스트 경로를 프로젝트 manifest 에 박았다. 그 테스트는
+        # 합성 입력으로 추출기를 검증하는 엔진 소유물이라 설치되지 않고, 프로젝트 자산의 회귀도
+        # 아니다. 없는 경로를 FAIL 로 세우면 프로젝트가 고칠 수 없는 실패가 되므로 안내로 바꾼다.
+        msgs.append(f"  WARN 엔진 소유 테스트 경로가 manifest 에 남아 있음: {test} "
+                    "— `sage generate --kind agent|skill --write` 재실행으로 정리됩니다")
+        bump("WARN")
+        test = None
     if run_regression and test and sev in ("PASS", "WARN"):
         tpath = _safe_test_path(root, test)
         if tpath is None:

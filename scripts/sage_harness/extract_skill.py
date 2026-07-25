@@ -50,7 +50,9 @@ def main(argv=None):
     p.add_argument("--register", action="store_true")
     p.add_argument("--render-claude", default="")
     p.add_argument("--render-codex", default="")
-    p.add_argument("--test", default="scripts/sage_harness/hooks/tests/test_reverse_extract_skill.py")
+    p.add_argument("--test", default=None,
+                   help="manifest.test 경로(이 자산의 회귀 테스트). 기본 없음 — 엔진 테스트를 "
+                        "가리키면 설치되지 않은 경로라 validate 가 FAIL 한다")
     args = p.parse_args(argv)
 
     config = load_config(args.config)
