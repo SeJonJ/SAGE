@@ -47,6 +47,12 @@ profile.pdca: { enabled, phases[{id,glob}], pre_implementation_required{L1,L2,L3
   선언 삭제·중복·오염은 snapshot fallback 없이 fail-closed 한다.
   phase write는 changed path/declaration, source write는 explicit event stem 또는 exact branch final segment로
   current cycle을 하나만 정한다. 숫자 substring과 recent/mtime은 cycle identity에 쓰지 않는다.
+- explicit event stem 은 `SAGE_CYCLE_STEM` env 로 주입된다(EH-7). 장수 브랜치에서는 branch final segment
+  추론이 영영 맞지 않으므로 이게 정상 경로다. `decide` 는 판정에 `cycle_stem`/`cycle_source`/
+  `cycle_stem_declared` 를 스탬프해서, ① 안내가 추론 사실과 선언 경로를 가리키게 하고 ② 어댑터가 선언
+  사용을 `.sage/override.jsonl` 의 `cycle_stem_declared` 로 세션·stem 1회 기록하게 한다. 선언 stem 은
+  이미 완결된 사이클을 지목해 전 게이트를 통과시킬 수 있어서, 기록 실패 시 통과를 허용하지 않는다
+  (`block_cycle_stem_audit_failure`).
 - core `decide`: ① missing/conflicting/ambiguous binding은 `block_cycle_binding`
   ② report←approve 게이트(L0 단축 전, current stem의 05에 정확히 한 개의
   `Final Status: APPROVED`가 없으면 block_report_without_approval). Placeholder, duplicate status,

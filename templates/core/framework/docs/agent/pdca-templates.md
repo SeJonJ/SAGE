@@ -336,6 +336,31 @@ filename without `.md`. Phase selection is exact by this stem; branch-number sca
 and recent-file fallback are not cycle identity. A missing, conflicting, or ambiguous
 stem blocks governed work.
 
+### Declaring the current cycle on a long-lived branch
+
+When you edit a phase document, the stem comes from its path, which cannot be
+forged. Every other edit has no such anchor, so the gate infers the stem from the
+last segment of the git branch name. That is correct when each cycle gets its own
+branch and permanently wrong when many cycles share one long-lived branch: the
+inferred stem never matches any phase document, so every governed edit is blocked
+as "phase documents missing" even though all of them exist.
+
+Declare the cycle instead of renaming the branch:
+
+```bash
+export SAGE_CYCLE_STEM=<phase-document-basename>   # e.g. sage_project_profile_refresh
+```
+
+This does not weaken the gate — it supplies the cycle identity the gate could not
+infer, and every phase, review, and acceptance requirement is still enforced
+against that stem. Because a declaration can point at an already-completed cycle
+whose evidence is fully in place, each session's first use is recorded in
+`.sage/override.jsonl` as a `cycle_stem_declared` entry; if that log cannot be
+written, the gate blocks rather than passing unaudited.
+
+Export it per shell session. Do not wire it into a settings file: a stored value
+silently binds every later non-phase edit to a stale cycle.
+
 Write Phase 06 only after all 00–05 updates have completed. A single change that
 co-modifies 06 with any other phase is blocked because the pre-write evidence snapshot
 cannot prove the resulting state.

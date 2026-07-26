@@ -227,6 +227,9 @@ _NON_OVERRIDABLE_BLOCKS = {
     "block_report_without_acceptance",
     "block_report_waiver_audit_failure",
     "block_gate_runtime_error",
+    # 감사 기록 실패로 생긴 BLOCK 은 override 대상이 아니다 — override 는 그 자체가 감사에 남는 우회인데,
+    # 감사를 못 쓰는 상태에서 감사로 우회한다는 건 성립하지 않는다. waiver 기록 실패와 같은 취급.
+    "block_cycle_stem_audit_failure",
 }
 
 
@@ -278,6 +281,34 @@ def _record_acceptance_waiver_uses(hook_id, root, decision):
         return {"status": "block", "exit_code": 2, "risk": "PDCA",
                 "message_key": "block_report_waiver_audit_failure",
                 "reason": f"acceptance waiver use 감사 기록 실패: {type(exc).__name__}: {exc}",
+                "file_short": (decision or {}).get("file_short", "")}
+
+
+def _record_declared_cycle_stem(hook_id, root, decision, session_id):
+    """선언된 cycle stem 이 판정에 쓰인 사실을 감사에 남긴다. 기록 실패 시 통과는 허용하지 않는다.
+
+    BLOCK 은 기록 실패로 바꿀 것이 없으므로 그대로 둔다. 통과(ok/warn)는 다르다 — 선언 stem 은
+    완결된 과거 사이클을 지목해 게이트 전체를 통과시킬 수 있어서, 기록하지 못한 통과는 waiver 소비를
+    기록하지 못한 것과 같은 무감사 통과다. 그래서 같은 방식으로 fail-closed 한다.
+    """
+    if not (decision or {}).get("cycle_stem_declared"):
+        return decision
+    try:
+        import override_audit
+        override_audit.record_cycle_stem_declaration(
+            root, hook_id, decision.get("cycle_stem") or "", session_id,
+            status=decision.get("status") or "")
+        return decision
+    except Exception as exc:
+        if (decision or {}).get("status") == "block":
+            print(f"[{hook_id}] 선언 cycle stem 감사 기록 실패(이미 BLOCK 이라 판정 유지): "
+                  f"{type(exc).__name__}: {exc}", file=sys.stderr)
+            return decision
+        print(f"⛔ [{hook_id}] 선언 cycle stem 감사 기록 실패 → fail-closed BLOCK: "
+              f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return {"status": "block", "exit_code": 2, "risk": "PDCA",
+                "message_key": "block_cycle_stem_audit_failure",
+                "reason": f"선언 cycle stem 감사 기록 실패: {type(exc).__name__}: {exc}",
                 "file_short": (decision or {}).get("file_short", "")}
 
 
@@ -368,6 +399,8 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
     decision = _decide_pre_implementation_fail_closed(
         hid, core, event, profile, snapshot, strategy_result)
     decision = _record_acceptance_waiver_uses(hid, root, decision)
+    # override 우회보다 먼저 기록한다 — 우회로 통과하든 게이트가 통과시키든 선언 사실은 남아야 한다.
+    decision = _record_declared_cycle_stem(hid, root, decision, event.get("session_id") or "")
     if _maybe_override(hid, root, decision, changes):   # P1-5: 활성 override 면 BLOCK 우회(감사 기록)
         return 0
     return io.render_gate(decision, profile)     # ← 런타임별 채널/포맷/exit

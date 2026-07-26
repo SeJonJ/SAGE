@@ -23,6 +23,51 @@ def desktop_hint(profile):
     return (profile.get("risk") or {}).get("desktop_block_hint", "원본 경로 수정 후 동기화")
 
 
+_PHASE_DOC_HINT = "해당 phase 문서를 먼저 작성하세요 (docs/agent/pdca-templates.md)"
+_BINDING_HINT = "phase 문서의 파일명과 Cycle-Stem 선언을 일치시키고 current cycle을 하나로 특정하세요"
+
+
+def _inferred_stem(decision):
+    """브랜치 leaf 추론으로 stem 을 얻었을 때 그 stem, 아니면 None.
+
+    phase 문서를 고칠 때 stem 은 경로에서 오지만(위조 불가), 그 외 편집에서는 브랜치 leaf 에서
+    추론한다. 사이클마다 브랜치를 따는 흐름에서는 맞고, 장수 브랜치에서는 영영 맞지 않는다.
+    후자에서 "문서를 작성하라" 고만 안내하면 이미 있는 문서를 다시 쓰게 만든다.
+    """
+    if "branch-leaf" not in (decision.get("cycle_source") or []):
+        return None
+    return decision.get("cycle_stem") or ""
+
+
+def _declare_hint(stem):
+    return (f"cycle stem 을 브랜치 leaf `{stem}` 에서 추론했습니다 — 지금 사이클이 이게 아니면 "
+            f"`export SAGE_CYCLE_STEM=<stem>` 으로 지정하세요(장수 브랜치에서는 필수, "
+            f".sage/override.jsonl 에 감사 기록)")
+
+
+def _phase_incomplete_hint(decision):
+    stem = _inferred_stem(decision)
+    if stem is None:
+        return _PHASE_DOC_HINT
+    return f"{_declare_hint(stem)}. 이 사이클이 맞으면 {_PHASE_DOC_HINT}"
+
+
+def _cycle_binding_hint(decision):
+    # binding 자체가 실패한 경우다. 비-phase 편집이면 브랜치 leaf 가 후보였으므로 선언이 탈출구고,
+    # phase 문서 편집이면 경로/선언 불일치라 기존 안내가 정확하다.
+    source = decision.get("cycle_source") or []
+    if source and "branch-leaf" not in source:
+        return _BINDING_HINT
+    return f"{_BINDING_HINT}. 비-phase 편집이면 `export SAGE_CYCLE_STEM=<stem>` 으로 사이클을 지정하세요"
+
+
+def _ok_suffix(decision):
+    """선언된 stem 은 OK 줄에도 노출한다 — 낡은 선언으로 조용히 통과하는 상태가 보이게."""
+    if not decision.get("cycle_stem_declared"):
+        return ""
+    return f" | cycle: {decision.get('cycle_stem') or '(미상)'} (SAGE_CYCLE_STEM 선언)"
+
+
 def _gate_record(decision, profile):
     """message_key → (sev, scope, text, show_reason, hint). 동적 필드(fs/rs/risk/miss)는
     여기서 채운다. hint 의 {rv} 는 렌더 시 런타임별 sage-review 호출로 치환된다."""
@@ -46,7 +91,7 @@ def _gate_record(decision, profile):
         "warn_l2_no_plan": ("WARN", "L2", "소스/설정 변경인데 plan 문서 없음.", True, None),
         "warn_l0_l3_content": ("WARN", "L0", "문서/plan 에 L3 내용 키워드 감지 — 민감정보 노출 점검.", False, None),
         "block_phase_incomplete": ("BLOCK", risk, f"의무 PDCA phase 미작성: [{miss}].", True,
-                             "해당 phase 문서를 먼저 작성하세요 (docs/agent/pdca-templates.md)"),
+                             _phase_incomplete_hint(decision)),
         "warn_phase_incomplete": ("WARN", "L1", f"권장 PDCA phase 미작성: [{miss}].", False, None),
         "block_report_without_approval": ("BLOCK", "PDCA", f"{rs}.", False,
                              "approve phase 문서에 APPROVED 기록 후 report 작성"),
@@ -56,8 +101,7 @@ def _gate_record(decision, profile):
                              "Phase 05 를 {rv} 로 돌려 loop 을 닫고(APPROVED) 05 문서에 'Loop-Run: <run_id>' 를 기록하세요"),
         "warn_report_without_audit": ("WARN", "PDCA", f"{rs}.", False,
                              "(advisory) Phase 05 리뷰 루프 audit 증거 권장 — {rv} 로 loop 실행 + 05 에 'Loop-Run: <run_id>' 기록"),
-        "block_cycle_binding": ("BLOCK", "PDCA", f"{rs}.", False,
-                             "phase 문서의 파일명과 Cycle-Stem 선언을 일치시키고 current cycle을 하나로 특정하세요"),
+        "block_cycle_binding": ("BLOCK", "PDCA", f"{rs}.", False, _cycle_binding_hint(decision)),
         "block_report_without_acceptance": ("BLOCK", "PDCA", f"{rs}.", False,
                              "04-analyze 에 acceptance evidence(PASS/FAIL/NOT TESTED/N/A)를 기록하고 05 를 다시 검토하세요"),
         "warn_report_without_acceptance": ("WARN", "PDCA", f"{rs}.", False,
@@ -66,6 +110,9 @@ def _gate_record(decision, profile):
                              "운영 검증 후 남은 evidence를 기록하고 waiver를 revoke하세요"),
         "block_report_waiver_audit_failure": ("BLOCK", "PDCA", f"{rs}.", False,
                              ".sage/acceptance-waivers.jsonl 쓰기 권한과 무결성을 확인하세요"),
+        "block_cycle_stem_audit_failure": ("BLOCK", "PDCA", f"{rs}.", False,
+                             ".sage/override.jsonl 쓰기 권한과 무결성을 확인하세요 — 선언된 cycle stem 을 "
+                             "기록하지 못하면 감사 없이 통과시킬 수 없습니다"),
         "block_gate_runtime_error": ("BLOCK", "PDCA", f"{rs}.", False,
                              "profile 타입과 설치된 SAGE runtime 무결성을 확인하고 validate를 다시 실행하세요"),
         "ok_l3": ("OK", "L3", "review 확인됨", False, None),
@@ -84,7 +131,7 @@ def gate_text(decision, profile, runtime):
     tag = f"[GATE {sev}{_dash(runtime)}{scope}]" if scope else f"[GATE {sev}]"
     prefix = "" if runtime == "codex" else f"{_EMOJI[sev]} "
     if sev == "OK":
-        line = f"{prefix}{tag} {text} | {fs}"
+        line = f"{prefix}{tag} {text} | {fs}{_ok_suffix(decision)}"
     else:
         line = f"{prefix}{tag} {text} 파일: {fs}"
         if show_reason and rs:

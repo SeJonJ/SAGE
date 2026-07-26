@@ -147,6 +147,14 @@ fenced code blocks and equal to its markdown basename. All phase, review, and ac
 that exact stem; branch-number scans and recent-file/mtime fallback are not cycle
 identity. Missing, conflicting, or ambiguous bindings block governed work.
 
+For edits outside phase documents there is no path to bind to, so the stem is
+inferred from the git branch's last segment. On a long-lived branch shared by many
+cycles that inference never matches, and governed edits are blocked as "phase
+documents missing" while the documents exist. Declare the cycle explicitly with
+`export SAGE_CYCLE_STEM=<phase-document-basename>`; the gate then enforces every
+requirement against that stem, and the first use in a session is recorded in
+`.sage/override.jsonl`. See `docs/agent/pdca-templates.md`.
+
 ### Pre-implementation declaration
 
 Before writing implementation code, declare: risk level, compound rule applied,

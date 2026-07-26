@@ -139,6 +139,34 @@
 
 ---
 
+## EH-7 — 장수 브랜치 cycle stem 해석 + 선언 통로 감사
+
+- **배경**: ChatForYou `chatforyou_v2_sage` 브랜치에서 L2 파일이면 무엇이든 편집이 차단됐다
+  (`⛔ [GATE BLOCK — L2] 의무 PDCA phase 미작성: [00, 01, 02, 03]`). SAGE 자산뿐 아니라 앱 코드
+  (`ChatApplication.java`, `server.js`)도 동일하게 막혀, 자산 한정 문제가 아니었다.
+- **원인**: phase 문서가 아닌 파일을 고칠 때는 바인딩할 경로가 없어 `cycle_binding` 이 stem 을 git 브랜치의
+  마지막 세그먼트에서 추론한다. 사이클마다 브랜치를 따는 흐름에서는 맞지만, 여러 사이클이 한 장수 브랜치를
+  공유하면 추론값이 어떤 phase 문서와도 맞지 않아 문서가 전부 있어도 영영 결핍 판정이 난다. `resolve()` 가
+  이미 `source: ["branch-leaf"]` 를 돌려주는데 아무도 소비하지 않아, 안내는 "phase 문서를 작성하세요" 로
+  방향이 틀린 채였다.
+- **부수 발견(더 무거움)**: 탈출구인 `SAGE_CYCLE_STEM` env 는 저장소 전체에서 주입 한 줄만 존재하고 문서·출력·
+  테스트에 전무했다. 게다가 이 선언은 phase 검사만 우회하지 않는다 — acceptance waiver grant 매칭 키이자 L3
+  리뷰 증거 판정 기준이라, **이미 완결된 과거 사이클의 stem 을 선언하면 증거가 모두 갖춰진 상태로 판정되어
+  전 게이트가 통과**하고, 그 통과가 감사 로그·출력 어디에도 남지 않았다.
+- **구현**: `decide` 가 판정에 `cycle_stem`/`cycle_source`/`cycle_stem_declared` 를 스탬프한다(판정 로직 불변).
+  안내는 출처로 분기해 추론일 때만 선언 경로를 제시하고, 경로 유래 결핍에는 기존 문서 작성 안내를 유지한다
+  (우회를 가르치지 않기 위해). 선언 사용은 `.sage/override.jsonl` 의 `cycle_stem_declared` 로 세션·stem 1회
+  기록하며, 기록 실패 시 통과를 허용하지 않는다(`block_cycle_stem_audit_failure`). 선언 자체는 막지 않는다 —
+  장수 브랜치에서는 이게 유일한 정상 경로이고, 봉쇄하면 개발이 다시 멈춘다.
+- **기각한 안**: SAGE 자산을 PDCA 대상에서 제외 — 앱 코드도 막히므로 대다수 케이스가 안 풀리고,
+  `project-profile.yaml` 은 `pdca.enabled`·`risk.*` 를 담은 게이트 정책 소스라 무게이트로 열면 한 줄로 전
+  시스템 게이트를 끄는 무검증 경로가 생긴다. branch-leaf 추론 자체를 변경 — `test_cycle_binding.py` 가
+  의도된 계약으로 못박고 있고, 사이클=브랜치 흐름에서는 옳다.
+- **상태**: ✅ **완료(2026-07-25)**. `test_cycle_stem_declaration.py` 17 케이스로 재현·안내·감사·fail-closed 를
+  못박았다.
+
+---
+
 ## (참고) 보류 — 자산 사이클 내 기록
 - F5(클린 업그레이드)는 하드닝에서 해소(profile create-only). F1/F3/F7/malformed 동일.
 - 진행 로그: vault `TECH - SAGE 구현 진행 로그.md`

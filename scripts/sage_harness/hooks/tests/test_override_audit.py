@@ -8,6 +8,7 @@
 - 감사로그는 append-only(grant + bypass 누적).
 """
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -192,6 +193,7 @@ class TestMaybeOverrideWiring(unittest.TestCase):
             "block_report_without_acceptance",
             "block_report_waiver_audit_failure",
             "block_gate_runtime_error",
+            "block_cycle_stem_audit_failure",
         )
         with tempfile.TemporaryDirectory() as tmp:
             ov.grant(tmp, "generic emergency override", 10000, gate="all")
@@ -217,6 +219,22 @@ class TestMaybeOverrideWiring(unittest.TestCase):
             recs = ov.read_records(tmp)
             self.assertEqual(sum(1 for r in recs if r["event"] == "grant"), 2)
             self.assertEqual(sum(1 for r in recs if r["event"] == "bypass"), 1)
+
+
+class TestListSurfacesEveryPassRoute(unittest.TestCase):
+    """감사 뷰어가 모든 통과 축을 보여주는지. 로그에만 쌓이고 안 보이면 기록한 의미가 없다."""
+
+    def test_cycle_stem_declarations_appear_in_list(self):
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))))))
+        with tempfile.TemporaryDirectory() as tmp:
+            ov.grant(tmp, "r", 10000, gate=GATE)
+            ov.record_cycle_stem_declaration(tmp, GATE, "some_cycle", "sess-1", status="ok")
+            proc = subprocess.run([sys.executable, "-m", "sage", "override", "--list",
+                                   "--root", tmp], cwd=repo, capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("cycle stem 선언 1건", proc.stdout)
+        self.assertIn("some_cycle", proc.stdout)
 
 
 if __name__ == "__main__":

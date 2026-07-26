@@ -30,6 +30,10 @@ echo "### 5a. deterministic Cycle-Stem binding"
 python3 "$HERE/test_cycle_binding.py" || rc=1
 
 echo ""
+echo "### 5a2. cycle stem 선언 통로 (EH-7 장수 브랜치 오안내 + 선언 감사)"
+python3 "$HERE/test_cycle_stem_declaration.py" || rc=1
+
+echo ""
 echo "### 5b. exact cycle/domain L3 review strategy"
 python3 "$HERE/test_cycle_domain_review.py" || rc=1
 

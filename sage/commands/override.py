@@ -45,13 +45,20 @@ def run(args):
         records = ov.read_records(root)
         grants = [r for r in records if r.get("event") == "grant"]
         bypasses = [r for r in records if r.get("event") == "bypass"]
+        # 선언 cycle stem 은 grant 없이 게이트를 통과시킬 수 있는 두 번째 축이라 같은 화면에 세운다 —
+        # 감사 로그에만 쌓이고 뷰어가 안 보여주면 기록해도 아무도 안 본다.
+        declared = [r for r in records if r.get("event") == "cycle_stem_declared"]
         print(f"== sage override --list ({ov.audit_path(root)}) ==")
         print(f"활성 override: {len(active)}건")
         for g in active:
             print(f"   - id={g.get('grant_id')} | gate={g['gate']} | 만료 {g['expires_at']} | 사유: {g.get('reason')} | by {g.get('user')}")
-        print(f"감사 총계: grant {len(grants)}건, bypass {len(bypasses)}건 (append-only)")
+        print(f"감사 총계: grant {len(grants)}건, bypass {len(bypasses)}건, "
+              f"cycle stem 선언 {len(declared)}건 (append-only)")
         for b in bypasses[-5:]:
             print(f"   · bypass {b.get('ts')} gate={b.get('gate')} {b.get('message_key')} 파일 {len(b.get('files') or [])}건")
+        for d in declared[-5:]:
+            print(f"   · SAGE_CYCLE_STEM {d.get('ts')} stem={d.get('cycle_stem')} "
+                  f"판정={d.get('status')} by {d.get('user')}")
         return 0
 
     # revoke 경로

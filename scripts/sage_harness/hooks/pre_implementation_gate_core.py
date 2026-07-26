@@ -18,7 +18,9 @@ import re
 
 import cycle_binding
 
-CONTRACT_VERSION = "1"
+CONTRACT_VERSION = "2"   # EH-7: decide() 가 cycle_stem/cycle_source/cycle_stem_declared 를 싣고,
+                         # 어댑터가 선언 사용을 감사해야 한다. 낡은 어댑터 + 새 core 조합은 스탬프만
+                         # 하고 기록을 못 해 무감사 통과가 되므로 STALE 로 잡는다.
 _RANK = {"none": -1, "L0": 0, "L1": 1, "L2": 2, "L3": 3}
 _STRUCTURED_LABEL_EMPHASIS_RE = re.compile(
     r"(?P<mark>\*{1,3}|_{1,3})(?P<label>Final\s+Status|Loop-Run|Risk\s+Level|Risk|위험도)"
@@ -212,6 +214,9 @@ def _missing_pre_impl_phases(event: dict, profile: dict, snapshot: dict, risk: s
 
     빈 리스트 = 강제 활성이나 결핍 없음(또는 해당 레벨 요구 phase 없음). 비어있지 않으면 결핍.
     phase 문서 존재는 path basename + Cycle-Stem exact binding으로 판정한다.
+
+    결핍 판정은 "문서가 없다" 와 "다른 사이클을 보고 있다" 를 구분하지 못한다. 어느 쪽인지는
+    stem 의 출처가 알려주므로, 안내는 decide() 가 스탬프한 cycle_source 로 분기한다.
     """
     cfg = _pdca_cfg(profile)
     if cfg is None:
@@ -773,8 +778,35 @@ def _feedback_gate(event, profile, snapshot):
             "markers": [m for _, markers in unresolved for m in markers]}
 
 
+_DECLARED_SOURCE = "event"      # cycle_binding 이 env 선언 기원에 붙이는 라벨
+
+
+def _stamp_cycle_identity(decision: dict, event: dict, profile: dict, snapshot: dict) -> dict:
+    """판정에 현재 cycle stem 과 그 출처를 실어 보낸다(판정 자체는 바꾸지 않는다).
+
+    출처를 밖으로 내보내야 하는 이유가 둘이다. 하나는 안내 — stem 을 브랜치 leaf 에서 추론했다면
+    올바른 탈출구는 "phase 문서를 작성하라" 가 아니라 "이 사이클이 아니면 선언하라" 다. 다른 하나는
+    감사 — env 선언 stem 은 이미 완결된 사이클을 지목해 게이트 전체를 통과시킬 수 있어서, 어댑터가
+    그 사실을 기록할 수 있어야 한다. core 는 IO 를 하지 않으므로 여기서는 사실만 싣는다.
+    """
+    cfg = _pdca_cfg(profile)
+    if cfg is None or not isinstance(decision, dict):
+        return decision
+    binding = cycle_binding.resolve(event, snapshot, cfg)
+    source = binding.get("source") or []
+    decision["cycle_stem"] = binding.get("stem") or ""
+    decision["cycle_source"] = list(source)
+    decision["cycle_stem_declared"] = _DECLARED_SOURCE in source
+    return decision
+
+
 def decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:
     """risk-gate 판정. strategy_result: None=미선택 / {found:bool, path?} = 선택된 전략 실행결과."""
+    return _stamp_cycle_identity(
+        _decide(event, profile, snapshot, strategy_result), event, profile, snapshot)
+
+
+def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:
     c = classify_risk(event, profile)
     risk = c["risk"]
 
