@@ -226,11 +226,37 @@ class TestDoctor(unittest.TestCase):
                 "components:\n  - id: backend\n    runtime_models: { codex: gpt-picked }\n"
                 "cross_model: { reviewer: { host: claude, model: opus } }\n",
                 encoding="utf-8")
-            with mock.patch.dict(os.environ, {"CODEX_HOME": ch}):
+            # doctor 는 실행 환경 진단이라 리뷰어가 실행 중인 host 에 따라 정해진다 — 테스트가
+            # 어느 host 에서 도는지에 결과가 좌우되지 않도록 고정한다(profile 의 active_host 와 일치).
+            with mock.patch.dict(os.environ, {"CODEX_HOME": ch, "SAGE_HOST": "codex"}):
                 rc, out = run_doctor(p)
         self.assertEqual(rc, 0)
         self.assertIn("component:backend : codex/gpt-picked → confirmed", out)
         self.assertIn("cross-reviewer : claude/opus → syntax-only/account-unverified", out)
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
+    def test_model_routing_reports_what_runtime_will_actually_use(self):
+        """리뷰어 host 와 실제 peer 가 갈리면 그 모델은 실행 시 버려진다 — 진단도 그렇게 말해야 한다.
+
+        "선택됨" 으로 보여주면 사용자가 멀쩡한 설정을 고치거나, 안 쓰이는 모델을 쓰인다고 믿는다.
+        """
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "p.yaml")
+            Path(p).write_text(
+                "runtime: { installed_hosts: [claude, codex], active_host: auto }\n"
+                "options: { cross_model: true }\n"
+                "cross_model: { reviewer: { host: codex, model: gpt-picked } }\n",
+                encoding="utf-8")
+            # 실제 실행이 codex → peer 는 claude → codex 용 모델은 적용되지 않는다.
+            with mock.patch.dict(os.environ, {"SAGE_HOST": "codex"}):
+                rc, out = run_doctor(p)
+        self.assertEqual(rc, 0)
+        self.assertIn("cross-reviewer : claude/(peer CLI default)", out)
+        self.assertIn("codex 용으로 지정", out)
+        self.assertNotIn("claude/gpt-picked", out)
+        # 폐기 사유를 낸 뒤 "선택 없음" 까지 덧붙이면 같은 절이 서로 다른 말을 한다.
+        self.assertNotIn("명시적 runtime model 선택 없음", out)
 
     def test_overlay_drift_hint_syncs_before_strict_validate(self):
         with tempfile.TemporaryDirectory() as root:

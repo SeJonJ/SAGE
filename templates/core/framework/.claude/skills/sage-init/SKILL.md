@@ -221,9 +221,12 @@ toggle's detail entirely when it stays off.
     and `sage cross-check` reject it:
     - peer `codex` (claude-host): `minimal | low | medium | high | xhigh`
     - peer `claude` (codex-host): `low | medium | high | xhigh | max`
-    Ask the user for `cross_model.reviewer.host` and `.model`; the host must be the
-    runtime opposite `active_host`. Show that host's `sage models` output first. If the
-    reviewer block is omitted, explain that SAGE uses the peer CLI default model.
+    Ask the user for `cross_model.reviewer.host` and `.model`. The `host` says which peer
+    the model was chosen for — model ids belong to one runtime — and the reviewer itself is
+    resolved at run time by excluding the host that is actually executing. If the resolved
+    peer differs from this `host`, SAGE skips the model and uses the peer CLI default. Show
+    that host's `sage models` output first. If the reviewer block is omitted, explain that
+    SAGE uses the peer CLI default model.
 - **`options.obsidian` / `knowledge_capture`** — shared automation flags and note
   conventions stay in `project-profile.yaml`. Machine availability and the private
   vault path go in `project-profile.local.yaml` as `enabled` and `vault_path`.

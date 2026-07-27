@@ -84,8 +84,10 @@ The vocabulary is peer-specific (`codex`: `minimal|low|medium|high|xhigh`;
 `claude`: `low|medium|high|xhigh|max`) and a wrong value is rejected by `sage validate`.
 
 For component or reviewer model edits, run `sage models --host <host>` before proposing
-the value and preserve its verification label. `cross_model.reviewer.host` must remain
-opposite `runtime.active_host`; a manual host handoff therefore requires a reviewer update.
+the value and preserve its verification label. `cross_model.reviewer.host` declares which peer
+the model was chosen for; the reviewer itself is the runtime opposite whichever host is actually
+executing, so a host handoff needs no reviewer edit — if the resolved peer differs, the model is
+skipped. `host` must be an installed host other than a pinned `runtime.active_host`.
 `sage doctor` reports cache-confirmed, syntax-only/account-unverified, or unknown selections.
 
 For **`pdca.review_loop`** and the **vault outputs**, drive the *same* questions as

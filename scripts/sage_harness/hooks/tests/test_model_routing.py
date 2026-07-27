@@ -32,12 +32,61 @@ class TestModelRouting(unittest.TestCase):
         self.assertEqual(MR.component_model(component, "claude"), "opus")
         self.assertEqual(component["model"], "opus")
 
-    def test_reviewer_host_must_be_explicit_opposite_when_configured(self):
+    def test_reviewer_host_cannot_be_the_declared_active_host(self):
         profile = self._profile()
         self.assertEqual(MR.reviewer_selection(profile), ("claude", "opus"))
-        profile["cross_model"]["reviewer"]["host"] = "codex"
+        profile["cross_model"]["reviewer"]["host"] = "codex"   # = active_host
         issues = MR.profile_issues(profile)
-        self.assertTrue(any(sev == "FAIL" and "opposite" in msg for sev, msg in issues))
+        self.assertTrue(any(sev == "FAIL" and "자기 자신은 독립 리뷰어가 될 수 없음" in msg
+                            for sev, msg in issues))
+
+    def test_reviewer_host_must_be_installed(self):
+        # 설치되지 않은 runtime 을 리뷰어로 지정하면 실행 시점에 CLI 가 없어 BLOCKED 로 끝난다.
+        # 이전에는 opposite 이기만 하면 통과해서 이 오설정이 정적 검사를 그냥 지나갔다.
+        profile = self._profile()
+        profile["runtime"] = {"installed_hosts": ["codex"], "active_host": "codex"}
+        profile["cross_model"]["reviewer"]["host"] = "claude"
+        issues = MR.profile_issues(profile)
+        self.assertTrue(any(sev == "FAIL" and "installed_hosts에 없음" in msg for sev, msg in issues))
+
+    def test_auto_active_host_leaves_reviewer_host_to_runtime(self):
+        # auto 면 peer 가 실행 시점에만 정해지므로 정적으로 옳고 그름을 말할 수 없다 → 판정하지 않는다.
+        profile = self._profile()
+        profile["runtime"]["active_host"] = "auto"
+        for host in ("claude", "codex"):
+            profile["cross_model"]["reviewer"]["host"] = host
+            issues = [msg for sev, msg in MR.profile_issues(profile) if sev == "FAIL"]
+            self.assertEqual([], issues, host)
+
+    def test_reviewer_requires_both_host_and_model(self):
+        """host 는 중복이 아니다 — model id 가 런타임 종속이라 어느 peer 용인지 알아야 한다.
+
+        (`gpt-5.6-terra` 는 codex, `opus` 는 claude. 실제 peer 가 달라지면 그 모델은 쓸 수 없다.)
+        """
+        profile = self._profile()
+        profile["runtime"]["active_host"] = "auto"
+        for partial in ({"model": "opus"}, {"host": "claude"}):
+            profile["cross_model"]["reviewer"] = partial
+            self.assertTrue(any(sev == "FAIL" and "host와 model을 모두 명시" in msg
+                                for sev, msg in MR.profile_issues(profile)), partial)
+
+    def test_detected_host_is_never_its_own_reviewer(self):
+        """감지가 성공하면 pin 과 무관하게 현재 host 를 제외한다 — 이게 10-b 의 본체다."""
+        profile = self._profile()          # active_host: codex (pin)
+        # pin 은 codex 인데 실제로는 claude 에서 돌고 있다 → 리뷰어는 claude 가 아니어야 한다.
+        self.assertEqual(MR.reviewer_selection(profile, "claude")[0], "codex")
+        # 반대 방향도 대칭.
+        self.assertEqual(MR.reviewer_selection(profile, "codex")[0], "claude")
+
+    def test_explicit_reviewer_host_is_dropped_when_it_is_the_running_host(self):
+        profile = self._profile()
+        profile["cross_model"]["reviewer"]["host"] = "claude"
+        self.assertEqual(MR.reviewer_selection(profile, "codex")[0], "claude")   # 충돌 없음
+        self.assertEqual(MR.reviewer_selection(profile, "claude")[0], "codex")   # 자기리뷰 → 무시
+
+    def test_undetected_host_falls_back_to_profile(self):
+        profile = self._profile()
+        self.assertEqual(MR.reviewer_selection(profile, None)[0], "claude")      # opposite(codex)
 
     def test_malformed_component_models_fail_closed_without_jsonschema(self):
         for bad in ("gpt", ["gpt"], {"codex": ""}, {"other": "gpt"}, {"codex": 3}):

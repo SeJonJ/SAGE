@@ -566,8 +566,11 @@ def _profile_with_host(host, prefix):
             indent = line[:len(line) - len(line.lstrip())]
             out.append(f"{indent}installed_hosts: [{host}]       # 원하는 discovery surface. double-host면 [claude, codex]")
         elif s.startswith("active_host:"):
+            # auto 가 기본이다. 어느 host 로 일하는지는 개발자별·세션별 사실인데 이 파일은 커밋되고
+            # local profile 이 이 키를 덮을 수 없어서(profile_layers._SECTION_KEYS), 값을 박아두면
+            # host 를 옮길 때마다 공유 파일을 고쳐야 한다 — 이 파일은 게이트 정책 소스라 L2 다.
             indent = line[:len(line) - len(line.lstrip())]
-            out.append(f"{indent}active_host: {host}              # 현재 단일 host. handoff 시 사용자가 명시 변경")
+            out.append(f"{indent}active_host: auto               # auto = 실행 시점 판별. claude|codex 로 고정도 가능")
         elif s.startswith('prefix:'):
             indent = line[:len(line) - len(line.lstrip())]
             out.append(f'{indent}prefix: "{prefix}"')

@@ -4,7 +4,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from sage.runtime_hosts import HOSTS, active_host, configured_hosts, opposite_host
+from sage.runtime_hosts import (HOSTS, active_host, configured_hosts, declared_active_host,
+                                declared_installed_hosts, opposite_host)
 
 _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")
 _COMPONENT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$")
@@ -32,15 +33,50 @@ def component_model(component: dict[str, Any] | None, host: str) -> str | None:
     return value if _valid_model(value) else None
 
 
-def reviewer_selection(profile: dict[str, Any] | None) -> tuple[str, str | None]:
-    peer = opposite_host(profile)
+def peer_candidates(profile: dict[str, Any] | None,
+                    current: str | None) -> list[str]:
+    """리뷰를 맡길 수 있는 host — 설치된 것 중 현재 실행 중인 것을 뺀 나머지.
+
+    현재 host 를 빼는 근거는 프로필 선언이 아니라 실행 중인 프로세스라는 사실이다. 독립 리뷰는
+    "코드를 쓴 놈이 아닌 다른 놈이 본다" 이고, 그건 프로필에 뭐라 적혔든 바뀌지 않는다.
+    host 가 2종뿐이라 결과는 항상 0개 또는 1개다.
+    """
+    hosts = configured_hosts(profile)
+    return [host for host in hosts if host != current] if current else list(hosts)
+
+
+def reviewer_selection(profile: dict[str, Any] | None,
+                       current: str | None = None) -> tuple[str, str | None]:
+    """(리뷰어 host, 모델) — current 는 실행 중인 host, None 이면 판별 불가.
+
+    current 를 여기서 직접 감지하지 않는 이유는 순수성이다. env 를 읽으면 같은 입력이 실행 환경에
+    따라 다른 답을 내고, 테스트도 어느 host 에서 돌리느냐에 좌우된다. 감지는 CLI 경계(review/doctor)가
+    하고 이 함수는 주입받는다 — hook core/adapter 분리와 같은 규칙이다.
+
+    current 가 주어지면 그 host 는 리뷰어가 되지 않는다. 명시된 `cross_model.reviewer.host` 도
+    마찬가지다 — 그대로 쓰면 자기 자신이 자기 코드를 리뷰하게 되어 cross-model 의 의미가 사라진다.
+    """
+    candidates = peer_candidates(profile, current)
+    if current is None:
+        # 무엇을 빼야 할지 모르면 후보 목록은 근거가 못 된다 — installed_hosts 가 없을 때
+        # configured_hosts 는 active_host 자신을 돌려주므로, 그대로 고르면 자기리뷰가 된다.
+        # 독립성이 걸린 호출자는 여기까지 오기 전에 running_host() 로 판별 실패를 확인하고 막아야
+        # 한다. 이 폴백은 진단·표시용이며 실행 host 를 보장하지 않는다.
+        peer = opposite_host(profile)
+    elif len(candidates) == 1:
+        peer = candidates[0]
+    else:
+        # 후보가 0개(설치 1개)여도 현재 host 를 리뷰어로 되돌리지는 않는다. 반대쪽을 가리키면
+        # 호출자의 CLI 가용성 검사가 걸러 BLOCKED 로 가고, 그게 자기리뷰보다 정직한 실패다.
+        peer = "codex" if current == "claude" else "claude"
     cross = profile.get("cross_model") if isinstance(profile, dict) else None
     reviewer = cross.get("reviewer") if isinstance(cross, dict) else None
     if not isinstance(reviewer, dict):
         return peer, None
     host = reviewer.get("host")
     model = reviewer.get("model")
-    return (host if host in HOSTS else peer, model if _valid_model(model) else None)
+    chosen = host if host in HOSTS and host != current else peer
+    return chosen, (model if _valid_model(model) else None)
 
 
 def component_issues(profile: dict[str, Any] | None) -> list[tuple[str, str]]:
@@ -122,15 +158,29 @@ def reviewer_issues(profile: dict[str, Any] | None) -> list[tuple[str, str]]:
     unknown = sorted((key for key in reviewer if key not in _REVIEWER_KEYS), key=str)
     if unknown:
         issues.append(("FAIL", f"cross_model.reviewer의 알 수 없는 키: {unknown}"))
+    # host 는 중복이 아니다 — model id 가 런타임 종속이라(`gpt-5.6-terra`=codex, `opus`=claude)
+    # 어느 peer 를 위한 선택인지 알아야 한다. 실제 peer 가 다르면 그 model 은 적용하지 않는다.
+    # (다만 "active_host 의 반대여야 한다" 는 옛 검사는 auto 에서 정적 판정이 불가능해 폐기했다.)
     if set(reviewer) & _REVIEWER_KEYS != _REVIEWER_KEYS:
         issues.append(("FAIL", "cross_model.reviewer는 host와 model을 모두 명시해야 함"))
         return issues
     host = reviewer.get("host")
     model = reviewer.get("model")
-    if host not in HOSTS:
-        issues.append(("FAIL", f"cross_model.reviewer.host={host!r} — {list(HOSTS)} 중 하나여야 함"))
-    elif host != opposite_host(profile):
-        issues.append(("FAIL", f"cross_model.reviewer.host={host!r}는 active_host의 opposite runtime이 아님"))
+    if host is not None:
+        declared = declared_active_host(profile)
+        installed = declared_installed_hosts(profile)
+        if host not in HOSTS:
+            issues.append(("FAIL", f"cross_model.reviewer.host={host!r} — {list(HOSTS)} 중 하나여야 함"))
+        elif installed is not None and host not in installed:
+            # installed_hosts 미선언 프로필은 무엇이 깔렸는지 주장한 적이 없으므로 판정하지 않는다.
+            # (선언이 없을 때 configured_hosts 는 active_host 하나로 폴백해서, 그걸 근거로 삼으면
+            #  legacy 프로필의 정상적인 cross-model 설정이 전부 FAIL 이 된다.)
+            issues.append(("FAIL", f"cross_model.reviewer.host={host!r}가 installed_hosts에 없음 — "
+                                   "설치되지 않은 runtime 에는 리뷰를 맡길 수 없음"))
+        elif host == declared:
+            # auto(=declared None)면 실행 시점에만 정해지므로 여기서 판정하지 않는다.
+            issues.append(("FAIL", f"cross_model.reviewer.host={host!r}가 active_host와 같음 — "
+                                   "자기 자신은 독립 리뷰어가 될 수 없음"))
     if not _valid_model(model):
         issues.append(("FAIL", f"cross_model.reviewer.model={model!r} — 유효한 model id 필요"))
     if enabled is not True:

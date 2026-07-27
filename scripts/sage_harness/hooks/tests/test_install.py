@@ -229,7 +229,10 @@ class TestInstall(unittest.TestCase):
             install.run(Args("codex", d, prefix="myapp"))
             prof = Path(os.path.join(d, "sage", "project-profile.yaml")).read_text(encoding="utf-8")
             self.assertIn("installed_hosts: [codex]", prof)
-            self.assertIn("active_host: codex", prof)
+            # active_host 는 설치 host 로 박지 않는다 — 어느 host 로 일하는지는 개발자별·세션별
+            # 사실인데 이 파일은 커밋되고 local 이 이 키를 덮을 수 없어서, 박아두면 host 를 옮길
+            # 때마다 L2 게이트를 통과해 공유 파일을 고쳐야 한다.
+            self.assertIn("active_host: auto", prof)
             self.assertIn('prefix: "myapp"', prof)
             # codex host → CODEX.md wrapper (CLAUDE.md 아님)
             self.assertTrue(os.path.exists(os.path.join(d, "CODEX.md")))

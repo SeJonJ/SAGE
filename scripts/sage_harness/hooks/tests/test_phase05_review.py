@@ -12,7 +12,8 @@ import os
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout, redirect_stderr
+from contextlib import contextmanager, redirect_stdout, redirect_stderr
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -25,6 +26,14 @@ class _Args:
         self.root = root; self.packet_file = packet_file; self.timeout = timeout; self.strict = strict
         self.host = host
         self.kind = kind; self.batch = batch; self.gate = gate
+
+
+@contextmanager
+def _running_as(host):
+    """실행 중인 host 를 고정 — 감지가 ambient env 를 읽으므로 테스트가 어느 host 에서
+    도는지에 결과가 좌우되면 안 된다."""
+    with mock.patch.dict(os.environ, {"SAGE_HOST": host}):
+        yield
 
 
 def _mkprofile(d, host="claude", cross=False):
@@ -141,7 +150,7 @@ class TestReview(unittest.TestCase):
                 handle.write("cross_model: { policy: recommended }\n")
             original_resolution = RV._doctor.reviewer_resolution
             original_invoke = RV._invoke_peer
-            RV._doctor.reviewer_resolution = lambda profile, caps: {
+            RV._doctor.reviewer_resolution = lambda profile, caps, current=None: {
                 "reviewer_mode": "clean_context_same_runtime",
                 "reviewer_runtime": "codex",
                 "reviewer_degrade_reason": "claude_cli_unavailable",
@@ -149,7 +158,7 @@ class TestReview(unittest.TestCase):
             RV._invoke_peer = lambda *args, **kwargs: self.fail("peer outage must not authorize same-runtime")
             out = io.StringIO()
             try:
-                with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                with _running_as("codex"), redirect_stdout(out), redirect_stderr(io.StringIO()):
                     rc = RV.run_review(_Args(root=d, host="codex", packet_file=self._packet(d)))
             finally:
                 RV._doctor.reviewer_resolution = original_resolution
@@ -181,7 +190,7 @@ class TestReview(unittest.TestCase):
             )
             buf = io.StringIO()
             try:
-                with redirect_stdout(buf), redirect_stderr(io.StringIO()):
+                with _running_as("codex"), redirect_stdout(buf), redirect_stderr(io.StringIO()):
                     rc = RV.run_review(_Args(root=d, host="codex", packet_file=self._packet(d)))
             finally:
                 RV._invoke_peer = original
@@ -211,14 +220,37 @@ class TestReview(unittest.TestCase):
             self.assertNotIn("REVIEWER_ACTUAL: same_runtime", out.getvalue())
             self.assertIn("timeout", err.getvalue())
 
-    def test_review_rejects_host_profile_conflict(self):
+    def test_review_rejects_host_that_contradicts_the_running_process(self):
+        """--host 는 실제 실행 중인 host 와 맞아야 한다 — same-runtime 이 아니게 되므로."""
         with tempfile.TemporaryDirectory() as d:
             _mkprofile(d, host="claude", cross=False)
-            out = io.StringIO()
-            with redirect_stdout(out), redirect_stderr(io.StringIO()):
-                rc = RV.run_review(_Args(root=d, host="codex", packet_file=self._packet(d)))
+            out, err = io.StringIO(), io.StringIO()
+            with _running_as("codex"), redirect_stdout(out), redirect_stderr(err):
+                rc = RV.run_review(_Args(root=d, host="claude", packet_file=self._packet(d)))
             self.assertEqual(2, rc)
             self.assertIn("REVIEWER_STATUS: BLOCKED", out.getvalue())
+            self.assertIn("감지된 실행 host=codex", err.getvalue())
+
+    def test_stale_profile_host_warns_but_does_not_block(self):
+        """프로필이 낡은 것은 사용자 잘못이 아니다 — active_host 는 공유 파일에만 둘 수 있고 L2 다.
+
+        고치라고 막는 대신 감지값으로 진행하고 알리기만 한다.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            _mkprofile(d, host="claude", cross=False)   # 프로필은 claude, 실제로는 codex
+            original = RV._invoke_peer
+            RV._invoke_peer = lambda *a, **k: (True, "APPROVED", None)
+            out, err = io.StringIO(), io.StringIO()
+            try:
+                with _running_as("codex"), redirect_stdout(out), redirect_stderr(err):
+                    rc = RV.run_review(_Args(root=d, host="codex", packet_file=self._packet(d)))
+            finally:
+                RV._invoke_peer = original
+            self.assertEqual(0, rc)
+            self.assertIn("REVIEWER_ACTUAL: same_runtime", out.getvalue())
+            self.assertIn("active_host=claude(프로필)", err.getvalue())
+            self.assertIn("auto 로 두면", err.getvalue())
+            self.assertNotIn("active_host", out.getvalue())   # 기계 판독 채널 오염 금지
 
     def test_review_rejects_non_default_host_for_legacy_profile_without_runtime(self):
         with tempfile.TemporaryDirectory() as d:
@@ -229,7 +261,8 @@ class TestReview(unittest.TestCase):
             RV._invoke_peer = lambda *args, **kwargs: self.fail("wrong host must not be invoked")
             out = io.StringIO()
             try:
-                with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                # runtime 선언이 아예 없는 프로필이라도 --host 가 실제 실행 host 와 다르면 막는다.
+                with _running_as("claude"), redirect_stdout(out), redirect_stderr(io.StringIO()):
                     rc = RV.run_review(_Args(root=d, host="codex", packet_file=self._packet(d)))
             finally:
                 RV._invoke_peer = original
@@ -240,7 +273,7 @@ class TestReview(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             _mkprofile(d, host="codex", cross=False)
             out = io.StringIO()
-            with redirect_stdout(out), redirect_stderr(io.StringIO()):
+            with _running_as("codex"), redirect_stdout(out), redirect_stderr(io.StringIO()):
                 rc = RV.run_review(_Args(root=d, host="codex", packet_file=os.path.join(d, "missing")))
             self.assertEqual(2, rc)
             self.assertIn("REVIEWER_STATUS: BLOCKED", out.getvalue())
@@ -254,7 +287,7 @@ class TestReview(unittest.TestCase):
             RV._invoke_peer = lambda *args, **kwargs: self.fail("invalid profile must not invoke reviewer")
             out = io.StringIO()
             try:
-                with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                with _running_as("codex"), redirect_stdout(out), redirect_stderr(io.StringIO()):
                     rc = RV.run_review(_Args(root=d, host="codex", packet_file=self._packet(d)))
             finally:
                 RV._invoke_peer = original
@@ -304,6 +337,58 @@ class TestCrossCheck(unittest.TestCase):
         p = os.path.join(d, "pkt.txt")
         open(p, "w", encoding="utf-8").write("review this diff")
         return p
+
+    def test_unknown_running_host_blocks_before_calling_a_peer(self):
+        """중첩 실행으로 판별이 모호하면 peer 를 고르지 않고 멈춘다.
+
+        고르면 실행 중인 host 자신이 뽑힐 수 있다 — 프로필 폴백이 dual-host 에서 기본값을 내놓기
+        때문이다. 순수 함수 단위가 아니라 명령 전체가 실제로 차단되는지 여기서 못박는다.
+        """
+        nested = {"CLAUDECODE": "1", "CODEX_SANDBOX": "seatbelt", "CODEX_THREAD_ID": "t"}
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "sage"), exist_ok=True)
+            with open(os.path.join(d, "sage", "project-profile.yaml"), "w", encoding="utf-8") as f:
+                f.write("runtime: { installed_hosts: [claude, codex], active_host: auto }\n"
+                        "options: { cross_model: true }\n")
+            original = RV._invoke_peer
+            RV._invoke_peer = lambda *a, **k: self.fail("판별 실패 상태에서 peer 를 부르면 안 된다")
+            out, err = io.StringIO(), io.StringIO()
+            try:
+                with mock.patch.dict(os.environ, nested, clear=True), \
+                     redirect_stdout(out), redirect_stderr(err):
+                    rc = RV.run_cross_check(_Args(root=d, packet_file=self._packet(d)))
+            finally:
+                RV._invoke_peer = original
+            self.assertEqual(2, rc)
+            self.assertIn("REVIEWER_STATUS: BLOCKED", out.getvalue())
+            self.assertIn("--host", err.getvalue())          # 탈출구를 알려준다
+
+    def test_explicit_host_unblocks_the_ambiguous_case(self):
+        """--host 로 근거를 주면 진행하고, peer 는 그 host 의 반대가 된다."""
+        nested = {"CLAUDECODE": "1", "CODEX_SANDBOX": "seatbelt", "CODEX_THREAD_ID": "t"}
+        seen = {}
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "sage"), exist_ok=True)
+            with open(os.path.join(d, "sage", "project-profile.yaml"), "w", encoding="utf-8") as f:
+                f.write("runtime: { installed_hosts: [claude, codex], active_host: auto }\n"
+                        "options: { cross_model: true }\ncapabilities: { claude: true }\n")
+            original = RV._invoke_peer
+
+            def fake(peer, prompt, timeout, effort=None, model=None):
+                seen["peer"] = peer
+                return True, "APPROVED", None
+
+            RV._invoke_peer = fake
+            out = io.StringIO()
+            try:
+                with mock.patch.dict(os.environ, nested, clear=True), \
+                     redirect_stdout(out), redirect_stderr(io.StringIO()):
+                    rc = RV.run_cross_check(_Args(root=d, host="codex",
+                                                  packet_file=self._packet(d)))
+            finally:
+                RV._invoke_peer = original
+            self.assertEqual(0, rc)
+            self.assertEqual("claude", seen["peer"])      # 실행이 codex 니 리뷰어는 claude
 
     def test_cross_off_runs_intentional_same_runtime(self):
         with tempfile.TemporaryDirectory() as d:
@@ -462,7 +547,7 @@ class TestCrossCheck(unittest.TestCase):
                 f.write("runtime: { host: claude }\noptions: { cross_model: true }\n"
                         "cross_model: { effort: max }\n")   # max 는 claude 어휘, peer=codex 는 모름
             orig = RV._doctor.reviewer_resolution
-            RV._doctor.reviewer_resolution = lambda p, c: {
+            RV._doctor.reviewer_resolution = lambda p, c, current=None: {
                 "reviewer_mode": "clean_context_same_runtime", "reviewer_runtime": "claude",
                 "fallback_used": True, "reviewer_degraded": True,
                 "reviewer_degrade_reason": "codex_cli_unavailable", "notice": "n/a"}
@@ -537,7 +622,7 @@ class TestCrossCheck(unittest.TestCase):
             with open(os.path.join(d, "sage", "project-profile.yaml"), "a", encoding="utf-8") as handle:
                 handle.write("cross_model: { policy: required }\n")
             original = RV._doctor.reviewer_resolution
-            RV._doctor.reviewer_resolution = lambda profile, caps: {
+            RV._doctor.reviewer_resolution = lambda profile, caps, current=None: {
                 "reviewer_mode": "clean_context_same_runtime",
                 "reviewer_runtime": "claude",
                 "reviewer_degrade_reason": "codex_cli_unavailable",

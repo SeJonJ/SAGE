@@ -45,6 +45,8 @@ def register(sub):
     pc = sub.add_parser("cross-check", help="Phase 05 cross-model 리뷰 — 반대 런타임 CLI 직접 호출")
     pc.add_argument("--packet-file", required=True,
                     help="리뷰 패킷(변경 diff + 05 맥락) 파일 — peer 에게 전달할 프롬프트")
+    pc.add_argument("--host", choices=["claude", "codex"],
+                    help="현재 실행 중인 host. env 판별이 모호할 때(중첩 실행 등) 필수")
     pc.add_argument("--timeout", type=int, default=_DEFAULT_TIMEOUT, help=f"peer 호출 상한 초(기본 {_DEFAULT_TIMEOUT})")
     pc.add_argument("--strict", action="store_true",
                     help="하위호환 플래그. reviewer 실패는 설정과 무관하게 BLOCKED/nonzero")
@@ -75,6 +77,20 @@ def intended_peer(profile):
     peer 가 마침 미가용이면 잘못된 설정이 검증 없이 통과해버린다."""
     from sage.runtime_hosts import opposite_host
     return opposite_host(profile)
+
+
+def possible_peers(profile):
+    """정적으로 가능한 peer 후보 — active_host 가 pin 이면 1개, auto 면 설치된 host 전부.
+
+    `auto` 는 실행 시점에야 peer 가 정해지므로 어느 쪽이 될지 미리 알 수 없다. 설정값(effort 등)이
+    peer 어휘에 종속되면 후보 전부에서 유효해야 안전하다.
+    """
+    from sage.runtime_hosts import (HOSTS, declared_active_host, declared_installed_hosts,
+                                    opposite_host)
+    if declared_active_host(profile) is not None:
+        return [opposite_host(profile)]
+    installed = declared_installed_hosts(profile)
+    return list(installed) if installed else list(HOSTS)
 
 
 def resolve_effort(profile):
@@ -115,9 +131,13 @@ def cross_model_issues(profile):
                                    f"`{only}` 만 지원합니다(다른 값은 무동작이라 안전정책으로 오인됩니다)"))
     effort, configured = resolve_effort(profile)
     if configured is not None:
-        issue = effort_issue(intended_peer(profile), effort)
-        if issue:
-            issues.append(("FAIL", issue))
+        # 정적으로 peer 를 하나로 좁힐 수 없으면(active_host: auto) 가능한 peer 전부에서 유효해야
+        # 한다. 한쪽만 보고 통과시키면 실제 peer 가 반대로 정해졌을 때 강도가 조용히 떨어진다.
+        for peer in possible_peers(profile):
+            issue = effort_issue(peer, effort)
+            if issue:
+                issues.append(("FAIL", issue))
+                break
     from sage.model_routing import reviewer_issues
     issues.extend(reviewer_issues(profile))
     return issues
@@ -210,7 +230,11 @@ def _invoke_peer(peer, prompt, timeout, effort=None, model=None):
         # 프롬프트는 stdin 으로(ARG_MAX 회피, codex R1 P1). codex exec/claude -p 가 stdin 을 프롬프트로 읽음.
         # encoding 명시(codex R2 P2): text=True 만 두면 locale 인코딩 사용 → C-locale 호스트에서 한글
         # 패킷이 UnicodeEncodeError 로 매번 degrade. 패킷 파일도 utf-8 로 읽으므로 대칭 맞춤.
-        r = subprocess.run(cmd, input=prompt, capture_output=True,
+        # peer 환경에서 부모 host 표식을 지운다. 자식은 부모 env 를 상속하므로, 그대로 두면 peer
+        # 안에서 도는 SAGE hook 이 `CLAUDECODE` 같은 상속된 값을 보고 자기를 부모 host 로 오인한다
+        # (실측: claude → codex exec 시 두 계열 표식이 동시에 관측됨).
+        from sage.runtime_hosts import peer_env
+        r = subprocess.run(cmd, input=prompt, capture_output=True, env=peer_env(peer),
                            text=True, encoding="utf-8", timeout=timeout)
     except subprocess.TimeoutExpired:
         return False, None, f"{peer} 호출 timeout({timeout}s)"
@@ -230,7 +254,7 @@ def _load_profile_caps(root):
     return profile, caps, rr
 
 
-def _load_profile_layers_caps(root):
+def _load_profile_layers_caps(root, explicit_host=None):
     """Effective profile and layer diagnostics for Phase 05 routing."""
     path = os.path.join(root, "sage", "project-profile.yaml") if root else None
     profile = {}
@@ -242,8 +266,55 @@ def _load_profile_layers_caps(root):
     caps_prof = profile.get("capabilities", {}) or {}
     caps = {"codex": bool(shutil.which("codex")) or bool(caps_prof.get("codex")),
             "claude": bool(shutil.which("claude")) or bool(caps_prof.get("claude"))}
-    rr = _doctor.reviewer_resolution(profile, caps)
+    from sage.runtime_hosts import running_host
+    rr = _doctor.reviewer_resolution(profile, caps, running_host(profile, explicit_host))
     return profile, caps, rr, layers
+
+
+def host_detection_notes(profile, detected):
+    """실행 관측과 프로필 선언이 어긋난 지점 — 차단하지 않고 알리기만 한다.
+
+    고치라고 요구하지 않는 이유가 있다. `active_host` 는 shared profile 에만 둘 수 있는데(local 이
+    이 키를 덮지 못한다) 그 파일은 커밋되고 게이트 정책 소스라 L2 다. 불일치를 사용자에게 떠넘기면
+    host 를 옮길 때마다 PDCA 게이트를 통과해 공유 파일을 고치라는 뜻이 된다.
+    """
+    from sage.runtime_hosts import configured_hosts, declared_active_host
+    if detected is None:
+        return []
+    notes = []
+    declared = declared_active_host(profile)
+    if declared is not None and declared != detected:
+        notes.append(f"active_host={declared}(프로필)와 감지된 실행 host={detected} 가 다릅니다 "
+                     f"— 감지값으로 진행합니다. 프로필을 auto 로 두면 이 경고가 사라집니다")
+    installed = configured_hosts(profile)
+    if detected not in installed:
+        notes.append(f"감지된 실행 host={detected} 가 installed_hosts={installed} 에 없습니다 "
+                     f"— install 영수증이 낡았을 수 있습니다")
+    return notes
+
+
+def _print_host_notes(command, profile, detected):
+    # stdout 은 `REVIEWER_ACTUAL:` 기계 판독 계약이 쓰는 채널이라 섞으면 sage-team 캡처가 깨진다.
+    for note in host_detection_notes(profile, detected):
+        print(f"[{command}] ⚠️  {note}", file=sys.stderr)
+
+
+def _model_for_peer(profile, peer, model):
+    """(peer 에게 넘길 model, 경고문) — 다른 peer 용으로 고른 모델은 넘기지 않는다.
+
+    model id 는 런타임 종속이다(`gpt-5.6-terra` 는 codex, `opus` 는 claude). 프로필이 어느 peer 를
+    염두에 두고 고른 값인지는 `cross_model.reviewer.host` 가 말해준다. 실제 peer 가 그와 다르면
+    그 모델은 이 peer 에서 의미가 없거나 존재하지 않으므로, 넘기지 않고 peer CLI 기본값에 맡긴다.
+    """
+    if not model:
+        return None, None
+    cross = profile.get("cross_model") if isinstance(profile, dict) else None
+    reviewer = cross.get("reviewer") if isinstance(cross, dict) else None
+    chosen_for = reviewer.get("host") if isinstance(reviewer, dict) else None
+    if chosen_for in ("claude", "codex") and chosen_for != peer:
+        return None, (f"cross_model.reviewer.model={model!r} 은 {chosen_for} 용으로 지정됐는데 실제 "
+                      f"peer 는 {peer} 입니다 — 모델을 넘기지 않고 {peer} CLI 기본값을 씁니다")
+    return model, None
 
 
 def _blocking_layer_issues(layers):
@@ -377,10 +448,15 @@ def run_review(args):
     host = getattr(args, "host", None)
     if host not in ("claude", "codex"):
         return _blocked_review("sage review", "--host claude|codex 명시가 필요합니다", 2)
-    configured_host = _profile_active_host(profile)
-    if configured_host is not None and configured_host != host:
+    from sage.runtime_hosts import detect_current_host
+    detected = detect_current_host()
+    _print_host_notes("sage review", profile, detected)
+    # 실행 관측이 있으면 그게 정본이다 — 선언과 달라도 지금 도는 프로세스가 사실이다.
+    expected, source = ((detected, "감지된 실행 host") if detected is not None
+                        else (_profile_active_host(profile), "profile active_host"))
+    if expected is not None and expected != host:
         return _blocked_review(
-            "sage review", f"--host={host}와 profile active_host={configured_host}가 다릅니다", 2
+            "sage review", f"--host={host}와 {source}={expected}가 다릅니다", 2
         )
     from sage.profile_layers import cross_model_policy
     policy = cross_model_policy(profile)
@@ -399,7 +475,18 @@ def run_review(args):
 def run_cross_check(args):
     """Cross-model 경로. peer를 직접 호출하고, 미가용/실패 시 BLOCKED를 표면화한다."""
     root = _find_root(args.root)
-    profile, _, rr, layers = _load_profile_layers_caps(root)
+    explicit = getattr(args, "host", None)
+    profile, _, rr, layers = _load_profile_layers_caps(root, explicit)
+    from sage.runtime_hosts import detect_current_host, running_host
+    _print_host_notes("sage cross-check", profile, detect_current_host())
+    current = running_host(profile, explicit)
+    if current is None:
+        # 지금 도는 host 를 모르면 어느 쪽을 빼야 할지도 모른다 — 추측해서 고르면 실행 중인 host 를
+        # 리뷰어로 뽑을 수 있고(중첩 실행에서 실제로 그렇게 된다) 그건 독립 리뷰가 아니다.
+        return _blocked_review(
+            "sage cross-check",
+            "실행 중인 host 를 확정할 수 없습니다(중첩 실행 등으로 env 표식이 모호). "
+            "`--host claude|codex` 로 명시하세요", 2)
     layer_failures = _blocking_layer_issues(layers)
     if layer_failures:
         for message in layer_failures:
@@ -424,7 +511,7 @@ def run_cross_check(args):
         return 2
     effort, configured = resolve_effort(profile)
     from sage.model_routing import reviewer_selection
-    _, reviewer_model = reviewer_selection(profile)
+    _, reviewer_model = reviewer_selection(profile, current)
 
     if rr["reviewer_mode"] != "opposite_runtime":
         from sage.profile_layers import cross_model_policy
@@ -442,10 +529,21 @@ def run_cross_check(args):
 
     peer = rr["reviewer_runtime"]
 
+    # 모델·effort 는 peer 런타임에 종속된 값이다(`gpt-…`/`opus`, codex 는 max 를 모르고 claude 는
+    # minimal 을 모른다). 프로필 기준 peer 와 실제 peer 가 갈릴 수 있으므로 실제 peer 로 다시 본다.
+    issue = effort_issue(peer, effort) if configured else None
+    if issue:
+        print(f"[sage cross-check] TOOL ERROR: {issue}", file=sys.stderr)
+        print("REVIEWER_STATUS: BLOCKED")
+        return 2
+    reviewer_model, model_note_suffix = _model_for_peer(profile, peer, reviewer_model)
+
     prompt = _read_packet(args.packet_file, "sage cross-check")
     if prompt is None:
         return _blocked_review("sage cross-check", "유효한 리뷰 패킷이 필요합니다", 2)
 
+    if model_note_suffix:
+        print(f"[sage cross-check] ⚠️  {model_note_suffix}", file=sys.stderr)
     eff_note = f"effort={effort}" + ("" if configured else " (기본값)")
     model_note = reviewer_model or "peer CLI default"
     print(f"[sage cross-check] {peer} 직접 호출 중(timeout {args.timeout}s, {eff_note}, model={model_note})…", file=sys.stderr)

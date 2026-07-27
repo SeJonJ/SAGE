@@ -24,7 +24,7 @@ def register(sub):
     p.set_defaults(func=run)
 
 
-def reviewer_resolution(profile: dict, caps: dict) -> dict:
+def reviewer_resolution(profile: dict, caps: dict, current: str | None = None) -> dict:
     """Phase 05 reviewer 해석 (순수). caps={'codex':bool,'claude':bool} 는 doctor 가 주입(peer CLI 가용성).
 
     7차 배치2: gstack 의존 폐기. cross-model 리뷰는 SAGE 가 반대 런타임 CLI 를 직접 호출하므로
@@ -39,7 +39,9 @@ def reviewer_resolution(profile: dict, caps: dict) -> dict:
     - cross on, codex-host, claude CLI 가용  → opposite_runtime(claude) via `claude -p`
     - cross on, codex-host, claude CLI 불가  → blocked (claude_cli_unavailable)
     """
-    host = active_host(profile)
+    # current 를 주면 그 host 는 리뷰어에서 제외된다(실행 중인 프로세스가 자기 코드를 리뷰하지 않도록).
+    # 미지정이면 reviewer_selection 이 실행 환경에서 판별하고, 판별 실패 시 프로필로 내려간다.
+    host = current or active_host(profile)
     cross = bool((profile.get("options", {}) or {}).get("cross_model", False))
 
     def res(mode, rt, fb, deg, reason, notice):
@@ -49,7 +51,8 @@ def reviewer_resolution(profile: dict, caps: dict) -> dict:
     if not cross:
         return res("clean_context_same_runtime", host, False, False, None,
                    "cross_model off — 의도적 same-runtime (degraded 아님)")
-    peer = opposite_host(profile)
+    from sage.model_routing import reviewer_selection
+    peer, _ = reviewer_selection(profile, current)
     if caps.get(peer):
         invoker = "codex exec" if peer == "codex" else "claude -p"
         return res("opposite_runtime", peer, False, False, None,
@@ -376,7 +379,7 @@ def _discover_profile(start=None):
         cur = parent
 
 
-def _report_model_routing(profile):
+def _report_model_routing(profile, current=None):
     """Compare explicit profile model selections with read-only local catalogs."""
     from sage.model_catalog import discover
     from sage.model_routing import catalog_status, profile_issues as routing_issues, reviewer_selection
@@ -398,12 +401,19 @@ def _report_model_routing(profile):
                     if host in ("claude", "codex") and isinstance(model, str) and model:
                         selected.append((f"component:{cid}", host, model))
     cross = profile.get("cross_model") if isinstance(profile, dict) else None
+    dropped = None
     if isinstance(cross, dict) and cross.get("reviewer") is not None:
-        host, model = reviewer_selection(profile)
+        host, model = reviewer_selection(profile, current)
+        # 실행 시 버려질 모델을 "선택됨" 으로 보여주면 진단이 실제와 어긋난다 — 같은 필터를 태운다.
+        from sage.commands.review import _model_for_peer
+        model, dropped = _model_for_peer(profile, host, model)
         if model:
             selected.append(("cross-reviewer", host, model))
+        elif dropped:
+            print(f"  cross-reviewer : {host}/(peer CLI default) — {dropped}")
     if not selected:
-        print("  (명시적 runtime model 선택 없음 — host CLI defaults)")
+        if not dropped:
+            print("  (명시적 runtime model 선택 없음 — host CLI defaults)")
         return
 
     catalogs = {host: discover(host) for host in {host for _, host, _ in selected}}
@@ -495,15 +505,23 @@ def run(args):
     codex_avail = bool(shutil.which("codex")) or bool(caps_prof.get("codex"))
     claude_avail = bool(shutil.which("claude")) or bool(caps_prof.get("claude"))
     opts = profile.get("options", {}) or {}
-    host = active_host(profile)
-    peer = opposite_host(profile)
+    # 진단 전체가 하나의 host 판정을 쓴다. 앞뒤가 서로 다른 기준을 쓰면 stale pin 상황에서 같은
+    # 실행이 peer=codex 와 reviewer runtime=claude 를 동시에 보고해, 사용자가 멀쩡한 설정을 고치게 된다.
+    from sage.runtime_hosts import detect_current_host, running_host
+    from sage.commands.review import host_detection_notes
+    detected = detect_current_host()
+    host = running_host(profile, None) or active_host(profile)
+    from sage.model_routing import reviewer_selection as _reviewer_selection
+    peer, _ = _reviewer_selection(profile, detected)
     peer_avail = codex_avail if peer == "codex" else claude_avail
     _kc = profile.get("knowledge_capture")
     vault = _kc.get("vault_path", "") if isinstance(_kc, dict) else ""   # 비-dict kc 방어(codex A)
     print("## 옵션 의존성")
     desired_hosts = configured_hosts(profile)
-    print(f"  active_host : {host}")
+    print(f"  active_host : {host}" + ("" if detected else " (env 판별 불가 — 프로필 기준)"))
     print(f"  desired_hosts: {desired_hosts} (동시 실행/자동 handoff 없음)")
+    for note in host_detection_notes(profile, detected):
+        print(f"  ⚠️  WARN {note}")
     for severity, message in profile_issues(profile):
         if severity in ("FAIL", "WARN"):
             print(f"  {'❌' if severity == 'FAIL' else '⚠️ '} {severity} {message}")
@@ -517,7 +535,7 @@ def run(args):
           f"(PATH which {peer} | capabilities.{peer}) — cross-model 시 `{_invoker}` 직접 호출")
     print(f"  codegraph   : {opts.get('codegraph', 'optional')} (MCP 필요 — 미연결 시 rg/read degrade)")
     print(f"  obsidian    : vault_path={'set' if vault else 'empty → 기능 OFF(N/A)'}")
-    _report_model_routing(profile)
+    _report_model_routing(profile, detected)
 
     # codex skill 전역 배포 점검(Part C) — manifest-추적 프로젝트 skill 이 codex 전역에 배포됐는지.
     #   정본 = repo .codex/skills/<id>/SKILL.md (manifest 추적), 전역 = $CODEX_HOME/skills/<prefix>-<id> (발견용 캐시).
@@ -537,9 +555,10 @@ def run(args):
         rc = 1   # 에이전트 frontmatter 로 주입될 값이 무효 = 설정이 조용히 무시되는 것 방지
     _check_codex_skill_deployment(prof_path, profile)
 
-    # reviewer resolution
-    rr = reviewer_resolution(profile, {"codex": codex_avail, "claude": claude_avail})
+    # reviewer resolution — 위에서 판별한 같은 값을 쓴다(감지 중복·기준 분기 방지).
+    rr = reviewer_resolution(profile, {"codex": codex_avail, "claude": claude_avail}, detected)
     print("## Phase 05 reviewer")
+    print(f"  detected: {detected or '(판별 불가 — 프로필 값 사용)'}")
     print(f"  mode    : {rr['reviewer_mode']} (runtime={rr['reviewer_runtime']})")
     print(f"  notice  : {rr['notice']}")
     if rr["reviewer_mode"] == "blocked":

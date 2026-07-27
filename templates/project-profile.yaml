@@ -144,7 +144,8 @@ verification:                    # 결정론 검증 — scripts/verify-changes.s
 
 runtime:                         # host runtime 모델 (§2.2). Claude 특권화 금지
   installed_hosts: [claude]      # 원하는 discovery surface. double-host면 [claude, codex]
-  active_host: claude            # 현재 단일 host. handoff 시 사용자가 명시 변경
+  active_host: auto              # auto = 실행 시점 env 로 판별. claude|codex 로 고정도 가능
+  #                              #   (고정해도 리뷰어 선택은 실측 판별이 우선 — 자기리뷰 방지)
   external_reviewer: clean_context_same_runtime   # opposite_runtime | clean_context_same_runtime
   asset_ssot: deferred
 
@@ -175,7 +176,10 @@ cross_model:                     # opposite-runtime 무상관 검증. 권장 opt
   policy: recommended            # required | recommended | off. local은 required를 완화할 수 없음
   peer: opposite_runtime         # host=claude → codex / host=codex → claude (하드코딩 금지)
   on_unavailable: block
-  # reviewer: { host: codex, model: gpt-5.6-terra } # 사용자 입력. host는 active_host의 반대.
+  # reviewer: { host: codex, model: gpt-5.6-terra } # host = 이 model 을 쓸 peer. model id 는 런타임
+  #                                                #   종속이라 어느 peer 용인지 함께 적는다.
+  #                                                #   리뷰어 자체는 실행 중인 host 의 반대로 자동 결정되고,
+  #                                                #   실제 peer 가 여기 host 와 다르면 model 은 건너뛴다.
   # effort: high                 # 선택. 미설정 → high. options.cross_model=true 일 때만 유효.
   #                              #   peer=codex  : minimal | low | medium | high | xhigh
   #                              #   peer=claude : low | medium | high | xhigh | max

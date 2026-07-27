@@ -238,6 +238,10 @@ echo "### 47. manual double-host (desired/actual/active host + opposite reviewer
 python3 "$HERE/test_runtime_hosts.py" || rc=1
 
 echo ""
+echo "### 47b. 실행 host 판별 + active_host auto (cross-check 리뷰어 자기선택 차단)"
+python3 "$HERE/test_host_detection.py" || rc=1
+
+echo ""
 echo "### 48. host model catalog/routing (provenance + component/reviewer selection)"
 python3 "$HERE/test_model_catalog.py" || rc=1
 python3 "$HERE/test_model_routing.py" || rc=1

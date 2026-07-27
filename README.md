@@ -251,8 +251,10 @@ Hook은 정책 판정(`{id}_core.py`)과 런타임 I/O(어댑터)가 분리되�
 
 **듀얼호스트** — Claude/Codex 두 surface는 각각 별도의 `sage install --host ...`로 설치합니다. profile의
 `runtime.installed_hosts`(설치된 surface)와 `runtime.active_host`(현재 진행 host)는 분리돼 있고, SAGE가 두
-host를 동시 실행하거나 자동 전환하지 않습니다 — 커밋된 phase 문서에서 수동으로 재개하고,
-`options.cross_model: true`를 유지해 Phase 05가 active host의 반대 런타임을 선택하게 하세요.
+host를 동시 실행하거나 자동 전환하지 않습니다 — 커밋된 phase 문서에서 수동으로 재개하세요.
+`active_host: auto`(신규 설치 기본값)면 실행 중인 host를 env로 판별하므로 host를 옮길 때 공유 프로필을
+고칠 필요가 없습니다. `options.cross_model: true`를 유지하면 Phase 05는 **실제로 실행 중인 host를 제외한**
+런타임에게 리뷰를 맡기므로, 프로필 값이 낡아도 자기 자신을 리뷰어로 뽑지 않습니다.
 
 **컨텍스트 압축** — host의 숨은 기억이 아니라 명시적 스냅샷입니다. `context_management.compaction.enabled: true`
 설정 시 CORE 스킬이 완료된 phase 경계를 `.sage/context/snapshots/`에 남기고, 이후 세션/host가 그 packet을
