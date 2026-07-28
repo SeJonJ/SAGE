@@ -13,6 +13,7 @@ import os
 import sys
 import unittest
 from contextlib import redirect_stdout
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -78,6 +79,19 @@ class TestDoctorOutput(unittest.TestCase):
         self.assertIn("bash", out)
         self.assertIn("옵션 의존성", out)
         self.assertIn("Phase 05 reviewer", out)
+
+    def test_windows_output_states_installed_hooks_are_bash_free(self):
+        class Args:
+            profile = None
+        buf = io.StringIO()
+        with mock.patch.object(D.os, "name", "nt"), \
+                mock.patch.object(D.platform, "system", return_value="Windows"), \
+                redirect_stdout(buf):
+            rc = D.run(Args())
+        out = buf.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn("설치 hook 7종", out)
+        self.assertIn("bash가 필요하지 않습니다", out)
 
 
 if __name__ == "__main__":

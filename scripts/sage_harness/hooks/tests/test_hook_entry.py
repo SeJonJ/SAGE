@@ -4,13 +4,16 @@
 등록 command 가 bash 대신 `sage-hook --runtime X --hook Y` 로 바뀌었으므로, 이 엔트리가
 셸 어댑터와 동일하게 프로젝트 루트/코어를 해석하고 run_hook.dispatch 를 재사용하는지 확인한다.
 """
+import io
 import os
 import json
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -79,6 +82,17 @@ class TestCoreDirResolution(unittest.TestCase):
             self.assertTrue(os.path.isdir(os.path.join(got, "runtime")))
 
 
+class TestOutputEncoding(unittest.TestCase):
+    def test_hook_streams_are_forced_to_utf8_with_replacement(self):
+        stdout = mock.Mock()
+        stderr = mock.Mock()
+        with mock.patch.object(hook_entry.sys, "stdout", stdout), \
+                mock.patch.object(hook_entry.sys, "stderr", stderr):
+            hook_entry._harden_io_encoding()
+        stdout.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+        stderr.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+
+
 class TestDispatchIntegration(unittest.TestCase):
     def _write_profile(self, root, yaml_data=None, json_data=None):
         os.makedirs(os.path.join(root, "sage"), exist_ok=True)
@@ -105,6 +119,32 @@ class TestDispatchIntegration(unittest.TestCase):
         # post-tool-logger 는 로깅 hook — 어떤 입력이든 통과(0). dispatch 배선 확인용.
         r = self._run("post-tool-logger", stdin="{}")
         self.assertEqual(r.returncode, 0)
+
+    def test_write_guard_dispatch_exception_is_fail_closed(self):
+        class BrokenRuntime:
+            @staticmethod
+            def dispatch(*_args):
+                raise RuntimeError("dispatch mismatch")
+
+        stderr = io.StringIO()
+        argv = [
+            "sage-hook",
+            "--runtime", "codex",
+            "--hook", "generated-artifact-write-guard",
+            "--root", REPO,
+            "--core-dir", CORE,
+        ]
+        with mock.patch.object(sys, "argv", argv), \
+                mock.patch.object(sys, "stdin", io.StringIO("{}")), \
+                mock.patch.dict(os.environ, {hook_entry._PROJECT_ROOT_ENV: REPO}), \
+                mock.patch.object(hook_entry, "_harden_io_encoding"), \
+                mock.patch.object(hook_entry, "_notify_version_contract"), \
+                mock.patch.object(hook_entry, "_load_run_hook", return_value=BrokenRuntime()), \
+                redirect_stderr(stderr):
+            rc = hook_entry.main()
+        self.assertEqual(rc, 2)
+        self.assertIn("dispatch", stderr.getvalue())
+        self.assertIn("RuntimeError", stderr.getvalue())
 
     def test_gate_injects_compiled_profile_when_env_absent(self):
         with tempfile.TemporaryDirectory() as root:
@@ -401,8 +441,25 @@ class TestDispatchIntegration(unittest.TestCase):
                              core=missing_core)
             advisory = self._run("post-tool-logger", stdin="{}", root=root,
                                  core=missing_core)
+            write_guard = self._run("generated-artifact-write-guard", stdin="{}", root=root,
+                                    core=missing_core)
             self.assertEqual(gate.returncode, 2)
             self.assertEqual(advisory.returncode, 0)
+            self.assertEqual(write_guard.returncode, 2)
+
+    def test_write_guard_output_survives_cp949_console(self):
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "cp949"
+        raw = json.dumps({"tool_input": {"file_path": ".claude/agents/leader.md"}})
+        result = subprocess.run(
+            [sys.executable, "-m", "sage.hook_entry",
+             "--runtime", "claude", "--hook", "generated-artifact-write-guard",
+             "--root", REPO, "--core-dir", CORE],
+            input=raw.encode("utf-8"), capture_output=True, cwd=REPO, env=env)
+        stderr = result.stderr.decode("cp949", errors="replace")
+        self.assertEqual(result.returncode, 2, stderr)
+        self.assertNotIn("UnicodeEncodeError", stderr)
+        self.assertIn("SAGE write guard", stderr)
 
     def test_root_env_allows_gate_from_wrong_cwd(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as cwd:

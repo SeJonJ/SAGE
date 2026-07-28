@@ -493,11 +493,11 @@ def run(args):
              "`pipx install sage-harness`(또는 `pip install -e .`)로 재설치"
              + ("하거나 SAGE_HOOK_BIN을 지정." if os.name != "nt" else ".")))
     print(f"  bash     : {bash_path or 'NOT FOUND'}"
-          + ("" if bash_path else "  ⚠️  scripts/verify-changes.sh(L2/L3 검증)와 `.sh` 수동 폴백 구동 불가 — Git Bash/WSL 필요"
-             "(hook 실행 자체는 sage-hook 이 담당)."))
+          + ("" if bash_path else "  ℹ️  선택적 개발자 스크립트(scripts/verify-changes.sh) 실행에만 필요"
+             " (설치 hook은 Python sage-hook 경로)."))
     if os.name == "nt" or platform.system() == "Windows":
-        print("  ⚠️  Windows 네이티브: hook 실행은 sage-hook 으로 bash 없이 동작. 단 verify-changes.sh(검증)와 `.sh` "
-              "폴백은 Git Bash/WSL 필요. python3 부재 시 SAGE_PYTHON=python 설정.")
+        print("  ✅ Windows 네이티브: 설치 hook 7종은 sage-hook으로 실행되며 bash가 필요하지 않습니다. "
+              "선택적 `.sh` 개발자 회귀 테스트만 SAGE_BASH로 Git Bash를 명시할 수 있습니다.")
 
     # 옵션 의존성
     caps_prof = profile.get("capabilities", {}) or {}

@@ -4,6 +4,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -16,7 +17,8 @@ sys.path.insert(0, REPO)
 from sage.commands import validate as V  # noqa: E402
 from sage.commands import install  # noqa: E402
 from sage.commands.validate import (_safe_test_path, _schema_check, _validate_core_skill_receipts,
-                                    _validate_hook_runtime_hash, _validate_interpretive)  # noqa: E402
+                                    _validate_hook_runtime_hash, _validate_interpretive,
+                                    _write_guard_smoke, _regression_runner)  # noqa: E402
 from sage.hook_runtime_hash import calculate_hook_runtime_hash  # noqa: E402
 
 try:
@@ -60,6 +62,73 @@ class TestSafeTestPath(unittest.TestCase):
         # 오염 manifest 의 test: 123 등 비문자열 — isabs/split 가 죽지 않고 안전하게 거부.
         self.assertIsNone(_safe_test_path(ROOT, 123))
         self.assertIsNone(_safe_test_path(ROOT, ["x"]))
+
+
+class TestWriteGuardSmoke(unittest.TestCase):
+    def test_accepts_exact_allow_block_contract(self):
+        ok = subprocess.CompletedProcess([], 0, "", "")
+        blocked = subprocess.CompletedProcess([], 2, "", "blocked")
+        with mock.patch.object(V.subprocess, "run", side_effect=[ok, blocked]) as run:
+            severity, message = _write_guard_smoke(ROOT)
+        self.assertEqual(severity, "PASS")
+        self.assertEqual(message, "")
+        self.assertEqual(run.call_count, 2)
+
+    def test_rejects_fail_open_or_unexecutable_return_code(self):
+        ok = subprocess.CompletedProcess([], 0, "", "")
+        broken = subprocess.CompletedProcess([], 127, "", "bash not found")
+        with mock.patch.object(V.subprocess, "run", side_effect=[ok, broken]):
+            severity, message = _write_guard_smoke(ROOT)
+        self.assertEqual(severity, "FAIL")
+        self.assertIn("127", message)
+
+    def test_timeout_is_validation_failure(self):
+        with mock.patch.object(
+                V.subprocess, "run",
+                side_effect=subprocess.TimeoutExpired(["guard"], 10)):
+            severity, message = _write_guard_smoke(ROOT)
+        self.assertEqual(severity, "FAIL")
+        self.assertIn("timeout", message.lower())
+
+    def test_windows_shell_regression_requires_explicit_interpreter(self):
+        runner, error = _regression_runner(
+            "scripts/test.sh", platform_name="nt", environ={})
+        self.assertIsNone(runner)
+        self.assertIn("SAGE_BASH", error)
+
+    def test_windows_shell_regression_accepts_explicit_interpreter(self):
+        with mock.patch.object(V.os.path, "isfile", return_value=True):
+            runner, error = _regression_runner(
+                "scripts/test.sh", platform_name="nt",
+                environ={"SAGE_BASH": r"C:\Tools\Git\bin\bash.exe"})
+        self.assertEqual(runner, [r"C:\Tools\Git\bin\bash.exe", "scripts/test.sh"])
+        self.assertEqual(error, "")
+
+    def test_windows_shell_regression_rejects_relative_or_missing_interpreter(self):
+        runner, error = _regression_runner(
+            "scripts/test.sh", platform_name="nt",
+            environ={"SAGE_BASH": "bash"})
+        self.assertIsNone(runner)
+        self.assertIn("절대경로", error)
+
+        with mock.patch.object(V.os.path, "isfile", return_value=False):
+            runner, error = _regression_runner(
+                "scripts/test.sh", platform_name="nt",
+                environ={"SAGE_BASH": r"C:\Missing\bash.exe"})
+        self.assertIsNone(runner)
+        self.assertIn("파일", error)
+
+    def test_validate_check_still_runs_write_guard_smoke(self):
+        manifest = json.loads(Path(
+            ROOT, "docs", "sage_harness", ".manifest.json").read_text(encoding="utf-8"))
+        entry = manifest["assets"]["hooks/generated-artifact-write-guard"]
+        with mock.patch.object(V, "_write_guard_smoke",
+                               return_value=("FAIL", "  FAIL injected smoke")) as smoke:
+            severity, messages = V._validate_hook(
+                ROOT, "hooks/generated-artifact-write-guard", entry, run_regression=False)
+        self.assertEqual(severity, "FAIL")
+        self.assertIn("  FAIL injected smoke", messages)
+        smoke.assert_called_once_with(ROOT)
 
 
 class TestCoreSkillScopeReceipt(unittest.TestCase):

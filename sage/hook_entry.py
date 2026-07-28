@@ -24,12 +24,22 @@ _GATE_HOOKS = {
     "pre-phase4-checklist-gate",
     "stop-compliance-report",
 }
+_FAIL_CLOSED_HOOKS = _GATE_HOOKS | {"generated-artifact-write-guard"}
 _BASELINE_HOOKS = {
     "capture-declared-risk",
     "session-start-snapshot",
 }
 _PROFILE_HOOKS = _GATE_HOOKS | _BASELINE_HOOKS | {"post-tool-logger"}
 _PROFILE_REQUIRED_HOOKS = _GATE_HOOKS | _BASELINE_HOOKS
+
+
+def _harden_io_encoding():
+    """Keep enforcement/report output alive on legacy Windows console encodings."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 
 def _resolve_root(runtime, explicit):
@@ -207,12 +217,15 @@ def _notify_version_contract(root, hook):
 
 
 def main():
+    _harden_io_encoding()
     ap = argparse.ArgumentParser(prog="sage-hook",
                                  description="SAGE hook 실행(크로스플랫폼, bash 비의존)")
     ap.add_argument("--runtime", required=True, choices=["claude", "codex"])
     ap.add_argument("--hook", required=True)
     ap.add_argument("--root", default=None, help="프로젝트 루트(기본: env/git/cwd 자동 해석)")
     ap.add_argument("--core-dir", default=None, help="hook 코어 경로(기본: 프로젝트 로컬→번들)")
+    ap.add_argument("--path", default=None,
+                    help="write-guard 직접호출 호환 경로(stdin JSON보다 우선)")
     a = ap.parse_args()
     root = _resolve_root(a.runtime, a.root)
     os.environ.setdefault(_PROJECT_ROOT_ENV, root)
@@ -231,8 +244,16 @@ def main():
     except Exception as e:
         # 코어 로드 실패 = hook 무력화 → 조용히 통과 말고 surface(gate-disable 은 시끄럽게).
         print(f"⛔ [sage-hook] hook 코어 로드 실패({core_dir}) → {type(e).__name__}: {e}", file=sys.stderr)
-        return 2 if a.hook in _GATE_HOOKS else 0
-    return run_hook.dispatch(a.runtime, a.hook, root, core_dir, raw_text)
+        return 2 if a.hook in _FAIL_CLOSED_HOOKS else 0
+    try:
+        if a.path is None:
+            return run_hook.dispatch(a.runtime, a.hook, root, core_dir, raw_text)
+        return run_hook.dispatch(
+            a.runtime, a.hook, root, core_dir, raw_text, direct_path=a.path)
+    except Exception as e:
+        print(f"⛔ [sage-hook] hook dispatch 실패({a.hook}) → "
+              f"{type(e).__name__}: {e}", file=sys.stderr)
+        return 2 if a.hook in _FAIL_CLOSED_HOOKS else 0
 
 
 if __name__ == "__main__":
