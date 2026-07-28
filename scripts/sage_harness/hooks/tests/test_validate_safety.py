@@ -118,6 +118,14 @@ class TestWriteGuardSmoke(unittest.TestCase):
         self.assertIsNone(runner)
         self.assertIn("파일", error)
 
+    def test_posix_shell_regression_discovers_bash_without_explicit_interpreter(self):
+        with mock.patch.object(V.shutil, "which", return_value="/usr/bin/bash") as which:
+            runner, error = _regression_runner(
+                "scripts/test.sh", platform_name="posix", environ={})
+        self.assertEqual(runner, ["/usr/bin/bash", "scripts/test.sh"])
+        self.assertEqual(error, "")
+        which.assert_called_once_with("bash")
+
     def test_validate_check_still_runs_write_guard_smoke(self):
         manifest = json.loads(Path(
             ROOT, "docs", "sage_harness", ".manifest.json").read_text(encoding="utf-8"))

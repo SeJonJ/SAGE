@@ -10,8 +10,7 @@ dist/
 build/
 
 # SAGE 로컬 런타임 캐시(활성 우회 권한 등) — 머신 전용이라 커밋 금지.
-# 감사 로그(.sage/override.jsonl)는 우회 이력을 추적·공유하려고 일부러 커밋한다.
-.sage/tmp/
+.sage/
 
 # PDCA 작업 문서는 로컬 실행 증거로 유지하고 00 base plan만 Git에서 공유한다.
 plan_docs/01-plan/

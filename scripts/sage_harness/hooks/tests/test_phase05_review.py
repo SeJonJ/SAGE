@@ -42,6 +42,16 @@ def _mkprofile(d, host="claude", cross=False):
         f.write(f"runtime: {{ host: {host} }}\noptions: {{ cross_model: {str(cross).lower()} }}\n")
 
 
+class _StableHostTestCase(unittest.TestCase):
+    """Default host-sensitive command tests to Claude regardless of the outer runner."""
+
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.dict(os.environ, {"SAGE_HOST": "claude"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+
 class TestParsers(unittest.TestCase):
     def test_codex_jsonl_last_agent_message(self):
         text = "\n".join([
@@ -123,7 +133,7 @@ class TestEffortIssue(unittest.TestCase):
         self.assertIsNotNone(RV.effort_issue("gpt", "high"))
 
 
-class TestReview(unittest.TestCase):
+class TestReview(_StableHostTestCase):
     def _packet(self, d):
         path = os.path.join(d, "packet.txt")
         with open(path, "w", encoding="utf-8") as handle:
@@ -332,7 +342,7 @@ class TestReview(unittest.TestCase):
         self.assertIsNone(args.host)
 
 
-class TestCrossCheck(unittest.TestCase):
+class TestCrossCheck(_StableHostTestCase):
     def _packet(self, d):
         p = os.path.join(d, "pkt.txt")
         open(p, "w", encoding="utf-8").write("review this diff")

@@ -27,6 +27,14 @@ from sage.profile_compile import materialize_profile  # noqa: E402
 CORE = os.path.join(REPO, "scripts", "sage_harness", "hooks")
 
 
+def _source_env(environ=None):
+    """Make source-tree module subprocesses independent of the caller's cwd/PYTHONPATH."""
+    env = dict(os.environ if environ is None else environ)
+    current = [entry for entry in env.get("PYTHONPATH", "").split(os.pathsep) if entry]
+    env["PYTHONPATH"] = os.pathsep.join([REPO, *(entry for entry in current if entry != REPO)])
+    return env
+
+
 class TestRootResolution(unittest.TestCase):
     def test_explicit_wins(self):
         self.assertEqual(hook_entry._resolve_root("claude", "/tmp/x"), os.path.abspath("/tmp/x"))
@@ -109,7 +117,7 @@ class TestDispatchIntegration(unittest.TestCase):
                                "--runtime", runtime, "--hook", hook,
                                "--root", root, "--core-dir", core],
                               input=stdin, capture_output=True, text=True, cwd=cwd,
-                              env=env)
+                              env=_source_env(env))
 
     def test_unknown_hook_safe_pass(self):
         r = self._run("does-not-exist")
@@ -448,7 +456,7 @@ class TestDispatchIntegration(unittest.TestCase):
             self.assertEqual(write_guard.returncode, 2)
 
     def test_write_guard_output_survives_cp949_console(self):
-        env = os.environ.copy()
+        env = _source_env()
         env["PYTHONIOENCODING"] = "cp949"
         raw = json.dumps({"tool_input": {"file_path": ".claude/agents/leader.md"}})
         result = subprocess.run(
@@ -464,7 +472,7 @@ class TestDispatchIntegration(unittest.TestCase):
     def test_root_env_allows_gate_from_wrong_cwd(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as cwd:
             self._write_profile(root)
-            env = os.environ.copy()
+            env = _source_env()
             env["CLAUDE_PROJECT_DIR"] = root
             env.pop("SAGE_PROFILE", None)
             r = subprocess.run([sys.executable, "-m", "sage.hook_entry",
@@ -477,7 +485,7 @@ class TestDispatchIntegration(unittest.TestCase):
         for runtime in ("claude", "codex"):
             with self.subTest(runtime=runtime), tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as cwd:
                 self._write_profile(root)
-                env = os.environ.copy()
+                env = _source_env()
                 env["SAGE_PROJECT_ROOT"] = root
                 env.pop("CLAUDE_PROJECT_DIR", None)
                 env.pop("CODEX_PROJECT_ROOT", None)
