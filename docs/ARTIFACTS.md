@@ -16,7 +16,7 @@ SAGE를 돌리면 여러 리소스가 **서로 다른 목적으로 서로 다른
 
 | 위치 | 성격 | 대표 산출물 | 생성 주체 |
 |---|---|---|---|
-| `<root>/.sage/` | PDCA 실행 정본 (커밋 대상) | `plan_interview.md` · `knowledge_scan.md` · `loop_audit.jsonl` · `acceptance-waivers.jsonl` · `override.jsonl` | CLI · 스킬 · hook |
+| `<root>/.sage/` | PDCA 실행 정본 (감사 4종만 커밋) | 커밋: `override.jsonl` · `acceptance-waivers.jsonl` · `loop_audit.jsonl` · `retro_audit.jsonl` / 로컬: `plan_interview.md` · `knowledge_scan.md` · `tmp/` · `context/` | CLI · 스킬 · hook |
 | `<root>/<host>/logs/` | 세션 단위 hook 기록 | `session-<date>.jsonl` · `compliance-<date>.md` · `declared-risk-<sid>.json` | hook 어댑터 |
 | Obsidian vault (`vault_path`/folder) | 최종 지식노트 | write-back TECH 노트 · loop audit 대시보드 · retro 노트 · `log.md` | `sage knowledge` · `review-loop` · `retro` |
 | `<root>/sage/asset_overrides/` | CORE 오버레이 (커밋 대상, install 미배포) | `agents/<id>.md` · `skills/<id>.md` | 사람 작성 (absorb 안내) |
@@ -29,27 +29,49 @@ SAGE를 돌리면 여러 리소스가 **서로 다른 목적으로 서로 다른
 ## 1. `<root>/.sage/` — PDCA 실행 정본
 
 PDCA를 돌리는 동안 남는 정본 데이터입니다. 프로젝트 루트(서브디렉토리에서 실행해도 동일 루트)를 기준으로
-`.sage/` 아래에 생기며, 재현·감사를 위해 **커밋 대상**입니다.
+`.sage/` 아래에 생깁니다.
 
-| 파일 | 역할 | 생성 코드 |
-|---|---|---|
-| `.sage/plan_interview.md` | 기획 인터뷰 결과. `sage-plan`/`sage-cycle`의 첫 프로세스에서 leader가 사용자와의 인터뷰(플랫폼·기능·데이터/API·제약·완료기준)를 정리해 남기고, 이를 근거로 PDCA 00(CONTEXT)/01(CONTENT)을 작성 | 출력 규약 `templates/core/framework/docs/agent/plan-interview.md`, 사용처 `sage-plan/SKILL.md` |
-| `.sage/knowledge_scan.md` | 개발 착수 전 Obsidian vault에서 관련 선행지식을 조회한 스캔 리포트. PDCA 00의 prior-knowledge 입력 | `sage/commands/knowledge.py:228` `_write_scan_report(root, …)` |
-| `.sage/loop_audit.jsonl` | Loop A(적대적 Phase 05 리뷰) 라운드 감사의 **정본**. open/round/close가 append되고 시퀀스 무결성을 검증. vault 대시보드는 이 파일의 파생 뷰 | `sage/commands/review_loop.py:8`, `:472` |
-| `.sage/retro_audit.jsonl` | Loop C(`sage retro --check`) 성공 증거의 append-only 감사(9-C v1). `sage retro --check`가 통과할 때마다 `{run_id, note_path, digest, ts}`를 기록 — Stop 훅(`retro_gate` 정책)이 세션 종료 시 이 기록으로 "이 사이클이 실제로 check를 통과했는지" 사후 확인한다. `pdca.retro.report_gate_enforce`가 off면 기록만 남고 아무것도 검사하지 않는다 | `sage/commands/retro.py::_check_note` → `scripts/sage_harness/hooks/runtime/retro_audit.py` |
-| `.sage/override.jsonl` | 게이트 임시 우회(`sage override`)의 append-only 감사 로그. 사유·TTL과 함께 사후 추적, 만료 시 자동 회수 | `sage/commands/override.py:6` |
-| `.sage/acceptance-waivers.jsonl` | exact L3 cycle/required acceptance ID의 명시적 `NOT TESTED` 유예. grant/use/revoke와 reason/scope/remaining evidence/confirmed_by를 append-only로 기록하며 malformed/중복/충돌은 fail-closed | `sage/commands/acceptance_waiver.py` → `scripts/sage_harness/hooks/runtime/acceptance_waiver.py` |
-| `.sage/context/snapshots/<stem>/*.json` | 완료 phase의 profile/manifest/exact Cycle-Stem 문서 경로·hash를 결속한 cross-session 정본 packet. 문서 본문은 포함하지 않음 | `sage context snapshot` |
-| `.sage/context/restored/*.md` | packet과 현재 source를 모두 검증한 뒤 생성되는 resume briefing. 재생성 가능한 파생물 | `sage context restore` |
+추적 정책은 **기본 제외 + 감사 이력만 명시적 허용**입니다. 아래 표의 "추적" 열이 정본이며,
+`.gitignore`가 이를 그대로 집행합니다:
 
-`context/snapshots`는 세션/host handoff를 위해 보존·커밋할 수 있는 정본이고,
-`context/restored`는 언제든 다시 만들 수 있는 파생물이라 저장소 정책에 따라 ignore해도 됩니다.
+```gitignore
+/.sage/*
+!/.sage/override.jsonl
+!/.sage/acceptance-waivers.jsonl
+!/.sage/loop_audit.jsonl
+!/.sage/retro_audit.jsonl
+```
+
+- **커밋하는 것 = 감사 이력 4종.** 게이트를 우회·유예했거나 루프를 통과했다는 사실은 "누가 언제 왜"를
+  동료·CI·리뷰어가 clone 후에 확인할 수 있어야 합니다. 로컬에만 남으면 예외 통과와 정상 통과를
+  구별할 수 없어, 차단은 강제인데 우회는 추적 불가인 비대칭이 생깁니다.
+- **커밋하지 않는 것 = 권한·세션 상태·재생성 가능한 파생물.** 특히 `tmp/grants.jsonl`은 활성 우회
+  **권한**이라 전파되면 남이 발급한 우회가 내 머신에서 자동 활성화됩니다 — 절대 추적하지 않습니다.
+- `/.sage/`(디렉터리 형태)로 무시하면 git이 디렉터리 안으로 내려가지 않아 `!` 예외가 전부 무효가
+  됩니다. 반드시 `/.sage/*` 형태여야 합니다.
+
+| 파일 | 추적 | 역할 | 생성 코드 |
+|---|:---:|---|---|
+| `.sage/plan_interview.md` | 로컬 | 기획 인터뷰 결과. `sage-plan`/`sage-cycle`의 첫 프로세스에서 leader가 사용자와의 인터뷰(플랫폼·기능·데이터/API·제약·완료기준)를 정리해 남기고, 이를 근거로 PDCA 00(CONTEXT)/01(CONTENT)을 작성 | 출력 규약 `templates/core/framework/docs/agent/plan-interview.md`, 사용처 `sage-plan/SKILL.md` |
+| `.sage/knowledge_scan.md` | 로컬 | 개발 착수 전 Obsidian vault에서 관련 선행지식을 조회한 스캔 리포트. PDCA 00의 prior-knowledge 입력 | `sage/commands/knowledge.py:228` `_write_scan_report(root, …)` |
+| `.sage/loop_audit.jsonl` | **커밋** | Loop A(적대적 Phase 05 리뷰) 라운드 감사의 **정본**. open/round/close가 append되고 시퀀스 무결성을 검증. vault 대시보드는 이 파일의 파생 뷰 | `sage/commands/review_loop.py:8`, `:472` |
+| `.sage/retro_audit.jsonl` | **커밋** | Loop C(`sage retro --check`) 성공 증거의 append-only 감사(9-C v1). `sage retro --check`가 통과할 때마다 `{run_id, note_path, digest, ts}`를 기록 — Stop 훅(`retro_gate` 정책)이 세션 종료 시 이 기록으로 "이 사이클이 실제로 check를 통과했는지" 사후 확인한다. `pdca.retro.report_gate_enforce`가 off면 기록만 남고 아무것도 검사하지 않는다 | `sage/commands/retro.py::_check_note` → `scripts/sage_harness/hooks/runtime/retro_audit.py` |
+| `.sage/override.jsonl` | **커밋** | 게이트 임시 우회(`sage override`)의 append-only 감사 로그. 사유·TTL과 함께 사후 추적, 만료 시 자동 회수 | `sage/commands/override.py:6` |
+| `.sage/acceptance-waivers.jsonl` | **커밋** | exact L3 cycle/required acceptance ID의 명시적 `NOT TESTED` 유예. grant/use/revoke와 reason/scope/remaining evidence/confirmed_by를 append-only로 기록하며 malformed/중복/충돌은 fail-closed | `sage/commands/acceptance_waiver.py` → `scripts/sage_harness/hooks/runtime/acceptance_waiver.py` |
+| `.sage/context/snapshots/<stem>/*.json` | 로컬 | 완료 phase의 profile/manifest/exact Cycle-Stem 문서 경로·hash를 결속한 cross-session 정본 packet. 문서 본문은 포함하지 않음 | `sage context snapshot` |
+| `.sage/context/restored/*.md` | 로컬 | packet과 현재 source를 모두 검증한 뒤 생성되는 resume briefing. 재생성 가능한 파생물 | `sage context restore` |
+
+`context/snapshots`는 세션/host handoff용 정본이라 팀에서 필요하면 예외를 추가해 추적할 수 있고,
+`context/restored`는 언제든 다시 만들 수 있는 파생물입니다. 기본 정책은 둘 다 로컬입니다.
 
 서버 권위 attestation은 로컬 `.sage/` 정본이 아니다. 보호된 CI가 `sage authority attest`의 stdout을 짧은
 수명의 job artifact로 전달하고, 같은 base/head/diff/cycle/risk 결속을 `sage authority gate`에서 검증한다.
 프로젝트 로컬 override/waiver audit은 이 판정의 입력에서 제외된다.
 
 > `.sage/tmp/grants.jsonl` 등 실행 보조 파일도 같은 트리에 생길 수 있습니다(런타임 grant 추적).
+> `grants.jsonl`은 이 머신에서 **활성인 우회 권한**이라 절대 추적하지 않습니다 — 커밋되면 clone/pull만으로
+> 남이 발급한 우회가 자동 활성화됩니다. 이력은 `override.jsonl`(커밋), 권한은 `tmp/grants.jsonl`(로컬)로
+> 분리하는 것이 설계 정본입니다(`scripts/sage_harness/hooks/runtime/override_audit.py` 모듈 docstring).
 
 ---
 

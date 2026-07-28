@@ -11,7 +11,7 @@
 | 프로젝트 정책을 설정하는 관리자 | [Profile 레퍼런스](profile-reference.md) |
 | 설치·실행 오류를 해결하는 사용자 | [문제 해결](troubleshooting.md) |
 | SAGE에 기여하는 개발자 | [Architecture](ARCHITECTURE.md) |
-| 생성물 위치와 소유권을 확인하는 개발자 | [Artifacts](ARTIFACTS.md) |
+| 생성물 위치·소유권과 커밋 대상을 확인하는 개발자 | [Artifacts](ARTIFACTS.md) |
 
 ## 거버넌스 하네스
 

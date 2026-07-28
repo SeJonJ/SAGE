@@ -11,7 +11,7 @@ Start with the document that matches your task.
 | Maintainer configuring project policy | [Profile reference](profile-reference.md) |
 | User resolving installation or runtime errors | [Troubleshooting](troubleshooting.md) |
 | Contributor changing SAGE internals | [Architecture](ARCHITECTURE.md) |
-| Developer locating generated artifacts | [Artifacts](ARTIFACTS.md) |
+| Developer locating generated artifacts and deciding what to commit | [Artifacts](ARTIFACTS.md) |
 
 ## Harness Specifications
 
