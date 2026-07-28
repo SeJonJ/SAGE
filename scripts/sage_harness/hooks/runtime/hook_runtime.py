@@ -406,6 +406,23 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
     return io.render_gate(decision, profile)     # ← 런타임별 채널/포맷/exit
 
 
+def run_generated_artifact_write_guard(raw_text, core_dir, direct_path=None):
+    """Run the Python write guard; unexpected failures block instead of disabling protection."""
+    try:
+        if core_dir not in sys.path:
+            sys.path.insert(0, core_dir)
+        core = importlib.import_module("generated_artifact_write_guard_core")
+        decision = core.decide_input(raw_text or "", direct_path=direct_path)
+        message = decision.get("message") or ""
+        if message:
+            print(message, file=sys.stderr)
+        return int(decision.get("exit_code", 2))
+    except Exception as exc:
+        print("⛔ [generated-artifact-write-guard] Python core failure → "
+              f"fail-closed BLOCK: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 2
+
+
 def run_capture_declared_risk(io, root, core_dir, raw_text):
     """capture-declared-risk 오케스트레이터(UserPromptSubmit). risk 포착은 비차단, parse 실패 silent.
 

@@ -97,17 +97,22 @@
       "test": "scripts/sage_harness/hooks/tests/test_stop_compliance_report.py"
     },
     "hooks/generated-artifact-write-guard": {
-      "spec_hash": "sha256:d1337a20c73d2a02dfcf1219bddf2e0f41cb5e05f9de1a26d365911e9d70862f",
-      "canonical_hash": "sha256:f8d4feaaaebc49cafbee52918afd9e13679e4d0208d6547ab621d3fb15b20524",
+      "spec_hash": "sha256:7fd1eb07f28e8d9d38748fafc8696b2ff4b56a4b360bb1e8fae499bcacf99ac8",
+      "canonical_hash": "sha256:25fbc671664217bab7f45073121ae3f7b84924e75b5fc0a6f58f0b6973e8a6d0",
       "render_hash": {
-        "native": "sha256:f8d4feaaaebc49cafbee52918afd9e13679e4d0208d6547ab621d3fb15b20524"
+        "claude": "sha256:ec506d9e4e881f66ca7f8a8a4081b517c0b86d2cdafdf9e9f7f6a869e5facf93",
+        "codex": "sha256:eef506545ad80aa90064de2471fce4350ce5454730d2473d988a6d1593b995de"
       },
-      "adapter_contract_version": "1",
+      "adapter_contract_version": "2",
       "conformance": "PASS",
-      "form": "native",
-      "test": "scripts/sage_harness/hooks/tests/run-tests.sh",
+      "form": "core_adapter",
+      "test": "scripts/sage_harness/hooks/tests/test_generated_artifact_write_guard.py",
       "risk": [],
-      "unresolved": []
+      "unresolved": [],
+      "adapter_hash": {
+        "claude": "sha256:ec506d9e4e881f66ca7f8a8a4081b517c0b86d2cdafdf9e9f7f6a869e5facf93",
+        "codex": "sha256:eef506545ad80aa90064de2471fce4350ce5454730d2473d988a6d1593b995de"
+      }
     },
     "hooks/session-start-snapshot": {
       "form": "core_adapter",
@@ -128,7 +133,7 @@
     }
   },
   "hook_runtime_hash": {
-    "shared": "sha256:b0cb18e544d8eab11e7a1da76ee9c1d328ed03c17f36e574c0e69c66468c85d4",
+    "shared": "sha256:85c2d1c533189c946df1bae88396da15d37fe68881cdabb384a6bd9971fdafaf",
     "claude": "sha256:6991dff9a466ef7f0fb3e926df2119c2617f8d534bdb14c5ce3d42fa2576a464",
     "codex": "sha256:97549092cb66b9226f8766b8f229679bc8024f27a21682d96bdee49f96f4b843"
   }

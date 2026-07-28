@@ -182,7 +182,9 @@ class TestInstall(unittest.TestCase):
                 "scripts/sage_harness/hooks/cycle_binding.py",
                 "scripts/sage_harness/hooks/adapters/claude/pre-implementation-gate.sh",
                 "scripts/sage_harness/hooks/adapters/codex/pre-implementation-gate.sh",
-                "scripts/sage_harness/hooks/generated-artifact-write-guard.sh",
+                "scripts/sage_harness/hooks/generated_artifact_write_guard_core.py",
+                "scripts/sage_harness/hooks/adapters/claude/generated-artifact-write-guard.sh",
+                "scripts/sage_harness/hooks/adapters/codex/generated-artifact-write-guard.sh",
                 "scripts/sage_harness/hooks/strategies/pre_implementation_gate/codex_feature_signal.py",
                 # CORE roster agent(중립)
                 "docs/sage_harness/agents/leader.md", "docs/sage_harness/agents/implementer-a.md",
@@ -224,6 +226,21 @@ class TestInstall(unittest.TestCase):
             # tests/ 는 배치하지 않음(런타임 불필요)
             self.assertFalse(os.path.exists(os.path.join(d, "scripts/sage_harness/hooks/tests")))
 
+    def test_force_upgrade_prunes_legacy_native_write_guard(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(install.run(Args("claude", d)), 0)
+            legacy = Path(
+                d, "scripts", "sage_harness", "hooks",
+                "generated-artifact-write-guard.sh")
+            legacy.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+
+            self.assertEqual(install.run(Args("claude", d, force=True)), 0)
+
+            self.assertFalse(legacy.exists())
+            self.assertTrue(Path(
+                d, "scripts", "sage_harness", "hooks",
+                "generated_artifact_write_guard_core.py").is_file())
+
     def test_host_prefix_substitution(self):
         with tempfile.TemporaryDirectory() as d:
             install.run(Args("codex", d, prefix="myapp"))
@@ -247,7 +264,7 @@ class TestInstall(unittest.TestCase):
             # manifest 는 CORE hook 7종 등록(빈 assets 아님) → generate 가 동작 가능
             self.assertEqual(len([k for k in m["assets"] if k.startswith("hooks/")]), 7)
             self.assertEqual(m["assets"]["hooks/pre-implementation-gate"]["form"], "core_adapter")
-            self.assertEqual(m["assets"]["hooks/generated-artifact-write-guard"]["form"], "native")
+            self.assertEqual(m["assets"]["hooks/generated-artifact-write-guard"]["form"], "core_adapter")
 
     def test_sequential_install_preserves_primary_and_tracks_both_hosts(self):
         with tempfile.TemporaryDirectory() as d:

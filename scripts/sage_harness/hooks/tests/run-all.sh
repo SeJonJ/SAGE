@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SAGE hook 전체 회귀 테스트 — write guard(bash) + reverse_extract hook(python).
+# SAGE hook 전체 회귀 테스트 — Python write guard + reverse_extract hook.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$HERE/../../../.." && pwd)"
@@ -7,7 +7,11 @@ export PYTHONPATH="$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 rc=0
 
 echo "### 1. generated-artifact write guard"
-bash "$HERE/run-tests.sh" || rc=1
+python3 "$HERE/test_generated_artifact_write_guard.py" || rc=1
+
+echo ""
+echo "### 1b. bilingual documentation structure"
+python3 "$HERE/test_documentation.py" || rc=1
 
 echo ""
 echo "### 2. capture-declared-risk reverse_extract 폐루프"

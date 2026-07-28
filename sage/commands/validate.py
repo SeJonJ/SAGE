@@ -11,6 +11,7 @@ Codex 2R 합의(step5, hook):
 
 import hashlib
 import json
+import ntpath
 import os
 import subprocess
 import sys
@@ -238,6 +239,60 @@ def _hook_paths(root, asset_id):
     }
 
 
+def _write_guard_smoke(root):
+    """Execute the installed Python guard path and require its exact allow/block contract."""
+    core_dir = os.path.join(root, "scripts", "sage_harness", "hooks")
+    runner = os.path.join(core_dir, "runtime", "run_hook.py")
+    command = [
+        sys.executable, runner,
+        "--runtime", "claude",
+        "--hook", "generated-artifact-write-guard",
+        "--root", root,
+        "--core-dir", core_dir,
+    ]
+    samples = [
+        ({"tool_input": {"file_path": "src/sage-write-guard-smoke.py"}}, 0),
+        ({"tool_input": {"file_path": ".claude/agents/sage-write-guard-smoke.md"}}, 2),
+    ]
+    for payload, expected in samples:
+        try:
+            result = subprocess.run(
+                command, input=json.dumps(payload), cwd=root,
+                capture_output=True, text=True, timeout=10)
+        except subprocess.TimeoutExpired:
+            return "FAIL", "  FAIL write-guard 실행 스모크 timeout (10s)"
+        except OSError as exc:
+            return "FAIL", f"  FAIL write-guard 실행 스모크 오류: {type(exc).__name__}: {exc}"
+        if result.returncode != expected:
+            detail = (result.stderr or result.stdout or "").strip()
+            suffix = f" ({detail[:240]})" if detail else ""
+            return "FAIL", (
+                f"  FAIL write-guard 실행 스모크 rc={result.returncode}, expected={expected}{suffix}")
+    return "PASS", ""
+
+
+def _regression_runner(test_path, platform_name=None, environ=None):
+    """Resolve a regression interpreter without accidentally selecting the Windows WSL launcher."""
+    if test_path.endswith(".py"):
+        return [sys.executable, test_path], ""
+    platform_name = os.name if platform_name is None else platform_name
+    environ = os.environ if environ is None else environ
+    explicit = environ.get("SAGE_BASH")
+    if explicit:
+        if platform_name == "nt":
+            if not ntpath.isabs(explicit):
+                return None, "Windows SAGE_BASH는 절대경로여야 함"
+            if not os.path.isfile(explicit):
+                return None, "Windows SAGE_BASH 파일을 찾지 못함"
+        return [explicit, test_path], ""
+    if platform_name == "nt":
+        return None, "Windows에서 .sh 회귀 테스트는 SAGE_BASH로 Git Bash 경로를 명시해야 함"
+    bash = shutil.which("bash")
+    if not bash:
+        return None, "bash 실행 파일을 찾지 못함"
+    return [bash, test_path], ""
+
+
 def _validate_hook(root, asset_id, entry, run_regression):
     """단일 hook asset → (severity, [messages])."""
     msgs = []
@@ -304,10 +359,20 @@ def _validate_hook(root, asset_id, entry, run_regression):
             if tpath is None:
                 bump("FAIL"); msgs.append(f"  FAIL unsafe/missing test path: {test}")
             else:
-                runner = [sys.executable, tpath] if tpath.endswith(".py") else ["bash", tpath]  # P3-11: sys.executable(venv/이식성)
-                r = subprocess.run(runner, cwd=root, capture_output=True, text=True)
-                if r.returncode != 0:
-                    bump("FAIL"); msgs.append(f"  FAIL regression 실패: {test}")
+                runner, runner_error = _regression_runner(tpath)
+                if runner is None:
+                    bump("FAIL"); msgs.append(f"  FAIL regression 실행 불가: {test} ({runner_error})")
+                else:
+                    r = subprocess.run(runner, cwd=root, capture_output=True, text=True)
+                    if r.returncode != 0:
+                        bump("FAIL"); msgs.append(f"  FAIL regression 실패: {test}")
+    # Built-in enforcement smoke is part of integrity validation, not the optional regression suite.
+    # It must also run under --check so a packaged guard cannot be hash-clean but non-functional.
+    if asset_id == "hooks/generated-artifact-write-guard" and sev in ("PASS", "WARN"):
+        smoke_sev, smoke_message = _write_guard_smoke(root)
+        bump(smoke_sev)
+        if smoke_message:
+            msgs.append(smoke_message)
     return sev, msgs
 
 

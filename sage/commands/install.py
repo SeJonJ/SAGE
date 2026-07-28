@@ -50,7 +50,7 @@ _CORE_HOOKS = [
     ("pre-phase4-checklist-gate", "core_adapter"),
     ("session-start-snapshot", "core_adapter"),
     ("stop-compliance-report", "core_adapter"),
-    ("generated-artifact-write-guard", "native"),
+    ("generated-artifact-write-guard", "core_adapter"),
 ]
 _SKIP_DIRS = {"tests", "__pycache__"}
 
@@ -179,6 +179,22 @@ def _prune_legacy_skill(skill_dir, pruned, transaction=None):
         pruned.append(skill_dir)
     except (OSError, UnicodeError):
         pass
+
+
+def _prune_legacy_native_write_guard(dest, pruned, transaction=None):
+    """Remove the retired shell canonical source during a force upgrade."""
+    path = os.path.join(
+        dest, "scripts", "sage_harness", "hooks",
+        "generated-artifact-write-guard.sh")
+    if not os.path.lexists(path):
+        return
+    if transaction is not None:
+        transaction.stage_remove_tree(path)
+    elif os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path)
+    else:
+        os.unlink(path)
+    pruned.append(path)
 
 
 def _copy_tree(src_dir, dst_dir, force, created, skipped, transaction=None):
@@ -1335,7 +1351,9 @@ def _run_locked(args) -> int:
                    os.path.join(dest, "docs", "sage_harness", "hooks", f"{hid}.md"), args.force,
                    created, skipped, transaction=transaction)
 
-    # 4. CORE hook 정본(core+adapter+strategy+native) → scripts/sage_harness/hooks/ (도메인값 0)
+    # 4. CORE hook 정본(core+adapter+strategy) → scripts/sage_harness/hooks/ (도메인값 0)
+    if args.force:
+        _prune_legacy_native_write_guard(dest, pruned, transaction=transaction)
     _copy_tree(_resources.hooks_src_dir(), os.path.join(dest, "scripts", "sage_harness", "hooks"),
                args.force, created, skipped, transaction=transaction)
 
@@ -1441,7 +1459,7 @@ def _run_locked(args) -> int:
         for p in sorted(skipped):
             print(f"  = {os.path.relpath(p, dest)}")
     if pruned:
-        print(f"정리 {len(pruned)}건 (은퇴한 CORE skill 잔존 사본 제거):")
+        print(f"정리 {len(pruned)}건 (은퇴한 CORE 잔존 자산 제거):")
         for p in sorted(pruned):
             print(f"  - {p}")
     # --force(업그레이드) 재설치는 CORE 자산을 갱신하므로, 인스턴스가 등록한 kind(mcp/agent/skill)
