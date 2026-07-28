@@ -103,6 +103,24 @@ def both(self, fn):
             fn(rt)
 
 
+
+
+# 권한 캐시가 저장소 밖 상태 디렉터리로 옮겨졌다(10-e). 격리하지 않으면 테스트가 개발자의 실제
+# ~/.local/state/sage 를 오염시킨다. 파일 전체에 강제한다.
+_STATE_TMP = None
+
+
+def setUpModule():
+    global _STATE_TMP
+    _STATE_TMP = tempfile.TemporaryDirectory()
+    os.environ["SAGE_STATE_HOME"] = _STATE_TMP.name
+
+
+def tearDownModule():
+    os.environ.pop("SAGE_STATE_HOME", None)
+    _STATE_TMP.cleanup()
+
+
 class TestPdcaEnforcementAlive(unittest.TestCase):
     """F9 런타임 가드 — 어댑터가 디스크 phase 문서를 실제로 스캔/강제하는가."""
 

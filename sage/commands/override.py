@@ -5,6 +5,9 @@
 --revoke 로 만료 전에 회수할 수 있다. 우회 이력(grant·bypass·revoke)은 커밋되는 감사 로그
 <root>/.sage/override.jsonl 에 append-only 로 남아 사후 추적되고, TTL 만료로 자동 회수된다.
 
+활성 권한 자체는 감사와 분리해 **저장소 트리 밖**(SAGE_STATE_HOME > XDG_STATE_HOME > ~/.local/state)
+에 둔다. 저장소 안에 두면 커밋돼서 남의 clone 에서 우회가 활성화된다(10-e). 위치는 --list 가 출력한다.
+
 핵심 로직은 엔진 런타임 모듈(override_audit) 단일소스 — hook 과 CLI 가 같은 코드를 공유.
 """
 import os
@@ -49,6 +52,9 @@ def run(args):
         # 감사 로그에만 쌓이고 뷰어가 안 보여주면 기록해도 아무도 안 본다.
         declared = [r for r in records if r.get("event") == "cycle_stem_declared"]
         print(f"== sage override --list ({ov.audit_path(root)}) ==")
+        # 권한 캐시는 저장소 밖에 있어 `.sage/tmp` 삭제로 리셋되지 않는다 — 위치를 보여줘야
+        # 운영자가 "왜 아직 활성이지"를 추적할 수 있다.
+        print(f"   권한 캐시(머신 로컬, 비커밋): {ov.grants_path(root)}")
         print(f"활성 override: {len(active)}건")
         for g in active:
             print(f"   - id={g.get('grant_id')} | gate={g['gate']} | 만료 {g['expires_at']} | 사유: {g.get('reason')} | by {g.get('user')}")

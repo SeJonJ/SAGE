@@ -3,23 +3,32 @@
 게이트(pre-implementation-gate · pre-phase4-checklist-gate)가 BLOCK 을 걸면, 운영자가 사유·기한과
 함께 명시적으로 우회한다. 권한과 감사를 두 저장소로 분리한다:
 
-- 감사 로그 `.sage/override.jsonl` — grant·bypass 전 이력(append-only). 커밋 대상이라
+- 감사 로그 `.sage/override.jsonl` — grant·bypass 전 이력(append-only). 저장소 안에 두고 커밋해
   "누가 언제 왜 무엇을 우회했는지"를 동료·CI·리뷰어가 clone 후에도 추적할 수 있다.
-- 권한 캐시 `.sage/tmp/grants.jsonl` — 이 머신에서 활성인 grant. 로컬 전용(.gitignore)이라
-  레포를 clone/pull 해도 남이 발급한 우회 권한이 자동으로 활성화되지 않는다.
+- 권한 캐시 — 이 머신에서 활성인 grant. **저장소 트리 밖**(상태 디렉터리)에 두어 git 이 실어나를 수
+  없게 한다. 예전에는 `.sage/tmp/grants.jsonl` 이었고 `.gitignore` 로 막는다고 적었지만, 설치
+  프로젝트에는 그 규칙을 넣는 코드가 없어서 기본값이 '추적'이었다. 실제로 커밋되면 다른 clone 에서
+  남이 발급한 우회가 활성화됐다(0.9.73 재현). 무시 규칙은 사용자가 지울 수 있는 파일이므로 보안
+  속성의 근거로 쓰지 않고, 전파 경로 자체를 없앤다.
 
 활성 여부는 권한 캐시만으로 판정한다. TTL 만료 시 자동 회수되어 상시 우회를 막는다(wall-clock 기준,
 세션 교차에도 일관). gate 스코프는 특정 게이트 id 또는 "all" — 우회는 grant.gate ∈ {요청 gate, "all"}.
 
 엔진 모듈(도메인값 0): 게이트 id 는 호출자가 주입하고, 경로/시간만 여기서 결정한다.
 """
+import hashlib
 import json
 import os
 import time
 import uuid
 
 AUDIT_REL = os.path.join(".sage", "override.jsonl")        # 커밋되는 감사 이력
-GRANTS_REL = os.path.join(".sage", "tmp", "grants.jsonl")  # 로컬 전용 활성 권한 캐시
+
+# 구 권한 캐시 경로. 읽지 않는다 — MAX_TTL_SECONDS(24h) 가 grant() 안에서 강제되므로 이전 grant 는
+# 하루 안에 전부 만료된다. 따라서 마이그레이션이 필요 없고, 남은 파일은 무해한 잔존물이다.
+LEGACY_GRANTS_REL = os.path.join(".sage", "tmp", "grants.jsonl")
+
+STATE_HOME_ENV = "SAGE_STATE_HOME"   # 명시 지정(테스트·운영). XDG_STATE_HOME 보다 우선.
 _UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
 # TTL 상한. "시한부 우회"가 임의로 길어지면 사실상 상시 우회가 되므로 24h 로 캡한다. 초과 grant 는
@@ -31,8 +40,31 @@ def audit_path(root):
     return os.path.join(root, AUDIT_REL)
 
 
-def grants_path(root):
-    return os.path.join(root, GRANTS_REL)
+def state_home(environ=None):
+    """권한 캐시가 사는 머신 로컬 상태 디렉터리. 저장소 트리 밖이어야 한다."""
+    env = os.environ if environ is None else environ
+    explicit = (env.get(STATE_HOME_ENV) or "").strip()
+    if explicit:
+        return explicit
+    xdg = (env.get("XDG_STATE_HOME") or "").strip()
+    if xdg:
+        return os.path.join(xdg, "sage")
+    return os.path.join(os.path.expanduser("~"), ".local", "state", "sage")
+
+
+def _root_key(root):
+    """저장소를 식별하는 안정 키. realpath 로 정규화한다 — 안 하면 symlink 경유 접근이 같은
+    저장소를 두 키로 갈라 한쪽에서 발급한 grant 가 다른 쪽에서 안 보인다."""
+    return hashlib.sha256(os.path.realpath(root).encode("utf-8")).hexdigest()[:16]
+
+
+def grants_path(root, environ=None):
+    return os.path.join(state_home(environ), "grants", _root_key(root) + ".jsonl")
+
+
+def legacy_grants_path(root):
+    """구 저장소 내 권한 캐시 경로(진단·안내용). 판정에는 쓰지 않는다."""
+    return os.path.join(root, LEGACY_GRANTS_REL)
 
 
 def parse_ttl(s):
@@ -176,12 +208,17 @@ def record_cycle_stem_declaration(root, gate, stem, session_id, status="", now=N
     return rec
 
 
-def record_bypass(root, gate, files, message_key, grant_rec, now=None):
+def record_bypass(root, gate, files, message_key, grant_rec, user=None, now=None):
     """grant 가 실제로 BLOCK 을 통과시킨 사실을 감사 로그에 기록 — 무엇을(message_key) 어느 파일에
-    적용했는지 추적. 권한이 아니라 사후 추적이므로 감사 로그에만 남긴다."""
+    적용했는지 추적. 권한이 아니라 사후 추적이므로 감사 로그에만 남긴다.
+
+    `user` 는 grant 를 **소비한** 주체다. 발급자(`grant.user`)와 별도로 남긴다 — 둘을 같다고 보면
+    발급자와 사용자가 갈리는 상황에서 감사가 엉뚱한 사람을 우회자로 지목한다."""
     t = time.time() if now is None else now
     _append(audit_path(root), {"event": "bypass", "ts": _iso(t), "epoch": int(t), "gate": gate,
                                "message_key": message_key, "files": files or [],
                                "grant_id": (grant_rec or {}).get("grant_id"),
                                "grant_ts": (grant_rec or {}).get("ts"),
+                               "grant_user": (grant_rec or {}).get("user"),
+                               "user": user or os.environ.get("USER") or "unknown",
                                "reason": (grant_rec or {}).get("reason")})

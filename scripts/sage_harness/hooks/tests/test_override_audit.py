@@ -25,6 +25,22 @@ OK = {"status": "ok", "exit_code": 0, "message_key": None}
 CHANGES = [{"path": "src/foo.py"}, {"path": "src/bar.py"}]
 
 
+# 권한 캐시는 이제 저장소 밖 상태 디렉터리에 산다. 격리하지 않으면 테스트가 개발자의 실제
+# ~/.local/state/sage 를 오염시킨다(구현 중 실제로 발생). 파일 전체에 강제한다.
+_STATE_TMP = None
+
+
+def setUpModule():
+    global _STATE_TMP
+    _STATE_TMP = tempfile.TemporaryDirectory()
+    os.environ[ov.STATE_HOME_ENV] = _STATE_TMP.name
+
+
+def tearDownModule():
+    os.environ.pop(ov.STATE_HOME_ENV, None)
+    _STATE_TMP.cleanup()
+
+
 class TestParseTtl(unittest.TestCase):
     def test_units(self):
         self.assertEqual(ov.parse_ttl("90s"), 90)
@@ -104,6 +120,8 @@ class TestAuditPermissionSplit(unittest.TestCase):
 
     def test_clone_inherits_audit_not_active_permission(self):
         # clone 모사: 감사 로그만 새 트리에 복사(.sage/tmp 권한 캐시는 비커밋이라 안 옴).
+        # 주의: 이 테스트는 "권한 캐시가 커밋되지 않았다"를 가정하고 그 뒤를 검증한다. 가정 자체는
+        # 아래 TestGrantStoreIsolation 이 실제 git 으로 검증한다(가정을 결론으로 쓰지 않기 위해).
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as dst:
             ov.grant(src, "원격 우회", 50000, gate=GATE, now=1000)
             os.makedirs(os.path.dirname(ov.audit_path(dst)), exist_ok=True)
@@ -113,6 +131,71 @@ class TestAuditPermissionSplit(unittest.TestCase):
             self.assertTrue(any(r["event"] == "grant" for r in ov.read_records(dst)))
             # 활성 권한은 전파되지 않는다
             self.assertFalse(ov.is_override_active(dst, GATE, now=1500))
+
+
+def _git(root, *args):
+    subprocess.run(["git", *args], cwd=root, check=True,
+                   capture_output=True, text=True)
+
+
+class TestGrantStoreIsolation(unittest.TestCase):
+    """권한 캐시는 저장소가 실어나를 수 없어야 한다 — 손으로 고른 파일이 아니라 실제 git 으로 검증한다.
+
+    teeth: 발급자가 `git add -A` 로 커밋해도(설치 프로젝트 기본값이 '추적'이라 정상 동작이다)
+    다른 clone 에서 권한이 활성화되면 안 된다. 파일을 복사하지 않는 방식으로 모사하면 증명해야 할
+    전제를 가정하게 되므로, 여기서는 git 이 실제로 옮기는 것만 옮기게 둔다.
+    """
+
+    def _repo(self, path):
+        os.makedirs(path, exist_ok=True)
+        _git(path, "init", "-q", ".")
+        _git(path, "config", "user.email", "t@example.com")
+        _git(path, "config", "user.name", "t")
+        return path
+
+    def test_committed_grant_does_not_activate_in_another_clone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = self._repo(os.path.join(tmp, "src"))
+            ov.grant(src, "긴급 배포", 50000, gate=GATE, user="alice", now=1000)
+            self.assertTrue(ov.is_override_active(src, GATE, now=1500),
+                            "발급자 본인에게는 활성이어야 한다")
+            _git(src, "add", "-A")
+            _git(src, "commit", "-q", "-m", "work")
+
+            dst = os.path.join(tmp, "clone")
+            subprocess.run(["git", "clone", "-q", src, dst], check=True,
+                           capture_output=True, text=True)
+            self.assertFalse(
+                ov.is_override_active(dst, GATE, now=1500),
+                "다른 clone 에서 남이 발급한 우회 권한이 활성화되면 안 된다")
+
+    def test_gate_does_not_open_in_another_clone(self):
+        """단위 판정뿐 아니라 실제 게이트 배선까지 닫혔는지 확인한다."""
+        with tempfile.TemporaryDirectory() as tmp:
+            src = self._repo(os.path.join(tmp, "src"))
+            ov.grant(src, "긴급 배포", 50000, gate="all", user="alice")
+            _git(src, "add", "-A")
+            _git(src, "commit", "-q", "-m", "work")
+
+            dst = os.path.join(tmp, "clone")
+            subprocess.run(["git", "clone", "-q", src, dst], check=True,
+                           capture_output=True, text=True)
+            self.assertFalse(hr._maybe_override(GATE, dst, dict(BLOCK), CHANGES),
+                             "clone 에서 BLOCK 이 열리면 안 된다")
+
+    def test_audit_history_still_travels_with_the_repository(self):
+        """권한은 막되 감사는 계속 공유돼야 한다 — 둘을 함께 막으면 추적성이 사라진다."""
+        with tempfile.TemporaryDirectory() as tmp:
+            src = self._repo(os.path.join(tmp, "src"))
+            ov.grant(src, "긴급 배포", 50000, gate=GATE, user="alice")
+            _git(src, "add", "-A")
+            _git(src, "commit", "-q", "-m", "work")
+
+            dst = os.path.join(tmp, "clone")
+            subprocess.run(["git", "clone", "-q", src, dst], check=True,
+                           capture_output=True, text=True)
+            events = [r["event"] for r in ov.read_records(dst)]
+            self.assertIn("grant", events, "감사 이력은 clone 에 따라와야 한다")
 
 
 class TestRevoke(unittest.TestCase):
@@ -237,6 +320,81 @@ class TestListSurfacesEveryPassRoute(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("cycle stem 선언 1건", proc.stdout)
         self.assertIn("some_cycle", proc.stdout)
+
+
+
+
+class TestStateHomeResolution(unittest.TestCase):
+    """권한 캐시 위치 해석 — 저장소 밖 + symlink 정규화 + 명시 지정 우선순위."""
+
+    def test_store_lives_outside_the_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = os.path.realpath(ov.grants_path(tmp))
+            self.assertFalse(store.startswith(os.path.realpath(tmp) + os.sep),
+                             f"권한 캐시가 저장소 트리 안에 있으면 git 이 실어나를 수 있다: {store}")
+
+    def test_symlinked_root_resolves_to_the_same_store(self):
+        # realpath 정규화가 없으면 같은 저장소가 두 키로 갈려, 한쪽에서 발급한 grant 가
+        # 다른 쪽에서 안 보인다(운영자는 "발급했는데 왜 안 먹지"를 겪는다).
+        with tempfile.TemporaryDirectory() as tmp:
+            real = os.path.join(tmp, "real")
+            os.makedirs(real)
+            link = os.path.join(tmp, "link")
+            os.symlink(real, link)
+            self.assertEqual(ov.grants_path(real), ov.grants_path(link))
+
+    def test_distinct_repositories_get_distinct_stores(self):
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            self.assertNotEqual(ov.grants_path(a), ov.grants_path(b))
+
+    def test_explicit_state_home_wins_over_xdg(self):
+        env = {ov.STATE_HOME_ENV: "/explicit", "XDG_STATE_HOME": "/xdg"}
+        self.assertEqual(ov.state_home(env), "/explicit")
+
+    def test_xdg_state_home_is_namespaced(self):
+        self.assertEqual(ov.state_home({"XDG_STATE_HOME": "/xdg"}),
+                         os.path.join("/xdg", "sage"))
+
+    def test_default_is_local_state(self):
+        home = os.path.expanduser("~")
+        self.assertEqual(ov.state_home({}),
+                         os.path.join(home, ".local", "state", "sage"))
+
+    def test_module_isolation_is_active(self):
+        # 이 파일의 setUpModule 이 실제 상태 디렉터리를 가리지 못하면 테스트가 개발자 홈을
+        # 오염시킨다. 격리 자체를 회귀로 고정한다.
+        self.assertTrue(os.environ.get(ov.STATE_HOME_ENV),
+                        "setUpModule 이 SAGE_STATE_HOME 을 설정해야 한다")
+        self.assertNotIn(os.path.expanduser("~/.local/state/sage"),
+                         ov.grants_path("/tmp/whatever"))
+
+
+class TestBypassActor(unittest.TestCase):
+    """우회를 '소비한' 주체를 남긴다 — 발급자와 사용자가 갈리면 감사가 엉뚱한 사람을 지목한다."""
+
+    def test_bypass_records_the_consuming_user(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            g = ov.grant(tmp, "긴급 배포", 10000, gate=GATE, user="alice")
+            ov.record_bypass(tmp, GATE, ["src/x.py"], "block_l3_strategy_unresolved",
+                             g, user="bob")
+            rec = [r for r in ov.read_records(tmp) if r["event"] == "bypass"][0]
+            self.assertEqual(rec["user"], "bob")           # 소비자
+            self.assertEqual(rec["grant_user"], "alice")   # 발급자
+            self.assertNotEqual(rec["user"], rec["grant_user"])
+
+    def test_bypass_falls_back_to_environment_user(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            g = ov.grant(tmp, "r", 10000, gate=GATE, user="alice")
+            ov.record_bypass(tmp, GATE, ["src/x.py"], "k", g)
+            rec = [r for r in ov.read_records(tmp) if r["event"] == "bypass"][0]
+            self.assertEqual(rec["user"], os.environ.get("USER") or "unknown")
+
+    def test_gate_wiring_records_the_actor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ov.grant(tmp, "r", 10000, gate=GATE, user="alice")
+            self.assertTrue(hr._maybe_override(GATE, tmp, dict(BLOCK), CHANGES))
+            rec = [r for r in ov.read_records(tmp) if r["event"] == "bypass"][0]
+            self.assertTrue(rec.get("user"), "게이트 배선도 행위자를 남겨야 한다")
 
 
 if __name__ == "__main__":

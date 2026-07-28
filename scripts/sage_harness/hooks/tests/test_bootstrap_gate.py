@@ -50,7 +50,7 @@ def _root(d):
     strategies = os.path.join(d, "scripts", "sage_harness", "hooks", "strategies", "pre_implementation_gate")
     os.makedirs(strategies, exist_ok=True)
     for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py",
-               "acceptance_waiver.py", "messages.py",
+               "acceptance_waiver.py", "override_audit.py", "messages.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
     Path(os.path.join(d, "scripts", "sage_harness", "hooks", "cycle_binding.py")).write_text(
