@@ -3,7 +3,7 @@
 - SAGE 개발 중 확인된 이슈들로 당장 개발해야하는 내용들은 아니지만, 추후 개발 필요시 참고한다.
 - 각 항목 = 배경 · 문제 · 접근 · 규모/위험 · 트리거 · 상태. 즉시 필요 아님 → 트리거 충족 시 착수.
 
-## 코드 검증 · 우선순위 (2026-07-17)
+## 코드 검증 · 우선순위 (2026-07-28)
 
 전 항목 코드 재대조 완료(허위/과장 없음, 상태 그대로 유효).
 
@@ -11,9 +11,11 @@
   EH-2: `output_contract_check.py` `_DEFAULT_MARKERS` 중립화 + 주입 파라미터, 코드 상 실재)
 - **EH-6 완료 확인**: SAGE-FB-05로 global/project-local 명시 선택, receipt, duplicate 진단, onboarding,
   transaction rollback, shared global lock까지 구현·검증했다.
-- **미착수 3건 착수 순위**:
-  1. **EH-5** — 최근 릴리즈(v0.9.60)된 살아있는 게이팅 로직의 현재진행형 정확성 결함(`_cycle_risk` 가 여전히
-     `declared_max→snapshot→00~05 첫 매칭` 순서라 `max()` 미구현). A 트랙에서 스캔 경로가 이미 깔려 있어 신규 범위 작음.
+- **완료 1건 + 미착수 2건**:
+  1. **EH-5 → 로드맵 §10-c 완료** — `_cycle_risk` 의 선언값 `max()`는 2026-07-18 하드닝에서 이미
+     구현됐다. 남은 실제 결함은 Phase 00 선언 미기입 통과와, 현재 변경의 글롭/내용 감지 tier가 Phase 00보다 높아도
+     durable tier 상향을 강제하지 않는 점이었다. 별도 ledger 없이 pre-write에서 Phase 00 선행 상향을
+     강제하는 방식으로 구현했다.
   2. **EH-3** — 단일 모듈(`loop_audit.py`) 격리 작업이라 다른 컴포넌트 영향 없음. 시급성은 낮으나 착수 리스크도 낮음.
   3. **EH-4** — sage-review·PostToolUse·Stop 게이트·profile_validate 다수 컴포넌트 동시 변경(대공사). 남은 우회가
      "과거 checked run_id 정확 복붙"뿐인 좁은 구멍이라 실이익 대비 비용 최대 — 트리거 충족 전 보류 유지.
@@ -101,21 +103,28 @@
 - **문제(A 의 advisory 한계)**:
   1. **미기입 무방비** — sage-plan Step 3/6 이 채워짐을 *프롬프트로* 확인하나 훅 차단은 아님. leader 가
      placeholder 를 남겨도 결정론으로 막지 못한다(현재는 write-back 이 unknown→L2 심층 fallback 으로 안전 degrade).
-  2. **effective-max 불완전** — `_cycle_risk` 는 `event.declared_max` → `snapshot.cycle_risk` → 00~05 스캔
-     순서라 **세션 선언이 00 보다 우선**. 00=L3 이어도 세션 declared=L1 이면 acceptance gate 가 낮게 열린다.
-     또 00 을 먼저 찾으면 후속 phase 의 더 높은 risk 를 안 본다(첫 매칭 반환).
+  2. **effective-max의 실제 변경 결속 불완전** — `_cycle_risk` 자체는 현재
+     `max(event.declared_max, snapshot.cycle_risk, 같은 stem의 00~05 전체 선언)`을 반환한다. 그러나
+     `build_snapshot()`은 `cycle_risk`를 생산하지 않고 post-tool 로그도 risk를 보존하지 않아, 이전 소스 편집에서
+     글롭/내용으로 감지된 상위 tier가 Phase 00에 반영되지 않으면 06 시점에 복원되지 않는다.
   3. **재조정 강제 부재** — 계획 L1 이 구현 후 L2/L3 로 커져도 자동 상향 없음. write-back 이 06 전에 `profile.risk`
      로 재분류해 00 을 갱신하도록 *프롬프트로* 지시하나 best-effort(집행 없음).
-- **접근**: (1) 00 `Risk Level` 미기입/placeholder 를 WARN/차단하는 **결정론 게이트**(pre-implementation 또는
-  전용 훅). (2) `_cycle_risk` 를 `max(declared_max, snapshot, 00~05 전체 스캔)` 로 바꿔 **완전 effective-max**
-  반환. (3) 06 작성 전 risk reconciliation(`profile.risk` 재분류→00 상향)을 결정론 단계로.
+- **접근(§10-c locked)**: (1) Phase 00-only 쓰기는 복구 경로로 허용하되, 이후 phase 또는 L1/L2/L3
+  소스 쓰기 전에 같은 stem의 00에 유효한 risk 선언이 정확히 하나인지 강제한다. (2) 현재
+  `classify_risk()`의 effective tier가 00보다 높으면 소스 쓰기를 차단하고 00을 별도 편집으로 먼저 상향하게 한다.
+  (3) 기존 `_cycle_risk` 전체 선언 max와 unknown fail-closed 동작은 보존한다. 새 훅·profile 키·risk ledger는
+  만들지 않는다.
 - **규모/위험**: **중간**. PDCA 문서 계약(00 스키마)·pre-implementation 게이트·`_cycle_risk`·테스트 동시 변경.
 - **트리거**: write-back 노트 깊이 오분류가 실제 관측되거나, "정직한 host" 전제로 부족할 때. **현 긴급도 낮음**
   — 미기입/불명확은 write-back 이 L2 심층 fallback 으로 안전 degrade.
-- **상태**: 🕗 **defer(2026-07-14, 유저 승인 "A 만 진행, B 는 추후")**. codex A 리뷰 파생. 정본 vault
-  `SAGE - write-back 심층 노트 설계 + required_structure 배선(26.07.14)`.
-  코드 재확인(2026-07-14): `pre_implementation_gate_core.py::_cycle_risk` 여전히 첫 매칭 순서(`max()` 미구현),
-  미기입 차단 게이트 부재 — 미착수 확정, 우선순위 2순위(↑ 코드 검증 참고).
+- **상태**: ✅ **로드맵 §10-c 완료(2026-07-28)**. Cycle-Stem:
+  `sage-risk-level-effective-max-gate`. 정본 plan:
+  `plan_docs/00-base_plan/sage-risk-level-effective-max-gate.md`부터 동일 stem의 01/02 문서.
+  gate core, override floor, host messages, runtime/golden/overlay 회귀, 문서·템플릿을 갱신했고
+  targeted 180 PASS, runtime smoke 13 PASS, overlay backing 13 PASS, wheel smoke와 clean-context
+  L3 리뷰 APPROVED를 확인했다. host-sensitive 테스트를 실행 환경과 격리한 뒤 main의 ambient-Codex
+  실행과 10-c의 pipx/명시-host 실행에서 전체 hook suite가 모두 통과했다.
+  교차 모델 Claude 리뷰는 세션 한도로 미실행했으며 Phase 05에 same-runtime 사실을 명시했다.
 
 ---
 

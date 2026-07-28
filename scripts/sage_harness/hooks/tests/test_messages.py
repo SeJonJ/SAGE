@@ -31,6 +31,7 @@ class TestGateText(unittest.TestCase):
                 "block_l3_review_evidence",
                 "warn_l3_no_review", "warn_l2_no_plan", "warn_l0_l3_content",
                 "block_phase_incomplete", "warn_phase_incomplete",
+                "block_cycle_risk_declaration", "block_cycle_risk_reconciliation",
                 "block_report_without_approval", "block_report_mixed_evidence",
                 "block_report_without_audit",
                 "warn_report_without_audit", "block_report_without_acceptance",
@@ -73,6 +74,25 @@ class TestGateText(unittest.TestCase):
         self.assertIn("/sage-review", M.gate_text(self._d("block_report_without_audit"), {}, "claude"))
         self.assertIn("$sage-review", M.gate_text(self._d("block_report_without_audit"), {}, "codex"))
         self.assertNotIn("$sage-review", M.gate_text(self._d("block_report_without_audit"), {}, "claude"))
+
+    def test_risk_reconciliation_names_declared_and_required_levels(self):
+        decision = self._d("block_cycle_risk_reconciliation",
+                           phase00_risk="L1", required_risk="L3",
+                           phase00_path="plan_docs/00-base_plan/feature.md")
+        for runtime in ("claude", "codex"):
+            message = M.gate_text(decision, {}, runtime)
+            self.assertIn("L1", message)
+            self.assertIn("L3", message)
+            self.assertIn("Phase 00", message)
+
+    def test_invalid_phase00_declaration_has_repair_hint(self):
+        for runtime in ("claude", "codex"):
+            message = M.gate_text(self._d("block_cycle_risk_declaration"), {}, runtime)
+            self.assertIn("Risk Level", message)
+            self.assertIn("Phase 00", message)
+            self.assertNotIn("Risk Level: L1|L2|L3", message)
+            for example in ("Risk Level: L1", "Risk Level: L2", "Risk Level: L3"):
+                self.assertIn(example, message)
 
 
 class TestOtherMessages(unittest.TestCase):

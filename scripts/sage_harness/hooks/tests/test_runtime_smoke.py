@@ -71,7 +71,10 @@ def write_instance(root, profile, phases=(), approve_content=None):
         sub = PHASE_GLOBS[pid].split("/**", 1)[0]            # 예: plan_docs/00-base_plan
         d = os.path.join(root, sub)
         os.makedirs(d, exist_ok=True)
-        phase_body = approve_content if (pid == "05" and approve_content) else f"# phase {pid} 합성 문서\n"
+        if pid == "00":
+            phase_body = "Risk Level: L3\n# phase 00 합성 문서\n"
+        else:
+            phase_body = approve_content if (pid == "05" and approve_content) else f"# phase {pid} 합성 문서\n"
         body = f"Cycle-Stem: `feature`\n{phase_body}"
         with open(os.path.join(d, "feature.md"), "w", encoding="utf-8") as f:
             f.write(body)
@@ -106,8 +109,8 @@ class TestPdcaEnforcementAlive(unittest.TestCase):
     def test_l2_missing_phases_blocks_at_runtime(self):
         def check(rt):
             with tempfile.TemporaryDirectory() as root:
-                prof = write_instance(root, make_profile(), phases=())   # phase 문서 0개
-                p = run_adapter(rt, event(rt, L2_FILE), root, prof)
+                prof = write_instance(root, make_profile(), phases=("00",))
+                p = run_adapter(rt, event(rt, L2_FILE), root, prof, branch="feature")
                 self.assertEqual(p.returncode, 2, f"{rt} L2 phase 결핍 BLOCK 기대\n{p.stdout}\n{p.stderr}")
                 self.assertIn("PDCA phase 미작성", p.stdout + p.stderr)
         both(self, check)
@@ -115,8 +118,8 @@ class TestPdcaEnforcementAlive(unittest.TestCase):
     def test_l3_missing_phases_blocks_at_runtime(self):
         def check(rt):
             with tempfile.TemporaryDirectory() as root:
-                prof = write_instance(root, make_profile(), phases=())
-                p = run_adapter(rt, event(rt, L3_FILE), root, prof)
+                prof = write_instance(root, make_profile(), phases=("00",))
+                p = run_adapter(rt, event(rt, L3_FILE), root, prof, branch="feature")
                 self.assertEqual(p.returncode, 2, f"{rt} L3 phase 결핍 BLOCK 기대\n{p.stdout}\n{p.stderr}")
                 self.assertIn("PDCA phase 미작성", p.stdout + p.stderr)
         both(self, check)
@@ -134,8 +137,10 @@ class TestPdcaEnforcementAlive(unittest.TestCase):
     def test_l1_missing_phases_warns_not_blocks(self):
         def check(rt):
             with tempfile.TemporaryDirectory() as root:
-                prof = write_instance(root, make_profile(), phases=())
-                p = run_adapter(rt, event(rt, L1_FILE), root, prof)
+                profile = make_profile()
+                profile["pdca"]["pre_implementation_required"]["L1"] = ["00", "01"]
+                prof = write_instance(root, profile, phases=("00",))
+                p = run_adapter(rt, event(rt, L1_FILE), root, prof, branch="feature")
                 self.assertEqual(p.returncode, 0, f"{rt} L1 은 warn(차단X) 기대\n{p.stdout}\n{p.stderr}")
         both(self, check)
 
@@ -161,7 +166,7 @@ class TestReportApproveGate(unittest.TestCase):
     def test_report_blocked_without_approval(self):
         def check(rt):
             with tempfile.TemporaryDirectory() as root:
-                prof = write_instance(root, make_profile(), phases=("05",),
+                prof = write_instance(root, make_profile(), phases=("00", "05"),
                                       approve_content="Final Status: FAIL\n")
                 p = run_adapter(rt, event(rt, "plan_docs/06-report/feature.md",
                                           "Cycle-Stem: `feature`\n"), root, prof)
@@ -171,7 +176,7 @@ class TestReportApproveGate(unittest.TestCase):
     def test_report_allowed_with_approval(self):
         def check(rt):
             with tempfile.TemporaryDirectory() as root:
-                prof = write_instance(root, make_profile(), phases=("05",),
+                prof = write_instance(root, make_profile(), phases=("00", "05"),
                                       approve_content="Final Status: APPROVED\n")
                 p = run_adapter(rt, event(rt, "plan_docs/06-report/feature.md",
                                           "Cycle-Stem: `feature`\n"), root, prof)
@@ -239,15 +244,27 @@ class TestOverrideBypassAtRuntime(unittest.TestCase):
     def test_block_then_override_passes_and_audits(self):
         def check(rt):
             with tempfile.TemporaryDirectory() as root:
-                prof = write_instance(root, make_profile(), phases=())   # phase 0 → L2 BLOCK
-                base = run_adapter(rt, event(rt, L2_FILE), root, prof)
+                prof = write_instance(root, make_profile(), phases=("00",))
+                base = run_adapter(rt, event(rt, L2_FILE), root, prof, branch="feature")
                 self.assertEqual(base.returncode, 2, f"{rt} 기준 BLOCK 기대\n{base.stdout}\n{base.stderr}")
                 ov = self._grant(root, "pre-implementation-gate")
-                p = run_adapter(rt, event(rt, L2_FILE), root, prof)
+                p = run_adapter(rt, event(rt, L2_FILE), root, prof, branch="feature")
                 self.assertEqual(p.returncode, 0, f"{rt} override 후 통과 기대\n{p.stdout}\n{p.stderr}")
                 self.assertIn("override 적용", p.stderr, f"{rt} 우회 통지 surface")
                 byp = [r for r in ov.read_records(root) if r.get("event") == "bypass"]
                 self.assertEqual(len(byp), 1, f"{rt} bypass 1건 감사 기대")
+        both(self, check)
+
+    def test_override_cannot_bypass_phase00_risk_contract(self):
+        def check(rt):
+            with tempfile.TemporaryDirectory() as root:
+                prof = write_instance(root, make_profile(), phases=())
+                ov = self._grant(root, "all")
+                p = run_adapter(rt, event(rt, L2_FILE), root, prof)
+                self.assertEqual(p.returncode, 2)
+                self.assertIn("Phase 00 Risk Level", p.stdout + p.stderr)
+                bypasses = [r for r in ov.read_records(root) if r.get("event") == "bypass"]
+                self.assertEqual(bypasses, [])
         both(self, check)
 
     def test_override_gate_mismatch_still_blocks(self):

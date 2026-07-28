@@ -190,6 +190,8 @@ class TestMaybeOverrideWiring(unittest.TestCase):
 
     def test_acceptance_and_fail_closed_blocks_are_not_overridable(self):
         protected = (
+            "block_cycle_risk_declaration",
+            "block_cycle_risk_reconciliation",
             "block_report_without_acceptance",
             "block_report_waiver_audit_failure",
             "block_gate_runtime_error",

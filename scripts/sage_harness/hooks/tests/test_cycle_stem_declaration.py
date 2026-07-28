@@ -46,14 +46,21 @@ PDCA_PROFILE = {
 }
 
 
-def _pdoc(stem):
-    return {"path": f"{stem}.md", "content": f"Cycle-Stem: `{stem}`\n", "recent": True}
+def _pdoc(stem, risk=""):
+    risk_line = f"Risk Level: {risk}\n" if risk else ""
+    return {"path": f"{stem}.md",
+            "content": f"Cycle-Stem: `{stem}`\n{risk_line}", "recent": True}
 
 
 def _complete_snapshot(stem):
     """실제 사이클 stem 으로 00~03 이 모두 갖춰진 스냅샷 — 결핍이 아닌 상태."""
     return {"plan_files": [_pdoc(stem)], "review_candidates": [],
-            "phase_docs": {pid: [_pdoc(stem)] for pid in ("00", "01", "02", "03")}}
+            "phase_docs": {
+                "00": [_pdoc(stem, risk="L2")],
+                "01": [_pdoc(stem)],
+                "02": [_pdoc(stem)],
+                "03": [_pdoc(stem)],
+            }}
 
 
 def _event(cycle_stem="", branch=LONG_BRANCH, path="backend/App.java"):
@@ -67,8 +74,7 @@ class TestLongLivedBranchMisbinding(unittest.TestCase):
 
     def test_complete_cycle_still_blocks_when_stem_is_inferred_from_branch(self):
         d = core.decide(_event(), PDCA_PROFILE, _complete_snapshot(REAL_STEM), None)
-        self.assertEqual(d["message_key"], "block_phase_incomplete")
-        self.assertEqual(d["missing_phases"], ["00", "01", "02", "03"])
+        self.assertEqual(d["message_key"], "block_cycle_risk_declaration")
         # 판정은 그대로지만 출처는 이제 밖으로 나온다 — 이게 오안내를 고칠 재료다.
         self.assertEqual(d["cycle_source"], ["branch-leaf"])
         self.assertEqual(d["cycle_stem"], LONG_BRANCH)
@@ -113,7 +119,7 @@ class TestHintPointsAtTheRealEscape(unittest.TestCase):
 
     def test_path_bound_stem_block_does_not_suggest_declaration(self):
         # 경로에서 stem 을 얻은 결핍은 진짜 문서 부재다 — 여기서 선언을 권하면 우회를 가르치는 셈이다.
-        docs = {"00": [_pdoc(REAL_STEM)]}
+        docs = {"00": [_pdoc(REAL_STEM, risk="L2")]}
         event = {"hook_id": GATE, "branch": LONG_BRANCH, "session_id": "s",
                  "changes": [{"path": f"plan_docs/00-x/{REAL_STEM}.md", "op": "write",
                               "content": f"Cycle-Stem: `{REAL_STEM}`\n"},

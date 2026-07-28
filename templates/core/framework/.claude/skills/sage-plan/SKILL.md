@@ -80,9 +80,8 @@ Hand off to the `leader` agent with this briefing:
   exact same `Cycle-Stem: <basename>` once near the top of every 00–02 document.
 - Required: the 00 base plan must record a `Risk Level: Lx` line — L1/L2/L3, the
   higher of the user-declared level and the risk the change globs imply. This is the
-  durable per-cycle tier knowledge write-back reads to size the final note (and the 06
-  acceptance-evidence report gate scans as a fallback when no session-level risk was
-  declared). Fill it with a real `L1`/`L2`/`L3`; never leave the `<L1|L2|L3>` placeholder.
+  durable per-cycle tier used by later gates and knowledge write-back. Fill exactly one
+  declaration with a real `L1`/`L2`/`L3`; never leave the `<L1|L2|L3>` placeholder.
 
 ## Step 3 — Verify plan doc exists
 
@@ -93,10 +92,10 @@ Confirm every 00–02 markdown basename equals its single `Cycle-Stem` declarati
 Missing, duplicate, mismatched, or multiple candidate stems are a hard stop; do
 not select a recent document as a fallback.
 
-Also confirm the 00 base plan carries a filled `Risk Level: L1`/`L2`/`L3` line (not the
-`<L1|L2|L3>` placeholder). If it is missing or unfilled, block and ask the leader to set
-it before handing off — write-back reads this tier to size the final note, and the 06
-acceptance-evidence report gate scans it only when no session-level risk was declared.
+Also confirm the 00 base plan carries exactly one filled `Risk Level: L1`/`L2`/`L3`
+line outside code fences (not the `<L1|L2|L3>` placeholder). If it is missing,
+unfilled, malformed, or duplicated, block and ask the leader to repair Phase 00 before
+handoff. Later-phase and governed source writes fail closed without this declaration.
 
 ## Step 4 — Report ownership map
 

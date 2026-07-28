@@ -228,11 +228,169 @@ def _pdoc(content="x", recent=True, stem="main"):
     return {"path": f"{stem}.md", "content": f"Cycle-Stem: `{stem}`\n{content}", "recent": recent}
 
 
+def _risk_pdoc(risk="L3", recent=True, stem="main"):
+    return _pdoc(content=f"Risk Level: {risk}", recent=recent, stem=stem)
+
+
 def snap_pdca(phase_docs=None, plan=None, review=None):
     return {"plan_files": plan or [], "review_candidates": review or [], "phase_docs": phase_docs or {}}
 
 
 class TestPdcaEnforcement(unittest.TestCase):
+    def _complete_docs(self, risk="L3", stem="main"):
+        return {
+            "00": [_risk_pdoc(risk=risk, stem=stem)],
+            "01": [_pdoc(stem=stem)],
+            "02": [_pdoc(stem=stem)],
+            "03": [_pdoc(stem=stem)],
+        }
+
+    def test_governed_source_blocks_when_bound_phase00_has_no_risk_declaration(self):
+        docs = {phase: [_pdoc()] for phase in ("00", "01", "02", "03")}
+        d = core.decide(ev("backend/Svc.java"), PDCA_PROFILE,
+                        snap_pdca(phase_docs=docs, plan=[_pdoc()]), None)
+        self.assertEqual(d["message_key"], "block_cycle_risk_declaration")
+        self.assertEqual(d["exit_code"], 2)
+        self.assertIn("Risk Level", d["reason"])
+
+    def test_governed_source_blocks_invalid_phase00_risk_declarations(self):
+        invalid = {
+            "placeholder": "Risk Level: TBD",
+            "duplicate": "Risk Level: L2\nRisk Level: L3",
+            "fenced_only": "```markdown\nRisk Level: L3\n```",
+            "malformed_label": "Risk Level [custom]: L3",
+            "valid_plus_malformed": "Risk Level: L2\nRisk Level [custom]: L3",
+            "inline_placeholder": "Risk Level: L1|L2|L3",
+            "same_line_duplicate": "Risk Level: L1 and Risk Level: L3",
+            "empty": "",
+        }
+        for label, content in invalid.items():
+            with self.subTest(label=label):
+                docs = self._complete_docs()
+                docs["00"] = [_pdoc(content=content)]
+                d = core.decide(ev("backend/Svc.java"), PDCA_PROFILE,
+                                snap_pdca(phase_docs=docs, plan=[_pdoc()]), None)
+                self.assertEqual(d["message_key"], "block_cycle_risk_declaration")
+                self.assertEqual(d["exit_code"], 2)
+
+    def test_emphasized_phase00_risk_declaration_is_accepted(self):
+        docs = self._complete_docs()
+        docs["00"] = [_pdoc(content="**Risk Level:** L2")]
+        d = core.decide(ev("backend/Svc.java"), PDCA_PROFILE,
+                        snap_pdca(phase_docs=docs, plan=[_pdoc()]), None)
+        self.assertEqual(d["message_key"], "ok_l2")
+
+    def test_legacy_markdown_and_trailing_reason_are_read_compatible(self):
+        declarations = (
+            "- Risk Level: L2",
+            "Risk Level: L2 — 기존 프로젝트 설명",
+            "* 위험도: L2 (legacy label)",
+        )
+        for declaration in declarations:
+            with self.subTest(declaration=declaration):
+                docs = self._complete_docs()
+                docs["00"] = [_pdoc(content=declaration)]
+                d = core.decide(ev("backend/Svc.java"), PDCA_PROFILE,
+                                snap_pdca(phase_docs=docs, plan=[_pdoc()]), None)
+                self.assertEqual(d["message_key"], "ok_l2")
+
+    def test_ambiguous_same_cycle_phase00_documents_fail_closed(self):
+        docs = self._complete_docs()
+        docs["00"] = [_risk_pdoc(risk="L2"), _risk_pdoc(risk="L3")]
+        d = core.decide(ev("backend/Svc.java"), PDCA_PROFILE,
+                        snap_pdca(phase_docs=docs, plan=[_pdoc()]), None)
+        self.assertEqual(d["message_key"], "block_cycle_risk_declaration")
+        self.assertIn("ambiguous", d["reason"])
+
+    def test_non_text_phase00_snapshot_content_fails_closed(self):
+        docs = self._complete_docs()
+        docs["00"] = [{"path": "main.md", "content": {"unreadable": True}, "recent": True}]
+        d = core.decide(ev("backend/Svc.java"), PDCA_PROFILE,
+                        snap_pdca(phase_docs=docs, plan=[_pdoc()]), None)
+        self.assertEqual(d["message_key"], "block_cycle_risk_declaration")
+        self.assertIn("읽을 수 없는", d["reason"])
+
+    def test_other_cycle_phase00_risk_does_not_authorize_source_write(self):
+        docs = {
+            "00": [_risk_pdoc(stem="other")],
+            "01": [_pdoc(stem="current")],
+            "02": [_pdoc(stem="current")],
+            "03": [_pdoc(stem="current")],
+        }
+        d = core.decide(ev("backend/Svc.java", branch="feat/current"), PDCA_PROFILE,
+                        snap_pdca(phase_docs=docs, plan=[_pdoc(stem="current")]), None)
+        self.assertEqual(d["message_key"], "block_cycle_risk_declaration")
+
+    def test_later_phase_write_requires_phase00_risk_declaration(self):
+        event = ev("plan_docs/01-plan/feature.md",
+                   "Cycle-Stem: `feature`\n# plan\n", branch="feat/feature")
+        d = core.decide(event, PDCA_PROFILE, snap_pdca(), None)
+        self.assertEqual(d["message_key"], "block_cycle_risk_declaration")
+
+    def test_phase00_only_write_can_repair_missing_or_invalid_declaration(self):
+        event = ev("plan_docs/00-base_plan/feature.md",
+                   "Cycle-Stem: `feature`\nRisk Level: L3\n", branch="feat/feature")
+        d = core.decide(event, PDCA_PROFILE, snap_pdca(), None)
+        self.assertEqual(d["status"], "ok")
+        self.assertNotEqual(d["message_key"], "block_cycle_risk_declaration")
+
+    def test_overlapping_phase_glob_is_not_treated_as_phase00_only_repair(self):
+        profile = json.loads(json.dumps(PDCA_PROFILE))
+        profile["pdca"]["phases"][1]["glob"] = profile["pdca"]["phases"][0]["glob"]
+        event = ev("plan_docs/00-base_plan/feature.md",
+                   "Cycle-Stem: `feature`\nRisk Level: L3\n", branch="feat/feature")
+        d = core.decide(event, profile, snap_pdca(), None)
+        self.assertEqual(d["message_key"], "block_cycle_risk_declaration")
+
+    def test_phase00_write_mixed_with_source_does_not_bypass_declaration_gate(self):
+        event = {"branch": "feat/feature", "changes": [
+            {"path": "plan_docs/00-base_plan/feature.md", "op": "update",
+             "content": "Cycle-Stem: `feature`\nRisk Level: L2\n"},
+            {"path": "backend/Svc.java", "op": "update", "content": ""},
+        ]}
+        docs = self._complete_docs(risk="L1", stem="feature")
+        d = core.decide(event, PDCA_PROFILE,
+                        snap_pdca(phase_docs=docs, plan=[_pdoc(stem="feature")]), None)
+        self.assertEqual(d["message_key"], "block_cycle_risk_reconciliation")
+
+    def test_phase00_write_mixed_with_later_phase_uses_prewrite_snapshot(self):
+        event = {"branch": "feat/feature", "changes": [
+            {"path": "plan_docs/00-base_plan/feature.md", "op": "update",
+             "content": "Cycle-Stem: `feature`\nRisk Level: L2\n"},
+            {"path": "plan_docs/01-plan/feature.md", "op": "update",
+             "content": "Cycle-Stem: `feature`\n# plan\n"},
+        ]}
+        docs = {"00": [_pdoc(stem="feature")]}
+        d = core.decide(event, PDCA_PROFILE, snap_pdca(phase_docs=docs), None)
+        self.assertEqual(d["message_key"], "block_cycle_risk_declaration")
+
+    def test_computed_risk_cannot_exceed_phase00_declaration(self):
+        cases = [
+            ("backend/Svc.java", None, "L1", "L2"),
+            ("a/payment.java", None, "L2", "L3"),
+            ("frontend/app.js", "L3", "L1", "L3"),
+        ]
+        for path, declared, phase00_risk, required in cases:
+            with self.subTest(path=path, declared=declared):
+                docs = self._complete_docs(risk=phase00_risk)
+                d = core.decide(ev(path, declared=declared), PDCA_PROFILE,
+                                snap_pdca(phase_docs=docs, plan=[_pdoc()]), {"found": True})
+                self.assertEqual(d["message_key"], "block_cycle_risk_reconciliation")
+                self.assertEqual(d["exit_code"], 2)
+                self.assertEqual(d["phase00_risk"], phase00_risk)
+                self.assertEqual(d["required_risk"], required)
+
+    def test_raising_phase00_risk_allows_retry_to_reach_existing_gate(self):
+        event = ev("a/payment.java")
+        stale = self._complete_docs(risk="L2")
+        blocked = core.decide(event, PDCA_PROFILE,
+                              snap_pdca(phase_docs=stale, plan=[_pdoc()]), {"found": True})
+        raised = self._complete_docs(risk="L3")
+        retried = core.decide(event, PDCA_PROFILE,
+                              snap_pdca(phase_docs=raised, plan=[_pdoc()]), {"found": True})
+        self.assertEqual(blocked["message_key"], "block_cycle_risk_reconciliation")
+        self.assertEqual(retried["message_key"], "ok_l3")
+
     def test_new_phase_doc_without_cycle_stem_blocks(self):
         event = ev("plan_docs/06-report/feature.md", "Status: COMPLETE\n")
         d = core.decide(event, PDCA_PROFILE, snap_pdca(), None)
@@ -252,14 +410,14 @@ class TestPdcaEnforcement(unittest.TestCase):
     def test_l2_missing_phases_blocks(self):
         # 의무 phase(00/01/02/03) 중 01·02·03 결핍 → L2 BLOCK
         d = core.decide(ev("backend/Svc.java"), PDCA_PROFILE,
-                        snap_pdca(phase_docs={"00": [_pdoc()]}), None)
+                        snap_pdca(phase_docs={"00": [_risk_pdoc()]}), None)
         self.assertEqual(d["message_key"], "block_phase_incomplete")
         self.assertEqual(d["exit_code"], 2)
         self.assertEqual(d["missing_phases"], ["01", "02", "03"])
 
     def test_l2_missing_only_03_blocks(self):
         # 00/01/02 있어도 03(구현 문서=파일소유/체크리스트) 없으면 소스 편집 BLOCK — 스캐폴딩 우회 차단
-        docs = {"00": [_pdoc()], "01": [_pdoc()], "02": [_pdoc()]}
+        docs = {"00": [_risk_pdoc()], "01": [_pdoc()], "02": [_pdoc()]}
         d = core.decide(ev("backend/build.gradle.kts"), PDCA_PROFILE,
                         snap_pdca(phase_docs=docs, plan=[_pdoc()]), None)
         self.assertEqual(d["message_key"], "block_phase_incomplete")
@@ -268,14 +426,14 @@ class TestPdcaEnforcement(unittest.TestCase):
 
     def test_l2_all_phases_present_falls_through(self):
         # 00/01/02/03 충족 → phase 통과 → 기존 L2 로직(plan 있음 → ok_l2)
-        docs = {"00": [_pdoc()], "01": [_pdoc()], "02": [_pdoc()], "03": [_pdoc()]}
+        docs = {"00": [_risk_pdoc()], "01": [_pdoc()], "02": [_pdoc()], "03": [_pdoc()]}
         d = core.decide(ev("backend/Svc.java"), PDCA_PROFILE,
                         snap_pdca(phase_docs=docs, plan=[_pdoc()]), None)
         self.assertEqual(d["message_key"], "ok_l2")
 
     def test_l3_phases_present_then_review_logic_preserved(self):
         # phase 충족이 L3 review 게이트를 단축하지 않는다 → 전략 미선택이면 여전히 BLOCK
-        docs = {"00": [_pdoc(stem="127")], "01": [_pdoc(stem="127")],
+        docs = {"00": [_risk_pdoc(stem="127")], "01": [_pdoc(stem="127")],
                 "02": [_pdoc(stem="127")], "03": [_pdoc(stem="127")]}
         d = core.decide(ev("a/payment.java", branch="bug/127"), PDCA_PROFILE,
                         snap_pdca(phase_docs=docs, plan=[_pdoc(stem="127")]), None)
@@ -283,7 +441,7 @@ class TestPdcaEnforcement(unittest.TestCase):
 
     def test_l3_missing_only_03_blocks(self):
         # L3 도 03 선행 강제 — 00/01/02 있어도 03 없으면 BLOCK
-        docs = {"00": [_pdoc()], "01": [_pdoc()], "02": [_pdoc()]}
+        docs = {"00": [_risk_pdoc()], "01": [_pdoc()], "02": [_pdoc()]}
         d = core.decide(ev("a/payment.java"), PDCA_PROFILE,
                         snap_pdca(phase_docs=docs, plan=[_pdoc()]), {"found": True})
         self.assertEqual(d["message_key"], "block_phase_incomplete")
@@ -292,25 +450,32 @@ class TestPdcaEnforcement(unittest.TestCase):
     def test_l3_missing_phases_blocks_before_review(self):
         # phase 결핍이 우선 → review 전략 결과와 무관하게 phase BLOCK
         d = core.decide(ev("a/payment.java"), PDCA_PROFILE,
-                        snap_pdca(phase_docs={"00": [_pdoc()]}), {"found": True})
+                        snap_pdca(phase_docs={"00": [_risk_pdoc()]}), {"found": True})
         self.assertEqual(d["message_key"], "block_phase_incomplete")
         self.assertEqual(d["missing_phases"], ["01", "02", "03"])
 
     def test_l1_missing_phases_warns(self):
-        d = core.decide(ev("frontend/app.js"), PDCA_PROFILE, snap_pdca(phase_docs={}), None)
+        profile = json.loads(json.dumps(PDCA_PROFILE))
+        profile["pdca"]["pre_implementation_required"]["L1"] = ["00", "01"]
+        d = core.decide(ev("frontend/app.js"), profile,
+                        snap_pdca(phase_docs={"00": [_risk_pdoc(risk="L1")]}), None)
         self.assertEqual(d["message_key"], "warn_phase_incomplete")
         self.assertEqual(d["exit_code"], 0)
-        self.assertEqual(d["missing_phases"], ["00"])
+        self.assertEqual(d["missing_phases"], ["01"])
 
     def test_report_blocked_without_approval(self):
         # 06-report 작성 + 05 에 APPROVED 없음 → BLOCK
         d = core.decide(ev("plan_docs/06-report/feature.md", "Cycle-Stem: `feature`\n"), PDCA_PROFILE,
-                        snap_pdca(phase_docs={"05": [_pdoc(content="Final Status: FAIL", stem="feature")]}), None)
+                        snap_pdca(phase_docs={
+                            "00": [_risk_pdoc(stem="feature")],
+                            "05": [_pdoc(content="Final Status: FAIL", stem="feature")],
+                        }), None)
         self.assertEqual(d["message_key"], "block_report_without_approval")
         self.assertEqual(d["exit_code"], 2)
 
     def test_noncanonical_report_paths_cannot_skip_report_gate(self):
         snapshot = snap_pdca(phase_docs={
+            "00": [_risk_pdoc(stem="feature")],
             "05": [_pdoc(content="Final Status: FAIL", stem="feature")],
         })
         for path in (
@@ -326,21 +491,30 @@ class TestPdcaEnforcement(unittest.TestCase):
     def test_report_allowed_with_approval(self):
         # 05 에 APPROVED → 06 작성 허용(L0 문서 → ok)
         d = core.decide(ev("plan_docs/06-report/feature.md", "Cycle-Stem: `feature`\n"), PDCA_PROFILE,
-                        snap_pdca(phase_docs={"05": [_pdoc(content="Final Status: APPROVED", stem="feature")]}), None)
+                        snap_pdca(phase_docs={
+                            "00": [_risk_pdoc(stem="feature")],
+                            "05": [_pdoc(content="Final Status: APPROVED", stem="feature")],
+                        }), None)
         self.assertEqual(d["status"], "ok")
         self.assertNotEqual(d["message_key"], "block_report_without_approval")
 
     def test_report_rejects_unfilled_status_placeholder(self):
         placeholder = "**Final Status:** APPROVED / FAIL / BLOCKED"
         d = core.decide(ev("plan_docs/06-report/feature.md", "Cycle-Stem: `feature`\n"), PDCA_PROFILE,
-                        snap_pdca(phase_docs={"05": [_pdoc(content=placeholder, stem="feature")]}), None)
+                        snap_pdca(phase_docs={
+                            "00": [_risk_pdoc(stem="feature")],
+                            "05": [_pdoc(content=placeholder, stem="feature")],
+                        }), None)
         self.assertEqual(d["message_key"], "block_report_without_approval")
         self.assertIn("Final Status", d["reason"])
 
     def test_report_rejects_duplicate_final_status(self):
         content = "Final Status: APPROVED\nFinal Status: APPROVED"
         d = core.decide(ev("plan_docs/06-report/feature.md", "Cycle-Stem: `feature`\n"), PDCA_PROFILE,
-                        snap_pdca(phase_docs={"05": [_pdoc(content=content, stem="feature")]}), None)
+                        snap_pdca(phase_docs={
+                            "00": [_risk_pdoc(stem="feature")],
+                            "05": [_pdoc(content=content, stem="feature")],
+                        }), None)
         self.assertEqual(d["message_key"], "block_report_without_approval")
         self.assertIn("found 2", d["reason"])
 
@@ -383,23 +557,26 @@ class TestPdcaEnforcement(unittest.TestCase):
             _pdoc(content="Final Status: APPROVED", stem="other"),
         ]
         event = ev("plan_docs/06-report/feature.md", "Cycle-Stem: `feature`\n")
-        d = core.decide(event, PDCA_PROFILE, snap_pdca(phase_docs={"05": docs}), None)
+        d = core.decide(event, PDCA_PROFILE,
+                        snap_pdca(phase_docs={"00": [_risk_pdoc(stem="feature")], "05": docs}), None)
         self.assertEqual(d["message_key"], "block_report_without_approval")
         self.assertIn("feature.md", d["reason"])
 
     def test_ticketless_branch_exact_stem_selects_required_phases(self):
         stem = "weather-search"
-        docs = {phase: [_pdoc(stem=stem)] for phase in ("00", "01", "02", "03")}
+        docs = {phase: [_pdoc(stem=stem)] for phase in ("01", "02", "03")}
+        docs["00"] = [_risk_pdoc(stem=stem)]
         d = core.decide(ev("backend/Svc.java", branch=f"feat/{stem}"), PDCA_PROFILE,
                         snap_pdca(phase_docs=docs, plan=[_pdoc(stem=stem)]), None)
         self.assertEqual(d["message_key"], "ok_l2")
 
     def test_recent_unrelated_phase_docs_do_not_satisfy_source_cycle(self):
-        docs = {phase: [_pdoc(stem="other", recent=True)] for phase in ("00", "01", "02", "03")}
+        docs = {phase: [_pdoc(stem="other", recent=True)] for phase in ("01", "02", "03")}
+        docs["00"] = [_risk_pdoc(stem="current"), _risk_pdoc(stem="other", recent=True)]
         d = core.decide(ev("backend/Svc.java", branch="feat/current"), PDCA_PROFILE,
                         snap_pdca(phase_docs=docs, plan=[_pdoc(stem="other")]), None)
         self.assertEqual(d["message_key"], "block_phase_incomplete")
-        self.assertEqual(d["missing_phases"], ["00", "01", "02", "03"])
+        self.assertEqual(d["missing_phases"], ["01", "02", "03"])
 
     def test_inactive_pdca_is_backward_compatible(self):
         # pdca 미설정(기존 PROFILE) → phase 강제 None → 기존 동작(L2 no-plan → warn)
@@ -440,7 +617,8 @@ def _risk_acceptance_profile(waiver_enabled=True):
 
 def snap_audit(docs05, runs=None, has_any=None):
     """06 작성 시나리오: 05 phase_docs + 주입된 loop_audit."""
-    return {"plan_files": [], "review_candidates": [], "phase_docs": {"05": docs05},
+    return {"plan_files": [], "review_candidates": [],
+            "phase_docs": {"00": [_risk_pdoc(stem="feature")], "05": docs05},
             "loop_audit": {"runs": runs or {}, "has_any_records": runs is not None if has_any is None else has_any}}
 
 
@@ -709,13 +887,16 @@ class TestReportAcceptanceGate(unittest.TestCase):
             *rows,
         ])
 
-    def _snap(self, content04, content05="Final Status: APPROVED", recent04=True, content01=None):
+    def _snap(self, content04, content05="Final Status: APPROVED", recent04=True,
+              content01=None, phase00_risk="L3"):
         def bound(content):
             return f"Cycle-Stem: `feature`\n{content}"
         return {
             "plan_files": [],
             "review_candidates": [],
             "phase_docs": {
+                "00": [{"path": "feature.md",
+                        "content": bound(f"Risk Level: {phase00_risk}"), "recent": True}],
                 "01": [{"path": "feature.md", "content": bound(content01 or self._matrix()), "recent": True}],
                 "04": [{"path": "feature.md", "content": bound(content04), "recent": recent04}],
                 "05": [{"path": "feature.md", "content": bound(content05), "recent": True}],
@@ -730,7 +911,7 @@ class TestReportAcceptanceGate(unittest.TestCase):
     def test_advisory_warns_when_acceptance_table_missing(self):
         report_ev = ev("plan_docs/06-report/feature.md", "Cycle-Stem: `feature`\n", declared="L2")
         d = core.decide(report_ev, _acceptance_profile(mode="advisory"),
-                        self._snap("## Coverage\nno table"), None)
+                        self._snap("## Coverage\nno table", phase00_risk="L2"), None)
         self.assertEqual(d["message_key"], "warn_report_without_acceptance")
         self.assertEqual(d["exit_code"], 0)
 
@@ -870,6 +1051,18 @@ class TestReportAcceptanceGate(unittest.TestCase):
         self.assertEqual(d["message_key"], "block_report_without_acceptance")
         self.assertIn("A1", d["reason"])
 
+    def test_lower_session_declaration_cannot_lower_phase00_at_report_time(self):
+        snap = self._snap("## Acceptance Evidence\n| ID | Status |\n|---|---|\n| A1 | FAIL |\n| A2 | PASS |",
+                          phase00_risk="L3")
+        report = ev("plan_docs/06-report/feature.md",
+                    "Cycle-Stem: `feature`\n", declared="L1")
+        self.assertEqual(
+            core._cycle_risk(report, _acceptance_profile(), snap, _acceptance_profile()["pdca"]),
+            "L3",
+        )
+        d = core.decide(report, _acceptance_profile(mode="enforce"), snap, None)
+        self.assertEqual(d["message_key"], "block_report_without_acceptance")
+
     def test_cycle_risk_recognizes_bold_label(self):
         for declaration in (
             "*Risk Level:* L3", "*Risk Level*: L3", "*Risk Level: L3*",
@@ -909,7 +1102,7 @@ class TestReportAcceptanceGate(unittest.TestCase):
     def test_audit_enforce_precedes_acceptance_advisory(self):
         p = _acceptance_profile(mode="advisory")
         p["pdca"]["review_loop"] = {"enabled": True, "report_gate_enforce": "enforce"}
-        snap = self._snap("## Coverage\nno acceptance table")
+        snap = self._snap("## Coverage\nno acceptance table", phase00_risk="L2")
         snap["loop_audit"] = {"runs": {}, "has_any_records": False}
         report_ev = ev("plan_docs/06-report/feature.md", "Cycle-Stem: `feature`\n", declared="L2")
         d = core.decide(report_ev, p, snap, None)
@@ -1009,7 +1202,8 @@ class TestReportAcceptanceGate(unittest.TestCase):
 | A1 | FAIL |
 """
         d = core.decide(ev("plan_docs/06-report/feature.md", declared="L1"),
-                        _acceptance_profile(mode="enforce"), self._snap(content04), None)
+                        _acceptance_profile(mode="enforce"),
+                        self._snap(content04, phase00_risk="L1"), None)
         self.assertNotIn(d["message_key"], ("block_report_without_acceptance", "warn_report_without_acceptance"))
 
     def test_risk_defaults_are_l2_advisory_and_l3_unknown_enforce(self):
@@ -1021,7 +1215,7 @@ class TestReportAcceptanceGate(unittest.TestCase):
 """
         profile = _risk_acceptance_profile(waiver_enabled=False)
         l2 = core.decide(ev("plan_docs/06-report/feature.md", "Cycle-Stem: `feature`\n", declared="L2"), profile,
-                         self._snap(content04), None)
+                         self._snap(content04, phase00_risk="L2"), None)
         unknown = core.decide(_REPORT_EV, profile, self._snap(content04), None)
         self.assertEqual(l2["message_key"], "warn_report_without_acceptance")
         self.assertEqual(unknown["message_key"], "block_report_without_acceptance")
@@ -1029,7 +1223,7 @@ class TestReportAcceptanceGate(unittest.TestCase):
         defaults = _risk_acceptance_profile(waiver_enabled=False)
         defaults["verification"]["acceptance"].pop("report_gate_by_risk")
         default_l2 = core.decide(ev("plan_docs/06-report/feature.md", "Cycle-Stem: `feature`\n", declared="L2"), defaults,
-                                 self._snap(content04), None)
+                                 self._snap(content04, phase00_risk="L2"), None)
         default_unknown = core.decide(_REPORT_EV, defaults, self._snap(content04), None)
         self.assertEqual(default_l2["message_key"], "warn_report_without_acceptance")
         self.assertEqual(default_unknown["message_key"], "block_report_without_acceptance")

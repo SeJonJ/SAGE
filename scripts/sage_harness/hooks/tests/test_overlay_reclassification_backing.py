@@ -96,7 +96,7 @@ class TestPhaseBacking(unittest.TestCase):
     def test_leader_phase_skip_blocked(self):
         # leader 오버레이 "계획 생략": L2 소스 편집인데 의무 phase(01/02/03) 결핍 → BLOCK.
         d = core.decide(pig.ev("backend/Svc.java"), pig.PDCA_PROFILE,
-                        pig.snap_pdca(phase_docs={"00": [pig._pdoc()]}), None)
+                        pig.snap_pdca(phase_docs={"00": [pig._risk_pdoc(risk="L2")]}), None)
         self.assertEqual(d["message_key"], "block_phase_incomplete")
         self.assertEqual(d["exit_code"], 2)
         self.assertEqual(d["missing_phases"], ["01", "02", "03"])
@@ -104,7 +104,9 @@ class TestPhaseBacking(unittest.TestCase):
     def test_sage_plan_unbound_plan_blocked(self):
         # sage-plan 오버레이가 다른 cycle 의 plan 문서를 재활용해도 stem 결속 불일치 → 결핍 → BLOCK.
         event = pig.ev("backend/Svc.java", "Cycle-Stem: `feat-x`\n")
-        docs = {p: [pig._pdoc(stem="other")] for p in ("00", "01", "02", "03")}
+        event["cycle_stem"] = "feat-x"
+        docs = {p: [pig._pdoc(stem="other")] for p in ("01", "02", "03")}
+        docs["00"] = [pig._risk_pdoc(risk="L2", stem="feat-x")]
         d = core.decide(event, pig.PDCA_PROFILE, pig.snap_pdca(phase_docs=docs), None)
         self.assertEqual(d["message_key"], "block_phase_incomplete")
         self.assertEqual(d["exit_code"], 2)
@@ -125,6 +127,7 @@ class TestQaExclusion(unittest.TestCase):
         def bound(c):
             return f"Cycle-Stem: `feature`\n{c}"
         return {"plan_files": [], "review_candidates": [], "phase_docs": {
+            "00": [{"path": "feature.md", "content": bound("Risk Level: L3"), "recent": True}],
             "01": [{"path": "feature.md", "content": bound(self._matrix()), "recent": True}],
             "04": [{"path": "feature.md", "content": bound(content04), "recent": True}],
             "05": [{"path": "feature.md", "content": bound("Final Status: APPROVED"), "recent": True}]}}
@@ -160,6 +163,7 @@ class TestAcceptanceContentGapIsPreExisting(unittest.TestCase):
         e = ("## Acceptance Evidence\n| ID | Status | Evidence |\n|---|---|---|\n"
              + "".join(f"| {i} | PASS | x |\n" for i in ev_ids))
         return {"plan_files": [], "review_candidates": [], "phase_docs": {
+            "00": [{"path": "feature.md", "content": bound("Risk Level: L3"), "recent": True}],
             "01": [{"path": "feature.md", "content": bound(m), "recent": True}],
             "04": [{"path": "feature.md", "content": bound(e), "recent": True}],
             "05": [{"path": "feature.md", "content": bound("Final Status: APPROVED"), "recent": True}]}}

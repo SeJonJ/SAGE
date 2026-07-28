@@ -224,6 +224,8 @@ def run_strategy(hook_id, profile, core_dir, changes, event, snapshot):
 
 
 _NON_OVERRIDABLE_BLOCKS = {
+    "block_cycle_risk_declaration",
+    "block_cycle_risk_reconciliation",
     "block_report_without_acceptance",
     "block_report_waiver_audit_failure",
     "block_gate_runtime_error",

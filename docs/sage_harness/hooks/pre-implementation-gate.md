@@ -9,6 +9,7 @@ runtime_bindings:
 소스/설정 변경 전 위험도(L0~L3)를 분류해 게이트를 적용한다. 동기화 산출물/금지 경로 직접수정 하드블록,
 L3(profile.risk 고위험 도메인) + plan 없음 하드블록, L3 review 확인, L2 plan 확인.
 PDCA phase 의무구조 강제(F9): profile.pdca 활성 시 구현 전 의무 phase 결핍이면 L2/L3 BLOCK·L1 WARN,
+같은 cycle의 Phase 00에 유효한 위험도 선언이 없거나 현재 변경 위험도보다 낮으면 BLOCK,
 report phase 작성 전 approve phase APPROVED 확인. pdca 비활성이면 None → 기존 risk/plan 동작(하위호환).
 
 ## runtime_bindings
@@ -54,11 +55,18 @@ profile.pdca: { enabled, phases[{id,glob}], pre_implementation_required{L1,L2,L3
   이미 완결된 사이클을 지목해 전 게이트를 통과시킬 수 있어서, 기록 실패 시 통과를 허용하지 않는다
   (`block_cycle_stem_audit_failure`).
 - core `decide`: ① missing/conflicting/ambiguous binding은 `block_cycle_binding`
-  ② report←approve 게이트(L0 단축 전, current stem의 05에 정확히 한 개의
+  ② Phase 00 위험도 게이트: Phase 01-06 또는 L1/L2/L3 비-phase 변경 전에 current stem의 Phase 00을
+  exact 선택하고 fence 밖 `Risk Level: L1|L2|L3` 선언을 정확히 한 개 요구한다. 누락·placeholder·malformed·
+  duplicate·읽기 불가·ambiguous는 `block_cycle_risk_declaration`이다. 현재 `classify_risk` 결과
+  (경로/내용 탐지와 `declared_max`의 최댓값)가 Phase 00 선언보다 높으면
+  `block_cycle_risk_reconciliation`으로 차단한다. Phase 00만 수정하는 변경은 자기복구를 위해 예외지만,
+  source/later phase와 섞은 변경은 pre-write snapshot 기준으로 차단하므로 Phase 00 상향 후 별도 재시도한다.
+  두 차단은 generic override로 우회할 수 없으며 Phase 00-only 복구가 유일한 진행 경로다.
+  ③ report←approve 게이트(L0 단축 전, current stem의 05에 정확히 한 개의
   `Final Status: APPROVED`가 없으면 block_report_without_approval). Placeholder, duplicate status,
   fenced code example, substring `APPROVED`는 승인 증거가 아니다. 06과 다른 phase를 같은 변경에서 수정하면 pre-write
   snapshot으로 검증할 수 없으므로 분리 작성을 요구하고 차단한다.
-  ③ 구현 전 의무 phase(current stem exact) — L2/L3 결핍=block_phase_incomplete, L1=warn_phase_incomplete.
+  ④ 구현 전 의무 phase(current stem exact) — L2/L3 결핍=block_phase_incomplete, L1=warn_phase_incomplete.
 - enabled=false/phases 없음 → `_pdca_cfg`=None → 강제 skip(기존 동작 보존). report/phase write는 snapshot과
   같은 configured glob semantics로 판정한다.
 
@@ -123,7 +131,7 @@ core 는 판단하지 않고 04 의 구조화된 상태(PASS/FAIL/NOT TESTED/N/A
     섞인 L3 키워드 문자열도 L3 로 올릴 수 있음. L0 문서(plan_docs/docs/*.md) pass 가 선행이라 문서 오탐은 제한됨.
 
 ## tests
-scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py (86 PASS)
+scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py
 - classify(L0~L3/escalation/desktop/declared/case-insensitive) + decide(분기) + 전략 후보 2종(인라인플래그/무효패턴 포함)
   + PDCA 강제(의무 phase block/통과/L3 review 보존/report 게이트/비활성 하위호환) + adapter(L3 block·L1 pass)
   + audit 게이트 seq_ok/degraded 분기 + report_gate_enforce 기본 advisory(7차 배치3)

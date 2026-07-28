@@ -144,8 +144,10 @@ adversarial find→refute→triage→rework loop, recording every round to
 changed paths/content with `profile.risk`, take `max(00's declared tier, that classification)`,
 and if it exceeds 00's `Risk Level` line, raise that line to match. Doing this *before* 06 keeps
 the 06 acceptance-evidence report gate (which reads the tier via `_cycle_risk`) and the later
-knowledge write-back from acting on a stale L1 when the work turned out L2/L3. This is prompt-level
-best effort; its deterministic enforcement is deferred to EH-5.
+knowledge write-back from acting on a stale L1 when the work turned out L2/L3. The
+pre-implementation gate enforces this throughout implementation: make the Phase 00
+risk-only edit first, then retry the source or later-phase write. Do not combine both in
+one patch because the gate validates the pre-write snapshot.
 
 Only when the cycle is `05_approved` (see resume state machine), the `leader` writes the
 06 completion report. The existing 06←05 gate enforces this deterministically, and
@@ -170,10 +172,9 @@ After 06 is written, run the configured knowledge write-back when it is enabled:
 
    **Depth scales with this cycle's risk tier.** Read the `Risk Level: Lx` line from this cycle's
    00 base plan — that is the durable per-cycle tier (it survives session resume, unlike your
-   in-session memory), already reconciled to the actual work at the start of Step 5. If 00 genuinely
-   carries no `Risk Level` (a legacy doc, or the placeholder was left unfilled), **default to L2 and
-   write the deep note** — over-documenting a trivial change is cheap; a shallow note on real work is
-   the failure we are fixing. (`profile.risk` is only the glob/keyword *mapping* that yields a tier,
+   in-session memory), already reconciled to the actual work at the start of Step 5. A missing,
+   placeholder, malformed, or duplicate declaration must be repaired before this phase; do not
+   infer or default the tier. (`profile.risk` is only the glob/keyword *mapping* that yields a tier,
    not the tier itself — do not read a per-cycle tier out of it.)
    - **L1 (only when the change is plainly trivial):** a few sentences suffice — what changed and
      the one thing to remember. Do not pad; skip the section skeleton below, and pass

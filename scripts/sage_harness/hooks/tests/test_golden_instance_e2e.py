@@ -140,19 +140,32 @@ class TestGoldenInstanceE2E(unittest.TestCase):
 
     def test_installed_shim_enforces_pdca_at_runtime(self):
         # 설치된 shim 폐루프: L2 코드 변경 + phase 문서 없음 → 실제 BLOCK(exit2)
-        p = _run_shim(self.inst, "pre-implementation-gate", _claude_write("app/core/data.src"))
-        self.assertEqual(p.returncode, 2, f"L2 phase 결핍 BLOCK 기대\n{p.stdout}\n{p.stderr}")
-        self.assertIn("PDCA phase 미작성", p.stdout + p.stderr)
+        phase00 = os.path.join(self.inst, "plan_docs", "00-base_plan", "main.md")
+        _write(phase00, "Cycle-Stem: `main`\nRisk Level: L2\n")
+        try:
+            p = _run_shim(self.inst, "pre-implementation-gate", _claude_write("app/core/data.src"))
+            self.assertEqual(p.returncode, 2, f"L2 phase 결핍 BLOCK 기대\n{p.stdout}\n{p.stderr}")
+            self.assertIn("PDCA phase 미작성", p.stdout + p.stderr)
+        finally:
+            import shutil
+            shutil.rmtree(os.path.join(self.inst, "plan_docs"), ignore_errors=True)
 
     def test_installed_shim_l1_passes(self):
-        p = _run_shim(self.inst, "pre-implementation-gate", _claude_write("app/ui/screen.src"))
-        self.assertEqual(p.returncode, 0, f"L1 통과 기대\n{p.stdout}\n{p.stderr}")
+        phase00 = os.path.join(self.inst, "plan_docs", "00-base_plan", "main.md")
+        _write(phase00, "Cycle-Stem: `main`\nRisk Level: L1\n")
+        try:
+            p = _run_shim(self.inst, "pre-implementation-gate", _claude_write("app/ui/screen.src"))
+            self.assertEqual(p.returncode, 0, f"L1 통과 기대\n{p.stdout}\n{p.stderr}")
+        finally:
+            import shutil
+            shutil.rmtree(os.path.join(self.inst, "plan_docs"), ignore_errors=True)
 
     def test_installed_shim_phases_present_passes(self):
         # 인스턴스에 00/01/02 phase 문서를 두면 shim glob 스캔이 잡아 phase 게이트 통과
         for pid, sub in (("00", "00-base_plan"), ("01", "01-plan"), ("02", "02-design")):
+            risk = "Risk Level: L2\n" if pid == "00" else ""
             _write(os.path.join(self.inst, "plan_docs", sub, "feature.md"),
-                   f"# phase {pid}\n\nCycle-Stem: `feature`\n")
+                   f"# phase {pid}\n\nCycle-Stem: `feature`\n{risk}")
         try:
             p = _run_shim(self.inst, "pre-implementation-gate", _claude_write("app/core/data.src"),
                           branch="feature")
