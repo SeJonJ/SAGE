@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNTIME = os.path.join(os.path.dirname(HERE), "runtime")
@@ -354,6 +355,24 @@ class TestStateHomeResolution(unittest.TestCase):
     def test_xdg_state_home_is_namespaced(self):
         self.assertEqual(ov.state_home({"XDG_STATE_HOME": "/xdg"}),
                          os.path.join("/xdg", "sage"))
+
+    def test_unresolvable_home_never_yields_a_relative_path(self):
+        # HOME 미설정 + pwd 항목 부재면 expanduser 가 "~" 를 그대로 돌려준다. 상대경로가 되면
+        # grants 가 CWD(보통 저장소 루트) 아래 생겨 이 사이클이 막은 전파가 되살아난다.
+        with mock.patch.object(os.path, "expanduser", lambda p: p):
+            home = ov.state_home({})
+            self.assertTrue(os.path.isabs(home), f"상대경로로 떨어지면 안 된다: {home}")
+            self.assertTrue(os.path.isabs(ov.grants_path("/some/repo", {})))
+
+    def test_windows_prefers_localappdata(self):
+        env = {"LOCALAPPDATA": r"C:\\Users\\x\\AppData\\Local"}
+        with mock.patch.object(os, "name", "nt"):
+            self.assertTrue(ov._candidate_state_home(env).startswith(env["LOCALAPPDATA"]))
+
+    def test_xdg_still_wins_over_localappdata(self):
+        env = {"XDG_STATE_HOME": "/xdg", "LOCALAPPDATA": r"C:\\Local"}
+        with mock.patch.object(os, "name", "nt"):
+            self.assertEqual(ov._candidate_state_home(env), os.path.join("/xdg", "sage"))
 
     def test_default_is_local_state(self):
         home = os.path.expanduser("~")

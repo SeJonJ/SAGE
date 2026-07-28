@@ -19,6 +19,7 @@
 import hashlib
 import json
 import os
+import tempfile
 import time
 import uuid
 
@@ -40,16 +41,34 @@ def audit_path(root):
     return os.path.join(root, AUDIT_REL)
 
 
-def state_home(environ=None):
-    """권한 캐시가 사는 머신 로컬 상태 디렉터리. 저장소 트리 밖이어야 한다."""
-    env = os.environ if environ is None else environ
+def _candidate_state_home(env):
     explicit = (env.get(STATE_HOME_ENV) or "").strip()
     if explicit:
         return explicit
     xdg = (env.get("XDG_STATE_HOME") or "").strip()
     if xdg:
         return os.path.join(xdg, "sage")
+    # Windows 는 XDG 관례가 없다. %LOCALAPPDATA% 가 같은 역할(머신 로컬·비로밍)이다.
+    if os.name == "nt":
+        local = (env.get("LOCALAPPDATA") or "").strip()
+        if local:
+            return os.path.join(local, "sage", "state")
     return os.path.join(os.path.expanduser("~"), ".local", "state", "sage")
+
+
+def state_home(environ=None):
+    """권한 캐시가 사는 머신 로컬 상태 디렉터리. **반드시 저장소 트리 밖의 절대경로**여야 한다.
+
+    HOME 미설정 + pwd 항목 부재(일부 최소 컨테이너)면 expanduser("~") 가 "~" 를 그대로 돌려줘
+    상대경로가 된다. 그러면 grants 가 CWD(보통 저장소 루트) 아래에 생겨 이 모듈이 막으려는
+    "권한이 저장소를 타고 전파되는" 상태로 되돌아간다. 절대경로가 아니면 temp 로 물러선다 —
+    temp 는 머신 로컬이고 저장소 밖이라 안전 방향이며, 최악의 결과는 grant 재발급이다.
+    """
+    env = os.environ if environ is None else environ
+    candidate = _candidate_state_home(env)
+    if os.path.isabs(candidate):
+        return candidate
+    return os.path.join(tempfile.gettempdir(), "sage-state")
 
 
 def _root_key(root):
