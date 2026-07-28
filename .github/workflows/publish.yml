@@ -12,6 +12,7 @@ jobs:
     environment: release
     permissions:
       id-token: write  # OIDC trusted publisher
+      contents: write  # GitHub Release 발행
 
     steps:
       - uses: actions/checkout@v4
@@ -32,3 +33,16 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      # 태그 push 는 PyPI 배포만 했고 GitHub Release 는 수동이라, v0.9.71~v0.9.73 이
+      # 발행 누락으로 릴리즈 페이지에서 보이지 않았다. PyPI 배포 성공 뒤에만 발행한다
+      # (배포 실패 릴리즈가 페이지에 남지 않게 순서 고정). 노트는 자동 생성 후 사람이 보강한다.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag
