@@ -1,6 +1,6 @@
 # SAGE Profile 레퍼런스
 
-[문서 인덱스](README.md)
+[English](profile-reference.en.md) | [문서 인덱스](README.md)
 
 ## 공유 정책과 로컬 capability
 

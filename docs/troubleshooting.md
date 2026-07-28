@@ -1,6 +1,6 @@
 # SAGE 문제 해결
 
-[문서 인덱스](README.md)
+[English](troubleshooting.en.md) | [문서 인덱스](README.md)
 
 ## `sage: command not found`
 

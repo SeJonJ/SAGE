@@ -21,6 +21,6 @@
 
 ## 에이전트 프레임워크
 
-`docs/agent/`는 SAGE가 대상 저장소에 설치하는 PDCA, 리뷰, risk, context-management 프로토콜입니다.
-프로젝트별 정책은 이 파일을 직접 수정하지 않고 `sage/project-profile.yaml`과 프로젝트 소유
-governance 문서에 둡니다.
+엔진 저장소의 정본은 `templates/core/framework/docs/agent/`에 있습니다. `sage install`은 그 내용을
+설치 대상 저장소의 `docs/agent/`로 배포합니다. 프로젝트별 정책은 설치된 파일을 직접 수정하지 않고
+`sage/project-profile.yaml`과 프로젝트 소유 governance 문서에 둡니다.

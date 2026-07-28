@@ -47,7 +47,7 @@ sage validate --kind all
 
 When joining a repository that already has a shared profile, run only `sage-init-local`. See the
 [English quickstart](docs/quickstart.en.md) for the full sequence and
-[troubleshooting](docs/troubleshooting.md) for installation failures.
+[troubleshooting](docs/troubleshooting.en.md) for installation failures.
 
 ## Windows
 
@@ -75,7 +75,7 @@ agent / skill host renders    <------------------>   .claude / .codex
 ```
 
 Agents handle code and judgment. SAGE handles deterministic integrity, phase, and approval
-boundaries. See [Architecture](docs/ARCHITECTURE.md) for trust boundaries and fail-open/fail-closed
+boundaries. See [Architecture](docs/ARCHITECTURE.en.md) for trust boundaries and fail-open/fail-closed
 policy.
 
 ## Core Workflows
@@ -110,16 +110,16 @@ vault access. Local configuration cannot weaken shared risk or review policy.
 | Need | Document |
 |---|---|
 | Install and run SAGE | [English quickstart](docs/quickstart.en.md) |
-| Commands and options | [CLI reference](docs/cli-reference.md) |
-| Configure a profile | [Profile reference](docs/profile-reference.md) |
-| Resolve errors | [Troubleshooting](docs/troubleshooting.md) |
-| Architecture and trust | [Architecture](docs/ARCHITECTURE.md) |
-| Output locations and ownership | [Artifacts](docs/ARTIFACTS.md) |
+| Commands and options | [CLI reference](docs/cli-reference.en.md) |
+| Configure a profile | [Profile reference](docs/profile-reference.en.md) |
+| Resolve errors | [Troubleshooting](docs/troubleshooting.en.md) |
+| Architecture and trust | [Architecture](docs/ARCHITECTURE.en.md) |
+| Output locations and ownership | [Artifacts](docs/ARTIFACTS.en.md) |
 | Browse all documentation | [English docs index](docs/README.en.md) |
 
-Detailed references currently remain language-neutral where possible and Korean where explanatory
-prose is required. The README, documentation index, and quickstart are maintained in both Korean
-and English.
+The README, documentation index, quickstart, and user references are maintained as Korean sources
+with English mirrors. Source-hash markers make the documentation test fail when a Korean reference
+changes and its English mirror marker has not been refreshed.
 
 ## Who It Is For
 

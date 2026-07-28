@@ -1,6 +1,6 @@
 # SAGE CLI 레퍼런스
 
-[문서 인덱스](README.md) | 실행 환경의 정확한 옵션은 `sage <command> --help`
+[English](cli-reference.en.md) | [문서 인덱스](README.md) | 실행 환경의 정확한 옵션은 `sage <command> --help`
 
 ## 설치와 생성
 
