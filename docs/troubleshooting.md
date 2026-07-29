@@ -68,6 +68,24 @@ sage override --reason "hotfix" --ttl 30m
 Override는 사유와 만료시간이 필수이며 감사 로그에 기록됩니다. 일부 무결성·risk 계약 block은 generic
 override로 우회할 수 없습니다.
 
+## `sage override`가 권한 캐시 위치를 거부
+
+```
+⛔ [sage override] 권한 캐시 위치가 저장소 안입니다(...) — SAGE_STATE_HOME 를 저장소 밖으로 지정하세요
+⛔ [sage override] 권한 캐시 위치를 정할 수 없습니다(절대경로 아님: ...)
+```
+
+활성 우회 **권한**은 저장소 밖 머신 로컬 상태 디렉터리에 삽니다. 저장소 안에 두면 커밋돼서 다른
+사람의 clone에서 우회가 활성화되기 때문입니다. 위치를 확신할 수 없으면 권한을 만들지 않습니다.
+
+- 저장소 안을 가리키는 `SAGE_STATE_HOME`/`XDG_STATE_HOME`/`HOME`을 저장소 밖으로 바꾸세요.
+- `HOME`이 없는 컨테이너라면 `SAGE_STATE_HOME`을 절대경로로 지정하세요.
+- 현재 위치는 `sage override --list`가 출력합니다. `.sage/tmp/`를 지워도 리셋되지 않습니다.
+
+`저장소 경계를 확정할 수 없습니다` 메시지는 `.git`이 있는데 해석되지 않는 경우입니다(손상된 포인터
+파일, 사라진 gitdir). 저장소 정체성을 확정하지 못한 채 발급하면 다른 저장소의 권한과 뒤섞이므로
+차단합니다. `.git` 상태를 복구한 뒤 재시도하세요. 자세한 위치 규칙은 [Artifacts](ARTIFACTS.md) §1.1.
+
 ## Cross-model 리뷰가 BLOCKED
 
 `sage doctor`로 반대 runtime CLI와 model 설정을 확인합니다. required 정책에서는 peer runtime에

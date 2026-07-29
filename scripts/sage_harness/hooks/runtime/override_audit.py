@@ -82,34 +82,58 @@ def _is_within(child, parent):
     return child == parent or child.startswith(parent + os.sep)
 
 
-def _gitdir_at(path):
-    """`path` 자신의 gitdir. `.git` 이 파일이면(worktree/submodule) 가리키는 경로를 푼다. 아니면 None."""
+_GIT_ABSENT = "absent"      # `.git` 항목 자체가 없다 → 상위로 계속 탐색
+_GIT_OK = "ok"              # 해석 성공
+_GIT_BROKEN = "broken"      # `.git` 은 있는데 해석 실패 → 판단 불가
+
+
+def _probe_gitdir(path):
+    """`path` 자신의 `.git` 을 3-상태로 판정 → (상태, gitdir 또는 사유).
+
+    "없음"과 "있는데 못 읽음"을 구분하는 것이 핵심이다. 후자를 "git 아님"으로 뭉개면 마커가
+    `.sage/` 로 떨어지는데, 그 위치는 부모 저장소 안일 수 있어 커밋·clone 으로 전파된다.
+    `.git` 이 존재한다는 것은 이미 "여기가 저장소 경계"라는 신호이므로, 해석 실패는 모른다는 뜻이지
+    아니라는 뜻이 아니다(codex 3R)."""
     git = os.path.join(path, ".git")
-    if os.path.isfile(git):
-        try:
-            with open(git, encoding="utf-8") as f:
-                line = f.read().strip()
-        except OSError:
-            return None
-        if not line.startswith("gitdir:"):
-            return None
-        git = line.split(":", 1)[1].strip()
-        if git and not os.path.isabs(git):
-            git = os.path.join(path, git)
-    return git if git and os.path.isdir(git) else None
+    if not os.path.lexists(git):
+        return _GIT_ABSENT, None
+    if os.path.isdir(git):
+        return _GIT_OK, git
+    if not os.path.isfile(git):
+        return _GIT_BROKEN, f"`.git` 이 파일도 디렉터리도 아님: {git}"
+    try:                                     # worktree/submodule: gitdir 를 가리키는 포인터 파일
+        with open(git, encoding="utf-8") as f:
+            line = f.read().strip()
+    except OSError as exc:
+        return _GIT_BROKEN, f"`.git` 포인터를 읽을 수 없음({git}): {type(exc).__name__}: {exc}"
+    if not line.startswith("gitdir:"):
+        return _GIT_BROKEN, f"`.git` 포인터 형식이 아님({git})"
+    target = line.split(":", 1)[1].strip()
+    if target and not os.path.isabs(target):
+        target = os.path.join(path, target)
+    if not target or not os.path.isdir(target):
+        return _GIT_BROKEN, f"`.git` 이 가리키는 gitdir 가 없음({target!r})"
+    return _GIT_OK, target
 
 
 def _gitdir(root):
-    """root 를 **포함하는** 저장소의 gitdir. 상위로 올라가며 찾는다.
+    """root 를 **포함하는** 저장소의 gitdir. 상위로 올라가며 찾는다. 어디에도 없으면 None.
 
     root 자신만 보면, 모노레포에서 하위 디렉터리를 root 로 잡은 구성(`CLAUDE_PROJECT_DIR=<repo>/apps/web`)
     이 "git 아님"으로 판정돼 마커가 `<repo>/apps/web/.sage/` 로 떨어진다. 그 위치는 부모 저장소 안이라
-    커밋·clone 으로 전파될 수 있어, git 이 아니어서 전파 위험이 없다는 전제가 깨진다(codex 2R 후속)."""
+    커밋·clone 으로 전파될 수 있어, git 이 아니어서 전파 위험이 없다는 전제가 깨진다(codex 2R 후속).
+
+    손상된 `.git` 을 만나면 **거기서 멈추고 fail-closed** 한다. 더 바깥 저장소로 탐색을 이어가면
+    엉뚱한 저장소의 정체성을 이 워킹카피 것으로 쓰게 된다(codex 3R)."""
     current = os.path.realpath(root)
     while True:
-        gitdir = _gitdir_at(current)
-        if gitdir:
-            return gitdir
+        state, value = _probe_gitdir(current)
+        if state == _GIT_OK:
+            return value
+        if state == _GIT_BROKEN:
+            raise StateHomeError(
+                f"저장소 경계를 확정할 수 없습니다 — {value}. 정체성을 확정하지 못한 채 발급하면 "
+                "다른 저장소의 권한과 뒤섞일 수 있습니다")
         parent = os.path.dirname(current)
         if parent == current:
             return None
@@ -165,10 +189,28 @@ def _repo_id(root, create=False):
         raise StateHomeError(
             f"저장소 정체성 마커를 만들 수 없습니다({marker!r}): {type(exc).__name__}: {exc}. "
             "정체성 없이 발급하면 같은 경로에 만들어진 다른 저장소가 이 권한을 물려받습니다") from exc
-    value = _read_identity(marker)
+    value = _await_identity(marker)
     if not value:
         raise StateHomeError(f"저장소 정체성 마커를 읽을 수 없습니다({marker!r})")
     return value
+
+
+# 승자가 O_EXCL 로 파일을 만든 시점과 33 bytes 를 쓰는 시점 사이에 아주 짧은 창이 있다. 그 사이에
+# 패자가 읽으면 빈 문자열을 보고 실패한다 — "경쟁에서 지면 승자 값을 읽는다"는 계약이 깨진다.
+# 창이 write() 한 번이라 짧은 재시도로 충분하다. rename/link 로 없앨 수도 있지만 Windows 파일시스템
+# 편차를 새로 떠안게 되므로(10-d 직후) 이식성이 확실한 재시도를 택한다.
+_IDENTITY_READ_ATTEMPTS = 20
+_IDENTITY_READ_DELAY = 0.01
+
+
+def _await_identity(marker):
+    for attempt in range(_IDENTITY_READ_ATTEMPTS):
+        value = _read_identity(marker)
+        if value:
+            return value
+        if attempt + 1 < _IDENTITY_READ_ATTEMPTS:
+            time.sleep(_IDENTITY_READ_DELAY)
+    return None
 
 
 def _read_identity(marker):

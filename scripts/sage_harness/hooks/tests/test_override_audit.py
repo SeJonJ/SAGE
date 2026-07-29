@@ -12,6 +12,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -537,15 +539,53 @@ class TestRepositoryIdentity(unittest.TestCase):
                 with self.assertRaises(ov.StateHomeError):
                     ov.grant(root, "긴급", 50000, gate="all", user="alice")
 
-    def test_identity_marker_creation_is_atomic_against_races(self):
-        # 최초 동시 발급에서 서로 다른 id 를 쓰면 한쪽 grant 가 즉시 미아가 된다.
+    def test_existing_marker_is_reused_instead_of_overwritten(self):
+        # 이미 값이 있으면 그대로 쓴다. 덮어쓰면 앞서 발급된 grant 가 즉시 미아가 된다.
         with tempfile.TemporaryDirectory() as tmp:
             root = self._git_repo(os.path.join(tmp, "work"))
             marker = ov._identity_marker(root)
             os.makedirs(os.path.dirname(marker), exist_ok=True)
             with open(marker, "w", encoding="utf-8") as f:
-                f.write("winner\n")            # 경쟁에서 이긴 쪽이 먼저 씀
+                f.write("winner\n")
             self.assertEqual(ov._repo_id(root, create=True), "winner")
+
+    def test_loser_waits_for_the_winner_value_when_the_marker_is_still_empty(self):
+        """승자가 O_EXCL 로 만든 직후~write 전의 빈 파일을 패자가 읽는 창을 재현한다(codex 3R).
+
+        이전 테스트는 마커에 이미 값이 있어 O_EXCL 경로를 아예 타지 않았다 — 이름이 검증 내용을
+        과대표현했다. 여기서는 빈 마커를 만들어 실제로 그 창에 진입시킨다.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._git_repo(os.path.join(tmp, "work"))
+            marker = ov._identity_marker(root)
+            os.makedirs(os.path.dirname(marker), exist_ok=True)
+            open(marker, "w").close()          # 승자가 만들었지만 아직 내용을 못 씀
+
+            def finish():
+                time.sleep(0.03)
+                with open(marker, "w", encoding="utf-8") as f:
+                    f.write("winner\n")
+
+            worker = threading.Thread(target=finish)
+            worker.start()
+            try:
+                self.assertEqual(ov._repo_id(root, create=True), "winner",
+                                 "패자는 승자 값을 기다려 읽어야 한다")
+            finally:
+                worker.join()
+
+    def test_empty_marker_that_never_fills_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._git_repo(os.path.join(tmp, "work"))
+            marker = ov._identity_marker(root)
+            os.makedirs(os.path.dirname(marker), exist_ok=True)
+            open(marker, "w").close()
+            with mock.patch.object(ov, "_IDENTITY_READ_ATTEMPTS", 2), \
+                 mock.patch.object(ov, "_IDENTITY_READ_DELAY", 0):
+                with self.assertRaises(ov.StateHomeError):
+                    ov._repo_id(root, create=True)
+
+
 
     def test_subdirectory_root_uses_the_enclosing_repository_marker(self):
         """모노레포 하위 root 는 부모 저장소의 `.git` 을 쓴다 — `.sage/` 에 두면 커밋·clone 으로 전파된다."""
@@ -606,6 +646,70 @@ class TestRepositoryIdentity(unittest.TestCase):
     def test_key_is_not_truncated(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(len(os.path.basename(ov.grants_path(tmp)).split(".")[0]), 64)
+
+
+class TestBrokenGitBoundary(unittest.TestCase):
+    """`.git` 이 있는데 해석 못 하는 것은 "git 아님"이 아니다 — 판단 불가다(codex 3R BLOCKER).
+
+    teeth: "없음"으로 뭉개면 마커가 `.sage/` 로 떨어지는데 그 위치는 부모 저장소 안일 수 있어
+    커밋·clone 으로 전파된다. 더 바깥 저장소로 탐색을 이어가는 것도 엉뚱한 정체성을 고르게 된다.
+    """
+
+    def _dir(self, tmp, name):
+        path = os.path.join(tmp, name)
+        os.makedirs(path)
+        return path
+
+    def test_malformed_git_pointer_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._dir(tmp, "broken")
+            with open(os.path.join(root, ".git"), "w", encoding="utf-8") as f:
+                f.write("not a gitdir pointer\n")
+            with self.assertRaises(ov.StateHomeError):
+                ov.grants_path(root, create=True)
+
+    def test_dangling_gitdir_target_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._dir(tmp, "dangling")
+            with open(os.path.join(root, ".git"), "w", encoding="utf-8") as f:
+                f.write(f"gitdir: {os.path.join(tmp, 'gone')}\n")
+            with self.assertRaises(ov.StateHomeError):
+                ov.grants_path(root, create=True)
+
+    def test_unreadable_git_pointer_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._dir(tmp, "unreadable")
+            open(os.path.join(root, ".git"), "w").close()
+            real_open = open
+
+            def blocked(path, *a, **k):
+                if str(path).endswith(os.sep + ".git"):
+                    raise PermissionError("unreadable")
+                return real_open(path, *a, **k)
+
+            with mock.patch("builtins.open", blocked):
+                with self.assertRaises(ov.StateHomeError):
+                    ov.grants_path(root, create=True)
+
+    def test_broken_git_does_not_fall_through_to_an_outer_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            outer = os.path.join(tmp, "outer")
+            os.makedirs(os.path.join(outer, ".git"))
+            inner = os.path.join(outer, "inner")
+            os.makedirs(inner)
+            with open(os.path.join(inner, ".git"), "w", encoding="utf-8") as f:
+                f.write("garbage\n")
+            with self.assertRaises(ov.StateHomeError):
+                ov.grants_path(inner, create=True)
+
+    def test_absent_git_still_walks_up(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            outer = os.path.join(tmp, "outer")
+            os.makedirs(os.path.join(outer, ".git"))
+            inner = os.path.join(outer, "a", "b")
+            os.makedirs(inner)
+            self.assertEqual(ov._gitdir(inner),
+                             os.path.join(os.path.realpath(outer), ".git"))
 
 
 if __name__ == "__main__":
