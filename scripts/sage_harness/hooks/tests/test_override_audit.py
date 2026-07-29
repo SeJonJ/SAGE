@@ -518,6 +518,48 @@ class TestRepositoryIdentity(unittest.TestCase):
             ov.grant(root, "긴급", 50000, gate="all", user="alice")
             self.assertTrue(ov.is_override_active(root, GATE))
 
+    def test_non_git_directory_replacement_drops_the_grant(self):
+        # git 이 아니면 정체성이 없다고 두면 경로 재사용 구멍이 그대로 남는다(codex 2R MAJOR).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = os.path.join(tmp, "plain")
+            os.makedirs(root)
+            ov.grant(root, "긴급", 50000, gate="all", user="alice")
+            self.assertTrue(ov.is_override_active(root, GATE))
+            shutil.rmtree(root)
+            os.makedirs(root)
+            self.assertFalse(ov.is_override_active(root, GATE))
+
+    def test_grant_fails_closed_when_identity_marker_cannot_persist(self):
+        # 조용히 경로 전용 키로 물러서면 교체된 저장소가 이전 grant 를 상속한다(codex 2R BLOCKER).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._git_repo(os.path.join(tmp, "work"))
+            with mock.patch.object(os, "open", side_effect=PermissionError("read-only .git")):
+                with self.assertRaises(ov.StateHomeError):
+                    ov.grant(root, "긴급", 50000, gate="all", user="alice")
+
+    def test_identity_marker_creation_is_atomic_against_races(self):
+        # 최초 동시 발급에서 서로 다른 id 를 쓰면 한쪽 grant 가 즉시 미아가 된다.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._git_repo(os.path.join(tmp, "work"))
+            marker = ov._identity_marker(root)
+            os.makedirs(os.path.dirname(marker), exist_ok=True)
+            with open(marker, "w", encoding="utf-8") as f:
+                f.write("winner\n")            # 경쟁에서 이긴 쪽이 먼저 씀
+            self.assertEqual(ov._repo_id(root, create=True), "winner")
+
+    def test_worktree_gitdir_file_is_resolved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            main = self._git_repo(os.path.join(tmp, "main"))
+            open(os.path.join(main, "f.txt"), "w").close()
+            _git(main, "add", "-A")
+            _git(main, "commit", "-q", "-m", "init")
+            wt = os.path.join(tmp, "wt")
+            _git(main, "worktree", "add", "-q", "-b", "x", wt)
+            self.assertTrue(os.path.isfile(os.path.join(wt, ".git")))
+            ov.grant(wt, "긴급", 50000, gate="all", user="alice")
+            self.assertTrue(ov.is_override_active(wt, GATE))
+            self.assertNotEqual(ov.grants_path(wt), ov.grants_path(main))
+
     def test_key_is_not_truncated(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(len(os.path.basename(ov.grants_path(tmp)).split(".")[0]), 64)

@@ -81,10 +81,11 @@ def write_instance(root, profile, phases=(), approve_content=None):
     return prof_path
 
 
-def run_adapter(runtime, raw, root, prof_path, branch="main"):
+def run_adapter(runtime, raw, root, prof_path, branch="main", env_extra=None):
     env_root = "CLAUDE_PROJECT_DIR" if runtime == "claude" else "CODEX_PROJECT_ROOT"
     env = dict(os.environ, **{env_root: root, "SAGE_HOOK_CORE_DIR": HOOKS_DIR,
                               "SAGE_PROFILE": prof_path, "SAGE_GATE_BRANCH": branch})
+    env.update(env_extra or {})
     adapter = os.path.join(ADAPTERS, runtime, "pre-implementation-gate.sh")
     return subprocess.run(["bash", adapter], input=json.dumps(raw), capture_output=True, text=True, env=env)
 
@@ -131,6 +132,25 @@ class TestPdcaEnforcementAlive(unittest.TestCase):
                 p = run_adapter(rt, event(rt, L2_FILE), root, prof, branch="feature")
                 self.assertEqual(p.returncode, 2, f"{rt} L2 phase 결핍 BLOCK 기대\n{p.stdout}\n{p.stderr}")
                 self.assertIn("PDCA phase 미작성", p.stdout + p.stderr)
+        both(self, check)
+
+    def test_unsafe_state_home_keeps_the_original_block_at_runtime(self):
+        """override 조회 실패가 traceback 이 아니라 원래 BLOCK 으로 귀결되는가(codex 2R BLOCKER).
+
+        여기서 예외가 새면 어댑터가 rc=1 로 죽고, 호스트가 non-blocking 오류로 분류해 도구 호출이
+        그대로 진행된다 — 10-d 에서 고친 write-guard fail-open 과 같은 유형이다.
+        """
+        def check(rt):
+            with tempfile.TemporaryDirectory() as root:
+                prof = write_instance(root, make_profile(), phases=("00",))
+                env_extra = {"SAGE_STATE_HOME": os.path.join(root, ".state")}  # 저장소 내부 = 불안전
+                p = run_adapter(rt, event(rt, L2_FILE), root, prof, branch="feature",
+                                env_extra=env_extra)
+                out = p.stdout + p.stderr
+                self.assertEqual(p.returncode, 2,
+                                 f"{rt}: 원래 BLOCK(exit 2)이어야 한다\n{out}")
+                self.assertNotIn("Traceback", out, f"{rt}: traceback 으로 죽으면 안 된다\n{out}")
+                self.assertIn("PDCA phase 미작성", out, f"{rt}: 원래 판정이 렌더링돼야 한다\n{out}")
         both(self, check)
 
     def test_l3_missing_phases_blocks_at_runtime(self):

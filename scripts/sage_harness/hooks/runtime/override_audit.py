@@ -82,41 +82,77 @@ def _is_within(child, parent):
     return child == parent or child.startswith(parent + os.sep)
 
 
-def _repo_id(root, create=False):
-    """이 워킹카피의 정체성. `.git` 안의 마커라 clone·커밋으로 전파되지 않고, 저장소를 지우고 같은
-    경로에 다시 만들면 새 값이 된다 — 경로만으로 식별하면 교체된 저장소가 이전 grant 를 물려받는다.
-
-    git 저장소가 아니면 None(경로만으로 식별). 마커는 발급(create=True)할 때만 만든다 — 읽기에서
-    만들면 부작용이고, 마커가 없으면 키가 달라져 grant 를 못 찾는 안전한 방향으로 떨어진다."""
+def _gitdir(root):
+    """워킹카피의 gitdir. `.git` 이 파일이면(worktree/submodule) 가리키는 경로를 푼다. 아니면 None."""
     git = os.path.join(root, ".git")
-    if os.path.isfile(git):          # worktree/submodule: `.git` 은 gitdir 를 가리키는 파일
+    if os.path.isfile(git):
         try:
             with open(git, encoding="utf-8") as f:
                 line = f.read().strip()
-            git = line.split(":", 1)[1].strip() if line.startswith("gitdir:") else ""
-            if git and not os.path.isabs(git):
-                git = os.path.join(root, git)
         except OSError:
             return None
-    if not git or not os.path.isdir(git):
-        return None
-    marker = os.path.join(git, "sage-state-id")
-    try:
-        with open(marker, encoding="utf-8") as f:
-            value = f.read().strip()
-        if value:
-            return value
-    except OSError:
-        pass
+        if not line.startswith("gitdir:"):
+            return None
+        git = line.split(":", 1)[1].strip()
+        if git and not os.path.isabs(git):
+            git = os.path.join(root, git)
+    return git if git and os.path.isdir(git) else None
+
+
+def _identity_marker(root):
+    """정체성 마커 경로. 저장소 트리 안이어야 교체 시 함께 사라진다.
+
+    git 저장소는 `.git/` 안 — clone·커밋으로 절대 전파되지 않는다. git 이 아니면 `.sage/` 안에 둔다.
+    git 이 아니라는 것은 clone/commit 경로가 존재하지 않는다는 뜻이므로 전파 위험도 없다."""
+    gitdir = _gitdir(root)
+    if gitdir:
+        return os.path.join(gitdir, "sage-state-id")
+    return os.path.join(root, ".sage", "instance-id")
+
+
+def _repo_id(root, create=False):
+    """이 워킹카피의 정체성. 저장소를 지우고 같은 경로에 다른 저장소를 만들면 새 값이 된다 —
+    경로만으로 식별하면 교체된 저장소가 이전 grant 를 물려받는다(CI 워크스페이스 경로 재사용).
+
+    읽기(create=False)에서는 만들지 않는다. 부작용이기도 하고, 마커가 없으면 키가 달라져 grant 를
+    못 찾는 안전한 방향으로 떨어지기 때문이다.
+
+    발급(create=True)에서 영속에 실패하면 **fail-closed**(StateHomeError). 읽기 전용 `.git`·권한
+    문제·I/O 오류일 때 조용히 경로 전용 키로 물러서면, 교체된 저장소가 이전 grant 를 그대로
+    상속한다(codex 2R 재현). 정체성을 보장할 수 없으면 권한을 만들지 않는다."""
+    marker = _identity_marker(root)
+    value = _read_identity(marker)
+    if value:
+        return value
     if not create:
         return None
-    value = uuid.uuid4().hex
     try:
-        with open(marker, "w", encoding="utf-8") as f:
-            f.write(value + "\n")
+        os.makedirs(os.path.dirname(marker), exist_ok=True)
+        # O_EXCL 로 원자적 생성 — 최초 동시 발급에서 두 프로세스가 서로 다른 id 를 쓰면
+        # 한쪽 grant 가 즉시 미아가 된다. 경쟁에서 지면 승자의 값을 읽어 쓴다.
+        fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(fd, (uuid.uuid4().hex + "\n").encode("utf-8"))
+        finally:
+            os.close(fd)
+    except FileExistsError:
+        pass
+    except OSError as exc:
+        raise StateHomeError(
+            f"저장소 정체성 마커를 만들 수 없습니다({marker!r}): {type(exc).__name__}: {exc}. "
+            "정체성 없이 발급하면 같은 경로에 만들어진 다른 저장소가 이 권한을 물려받습니다") from exc
+    value = _read_identity(marker)
+    if not value:
+        raise StateHomeError(f"저장소 정체성 마커를 읽을 수 없습니다({marker!r})")
+    return value
+
+
+def _read_identity(marker):
+    try:
+        with open(marker, encoding="utf-8") as f:
+            return f.read().strip()
     except OSError:
         return None
-    return value
 
 
 def _root_key(root, create=False):

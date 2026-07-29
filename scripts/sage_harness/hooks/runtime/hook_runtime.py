@@ -250,12 +250,27 @@ def _maybe_override(hook_id, root, decision, changes):
         import override_audit as ov
     except Exception:
         return False
-    grants = ov.active_grants(root, gate=hook_id)
+    # 조회 실패는 예외로 흘리지 않는다. 여기서 raise 하면 어댑터 경로(run_hook.main)에 예외 처리가
+    # 없어 traceback rc=1 로 죽고, 호스트가 이를 non-blocking 오류로 분류해 **도구 호출이 그대로
+    # 진행된다** — 10-d 에서 고친 write-guard fail-open 과 같은 유형이다. override 를 확인할 수
+    # 없으면 우회하지 않고(False) 원래 BLOCK 을 그대로 렌더링하는 것이 fail-closed 다.
+    try:
+        grants = ov.active_grants(root, gate=hook_id)
+    except Exception as exc:
+        print(f"⚠️  [{hook_id}] override 조회 실패 → 우회 없이 원래 판정을 유지합니다: "
+              f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return False
     if not grants:
         return False
     files = [c.get("path") for c in (changes or []) if c.get("path")]
     g = grants[0]
-    ov.record_bypass(root, hook_id, files, decision.get("message_key"), g)
+    try:
+        ov.record_bypass(root, hook_id, files, decision.get("message_key"), g)
+    except Exception as exc:
+        # 감사 기록 없이 우회를 적용하면 무감사 통과가 된다 — 우회를 포기하고 BLOCK 을 유지한다.
+        print(f"⚠️  [{hook_id}] override bypass 감사 기록 실패 → 우회를 적용하지 않습니다: "
+              f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return False
     print(f"⚠️  [{hook_id}] GATE BLOCK override 적용 — 사유: {g.get('reason')} "
           f"(만료 {g.get('expires_at')}, .sage/override.jsonl 감사). "
           f"우회: {decision.get('message_key')} | 파일: {', '.join(files) or '(미상)'}",

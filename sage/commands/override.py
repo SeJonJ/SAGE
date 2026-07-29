@@ -41,6 +41,15 @@ def _load_override_audit():
 def run(args):
     root = os.path.abspath(args.root or os.getcwd())
     ov = _load_override_audit()
+    try:
+        return _run(args, root, ov)
+    except ov.StateHomeError as exc:
+        # 권한 캐시 위치를 안전하게 정할 수 없음 = 우회를 만들 수 없음. traceback 대신 안내한다.
+        print(f"⛔ [sage override] {exc}", file=sys.stderr)
+        return 2
+
+
+def _run(args, root, ov):
 
     if args.list:
         now = time.time()
