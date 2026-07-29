@@ -19,7 +19,6 @@
 import hashlib
 import json
 import os
-import tempfile
 import time
 import uuid
 
@@ -56,29 +55,89 @@ def _candidate_state_home(env):
     return os.path.join(os.path.expanduser("~"), ".local", "state", "sage")
 
 
-def state_home(environ=None):
-    """권한 캐시가 사는 머신 로컬 상태 디렉터리. **반드시 저장소 트리 밖의 절대경로**여야 한다.
+class StateHomeError(RuntimeError):
+    """권한 캐시 위치를 안전하게 정할 수 없음. 우회 판정 불가 → 호출자는 BLOCK 을 유지해야 한다."""
 
-    HOME 미설정 + pwd 항목 부재(일부 최소 컨테이너)면 expanduser("~") 가 "~" 를 그대로 돌려줘
-    상대경로가 된다. 그러면 grants 가 CWD(보통 저장소 루트) 아래에 생겨 이 모듈이 막으려는
-    "권한이 저장소를 타고 전파되는" 상태로 되돌아간다. 절대경로가 아니면 temp 로 물러선다 —
-    temp 는 머신 로컬이고 저장소 밖이라 안전 방향이며, 최악의 결과는 grant 재발급이다.
+
+def state_home(environ=None):
+    """권한 캐시가 사는 머신 로컬 상태 디렉터리. **반드시 절대경로**여야 한다.
+
+    해석 불가면 예외로 fail-closed 한다. 폴백을 두지 않는 이유: 예측 가능한 공용 위치(temp 등)로
+    물러서면 그 경로에 유효한 grant JSONL 을 **미리 심어두는 것만으로 우회 권한이 생긴다**
+    (공용 temp 는 보통 0755). 우회는 권한이므로, 위치를 확신할 수 없으면 권한을 만들지 않는 쪽이 맞다.
+    운영자는 SAGE_STATE_HOME 으로 명시할 수 있다.
     """
     env = os.environ if environ is None else environ
     candidate = _candidate_state_home(env)
-    if os.path.isabs(candidate):
-        return candidate
-    return os.path.join(tempfile.gettempdir(), "sage-state")
+    if not os.path.isabs(candidate):
+        raise StateHomeError(
+            f"권한 캐시 위치를 정할 수 없습니다(절대경로 아님: {candidate!r}). "
+            f"HOME 미설정 환경으로 보입니다 — {STATE_HOME_ENV} 를 절대경로로 지정하세요")
+    return candidate
 
 
-def _root_key(root):
-    """저장소를 식별하는 안정 키. realpath 로 정규화한다 — 안 하면 symlink 경유 접근이 같은
-    저장소를 두 키로 갈라 한쪽에서 발급한 grant 가 다른 쪽에서 안 보인다."""
-    return hashlib.sha256(os.path.realpath(root).encode("utf-8")).hexdigest()[:16]
+def _is_within(child, parent):
+    child = os.path.realpath(child)
+    parent = os.path.realpath(parent)
+    return child == parent or child.startswith(parent + os.sep)
 
 
-def grants_path(root, environ=None):
-    return os.path.join(state_home(environ), "grants", _root_key(root) + ".jsonl")
+def _repo_id(root, create=False):
+    """이 워킹카피의 정체성. `.git` 안의 마커라 clone·커밋으로 전파되지 않고, 저장소를 지우고 같은
+    경로에 다시 만들면 새 값이 된다 — 경로만으로 식별하면 교체된 저장소가 이전 grant 를 물려받는다.
+
+    git 저장소가 아니면 None(경로만으로 식별). 마커는 발급(create=True)할 때만 만든다 — 읽기에서
+    만들면 부작용이고, 마커가 없으면 키가 달라져 grant 를 못 찾는 안전한 방향으로 떨어진다."""
+    git = os.path.join(root, ".git")
+    if os.path.isfile(git):          # worktree/submodule: `.git` 은 gitdir 를 가리키는 파일
+        try:
+            with open(git, encoding="utf-8") as f:
+                line = f.read().strip()
+            git = line.split(":", 1)[1].strip() if line.startswith("gitdir:") else ""
+            if git and not os.path.isabs(git):
+                git = os.path.join(root, git)
+        except OSError:
+            return None
+    if not git or not os.path.isdir(git):
+        return None
+    marker = os.path.join(git, "sage-state-id")
+    try:
+        with open(marker, encoding="utf-8") as f:
+            value = f.read().strip()
+        if value:
+            return value
+    except OSError:
+        pass
+    if not create:
+        return None
+    value = uuid.uuid4().hex
+    try:
+        with open(marker, "w", encoding="utf-8") as f:
+            f.write(value + "\n")
+    except OSError:
+        return None
+    return value
+
+
+def _root_key(root, create=False):
+    """저장소를 식별하는 안정 키 = realpath + 워킹카피 정체성.
+
+    realpath 정규화가 없으면 symlink 경유 접근이 같은 저장소를 두 키로 갈라 발급한 grant 가 안 보인다.
+    경로만 쓰면 반대로 서로 다른 저장소가 같은 키를 공유한다(CI 워크스페이스처럼 경로를 재사용하는
+    환경에서 실제로 발생한다). 해시는 절단하지 않는다 — 절단으로 얻는 이점이 없다."""
+    ident = os.path.realpath(root) + "\0" + (_repo_id(root, create=create) or "")
+    return hashlib.sha256(ident.encode("utf-8")).hexdigest()
+
+
+def grants_path(root, environ=None, create=False):
+    """권한 캐시 경로. 저장소 트리 안이면 fail-closed — 트리 밖이라는 것이 이 설계의 불변식이고,
+    안이면 커밋돼서 다른 clone 으로 우회가 전파된다(이 사이클이 막으려던 바로 그 상태)."""
+    home = state_home(environ)
+    if _is_within(home, root):
+        raise StateHomeError(
+            f"권한 캐시 위치가 저장소 안입니다({home!r} ⊂ {os.path.realpath(root)!r}). "
+            f"커밋되면 다른 clone 에서 우회가 활성화됩니다 — {STATE_HOME_ENV} 를 저장소 밖으로 지정하세요")
+    return os.path.join(home, "grants", _root_key(root, create=create) + ".jsonl")
 
 
 def legacy_grants_path(root):
@@ -145,7 +204,7 @@ def grant(root, reason, ttl_seconds, gate="all", user=None, now=None):
            "ttl_seconds": int(ttl_seconds), "gate": gate, "reason": reason,
            "user": user or os.environ.get("USER") or "unknown"}
     _append(audit_path(root), rec)    # 추적용(커밋)
-    _append(grants_path(root), rec)   # 집행용(로컬)
+    _append(grants_path(root, create=True), rec)   # 집행용(로컬, 발급 시에만 정체성 마커 생성)
     return rec
 
 

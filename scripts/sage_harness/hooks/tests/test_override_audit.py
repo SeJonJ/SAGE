@@ -8,6 +8,7 @@
 - 감사로그는 append-only(grant + bypass 누적).
 """
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -329,6 +330,8 @@ class TestStateHomeResolution(unittest.TestCase):
     """권한 캐시 위치 해석 — 저장소 밖 + symlink 정규화 + 명시 지정 우선순위."""
 
     def test_store_lives_outside_the_repository(self):
+        # 주의: setUpModule 이 이미 저장소 밖을 가리키므로 이 테스트만으로는
+        # "밖에 있다"는 불변식이 강제됨을 증명하지 못한다. 강제는 아래 TestStateHomeContainment 가 검증한다.
         with tempfile.TemporaryDirectory() as tmp:
             store = os.path.realpath(ov.grants_path(tmp))
             self.assertFalse(store.startswith(os.path.realpath(tmp) + os.sep),
@@ -355,14 +358,6 @@ class TestStateHomeResolution(unittest.TestCase):
     def test_xdg_state_home_is_namespaced(self):
         self.assertEqual(ov.state_home({"XDG_STATE_HOME": "/xdg"}),
                          os.path.join("/xdg", "sage"))
-
-    def test_unresolvable_home_never_yields_a_relative_path(self):
-        # HOME 미설정 + pwd 항목 부재면 expanduser 가 "~" 를 그대로 돌려준다. 상대경로가 되면
-        # grants 가 CWD(보통 저장소 루트) 아래 생겨 이 사이클이 막은 전파가 되살아난다.
-        with mock.patch.object(os.path, "expanduser", lambda p: p):
-            home = ov.state_home({})
-            self.assertTrue(os.path.isabs(home), f"상대경로로 떨어지면 안 된다: {home}")
-            self.assertTrue(os.path.isabs(ov.grants_path("/some/repo", {})))
 
     def test_windows_prefers_localappdata(self):
         env = {"LOCALAPPDATA": r"C:\\Users\\x\\AppData\\Local"}
@@ -414,6 +409,118 @@ class TestBypassActor(unittest.TestCase):
             self.assertTrue(hr._maybe_override(GATE, tmp, dict(BLOCK), CHANGES))
             rec = [r for r in ov.read_records(tmp) if r["event"] == "bypass"][0]
             self.assertTrue(rec.get("user"), "게이트 배선도 행위자를 남겨야 한다")
+
+
+
+
+class TestStateHomeContainment(unittest.TestCase):
+    """"저장소 밖"은 주장이 아니라 강제여야 한다 — 정상 환경만 검사하면 전제를 가정하게 된다(codex 1R).
+
+    teeth: 어떤 통로로든 상태 경로가 저장소 내부를 가리키면 fail-closed. 통과시키면 grant 가 커밋돼
+    다른 clone 에서 우회가 활성화된다 — 이 사이클이 막으려던 바로 그 상태다.
+    """
+
+    def _repo(self, tmp):
+        root = os.path.join(tmp, "repo")
+        os.makedirs(root)
+        return root
+
+    def test_explicit_state_home_inside_repository_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._repo(tmp)
+            env = {ov.STATE_HOME_ENV: os.path.join(root, ".machine-state")}
+            with self.assertRaises(ov.StateHomeError):
+                ov.grants_path(root, env)
+
+    def test_xdg_state_home_inside_repository_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._repo(tmp)
+            with self.assertRaises(ov.StateHomeError):
+                ov.grants_path(root, {"XDG_STATE_HOME": os.path.join(root, "xdg")})
+
+    def test_home_inside_repository_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._repo(tmp)
+            with mock.patch.object(os.path, "expanduser", lambda p: root):
+                with self.assertRaises(ov.StateHomeError):
+                    ov.grants_path(root, {})
+
+    def test_state_home_equal_to_repository_root_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._repo(tmp)
+            with self.assertRaises(ov.StateHomeError):
+                ov.grants_path(root, {ov.STATE_HOME_ENV: root})
+
+    def test_symlinked_state_home_into_repository_is_rejected(self):
+        # realpath 로 풀지 않으면 symlink 한 겹으로 containment 검사를 우회할 수 있다.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._repo(tmp)
+            inside = os.path.join(root, "state")
+            os.makedirs(inside)
+            link = os.path.join(tmp, "link-to-inside")
+            os.symlink(inside, link)
+            with self.assertRaises(ov.StateHomeError):
+                ov.grants_path(root, {ov.STATE_HOME_ENV: link})
+
+    def test_sibling_directory_is_not_treated_as_inside(self):
+        # 접두 문자열 비교만 하면 <root>-state 같은 형제 경로가 오탐된다.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._repo(tmp)
+            sibling = root + "-state"
+            os.makedirs(sibling)
+            self.assertTrue(ov.grants_path(root, {ov.STATE_HOME_ENV: sibling}))
+
+    def test_unresolvable_home_fails_closed_without_shared_temp_fallback(self):
+        # 예측 가능한 공용 위치로 물러서면 그 경로에 grant 를 미리 심는 것만으로 권한이 생긴다.
+        with mock.patch.object(os.path, "expanduser", lambda p: p):
+            with self.assertRaises(ov.StateHomeError):
+                ov.state_home({})
+
+
+class TestRepositoryIdentity(unittest.TestCase):
+    """경로만으로 저장소를 식별하면 교체된 저장소가 이전 grant 를 물려받는다(codex 1R)."""
+
+    def _git_repo(self, path):
+        os.makedirs(path, exist_ok=True)
+        _git(path, "init", "-q", ".")
+        _git(path, "config", "user.email", "t@example.com")
+        _git(path, "config", "user.name", "t")
+        return path
+
+    def test_replacing_the_repository_at_the_same_path_drops_the_grant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._git_repo(os.path.join(tmp, "work"))
+            ov.grant(root, "긴급", 50000, gate="all", user="alice")
+            self.assertTrue(ov.is_override_active(root, GATE))
+            shutil.rmtree(root)
+            self._git_repo(root)          # 같은 경로, 다른 저장소
+            self.assertFalse(ov.is_override_active(root, GATE),
+                             "교체된 저장소가 이전 grant 를 물려받으면 안 된다")
+
+    def test_same_repository_keeps_its_grant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._git_repo(os.path.join(tmp, "work"))
+            ov.grant(root, "긴급", 50000, gate="all", user="alice")
+            self.assertTrue(ov.is_override_active(root, GATE))
+            self.assertTrue(ov.is_override_active(root, GATE), "같은 저장소에서는 유지돼야 한다")
+
+    def test_identity_marker_is_not_created_on_read(self):
+        # 읽기에서 마커를 만들면 부작용이고, 없을 때는 키가 달라져 안전한 방향으로 떨어져야 한다.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._git_repo(os.path.join(tmp, "work"))
+            ov.is_override_active(root, GATE)
+            self.assertFalse(os.path.exists(os.path.join(root, ".git", "sage-state-id")))
+
+    def test_non_git_directory_still_works(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = os.path.join(tmp, "plain")
+            os.makedirs(root)
+            ov.grant(root, "긴급", 50000, gate="all", user="alice")
+            self.assertTrue(ov.is_override_active(root, GATE))
+
+    def test_key_is_not_truncated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(len(os.path.basename(ov.grants_path(tmp)).split(".")[0]), 64)
 
 
 if __name__ == "__main__":

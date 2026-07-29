@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARTIFACTS.md sha256:b92cc746edf26f214cb83b568b1b842ce0d4a7b27261bec9b17d7473abbfe4f4 -->
+<!-- sage-doc-source: ARTIFACTS.md sha256:7224577794cdeda323af01e18995bb4ec37463c1c6301a9dcc963c6fed1f4cdd -->
 # SAGE Artifact Map
 
 [한국어](ARTIFACTS.md) | [Documentation index](README.en.md)
@@ -52,9 +52,11 @@ The tracking policy is **exclude by default and explicitly include only audit tr
 - **Commit the four audit trails.** Peers, CI, and reviewers must be able to inspect who bypassed or
   waived a gate, or completed a loop, when they did it, and why after cloning. Keeping this only
   locally would make enforced blocks auditable while allowing exception paths to disappear.
-- **Do not commit permissions, session state, or reproducible derivatives.** In particular,
-  `tmp/grants.jsonl` is an active bypass **permission**. Propagating it could activate another
-  person's grant on your machine.
+- **Do not commit session state or reproducible derivatives.**
+- **Active bypass permissions do not live here.** `.sage/` is inside the repository, so keeping
+  permissions there would make the guarantee depend on an ignore rule, and `.gitignore` is a
+  user-owned file that cannot serve as the basis for a security property. The permission cache lives
+  **outside** the repository tree, in a machine-local state directory (see section 1.1).
 - Ignoring `/.sage/` as a directory prevents Git from descending into it, which disables every `!`
   exception. The rule must therefore use `/.sage/*`.
 
@@ -77,11 +79,43 @@ Server-authority attestations are not local `.sage/` sources of truth. Protected
 the same base, head, diff, cycle, and risk. Project-local override and waiver audits are excluded
 from that decision.
 
-> Execution helpers such as `.sage/tmp/grants.jsonl` may also appear in this tree to track runtime
-> grants. `grants.jsonl` is the active bypass **permission** for this machine and must never be
-> committed: committing it could activate another person's bypass after clone or pull. The design
-> separates committed history in `override.jsonl` from local permissions in `tmp/grants.jsonl`
-> (`scripts/sage_harness/hooks/runtime/override_audit.py` module docstring).
+### 1.1 Active bypass permissions: outside the repository
+
+| Location | Precedence |
+|---|---|
+| `$SAGE_STATE_HOME/grants/<repo-key>.jsonl` | 1 (explicit; tests and operations) |
+| `$XDG_STATE_HOME/sage/grants/<repo-key>.jsonl` | 2 |
+| `%LOCALAPPDATA%\sage\state\grants\<repo-key>.jsonl` | 3 (Windows) |
+| `~/.local/state/sage/grants/<repo-key>.jsonl` | 4 (default) |
+
+`<repo-key>` is a SHA-256 over the repository root's **realpath** plus a **working-copy identity**.
+
+- Without realpath normalization, reaching the same repository through a symlink splits it into two
+  keys, so an issued grant becomes invisible.
+- With the path alone, distinct repositories share one key. Deleting a repository and creating a
+  different one at the same path would inherit the previous grant, which happens in practice where
+  workspace paths are reused, such as CI runners. The working-copy identity is a `.git/sage-state-id`
+  marker that never propagates through clone or commit. Non-Git directories fall back to path only.
+
+**Two fail-closed rules.** A bypass is a permission, so SAGE refuses to create one when it cannot be
+confident about the location.
+
+- A state path that resolves **inside the repository** is rejected. Allowing it would let the grant
+  be committed and activate the bypass in another clone, which is exactly what this separation
+  prevents.
+- An unresolvable home directory (no `HOME` and no passwd entry) is rejected rather than falling
+  back. Retreating to a predictable shared location such as the temp directory would let anyone
+  create a bypass simply by **planting** a valid grant file there. Set `SAGE_STATE_HOME` to an
+  absolute path in that case.
+
+History and permissions move in opposite directions: history in `override.jsonl` **must** be shared,
+while permissions **must not** be. Through 0.9.73 permissions also lived inside the repository at
+`.sage/tmp/grants.jsonl`, and because no code adds an ignore rule to installed projects, the default
+was to track them. Committing them activated the bypass in other developers' clones. Rather than
+relying on an ignore rule, the propagation path itself was removed.
+
+`sage override --list` prints the current location. Deleting `.sage/tmp/` no longer resets it. Files
+left at the old path are not read, because the 24-hour TTL cap expires every prior grant within a day.
 
 ---
 

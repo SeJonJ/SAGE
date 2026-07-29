@@ -78,10 +78,24 @@ PDCA를 돌리는 동안 남는 정본 데이터입니다. 프로젝트 루트(�
 |---|---|
 | `$SAGE_STATE_HOME/grants/<repo-key>.jsonl` | 1 (명시 지정 — 테스트·운영) |
 | `$XDG_STATE_HOME/sage/grants/<repo-key>.jsonl` | 2 |
-| `~/.local/state/sage/grants/<repo-key>.jsonl` | 3 (기본) |
+| `%LOCALAPPDATA%\sage\state\grants\<repo-key>.jsonl` | 3 (Windows) |
+| `~/.local/state/sage/grants/<repo-key>.jsonl` | 4 (기본) |
 
-`<repo-key>` 는 저장소 루트의 **realpath** 해시입니다. 정규화하지 않으면 symlink 경유 접근이 같은
-저장소를 두 키로 갈라, 발급한 grant 가 안 보이는 상태가 생깁니다.
+`<repo-key>` 는 저장소 루트의 **realpath** 와 **워킹카피 정체성**을 합친 SHA-256 입니다.
+
+- realpath 정규화가 없으면 symlink 경유 접근이 같은 저장소를 두 키로 갈라 발급한 grant 가 안 보입니다.
+- 경로만 쓰면 반대로 서로 다른 저장소가 같은 키를 공유합니다. 저장소를 지우고 같은 경로에 다른 저장소를
+  만들면 이전 grant 를 물려받습니다(CI 워크스페이스처럼 경로를 재사용하는 환경에서 실제로 발생합니다).
+  워킹카피 정체성은 `.git/sage-state-id` 마커이며 clone·커밋으로 전파되지 않습니다. git 저장소가
+  아니면 경로만으로 식별합니다.
+
+**fail-closed 두 가지.** 우회는 권한이므로 위치를 확신할 수 없으면 권한을 만들지 않습니다.
+
+- 상태 경로가 **저장소 안**을 가리키면 거부합니다. 통과시키면 grant 가 커밋돼 다른 clone 에서 우회가
+  활성화됩니다 — 이 분리가 막으려는 바로 그 상태입니다.
+- 홈을 해석할 수 없으면(HOME 미설정 + pwd 항목 부재) 폴백하지 않고 거부합니다. 예측 가능한 공용
+  위치(temp 등)로 물러서면 그 경로에 유효한 grant 를 **미리 심어두는 것만으로** 우회 권한이 생깁니다.
+  이 경우 `SAGE_STATE_HOME` 을 절대경로로 지정하세요.
 
 이력과 권한을 나누는 이유는 방향이 반대이기 때문입니다 — 이력(`override.jsonl`)은 **공유돼야** 하고
 권한은 **공유되면 안 됩니다**. 0.9.73 까지는 권한도 `.sage/tmp/grants.jsonl` 로 저장소 안에 있었고,
