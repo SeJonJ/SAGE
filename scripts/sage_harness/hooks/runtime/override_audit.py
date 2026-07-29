@@ -82,9 +82,9 @@ def _is_within(child, parent):
     return child == parent or child.startswith(parent + os.sep)
 
 
-def _gitdir(root):
-    """워킹카피의 gitdir. `.git` 이 파일이면(worktree/submodule) 가리키는 경로를 푼다. 아니면 None."""
-    git = os.path.join(root, ".git")
+def _gitdir_at(path):
+    """`path` 자신의 gitdir. `.git` 이 파일이면(worktree/submodule) 가리키는 경로를 푼다. 아니면 None."""
+    git = os.path.join(path, ".git")
     if os.path.isfile(git):
         try:
             with open(git, encoding="utf-8") as f:
@@ -95,18 +95,42 @@ def _gitdir(root):
             return None
         git = line.split(":", 1)[1].strip()
         if git and not os.path.isabs(git):
-            git = os.path.join(root, git)
+            git = os.path.join(path, git)
     return git if git and os.path.isdir(git) else None
+
+
+def _gitdir(root):
+    """root 를 **포함하는** 저장소의 gitdir. 상위로 올라가며 찾는다.
+
+    root 자신만 보면, 모노레포에서 하위 디렉터리를 root 로 잡은 구성(`CLAUDE_PROJECT_DIR=<repo>/apps/web`)
+    이 "git 아님"으로 판정돼 마커가 `<repo>/apps/web/.sage/` 로 떨어진다. 그 위치는 부모 저장소 안이라
+    커밋·clone 으로 전파될 수 있어, git 이 아니어서 전파 위험이 없다는 전제가 깨진다(codex 2R 후속)."""
+    current = os.path.realpath(root)
+    while True:
+        gitdir = _gitdir_at(current)
+        if gitdir:
+            return gitdir
+        parent = os.path.dirname(current)
+        if parent == current:
+            return None
+        current = parent
 
 
 def _identity_marker(root):
     """정체성 마커 경로. 저장소 트리 안이어야 교체 시 함께 사라진다.
 
-    git 저장소는 `.git/` 안 — clone·커밋으로 절대 전파되지 않는다. git 이 아니면 `.sage/` 안에 둔다.
-    git 이 아니라는 것은 clone/commit 경로가 존재하지 않는다는 뜻이므로 전파 위험도 없다."""
+    git 저장소(상위 포함) 안이면 그 `.git/sage/` 에 둔다 — clone·커밋으로 절대 전파되지 않는다.
+    도구 전용 하위 폴더를 쓰는 것은 생태계 관례다(`.git/lfs/`·`.git/annex/`·`.git/git-crypt/`,
+    GUI 클라이언트의 `.git/gk/`·`.git/cursor/`). 최상위에 낱개 파일을 두면 이름이 충돌하기 쉽다.
+    git 자신도 워킹카피 전용 로컬 상태를 `.git/info/exclude`·`.git/worktrees/` 로 같은 자리에 둔다.
+
+    어떤 저장소에도 속하지 않을 때만 `.sage/` 에 두며, 이 경우 clone/commit 경로 자체가 없다.
+
+    같은 저장소의 서로 다른 하위 root 는 마커를 공유하지만 키는 realpath 를 함께 해싱하므로 갈린다.
+    저장소가 교체되면 `.git` 이 함께 바뀌어 하위 root 들도 일제히 새 정체성을 얻는다."""
     gitdir = _gitdir(root)
     if gitdir:
-        return os.path.join(gitdir, "sage-state-id")
+        return os.path.join(gitdir, "sage", "state-id")
     return os.path.join(root, ".sage", "instance-id")
 
 

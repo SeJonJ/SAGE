@@ -509,7 +509,7 @@ class TestRepositoryIdentity(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = self._git_repo(os.path.join(tmp, "work"))
             ov.is_override_active(root, GATE)
-            self.assertFalse(os.path.exists(os.path.join(root, ".git", "sage-state-id")))
+            self.assertFalse(os.path.exists(os.path.join(root, ".git", "sage", "state-id")))
 
     def test_non_git_directory_still_works(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -546,6 +546,49 @@ class TestRepositoryIdentity(unittest.TestCase):
             with open(marker, "w", encoding="utf-8") as f:
                 f.write("winner\n")            # 경쟁에서 이긴 쪽이 먼저 씀
             self.assertEqual(ov._repo_id(root, create=True), "winner")
+
+    def test_subdirectory_root_uses_the_enclosing_repository_marker(self):
+        """모노레포 하위 root 는 부모 저장소의 `.git` 을 쓴다 — `.sage/` 에 두면 커밋·clone 으로 전파된다."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._git_repo(os.path.join(tmp, "repo"))
+            sub = os.path.join(root, "apps", "web")
+            os.makedirs(sub)
+            marker = ov._identity_marker(sub)
+            # macOS 의 /var → /private/var 처럼 root 경로 자체가 symlink 일 수 있어 realpath 로 비교한다.
+            expected = os.path.join(os.path.realpath(root), ".git") + os.sep
+            self.assertTrue(marker.startswith(expected), f"{marker} !⊂ {expected}")
+            ov.grant(sub, "긴급", 50000, gate="all", user="alice")
+            self.assertFalse(os.path.exists(os.path.join(sub, ".sage", "instance-id")),
+                             "부모 저장소 안에 추적 가능한 마커를 만들면 안 된다")
+
+    def test_subdirectory_root_key_differs_from_repository_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._git_repo(os.path.join(tmp, "repo"))
+            sub = os.path.join(root, "apps", "web")
+            os.makedirs(sub)
+            ov.grant(sub, "긴급", 50000, gate="all", user="alice")
+            self.assertTrue(ov.is_override_active(sub, GATE))
+            self.assertFalse(ov.is_override_active(root, GATE),
+                             "하위 root 의 grant 가 저장소 루트로 번지면 안 된다")
+
+    def test_subdirectory_root_loses_the_grant_when_the_repository_is_replaced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._git_repo(os.path.join(tmp, "repo"))
+            sub = os.path.join(root, "apps", "web")
+            os.makedirs(sub)
+            ov.grant(sub, "긴급", 50000, gate="all", user="alice")
+            self.assertTrue(ov.is_override_active(sub, GATE))
+            shutil.rmtree(root)
+            self._git_repo(root)
+            os.makedirs(sub)
+            self.assertFalse(ov.is_override_active(sub, GATE))
+
+    def test_plain_directory_outside_any_repository_uses_sage_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = os.path.join(tmp, "plain")
+            os.makedirs(root)
+            self.assertEqual(ov._identity_marker(root),
+                             os.path.join(root, ".sage", "instance-id"))
 
     def test_worktree_gitdir_file_is_resolved(self):
         with tempfile.TemporaryDirectory() as tmp:

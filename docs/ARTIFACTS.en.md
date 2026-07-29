@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARTIFACTS.md sha256:7224577794cdeda323af01e18995bb4ec37463c1c6301a9dcc963c6fed1f4cdd -->
+<!-- sage-doc-source: ARTIFACTS.md sha256:2b0e1ea86a0c0eea15d7787bc9a8b9e9ea31021ee024383a28f27b644f5e31f3 -->
 # SAGE Artifact Map
 
 [한국어](ARTIFACTS.md) | [Documentation index](README.en.md)
@@ -94,8 +94,12 @@ from that decision.
   keys, so an issued grant becomes invisible.
 - With the path alone, distinct repositories share one key. Deleting a repository and creating a
   different one at the same path would inherit the previous grant, which happens in practice where
-  workspace paths are reused, such as CI runners. The working-copy identity is a `.git/sage-state-id`
-  marker that never propagates through clone or commit. Non-Git directories fall back to path only.
+  workspace paths are reused, such as CI runners. The working-copy identity is a `.git/sage/state-id`
+  marker that never propagates through clone or commit. The search walks up to the enclosing
+  repository, so a monorepo subdirectory used as the root still uses the parent's `.git/`. A
+  tool-owned subdirectory follows ecosystem convention, as with `.git/lfs/` and `.git/annex/`. Only a
+  directory outside any repository falls back to `.sage/instance-id`, where clone and commit paths do
+  not exist at all.
 
 **Two fail-closed rules.** A bypass is a permission, so SAGE refuses to create one when it cannot be
 confident about the location.
