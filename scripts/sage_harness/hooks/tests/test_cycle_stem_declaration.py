@@ -28,6 +28,23 @@ sys.path.insert(0, RUNTIME)
 sys.path.insert(0, HOOKS_DIR)
 import pre_implementation_gate_core as core   # noqa: E402
 import messages                               # noqa: E402
+
+
+# 권한 캐시가 저장소 밖 상태 디렉터리로 옮겨졌다(10-e). 격리하지 않으면 테스트가 개발자의 실제
+# ~/.local/state/sage 를 오염시킨다. 파일 전체에 강제한다.
+_STATE_TMP = None
+
+
+def setUpModule():
+    global _STATE_TMP
+    _STATE_TMP = tempfile.TemporaryDirectory()
+    os.environ["SAGE_STATE_HOME"] = _STATE_TMP.name
+
+
+def tearDownModule():
+    os.environ.pop("SAGE_STATE_HOME", None)
+    _STATE_TMP.cleanup()
+
 import override_audit as ov                   # noqa: E402
 import hook_runtime as hr                     # noqa: E402
 

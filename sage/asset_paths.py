@@ -45,6 +45,11 @@ def hook_runtime_files(root: str) -> dict[str, list[str]]:
             # acceptance_waiver.py: build_snapshot 과 report gate가 신뢰하는 L3 waiver 감사/검증 정본.
             # 미추적 시 이 파일만 변조해도 hook_runtime_hash가 PASS하여 acceptance enforce를 우회할 수 있다.
             os.path.join(runtime, "acceptance_waiver.py"),
+            # override_audit.py: BLOCK 을 실제로 들어올리는 판정(is_override_active/active_grants)과
+            # 그 감사 정본. 미추적 시 이 파일만 변조해도 hook_runtime_hash 가 PASS 하여 **모든 우회
+            # 가능 게이트가 상시 열린다**(10-e 에서 변조 실험으로 확인). acceptance_waiver 와 같은
+            # 근거이고, 우회 판정 그 자체라 오히려 더 직접적이다.
+            os.path.join(runtime, "override_audit.py"),
             # policies/retro_gate.py: enforce 판정 그 자체(BLOCK/WARN). 파일이 없으면 Stop 오케스트레이터가
             # import 실패를 INFO skip 으로 낮춰 **enforce 가 조용히 무동작**한다 → validate 가 못 잡으면
             # 설치본에서 이 파일만 빠진 rolling upgrade 가 게이트를 은밀히 해제한다(codex 구현리뷰 2R P0).

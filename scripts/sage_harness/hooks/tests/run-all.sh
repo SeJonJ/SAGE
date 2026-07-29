@@ -4,6 +4,13 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$HERE/../../../.." && pwd)"
 export PYTHONPATH="$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+
+# override 권한 캐시는 저장소 밖 상태 디렉터리에 산다. 파일별 setUpModule 격리에만 기대면
+# 그걸 모르는 새 테스트가 개발자의 실제 ~/.local/state 를 오염시킨다(10-e 구현 중 실제로 발생).
+# 스위트 전체를 임시 디렉터리로 묶어 신규 테스트도 자동으로 격리되게 한다(codex 1R §5).
+SAGE_STATE_HOME="$(mktemp -d)"
+export SAGE_STATE_HOME
+trap 'rm -rf "$SAGE_STATE_HOME"' EXIT
 rc=0
 
 echo "### 1. generated-artifact write guard"

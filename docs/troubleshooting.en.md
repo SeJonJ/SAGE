@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:a73f55cb897f710a90f6aee112f46459d483aed27ede285218c5e117850fcd0e -->
+<!-- sage-doc-source: troubleshooting.md sha256:b167241b94dc183005aabef8346c6e5a7ef401baa019ddbd372f3a4b0716c03f -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -70,6 +70,26 @@ sage override --reason "hotfix" --ttl 30m
 
 An override requires a reason and expiration time and is recorded in the audit log. Some integrity
 and risk-contract blocks cannot be bypassed with a generic override.
+
+## `sage override` rejects the permission-cache location
+
+```
+[sage override] The permission cache resolves inside the repository (...)
+[sage override] The permission cache location cannot be determined (not an absolute path: ...)
+```
+
+Active bypass **permissions** live in a machine-local state directory outside the repository. Keeping
+them inside would let them be committed, which activates the bypass in someone else's clone. When the
+location cannot be trusted, no permission is created.
+
+- Point `SAGE_STATE_HOME`, `XDG_STATE_HOME`, or `HOME` outside the repository.
+- In a container without `HOME`, set `SAGE_STATE_HOME` to an absolute path.
+- `sage override --list` prints the current location. Deleting `.sage/tmp/` does not reset it.
+
+The message about an undeterminable repository boundary means a `.git` entry exists but cannot be
+interpreted, such as a corrupted pointer file or a missing gitdir. Issuing without a confirmed
+repository identity would mix permissions across repositories, so it is refused. Repair the `.git`
+state and retry. See [Artifacts](ARTIFACTS.md) section 1.1 for the full location rules.
 
 ## Cross-model review is BLOCKED
 

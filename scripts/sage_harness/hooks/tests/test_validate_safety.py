@@ -543,7 +543,7 @@ def _runtime_root(d):
     strategies = os.path.join(hooks, "strategies", "pre_implementation_gate")
     os.makedirs(strategies, exist_ok=True)
     for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py",
-               "acceptance_waiver.py", "messages.py",
+               "acceptance_waiver.py", "override_audit.py", "messages.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(runtime, fn)).write_text(f"# {fn}\n", encoding="utf-8")
     Path(os.path.join(hooks, "cycle_binding.py")).write_text("# cycle_binding.py\n", encoding="utf-8")
