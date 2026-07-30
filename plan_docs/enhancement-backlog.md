@@ -11,12 +11,13 @@
   EH-2: `output_contract_check.py` `_DEFAULT_MARKERS` 중립화 + 주입 파라미터, 코드 상 실재)
 - **EH-6 완료 확인**: SAGE-FB-05로 global/project-local 명시 선택, receipt, duplicate 진단, onboarding,
   transaction rollback, shared global lock까지 구현·검증했다.
-- **완료 1건 + 미착수 2건**:
+- **완료 1건 + 개발중 1건 + 보류 1건**:
   1. **EH-5 → 로드맵 §10-c 완료** — `_cycle_risk` 의 선언값 `max()`는 2026-07-18 하드닝에서 이미
      구현됐다. 남은 실제 결함은 Phase 00 선언 미기입 통과와, 현재 변경의 글롭/내용 감지 tier가 Phase 00보다 높아도
      durable tier 상향을 강제하지 않는 점이었다. 별도 ledger 없이 pre-write에서 Phase 00 선행 상향을
      강제하는 방식으로 구현했다.
-  2. **EH-3** — 단일 모듈(`loop_audit.py`) 격리 작업이라 다른 컴포넌트 영향 없음. 시급성은 낮으나 착수 리스크도 낮음.
+  2. **EH-3 → 로드맵 §10-g 개발중** — `loop_audit` run별 strict chain을 중심으로 report gate,
+     CLI 오류 계약, hook manifest까지 함께 변경한다. 나머지 감사 3종은 EH-8로 분리했다.
   3. **EH-4** — sage-review·PostToolUse·Stop 게이트·profile_validate 다수 컴포넌트 동시 변경(대공사). 남은 우회가
      "과거 checked run_id 정확 복붙"뿐인 좁은 구멍이라 실이익 대비 비용 최대 — 트리거 충족 전 보류 유지.
 
@@ -57,20 +58,24 @@
 
 ---
 
-## EH-3 — loop_audit 해시체인 위변조 내성 (tamper-resistance)
+## EH-3 — loop_audit run별 strict hash-chain 자기검증
 
 - **배경**: `scripts/sage_harness/hooks/runtime/loop_audit.py` 의 `_next_seq` 는 seq 연속성 검사가
   *수기 append·순서 뒤바뀜·누락* 같은 게으른 우회를 잡는 **anti-lazy-bypass sanity** 검사이지
   위변조 내성이 아님을 스스로 자인한다(seq = 레코드 수 → 파일을 읽어 다음 정수를 맞춰 append 하면 통과).
 - **문제**: 감사 로그(`.sage/loop_audit.jsonl`)가 "위변조 방지"로 오인될 수 있다. 경계는 문서로 명시했으나
-  (`docs/ARCHITECTURE.md` 신뢰 경계 · README), 실제 tamper-resistance 메커니즘은 없다.
-- **접근**: 각 레코드에 직전 레코드의 해시를 포함하는 **해시체인(prev_hash chaining)** — 중간 삽입/수정/삭제가
-  체인 단절로 검출된다. 게이트가 체인 무결성을 검산. 기존 로그 마이그레이션(genesis 재스탬프) 고려.
-- **규모/위험**: 중. loop_audit 스키마 확장(prev_hash) + 기록/검증 로직 + 게이트 배선 + 하위호환.
-- **트리거**: 위협모델이 "정직한 host"에서 "적대적 host / 감사 로그 신뢰가 필요한 규제·외부 감사"로 확장될 때
-  (README "완전 장악된 host runtime 은 방어하지 않음" 전제가 바뀔 때). **현 위협모델상 낮은 긴급도.**
-- **상태**: 📋 **로드맵 등재(미착수)**. 감사 표현 정직화(경계 명시)는 완료 — `ARCHITECTURE.md` 신뢰 경계 · README.
-  코드 재확인(2026-07-14): `loop_audit.py` 에 `prev_hash`/`hashlib` 부재 — 미착수 확정, 우선순위 3순위(↑ 코드 검증 참고).
+  (`docs/ARCHITECTURE.md` 신뢰 경계 · README), 현재는 seq 연속성 외에 레코드 내용의 자기검증 수단이 없다.
+- **접근(§10-g locked)**: run별 immediate predecessor만 허용하는 **strict hash-chain**을 적용한다.
+  각 신규 레코드는 `prev_hash`와 자기 자신을 검증하는 `record_hash`를 함께 저장하고, stamp+append를
+  크로스플랫폼 프로세스 잠금 안에서 수행한다. `audit_summary.runs[run_id].chain_ok`를 실제 report gate와
+  `integrity_issues()`가 소비하며, 기존 레코드는 재작성하지 않고 legacy tri-state로 유지한다.
+- **규모/위험**: 중. `loop_audit` 스키마/잠금/검증 + report gate 배선 + CLI 오류 계약 + 하위호환.
+- **트리거**: Git 이력 대조 전에도 Loop A 레코드의 우발적·단순 소급 변경을 기계적으로 판별하고,
+  손상된 run이 report gate의 승인 증거로 쓰이지 않게 할 필요가 생길 때. 적대적 host나 규제 수준 보장은
+  서명·외부 witness가 필요한 별도 범위다.
+- **상태**: 🚧 **로드맵 §10-g 설계 승인·개발 착수(2026-07-30)**. 정본 설계:
+  `plan_docs/00-base_plan/sage-loop-audit-strict-hash-chain.md`. 해시 전체를 재계산할 수 있는 적대적 편집자에
+  대한 tamper-resistance는 제공하지 않으며, Git 이력은 외부 검토 앵커로 남는다.
 
 ---
 
@@ -173,6 +178,26 @@
   의도된 계약으로 못박고 있고, 사이클=브랜치 흐름에서는 옳다.
 - **상태**: ✅ **완료(2026-07-25)**. `test_cycle_stem_declaration.py` 17 케이스로 재현·안내·감사·fail-closed 를
   못박았다.
+
+---
+
+## EH-8 — 나머지 감사 로그 3종의 authority-aware 무결성
+
+- **배경**: SAGE는 `.sage/acceptance-waivers.jsonl`, `.sage/retro_audit.jsonl`,
+  `.sage/override.jsonl`도 커밋 정본으로 둔다. §10-g 검토에서 네 로그 전체를 같은 해시 writer로 묶는 안을
+  검토했지만, 각 로그의 권한성과 실패 계약이 달라 별도 범위로 분리했다.
+- **문제**: acceptance waiver는 report 예외 권한의 정본이고 별도 `flock`·secure-open 하드닝을 갖는다.
+  retro audit은 Stop gate 증거지만 읽기 실패의 fail-open/reporting 경계가 있다. override audit은 사후 추적용이며
+  실제 활성 권한은 저장소 밖 grant store가 결정한다. 동일한 `prev_hash` 필드만 추가하면 검증되지 않는 해시를
+  보안 기능처럼 보이게 하거나 기존 권한/복구 계약을 깨뜨릴 수 있다.
+- **접근**: 로그별 위협모델과 소비 정책을 먼저 고정한다. acceptance는 chain 오류 시 권한 판정을 fail-closed,
+  retro는 Stop/doctor의 BLOCK·WARN·unreadable 계약을 명시, override는 권한 store와 감사 trail의 책임을
+  분리한 채 CLI/doctor에서 무결성을 표면화한다. 공통화는 canonical hash 같은 순수 primitive에 한정하고 각
+  writer의 잠금·secure-open·오류 정책은 유지한다. 적대적 편집자까지 범위에 넣으면 서명된 head나 외부 witness를
+  별도 설계한다.
+- **규모/위험**: 중대. 권한 판정, Stop hook, doctor, CLI, POSIX/Windows 잠금, legacy 정책을 함께 검증해야 한다.
+- **트리거**: 실제 감사 변조가 관측되거나 규제·외부감사 요구로 committed audit 자체를 권한 근거로 강화할 때.
+- **상태**: 🕗 **보류(2026-07-30, §10-g에서 분리)**. §10-g 완료 후 독립 L3 설계·검토 대상으로 유지한다.
 
 ---
 
