@@ -615,11 +615,17 @@ def _risk_acceptance_profile(waiver_enabled=True):
     return p
 
 
-def snap_audit(docs05, runs=None, has_any=None):
+def snap_audit(docs05, runs=None, has_any=None, file_ok=True,
+               file_issues=None, snapshot_error=None):
     """06 작성 시나리오: 05 phase_docs + 주입된 loop_audit."""
+    audit = {"runs": runs or {}, "file_ok": file_ok,
+             "file_issues": file_issues or [],
+             "has_any_records": runs is not None if has_any is None else has_any}
+    if snapshot_error is not None:
+        audit["snapshot_error"] = snapshot_error
     return {"plan_files": [], "review_candidates": [],
             "phase_docs": {"00": [_risk_pdoc(stem="feature")], "05": docs05},
-            "loop_audit": {"runs": runs or {}, "has_any_records": runs is not None if has_any is None else has_any}}
+            "loop_audit": audit}
 
 
 _REPORT_EV = ev("plan_docs/06-report/feature.md", "Cycle-Stem: `feature`\n")
@@ -712,6 +718,65 @@ class TestReportAuditGate(unittest.TestCase):
         d = core.decide(_REPORT_EV, _audit_profile(mode="enforce"),
                         snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
                                    runs={"run-x1": {"closed": True, "result": "APPROVED", "seq_ok": None}}), None)
+        self.assertEqual(d["status"], "ok")
+
+    # --- 10-g: raw 파일 무결성 + selected run strict chain ---
+    def test_file_ok_false_blocks_enforce(self):
+        d = core.decide(_REPORT_EV, _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": True, "result": "APPROVED",
+                                                    "seq_ok": True, "chain_ok": True}},
+                                   file_ok=False), None)
+        self.assertEqual(d["message_key"], "block_report_without_audit")
+        self.assertEqual(d["exit_code"], 2)
+
+    def test_file_ok_false_warns_advisory(self):
+        d = core.decide(_REPORT_EV, _audit_profile(mode="advisory"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": True, "result": "APPROVED",
+                                                    "seq_ok": True, "chain_ok": True}},
+                                   file_ok=False), None)
+        self.assertEqual(d["message_key"], "warn_report_without_audit")
+        self.assertEqual(d["exit_code"], 0)
+
+    def test_snapshot_error_reports_runtime_failure_not_malformed_json(self):
+        gate = core._audit_gate(
+            _REPORT_EV,
+            _audit_profile(mode="enforce"),
+            snap_audit(
+                [self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
+                runs={"run-x1": {"closed": True, "result": "APPROVED",
+                                 "seq_ok": True, "chain_ok": True}},
+                file_ok=False,
+                snapshot_error="ModuleNotFoundError: loop_audit",
+            ),
+        )
+        self.assertFalse(gate["ok"])
+        self.assertIn("snapshot 생성 실패", gate["detail"])
+        self.assertIn("ModuleNotFoundError", gate["detail"])
+        self.assertNotIn("malformed/non-object", gate["detail"])
+
+    def test_chain_ok_false_blocks_enforce(self):
+        d = core.decide(_REPORT_EV, _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": True, "result": "APPROVED",
+                                                    "seq_ok": True, "chain_ok": False}}), None)
+        self.assertEqual(d["message_key"], "block_report_without_audit")
+        self.assertEqual(d["exit_code"], 2)
+
+    def test_chain_ok_false_warns_advisory(self):
+        d = core.decide(_REPORT_EV, _audit_profile(mode="advisory"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": True, "result": "APPROVED",
+                                                    "seq_ok": True, "chain_ok": False}}), None)
+        self.assertEqual(d["message_key"], "warn_report_without_audit")
+        self.assertEqual(d["exit_code"], 0)
+
+    def test_chain_ok_none_legacy_passes(self):
+        d = core.decide(_REPORT_EV, _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": True, "result": "APPROVED",
+                                                    "seq_ok": True, "chain_ok": None}}), None)
         self.assertEqual(d["status"], "ok")
 
     # --- 7차 배치3-4: reviewer degraded(cross-model 폴백) → advisory WARN / enforce BLOCK ---

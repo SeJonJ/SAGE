@@ -766,6 +766,18 @@ def _audit_gate(event, profile, snapshot):
 
     if select_error:
         return fail(f"05 선택 실패: {select_error}")
+    if la.get("file_ok", True) is False:
+        # 10-g: malformed/non-object JSON은 run_id 자체를 신뢰할 수 없어 특정 run으로 격리할 수 없다.
+        # 유효 레코드만 골라 통과시키면 손상 줄에 숨은 증거를 skip하는 우회가 되므로 파일 단위로 닫는다.
+        snapshot_error = la.get("snapshot_error")
+        if snapshot_error:
+            return fail(f"loop audit snapshot 생성 실패 — {snapshot_error} "
+                        "(감사 증거를 읽지 못해 신뢰 불가)")
+        file_issues = la.get("file_issues") or []
+        if file_issues:
+            detail = "; ".join(str(issue).replace("\n", " ") for issue in file_issues[:3])
+            return fail(f"loop audit 로그 무결성 실패 — {detail} (감사 증거 신뢰 불가)")
+        return fail("loop audit 로그 원문 무결성 실패(원인 미제공) — 감사 증거 신뢰 불가")
     content = sel.get("content") or ""
     marker = (cfg.get("approve_marker") or "APPROVED").upper()
     status, status_error = _final_status(content)
@@ -794,6 +806,9 @@ def _audit_gate(event, profile, snapshot):
     if run.get("seq_ok") is False:
         # 7차 배치3-3: seq 불연속/누락 = CLI/라이브러리 우회한 수기 JSONL append 또는 순서 조작.
         return fail(f"run {run_id!r} 의 라운드 seq 불연속/누락 — 수기 기록 또는 순서 조작 의심(감사 증거 신뢰 불가)")
+    if run.get("chain_ok") is False:
+        # 10-g: selected run의 immediate-predecessor/self-hash 검증 실패. 키 부재/None은 legacy skip.
+        return fail(f"run {run_id!r} 의 strict hash-chain 불일치 — 기록 수정/누락/순서 조작 의심(감사 증거 신뢰 불가)")
     if not run.get("closed"):
         return fail(f"run {run_id!r} 가 닫히지 않음(루프 미종료)")
     if (run.get("result") or "").upper() != "APPROVED":

@@ -177,7 +177,7 @@ echo "### 33. kind invariants (N-R2 메타 박제 — mcps 경로 손조립 0/�
 python3 "$HERE/test_kind_invariants.py" || rc=1
 
 echo ""
-echo "### 34. loop_audit (Loop A 라운드별 append-only 감사 — open/round/close, run_id 격리, 손상줄 skip)"
+echo "### 34. loop_audit (Loop A strict run별 hash-chain — locked append, 손상 fail-closed)"
 python3 "$HERE/test_loop_audit.py" || rc=1
 
 echo ""

@@ -319,15 +319,132 @@ class TestBuildSnapshot(unittest.TestCase):
             snap = hr.build_snapshot({"risk": {}, "pdca": {}}, root, hr.make_rel(root))
             self.assertIn("loop_audit", snap)
             self.assertTrue(snap["loop_audit"]["has_any_records"])
+            self.assertTrue(snap["loop_audit"]["file_ok"])
+            self.assertEqual(snap["loop_audit"]["file_issues"], [])
             self.assertEqual(snap["loop_audit"]["runs"]["run-z"],
                              {"closed": True, "result": "APPROVED", "clean": True, "seq_ok": True,
-                              "reviewer_requested": None, "reviewer_actual": None, "degraded": False})
+                              "chain_ok": True, "reviewer_requested": None,
+                              "reviewer_actual": None, "degraded": False})
 
     def test_loop_audit_fail_open_no_sage_dir(self):
         # .sage 부재 → fail-open 빈 요약(snapshot 빌드는 안 깨짐).
         with tempfile.TemporaryDirectory() as root:
             snap = hr.build_snapshot({"risk": {}, "pdca": {}}, root, hr.make_rel(root))
-            self.assertEqual(snap["loop_audit"], {"runs": {}, "has_any_records": False})
+            self.assertEqual(snap["loop_audit"], {
+                "runs": {}, "has_any_records": False, "file_ok": True,
+                "file_issues": [],
+            })
+
+    def test_loop_audit_snapshot_exception_preserves_cause(self):
+        import loop_audit as la
+
+        with tempfile.TemporaryDirectory() as root:
+            with mock.patch.object(la, "audit_summary",
+                                   side_effect=RuntimeError("injected loader failure")):
+                snap = hr.build_snapshot({"risk": {}, "pdca": {}}, root,
+                                         hr.make_rel(root))
+
+        audit = snap["loop_audit"]
+        self.assertFalse(audit["file_ok"])
+        self.assertEqual(audit["file_issues"], [])
+        self.assertEqual(audit["snapshot_error"],
+                         "RuntimeError: injected loader failure")
+
+    def test_real_tampered_audit_snapshot_is_rejected_by_report_gate(self):
+        import json
+        import loop_audit as la
+
+        with tempfile.TemporaryDirectory() as root:
+            rid = la.open_loop(root, "L3", run_id="run-tampered", now=0)
+            la.close_loop(root, rid, result="APPROVED", reason="CONVERGED",
+                          iterations=1, now=1)
+            path = la.audit_path(root)
+            with open(path, encoding="utf-8") as f:
+                records = [json.loads(line) for line in f]
+            records[-1]["result"] = "BLOCKED"
+            with open(path, "w", encoding="utf-8") as f:
+                for record in records:
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+            profile = {"pdca": {
+                "enabled": True,
+                "approve_phase": "05",
+                "report_phase": "06",
+                "approve_marker": "APPROVED",
+                "review_loop": {"enabled": True, "report_gate_enforce": "enforce"},
+                "phases": [
+                    {"id": "05", "glob": "plan_docs/05-expert-review/**/*.md"},
+                    {"id": "06", "glob": "plan_docs/06-report/**/*.md"},
+                ],
+            }}
+            snapshot = hr.build_snapshot(profile, root, hr.make_rel(root))
+            snapshot["phase_docs"] = {"05": [{
+                "path": "plan_docs/05-expert-review/feature.md",
+                "content": ("Cycle-Stem: `feature`\n"
+                            "Final Status: APPROVED\n"
+                            "Loop-Run: run-tampered\n"),
+                "recent": True,
+            }]}
+            event = {
+                "branch": "feat/feature",
+                "changes": [{
+                    "path": "plan_docs/06-report/feature.md",
+                    "op": "write",
+                    "content": "Cycle-Stem: `feature`\n",
+                }],
+            }
+
+            self.assertFalse(snapshot["loop_audit"]["runs"][rid]["chain_ok"])
+            result = pre_gate._audit_gate(event, profile, snapshot)
+            self.assertEqual(result["mode"], "enforce")
+            self.assertFalse(result["ok"])
+            self.assertIn("strict hash-chain", result["detail"])
+
+    def test_real_malformed_audit_line_detail_reaches_report_gate(self):
+        import loop_audit as la
+
+        with tempfile.TemporaryDirectory() as root:
+            rid = la.open_loop(root, "L3", run_id="run-malformed", now=0)
+            la.close_loop(root, rid, result="APPROVED", reason="CONVERGED",
+                          iterations=1, now=1)
+            with open(la.audit_path(root), "a", encoding="utf-8") as f:
+                f.write("42\n")
+
+            profile = {"pdca": {
+                "enabled": True,
+                "approve_phase": "05",
+                "report_phase": "06",
+                "approve_marker": "APPROVED",
+                "review_loop": {"enabled": True, "report_gate_enforce": "enforce"},
+                "phases": [
+                    {"id": "05", "glob": "plan_docs/05-expert-review/**/*.md"},
+                    {"id": "06", "glob": "plan_docs/06-report/**/*.md"},
+                ],
+            }}
+            snapshot = hr.build_snapshot(profile, root, hr.make_rel(root))
+            snapshot["phase_docs"] = {"05": [{
+                "path": "plan_docs/05-expert-review/feature.md",
+                "content": ("Cycle-Stem: `feature`\n"
+                            "Final Status: APPROVED\n"
+                            "Loop-Run: run-malformed\n"),
+                "recent": True,
+            }]}
+            event = {
+                "branch": "feat/feature",
+                "changes": [{
+                    "path": "plan_docs/06-report/feature.md",
+                    "op": "write",
+                    "content": "Cycle-Stem: `feature`\n",
+                }],
+            }
+
+            self.assertFalse(snapshot["loop_audit"]["file_ok"])
+            self.assertEqual(snapshot["loop_audit"]["file_issues"],
+                             ["line 3: record must be an object"])
+            result = pre_gate._audit_gate(event, profile, snapshot)
+            self.assertEqual(result["mode"], "enforce")
+            self.assertFalse(result["ok"])
+            self.assertIn("line 3: record must be an object", result["detail"])
 
     def test_acceptance_waiver_audit_injected_only_when_enabled(self):
         import acceptance_waiver as aw

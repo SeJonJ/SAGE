@@ -8,6 +8,7 @@ import io
 import json
 import os
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -119,6 +120,7 @@ class TestInstall(unittest.TestCase):
 
     def test_install_packages_local_schema_and_ignores_but_does_not_create_local_profile(self):
         with tempfile.TemporaryDirectory() as d:
+            subprocess.run(["git", "init", "-q", d], check=True)
             rc = install.run(Args("claude", d))
 
             self.assertEqual(rc, 0)
@@ -128,6 +130,23 @@ class TestInstall(unittest.TestCase):
             self.assertIn("# >>> SAGE LOCAL PROFILE", ignore)
             self.assertIn("/sage/project-profile.local.yaml", ignore)
             self.assertIn("# <<< SAGE LOCAL PROFILE", ignore)
+            self.assertIn("# >>> SAGE LOCAL STATE", ignore)
+            self.assertIn("/.sage/*", ignore)
+            self.assertIn("!/.sage/loop_audit.jsonl", ignore)
+            self.assertIn("# <<< SAGE LOCAL STATE", ignore)
+
+            sage_dir = Path(d, ".sage")
+            sage_dir.mkdir()
+            (sage_dir / "loop_audit.jsonl.lock").touch()
+            (sage_dir / "loop_audit.jsonl").touch()
+            ignored = subprocess.run(
+                ["git", "-C", d, "check-ignore", "--quiet",
+                 ".sage/loop_audit.jsonl.lock"])
+            committed = subprocess.run(
+                ["git", "-C", d, "check-ignore", "--quiet",
+                 ".sage/loop_audit.jsonl"])
+            self.assertEqual(ignored.returncode, 0)
+            self.assertEqual(committed.returncode, 1)
 
     def test_install_preserves_gitignore_and_managed_block_is_idempotent(self):
         with tempfile.TemporaryDirectory() as d:
@@ -137,6 +156,7 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(install.run(Args("claude", d)), 0)
             first = ignore_path.read_text(encoding="utf-8")
             self.assertEqual(first.count("# >>> SAGE LOCAL PROFILE"), 1)
+            self.assertEqual(first.count("# >>> SAGE LOCAL STATE"), 1)
             self.assertIn("node_modules/\n.env\n", first)
 
             self.assertEqual(install.run(Args("claude", d, force=True)), 0)
@@ -147,6 +167,14 @@ class TestInstall(unittest.TestCase):
         malformed = ("# <<< SAGE LOCAL PROFILE\n"
                      "/sage/project-profile.local.yaml\n"
                      "# >>> SAGE LOCAL PROFILE\n")
+
+        with self.assertRaisesRegex(install._tx.InstallDriftError, "관리 마커가 손상됨"):
+            install._render_local_profile_gitignore(malformed)
+
+    def test_inverted_local_state_gitignore_markers_report_install_drift(self):
+        malformed = ("# <<< SAGE LOCAL STATE\n"
+                     "/.sage/*\n"
+                     "# >>> SAGE LOCAL STATE\n")
 
         with self.assertRaisesRegex(install._tx.InstallDriftError, "관리 마커가 손상됨"):
             install._render_local_profile_gitignore(malformed)

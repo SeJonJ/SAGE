@@ -43,6 +43,16 @@ _LEGACY_SKILL_SIGNATURE = "CORE framework bootstrap asset"
 _LOCAL_PROFILE_IGNORE_START = "# >>> SAGE LOCAL PROFILE"
 _LOCAL_PROFILE_IGNORE_END = "# <<< SAGE LOCAL PROFILE"
 _LOCAL_PROFILE_IGNORE_ENTRY = "/sage/project-profile.local.yaml"
+_LOCAL_STATE_IGNORE_START = "# >>> SAGE LOCAL STATE"
+_LOCAL_STATE_IGNORE_END = "# <<< SAGE LOCAL STATE"
+_LOCAL_STATE_IGNORE_ENTRIES = (
+    "!/.sage/",
+    "/.sage/*",
+    "!/.sage/override.jsonl",
+    "!/.sage/acceptance-waivers.jsonl",
+    "!/.sage/loop_audit.jsonl",
+    "!/.sage/retro_audit.jsonl",
+)
 _CORE_HOOKS = [
     ("capture-declared-risk", "core_adapter"),
     ("post-tool-logger", "core_adapter"),
@@ -117,27 +127,46 @@ def _copy_file(src, dst, force, created, skipped, transaction=None):
            transaction=transaction)
 
 
-def _render_local_profile_gitignore(current):
-    """Preserve user entries while owning one deterministic local-profile block."""
+def _render_gitignore_block(current, start_marker, end_marker, entries, label,
+                            blank_before=True):
+    """Preserve user entries while replacing one deterministic managed block."""
     text = current.replace("\r\n", "\n").replace("\r", "\n")
-    start_count = text.count(_LOCAL_PROFILE_IGNORE_START)
-    end_count = text.count(_LOCAL_PROFILE_IGNORE_END)
+    start_count = text.count(start_marker)
+    end_count = text.count(end_marker)
     if start_count != end_count or start_count > 1:
-        raise _tx.InstallDriftError(".gitignore SAGE LOCAL PROFILE 관리 마커가 손상됨")
-    block = (f"{_LOCAL_PROFILE_IGNORE_START}\n"
-             f"{_LOCAL_PROFILE_IGNORE_ENTRY}\n"
-             f"{_LOCAL_PROFILE_IGNORE_END}\n")
+        raise _tx.InstallDriftError(f".gitignore {label} 관리 마커가 손상됨")
+    block = f"{start_marker}\n" + "\n".join(entries) + f"\n{end_marker}\n"
     if start_count == 1:
-        start = text.index(_LOCAL_PROFILE_IGNORE_START)
-        end_start = text.index(_LOCAL_PROFILE_IGNORE_END)
+        start = text.index(start_marker)
+        end_start = text.index(end_marker)
         if end_start < start:
-            raise _tx.InstallDriftError(".gitignore SAGE LOCAL PROFILE 관리 마커가 손상됨")
-        end = end_start + len(_LOCAL_PROFILE_IGNORE_END)
+            raise _tx.InstallDriftError(f".gitignore {label} 관리 마커가 손상됨")
+        end = end_start + len(end_marker)
         text = text[:start] + block + text[end:].lstrip("\n")
     else:
         text = text.rstrip("\n")
-        text = f"{text}\n\n{block}" if text else block
+        separator = "\n\n" if blank_before else "\n"
+        text = f"{text}{separator}{block}" if text else block
     return text.rstrip("\n") + "\n"
+
+
+def _render_local_profile_gitignore(current):
+    """Install deterministic local-profile and local-state ignore policies."""
+    rendered = _render_gitignore_block(
+        current,
+        _LOCAL_PROFILE_IGNORE_START,
+        _LOCAL_PROFILE_IGNORE_END,
+        (_LOCAL_PROFILE_IGNORE_ENTRY,),
+        "SAGE LOCAL PROFILE",
+    )
+    return _render_gitignore_block(
+        rendered,
+        _LOCAL_STATE_IGNORE_START,
+        _LOCAL_STATE_IGNORE_END,
+        _LOCAL_STATE_IGNORE_ENTRIES,
+        "SAGE LOCAL STATE",
+        blank_before=False,
+    )
 
 
 def _write_local_profile_gitignore(dest, created, skipped, transaction):

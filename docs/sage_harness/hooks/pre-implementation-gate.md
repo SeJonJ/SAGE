@@ -73,21 +73,26 @@ profile.pdca: { enabled, phases[{id,glob}], pre_implementation_required{L1,L2,L3
 ## report←approve audit 게이트 (9.5, profile.pdca.review_loop.report_gate_enforce — F-5)
 review_loop.enabled + report_gate_enforce ∈ {advisory, enforce} 일 때, 마커 검사에 더해 06 작성 시
 `_audit_gate` 가: current `Cycle-Stem`의 05 문서 1개를 exact 선택 → 그 동일 문서에서 APPROVED 마커와
-fenced code block 밖의 정확히 한 개 `Loop-Run: <run_id>` 를 함께 읽고, 주입된 `snapshot.loop_audit.runs[run_id]` 가 다음을 모두 만족하는지 검사:
-clean(open 1회 + close 최대 1회 — 고아 close·중복/재사용 open·close 아님; open-only run 은 clean=True 이며 별도
-`closed` 체크가 거른다) · seq_ok≠False(라운드 seq 연속 — 7차 배치3) · closed · result=APPROVED ·
+fenced code block 밖의 정확히 한 개 `Loop-Run: <run_id>` 를 함께 읽고, 주입된
+`snapshot.loop_audit`와 `runs[run_id]`가 다음을 모두 만족하는지 검사:
+파일 원문 `file_ok≠False` · clean(open 1회 + close 최대 1회 — 고아 close·중복/재사용 open·close 아님;
+open-only run 은 clean=True 이며 별도 `closed` 체크가 거른다) · seq_ok≠False(라운드 seq 연속 —
+7차 배치3) · chain_ok≠False(run별 strict hash-chain) · closed · result=APPROVED ·
 degraded 아님(reviewer 의도=실제 — 7차 배치3). 위반 시 advisory=warn_report_without_audit(exit0) /
 enforce=block_report_without_audit(exit2). report_gate_enforce 기본=advisory(키 부재 시 — 7차 배치3-5,
 루프 켠 프로젝트는 최소 WARN); 명시 off·루프 비활성 → skip(하위호환). loop_audit 주입은 adapter
 (`hook_runtime.build_snapshot` → `loop_audit.audit_summary`)가 담당(core 는 순수). stale 결합 차단: 마커와
 Loop-Run 을 *같은* selected 문서에서 읽는다.
-- **seq sanity(배치3-3)**: `loop_audit` 라이브러리가 open=0·round/close append 순 +1 로 seq 를 stamp →
-  `audit_summary.seq_ok` 가 [0..n-1] 연속을 검산. **seq 를 생략했거나 순서를 틀린** 순진한/우회 수기 append 는
-  seq 불연속(False)으로 탐지·차단되지만, **파일을 읽어 다음 정수를 추측해 맞춰 쓰면 통과한다**.
-  **범위(codex R1b P1·R2 P2)**: 위변조 방지가 아닌 *게으른 우회/순서* 탐지 — 진짜 tamper-resistance 는
-  해시체인(7차 이후 과제).
-  구버전 기록(seq 전무)은 None=skip(하위호환). **레거시+신규 혼합**(같은 run_id 에 seq 없는 구레코드 +
-  seq 있는 신규)은 의도적으로 False — 그 run 이력은 더 이상 신뢰 불가하므로 차단/경고(codex R1b P2, intentional).
+- **seq + strict hash-chain(10-g)**: writer는 OS 소유 프로세스 락 안에서 `seq`와 run별 `prev_hash`,
+  `record_hash`를 계산하고 한 줄 append합니다. `audit_summary.seq_ok`는 [0..n-1] 연속성을,
+  `chain_ok`는 immediate predecessor와 각 레코드의 canonical SHA-256 self-hash를 검산합니다.
+  손상 JSON·비-object 줄은 skip하지 않고 파일 전체 `file_ok=False`로 표면화합니다. 구버전 run은
+  `chain_ok=None`으로 하위호환하며 첫 신규 레코드부터 legacy 직전 레코드에 연결합니다. hash를 다시 계산하지
+  않은 수정·삽입·중간 삭제·재정렬은 v1 필드가 남아 있는 동안 탐지하지만, 전체 파일과 체인을 재계산하는
+  공격자를 인증하지는 않습니다. 또한 run 전체의 세 체인 필드를 모두 제거하면 정당한 legacy run과 구분할
+  외부 provenance가 없어 `chain_ok=None` 경계가 됩니다. 이 범위를 닫으려면 별도 artifact의 tip·Git
+  기준선·서명 head·외부 witness가 필요합니다. 원문 문제는 `file_issues`, runtime/module 요약 실패는
+  `snapshot_error`로 구분해 게이트가 실제 원인을 안내합니다.
 - **reviewer degraded(배치3-4)**: open 의 reviewer_requested 가 명시됐는데 close 의 reviewer_actual 이
   *다르거나 기록 안 됨*(closed run 한정)이면 degraded → cross-model 요청이 same-runtime 으로 폴백/미확인된
   정황을 침묵 통과시키지 않음(codex R1b P1: actual 미기록도 fail-closed). reviewer_actual 자동 기록은 배치2
@@ -134,5 +139,5 @@ core 는 판단하지 않고 04 의 구조화된 상태(PASS/FAIL/NOT TESTED/N/A
 scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py
 - classify(L0~L3/escalation/desktop/declared/case-insensitive) + decide(분기) + 전략 후보 2종(인라인플래그/무효패턴 포함)
   + PDCA 강제(의무 phase block/통과/L3 review 보존/report 게이트/비활성 하위호환) + adapter(L3 block·L1 pass)
-  + audit 게이트 seq_ok/degraded 분기 + report_gate_enforce 기본 advisory(7차 배치3)
+  + audit 게이트 file_ok/seq_ok/chain_ok/degraded 분기 + report_gate_enforce 기본 advisory(7차 배치3, 10-g)
   + acceptance evidence 게이트(matrix↔evidence 대조/미해결 block·warn/risk 미해당 skip)

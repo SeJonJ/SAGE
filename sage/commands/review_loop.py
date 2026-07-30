@@ -149,6 +149,15 @@ def _is_closed(la, root, run_id):
     return la.close_of(root, run_id) is not None
 
 
+def _write_audit(la, operation):
+    """Convert fail-closed audit writer failures into the CLI's blocking contract."""
+    try:
+        return operation()
+    except (la.AuditWriteError, OSError) as exc:
+        print(f"[sage review-loop] audit write failed — 기록하지 않음: {exc}", file=sys.stderr)
+        return None
+
+
 def _run_open(args):
     la = _load_loop_audit()
     root = _root(args)
@@ -159,8 +168,14 @@ def _run_open(args):
     if args.run_id and _is_open(la, root, args.run_id):
         print(f"[sage review-loop] run_id '{args.run_id}' 이미 open 됨 — 중복 open 거부(integrity)", file=sys.stderr)
         return 2
-    rid = la.open_loop(root, args.risk, cfg=_cfg_snapshot(root, profile), run_id=args.run_id,
-                       reviewer_requested=args.reviewer_requested)
+    rid = _write_audit(
+        la,
+        lambda: la.open_loop(root, args.risk, cfg=_cfg_snapshot(root, profile),
+                             run_id=args.run_id,
+                             reviewer_requested=args.reviewer_requested),
+    )
+    if rid is None:
+        return 2
     print(rid)   # stdout = run_id 만(스킬이 캡처해 후속 round/close 에 전달)
     print(f"[sage review-loop] open run_id={rid} risk={args.risk} → {la.audit_path(root)}", file=sys.stderr)
     return 0
@@ -187,8 +202,14 @@ def _run_round(args):
     if args.arch > args.survived:
         print(f"[sage review-loop] arch({args.arch}) > survived({args.survived}) 불가(아키텍처는 생존 중 분류)", file=sys.stderr)
         return 2
-    la.record_round(root, args.run_id, args.iteration, args.found, args.survived,
-                    args.accepted, arch=args.arch, tokens=args.tokens)
+    written = _write_audit(
+        la,
+        lambda: la.record_round(root, args.run_id, args.iteration, args.found,
+                                args.survived, args.accepted, arch=args.arch,
+                                tokens=args.tokens),
+    )
+    if written is None:
+        return 2
     print(f"[sage review-loop] round {args.iteration} run_id={args.run_id} "
           f"found={args.found} survived={args.survived} accepted={args.accepted} arch={args.arch}", file=sys.stderr)
     return 0
@@ -310,8 +331,14 @@ def _run_close(args):
         print("[sage review-loop] (advisory — 기록은 진행. profile 의 review_loop.termination_enforce=enforce 로 강제 가능)",
               file=sys.stderr)
 
-    la.close_loop(root, args.run_id, args.result, args.reason, args.iterations,
-                  reviewer_actual=args.reviewer_actual)
+    written = _write_audit(
+        la,
+        lambda: la.close_loop(root, args.run_id, args.result, args.reason,
+                              args.iterations,
+                              reviewer_actual=args.reviewer_actual),
+    )
+    if written is None:
+        return 2
     print(f"[sage review-loop] close run_id={args.run_id} {args.result}/{args.reason} iterations={args.iterations}", file=sys.stderr)
     _auto_write_vault_dashboard(la, root)
     return 0

@@ -11,13 +11,13 @@
   EH-2: `output_contract_check.py` `_DEFAULT_MARKERS` 중립화 + 주입 파라미터, 코드 상 실재)
 - **EH-6 완료 확인**: SAGE-FB-05로 global/project-local 명시 선택, receipt, duplicate 진단, onboarding,
   transaction rollback, shared global lock까지 구현·검증했다.
-- **완료 1건 + 개발중 1건 + 보류 1건**:
+- **완료 2건 + 보류 1건**:
   1. **EH-5 → 로드맵 §10-c 완료** — `_cycle_risk` 의 선언값 `max()`는 2026-07-18 하드닝에서 이미
      구현됐다. 남은 실제 결함은 Phase 00 선언 미기입 통과와, 현재 변경의 글롭/내용 감지 tier가 Phase 00보다 높아도
      durable tier 상향을 강제하지 않는 점이었다. 별도 ledger 없이 pre-write에서 Phase 00 선행 상향을
      강제하는 방식으로 구현했다.
-  2. **EH-3 → 로드맵 §10-g 개발중** — `loop_audit` run별 strict chain을 중심으로 report gate,
-     CLI 오류 계약, hook manifest까지 함께 변경한다. 나머지 감사 3종은 EH-8로 분리했다.
+  2. **EH-3 → 로드맵 §10-g 완료** — `loop_audit` run별 strict chain을 중심으로 report gate,
+     CLI 오류 계약, hook manifest까지 함께 변경했다. 나머지 감사 3종은 EH-8로 분리했다.
   3. **EH-4** — sage-review·PostToolUse·Stop 게이트·profile_validate 다수 컴포넌트 동시 변경(대공사). 남은 우회가
      "과거 checked run_id 정확 복붙"뿐인 좁은 구멍이라 실이익 대비 비용 최대 — 트리거 충족 전 보류 유지.
 
@@ -73,9 +73,12 @@
 - **트리거**: Git 이력 대조 전에도 Loop A 레코드의 우발적·단순 소급 변경을 기계적으로 판별하고,
   손상된 run이 report gate의 승인 증거로 쓰이지 않게 할 필요가 생길 때. 적대적 host나 규제 수준 보장은
   서명·외부 witness가 필요한 별도 범위다.
-- **상태**: 🚧 **로드맵 §10-g 설계 승인·개발 착수(2026-07-30)**. 정본 설계:
-  `plan_docs/00-base_plan/sage-loop-audit-strict-hash-chain.md`. 해시 전체를 재계산할 수 있는 적대적 편집자에
-  대한 tamper-resistance는 제공하지 않으며, Git 이력은 외부 검토 앵커로 남는다.
+- **상태**: ✅ **로드맵 §10-g 완료(2026-07-30, v0.9.75)**. 정본 설계:
+  `plan_docs/00-base_plan/sage-loop-audit-strict-hash-chain.md`. run별 strict chain, OS 소유 lock,
+  손상 줄 fail-closed, terminal-newline 없는 정상 JSONL append 복구, 실제 report gate 배선과 회귀 테스트를
+  구현했다. 교차 리뷰 2라운드에서 나온 개행 결합 결함은 단일 write separator로 닫고 회귀로 박제했으며,
+  run 전체 체인 필드 제거 downgrade는 레코드 밖 provenance가 필요한 범위 밖 경계로 설계·문서·테스트에
+  명시했다. 해시 전체 재계산에 대한 tamper-resistance는 제공하지 않으며, Git 이력은 외부 검토 앵커로 남는다.
 
 ---
 
@@ -189,7 +192,9 @@
 - **문제**: acceptance waiver는 report 예외 권한의 정본이고 별도 `flock`·secure-open 하드닝을 갖는다.
   retro audit은 Stop gate 증거지만 읽기 실패의 fail-open/reporting 경계가 있다. override audit은 사후 추적용이며
   실제 활성 권한은 저장소 밖 grant store가 결정한다. 동일한 `prev_hash` 필드만 추가하면 검증되지 않는 해시를
-  보안 기능처럼 보이게 하거나 기존 권한/복구 계약을 깨뜨릴 수 있다.
+  보안 기능처럼 보이게 하거나 기존 권한/복구 계약을 깨뜨릴 수 있다. 세 writer 모두 terminal newline 없는
+  정상 JSONL 뒤에 구분자 없이 append해 레코드를 합치는 기존 결함도 있으므로, 로그별 실패 정책을 보존하면서
+  같은 단일-write separator 회귀를 각각 닫아야 한다.
 - **접근**: 로그별 위협모델과 소비 정책을 먼저 고정한다. acceptance는 chain 오류 시 권한 판정을 fail-closed,
   retro는 Stop/doctor의 BLOCK·WARN·unreadable 계약을 명시, override는 권한 store와 감사 trail의 책임을
   분리한 채 CLI/doctor에서 무결성을 표면화한다. 공통화는 canonical hash 같은 순수 primitive에 한정하고 각

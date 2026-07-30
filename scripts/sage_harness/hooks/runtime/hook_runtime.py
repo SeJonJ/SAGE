@@ -152,8 +152,16 @@ def build_snapshot(profile, root, rel):
     try:
         import loop_audit
         la = loop_audit.audit_summary(root)
-    except Exception:
-        la = {"runs": {}, "has_any_records": False}
+    except Exception as exc:
+        # 파일을 읽어 요약하지 못한 상태를 "정상적으로 빈 로그"와 구분한다. 선택 run도 사라지므로
+        # 기존 gate가 닫히지만, 원문 파싱 실패와 adapter/module 실패의 원인은 구분한다(10-g).
+        la = {
+            "runs": {},
+            "has_any_records": False,
+            "file_ok": False,
+            "file_issues": [],
+            "snapshot_error": f"{type(exc).__name__}: {exc}",
+        }
     acceptance = ((profile.get("verification") or {}).get("acceptance") or {})
     waiver_cfg = acceptance.get("waiver") if isinstance(acceptance, dict) else {}
     if isinstance(waiver_cfg, dict) and waiver_cfg.get("enabled") is True:

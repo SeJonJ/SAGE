@@ -133,6 +133,43 @@ class TestReviewLoopCli(unittest.TestCase):
         self.assertIn("project-profile.local.yaml", r.stderr)
         self.assertFalse(os.path.exists(os.path.join(self.tmp, ".sage", "loop_audit.jsonl")))
 
+    def _corrupt_audit(self):
+        path = os.path.join(self.tmp, ".sage", "loop_audit.jsonl")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "ab") as f:
+            f.write(b'{"partial":')
+
+    def test_open_audit_write_failure_is_exit_2_without_traceback(self):
+        self._corrupt_audit()
+
+        r = sage("open", "--risk", "L3", root=self.tmp)
+
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("audit write failed", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+
+    def test_round_audit_write_failure_is_exit_2_without_traceback(self):
+        rid = self._open()
+        self._corrupt_audit()
+
+        r = sage("round", "--run-id", rid, "--iteration", "1", "--found", "1",
+                 "--survived", "0", "--accepted", "0", root=self.tmp)
+
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("audit write failed", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+
+    def test_close_audit_write_failure_is_exit_2_without_traceback(self):
+        rid = self._open()
+        self._corrupt_audit()
+
+        r = sage("close", "--run-id", rid, "--result", "BLOCKED", "--reason", "BUDGET_ITER",
+                 "--iterations", "1", root=self.tmp)
+
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("audit write failed", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+
     # --- codex S3 후속: CLI 가 integrity 를 write 시점에 강제 ---
     def test_round_orphan_run_id_rejected(self):
         # open 없는 run_id 의 round → exit 2(orphan 차단).
@@ -308,16 +345,20 @@ class TestTerminationEnforcement(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("BUDGET_ITER", r.stderr)
 
-    def test_enforce_degrades_on_integrity_warning(self):
-        # P1: audit 무결성 경고(손상 줄) 있으면 enforce 라도 advisory 로 degrade → 불일치여도 진행.
+    def test_enforce_refuses_close_on_integrity_warning(self):
+        # 손상 줄을 skip하고 append하면 삽입 탐지가 무력화되므로 close 자체를 거부한다.
         self._profile("enforce")
         rid = self._open_round(survived=2)   # APPROVED 와 모순될 상태
-        with open(os.path.join(self.tmp, ".sage", "loop_audit.jsonl"), "a", encoding="utf-8") as f:
+        path = os.path.join(self.tmp, ".sage", "loop_audit.jsonl")
+        with open(path, "a", encoding="utf-8") as f:
             f.write("{ corrupt line\n")   # 무결성 경고 유발
+        before = open(path, "rb").read()
         r = sage("close", "--run-id", rid, "--result", "APPROVED", "--reason", "CONVERGED",
                  "--iterations", "1", root=self.tmp)
-        self.assertEqual(r.returncode, 0, r.stderr)   # degrade → 진행
-        self.assertIn("degrade", r.stderr)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("audit write failed", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertEqual(open(path, "rb").read(), before)
 
     def test_missing_budget_cfg_skip_warn(self):
         # P2: budget 미설정인데 APPROVED → 예산 검산 skip + WARN(차단 안 함).

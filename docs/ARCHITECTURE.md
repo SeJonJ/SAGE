@@ -40,16 +40,21 @@ profile 로드 · L3 전략 로드 경로.
 - 단일 모델 편향 — cross-model 리뷰로 반대 런타임이 독립 리뷰
 - 게이트 침묵 비활성 — profile 오타·미지 키(게이트를 조용히 끄는 원인)를 `sage validate`가 fail-closed로 적발. 이는 **검증 시점**의 fail-closed이며, **런타임**의 profile *파싱* 실패는 위 표대로 fail-open + LOUD로 — 서로 다른 층이다
 - 06←05 우회 — 완료 보고를 APPROVED된 리뷰에 결정론으로 묶음
-- 루프 라운드의 게으른 우회 — 라운드 기록의 seq 연속성 검산
+- Loop A 감사 증거의 비재해시 수정·삽입·중간 삭제·재정렬 — run별 strict hash-chain,
+  레코드 self-hash, 파일 파싱 무결성을 실제 report gate가 검산
 
 **막지 않는 것 (설계상 범위 밖)**
 - **완전히 장악된 host runtime** — SAGE는 host가 규칙대로 CLI/스킬을 호출한다고 가정합니다.
   악의적으로 조작된 runtime 자체는 방어 대상이 아닙니다.
-- **loop_audit 위변조** — `scripts/sage_harness/hooks/runtime/loop_audit.py`의 seq 연속성 검사는 *수기 append·순서
-  뒤바뀜·누락* 같은 **게으른 우회(anti-lazy-bypass)** 를 잡는 **sanity 검사**입니다.
-  seq = 기록된 레코드 수이므로, 파일을 읽어 다음 정수를 추측해 append 하면 통과합니다.
-  진짜 **위변조 내성(tamper-resistance)은 해시체인**이며, 향후 하드닝 과제로 남아 있습니다
-  (로드맵: `plan_docs/enhancement-backlog.md` EH-3).
+- **완전 재계산 또는 legacy로 강등한 loop_audit 재작성** — run별 strict hash-chain은 키 순서와 Unicode
+  표현을 고정한 canonical SHA-256으로 각 레코드와 직전 run 레코드를 self-verify합니다. v1 체인 필드가
+  하나라도 남은 run에서는 hash를 다시 계산하지 않은 수정·삽입·중간 삭제·재정렬을 탐지하지만, 파일과 체인을
+  재계산할 수 있는 공격자를 인증하지는 않습니다. 또한 하위호환을 위해 체인 필드가 전혀 없는 run을
+  legacy(`chain_ok=None`)로 허용하므로, run 전체에서 세 체인 필드를 모두 제거한 downgrade는 정당한 legacy
+  run과 구분할 수 없습니다. 비밀 키·서명된 head·별도 artifact의 tip·Git 기준선·외부 witness가 없으므로
+  독립적인 tamper-resistance가 아니라 **자체 무결성 검증(self-verification)** 입니다. tip 수정은
+  self-hash로 탐지하고, 최종 close 삭제는 report gate의 `closed` 불변식으로 차단하며, 완전 재계산·전체
+  필드 제거 재작성의 외부 앵커는 Git 이력과 코드 리뷰입니다.
 
 경계를 넘는 위협(장악된 runtime, 감사 로그 위변조)은 결정론 게이트가 아니라
 cross-model 리뷰·사람 승인 같은 상위 절차가 완화합니다. 결정론 게이트는 "정직한 host의

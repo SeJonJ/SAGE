@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARCHITECTURE.md sha256:7333189fae8c632ce7f4023ba197da2fb7d7aa7ae70ccb9ad1401c0977382b20 -->
+<!-- sage-doc-source: ARCHITECTURE.md sha256:a436183cfcaef6efa83a3bc0c81f2907c616164b99fcf7713d250c9139f7b264 -->
 # SAGE Architecture
 
 [한국어](ARCHITECTURE.md) | [Documentation index](README.en.md)
@@ -47,18 +47,25 @@ paths.
   silently disable gates. This is validation-time fail-closed behavior. Runtime profile *parsing*
   failures are a separate layer and remain fail-open with a LOUD warning, as described above.
 - Phase 06 bypassing Phase 05: completion reports are deterministically bound to an APPROVED review.
-- Lazy review-loop bypasses: the audit validates contiguous round sequence numbers.
+- Unrehashed mutation, insertion, non-tail deletion, or reordering of Loop A evidence: the real
+  report gate validates per-run strict hash chains, record self-hashes, and file parse integrity.
 
 **SAGE does not block by design**
 
 - **A fully compromised host runtime**: SAGE assumes the host invokes CLI commands and skills
   according to their contracts. A maliciously modified runtime is outside the threat model.
-- **Tampering with `loop_audit`**: sequence continuity in
-  `scripts/sage_harness/hooks/runtime/loop_audit.py` detects **lazy bypasses** such as manual appends,
-  reordered records, and omissions. It is a sanity check, not tamper resistance. Because `seq`
-  equals the number of existing records, an editor can inspect the file and append the next integer.
-  True tamper resistance requires a hash chain and remains a future hardening task
-  (`plan_docs/enhancement-backlog.md`, EH-3).
+- **A fully recomputed or legacy-downgraded rewrite of `loop_audit`**: the strict per-run hash chain
+  uses canonical SHA-256 with fixed key ordering and Unicode representation to self-verify each
+  record and its immediate predecessor. While any v1 chain field remains in a run, it detects
+  mutation, insertion, non-tail deletion, and reordering when hashes are not recomputed. It does not
+  authenticate the file against an attacker who can recalculate the chain. Legacy compatibility
+  also accepts a run with no chain fields as `chain_ok=None`, so removing all three chain fields
+  from every record in a run is indistinguishable from legitimate legacy data. Without a secret
+  key, signed head, a tip in another artifact, a Git baseline, or an external witness, this is
+  **self-verification**, not standalone tamper resistance. A tip edit is detected by the record
+  self-hash, deletion of the final close is rejected by the report gate's `closed` invariant, and
+  Git history plus code review remain the external anchor for fully recomputed or downgraded
+  rewrites.
 
 Threats beyond this boundary, such as a compromised runtime or audit-log tampering, are mitigated by
 higher-level procedures such as cross-model review and human approval. Deterministic gates prevent

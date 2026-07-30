@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARTIFACTS.md sha256:2b0e1ea86a0c0eea15d7787bc9a8b9e9ea31021ee024383a28f27b644f5e31f3 -->
+<!-- sage-doc-source: ARTIFACTS.md sha256:83368ca4db7d3304e0df3e50a8efb485f6d70095020f77b67cc198738dd7490c -->
 # SAGE Artifact Map
 
 [한국어](ARTIFACTS.md) | [Documentation index](README.en.md)
@@ -64,7 +64,8 @@ The tracking policy is **exclude by default and explicitly include only audit tr
 |---|:---:|---|---|
 | `.sage/plan_interview.md` | Local | Planning-interview output. In the first `sage-plan` or `sage-cycle` process, the leader records platform, feature, data/API, constraints, and completion criteria, then uses them to write PDCA 00 (CONTEXT) and 01 (CONTENT) | Output contract `templates/core/framework/docs/agent/plan-interview.md`; consumer `sage-plan/SKILL.md` |
 | `.sage/knowledge_scan.md` | Local | Pre-development report of related prior knowledge found in the Obsidian vault; an input to PDCA 00 | `sage/commands/knowledge.py:228`, `_write_scan_report(root, ...)` |
-| `.sage/loop_audit.jsonl` | **Commit** | Source of truth for Loop A adversarial Phase 05 review rounds. Open, round, and close events are appended and sequence integrity is validated. The vault dashboard is a derived view | `sage/commands/review_loop.py:8`, `:472` |
+| `.sage/loop_audit.jsonl` | **Commit** | Source of truth for Loop A adversarial Phase 05 review rounds. Open, round, and close events are appended, and the per-run strict hash chain plus sequence integrity are validated. The vault dashboard is a derived view | `sage/commands/review_loop.py`, `scripts/sage_harness/hooks/runtime/loop_audit.py` |
+| `.sage/loop_audit.jsonl.lock` | Local | OS-owned process-lock sidecar for the Loop Audit writer. The `SAGE LOCAL STATE` gitignore block installed by SAGE excludes it; a file left after process exit is neither authority nor audit evidence | `loop_audit._audit_lock`, `sage.commands.install._render_local_profile_gitignore` |
 | `.sage/retro_audit.jsonl` | **Commit** | Append-only evidence that Loop C (`sage retro --check`) succeeded. Each passing check records `{run_id, note_path, digest, ts}`. The Stop hook's `retro_gate` policy uses it to verify that the cycle actually passed. With `pdca.retro.report_gate_enforce` off, the event is recorded without enforcement | `sage/commands/retro.py::_check_note` to `scripts/sage_harness/hooks/runtime/retro_audit.py` |
 | `.sage/override.jsonl` | **Commit** | Append-only audit log for temporary gate bypasses from `sage override`; records reason and TTL, with automatic expiration | `sage/commands/override.py:6` |
 | `.sage/acceptance-waivers.jsonl` | **Commit** | Explicit `NOT TESTED` waivers for exact L3 cycle and required acceptance IDs. Grant, use, and revoke events include reason, scope, remaining evidence, and confirmer. Malformed, duplicate, and conflicting records fail closed | `sage/commands/acceptance_waiver.py` to `scripts/sage_harness/hooks/runtime/acceptance_waiver.py` |

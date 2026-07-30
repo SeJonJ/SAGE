@@ -5,15 +5,20 @@
   1. open_loop → run_id 발급 + loop_open 레코드(risk/cfg)
   2. record_round → round 레코드(found/survived/accepted/arch/tokens)
   3. close_loop → loop_close 레코드(result/reason/iterations)
-  4. append-only: 다회 open/round/close 가 누적, run_id 별 격리
-  5. 견고성: 손상 줄 skip, 부재 파일 → []
-  6. 경로: .sage/loop_audit.jsonl (커밋 대상)
+  4. strict run별 hash-chain: self-hash, immediate predecessor, legacy 전환
+  5. 동시성: OS 소유 lock 안에서 seq/hash stamp, short append rollback
+  6. 견고성: 손상 줄 file_ok=False + 후속 쓰기 거부, 부재 파일 → []
+  7. 경로: .sage/loop_audit.jsonl (커밋 대상)
 """
 import json
 import os
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from copy import deepcopy
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNTIME = os.path.join(os.path.dirname(HERE), "runtime")
@@ -61,7 +66,10 @@ class TestLoopAudit(unittest.TestCase):
 
     def test_audit_summary_empty(self):
         s = la.audit_summary(self.tmp)
-        self.assertEqual(s, {"runs": {}, "has_any_records": False})
+        self.assertEqual(s, {
+            "runs": {}, "has_any_records": False, "file_ok": True,
+            "file_issues": [],
+        })
 
     def test_audit_summary_open_then_closed(self):
         r1 = la.open_loop(self.tmp, "L3", run_id="run-a", now=0)
@@ -70,17 +78,17 @@ class TestLoopAudit(unittest.TestCase):
         s = la.audit_summary(self.tmp)
         self.assertTrue(s["has_any_records"])
         self.assertEqual(s["runs"]["run-a"], {"closed": True, "result": "APPROVED", "clean": True,
-                                              "seq_ok": True, "reviewer_requested": None,
+                                              "seq_ok": True, "chain_ok": True, "reviewer_requested": None,
                                               "reviewer_actual": None, "degraded": False})
         self.assertEqual(s["runs"]["run-b"], {"closed": False, "result": None, "clean": True,
-                                              "seq_ok": True, "reviewer_requested": None,
+                                              "seq_ok": True, "chain_ok": True, "reviewer_requested": None,
                                               "reviewer_actual": None, "degraded": False})
 
     def test_audit_summary_blocked_result(self):
         r = la.open_loop(self.tmp, "L3", run_id="run-x", now=0)
         la.close_loop(self.tmp, r, result="BLOCKED", reason="BUDGET_ITER", iterations=3, now=1)
         self.assertEqual(la.audit_summary(self.tmp)["runs"]["run-x"],
-                         {"closed": True, "result": "BLOCKED", "clean": True, "seq_ok": True,
+                         {"closed": True, "result": "BLOCKED", "clean": True, "seq_ok": True, "chain_ok": True,
                           "reviewer_requested": None, "reviewer_actual": None, "degraded": False})
 
     def test_audit_summary_reused_run_id_not_clean(self):
@@ -121,14 +129,18 @@ class TestLoopAudit(unittest.TestCase):
         la.close_loop(self.tmp, rid, "BLOCKED", "BLOCKED_ARCH", 1, now=2)
         self.assertEqual(la.close_of(self.tmp, rid)["reason"], "BLOCKED_ARCH")
 
-    def test_corrupt_line_skipped(self):
+    def test_corrupt_line_is_file_invalid_and_refuses_later_append(self):
         rid = la.open_loop(self.tmp, "L3", now=0)
         with open(la.audit_path(self.tmp), "a", encoding="utf-8") as f:
             f.write("{ this is not valid json\n")
             f.write("\n")   # 빈 줄
-        la.record_round(self.tmp, rid, 1, 1, 1, 1, 0, 10, now=1)
-        recs = la.read_records(self.tmp)   # 손상 줄·빈 줄 skip, 유효 2건만
-        self.assertEqual([r["event"] for r in recs], ["loop_open", "round"])
+        summary = la.audit_summary(self.tmp)
+        self.assertFalse(summary["file_ok"])
+        self.assertIn("malformed JSON", summary["file_issues"][0])
+        with self.assertRaises(la.AuditWriteError):
+            la.record_round(self.tmp, rid, 1, 1, 1, 1, 0, 10, now=1)
+        recs = la.read_records(self.tmp)   # 조회는 견고하게 유효 dict만 반환하되 권한 판정은 file_ok로 닫는다.
+        self.assertEqual([r["event"] for r in recs], ["loop_open"])
 
     def test_missing_file_empty(self):
         self.assertEqual(la.read_records(self.tmp), [])
@@ -140,15 +152,17 @@ class TestLoopAudit(unittest.TestCase):
         self.assertEqual(la.read_records(self.tmp)[0]["cfg"]["note"], "보안 렌즈 검토")
 
     # --- codex S2 후속: valid-but-non-dict 줄이 소비자 .get() 크래시 안 내게 skip ---
-    def test_valid_nondict_json_skipped_no_crash(self):
+    def test_valid_nondict_json_is_file_invalid_without_consumer_crash(self):
         rid = la.open_loop(self.tmp, "L3", now=0)
         with open(la.audit_path(self.tmp), "a", encoding="utf-8") as f:
             f.write("42\n[]\n\"junk\"\nnull\n")   # 전부 valid JSON 이지만 비-dict
-        la.record_round(self.tmp, rid, 1, 1, 1, 1, 0, 10, now=1)
-        recs = la.read_records(self.tmp)   # dict 만 남음
-        self.assertEqual([r["event"] for r in recs], ["loop_open", "round"])
+        self.assertFalse(la.audit_summary(self.tmp)["file_ok"])
+        with self.assertRaises(la.AuditWriteError):
+            la.record_round(self.tmp, rid, 1, 1, 1, 1, 0, 10, now=1)
+        recs = la.read_records(self.tmp)   # dict만 남겨 조회 consumer는 크래시하지 않는다.
+        self.assertEqual([r["event"] for r in recs], ["loop_open"])
         # 소비자 헬퍼가 비-dict 줄에도 크래시하지 않음
-        self.assertEqual(len(la.rounds_of(self.tmp, rid)), 1)
+        self.assertEqual(len(la.rounds_of(self.tmp, rid)), 0)
         self.assertEqual(la.runs(self.tmp), [rid])
         self.assertIsNone(la.close_of(self.tmp, rid))
 
@@ -203,9 +217,11 @@ class TestLoopAudit(unittest.TestCase):
         with open(la.audit_path(self.tmp), "a", encoding="utf-8") as f:
             f.write(json.dumps({"event": "round", "run_id": "rl-forge", "iteration": 1,
                                 "found": 9, "survived": 9, "accepted": 9}) + "\n")   # seq 누락
-        la.close_loop(self.tmp, "rl-forge", "APPROVED", "CONVERGED", 1, now=2)
+        with self.assertRaises(la.AuditWriteError):
+            la.close_loop(self.tmp, "rl-forge", "APPROVED", "CONVERGED", 1, now=2)
         run = la.audit_summary(self.tmp)["runs"]["rl-forge"]
         self.assertFalse(run["seq_ok"])
+        self.assertFalse(run["chain_ok"])
         self.assertTrue(any("시퀀스" in i and "rl-forge" in i for i in la.integrity_issues(self.tmp)))
 
     def test_seq_legacy_no_seq_skips(self):
@@ -218,6 +234,7 @@ class TestLoopAudit(unittest.TestCase):
                                 "reason": "CONVERGED", "iterations": 1}) + "\n")
         run = la.audit_summary(self.tmp)["runs"]["rl-old"]
         self.assertIsNone(run["seq_ok"])
+        self.assertIsNone(run["chain_ok"])
         self.assertEqual(la.integrity_issues(self.tmp), [])
 
     # --- 7차 배치3: reviewer degraded (cross-model 폴백 침묵 차단) ---
@@ -241,6 +258,166 @@ class TestLoopAudit(unittest.TestCase):
         rid = la.open_loop(self.tmp, "L3", run_id="rl-z", now=0)
         la.close_loop(self.tmp, "rl-z", "APPROVED", "CONVERGED", 1, now=1)
         self.assertFalse(la.audit_summary(self.tmp)["runs"]["rl-z"]["degraded"])
+
+
+class TestStrictHashChain(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def _cycle(self, run_id="rl-chain"):
+        la.open_loop(self.tmp, "L3", run_id=run_id, now=0)
+        la.record_round(self.tmp, run_id, 1, 2, 1, 1, 0, 10, now=1)
+        la.close_loop(self.tmp, run_id, "APPROVED", "CONVERGED", 1, now=2)
+        return la.read_records(self.tmp)
+
+    def test_record_hash_is_canonical_and_covers_prev_hash(self):
+        left = {"event": "round", "run_id": "r", "prev_hash": "a", "note": "보안"}
+        right = {"note": "보안", "prev_hash": "a", "run_id": "r", "event": "round"}
+        self.assertEqual(la._record_hash(left), la._record_hash(right))
+        changed = dict(left, prev_hash="b")
+        self.assertNotEqual(la._record_hash(left), la._record_hash(changed))
+
+    def test_new_run_forms_one_strict_chain_and_self_verifies_tip(self):
+        records = self._cycle()
+        self.assertEqual([r["chain_version"] for r in records], [1, 1, 1])
+        self.assertEqual(records[0]["prev_hash"], la.GENESIS)
+        self.assertEqual(records[1]["prev_hash"], records[0]["record_hash"])
+        self.assertEqual(records[2]["prev_hash"], records[1]["record_hash"])
+        self.assertTrue(la._chain_states(records)["rl-chain"])
+        self.assertTrue(la.audit_summary(self.tmp)["runs"]["rl-chain"]["chain_ok"])
+
+    def test_modifying_open_middle_or_final_close_is_detected(self):
+        records = self._cycle()
+        for index, field, value in ((0, "risk", "L2"), (1, "found", 99),
+                                    (2, "result", "BLOCKED")):
+            changed = deepcopy(records)
+            changed[index][field] = value
+            self.assertFalse(la._chain_states(changed)["rl-chain"], (index, field))
+
+    def test_insert_delete_and_reorder_are_detected(self):
+        records = self._cycle()
+        inserted = deepcopy(records)
+        inserted.insert(1, dict(inserted[0]))
+        self.assertFalse(la._chain_states(inserted)["rl-chain"])
+        self.assertFalse(la._chain_states([records[0], records[2]])["rl-chain"])
+        self.assertFalse(la._chain_states([records[1], records[0], records[2]])["rl-chain"])
+
+    def test_stale_same_predecessor_sibling_is_rejected(self):
+        records = self._cycle()
+        sibling = deepcopy(records[1])
+        sibling["iteration"] = 2
+        sibling["record_hash"] = la._record_hash(sibling)
+        self.assertFalse(la._chain_states([records[0], records[1], sibling])["rl-chain"])
+
+    def test_interleaved_runs_have_independent_strict_chains(self):
+        la.open_loop(self.tmp, "L3", run_id="run-a", now=0)
+        la.open_loop(self.tmp, "L2", run_id="run-b", now=1)
+        la.record_round(self.tmp, "run-a", 1, 1, 0, 0, 0, 1, now=2)
+        la.record_round(self.tmp, "run-b", 1, 1, 0, 0, 0, 1, now=3)
+        states = la._chain_states(la.read_records(self.tmp))
+        self.assertEqual(states, {"run-a": True, "run-b": True})
+
+    def test_legacy_only_is_none_and_first_v1_links_to_legacy_tip(self):
+        path = la.audit_path(self.tmp)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        legacy = {"event": "loop_open", "run_id": "rl-old", "risk": "L3", "seq": 0}
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(json.dumps(legacy) + "\n")
+        self.assertIsNone(la._chain_states([legacy])["rl-old"])
+        la.record_round(self.tmp, "rl-old", 1, 1, 0, 0, 0, 1, now=1)
+        records = la.read_records(self.tmp)
+        self.assertEqual(records[1]["prev_hash"], la._record_hash(legacy))
+        self.assertTrue(la._chain_states(records)["rl-old"])
+
+    def test_unstamped_or_partial_record_after_chain_start_is_invalid(self):
+        records = self._cycle()
+        unstamped = {"event": "round", "run_id": "rl-chain", "seq": 3}
+        partial = dict(unstamped, chain_version=1, prev_hash=records[-1]["record_hash"])
+        self.assertFalse(la._chain_states(records + [unstamped])["rl-chain"])
+        self.assertFalse(la._chain_states(records + [partial])["rl-chain"])
+
+    def test_removing_every_chain_field_is_an_explicit_legacy_downgrade_boundary(self):
+        records = self._cycle()
+        stripped = deepcopy(records)
+        for record in stripped:
+            for field in ("chain_version", "prev_hash", "record_hash"):
+                record.pop(field)
+
+        # With no external provenance anchor, this is byte-for-byte
+        # indistinguishable from a legitimate legacy run.
+        self.assertIsNone(la._chain_states(stripped)["rl-chain"])
+
+
+class TestLockedWriter(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def test_short_append_rolls_back_to_original_bytes(self):
+        rid = la.open_loop(self.tmp, "L3", run_id="rl-short", now=0)
+        path = la.audit_path(self.tmp)
+        with open(path, "rb") as f:
+            before = f.read()
+
+        def partial_write(fd, payload):
+            return os.write(fd, payload[:len(payload) // 2])
+
+        with mock.patch.object(la, "_write_once", side_effect=partial_write):
+            with self.assertRaises(la.AuditWriteError):
+                la.record_round(self.tmp, rid, 1, 1, 0, 0, 0, 1, now=1)
+        with open(path, "rb") as f:
+            self.assertEqual(f.read(), before)
+
+    def test_complete_final_record_without_newline_can_be_extended(self):
+        rid = la.open_loop(self.tmp, "L3", run_id="rl-no-newline", now=0)
+        path = la.audit_path(self.tmp)
+        with open(path, "rb") as f:
+            before = f.read()
+        self.assertTrue(before.endswith(b"\n"))
+        with open(path, "wb") as f:
+            f.write(before[:-1])
+
+        la.record_round(self.tmp, rid, 1, 1, 0, 0, 0, 1, now=1)
+
+        summary = la.audit_summary(self.tmp)
+        self.assertTrue(summary["file_ok"])
+        self.assertTrue(summary["runs"][rid]["chain_ok"])
+        self.assertEqual([record["seq"] for record in la.read_records(self.tmp)],
+                         [0, 1])
+
+    @unittest.skipIf(os.name == "nt", "POSIX subprocess command is covered separately on Windows")
+    def test_os_lock_serializes_concurrent_writers_and_stamps_inside_lock(self):
+        la.open_loop(self.tmp, "L3", run_id="rl-lock", now=0)
+        code = (
+            "import loop_audit as la,sys;"
+            "i=int(sys.argv[2]);"
+            "la.record_round(sys.argv[1],'rl-lock',i,1,0,0,0,i,now=i)"
+        )
+        env = dict(os.environ, PYTHONPATH=RUNTIME)
+        with la._audit_lock(la.audit_path(self.tmp)):
+            children = [
+                subprocess.Popen([sys.executable, "-c", code, self.tmp, str(iteration)],
+                                 env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True)
+                for iteration in (1, 2)
+            ]
+            time.sleep(0.2)
+            for child in children:
+                self.assertIsNone(child.poll(), "writer bypassed the OS-owned lock")
+        for child in children:
+            stdout, stderr = child.communicate(timeout=5)
+            self.assertEqual(child.returncode, 0, (stdout, stderr))
+        self.assertTrue(la.audit_summary(self.tmp)["runs"]["rl-lock"]["chain_ok"])
+        self.assertEqual([r["seq"] for r in la.read_records(self.tmp)], [0, 1, 2])
+
+    def test_windows_backend_uses_msvcrt_lock_and_unlock(self):
+        fake = mock.Mock()
+        fake.LK_LOCK = 1
+        fake.LK_UNLCK = 2
+        with mock.patch.object(la.os, "name", "nt"), mock.patch.dict(sys.modules, {"msvcrt": fake}):
+            with la._audit_lock(os.path.join(self.tmp, "audit.jsonl")):
+                pass
+        self.assertEqual([call.args[1] for call in fake.locking.call_args_list],
+                         [fake.LK_LOCK, fake.LK_UNLCK])
 
 
 if __name__ == "__main__":
