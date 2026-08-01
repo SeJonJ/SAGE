@@ -133,20 +133,126 @@ class TestInstall(unittest.TestCase):
             self.assertIn("# >>> SAGE LOCAL STATE", ignore)
             self.assertIn("/.sage/*", ignore)
             self.assertIn("!/.sage/loop_audit.jsonl", ignore)
+            self.assertNotIn("!/.sage/retro_audit.jsonl", ignore)
             self.assertIn("# <<< SAGE LOCAL STATE", ignore)
 
             sage_dir = Path(d, ".sage")
             sage_dir.mkdir()
             (sage_dir / "loop_audit.jsonl.lock").touch()
-            (sage_dir / "loop_audit.jsonl").touch()
-            ignored = subprocess.run(
-                ["git", "-C", d, "check-ignore", "--quiet",
-                 ".sage/loop_audit.jsonl.lock"])
-            committed = subprocess.run(
-                ["git", "-C", d, "check-ignore", "--quiet",
-                 ".sage/loop_audit.jsonl"])
-            self.assertEqual(ignored.returncode, 0)
-            self.assertEqual(committed.returncode, 1)
+            for name in ("loop_audit.jsonl", "override.jsonl", "acceptance-waivers.jsonl",
+                         "retro_audit.jsonl"):
+                (sage_dir / name).touch()
+
+            expected_ignored = {
+                "loop_audit.jsonl.lock": True,
+                "retro_audit.jsonl": True,
+                "loop_audit.jsonl": False,
+                "override.jsonl": False,
+                "acceptance-waivers.jsonl": False,
+            }
+            for name, ignored in expected_ignored.items():
+                result = subprocess.run(
+                    ["git", "-C", d, "check-ignore", "--quiet", f".sage/{name}"])
+                self.assertEqual(result.returncode, 0 if ignored else 1, name)
+
+    def test_install_upgrades_managed_retro_ignore_and_preserves_explicit_opt_in(self):
+        old = (
+            "node_modules/\n"
+            "# >>> SAGE LOCAL PROFILE\n"
+            "/sage/project-profile.local.yaml\n"
+            "# <<< SAGE LOCAL PROFILE\n"
+            "# >>> SAGE LOCAL STATE\n"
+            "!/.sage/\n"
+            "/.sage/*\n"
+            "!/.sage/override.jsonl\n"
+            "!/.sage/acceptance-waivers.jsonl\n"
+            "!/.sage/loop_audit.jsonl\n"
+            "!/.sage/retro_audit.jsonl\n"
+            "# <<< SAGE LOCAL STATE\n"
+            "# project-owned opt-in after the managed block\n"
+            "!/.sage/retro_audit.jsonl\n"
+        )
+
+        rendered = install._render_local_profile_gitignore(old)
+
+        managed = rendered.split("# >>> SAGE LOCAL STATE\n", 1)[1].split(
+            "# <<< SAGE LOCAL STATE\n", 1)[0]
+        self.assertNotIn("!/.sage/retro_audit.jsonl", managed)
+        self.assertTrue(rendered.endswith(
+            "# project-owned opt-in after the managed block\n"
+            "!/.sage/retro_audit.jsonl\n"))
+
+    def test_install_warns_for_tracked_retro_audit_without_mutating_file_or_index(self):
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run(["git", "init", "-q", d], check=True)
+            path = Path(d, ".sage", "retro_audit.jsonl")
+            path.parent.mkdir()
+            original = b'{"event":"retro_check_ok","note_path":"/Users/private/vault/note.md"}\n'
+            path.write_bytes(original)
+            subprocess.run(
+                ["git", "-C", d, "add", "-f", "--", ".sage/retro_audit.jsonl"],
+                check=True,
+            )
+            stderr = io.StringIO()
+
+            with redirect_stderr(stderr):
+                rc = install.run(Args("claude", d))
+
+            self.assertEqual(rc, 0)
+            self.assertIn("git rm --cached -- .sage/retro_audit.jsonl", stderr.getvalue())
+            self.assertIn("Git 이력", stderr.getvalue())
+            self.assertEqual(original, path.read_bytes())
+            tracked = subprocess.run(
+                ["git", "-C", d, "ls-files", "--error-unmatch", "--",
+                 ".sage/retro_audit.jsonl"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self.assertEqual(tracked.returncode, 0)
+
+    def test_install_does_not_warn_for_untracked_or_non_git_retro_audit(self):
+        for initialize_git in (True, False):
+            with self.subTest(initialize_git=initialize_git), tempfile.TemporaryDirectory() as d:
+                if initialize_git:
+                    subprocess.run(["git", "init", "-q", d], check=True)
+                path = Path(d, ".sage", "retro_audit.jsonl")
+                path.parent.mkdir()
+                path.write_text("{}\n", encoding="utf-8")
+                stderr = io.StringIO()
+
+                with redirect_stderr(stderr):
+                    rc = install.run(Args("claude", d))
+
+                self.assertEqual(rc, 0)
+                self.assertNotIn("git rm --cached", stderr.getvalue())
+                self.assertEqual("{}\n", path.read_text(encoding="utf-8"))
+
+    def test_tracked_retro_probe_is_silent_when_git_cannot_start(self):
+        stderr = io.StringIO()
+
+        with mock.patch.object(install.subprocess, "run", side_effect=FileNotFoundError), \
+                redirect_stderr(stderr):
+            install._warn_if_retro_audit_tracked("/nonexistent")
+
+        self.assertEqual("", stderr.getvalue())
+
+    def test_tracked_retro_probe_is_silent_when_git_times_out(self):
+        stderr = io.StringIO()
+        timeout = subprocess.TimeoutExpired(cmd=["git", "ls-files"], timeout=5)
+
+        with mock.patch.object(install.subprocess, "run", side_effect=timeout), \
+                redirect_stderr(stderr):
+            install._warn_if_retro_audit_tracked("/slow-repository")
+
+        self.assertEqual("", stderr.getvalue())
+
+    def test_tracked_retro_probe_bounds_git_runtime(self):
+        with mock.patch.object(install.subprocess, "run") as run:
+            run.return_value.returncode = 1
+
+            install._warn_if_retro_audit_tracked("/slow-repository")
+
+        self.assertEqual(5, run.call_args.kwargs["timeout"])
 
     def test_install_preserves_gitignore_and_managed_block_is_idempotent(self):
         with tempfile.TemporaryDirectory() as d:

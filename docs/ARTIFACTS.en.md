@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARTIFACTS.md sha256:83368ca4db7d3304e0df3e50a8efb485f6d70095020f77b67cc198738dd7490c -->
+<!-- sage-doc-source: ARTIFACTS.md sha256:e749ba1fbee9fbf25b62b93069a99a9ec970a5650014de7b98735d6ea1d38384 -->
 # SAGE Artifact Map
 
 [한국어](ARTIFACTS.md) | [Documentation index](README.en.md)
@@ -22,7 +22,7 @@ Three principles apply throughout:
 
 | Location | Nature | Representative artifacts | Writer |
 |---|---|---|---|
-| `<root>/.sage/` | Source-of-truth PDCA execution data; only four audit files are committed | Committed: `override.jsonl`, `acceptance-waivers.jsonl`, `loop_audit.jsonl`, `retro_audit.jsonl`; local: `plan_interview.md`, `knowledge_scan.md`, `tmp/`, `context/` | CLI, skills, hooks |
+| `<root>/.sage/` | Source-of-truth PDCA execution data; only three shared audit files are committed | Committed: `override.jsonl`, `acceptance-waivers.jsonl`, `loop_audit.jsonl`; local: `retro_audit.jsonl`, `plan_interview.md`, `knowledge_scan.md`, `tmp/`, `context/` | CLI, skills, hooks |
 | `<root>/<host>/logs/` | Per-session hook records | `session-<date>.jsonl`, `compliance-<date>.md`, `declared-risk-<sid>.json` | Hook adapters |
 | Obsidian vault (`vault_path`/folder) | Final knowledge notes | Write-back TECH notes, loop audit dashboard, retrospective notes, `log.md` | `sage knowledge`, `review-loop`, `retro` |
 | `<root>/sage/asset_overrides/` | CORE overlays, committed but not deployed by install | `agents/<id>.md`, `skills/<id>.md` | Human-authored, with absorb guidance |
@@ -38,20 +38,24 @@ Three principles apply throughout:
 These are authoritative records created while PDCA runs. They are stored under `.sage/` relative to
 the project root, including when a command is started from a subdirectory.
 
-The tracking policy is **exclude by default and explicitly include only audit trails**. The
+The tracking policy is **exclude by default and explicitly include only audit trails with shared
+review value**. The
 "Tracking" column below is authoritative, and `.gitignore` enforces it:
 
 ```gitignore
+!/.sage/
 /.sage/*
 !/.sage/override.jsonl
 !/.sage/acceptance-waivers.jsonl
 !/.sage/loop_audit.jsonl
-!/.sage/retro_audit.jsonl
 ```
 
-- **Commit the four audit trails.** Peers, CI, and reviewers must be able to inspect who bypassed or
-  waived a gate, or completed a loop, when they did it, and why after cloning. Keeping this only
-  locally would make enforced blocks auditable while allowing exception paths to disappear.
+- **Commit the three shared audit trails.** Gate bypasses, evidence waivers, and the Phase 05 review
+  source of truth must remain visible to peers, CI, and reviewers after cloning.
+- **Keep `retro_audit.jsonl` local.** Its private Obsidian note path and check-time digest cannot be
+  reproduced by a peer without that vault. Combining per-developer records in one append-only file
+  exposes local paths and creates merge conflicts without portable evidence. The Stop gate reads the
+  local file directly, so ignoring it does not change the decision.
 - **Do not commit session state or reproducible derivatives.**
 - **Active bypass permissions do not live here.** `.sage/` is inside the repository, so keeping
   permissions there would make the guarantee depend on an ignore rule, and `.gitignore` is a
@@ -66,11 +70,24 @@ The tracking policy is **exclude by default and explicitly include only audit tr
 | `.sage/knowledge_scan.md` | Local | Pre-development report of related prior knowledge found in the Obsidian vault; an input to PDCA 00 | `sage/commands/knowledge.py:228`, `_write_scan_report(root, ...)` |
 | `.sage/loop_audit.jsonl` | **Commit** | Source of truth for Loop A adversarial Phase 05 review rounds. Open, round, and close events are appended, and the per-run strict hash chain plus sequence integrity are validated. The vault dashboard is a derived view | `sage/commands/review_loop.py`, `scripts/sage_harness/hooks/runtime/loop_audit.py` |
 | `.sage/loop_audit.jsonl.lock` | Local | OS-owned process-lock sidecar for the Loop Audit writer. The `SAGE LOCAL STATE` gitignore block installed by SAGE excludes it; a file left after process exit is neither authority nor audit evidence | `loop_audit._audit_lock`, `sage.commands.install._render_local_profile_gitignore` |
-| `.sage/retro_audit.jsonl` | **Commit** | Append-only evidence that Loop C (`sage retro --check`) succeeded. Each passing check records `{run_id, note_path, digest, ts}`. The Stop hook's `retro_gate` policy uses it to verify that the cycle actually passed. With `pdca.retro.report_gate_enforce` off, the event is recorded without enforcement | `sage/commands/retro.py::_check_note` to `scripts/sage_harness/hooks/runtime/retro_audit.py` |
+| `.sage/retro_audit.jsonl` | Local | Append-only local evidence that Loop C (`sage retro --check`) succeeded. Each passing check records `{run_id, note_path, digest, ts}`. The Stop hook's `retro_gate` policy reads it in the same working copy to verify that the cycle actually passed. It is ignored by default so private vault paths and digests that peers cannot reproduce do not enter the shared repository. With `pdca.retro.report_gate_enforce` off, the event is recorded without enforcement | `sage/commands/retro.py::_check_note` to `scripts/sage_harness/hooks/runtime/retro_audit.py` |
 | `.sage/override.jsonl` | **Commit** | Append-only audit log for temporary gate bypasses from `sage override`; records reason and TTL, with automatic expiration | `sage/commands/override.py:6` |
 | `.sage/acceptance-waivers.jsonl` | **Commit** | Explicit `NOT TESTED` waivers for exact L3 cycle and required acceptance IDs. Grant, use, and revoke events include reason, scope, remaining evidence, and confirmer. Malformed, duplicate, and conflicting records fail closed | `sage/commands/acceptance_waiver.py` to `scripts/sage_harness/hooks/runtime/acceptance_waiver.py` |
 | `.sage/context/snapshots/<stem>/*.json` | Local | Cross-session source-of-truth packet binding completed-phase profile, manifest, exact Cycle-Stem document paths, and hashes. It does not contain document bodies | `sage context snapshot` |
 | `.sage/context/restored/*.md` | Local | Resume briefing generated after validating both the packet and current sources; reproducible derivative | `sage context restore` |
+
+An ignore rule does not remove `.sage/retro_audit.jsonl` from the index of an existing installation.
+After reviewing the warning from `sage install`, run this command from the project root:
+
+```bash
+git rm --cached -- .sage/retro_audit.jsonl
+```
+
+The command preserves the local file but does not change existing Git history. If historical paths
+must be removed, the team must make a separate explicit history-rewrite decision. A project that
+intentionally shares portable retro notes may add `!/.sage/retro_audit.jsonl` **after**
+`# <<< SAGE LOCAL STATE`, outside the managed block. Rules inside the block are replaced by the next
+install, and an exception before the block is overridden by its later `/.sage/*` rule.
 
 `context/snapshots` is authoritative host/session handoff data, so a team may explicitly track it
 when needed. `context/restored` can always be regenerated. Both are local by default.

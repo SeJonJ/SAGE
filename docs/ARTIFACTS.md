@@ -18,7 +18,7 @@ SAGE를 돌리면 여러 리소스가 **서로 다른 목적으로 서로 다른
 
 | 위치 | 성격 | 대표 산출물 | 생성 주체 |
 |---|---|---|---|
-| `<root>/.sage/` | PDCA 실행 정본 (감사 4종만 커밋) | 커밋: `override.jsonl` · `acceptance-waivers.jsonl` · `loop_audit.jsonl` · `retro_audit.jsonl` / 로컬: `plan_interview.md` · `knowledge_scan.md` · `tmp/` · `context/` | CLI · 스킬 · hook |
+| `<root>/.sage/` | PDCA 실행 정본 (공유 감사 3종만 커밋) | 커밋: `override.jsonl` · `acceptance-waivers.jsonl` · `loop_audit.jsonl` / 로컬: `retro_audit.jsonl` · `plan_interview.md` · `knowledge_scan.md` · `tmp/` · `context/` | CLI · 스킬 · hook |
 | `<root>/<host>/logs/` | 세션 단위 hook 기록 | `session-<date>.jsonl` · `compliance-<date>.md` · `declared-risk-<sid>.json` | hook 어댑터 |
 | Obsidian vault (`vault_path`/folder) | 최종 지식노트 | write-back TECH 노트 · loop audit 대시보드 · retro 노트 · `log.md` | `sage knowledge` · `review-loop` · `retro` |
 | `<root>/sage/asset_overrides/` | CORE 오버레이 (커밋 대상, install 미배포) | `agents/<id>.md` · `skills/<id>.md` | 사람 작성 (absorb 안내) |
@@ -33,20 +33,22 @@ SAGE를 돌리면 여러 리소스가 **서로 다른 목적으로 서로 다른
 PDCA를 돌리는 동안 남는 정본 데이터입니다. 프로젝트 루트(서브디렉토리에서 실행해도 동일 루트)를 기준으로
 `.sage/` 아래에 생깁니다.
 
-추적 정책은 **기본 제외 + 감사 이력만 명시적 허용**입니다. 아래 표의 "추적" 열이 정본이며,
+추적 정책은 **기본 제외 + 공유 가치가 있는 감사 이력만 명시적 허용**입니다. 아래 표의 "추적" 열이 정본이며,
 `.gitignore`가 이를 그대로 집행합니다:
 
 ```gitignore
+!/.sage/
 /.sage/*
 !/.sage/override.jsonl
 !/.sage/acceptance-waivers.jsonl
 !/.sage/loop_audit.jsonl
-!/.sage/retro_audit.jsonl
 ```
 
-- **커밋하는 것 = 감사 이력 4종.** 게이트를 우회·유예했거나 루프를 통과했다는 사실은 "누가 언제 왜"를
-  동료·CI·리뷰어가 clone 후에 확인할 수 있어야 합니다. 로컬에만 남으면 예외 통과와 정상 통과를
-  구별할 수 없어, 차단은 강제인데 우회는 추적 불가인 비대칭이 생깁니다.
+- **커밋하는 것 = 공유 감사 이력 3종.** 게이트 우회·유예와 Phase 05 리뷰 정본은 동료·CI·리뷰어가
+  clone 후 확인할 수 있어야 합니다.
+- **`retro_audit.jsonl`은 로컬입니다.** 개인 Obsidian 노트의 절대경로와 check 시점 digest는 볼트가 없는
+  동료가 재검증할 수 없고, 개발자별 기록을 한 append-only 파일에 모으면 경로 노출과 머지 충돌만 생깁니다.
+  Stop 게이트는 로컬 디스크의 파일을 직접 읽으므로 Git에서 무시해도 판정은 그대로 동작합니다.
 - **커밋하지 않는 것 = 세션 상태·재생성 가능한 파생물.**
 - **활성 우회 권한은 여기 살지 않습니다.** `.sage/` 는 저장소 안이라 무시 규칙에만 의존하게 되는데,
   `.gitignore` 는 사용자가 지울 수 있는 파일이라 보안 속성의 근거로 쓸 수 없습니다. 권한 캐시는
@@ -60,11 +62,23 @@ PDCA를 돌리는 동안 남는 정본 데이터입니다. 프로젝트 루트(�
 | `.sage/knowledge_scan.md` | 로컬 | 개발 착수 전 Obsidian vault에서 관련 선행지식을 조회한 스캔 리포트. PDCA 00의 prior-knowledge 입력 | `sage/commands/knowledge.py:228` `_write_scan_report(root, …)` |
 | `.sage/loop_audit.jsonl` | **커밋** | Loop A(적대적 Phase 05 리뷰) 라운드 감사의 **정본**. open/round/close가 append되고 run별 strict hash-chain과 시퀀스 무결성을 검증. vault 대시보드는 이 파일의 파생 뷰 | `sage/commands/review_loop.py`, `scripts/sage_harness/hooks/runtime/loop_audit.py` |
 | `.sage/loop_audit.jsonl.lock` | 로컬 | Loop Audit writer의 OS 소유 프로세스 lock sidecar. install이 배치하는 `SAGE LOCAL STATE` gitignore 블록으로 제외하며, 프로세스 종료 후 파일이 남아도 권한이나 감사 증거가 아니다 | `loop_audit._audit_lock`, `sage.commands.install._render_local_profile_gitignore` |
-| `.sage/retro_audit.jsonl` | **커밋** | Loop C(`sage retro --check`) 성공 증거의 append-only 감사(9-C v1). `sage retro --check`가 통과할 때마다 `{run_id, note_path, digest, ts}`를 기록 — Stop 훅(`retro_gate` 정책)이 세션 종료 시 이 기록으로 "이 사이클이 실제로 check를 통과했는지" 사후 확인한다. `pdca.retro.report_gate_enforce`가 off면 기록만 남고 아무것도 검사하지 않는다 | `sage/commands/retro.py::_check_note` → `scripts/sage_harness/hooks/runtime/retro_audit.py` |
+| `.sage/retro_audit.jsonl` | 로컬 | Loop C(`sage retro --check`) 성공 증거의 append-only 로컬 감사(9-C v1). `sage retro --check`가 통과할 때마다 `{run_id, note_path, digest, ts}`를 기록 — Stop 훅(`retro_gate` 정책)이 같은 워킹카피에서 이 기록으로 "이 사이클이 실제로 check를 통과했는지" 사후 확인한다. 개인 vault 절대경로와 재검증할 수 없는 digest를 공유 저장소에 남기지 않도록 기본 무시한다. `pdca.retro.report_gate_enforce`가 off면 기록만 남고 아무것도 검사하지 않는다 | `sage/commands/retro.py::_check_note` → `scripts/sage_harness/hooks/runtime/retro_audit.py` |
 | `.sage/override.jsonl` | **커밋** | 게이트 임시 우회(`sage override`)의 append-only 감사 로그. 사유·TTL과 함께 사후 추적, 만료 시 자동 회수 | `sage/commands/override.py:6` |
 | `.sage/acceptance-waivers.jsonl` | **커밋** | exact L3 cycle/required acceptance ID의 명시적 `NOT TESTED` 유예. grant/use/revoke와 reason/scope/remaining evidence/confirmed_by를 append-only로 기록하며 malformed/중복/충돌은 fail-closed | `sage/commands/acceptance_waiver.py` → `scripts/sage_harness/hooks/runtime/acceptance_waiver.py` |
 | `.sage/context/snapshots/<stem>/*.json` | 로컬 | 완료 phase의 profile/manifest/exact Cycle-Stem 문서 경로·hash를 결속한 cross-session 정본 packet. 문서 본문은 포함하지 않음 | `sage context snapshot` |
 | `.sage/context/restored/*.md` | 로컬 | packet과 현재 source를 모두 검증한 뒤 생성되는 resume briefing. 재생성 가능한 파생물 | `sage context restore` |
+
+기존 설치에서 `.sage/retro_audit.jsonl`이 이미 추적 중이면 새 ignore 규칙만으로 index에서 빠지지 않습니다.
+`sage install`의 경고를 확인한 뒤 프로젝트 루트에서 다음을 실행합니다:
+
+```bash
+git rm --cached -- .sage/retro_audit.jsonl
+```
+
+이 명령은 로컬 파일을 보존하지만 기존 Git 이력은 바꾸지 않습니다. 과거 경로 제거가 필요하면 별도 이력
+재작성 여부를 팀에서 판단해야 합니다. portable retro 노트를 의도적으로 공유하는 프로젝트는
+`# <<< SAGE LOCAL STATE` **뒤에**, 관리 블록 밖에서 `!/.sage/retro_audit.jsonl`을 추가할 수 있습니다.
+관리 블록 안의 규칙은 다음 install에서 교체되고, 블록 앞의 예외는 뒤에 오는 `/.sage/*`에 다시 가려집니다.
 
 `context/snapshots`는 세션/host handoff용 정본이라 팀에서 필요하면 예외를 추가해 추적할 수 있고,
 `context/restored`는 언제든 다시 만들 수 있는 파생물입니다. 기본 정책은 둘 다 로컬입니다.

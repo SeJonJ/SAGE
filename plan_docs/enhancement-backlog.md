@@ -187,8 +187,10 @@
 ## EH-8 — 나머지 감사 로그 3종의 authority-aware 무결성
 
 - **배경**: SAGE는 `.sage/acceptance-waivers.jsonl`, `.sage/retro_audit.jsonl`,
-  `.sage/override.jsonl`도 커밋 정본으로 둔다. §10-g 검토에서 네 로그 전체를 같은 해시 writer로 묶는 안을
-  검토했지만, 각 로그의 권한성과 실패 계약이 달라 별도 범위로 분리했다.
+  `.sage/override.jsonl`을 서로 다른 권한·감사 목적으로 쓴다. §10-g 검토에서 네 로그 전체를 같은 해시
+  writer로 묶는 안을 검토했지만, 각 로그의 권한성과 실패 계약이 달라 별도 범위로 분리했다.
+  §10-h에서 개인 vault 경로를 담는 `retro_audit.jsonl`은 로컬 상태로 전환했으며, 나머지 두 로그는
+  계속 커밋 정본이다. 이 추적 정책 변경은 EH-8의 로그 자체 무결성 과제를 구현하거나 해소하지 않는다.
 - **문제**: acceptance waiver는 report 예외 권한의 정본이고 별도 `flock`·secure-open 하드닝을 갖는다.
   retro audit은 Stop gate 증거지만 읽기 실패의 fail-open/reporting 경계가 있다. override audit은 사후 추적용이며
   실제 활성 권한은 저장소 밖 grant store가 결정한다. 동일한 `prev_hash` 필드만 추가하면 검증되지 않는 해시를

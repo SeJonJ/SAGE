@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import stat
+import subprocess
 import sys
 from pathlib import Path
 
@@ -51,8 +52,8 @@ _LOCAL_STATE_IGNORE_ENTRIES = (
     "!/.sage/override.jsonl",
     "!/.sage/acceptance-waivers.jsonl",
     "!/.sage/loop_audit.jsonl",
-    "!/.sage/retro_audit.jsonl",
 )
+_RETRO_AUDIT_REL = os.path.join(".sage", "retro_audit.jsonl")
 _CORE_HOOKS = [
     ("capture-declared-risk", "core_adapter"),
     ("post-tool-logger", "core_adapter"),
@@ -184,6 +185,29 @@ def _write_local_profile_gitignore(dest, created, skipped, transaction):
         return
     _atomic_write(path, rendered, transaction=transaction)
     created.append(path)
+
+
+def _warn_if_retro_audit_tracked(dest):
+    """Report the one-time index migration without changing Git or local audit bytes."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", dest, "ls-files", "--error-unmatch", "--", _RETRO_AUDIT_REL],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+    if result.returncode != 0:
+        return
+    print(
+        "⚠️  `.sage/retro_audit.jsonl` 이 이미 Git 추적 중입니다. "
+        "새 기본값은 로컬 전용이지만 install 은 index나 파일을 자동 변경하지 않습니다.\n"
+        "   프로젝트 루트에서 실행: git rm --cached -- .sage/retro_audit.jsonl\n"
+        "   이 명령은 로컬 파일을 보존합니다. 기존 Git 이력의 경로는 남으므로 이력 재작성은 별도로 판단하세요.",
+        file=sys.stderr,
+    )
 
 
 def _prune_legacy_skill(skill_dir, pruned, transaction=None):
@@ -1477,6 +1501,7 @@ def _run_locked(args) -> int:
     cleanup_errors = transaction.commit()
     for message in cleanup_errors:
         print(f"⚠️ install transaction backup 정리 실패: {message}", file=sys.stderr)
+    _warn_if_retro_audit_tracked(dest)
 
     # 보고
     print(f"== sage install (host={args.host}, prefix={args.prefix}) → {dest} ==")

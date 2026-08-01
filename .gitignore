@@ -9,17 +9,16 @@ venv/
 dist/
 build/
 
-# SAGE 로컬 산출물은 기본 제외하고, 게이트 감사 이력만 명시적으로 추적한다.
-# 감사(override/waiver/loop/retro)는 "누가 언제 왜 우회·유예했는지"를 동료·CI·리뷰어가
-# clone 후에도 확인해야 하므로 커밋한다. 반면 tmp/grants.jsonl 은 활성 우회 '권한'이라
-# 전파되면 남이 발급한 우회가 자동 활성화되므로 절대 추적하지 않는다.
+# SAGE 로컬 산출물은 기본 제외하고, 공유 가치가 있는 감사 이력만 명시적으로 추적한다.
+# override/waiver/loop 3종은 동료·CI·리뷰어가 clone 후에도 확인해야 하므로 커밋한다.
+# retro는 개인 vault 경로를 담는 로컬 게이트 상태이고, tmp/grants.jsonl 은 활성 우회
+# '권한'이므로 둘 다 공유 저장소에 추적하지 않는다.
 # `/.sage/*` 형태여야 한다 — `/.sage/`(디렉터리)로 무시하면 git 이 안으로 내려가지 않아
 # 아래 예외가 전부 무효가 된다.
 /.sage/*
 !/.sage/override.jsonl
 !/.sage/acceptance-waivers.jsonl
 !/.sage/loop_audit.jsonl
-!/.sage/retro_audit.jsonl
 
 # PDCA 작업 문서는 로컬 실행 증거로 유지하고 00 base plan만 Git에서 공유한다.
 plan_docs/01-plan/
