@@ -11,6 +11,10 @@
 로컬 profile은 host/model/vault 경로처럼 머신마다 다른 capability만 소유합니다. risk, PDCA, review처럼
 게이트를 완화할 수 있는 공유 정책은 로컬에서 덮어쓸 수 없습니다.
 
+generate는 compiled profile을 `0600`으로 수렴시킵니다. 이전 버전이 만든 `0644` 파일도 다음 generate에서
+소유자 전용으로 강화됩니다. hook 프로세스가 다른 UID로 실행되는 CI/컨테이너에서는 같은 UID로 실행하거나
+명시적인 파일 전달 방식을 구성해야 하며, 권한을 넓혀 공유하는 방식은 지원 계약이 아닙니다.
+
 ## 최소 흐름
 
 최초 작성은 `sage-init`, 이미 설정된 프로젝트에 합류할 때는 `sage-init-local`을 사용합니다.
@@ -86,6 +90,23 @@ components:
 
 Components는 implementer roster와 ownership routing에 사용됩니다. `sage generate --kind roster`가
 `implementer-<component>` spec을 생성합니다.
+
+### Phase 04 체크리스트 스캔
+
+```yaml
+checklist_scan_targets:
+  - label: "03 implementation"
+    glob: "plan_docs/03-implementation/**/*.md"
+    is_impl: true
+  - label: "backend plan"
+    glob: "backend/plan_docs/*.md"
+```
+
+각 항목은 `label`과 project-relative `glob`이 필수이며 `is_impl`은 선택 boolean입니다. 절대경로,
+UNC/rooted 경로, Windows drive-relative 경로(`C:private/*.md`), `..` 세그먼트와 제어문자는
+거부됩니다. 실제 매치도 realpath로 다시 검사하므로 symlink를 통해 저장소 밖 문서를 읽을 수 없습니다.
+이전 버전에서 잘못된 항목이 조용히 무시됐다면 새 버전의 `sage generate`는 기존 산출물을 보존하고
+FAIL합니다. profile을 수정한 뒤 다시 생성하세요.
 
 ### Team runtime
 

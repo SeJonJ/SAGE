@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:9438ef8978eeeed8c98a8a4ffa497467f67af43a2656b77226a9742d12f7eccc -->
+<!-- sage-doc-source: cli-reference.md sha256:de1ef09391551e9e1ce8d9250784c988171d2066c669994396742a291d5368f2 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -19,6 +19,28 @@
 Without `--write`, `generate` only previews changes. For hooks and MCPs, select the host with
 `--target claude|codex|both`. Agents and skills always require both host renders because they use a
 render-first flow, so `--target` cannot narrow their scope.
+
+For a new project hook, first author only `docs/sage_harness/hooks/<id>.md` and
+`scripts/sage_harness/hooks/<id>_core.py`, then register it with:
+
+```bash
+sage generate --kind hook --id <id> --write --target both
+```
+
+The first registration validates both host bindings and `CONTRACT_VERSION`, then writes the
+manifest, canonical adapters, host settings, and shims in one transaction. A new ID cannot be
+registered for only one host.
+
+Every registered project hook requires a current `sage/project-profile.json`, even when its core
+does not inspect the profile. Missing or divergent YAML/compiled profiles block edits with exit 2;
+run `sage generate --kind hook --write --target both` after registration or profile changes.
+
+For `decide(event, profile, snapshot)`, `event` provides `hook_id`, `hook_event_name`
+(`PreToolUse`), `runtime`, `session_id`, and `changes`. `changes` is a possibly empty list of
+`{path, op}` objects extracted from the host input. Globs returned by optional `plan_reads()` read
+only regular files inside the project root, and `snapshot` has the shape `{glob_results, files}`.
+Directories matched by recursive globs are skipped; root escapes including symlink ancestors,
+symlink leaf matches, and other non-regular paths are contract failures.
 
 ## Validation and diagnostics
 

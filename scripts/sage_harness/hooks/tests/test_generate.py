@@ -10,6 +10,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest import mock
 
@@ -60,6 +62,10 @@ def make_root(d, with_adapter=True):
                "acceptance_waiver.py", "override_audit.py", "messages.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
+    shutil.copyfile(
+        os.path.join(REPO, "scripts", "sage_harness", "hooks", "runtime", "checklist_contract.py"),
+        os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", "checklist_contract.py"),
+    )
     Path(os.path.join(d, "scripts", "sage_harness", "hooks", "cycle_binding.py")).write_text(
         "# cycle_binding.py\n")
     Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "retro_gate.py")).write_text("# retro_gate\n")
@@ -301,14 +307,14 @@ class TestGenerate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             make_root(root)
 
-            self.assertTrue(gen._stamp_manifest(root, []))
+            self.assertEqual(gen.run(Args(target="claude", dest=root, root=root, write=True)), 0)
 
             manifest = json.loads(
                 Path(root, "docs", "sage_harness", ".manifest.json").read_text(encoding="utf-8")
             )
             self.assertEqual(__version__, manifest["generator_version"])
 
-    def test_hook_manifest_stamp_preserves_manifest_when_atomic_replace_fails(self):
+    def test_hook_manifest_transaction_preserves_manifest_when_write_fails(self):
         import unittest.mock as mock
 
         with tempfile.TemporaryDirectory() as root:
@@ -316,8 +322,17 @@ class TestGenerate(unittest.TestCase):
             manifest_path = Path(root, "docs", "sage_harness", ".manifest.json")
             before = manifest_path.read_bytes()
 
-            with mock.patch.object(gen, "atomic_write_json", side_effect=OSError("injected")):
-                self.assertFalse(gen._stamp_manifest(root, [], runtime_hash="sha256:test"))
+            original_write = gen._oc.write_text_lf
+
+            def fail_manifest(path, body, mode=None):
+                if os.path.abspath(path) == os.path.abspath(manifest_path):
+                    raise OSError("injected")
+                return original_write(path, body, mode=mode)
+
+            with mock.patch.object(gen._oc, "write_text_lf", side_effect=fail_manifest), \
+                    redirect_stderr(StringIO()), redirect_stdout(StringIO()):
+                self.assertEqual(
+                    gen.run(Args(target="claude", dest=root, root=root, write=True)), 1)
 
             self.assertEqual(before, manifest_path.read_bytes())
 
@@ -601,17 +616,62 @@ class TestGenerate(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(dest, ".codex", "hooks.json")))
 
     @unittest.skipUnless(_HAS_YAML, "pyyaml 필요(generate 빌드 의존성)")
+    def test_invalid_checklist_profile_preserves_all_existing_outputs(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as dest:
+            make_root(d)
+            os.makedirs(os.path.join(dest, "sage"), exist_ok=True)
+            compiled = os.path.join(dest, "sage", "project-profile.json")
+            settings = os.path.join(dest, ".claude", "settings.json")
+            hooks = os.path.join(dest, ".codex", "hooks.json")
+            os.makedirs(os.path.dirname(settings), exist_ok=True)
+            os.makedirs(os.path.dirname(hooks), exist_ok=True)
+            Path(compiled).write_text('{"old": true}\n', encoding="utf-8")
+            Path(settings).write_text('{"old": "claude"}\n', encoding="utf-8")
+            Path(hooks).write_text('{"old": "codex"}\n', encoding="utf-8")
+            os.chmod(compiled, 0o600)
+            before = {
+                path: (Path(path).read_bytes(), os.stat(path).st_mode & 0o777,
+                       os.stat(path).st_mtime_ns)
+                for path in (compiled, settings, hooks)
+            }
+            Path(os.path.join(dest, "sage", "project-profile.yaml")).write_text(
+                "project: { name: t }\n"
+                "checklist_scan_targets:\n"
+                "  - { label: implementation, glob: 'C:private\\\\*.md' }\n",
+                encoding="utf-8",
+            )
+
+            rc = gen.run(Args(target="both", dest=dest, root=d, write=True))
+
+            self.assertEqual(rc, 1)
+            for path, expected in before.items():
+                self.assertEqual((Path(path).read_bytes(), os.stat(path).st_mode & 0o777,
+                                  os.stat(path).st_mtime_ns),
+                                 expected, path)
+            self.assertFalse(os.path.exists(os.path.join(dest, ".claude", "hooks")))
+            self.assertFalse(os.path.exists(os.path.join(dest, ".codex", "hooks")))
+
+    @unittest.skipUnless(_HAS_YAML, "pyyaml 필요(generate 빌드 의존성)")
     def test_profile_compiles_to_json(self):
         # profile.yaml(유효) → project-profile.json 컴파일(hook 런타임 입력, 의존성 0)
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as dest:
             make_root(d)
             os.makedirs(os.path.join(dest, "sage"), exist_ok=True)
+            compiled = os.path.join(dest, "sage", "project-profile.json")
+            Path(compiled).write_text('{"old": true}\n', encoding="utf-8")
+            os.chmod(compiled, 0o644)
+            shim = os.path.join(dest, ".claude", "hooks", "aaa-hook.sh")
+            os.makedirs(os.path.dirname(shim), exist_ok=True)
+            Path(shim).write_text("old shim\n", encoding="utf-8")
+            os.chmod(shim, 0o644)
             Path(os.path.join(dest, "sage", "project-profile.yaml")).write_text(
                 "project: { name: t }\nrisk:\n  l3_filename_globs: ['*payment*']\n  l2_path_globs: ['src/*']\n")
             rc = gen.run(Args(target="claude", dest=dest, root=d, write=True))
             self.assertEqual(rc, 0)
-            prof = json.loads(Path(os.path.join(dest, "sage", "project-profile.json")).read_text())
+            prof = json.loads(Path(compiled).read_text())
             self.assertEqual(prof["risk"]["l3_filename_globs"], ["*payment*"])
+            self.assertEqual(os.stat(compiled).st_mode & 0o777, 0o600)
+            self.assertEqual(os.stat(shim).st_mode & 0o777, 0o755)
 
     def test_agent_generate_guidance(self):
         with tempfile.TemporaryDirectory() as d:

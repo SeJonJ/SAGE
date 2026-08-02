@@ -411,6 +411,9 @@ def _schema_issues(profile, root):
 def _semantic_issues(profile, root):
     issues = [("FAIL", message) for message in materialization_issues(profile)]
 
+    from sage.checklist_contract import checklist_target_issues
+    issues.extend(("FAIL", message) for message in checklist_target_issues(profile, root))
+
     # 섹션 타입 가드(codex 재리뷰) — risk/pdca/options/knowledge_capture 가 truthy 비-dict 면 이후
     #   .get() 크래시(retro 등 런타임 읽기 포함). jsonschema 없어도 제어된 FAIL 을 단일 출처로 발행.
     # risk 루트 타입은 materialization_issues가 소유한다. 여기서 다시 발행하면 동일 FAIL이 중복된다.

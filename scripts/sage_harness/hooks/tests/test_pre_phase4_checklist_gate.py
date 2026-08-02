@@ -95,9 +95,10 @@ class TestCore(unittest.TestCase):
         self.assertTrue(any(e.get("read_error") for e in d["evidence"]))
 
 
-def run_adapter(runtime, raw, root):
+def run_adapter(runtime, raw, root, profile_path=PROFILE_PATH):
     env_root = "CLAUDE_PROJECT_DIR" if runtime == "claude" else "CODEX_PROJECT_ROOT"
-    env = dict(os.environ, **{env_root: root, "SAGE_HOOK_CORE_DIR": HOOKS_DIR, "SAGE_PROFILE": PROFILE_PATH})
+    env = dict(os.environ, **{env_root: root, "SAGE_HOOK_CORE_DIR": HOOKS_DIR,
+                             "SAGE_PROFILE": profile_path})
     adapter = os.path.join(ADAPTERS, runtime, "pre-phase4-checklist-gate.sh")
     return subprocess.run(["bash", adapter], input=json.dumps(raw), capture_output=True, text=True, env=env)
 
@@ -129,6 +130,38 @@ class TestAdapters(unittest.TestCase):
                 setup_tree(root, "- [x] done")
                 p = run_adapter(runtime, self._raw(runtime), root)
                 self.assertEqual(p.returncode, 0, f"{runtime} ok exit0")
+
+    def test_malformed_compiled_profile_blocks_without_traceback(self):
+        for runtime in ("claude", "codex"):
+            with self.subTest(runtime=runtime), tempfile.TemporaryDirectory() as root:
+                profile_path = os.path.join(root, "broken-profile.json")
+                with open(profile_path, "w", encoding="utf-8") as stream:
+                    stream.write("{")
+                p = run_adapter(runtime, self._raw(runtime), root, profile_path)
+                self.assertEqual(p.returncode, 2)
+                self.assertIn("profile/snapshot 계약 오류", p.stderr)
+                self.assertNotIn("Traceback", p.stderr)
+
+    def test_symlink_escape_match_blocks_both_runtimes(self):
+        if not hasattr(os, "symlink"):
+            self.skipTest("symlink unavailable")
+        for runtime in ("claude", "codex"):
+            with self.subTest(runtime=runtime), tempfile.TemporaryDirectory() as root, \
+                    tempfile.TemporaryDirectory() as outside:
+                with open(os.path.join(outside, "private.md"), "w", encoding="utf-8") as stream:
+                    stream.write("- [x] hidden")
+                os.symlink(outside, os.path.join(root, "linked"))
+                profile_path = os.path.join(root, "profile.json")
+                profile = dict(PROFILE)
+                profile["checklist_scan_targets"] = [
+                    {"label": "outside", "glob": "linked/*.md"},
+                ]
+                with open(profile_path, "w", encoding="utf-8") as stream:
+                    json.dump(profile, stream)
+                p = run_adapter(runtime, self._raw(runtime), root, profile_path)
+                self.assertEqual(p.returncode, 2)
+                self.assertIn("root 밖 symlink", p.stderr)
+                self.assertNotIn("Traceback", p.stderr)
 
 
 if __name__ == "__main__":

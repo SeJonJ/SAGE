@@ -208,6 +208,58 @@
 
 ---
 
+## EH-9 — 소비자 생성·project hook 확장 계약 통합 하드닝
+
+- **배경**: ChatForYou에 0.9.76을 역적용하면서 생성 onboarding의 trailing whitespace,
+  `checklist_scan_targets` schema/runtime drift, project-authored hook의 create-new lifecycle 부재가 함께 확인됐다.
+- **문제**: 잘못된 profile이 strict validation을 통과한 뒤 thin adapter에서 exit 1 traceback 또는 무음 무동작으로
+  나타나고, 신규 project hook은 manifest·adapter 선요구 때문에 문서화된 `spec + pure core` 흐름으로 등록할 수 없다.
+  수동 host 등록도 runtime의 unknown ID exit 0 때문에 장식용 gate가 된다. 첫 구현 시도에서는 별도 rollback을
+  추가하며 snapshot 시점, 부분쓰기, chmod 실패, 동시 manifest/adapter 변경 같은 트랜잭션 결함이 반복됐다.
+- **접근(§10-i 통합 확정)**: profile 객체·경로·진입점 계약과 project hook 등록·generic dispatch를 한 L3 변경으로
+  구현한다. `sage generate --kind hook --write`가 쓰는 compiled profile, manifest, canonical adapters,
+  host 설정과 shims를 기존 `DestinationLock` + `InstallTransaction`으로 묶는다. 최종 산출물을 메모리에서 모두
+  검증·렌더한 뒤 기록하며, manifest는 중간 등록 없이 한 번만 쓴다. 신규 project hook은 양 host만 허용한다.
+- **규모/위험**: **중대(L3)**. profile schema/compiler/validator/runtime, generate/install transaction,
+  manifest, 양 host dispatch, template/docs, wheel packaging을 함께 변경한다.
+- **트리거**: ChatForYou 0.9.76 역적용과 project-authored gate 실증에서 충족됐다.
+- **상태**: ✅ **통합 구현·독립 리뷰 지적 반영(2026-08-02, 미커밋·로컬 재검증 완료)**. 10-i-1/10-i-2를
+  한 transaction/acceptance로 구현했다. 최소 fixture 출력 12곳·전체 설치 소비자 출력 22곳과 record/verify
+  실패 주입 rollback, schema/manual parity,
+  install force 보존, none/Claude/Codex 공식 suite와 clean wheel의 template→양 host dispatch→validate를 통과했다.
+  독립 검증에서 나온 recursive glob 디렉터리 오차단, `--id` 없는 project parser 우회, install/generate manifest
+  key-order churn을 재현해 수정하고 회귀를 추가했다. compiled profile `0600` 전환, project hook profile 필수,
+  `event.changes` 공개 계약도 한영 문서에 명시했다. 후속 재검증에서 확인된 호출부 없는 구 `_stamp_manifest`
+  writer는 제거하고 테스트를 실제 generate transaction 경로로 이전했다.
+  정본: `plan_docs/00-base_plan/sage-consumer-generation-extension-contract-hardening.md`.
+
+---
+
+## EH-10 — adapter/shim 직접 실행 경로의 profile freshness (CORE 공통)
+
+- **배경**: §10-i 독립 검토에서 "생성된 project hook adapter가 stale profile을 통과시킨다"가 완료 차단으로
+  제기됐다. 재현은 사실이나 project hook 고유 결함이 아니라 adapter 계층 전체의 기존 성질임을 실측으로 확인해
+  §10-i 범위 밖 경계로 분리했다(정본 base plan §5.4 "경계 — profile freshness는 entrypoint SSOT가 아니다").
+- **문제**: hook 런타임은 **의존성 0(compiled JSON만 읽음)** 계약이라 `project-profile.yaml`을 파싱할 수 없다.
+  그래서 YAML↔compiled JSON 동등성 비교는 `sage-hook`(`hook_entry._prepare_gate_profile`) 한 곳에만 있고,
+  canonical adapter와 host shim은 `SAGE_PROFILE`을 직접 주입한 뒤 `run_hook.py`를 exec 하므로 그 비교를 건너뛴다.
+  YAML만 고치고 `sage generate`를 다시 돌리지 않은 상태에서 CORE hook과 project hook 모두 adapter/shim은 rc=0,
+  `sage-hook`은 rc=2다. 소비자 실행 경로는 host 등록 command가 `sage-hook`이라 보호되고 `sage validate`가
+  `profile-yaml-json-stale` WARN + `overlay-materialize-drift` FAIL로 표면화하므로, 남은 노출은 adapter/shim
+  **직접 호출**(테스트·디버깅)뿐이다. 다만 "세 entrypoint가 같은 guarded dispatch를 쓴다"는 계약과는 어긋난다.
+- **접근**: generate가 `project-profile.yaml` 바이트 해시를 compiled JSON에 스탬프하고 런타임이 대조하면
+  의존성 0을 지키면서 모든 entrypoint가 검사를 받는다. 단 바이트 해시는 주석·공백 변경도 stale로 판정해
+  현재 `sage-hook`의 의미 비교(`materialize_profile` 동등성)와 규칙이 갈리므로, `hook_entry`도 같은 규칙으로
+  옮겨 한쪽으로 통일해야 한다. project adapter만 `sage-hook`을 경유시키는 국소 수정은 PATH 부재 시 fallback이
+  검사를 건너뛰어 반쪽이고 CORE adapter와 비대칭을 만들므로 채택하지 않는다.
+- **규모/위험**: 중. CORE 게이트 8종의 실행 계약과 `hook_entry`, 양 host adapter, compiled profile 스키마,
+  관련 회귀를 함께 바꾼다. 주석 편집이 stale로 잡히는 의미 변경을 받아들일지가 선결 판단이다.
+- **트리거**: adapter/shim을 직접 호출하는 host 배선이 실재하거나, 세 entrypoint의 검사 동등성을 계약으로
+  강제해야 할 때. 현 위협모델상 긴급도 낮음 — host 경로는 차단되고 validate가 잡는다.
+- **상태**: 🕗 **보류(2026-08-02, §10-i에서 경계로 분리)**. 독립 L3 설계·검토 대상.
+
+---
+
 ## (참고) 보류 — 자산 사이클 내 기록
 - F5(클린 업그레이드)는 하드닝에서 해소(profile create-only). F1/F3/F7/malformed 동일.
 - 진행 로그: vault `TECH - SAGE 구현 진행 로그.md`

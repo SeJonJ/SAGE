@@ -643,7 +643,7 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(Path(manifest_path).read_bytes(), before)
 
     def test_force_reinstall_preserves_generated_kind_manifest_entries(self):
-        """--force 재설치가 sage generate 로 등록된 mcp/agent/skill manifest 항목을 보존한다(이슈 #1).
+        """--force 재설치가 generate로 등록된 project 자산과 manifest 항목을 보존한다(이슈 #1).
 
         엔진 자산(CORE hook)은 미스탬프 스켈레톤으로 리셋되지만, 인스턴스가 등록한 다른 kind 는
         profile.yaml 과 같은 보존 정책을 따라야 한다 — 안 그러면 --force 가 등록을 지워 orphan drift 가 난다.
@@ -660,6 +660,20 @@ class TestInstall(unittest.TestCase):
                     m["assets"]["mcps/weather"] = {"form": "declarative", "conformance": "PASS"}
                     m["assets"]["agents/analyst"] = {"form": "native", "conformance": "PASS"}
                     m["assets"]["skills/summarize"] = {"form": "native", "conformance": "PASS"}
+                    m["assets"]["hooks/project-gate"] = {
+                        "origin": "project", "form": "core_adapter", "conformance": "PASS",
+                        "adapter_contract_version": "1",
+                    }
+                    authored = {
+                        "docs/sage_harness/hooks/project-gate.md": "project spec\n",
+                        "scripts/sage_harness/hooks/project_gate_core.py": "project core\n",
+                        "scripts/sage_harness/hooks/adapters/claude/project-gate.sh": "claude adapter\n",
+                        "scripts/sage_harness/hooks/adapters/codex/project-gate.sh": "codex adapter\n",
+                    }
+                    for relative, content in authored.items():
+                        path = Path(d, relative)
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_text(content, encoding="utf-8")
                     a_core_hook = next(k for k in m["assets"] if k.startswith("hooks/"))
                     m["assets"][a_core_hook]["conformance"] = "PASS"  # 스탬프된 상태 모사
                     Path(mpath).write_text(json.dumps(m, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -670,9 +684,16 @@ class TestInstall(unittest.TestCase):
                 self.assertEqual(m2["assets"].get("mcps/weather"), {"form": "declarative", "conformance": "PASS"})
                 self.assertEqual(m2["assets"].get("agents/analyst"), {"form": "native", "conformance": "PASS"})
                 self.assertEqual(m2["assets"].get("skills/summarize"), {"form": "native", "conformance": "PASS"})
+                self.assertEqual(m2["assets"].get("hooks/project-gate"), {
+                    "origin": "project", "form": "core_adapter", "conformance": "PASS",
+                    "adapter_contract_version": "1",
+                })
+                for relative, content in authored.items():
+                    self.assertEqual(Path(d, relative).read_text(encoding="utf-8"), content)
                 # CORE hook 은 엔진 자산 → 미스탬프 스켈레톤으로 리셋
                 self.assertEqual(m2["assets"][a_core_hook]["conformance"], "UNKNOWN")
-                self.assertEqual(len([k for k in m2["assets"] if k.startswith("hooks/")]), len(install._CORE_HOOKS))
+                self.assertEqual(len([k for k in m2["assets"] if k.startswith("hooks/")]),
+                                 len(install._CORE_HOOKS) + 1)
 
     def test_force_reinstall_drops_corrupt_entries_and_validate_survives(self):
         """--force 보존이 손상 항목(non-dict)을 버려 이후 sage validate 가 크래시하지 않는다(codex R1-P1).
@@ -1724,6 +1745,18 @@ class TestInstall(unittest.TestCase):
             onboarding = Path(d, "docs", "agent", "sage-onboarding.md").read_text()
             self.assertIn("Selected Codex CORE skill scope: `global`", onboarding)
             self.assertIn("each teammate", onboarding)
+
+    def test_generated_onboarding_has_no_trailing_whitespace(self):
+        from sage.commands.install import _onboarding_text
+
+        for host, scope in (("claude", None), ("codex", "global"),
+                            ("codex", "project-local")):
+            with self.subTest(host=host, scope=scope):
+                text = _onboarding_text(host, scope)
+                self.assertFalse(
+                    any(line != line.rstrip() for line in text.splitlines()),
+                    "generated onboarding must pass git diff --check",
+                )
 
     def test_codex_global_scope_ignores_project_custom_skills_on_install_and_force(self):
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:

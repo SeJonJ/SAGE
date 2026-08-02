@@ -9,15 +9,24 @@
 import json
 import os
 import re
+import stat
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 from sage import __version__
 from sage import overlay_common as _oc
-from sage.asset_paths import AssetPaths, docs_dir
+from sage.asset_paths import AssetPaths, docs_dir, hook_runtime_files
 from sage.commands._common import contract_version_of
 from sage.hook_launcher import command_template as hook_command_template, valid_hook_id
 from sage.hook_runtime_hash import calculate_hook_runtime_hash
+from sage.install_transaction import (
+    DestinationLock,
+    InstallBusyError,
+    InstallDriftError,
+    InstallTransaction,
+    capture_paths,
+)
 from sage.manifest_io import atomic_write_json
 
 
@@ -89,11 +98,12 @@ def _command_template(target, hook_id):
     return hook_command_template(target, hook_id, platform_name=os.name)
 
 
-def _build_registration(root, target, hook_ids):
+def _build_registration(root, target, hook_ids, project_hooks=None):
     """hook id 정렬 → target 별 {Event: [{matcher, hooks:[...]}]} 등록 dict (결정론).
 
     같은 event+matcher 는 한 블록에 hooks append. adapter 파일 존재 확인(없으면 (None, missing))."""
     missing = []
+    project_hooks = project_hooks or {}
     # event → matcher → [command블록]  (matcher 안정 정렬)
     by_event = {}
     for hid in sorted(hook_ids):   # lexicographic 정렬(결정론)
@@ -103,11 +113,12 @@ def _build_registration(root, target, hook_ids):
         ap = AssetPaths(root, "hook", hid)
         if not os.path.exists(ap.spec):
             missing.append(f"spec:{hid}"); continue
-        rb = _parse_runtime_bindings(ap.spec)
+        rb = (project_hooks[hid]["bindings"] if hid in project_hooks
+              else _parse_runtime_bindings(ap.spec))
         if target not in rb:
             continue
         # adapter/native 파일 존재 확인 (경로 규약 AssetPaths 단일소스 — P2-6)
-        if not (os.path.exists(ap.adapter(target)) or os.path.exists(ap.native)):
+        if hid not in project_hooks and not (os.path.exists(ap.adapter(target)) or os.path.exists(ap.native)):
             missing.append(f"adapter:{target}:{hid}")
             continue
         ev = rb[target].get("event", "PreToolUse")
@@ -166,9 +177,9 @@ def _write_hook_shims(args, root, manifest, hook_ids, target):
 
 
 def _compile_profile(root, dest):
-    """sage/project-profile.yaml → project-profile.json (hook 런타임은 의존성 0 = JSON 만 읽음).
+    """Compile a profile in memory; callers own validation and transactional writing.
 
-    반환: "none"(profile 파일 없음) | "ok"(컴파일 성공) | "fail"(profile 존재하나 컴파일 실패).
+    반환: (status, data, body, output_path). status = none|ok|fail.
     fail-closed(Codex 2R): profile 이 있는데 컴파일 실패하면 hook 이 조용히 pass-open 되어
     risk gate 가 무력화된다 → generate 가 실패로 보고한다. pyyaml 은 generate(빌드) 의존성(pyproject 선언).
     """
@@ -176,32 +187,221 @@ def _compile_profile(root, dest):
     if not os.path.exists(yml):
         yml = os.path.join(root, "sage", "project-profile.yaml")
     if not os.path.exists(yml):
-        return "none"
+        return "none", None, None, None
     try:
         import yaml
         data = yaml.safe_load(Path(yml).read_text(encoding="utf-8")) or {}
     except ImportError:
         print("   ❌ profile 컴파일 실패: pyyaml 미설치 (generate 빌드 의존성 — pip install pyyaml).", file=sys.stderr)
-        return "fail"
+        return "fail", None, None, None
     except Exception as e:
         print(f"   ❌ profile 컴파일 실패: YAML 파싱 오류 ({type(e).__name__}: {e}).", file=sys.stderr)
-        return "fail"
+        return "fail", None, None, None
     from sage.profile_compile import ProfileCompileError, materialize_profile
     try:
         data = materialize_profile(data)
     except ProfileCompileError as e:
         print(f"   ❌ profile 컴파일 실패: raw risk 필드 타입 오류 ({e}).", file=sys.stderr)
-        return "fail"
+        return "fail", None, None, None
     outp = os.path.join(dest, "sage", "project-profile.json")
-    os.makedirs(os.path.dirname(outp), exist_ok=True)
-    Path(outp).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"   ↳ profile 컴파일: {os.path.relpath(outp, dest)} (hook 런타임 입력)")
-    return "ok"
+    body = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    return "ok", data, body, outp
+
+
+def _existing_mode(path, default_mode):
+    try:
+        current = os.lstat(path)
+    except FileNotFoundError:
+        return default_mode
+    if not stat.S_ISREG(current.st_mode):
+        raise InstallDriftError(f"generate output is not a regular file: {path}")
+    return stat.S_IMODE(current.st_mode)
+
+
+def _transaction_write(transaction, path, body, default_mode, preserve_existing_mode):
+    mode = (_existing_mode(path, default_mode) if preserve_existing_mode else default_mode)
+    transaction.stage_write(path)
+    transaction.declare_file_output(path, body, mode)
+    _oc.write_text_lf(path, body, mode=mode)
+    transaction.record_output(path)
+
+
+def _host_registration_body(target, outp, registration):
+    document = {"hooks": registration}
+    if os.path.exists(outp):
+        try:
+            existing = json.loads(Path(outp).read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise ValueError(f"{target} hook registration JSON 손상: {exc}") from exc
+        if not isinstance(existing, dict):
+            raise ValueError(f"{target} hook registration JSON 루트는 object여야 함")
+        existing["hooks"] = registration
+        document = existing
+    return json.dumps(document, ensure_ascii=False, indent=2) + "\n"
+
+
+def _stamped_manifest(root, manifest, hook_ids, runtime_hash):
+    import hashlib
+
+    def sha(path):
+        return "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    stamped = deepcopy(manifest)
+    stamped["generator_version"] = __version__
+    stamped["hook_runtime_hash"] = runtime_hash
+    for hid in hook_ids:
+        entry = stamped["assets"].get(f"hooks/{hid}")
+        if not entry:
+            continue
+        paths = AssetPaths(root, "hook", hid)
+        if os.path.exists(paths.spec):
+            entry["spec_hash"] = sha(paths.spec)
+        if entry.get("form") == "native":
+            if os.path.exists(paths.native):
+                entry["canonical_hash"] = sha(paths.native)
+                entry["render_hash"] = {"native": sha(paths.native)}
+            continue
+        if os.path.exists(paths.core):
+            entry["canonical_hash"] = sha(paths.core)
+            contract_version = contract_version_of(paths.core)
+            if contract_version:
+                entry["adapter_contract_version"] = contract_version
+        adapter_hashes = {}
+        for runtime in ("claude", "codex"):
+            adapter = paths.adapter(runtime)
+            if os.path.exists(adapter):
+                adapter_hashes[runtime] = sha(adapter)
+        if adapter_hashes:
+            entry["adapter_hash"] = adapter_hashes
+            entry["render_hash"] = adapter_hashes
+    return stamped
 
 
 def _gen_hook(args, root):
-    manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
-    all_hook_ids = [k.split("/", 1)[1] for k in manifest["assets"] if k.startswith("hooks/")]
+    """Serialize write-mode planning and apply with the install destination lock."""
+    if not args.write:
+        return _gen_hook_locked(args, root)
+    lock_roots = sorted({os.path.abspath(args.dest), os.path.abspath(root)})
+    locks = [DestinationLock(path) for path in lock_roots]
+    try:
+        for lock in locks:
+            lock.acquire()
+        return _gen_hook_locked(args, root)
+    except (OSError, ValueError, InstallBusyError, InstallDriftError) as exc:
+        print(f"[sage generate] FAIL: 생성 preflight 실패 — {type(exc).__name__}: {exc}",
+              file=sys.stderr)
+        return 1
+    finally:
+        for lock in reversed(locks):
+            lock.release()
+
+
+def _gen_hook_locked(args, root):
+    manifest_path = os.path.join(root, "docs", "sage_harness", ".manifest.json")
+    preflight_fingerprints = capture_paths([manifest_path])
+    manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("assets"), dict):
+        print("[sage generate] FAIL: manifest 루트/assets 구조가 손상됨", file=sys.stderr)
+        return 2
+    manifest = deepcopy(manifest)
+    assets = manifest["assets"]
+    all_hook_ids = [k.split("/", 1)[1] for k in assets if k.startswith("hooks/")]
+    registered_inputs = []
+    for hook_id in all_hook_ids:
+        paths = AssetPaths(root, "hook", hook_id)
+        registered_inputs.extend((paths.spec, paths.core, paths.native,
+                                  paths.adapter("claude"), paths.adapter("codex")))
+    for runtime_paths in hook_runtime_files(root).values():
+        registered_inputs.extend(runtime_paths)
+    preflight_fingerprints.update(capture_paths(registered_inputs))
+    project_hooks = {}
+    canonical_adapter_writes = []
+
+    from sage.project_hook_contract import adapter_body, inspect_project_hook
+    if args.id and args.id not in all_hook_ids:
+        spec_candidate = os.path.join(root, "docs", "sage_harness", "hooks", f"{args.id}.md")
+        core_candidate = os.path.join(root, "scripts", "sage_harness", "hooks",
+                                      f"{args.id.replace('-', '_')}_core.py")
+        preflight_fingerprints.update(capture_paths([spec_candidate, core_candidate]))
+        if not (os.path.lexists(spec_candidate) or os.path.lexists(core_candidate)):
+            print(f"[sage generate] TOOL ERROR: manifest 에 hooks/{args.id} 없음", file=sys.stderr)
+            return 2
+        if args.write and args.target != "both":
+            print("[sage generate] TOOL ERROR: 신규 project hook 등록은 --target both 가 필수입니다",
+                  file=sys.stderr)
+            return 2
+        metadata, issues = inspect_project_hook(root, args.id)
+        if issues:
+            for issue in issues:
+                print(f"[sage generate] TOOL ERROR: {issue}", file=sys.stderr)
+            return 2
+        assets[f"hooks/{args.id}"] = {
+            "origin": "project", "form": "core_adapter", "conformance": "UNKNOWN",
+            "adapter_contract_version": metadata["contract_version"],
+        }
+        all_hook_ids.append(args.id)
+        project_hooks[args.id] = metadata
+
+    from sage.commands.install import _CORE_HOOKS
+    engine_hook_ids = {hook_id for hook_id, _form in _CORE_HOOKS}
+    for hid in sorted(all_hook_ids):
+        entry = assets.get(f"hooks/{hid}")
+        paths_for_id = AssetPaths(root, "hook", hid)
+        if not isinstance(entry, dict):
+            print(f"[sage generate] TOOL ERROR: manifest hooks/{hid} entry는 object여야 함",
+                  file=sys.stderr)
+            return 2
+        has_project_sources = (
+            hid not in engine_hook_ids
+            and os.path.isfile(paths_for_id.spec) and os.path.isfile(paths_for_id.core)
+        )
+        if has_project_sources and entry.get("form") != "core_adapter":
+            print(f"[sage generate] TOOL ERROR: project hook hooks/{hid} form 손상 — "
+                  "core_adapter 필요; canonical form은 자동 변환하지 않습니다", file=sys.stderr)
+            return 2
+        # Authored spec+core is sufficient provenance to route every generation mode through
+        # the strict project contract. Otherwise an all-hook run could fall back to the legacy
+        # CORE frontmatter parser and publish bindings that the project validator rejects.
+        recoverable_project = (
+            hid not in engine_hook_ids
+            and entry.get("form") == "core_adapter" and has_project_sources
+        )
+        if entry.get("origin") != "project" and not recoverable_project:
+            continue
+        if entry.get("form") != "core_adapter":
+            print(f"[sage generate] TOOL ERROR: project hook hooks/{hid} form 손상 — core_adapter 필요",
+                  file=sys.stderr)
+            return 2
+        project_paths = AssetPaths(root, "hook", hid)
+        preflight_fingerprints.update(capture_paths([project_paths.spec, project_paths.core]))
+        metadata, issues = inspect_project_hook(root, hid)
+        if issues:
+            for issue in issues:
+                print(f"[sage generate] TOOL ERROR: {issue}", file=sys.stderr)
+            return 2
+        entry["origin"] = "project"
+        entry["adapter_contract_version"] = metadata["contract_version"]
+        project_hooks[hid] = metadata
+
+    for hid, metadata in sorted(project_hooks.items()):
+        import hashlib
+        adapter_hashes = {}
+        for runtime in ("claude", "codex"):
+            adapter_path = AssetPaths(root, "hook", hid).adapter(runtime)
+            preflight_fingerprints.update(capture_paths([adapter_path]))
+            expected_body = adapter_body(runtime, hid)
+            adapter_hashes[runtime] = "sha256:" + hashlib.sha256(
+                expected_body.encode("utf-8")).hexdigest()
+            if os.path.lexists(adapter_path):
+                if (not os.path.isfile(adapter_path) or os.path.islink(adapter_path)
+                        or Path(adapter_path).read_text(encoding="utf-8") != expected_body):
+                    print(f"[sage generate] TOOL ERROR: project hook adapter 손상/비정본: {adapter_path}",
+                          file=sys.stderr)
+                    return 2
+            else:
+                canonical_adapter_writes.append((adapter_path, expected_body, 0o755))
+        assets[f"hooks/{hid}"]["adapter_hash"] = adapter_hashes
+        assets[f"hooks/{hid}"]["render_hash"] = dict(adapter_hashes)
     if args.id:
         if args.id not in all_hook_ids:
             print(f"[sage generate] TOOL ERROR: manifest 에 hooks/{args.id} 없음", file=sys.stderr); return 2
@@ -213,8 +413,14 @@ def _gen_hook(args, root):
     reg_ids = all_hook_ids
 
     # profile 컴파일 먼저(fail-closed): 실패면 산출물 쓰기 전에 중단 — hook risk gate 무력화 방지(Codex 2R)
+    profile_sources = [os.path.join(args.dest, "sage", "project-profile.yaml")]
+    if os.path.abspath(args.dest) != os.path.abspath(root):
+        profile_sources.append(os.path.join(root, "sage", "project-profile.yaml"))
+    preflight_fingerprints.update(capture_paths(profile_sources))
+    profile_status, profile_data, profile_body, profile_path = _compile_profile(root, args.dest)
+    runtime_hash = None
     if args.write:
-        status = _compile_profile(root, args.dest)
+        status = profile_status
         if status == "fail":
             print("[sage generate] FAIL: profile 컴파일 실패 → hook risk gate 무력화 위험. "
                   "pyyaml 설치 또는 YAML 수정 후 재실행(profile 없는 프로젝트면 sage/project-profile.yaml 제거).",
@@ -224,20 +430,14 @@ def _gen_hook(args, root):
         # 산출물 쓰기 전 중단 — "유효 YAML 이지만 게이트가 침묵 비활성되는" profile 의 배포 차단.
         if status == "ok":
             from sage.profile_validate import severity_of, validate_profile
-            compiled = os.path.join(args.dest, "sage", "project-profile.json")
-            try:
-                prof = json.loads(Path(compiled).read_text(encoding="utf-8"))
-            except Exception:
-                prof = None
-            if prof is not None:
-                issues = validate_profile(prof, root)
-                for sev, msg in issues:
-                    mark = {"FAIL": "❌", "WARN": "⚠️ ", "INFO": "ℹ️ "}.get(sev, "")
-                    print(f"   {mark} profile {sev}: {msg}", file=sys.stderr if sev == "FAIL" else sys.stdout)
-                if severity_of(issues) == "FAIL":
-                    print("[sage generate] FAIL: profile 검증 실패 → 게이트 침묵 비활성 위험. "
-                          "위 항목 수정 후 재실행.", file=sys.stderr)
-                    return 1
+            issues = validate_profile(profile_data, root)
+            for sev, msg in issues:
+                mark = {"FAIL": "❌", "WARN": "⚠️ ", "INFO": "ℹ️ "}.get(sev, "")
+                print(f"   {mark} profile {sev}: {msg}", file=sys.stderr if sev == "FAIL" else sys.stdout)
+            if severity_of(issues) == "FAIL":
+                print("[sage generate] FAIL: profile 검증 실패 → 게이트 침묵 비활성 위험. "
+                      "위 항목 수정 후 재실행.", file=sys.stderr)
+                return 1
         # hook 공용 런타임이 없으면 registration/settings 를 먼저 쓰고 manifest 에서 실패하는
         # 부분 산출물이 생긴다. 산출 전 preflight 로 닫는다.
         runtime_hash, missing_runtime = calculate_hook_runtime_hash(root)
@@ -257,88 +457,81 @@ def _gen_hook(args, root):
               "엔진 저장소는 설치 산출물을 보유하지 않습니다(manifest 스탬프는 그대로 수행).")
 
     targets = ["claude", "codex"] if args.target == "both" else [args.target]
-    rc = 0
+    planned = []
     for tgt in targets:
-        reg, missing = _build_registration(root, tgt, reg_ids)
+        reg, missing = _build_registration(root, tgt, reg_ids, project_hooks=project_hooks)
         if missing:
             print(f"[sage generate] FAIL ({tgt}): 누락 — {', '.join(missing)} (adapter 는 reverse_extract 정본)", file=sys.stderr)
-            rc = 1
-            continue
-        if tgt == "claude":
-            doc = {"hooks": reg}
-            outp = os.path.join(args.dest, ".claude", "settings.json")
-        else:
-            doc = {"hooks": reg}
-            outp = os.path.join(args.dest, ".codex", "hooks.json")
-        body = json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
-        if args.write and not engine_tree:
-            os.makedirs(os.path.dirname(outp), exist_ok=True)
-            # 기존 settings.json 에 hooks 키만 갱신(다른 설정 보존)
-            if tgt == "claude" and os.path.exists(outp):
-                try:
-                    existing = json.loads(Path(outp).read_text())
-                    existing["hooks"] = reg
-                    body = json.dumps(existing, ensure_ascii=False, indent=2) + "\n"
-                except Exception:
-                    pass
-            Path(outp).write_text(body, encoding="utf-8")
-            print(f"✅ ({tgt}) 등록 생성: {os.path.relpath(outp, args.dest)} — {sum(len(v) for v in reg.values())} event 블록")
-            # 등록만으로는 실행 불가 → hook 실행 shim 을 {host}/hooks/ 에 배치(P0-2)
-            _write_hook_shims(args, root, manifest, reg_ids, tgt)
-        else:
+            return 1
+        outp = os.path.join(args.dest, _RUNTIME_DIR[tgt],
+                            "settings.json" if tgt == "claude" else "hooks.json")
+        preflight_fingerprints.update(capture_paths([outp]))
+        try:
+            body = _host_registration_body(tgt, outp, reg)
+        except ValueError as exc:
+            print(f"[sage generate] FAIL: {exc}", file=sys.stderr)
+            return 1
+        shims = []
+        for hid in sorted(reg_ids):
+            form = manifest["assets"].get(f"hooks/{hid}", {}).get("form", "core_adapter")
+            canonical = (os.path.join(root, "scripts", "sage_harness", "hooks", "adapters", tgt, f"{hid}.sh")
+                         if form != "native" else os.path.join(root, "scripts", "sage_harness", "hooks", f"{hid}.sh"))
+            if hid in project_hooks or os.path.exists(canonical):
+                shim_path = os.path.join(args.dest, _RUNTIME_DIR[tgt], "hooks", f"{hid}.sh")
+                shims.append((shim_path, _shim_body(tgt, hid, form)))
+        planned.append((tgt, reg, outp, body, shims))
+        if not args.write or engine_tree:
             label = "engine-skip" if engine_tree else "dry-run"
             print(f"== generate {tgt} ({label}) ==\n{body}")
 
-    # manifest 스탬프 (--write) — profile 컴파일은 위에서 fail-closed 처리됨. --id 면 그 hook 만 재스탬프.
-    if args.write and rc == 0:
-        if not _stamp_manifest(root, stamp_ids, runtime_hash=runtime_hash):
-            return 1
-    return rc
+    if not args.write:
+        return 0
 
+    stamped = _stamped_manifest(root, manifest, stamp_ids, runtime_hash)
+    manifest_body = json.dumps(stamped, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    # JSON documents preserve an existing project mode. Security/runtime artifacts converge
+    # to their declared modes even when an older generator left broader or non-executable modes.
+    writes = [(manifest_path, manifest_body, 0o644, True)]
+    if profile_status == "ok":
+        writes.append((profile_path, profile_body, 0o600, False))
+    if not engine_tree:
+        for _tgt, _reg, outp, body, shims in planned:
+            writes.append((outp, body, 0o644, True))
+            writes.extend((path, body, 0o755, False) for path, body in shims)
+    writes.extend((path, body, mode, False)
+                  for path, body, mode in canonical_adapter_writes)
 
-def _stamp_manifest(root, hook_ids, runtime_hash=None):
-    import hashlib
-    def sha(p):
-        return "sha256:" + hashlib.sha256(Path(p).read_bytes()).hexdigest()
-    m = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
-    m["generator_version"] = __version__
-    if runtime_hash is None:
-        runtime_hash, missing_runtime = calculate_hook_runtime_hash(root)
-        if missing_runtime:
-            print("[sage generate] FAIL: hook_runtime_hash 스탬프 불가 — runtime 파일 누락: " +
-                  ", ".join(os.path.relpath(p, root) for p in missing_runtime), file=sys.stderr)
-            return False
-    m["hook_runtime_hash"] = runtime_hash
-    for hid in hook_ids:
-        e = m["assets"].get(f"hooks/{hid}")
-        if not e:
-            continue
-        paths = AssetPaths(root, "hook", hid)   # 경로 규약 단일소스(P2-6)
-        if os.path.exists(paths.spec):
-            e["spec_hash"] = sha(paths.spec)
-        if e.get("form") == "native":
-            if os.path.exists(paths.native):
-                e["canonical_hash"] = sha(paths.native); e["render_hash"] = {"native": sha(paths.native)}
-        else:
-            if os.path.exists(paths.core):
-                e["canonical_hash"] = sha(paths.core)
-                cv = contract_version_of(paths.core)   # R3: core.CONTRACT_VERSION 스탬프(인터페이스 계약 드리프트 가드)
-                if cv:
-                    e["adapter_contract_version"] = cv
-            ah = {}
-            for rt in ("claude", "codex"):
-                adp = paths.adapter(rt)
-                if os.path.exists(adp):
-                    ah[rt] = sha(adp)
-            if ah:
-                e["adapter_hash"] = ah; e["render_hash"] = ah
+    lock_roots = sorted({os.path.abspath(args.dest), os.path.abspath(root)})
+    transaction = None
     try:
-        atomic_write_json(os.path.join(root, "docs", "sage_harness", ".manifest.json"), m)
-    except OSError as exc:
-        print(f"[sage generate] FAIL: manifest 스탬프 원자적 교체 실패 — {exc}", file=sys.stderr)
-        return False
+        expected = dict(preflight_fingerprints)
+        uncaptured = [path for path, _body, _mode, _preserve_mode in writes
+                      if os.path.abspath(path) not in expected]
+        expected.update(capture_paths(uncaptured))
+        transaction = InstallTransaction(expected=expected, write_roots=lock_roots)
+        for path, body, mode, preserve_mode in writes:
+            _transaction_write(transaction, path, body, mode, preserve_mode)
+        transaction.verify_unconsumed()
+        transaction.verify_outputs()
+        cleanup_errors = transaction.commit()
+        if cleanup_errors:
+            print("[sage generate] WARN: transaction backup 정리 실패 — " + "; ".join(cleanup_errors),
+                  file=sys.stderr)
+    except (OSError, ValueError, InstallBusyError, InstallDriftError) as exc:
+        rollback_errors = transaction.rollback() if transaction is not None else []
+        suffix = ("; rollback 경고: " + "; ".join(rollback_errors)) if rollback_errors else ""
+        print(f"[sage generate] FAIL: 원자적 생성 실패 — {type(exc).__name__}: {exc}{suffix}",
+              file=sys.stderr)
+        return 1
+    if profile_status == "ok":
+        print(f"   ↳ profile 컴파일: {os.path.relpath(profile_path, args.dest)} (hook 런타임 입력)")
+    if not engine_tree:
+        for tgt, reg, outp, _body, shims in planned:
+            print(f"✅ ({tgt}) 등록 생성: {os.path.relpath(outp, args.dest)} — "
+                  f"{sum(len(v) for v in reg.values())} event 블록")
+            print(f"   ↳ ({tgt}) hook shim {len(shims)}건: {_RUNTIME_DIR[tgt]}/hooks/*.sh")
     print("✅ manifest 스탬프 갱신")
-    return True
+    return 0
 
 
 def _stamp_generator_version(root):

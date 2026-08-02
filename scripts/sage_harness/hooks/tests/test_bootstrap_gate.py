@@ -9,6 +9,7 @@ self-contained: 임시 SAGE 루트(manifest + hook spec + adapter stub)로 게�
 """
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -53,6 +54,10 @@ def _root(d):
                "acceptance_waiver.py", "override_audit.py", "messages.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
+    shutil.copyfile(
+        os.path.join(REPO, "scripts", "sage_harness", "hooks", "runtime", "checklist_contract.py"),
+        os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", "checklist_contract.py"),
+    )
     Path(os.path.join(d, "scripts", "sage_harness", "hooks", "cycle_binding.py")).write_text(
         "# cycle_binding.py\n")
     Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "retro_gate.py")).write_text("# retro_gate\n")

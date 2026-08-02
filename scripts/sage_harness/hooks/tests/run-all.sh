@@ -137,6 +137,10 @@ echo "### 25. contract_version_of (R3 계약버전 강제 — core.CONTRACT_VERS
 python3 "$HERE/test_contract_version.py" || rc=1
 
 echo ""
+echo "### 25b. project hook lifecycle (10-i 통합 등록·양 host dispatch·원자성)"
+python3 "$HERE/test_project_hook_lifecycle.py" || rc=1
+
+echo ""
 echo "### 26. profile_validate (R2 profile 스키마+의미검증 — 오타키 FAIL/전략부재 FAIL/미정의phase FAIL, P0-2)"
 python3 "$HERE/test_profile_validate.py" || rc=1
 

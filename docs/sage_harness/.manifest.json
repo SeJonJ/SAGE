@@ -1,140 +1,140 @@
 {
-  "sage_version": "0.1.0",
-  "generator_version": "0.9.76",
-  "template_version": "0.1.0",
-  "host_runtime": "claude",
   "assets": {
     "hooks/capture-declared-risk": {
-      "spec_hash": "sha256:00175ddf67e2ba9a492e73a5cfd259283164b653808092081accdb82ad3f7d74",
+      "adapter_contract_version": "1",
+      "adapter_hash": {
+        "claude": "sha256:dd4155c7a38974f513d9fdadeccbe9b914e9a2dd40ab5b6002dc976699be4b56",
+        "codex": "sha256:dfd1c978994ea5bd6da91b39ae7940d8daebb69b81123ebf19d153f668249687"
+      },
       "canonical_hash": "sha256:eaf95e8df3c5521a3b1f3eabd735a8e8937573090a6a60e8ac0c0f80dfba9e7a",
-      "adapter_hash": {
-        "claude": "sha256:dd4155c7a38974f513d9fdadeccbe9b914e9a2dd40ab5b6002dc976699be4b56",
-        "codex": "sha256:dfd1c978994ea5bd6da91b39ae7940d8daebb69b81123ebf19d153f668249687"
-      },
-      "adapter_contract_version": "1",
+      "conformance": "PASS",
+      "form": "core_adapter",
       "render_hash": {
         "claude": "sha256:dd4155c7a38974f513d9fdadeccbe9b914e9a2dd40ab5b6002dc976699be4b56",
         "codex": "sha256:dfd1c978994ea5bd6da91b39ae7940d8daebb69b81123ebf19d153f668249687"
       },
-      "conformance": "PASS",
       "risk": [],
-      "unresolved": [],
-      "form": "core_adapter",
-      "test": "scripts/sage_harness/hooks/tests/test_capture_declared_risk.py"
-    },
-    "hooks/post-tool-logger": {
-      "spec_hash": "sha256:9bcc616cb18a6dc4ad91646e1fdff815d2958822a8cd38b58d368a430367a718",
-      "canonical_hash": "sha256:69e89672b17bbaf723bb9633518fc4ca8fdae4b376499c21edfe400d642f7f48",
-      "adapter_hash": {
-        "claude": "sha256:c843bd1070c9de59b01123c1de72332e77e265f9107051f9e094012f40b085e1",
-        "codex": "sha256:b37349688572c5e6925b32689517e3ecd4c714b2b59dba890f1ffb980adb1ed9"
-      },
-      "adapter_contract_version": "1",
-      "render_hash": {
-        "claude": "sha256:c843bd1070c9de59b01123c1de72332e77e265f9107051f9e094012f40b085e1",
-        "codex": "sha256:b37349688572c5e6925b32689517e3ecd4c714b2b59dba890f1ffb980adb1ed9"
-      },
-      "conformance": "PASS",
-      "risk": [],
-      "unresolved": [],
-      "form": "core_adapter",
-      "test": "scripts/sage_harness/hooks/tests/test_post_tool_logger.py"
-    },
-    "hooks/pre-phase4-checklist-gate": {
-      "spec_hash": "sha256:9d1f8a28c5cd2b44158b7bf64b8addfc2fcdb5f9152ae225d5e41978c2dabf9d",
-      "canonical_hash": "sha256:fcaa8ffa11c08e0f63cdd57853c34fe71fe3a09a4ef953dcc4165423116ddf89",
-      "adapter_hash": {
-        "claude": "sha256:9b02157df8b4e4db0ce4e96edabc68601f781bccba802ca7b2f81c1f85d7955c",
-        "codex": "sha256:90a0205df56a47207e6e610a4a7f32dea87b2a42d893eef4ec59529f65e1747a"
-      },
-      "adapter_contract_version": "1",
-      "render_hash": {
-        "claude": "sha256:9b02157df8b4e4db0ce4e96edabc68601f781bccba802ca7b2f81c1f85d7955c",
-        "codex": "sha256:90a0205df56a47207e6e610a4a7f32dea87b2a42d893eef4ec59529f65e1747a"
-      },
-      "conformance": "PASS",
-      "risk": [],
-      "unresolved": [],
-      "form": "core_adapter",
-      "test": "scripts/sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py"
-    },
-    "hooks/pre-implementation-gate": {
-      "spec_hash": "sha256:57e35d36cd61301513629cfe40583d05000a2b2bc43ec61f644b94c610a4ebd1",
-      "canonical_hash": "sha256:c541bee4e08cc6036c4e77199ceb0e2259dfe1b3075fe4423be75ba2a277aca8",
-      "adapter_hash": {
-        "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
-        "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
-      },
-      "adapter_contract_version": "2",
-      "render_hash": {
-        "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
-        "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
-      },
-      "conformance": "PASS",
-      "safety_degraded": false,
-      "risk": [],
-      "unresolved": [],
-      "form": "core_adapter",
-      "test": "scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py",
-      "l3_review_strategy": "codex_feature_signal"
-    },
-    "hooks/stop-compliance-report": {
-      "spec_hash": "sha256:8ea6a8dd1d9207f27259aee7e9479725d02fa70fce5de46bf6d30c61d01d9a47",
-      "canonical_hash": "sha256:9722b3c9694ea0649208fb0ae021467cd872ded6b4328794aa8b08dc5690fcb6",
-      "adapter_hash": {
-        "claude": "sha256:031dcf4cee2de44cd3f5af5e4e38e95aa511704cfaa55b29f84d5d0b2bc7f8d0",
-        "codex": "sha256:1e3437fb58f182aa65a1c36669f008db6c61d9ca92a3b9b6c8d1cb0e4d4e79b1"
-      },
-      "adapter_contract_version": "1",
-      "render_hash": {
-        "claude": "sha256:031dcf4cee2de44cd3f5af5e4e38e95aa511704cfaa55b29f84d5d0b2bc7f8d0",
-        "codex": "sha256:1e3437fb58f182aa65a1c36669f008db6c61d9ca92a3b9b6c8d1cb0e4d4e79b1"
-      },
-      "conformance": "PASS",
-      "risk": [],
-      "unresolved": [],
-      "form": "core_adapter",
-      "test": "scripts/sage_harness/hooks/tests/test_stop_compliance_report.py"
+      "spec_hash": "sha256:00175ddf67e2ba9a492e73a5cfd259283164b653808092081accdb82ad3f7d74",
+      "test": "scripts/sage_harness/hooks/tests/test_capture_declared_risk.py",
+      "unresolved": []
     },
     "hooks/generated-artifact-write-guard": {
-      "spec_hash": "sha256:7fd1eb07f28e8d9d38748fafc8696b2ff4b56a4b360bb1e8fae499bcacf99ac8",
+      "adapter_contract_version": "2",
+      "adapter_hash": {
+        "claude": "sha256:ec506d9e4e881f66ca7f8a8a4081b517c0b86d2cdafdf9e9f7f6a869e5facf93",
+        "codex": "sha256:eef506545ad80aa90064de2471fce4350ce5454730d2473d988a6d1593b995de"
+      },
       "canonical_hash": "sha256:25fbc671664217bab7f45073121ae3f7b84924e75b5fc0a6f58f0b6973e8a6d0",
+      "conformance": "PASS",
+      "form": "core_adapter",
       "render_hash": {
         "claude": "sha256:ec506d9e4e881f66ca7f8a8a4081b517c0b86d2cdafdf9e9f7f6a869e5facf93",
         "codex": "sha256:eef506545ad80aa90064de2471fce4350ce5454730d2473d988a6d1593b995de"
       },
-      "adapter_contract_version": "2",
+      "risk": [],
+      "spec_hash": "sha256:7fd1eb07f28e8d9d38748fafc8696b2ff4b56a4b360bb1e8fae499bcacf99ac8",
+      "test": "scripts/sage_harness/hooks/tests/test_generated_artifact_write_guard.py",
+      "unresolved": []
+    },
+    "hooks/post-tool-logger": {
+      "adapter_contract_version": "1",
+      "adapter_hash": {
+        "claude": "sha256:c843bd1070c9de59b01123c1de72332e77e265f9107051f9e094012f40b085e1",
+        "codex": "sha256:b37349688572c5e6925b32689517e3ecd4c714b2b59dba890f1ffb980adb1ed9"
+      },
+      "canonical_hash": "sha256:69e89672b17bbaf723bb9633518fc4ca8fdae4b376499c21edfe400d642f7f48",
       "conformance": "PASS",
       "form": "core_adapter",
-      "test": "scripts/sage_harness/hooks/tests/test_generated_artifact_write_guard.py",
+      "render_hash": {
+        "claude": "sha256:c843bd1070c9de59b01123c1de72332e77e265f9107051f9e094012f40b085e1",
+        "codex": "sha256:b37349688572c5e6925b32689517e3ecd4c714b2b59dba890f1ffb980adb1ed9"
+      },
       "risk": [],
-      "unresolved": [],
+      "spec_hash": "sha256:9bcc616cb18a6dc4ad91646e1fdff815d2958822a8cd38b58d368a430367a718",
+      "test": "scripts/sage_harness/hooks/tests/test_post_tool_logger.py",
+      "unresolved": []
+    },
+    "hooks/pre-implementation-gate": {
+      "adapter_contract_version": "2",
       "adapter_hash": {
-        "claude": "sha256:ec506d9e4e881f66ca7f8a8a4081b517c0b86d2cdafdf9e9f7f6a869e5facf93",
-        "codex": "sha256:eef506545ad80aa90064de2471fce4350ce5454730d2473d988a6d1593b995de"
-      }
+        "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
+        "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
+      },
+      "canonical_hash": "sha256:c541bee4e08cc6036c4e77199ceb0e2259dfe1b3075fe4423be75ba2a277aca8",
+      "conformance": "PASS",
+      "form": "core_adapter",
+      "l3_review_strategy": "codex_feature_signal",
+      "render_hash": {
+        "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
+        "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
+      },
+      "risk": [],
+      "safety_degraded": false,
+      "spec_hash": "sha256:57e35d36cd61301513629cfe40583d05000a2b2bc43ec61f644b94c610a4ebd1",
+      "test": "scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py",
+      "unresolved": []
+    },
+    "hooks/pre-phase4-checklist-gate": {
+      "adapter_contract_version": "1",
+      "adapter_hash": {
+        "claude": "sha256:9b02157df8b4e4db0ce4e96edabc68601f781bccba802ca7b2f81c1f85d7955c",
+        "codex": "sha256:90a0205df56a47207e6e610a4a7f32dea87b2a42d893eef4ec59529f65e1747a"
+      },
+      "canonical_hash": "sha256:fcaa8ffa11c08e0f63cdd57853c34fe71fe3a09a4ef953dcc4165423116ddf89",
+      "conformance": "PASS",
+      "form": "core_adapter",
+      "render_hash": {
+        "claude": "sha256:9b02157df8b4e4db0ce4e96edabc68601f781bccba802ca7b2f81c1f85d7955c",
+        "codex": "sha256:90a0205df56a47207e6e610a4a7f32dea87b2a42d893eef4ec59529f65e1747a"
+      },
+      "risk": [],
+      "spec_hash": "sha256:9d1f8a28c5cd2b44158b7bf64b8addfc2fcdb5f9152ae225d5e41978c2dabf9d",
+      "test": "scripts/sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py",
+      "unresolved": []
     },
     "hooks/session-start-snapshot": {
-      "form": "core_adapter",
-      "conformance": "UNKNOWN",
-      "risk": [],
-      "unresolved": [],
-      "spec_hash": "sha256:8f2a83ca8956f23050fafd12261745a0dacbb1c18c6505f2e6efe0f197c0e113",
-      "canonical_hash": "sha256:bdeb1dcf32159149493882ee8e87bb4ca4de33154f6c205333995b88543d1277",
       "adapter_contract_version": "1",
       "adapter_hash": {
         "claude": "sha256:0913cee5abff18c7dc7b09025f1d6e9844392d8a48311d38065f5f5b2b7db313",
         "codex": "sha256:080cb526553aa3ee9e6383e0664e5f2a35cdffdde426b7b6f0aa9936c4615527"
       },
+      "canonical_hash": "sha256:bdeb1dcf32159149493882ee8e87bb4ca4de33154f6c205333995b88543d1277",
+      "conformance": "UNKNOWN",
+      "form": "core_adapter",
       "render_hash": {
         "claude": "sha256:0913cee5abff18c7dc7b09025f1d6e9844392d8a48311d38065f5f5b2b7db313",
         "codex": "sha256:080cb526553aa3ee9e6383e0664e5f2a35cdffdde426b7b6f0aa9936c4615527"
-      }
+      },
+      "risk": [],
+      "spec_hash": "sha256:8f2a83ca8956f23050fafd12261745a0dacbb1c18c6505f2e6efe0f197c0e113",
+      "unresolved": []
+    },
+    "hooks/stop-compliance-report": {
+      "adapter_contract_version": "1",
+      "adapter_hash": {
+        "claude": "sha256:031dcf4cee2de44cd3f5af5e4e38e95aa511704cfaa55b29f84d5d0b2bc7f8d0",
+        "codex": "sha256:1e3437fb58f182aa65a1c36669f008db6c61d9ca92a3b9b6c8d1cb0e4d4e79b1"
+      },
+      "canonical_hash": "sha256:9722b3c9694ea0649208fb0ae021467cd872ded6b4328794aa8b08dc5690fcb6",
+      "conformance": "PASS",
+      "form": "core_adapter",
+      "render_hash": {
+        "claude": "sha256:031dcf4cee2de44cd3f5af5e4e38e95aa511704cfaa55b29f84d5d0b2bc7f8d0",
+        "codex": "sha256:1e3437fb58f182aa65a1c36669f008db6c61d9ca92a3b9b6c8d1cb0e4d4e79b1"
+      },
+      "risk": [],
+      "spec_hash": "sha256:8ea6a8dd1d9207f27259aee7e9479725d02fa70fce5de46bf6d30c61d01d9a47",
+      "test": "scripts/sage_harness/hooks/tests/test_stop_compliance_report.py",
+      "unresolved": []
     }
   },
+  "generator_version": "0.9.76",
   "hook_runtime_hash": {
-    "shared": "sha256:354c2689c1d0af305d0826c15561de35eeffce81b12bc4b13125fa952682893c",
     "claude": "sha256:6991dff9a466ef7f0fb3e926df2119c2617f8d534bdb14c5ce3d42fa2576a464",
-    "codex": "sha256:97549092cb66b9226f8766b8f229679bc8024f27a21682d96bdee49f96f4b843"
-  }
+    "codex": "sha256:97549092cb66b9226f8766b8f229679bc8024f27a21682d96bdee49f96f4b843",
+    "shared": "sha256:71c6ed6766049e267b5f4dcb70704d55654d23397d8950cfb68e14b72d65b334"
+  },
+  "host_runtime": "claude",
+  "sage_version": "0.1.0",
+  "template_version": "0.1.0"
 }

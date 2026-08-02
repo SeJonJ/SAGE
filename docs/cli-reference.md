@@ -19,6 +19,27 @@
 `--target claude|codex|both`로 host를 지정합니다. agent/skill은 항상 두 host render를 요구하는
 render-first 흐름이므로 `--target`으로 범위를 줄이지 않습니다.
 
+신규 project hook은 `docs/sage_harness/hooks/<id>.md`와
+`scripts/sage_harness/hooks/<id>_core.py`만 먼저 작성한 뒤 다음 명령으로 등록합니다.
+
+```bash
+sage generate --kind hook --id <id> --write --target both
+```
+
+최초 등록은 양 host binding과 `CONTRACT_VERSION`을 검증하고 manifest, canonical adapter,
+host 설정, shim을 하나의 트랜잭션으로 기록합니다. 신규 ID의 단일 host 등록은 허용되지 않습니다.
+
+등록된 project hook은 profile 사용 여부와 무관하게 최신 `sage/project-profile.json`을 요구합니다.
+YAML/compiled profile이 없거나 서로 다르면 편집을 exit 2로 차단하므로, 등록 또는 profile 변경 뒤에는
+`sage generate --kind hook --write --target both`를 실행해야 합니다.
+
+project core의 `decide(event, profile, snapshot)`에서 `event`는 `hook_id`, `hook_event_name`
+(`PreToolUse`), `runtime`, `session_id`, `changes`를 제공합니다. `changes`는 host 입력에서 추출한
+`{path, op}` 목록이며 비어 있을 수 있습니다. 선택적 `plan_reads()`가 반환한 glob은 project root 안의
+regular file만 읽고, `snapshot`은 `{glob_results, files}` 형태입니다. 재귀 glob이 매치한 디렉터리는
+건너뛰지만 symlink ancestor를 포함한 root 이탈, symlink leaf match, 그 밖의 비정규 파일은 계약 오류로
+차단합니다.
+
 ## 검증과 진단
 
 | 명령 | 역할 |

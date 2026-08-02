@@ -300,11 +300,24 @@ def _validate_hook(root, asset_id, entry, run_regression):
     sev = "PASS"
     p = _hook_paths(root, asset_id)
     form = entry.get("form", "core_adapter")
-
+    project_origin = entry.get("origin") == "project"
+    from sage.commands.install import _CORE_HOOKS
+    core_hook_ids = {hook_id for hook_id, _form in _CORE_HOOKS}
+    hook_id = asset_id.split("/", 1)[1]
     def bump(s):
         nonlocal sev
         if _SEV_RANK[s] > _SEV_RANK[sev]:
             sev = s
+
+    project_sources = (hook_id not in core_hook_ids and os.path.exists(p["spec"])
+                       and os.path.exists(p["core_py"]))
+    if project_sources and not project_origin:
+        bump("FAIL")
+        if form == "core_adapter":
+            msgs.append("  FAIL project hook origin 스탬프 누락/손상 — sage generate --kind hook "
+                        f"--id {hook_id} --write --target both 로 복구")
+        else:
+            msgs.append("  FAIL project hook form/origin 손상 — core_adapter 정본 form은 자동 변환하지 않음")
 
     # 0. 미스탬프 감지(install 후 generate 전): hash 없음 → STALE "generate 필요"
     #    (pre-generate 등록만 된 hook 이 PASS 로 보여 위험을 가리는 것 방지 — Codex P2-6)
@@ -341,8 +354,14 @@ def _validate_hook(root, asset_id, entry, run_regression):
     if form == "core_adapter" and os.path.exists(p["core_py"]):
         want = contract_version_of(p["core_py"])
         have = entry.get("adapter_contract_version")
-        if want and have and want != have:
+        if project_origin and not want:
+            bump("FAIL"); msgs.append("  FAIL project hook core CONTRACT_VERSION 누락")
+        elif project_origin and (not isinstance(have, str) or not have):
+            bump("FAIL"); msgs.append("  FAIL project hook manifest 계약버전 스탬프 누락")
+        elif want and have and want != have:
             bump("STALE"); msgs.append(f"  STALE 계약버전 불일치 ({have}→{want}) — sage generate 재스탬프 필요")
+    if project_origin and form != "core_adapter":
+        bump("FAIL"); msgs.append("  FAIL project hook form은 core_adapter여야 함")
 
     # 4. WARN 정보 (exit 영향 없음)
     if entry.get("safety_degraded"):
@@ -802,7 +821,8 @@ def run(args):
         for m in msgs:
             print(m)
 
-    # orphan: spec 있는데 manifest 없음 → WARN (kind 별로 일반화 — hook/mcp 둘 다 spec md 가 SSOT)
+    # orphan: project hook은 spec+core 계약을 검사해 등록 대기와 등록 불가를 구분한다.
+    # validate는 읽기 전용이며 manifest나 adapter를 자동 생성하지 않는다.
     _orphan_kinds = []
     if args.kind in ("hook", "all"):
         _orphan_kinds.append("hooks")
@@ -813,9 +833,24 @@ def run(args):
         if os.path.isdir(spec_dir):
             for fn in sorted(os.listdir(spec_dir)):
                 if fn.endswith(".md") and not fn.endswith(".claims.yml") and f"{subdir}/{fn[:-3]}" not in assets:
-                    if overall == "PASS":
-                        overall = "WARN"
-                    print(f"⚠️  WARN  orphan spec (manifest 미등록): {subdir}/{fn[:-3]}")
+                    orphan_id = fn[:-3]
+                    if subdir == "hooks":
+                        from sage.project_hook_contract import inspect_project_hook
+                        _metadata, orphan_issues = inspect_project_hook(root, orphan_id)
+                        if orphan_issues:
+                            overall = "FAIL"
+                            print(f"❌ FAIL  orphan hook spec을 등록할 수 없음: hooks/{orphan_id}")
+                            for issue in orphan_issues:
+                                print(f"  {issue}")
+                        else:
+                            if overall == "PASS":
+                                overall = "WARN"
+                            print(f"⚠️  WARN  project hook registration pending: hooks/{orphan_id}")
+                            print(f"  → sage generate --kind hook --id {orphan_id} --write --target both")
+                    else:
+                        if overall == "PASS":
+                            overall = "WARN"
+                        print(f"⚠️  WARN  orphan spec (manifest 미등록): {subdir}/{orphan_id}")
 
     # MCP 소유권: .mcp.json/.codex managed-block 의 manifest 밖 서버 표면화 (mcp/all 대상)
     if args.kind in ("mcp", "all"):

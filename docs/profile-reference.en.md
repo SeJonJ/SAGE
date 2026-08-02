@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:83ccd117acf19f669bbb12b585131b85be24b536d5574b481dc4083a2fc3bab6 -->
+<!-- sage-doc-source: profile-reference.md sha256:8a815b2a1541603362ec56951471137276fc0c842f27290dba31e49bc34740a6 -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -11,6 +11,11 @@
 
 The local profile owns only machine-specific capabilities such as host, model, and vault paths. It
 cannot override shared policy that could weaken gates, including risk, PDCA, and review policy.
+
+Generate converges the compiled profile to mode `0600`. A `0644` file produced by an older release
+becomes owner-only on the next generation. In CI or containers where hooks run under another UID,
+run them under the same UID or arrange an explicit profile handoff; widening the file mode for
+cross-user sharing is not part of the supported contract.
 
 ## Minimal workflow
 
@@ -90,6 +95,23 @@ components:
 
 Components drive the implementer roster and ownership routing. `sage generate --kind roster`
 creates an `implementer-<component>` spec for each component.
+
+### Phase 04 checklist scanning
+
+```yaml
+checklist_scan_targets:
+  - label: "03 implementation"
+    glob: "plan_docs/03-implementation/**/*.md"
+    is_impl: true
+  - label: "backend plan"
+    glob: "backend/plan_docs/*.md"
+```
+
+Each item requires a `label` and a project-relative `glob`; `is_impl` is an optional boolean.
+Absolute, UNC/rooted, Windows drive-relative (`C:private/*.md`), `..` segment, and control-character
+paths are rejected. Runtime also checks every match by realpath, so a symlink cannot read a document
+outside the repository. If an older release silently ignored a malformed item, the new `sage
+generate` preserves existing outputs and fails. Correct the profile and generate again.
 
 ### Team runtime
 

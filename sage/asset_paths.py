@@ -35,6 +35,9 @@ def hook_runtime_files(root: str) -> dict[str, list[str]]:
             os.path.join(root, _HOOKS_REL, "cycle_binding.py"),
             os.path.join(runtime, "run_hook.py"),
             os.path.join(runtime, "hook_runtime.py"),
+            # checklist_contract.py: profile 검증과 pre-phase4 runtime이 공유하는 경로 봉쇄 계약.
+            # 누락/표류하면 유효성 판정과 실제 filesystem 읽기 경계가 갈린다.
+            os.path.join(runtime, "checklist_contract.py"),
             # loop_audit.py: hook_runtime.build_snapshot 가 audit_summary 를 호출하는 전이 의존이자
             # 게이트가 신뢰하는 감사 트레일 로직. 추적 안 하면 감사 무결성 코드가 validate 미감지로
             # 표류(7차 배치3, codex R1b P2 수용).

@@ -33,6 +33,28 @@ _PROFILE_HOOKS = _GATE_HOOKS | _BASELINE_HOOKS | {"post-tool-logger"}
 _PROFILE_REQUIRED_HOOKS = _GATE_HOOKS | _BASELINE_HOOKS
 
 
+def _project_hook_state(root, hook):
+    """Return unknown|project|damaged for a non-built-in manifest entry."""
+    path = os.path.join(root, "docs", "sage_harness", ".manifest.json")
+    if not os.path.exists(path):
+        return "unknown"
+    try:
+        with open(path, encoding="utf-8") as stream:
+            manifest = json.load(stream)
+    except Exception:
+        return "damaged"
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("assets"), dict):
+        return "damaged"
+    key = f"hooks/{hook}"
+    if key not in manifest["assets"]:
+        return "unknown"
+    entry = manifest["assets"][key]
+    if (not isinstance(entry, dict) or entry.get("origin") != "project"
+            or entry.get("form") != "core_adapter"):
+        return "damaged"
+    return "project"
+
+
 def _harden_io_encoding():
     """Keep enforcement/report output alive on legacy Windows console encodings."""
     for stream in (sys.stdout, sys.stderr):
@@ -99,13 +121,13 @@ def _missing_profile_hint(root, runtime):
             f"(설치 대상이 아닌 곳에 hook 만 남으면 모든 편집이 이렇게 차단된다).")
 
 
-def _prepare_gate_profile(root, hook, runtime=None):
+def _prepare_gate_profile(root, hook, runtime=None, project_hook=False):
     """Inject the compiled profile for every consumer; safety hooks fail closed on drift."""
-    if hook not in _PROFILE_HOOKS:
+    if hook not in _PROFILE_HOOKS and not project_hook:
         return None
     # Hook subprocess가 상위 shell의 다른 프로젝트 profile을 상속하더라도 현재 root의 정책만 사용한다.
     os.environ.pop("SAGE_PROFILE", None)
-    required = hook in _PROFILE_REQUIRED_HOOKS
+    required = hook in _PROFILE_REQUIRED_HOOKS or project_hook
 
     yaml_path = os.path.join(root, "sage", "project-profile.yaml")
     json_path = os.path.join(root, "sage", "project-profile.json")
@@ -232,7 +254,11 @@ def main():
     core_dir = _resolve_core_dir(root, a.core_dir)
     raw_text = sys.stdin.read() if not sys.stdin.isatty() else ""
     _notify_version_contract(root, a.hook)
-    profile_error = _prepare_gate_profile(root, a.hook, a.runtime)
+    project_state = (_project_hook_state(root, a.hook)
+                     if a.hook not in _FAIL_CLOSED_HOOKS else "unknown")
+    fail_closed = a.hook in _FAIL_CLOSED_HOOKS or project_state in ("project", "damaged")
+    profile_error = _prepare_gate_profile(
+        root, a.hook, a.runtime, project_hook=project_state == "project")
     if profile_error:
         if _is_stop_retry(a.hook, raw_text):
             print(f"[sage-hook] {a.hook} 재시도(stop_hook_active) — 프로필 문제로 차단하지 않고 통과: "
@@ -244,7 +270,7 @@ def main():
     except Exception as e:
         # 코어 로드 실패 = hook 무력화 → 조용히 통과 말고 surface(gate-disable 은 시끄럽게).
         print(f"⛔ [sage-hook] hook 코어 로드 실패({core_dir}) → {type(e).__name__}: {e}", file=sys.stderr)
-        return 2 if a.hook in _FAIL_CLOSED_HOOKS else 0
+        return 2 if fail_closed else 0
     try:
         if a.path is None:
             return run_hook.dispatch(a.runtime, a.hook, root, core_dir, raw_text)
@@ -253,7 +279,7 @@ def main():
     except Exception as e:
         print(f"⛔ [sage-hook] hook dispatch 실패({a.hook}) → "
               f"{type(e).__name__}: {e}", file=sys.stderr)
-        return 2 if a.hook in _FAIL_CLOSED_HOOKS else 0
+        return 2 if fail_closed else 0
 
 
 if __name__ == "__main__":

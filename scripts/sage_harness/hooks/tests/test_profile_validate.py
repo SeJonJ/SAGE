@@ -5,12 +5,17 @@
 + 의미검증(전략 모듈 부재·미정의 phase 참조 FAIL / 위험 글롭 전무 INFO).
 schema 검증은 jsonschema 선택의존 — 미설치면 schema 의존 테스트 skip(의미검증은 항상 동작).
 """
+import json
 import os
 import sys
 import unittest
+from pathlib import Path
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
+import sage.profile_validate as profile_validate  # noqa: E402
+from sage.checklist_contract import checklist_target_issues  # noqa: E402
 from sage.profile_validate import severity_of, validate_profile, _writeback_gate_issues  # noqa: E402
 
 try:
@@ -58,8 +63,89 @@ class TestProfileSchema(unittest.TestCase):
         domain = {"id": "auth", "risk_level": "L3", "protocol_pointer": "sage/auth.md"}
         self.assertNotIn("FAIL", [severity for severity, _ in sevs({"risk": {"domains": [domain]}})])
 
+    def test_checklist_scan_targets_schema_matches_runtime_contract(self):
+        schema_path = os.path.join(REPO, "schema", "profile.schema.json")
+        schema = json.loads(Path(schema_path).read_text(encoding="utf-8"))
+        valid = {"checklist_scan_targets": [
+            {"label": "implementation", "glob": "plan_docs/03-implementation/**/*.md",
+             "is_impl": True},
+        ]}
+        jsonschema.validate(valid, schema)
+
+        invalid_values = (
+            "plan_docs/**/*.md",
+            [None],
+            [{}],
+            [{"label": "implementation"}],
+            [{"glob": "plan_docs/**/*.md"}],
+            [{"label": "", "glob": "plan_docs/**/*.md"}],
+            [{"label": "implementation", "glob": "../private/*.md"}],
+            [{"label": "implementation", "glob": "   "}],
+            [{"label": "implementation", "glob": "x" * 513}],
+            [{"label": "implementation", "glob": "/private/*.md"}],
+            [{"label": "implementation", "glob": "C:private\\*.md"}],
+            [{"label": "implementation", "glob": "C:\\private\\*.md"}],
+            [{"label": "implementation", "glob": "\\\\server\\share\\*.md"}],
+            [{"label": "implementation", "glob": "plan_docs/*.md", "extra": True}],
+            [{"label": "implementation", "glob": "plan_docs/*.md", "is_impl": 1}],
+        )
+        for value in invalid_values:
+            with self.subTest(value=value):
+                with self.assertRaises(jsonschema.ValidationError):
+                    jsonschema.validate({"checklist_scan_targets": value}, schema)
+
+    def test_checklist_schema_and_manual_validator_have_identical_verdicts(self):
+        schema = json.loads(Path(REPO, "schema", "profile.schema.json").read_text(encoding="utf-8"))
+        validator = jsonschema.Draft202012Validator(schema)
+        samples = (
+            None,
+            [],
+            [{"label": "implementation", "glob": "plan_docs/**/*.md"}],
+            [{"label": "implementation", "glob": "plan_docs/**/*.md", "is_impl": False}],
+            "plan_docs/**/*.md",
+            [None],
+            [{}],
+            [{"label": "", "glob": "x"}],
+            [{"label": "x", "glob": "   "}],
+            [{"label": "x", "glob": "x" * 513}],
+            [{"label": "x", "glob": "/tmp/x"}],
+            [{"label": "x", "glob": "\\rooted\\x"}],
+            [{"label": "x", "glob": "C:private\\x"}],
+            [{"label": "x", "glob": "C:\\private\\x"}],
+            [{"label": "x", "glob": "a/../x"}],
+            [{"label": "x", "glob": "a/*.md", "is_impl": 1}],
+            [{"label": "x", "glob": "a/*.md", "extra": True}],
+            [{"label": "line\nbreak", "glob": "a/*.md"}],
+        )
+        for value in samples:
+            with self.subTest(value=value):
+                profile = {} if value is None else {"checklist_scan_targets": value}
+                schema_ok = validator.is_valid(profile)
+                manual_ok = not checklist_target_issues(profile, REPO)
+                self.assertEqual(schema_ok, manual_ok)
+
 
 class TestProfileSemantic(unittest.TestCase):
+    def test_checklist_scan_targets_fail_without_jsonschema(self):
+        invalid_values = (
+            False,
+            [None],
+            [{"label": "implementation"}],
+            [{"label": "implementation", "glob": "foo/../private/*.md"}],
+            [{"label": "implementation", "glob": "   "}],
+            [{"label": "implementation", "glob": "x" * 513}],
+            [{"label": "implementation", "glob": "C:private\\*.md"}],
+            [{"label": "implementation", "glob": "plan_docs/*.md", "extra": True}],
+            [{"label": "implementation", "glob": "plan_docs/*.md", "is_impl": 1}],
+        )
+        for value in invalid_values:
+            with self.subTest(value=value):
+                with mock.patch.object(profile_validate, "_schema_issues", return_value=[]):
+                    issues = sevs({"checklist_scan_targets": value})
+                self.assertEqual(severity_of(issues), "FAIL")
+                self.assertTrue(any("checklist_scan_targets" in message
+                                    for _severity, message in issues))
+
     def test_non_mapping_risk_type_has_one_semantic_owner(self):
         messages = [message for severity, message in sevs({"risk": "bad"})
                     if severity == "FAIL" and "risk 섹션은 매핑" in message]

@@ -542,7 +542,7 @@ def _runtime_root(d):
     os.makedirs(policies, exist_ok=True)
     strategies = os.path.join(hooks, "strategies", "pre_implementation_gate")
     os.makedirs(strategies, exist_ok=True)
-    for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py",
+    for fn in ("run_hook.py", "hook_runtime.py", "checklist_contract.py", "loop_audit.py", "retro_audit.py",
                "acceptance_waiver.py", "override_audit.py", "messages.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(runtime, fn)).write_text(f"# {fn}\n", encoding="utf-8")

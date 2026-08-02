@@ -9,7 +9,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # repo root
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-echo "== [1/6] wheel 빌드 (격리 build venv — 시스템 python PEP668 회피) =="
+echo "== [1/7] wheel 빌드 (격리 build venv — 시스템 python PEP668 회피) =="
 python3 -m venv "$WORK/buildenv"
 "$WORK/buildenv/bin/pip" install --quiet build >/dev/null
 ( cd "$HERE" && rm -rf dist build && "$WORK/buildenv/bin/python" -m build --wheel >/dev/null )
@@ -20,13 +20,13 @@ echo "   wheel: $(basename "$WHL")"
 # site-packages wheel 보다 먼저 import 해 번들 검증이 무력화된다. $WORK 엔 sage/ 가 없어 wheel 이 import 됨.
 cd "$WORK"
 
-echo "== [2/6] clean venv 설치 (wheel + jsonschema 만) =="
+echo "== [2/7] clean venv 설치 (wheel + jsonschema 만) =="
 python3 -m venv "$WORK/venv"
 "$WORK/venv/bin/pip" install --quiet "$WHL" jsonschema >/dev/null
 SAGE="$WORK/venv/bin/sage"
 PY="$WORK/venv/bin/python"
 
-echo "== [3/6] sage_root 가 번들(sage/_bundle)로 해석되는지 (repo fallback 아님) =="
+echo "== [3/7] sage_root 가 번들(sage/_bundle)로 해석되는지 (repo fallback 아님) =="
 unset SAGE_RESOURCE_ROOT
 "$PY" - <<'PYEOF'
 import os, sys
@@ -35,11 +35,12 @@ root = _resources.sage_root()
 assert root.endswith(os.path.join("sage", "_bundle")), f"sage_root 가 번들이 아님: {root}"
 assert os.path.isdir(os.path.join(root, "templates")), "번들에 templates 없음"
 assert os.path.isfile(os.path.join(root, "scripts", "sage_harness", "hooks", "pre_implementation_gate_core.py")), "번들에 hook core 없음"
+assert os.path.isfile(os.path.join(root, "scripts", "sage_harness", "hooks", "runtime", "checklist_contract.py")), "번들에 checklist 계약 없음"
 print(f"   sage_root = {root} (번들 OK)")
 PYEOF
 
 PROJ="$WORK/proj"; mkdir -p "$PROJ"
-echo "== [4/6] sage install (번들 → 신규 프로젝트 복사) =="
+echo "== [4/7] sage install (번들 → 신규 프로젝트 복사) =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$PROJ" >/dev/null
 test -f "$PROJ/docs/sage_harness/.manifest.json" || { echo "❌ manifest 미생성"; exit 1; }
 test -f "$PROJ/scripts/sage_harness/hooks/pre_implementation_gate_core.py" || { echo "❌ hook 정본 미복사"; exit 1; }
@@ -48,7 +49,7 @@ test -f "$PROJ/.claude/skills/sage-init/SKILL.md" || { echo "❌ /sage-init 부�
 echo "   install OK (manifest + hook 정본 + profile + /sage-init 스킬 복사)"
 
 # 강제 게이트 검증: 부트스트랩 전(project.name 빈값)엔 generate 가 BLOCK(exit 2) 돼야 한다.
-echo "== [4b/6] 부트스트랩 게이트 (빈 profile → generate BLOCK 기대) =="
+echo "== [4b/7] 부트스트랩 게이트 (빈 profile → generate BLOCK 기대) =="
 if env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --write --dest "$PROJ" >/dev/null 2>&1; then
   echo "❌ 미부트스트랩 profile 인데 generate 가 통과함 (게이트 미작동)"; exit 1
 fi
@@ -65,12 +66,51 @@ t = t.replace('l2_path_globs: []', 'l2_path_globs: ["src/**"]')
 open(p, "w", encoding="utf-8").write(t)
 PY
 
-echo "== [5/6] sage generate --kind hook --write (등록 산출물 + manifest 스탬프) =="
+echo "== [5/7] sage generate --kind hook --write (등록 산출물 + manifest 스탬프) =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --write --dest "$PROJ" >/dev/null
 test -f "$PROJ/.claude/settings.json" || { echo "❌ generate 가 .claude/settings.json 미생성"; exit 1; }
 echo "   generate OK (.claude/settings.json 등록 산출물)"
 
-echo "== [6/6] sage validate --check --schema (전체 PASS 기대) =="
+echo "== [6/7] 설치 template 기반 project hook 등록 + 양 host 실제 dispatch =="
+"$PY" - "$PROJ" <<'PY'
+import os, sys
+from pathlib import Path
+from sage import _resources
+
+root = Path(sys.argv[1])
+hook_id = "wheel-project-gate"
+template = Path(_resources.templates_dir(), "hook.spec.md").read_text(encoding="utf-8")
+(root / "docs" / "sage_harness" / "hooks" / f"{hook_id}.md").write_text(
+    template.replace('id: ""', f"id: {hook_id}", 1), encoding="utf-8")
+(root / "scripts" / "sage_harness" / "hooks" / "wheel_project_gate_core.py").write_text(
+    'CONTRACT_VERSION = "1"\n\n'
+    'def decide(event, profile, snapshot):\n'
+    '    return {"status": "block", "exit_code": 2, "message": "wheel project block"}\n',
+    encoding="utf-8")
+PY
+env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --id wheel-project-gate \
+  --write --target both --root "$PROJ" --dest "$PROJ" >/dev/null
+for HOST in claude codex; do
+  if [ "$HOST" = claude ]; then
+    INPUT='{"tool_name":"Write","tool_input":{"file_path":"src/a.py"}}'
+  else
+    INPUT='{"tool_name":"apply_patch","tool_input":{"command":"*** Update File: src/a.py\\n+x"}}'
+  fi
+  set +e
+  printf '%s' "$INPUT" | SAGE_PROJECT_ROOT="$PROJ" \
+    "$PROJ/scripts/sage_harness/hooks/adapters/$HOST/wheel-project-gate.sh" \
+    >"$WORK/$HOST.out" 2>"$WORK/$HOST.err"
+  RC=$?
+  set -e
+  test "$RC" -eq 2 || { echo "❌ $HOST project hook rc=$RC (expected 2)"; cat "$WORK/$HOST.err"; exit 1; }
+  grep -q "wheel project block" "$WORK/$HOST.err" || {
+    echo "❌ $HOST decision 미실행"; cat "$WORK/$HOST.err"; exit 1;
+  }
+  ! grep -q "Traceback" "$WORK/$HOST.err" || { echo "❌ $HOST traceback 노출"; exit 1; }
+done
+echo "   project hook lifecycle OK (template → register → claude/codex dispatch)"
+
+echo "== [7/7] sage validate --check --schema (전체 PASS 기대) =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" validate --check --schema --root "$PROJ"
 
 echo "✅ 순수 wheel 단독배포 게이트 PASS — 번들 리소스만으로 install→generate→validate 폐루프 동작"

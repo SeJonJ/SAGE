@@ -674,7 +674,7 @@ _ASSET_KEYS = {
     "spec_hash", "claims_hash", "canonical_hash", "adapter_hash",
     "adapter_contract_version", "render_hash", "conformance", "form",
     "runtime_targets", "test", "safety_degraded", "l3_review_strategy",
-    "risk", "unresolved",
+    "risk", "unresolved", "origin",
 }
 _PREFIXED_SHA_RE = re.compile(r"sha256:[0-9a-f]{64}")
 
@@ -721,6 +721,8 @@ def _asset_entry_issue(value):
         if (not isinstance(targets, list)
                 or any(target not in ("claude", "codex") for target in targets)):
             return "runtime_targets가 claude/codex array가 아님"
+    if "origin" in value and value["origin"] != "project":
+        return "origin은 project만 허용됨"
     for key in ("risk", "unresolved"):
         if key in value:
             items = value[key]
@@ -1090,7 +1092,7 @@ def _onboarding_text(host, skill_scope):
     selected = skill_scope if host == "codex" else "project-local"
     return (
         "# SAGE Team Onboarding\n\n"
-        f"Host: `{host}`  \n"
+        f"Host: `{host}`\n"
         f"Selected Codex CORE skill scope: `{selected}`\n\n"
         f"{detail}\n\n"
         "Run `sage-init` only for the first shared+local bootstrap. When the shared profile is already bootstrapped, "
@@ -1479,7 +1481,7 @@ def _run_locked(args) -> int:
     if next_manifest.get("source_core_content_hash") != preflight_source_hash:
         raise _tx.InstallDriftError("SAGE source resources changed during install")
     _write(manifest_path,
-           json.dumps(next_manifest, ensure_ascii=False, indent=2) + "\n",
+           json.dumps(next_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
            True, created, skipped, transaction=transaction)
 
     # 7. spec 템플릿(사람 작성 참고) + schema(validate 참조)
