@@ -957,6 +957,10 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
                     "phase00_path": phase00["path"],
                     "phase00_risk": phase00["risk"],
                     "required_risk": risk,
+                    # 안내가 갈리는 근거. 세션 선언이 위험도를 올린 경우 00 상향을 먼저 시키면
+                    # 실제보다 높은 위험도를 기록하게 된다 — 게이트가 기록 오염을 유도한다.
+                    "risk_from_declaration": any(
+                        str(s).startswith("declared_") for s in (c.get("trigger_sources") or [])),
                 }
 
     # PDCA report←approve 게이트: report phase 문서 작성은 L0(plan_docs)이라 아래 단축 전에 검사.

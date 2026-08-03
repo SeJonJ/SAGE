@@ -70,6 +70,21 @@ def _cycle_risk_declaration_hint(decision):
     return f"{_declare_hint(stem)}. 이 사이클이 맞으면 {repair}"
 
 
+def _reconciliation_hint(decision, phase00_path, required_risk):
+    """계산 위험도가 00 선언을 넘었을 때의 안내. 출처에 따라 첫 행동이 갈린다.
+
+    위험도가 세션 선언에서 왔다면 00 상향은 **실제보다 높은 위험도를 기록하는 행동**이다.
+    실측: 가정 질문에서 L3 가 잘못 포착돼 L2 사이클의 모든 편집이 막혔고, 안내대로 00 을
+    올렸다면 위험도 기록이 허위로 상향됐을 것이다. 그래서 선언 정정을 먼저 제시한다.
+    """
+    raise_00 = (f"실제로 {required_risk} 작업이면 `{phase00_path}`의 Phase 00 Risk Level을 "
+                f"{required_risk} 이상으로 상향한 뒤 재시도하세요")
+    if not decision.get("risk_from_declaration"):
+        return raise_00
+    return (f"이 위험도는 이번 세션의 {required_risk} 선언에서 왔습니다. 잘못 잡힌 선언이면 "
+            f"`위험도 선언 해제`라고 입력해 지우세요 — {raise_00}")
+
+
 def _ok_suffix(decision):
     """선언된 stem 은 OK 줄에도 노출한다 — 낡은 선언으로 조용히 통과하는 상태가 보이게."""
     if not decision.get("cycle_stem_declared"):
@@ -113,8 +128,7 @@ def _gate_record(decision, profile):
         "block_cycle_risk_reconciliation": (
             "BLOCK", "PDCA",
             f"Phase 00 Risk Level {phase00_risk}보다 계산 위험도 {required_risk}가 높습니다.", True,
-            f"`{phase00_path}`의 Phase 00 Risk Level을 {required_risk} 이상으로 먼저 상향한 뒤 "
-            "원래 변경을 재시도하세요"),
+            _reconciliation_hint(decision, phase00_path, required_risk)),
         "block_report_without_approval": ("BLOCK", "PDCA", f"{rs}.", False,
                              "approve phase 문서에 APPROVED 기록 후 report 작성"),
         "block_report_mixed_evidence": ("BLOCK", "PDCA", f"{rs}.", False,
@@ -166,6 +180,20 @@ def gate_text(decision, profile, runtime):
 
 def declared_capture_text(level, runtime):
     core = f"[Risk 선언 포착] 이번 세션 작업 레벨: {level} — 소스 수정 시 해당 레벨 게이트가 적용됩니다."
+    return core if runtime == "codex" else f"ℹ️  {core}"
+
+
+def declared_ambiguous_text(runtime):
+    core = ("[Risk 선언 미포착] 여러 레벨이 함께 언급돼 선언으로 보지 않았습니다 — "
+            "적용하려면 레벨 하나만 적어주세요.")
+    return core if runtime == "codex" else f"ℹ️  {core}"
+
+
+def declared_clear_text(runtime, existed=True):
+    # 지울 것이 없었는데 "지웠습니다" 로 안내하면 사용자가 원인 파악에 헤맨다.
+    core = ("[Risk 선언 해제] 이번 세션의 위험도 선언을 지웠습니다"
+            if existed else "[Risk 선언 해제] 이번 세션에는 위험도 선언이 없었습니다")
+    core += " — 이후 판정은 경로·내용 계산만 씁니다."
     return core if runtime == "codex" else f"ℹ️  {core}"
 
 

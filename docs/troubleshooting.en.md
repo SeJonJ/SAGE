@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:b167241b94dc183005aabef8346c6e5a7ef401baa019ddbd372f3a4b0716c03f -->
+<!-- sage-doc-source: troubleshooting.md sha256:6e4813d9eea7d86e8f6157dccd9edd0c03a16c7498ae961765f9c169eb7bec35 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -60,6 +60,23 @@ sage generate --kind agent --write
 
 Use `sage-asset-override` for supported CORE asset customization. Put project policy in
 `sage/project-profile.yaml` or project-owned governance documents.
+
+## A session risk declaration was captured by mistake and blocks edits
+
+When the gate demands a higher risk level than Phase 00 and that level came from **this session's
+declaration**, do not raise Phase 00 — that records a higher risk than the work actually carries.
+Clear the declaration instead.
+
+```
+risk 선언 취소
+```
+
+Send that as a prompt and the session declaration is deleted; later decisions use only path and
+content classification. The block message states where the risk level came from, so the guidance
+tells you which case you are in.
+
+A declaration is captured only from a plain statement naming a single level, and SAGE tells you when
+a prompt was not captured. An unused declaration expires after two days.
 
 ## Missing arguments for `sage absorb` or `sage override`
 

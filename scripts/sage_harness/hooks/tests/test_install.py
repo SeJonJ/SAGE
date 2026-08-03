@@ -653,7 +653,11 @@ class TestInstall(unittest.TestCase):
         for host in ("claude", "codex"):
             with self.subTest(host=host), tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as codex_home:
                 with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}):
-                    install.run(Args(host, d, no_global_skill=(host == "codex")))
+                    # rc 를 단언하지 않으면 install 실패가 manifest FileNotFoundError 로만 나타나
+                    # 진짜 사유가 가려진다(실측: run-all 중 1회 flake 에서 원인 추적 불가).
+                    self.assertEqual(
+                        install.run(Args(host, d, no_global_skill=(host == "codex"))), 0,
+                        "first install must succeed before manifest preservation is checked")
                     mpath = os.path.join(d, manifest_rel)
                     m = json.loads(Path(mpath).read_text(encoding="utf-8"))
                     # sage generate --kind {mcp,agent,skill} --write 가 stamp 하는 항목을 모사

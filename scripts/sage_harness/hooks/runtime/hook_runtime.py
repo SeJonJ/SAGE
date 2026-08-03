@@ -517,6 +517,25 @@ def run_capture_declared_risk(io, root, core_dir, raw_text):
             io.render_declared_capture(decision["level"])
         except Exception:
             pass
+    elif decision.get("message_key") == "risk_declaration_ambiguous":
+        # 기각을 알리는 것뿐이므로 상태 파일은 건드리지 않는다. UserPromptSubmit 은 exit 0 stdout 이
+        # 컨텍스트로 올라가는 이벤트라 양 런타임에서 실제로 보인다.
+        try:
+            io.render_declared_ambiguous()
+        except Exception:
+            pass
+    elif decision["action"] == "clear":
+        # 잘못 잡힌 선언의 유일한 탈출구다. 파일이 없어도 성공으로 안내한다 — 사용자가 원한
+        # 최종 상태(선언 없음)는 어느 쪽이든 같다.
+        path = os.path.join(log_dir, decision["state_file"])
+        try:
+            existed = os.path.exists(path)
+            if existed:
+                os.remove(path)
+            io.render_declared_clear(existed)
+        except Exception as exc:
+            print(f"[{hid}] 선언 해제 실패 — 수동으로 {path} 를 지우세요: "
+                  f"{type(exc).__name__}: {exc}", file=sys.stderr)
     return decision["exit_code"]
 
 

@@ -380,6 +380,20 @@ class TestPdcaEnforcement(unittest.TestCase):
                 self.assertEqual(d["phase00_risk"], phase00_risk)
                 self.assertEqual(d["required_risk"], required)
 
+    def test_reconciliation_records_whether_risk_came_from_declaration(self):
+        # 안내가 이 값으로 갈린다. 스탬프가 비면 messages 는 항상 00 상향을 제시하고,
+        # 선언 오탐에 걸린 사용자를 허위 상향으로 유도한다.
+        docs = self._complete_docs(risk="L1")
+        from_decl = core.decide(ev("frontend/app.js", declared="L3"), PDCA_PROFILE,
+                                snap_pdca(phase_docs=docs, plan=[_pdoc()]), {"found": True})
+        self.assertEqual(from_decl["message_key"], "block_cycle_risk_reconciliation")
+        self.assertTrue(from_decl["risk_from_declaration"])
+
+        from_path = core.decide(ev("a/payment.java"), PDCA_PROFILE,
+                                snap_pdca(phase_docs=docs, plan=[_pdoc()]), {"found": True})
+        self.assertEqual(from_path["message_key"], "block_cycle_risk_reconciliation")
+        self.assertFalse(from_path["risk_from_declaration"])
+
     def test_raising_phase00_risk_allows_retry_to_reach_existing_gate(self):
         event = ev("a/payment.java")
         stale = self._complete_docs(risk="L2")

@@ -85,6 +85,26 @@ class TestGateText(unittest.TestCase):
             self.assertIn("L3", message)
             self.assertIn("Phase 00", message)
 
+    def test_reconciliation_hint_offers_declaration_repair_before_raising_00(self):
+        # 위험도가 세션 선언에서 왔다면 00 상향은 실제보다 높은 위험도를 기록하는 행동이다.
+        # 게이트가 그걸 첫 행동으로 제시하면 스스로 기록 오염을 유도한다.
+        common = dict(phase00_risk="L2", required_risk="L3",
+                      phase00_path="plan_docs/00-base_plan/feature.md")
+        for runtime in ("claude", "codex"):
+            with self.subTest(runtime=runtime):
+                declared = M.gate_text(
+                    self._d("block_cycle_risk_reconciliation", risk_from_declaration=True, **common),
+                    {}, runtime)
+                self.assertIn("선언", declared)
+                self.assertIn("위험도 선언 해제", declared)
+                self.assertLess(declared.index("해제"), declared.index("상향"))
+
+                computed = M.gate_text(
+                    self._d("block_cycle_risk_reconciliation", risk_from_declaration=False, **common),
+                    {}, runtime)
+                self.assertIn("상향", computed)
+                self.assertNotIn("위험도 선언 해제", computed)
+
     def test_invalid_phase00_declaration_has_repair_hint(self):
         for runtime in ("claude", "codex"):
             message = M.gate_text(self._d("block_cycle_risk_declaration"), {}, runtime)

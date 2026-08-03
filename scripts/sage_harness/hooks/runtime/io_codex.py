@@ -81,6 +81,24 @@ def render_declared_capture(level):
     }, ensure_ascii=False))
 
 
+def render_declared_ambiguous():
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": messages.declared_ambiguous_text(RUNTIME)
+        }
+    }, ensure_ascii=False))
+
+
+def render_declared_clear(existed=True):
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": messages.declared_clear_text(RUNTIME, existed)
+        }
+    }, ensure_ascii=False))
+
+
 # --- post-tool-logger IO (Codex: apply_patch 본문 다중파일 + Move) ---
 def logger_tool_name(raw):
     return "apply_patch"

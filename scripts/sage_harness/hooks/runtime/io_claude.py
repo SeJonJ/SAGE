@@ -65,6 +65,14 @@ def render_declared_capture(level):
     print(messages.declared_capture_text(level, RUNTIME))
 
 
+def render_declared_ambiguous():
+    print(messages.declared_ambiguous_text(RUNTIME))
+
+
+def render_declared_clear(existed=True):
+    print(messages.declared_clear_text(RUNTIME, existed))
+
+
 # --- post-tool-logger IO (Claude: tool_input.file_path 단일) ---
 def logger_tool_name(raw):
     return raw.get("tool_name", "") or ""
