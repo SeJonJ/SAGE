@@ -7,8 +7,10 @@
 
 전 항목 코드 재대조 완료(허위/과장 없음, 상태 그대로 유효).
 
-2026-08-03 기준 **EH-1~EH-12 중 5건 완료·7건 보류**. EH-8·EH-10·EH-11 은 각각 §10-g·§10-i·§10-j 에서
-범위 경계로 분리된 신규 보류 항목이고, EH-12 는 §10-j-1 의 Phase 05 독립 리뷰에서 나왔다.
+2026-08-03 기준 **EH-1~EH-12 중 7건 완료·5건 보류**(완료 EH-1·2·3·5·6·7·9 / 보류 EH-4·8·10·11·12).
+EH-8·EH-10·EH-11 은 각각 §10-g·§10-i·§10-j 에서 범위 경계로 분리된 항목이고, EH-12 는 §10-j-1 의
+Phase 05 독립 리뷰에서 나왔다. EH-11 은 9개 하위 중 5개(J-4·J-5·J-6·J-8·J-9)를 `v0.9.78` 로 냈고
+결속 본체(J-1·J-2·J-3)와 J-7 이 남아 보류로 유지한다.
 
 - **EH-1·EH-2**: 완료 확인 — 추가 작업 불필요. (EH-1: `sage/commands/generate.py` roster kind + `test_gen_roster.py` /
   EH-2: `output_contract_check.py` `_DEFAULT_MARKERS` 중립화 + 주입 파라미터, 코드 상 실재)
@@ -226,7 +228,7 @@
 - **규모/위험**: **중대(L3)**. profile schema/compiler/validator/runtime, generate/install transaction,
   manifest, 양 host dispatch, template/docs, wheel packaging을 함께 변경한다.
 - **트리거**: ChatForYou 0.9.76 역적용과 project-authored gate 실증에서 충족됐다.
-- **상태**: ✅ **통합 구현·독립 리뷰 지적 반영(2026-08-02, 미커밋·로컬 재검증 완료)**. 10-i-1/10-i-2를
+- **상태**: ✅ **완료·릴리즈 `v0.9.77`(2026-08-02)**. 10-i-1/10-i-2를
   한 transaction/acceptance로 구현했다. 최소 fixture 출력 12곳·전체 설치 소비자 출력 22곳과 record/verify
   실패 주입 rollback, schema/manual parity,
   install force 보존, none/Claude/Codex 공식 suite와 clean wheel의 template→양 host dispatch→validate를 통과했다.
@@ -294,7 +296,8 @@
 - **규모/위험**: 중~중대. `cycle_binding`, pre-implementation gate, `capture-declared-risk` core,
   양 host io 렌더 채널, 신규 CLI(`sage cycle use`)와 머신 로컬 상태를 함께 다룬다. 하위 항목별 분할 착수 가능.
 - **트리거**: J-8은 게이트 우회 경로라 즉시 착수 후보다. 나머지는 장수 브랜치 다중 사이클 운용이 계속될 때.
-- **상태**: 🕗 **미착수(2026-08-02, §10-j로 등록)**. 요구·실측·경계·하위 분해 확정. 정본 위키:
+- **상태**: 🕗 **일부 완료(2026-08-03)**. J-4·J-5·J-6·J-8·J-9 는 두 사이클로 개발해 `v0.9.78` 릴리즈.
+  잔여: 결속 본체 J-1·J-2·J-3(EH-12 선행 필요 — J-2 가 그 위에 선다)과 J-7. 정본 위키:
   `SAGE - 장수 브랜치 다중 사이클 결속·선언 risk 설계 (10-j, 26.08.02)`.
 
 ## EH-12 — claude PreToolUse 의 비차단 메시지가 사용자에게 닿지 않음
