@@ -7,6 +7,9 @@
 
 전 항목 코드 재대조 완료(허위/과장 없음, 상태 그대로 유효).
 
+2026-08-03 기준 **EH-1~EH-12 중 5건 완료·7건 보류**. EH-8·EH-10·EH-11 은 각각 §10-g·§10-i·§10-j 에서
+범위 경계로 분리된 신규 보류 항목이고, EH-12 는 §10-j-1 의 Phase 05 독립 리뷰에서 나왔다.
+
 - **EH-1·EH-2**: 완료 확인 — 추가 작업 불필요. (EH-1: `sage/commands/generate.py` roster kind + `test_gen_roster.py` /
   EH-2: `output_contract_check.py` `_DEFAULT_MARKERS` 중립화 + 주입 파라미터, 코드 상 실재)
 - **EH-6 완료 확인**: SAGE-FB-05로 global/project-local 명시 선택, receipt, duplicate 진단, onboarding,
@@ -257,6 +260,63 @@
 - **트리거**: adapter/shim을 직접 호출하는 host 배선이 실재하거나, 세 entrypoint의 검사 동등성을 계약으로
   강제해야 할 때. 현 위협모델상 긴급도 낮음 — host 경로는 차단되고 validate가 잡는다.
 - **상태**: 🕗 **보류(2026-08-02, §10-i에서 경계로 분리)**. 독립 L3 설계·검토 대상.
+
+---
+
+## EH-11 — 장수 브랜치 다중 사이클 결속 검증 + 선언 risk 오탐
+
+- **배경**: §10-a(EH-7)는 장수 브랜치에서 cycle stem을 브랜치 leaf로 추론할 때의 *오안내*와 *선언 감사*를
+  닫았다. 그러나 한 브랜치에서 사이클을 이어 돌릴 때 **추론이 엉뚱한 사이클에 성공하는 경로**는 남았다.
+  ChatForYou `chatforyou_dual_implementation_doc_gate` 사이클 개발(실측 `0.9.77`)에서 수집했고, J-8·J-9는
+  같은 사이클의 Phase-05 cross-model 리뷰가 찾은 CORE 결함이다.
+- **문제**: (A) 1차 L3 사이클 뒤 같은 브랜치에서 2차 L2 소스 편집이 **차단도 경고도 없이 1차 사이클에 결속**된다.
+  위험도 판정은 10-c의 effective-max 규칙상 정상이고, 결함은 **어느 사이클에 결속됐는지 아무도 확인하지
+  않는다**는 점이다. 실제로 `Component-Backend: N/A`를 선언한 사이클로 backend 코드를 고치는데 게이트가
+  승인했다. 피해는 침묵이다 — 2차 acceptance 증거가 1차 버킷에 쌓이고 Phase 05가 1차 문서로 2차 코드를 판정한다.
+  (B) `capture-declared-risk`가 **가정 질문**("L3 개발을 1차로 한 후 …")에서 위험도를 선언으로 포착하고
+  `max(levels)`로 L3를 채택해, 세션 전체가 L3로 간주돼 모든 편집이 차단됐다. 안내는 *00을 L3로 올리라*고 해
+  따르면 위험도 기록을 허위 상향하게 된다. 정정 명령이 없어 방치하면 2일 TTL까지 세션이 묶인다.
+  (C) claude 런타임은 BLOCK을 stdout으로 렌더하는데 Claude Code는 exit 2일 때 stderr를 사유로 읽어
+  차단 사유가 사용자에게 전달되지 않는다(codex는 정상 — 런타임 간 계약 불일치).
+  (D) 거버넌스 자산 소스가 도메인 content keyword를 이름으로 담으면 자기 자신이 상위 tier로 분류된다.
+  (E) `io_codex.extract_phase4_changes`가 `*** Move to:` 목적지를 무시해 **파일 이동으로 Phase04 게이트를
+  우회**할 수 있고(같은 모듈의 범용 `extract_changes`는 처리하므로 Phase04 전용 추출기만 빠졌다),
+  `_project_snapshot`은 `plan_reads` 오반환을 `runtime_contract_error`로 잡지 않는다.
+- **접근**: J-1~J-9로 분해했다. J-1(완결 사이클 결속 차단)은 새 데이터 없이 profile의 `report_phase`/
+  `approve_phase`/`approve_marker`와 실제 06·05 문서로 판정 가능하다. J-3(`sage cycle use <stem>`)은
+  §10-e가 grant를 저장소 밖으로 옮긴 선례를 따라 머신 로컬 상태에 둬 닭-달걀·저장소 오염·낡은 값을 함께 해소한다.
+  J-5는 안내 순서가 핵심 — 계산 위험도가 세션 *선언*에서 왔으면 "선언이 맞습니까"를 먼저 묻고, 경로·내용 기반일
+  때만 00 상향을 제시한다(출처 구분은 §10-a의 `cycle_source` 스탬프로 가능).
+- **경계**: branch-leaf 추론 자체는 바꾸지 않는다(§10-a에서 기각, `test_cycle_binding.py`가 계약으로 못박음).
+  선언 통로도 막지 않는다(장수 브랜치의 정상 경로). 10-c의 effective-max 규칙은 불변 — 결함은 위험도 계산이
+  아니라 결속 검증 부재와 선언 입력 품질이다. 정규식을 느슨하게 해 포착을 늘리는 방향은 금지 — **오탐이 곧
+  세션 정지라 미포착보다 오탐이 비싸다**.
+- **규모/위험**: 중~중대. `cycle_binding`, pre-implementation gate, `capture-declared-risk` core,
+  양 host io 렌더 채널, 신규 CLI(`sage cycle use`)와 머신 로컬 상태를 함께 다룬다. 하위 항목별 분할 착수 가능.
+- **트리거**: J-8은 게이트 우회 경로라 즉시 착수 후보다. 나머지는 장수 브랜치 다중 사이클 운용이 계속될 때.
+- **상태**: 🕗 **미착수(2026-08-02, §10-j로 등록)**. 요구·실측·경계·하위 분해 확정. 정본 위키:
+  `SAGE - 장수 브랜치 다중 사이클 결속·선언 risk 설계 (10-j, 26.08.02)`.
+
+## EH-12 — claude PreToolUse 의 비차단 메시지가 사용자에게 닿지 않음
+
+- **배경**: §10-j-1(hook 런타임 IO 계약 정합)의 Phase 05 독립 리뷰에서 나왔다. 그 사이클은 BLOCK 사유가
+  claude 에서 stdout 으로 나가 유실되던 것을 stderr 로 옮겨 닫았는데, 같은 확인 과정에서 **반대 방향의
+  비대칭**이 드러났다.
+- **문제**: Claude Code 는 exit 0 hook 의 평문 stdout 을 디버그 로그에만 쓴다. 컨텍스트로 올라가는 이벤트는
+  `UserPromptSubmit`·`UserPromptExpansion`·`SessionStart` 뿐이고 **PreToolUse 는 아니다**(공식 문서 확인).
+  `io_claude.render_gate`·`render_phase4` 의 OK/WARN 은 평문 stdout 이므로 claude 사용자·모델 어느 쪽에도
+  닿지 않는다. codex 는 같은 상황에서 `hookSpecificOutput.additionalContext` 를 쓰므로 보인다.
+  PreToolUse 도 `additionalContext` 를 지원하므로 이는 host 제약이 아니라 SAGE 의 미사용이다.
+- **왜 지금 중요한가**: EH-11 의 **J-2(OK 줄에 판정 stem 과 출처를 항상 표기)가 이 위에 서 있다.**
+  이걸 먼저 닫지 않으면 J-2 는 claude 에서 아무 효과가 없는 기능이 된다.
+- **접근**: `io_claude` 의 비차단 렌더를 `hookSpecificOutput.additionalContext` JSON 으로 전환한다.
+  BLOCK(stderr)·비차단(JSON) 분리는 codex 와 같은 모양이 되어 런타임 대칭이 완성된다.
+- **경계**: BLOCK 채널은 §10-j-1 에서 이미 닫았으므로 건드리지 않는다. 문구(`messages`)도 불변이다.
+  `render_declared_capture` 는 `UserPromptSubmit` 바인딩이라 평문 stdout 이 정확하며 대상이 아니다.
+- **규모·위험**: 코드는 작다(렌더러 2곳). 위험은 claude 출력 프로토콜이 평문→JSON 으로 바뀌는 것이라
+  stdout 평문을 단언하는 기존 테스트가 흔들린다. §10-j-1 에서 채널 이동만으로 16건이 걸린 전례가 있다.
+- **트리거**: EH-11 의 J-2 착수 전. 또는 claude 에서 게이트 OK/WARN 이 안 보인다는 보고가 다시 나올 때.
+- **상태**: 보류. 실측·근거 확정, 미착수.
 
 ---
 
