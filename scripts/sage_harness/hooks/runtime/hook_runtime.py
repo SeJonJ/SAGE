@@ -677,11 +677,13 @@ def _load_project_core(root, hook_id, expected_version):
 def _project_snapshot(core, event, profile, root):
     planner = getattr(core, "plan_reads", None)
     if planner is None:
-        return {}
+        # plan_reads 는 선택이지만 snapshot 형태는 선택이 아니다. 여기서 {} 를 돌려주면
+        # core 의 snapshot["files"] 가 KeyError 로 죽고 catch-all 이 그것을 내부 버그로 안내한다.
+        return {"glob_results": {}, "files": {}}
     reads = planner(event, profile)
-    if not isinstance(reads, dict) or set(reads) - {"globs"}:
+    if not isinstance(reads, dict) or set(reads) != {"globs"}:
         raise ProjectHookError("project plan_reads must return {'globs': [...]} only")
-    globs = reads.get("globs", [])
+    globs = reads["globs"]
     if not isinstance(globs, list):
         raise ProjectHookError("project plan_reads.globs must be a list")
     root_real = os.path.realpath(root)

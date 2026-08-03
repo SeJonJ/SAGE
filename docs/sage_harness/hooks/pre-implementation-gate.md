@@ -15,7 +15,8 @@ report phase 작성 전 approve phase APPROVED 확인. pdca 비활성이면 None
 ## runtime_bindings
 - claude: { event: PreToolUse, matcher: "Write|Edit|MultiEdit", input: file_path + content/new_string/edits }
 - codex:  { event: PreToolUse, matcher: "apply_patch", input: command 본문 다중파일+content }
-- output: block=메시지+exit2 (claude stdout / codex stderr), warn·ok=exit0 (codex hookSpecificOutput)
+- output: block=메시지+exit2 (양 host stderr — host 가 차단 사유를 읽는 채널),
+  warn·ok=exit0 (claude stdout / codex hookSpecificOutput)
 
 ## canonical (부분추출 — IO-bound gate, 2단계 pure core)
 scripts/sage_harness/hooks/pre_implementation_gate_core.py
