@@ -1,12 +1,13 @@
 """io_claude — pre-implementation-gate 의 Claude 전용 IO (입력추출/declared/렌더). R1 분리.
 
 런타임이 진짜 다른 부분만: Write/Edit/MultiEdit 입력추출, .claude/logs declared 읽기,
-stdout 평문 렌더(채널). 본문 로직(snapshot/전략/decide)은 hook_runtime 공유,
+평문 렌더(채널 — BLOCK 은 stderr, 그 외는 stdout). 본문 로직(snapshot/전략/decide)은 hook_runtime 공유,
 사용자 문구는 messages 모듈 공유(5-3 — io_codex 와의 테이블 중복 제거).
 """
 import json
 import os
 import re
+import sys
 
 import messages
 
@@ -50,10 +51,12 @@ def read_declared_level(raw, root):
 
 
 def render_gate(decision, profile):
-    # 문구는 messages 공유(SSOT), 채널은 Claude=stdout 평문.
+    # 문구는 messages 공유(SSOT), 채널은 Claude=평문. BLOCK 만 stderr 로 보낸다 —
+    # Claude Code 는 exit 2 hook 의 차단 사유를 stderr 에서 읽으므로 stdout 으로 내면
+    # 사유가 만들어졌는데도 사용자에게 "No stderr output" 만 보인다.
     m = messages.gate_text(decision, profile, RUNTIME)
     if m:
-        print(m)
+        print(m, file=sys.stderr if decision["status"] == "block" else sys.stdout)
     return decision["exit_code"]
 
 
@@ -100,7 +103,7 @@ def render_phase4(decision):
     else:
         msg = ""
     if msg:
-        print(msg)
+        print(msg, file=sys.stderr if s == "block" else sys.stdout)
     return dec["exit_code"]
 
 
@@ -111,8 +114,10 @@ def attach_policy_results(model, profile, entries, raw_text, kc_result):
 
 
 def render_stop_result(today, block_reason=None):
+    # 저장 알림은 차단 사유가 아니므로 stdout 유지. 차단 사유만 stderr — Stop hook 도
+    # exit 2 일 때 host 가 읽는 채널은 stderr 다.
     print(messages.report_saved_text(HOST_DIR, today, RUNTIME))
     if block_reason:
-        print(f"[stop-compliance-report] ❌ {block_reason}")
+        print(f"[stop-compliance-report] ❌ {block_reason}", file=sys.stderr)
         return 2
     return 0

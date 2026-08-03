@@ -105,14 +105,19 @@ def extract_logged_changes(raw, rel):
     return changes
 
 
-# --- pre-phase4-checklist-gate IO (Codex: apply_patch Add|Update 만) ---
+# --- pre-phase4-checklist-gate IO (Codex: apply_patch Add|Update + Move 목적지) ---
 def extract_phase4_changes(raw, rel):
-    command = (raw.get("tool_input") or {}).get("command") or ""
+    # Move 목적지도 "그 경로에 문서가 생긴다"는 점에서 Add 와 같다. 빠뜨리면 임의 파일을
+    # 04-analyze 로 이동하는 것만으로 게이트를 지나간다. Delete 는 증거를 요구할 대상이 아니라 제외.
     changes = []
-    for line in command.splitlines():
+    for line in ((raw.get("tool_input") or {}).get("command") or "").splitlines():
         m = re.match(r"^\*\*\* (Add|Update) File: (.+)$", line)
         if m:
             changes.append({"path": rel(m.group(2).strip()), "op": m.group(1).lower()})
+            continue
+        move = re.match(r"^\*\*\* Move to: (.+)$", line)
+        if move:
+            changes.append({"path": rel(move.group(1).strip()), "op": "move"})
     return changes
 
 

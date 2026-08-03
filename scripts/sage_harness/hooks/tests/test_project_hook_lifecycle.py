@@ -568,6 +568,71 @@ class TestProjectHookRuntime(unittest.TestCase):
         finally:
             temp.cleanup()
 
+    def test_snapshot_shape_is_uniform_without_plan_reads(self):
+        # plan_reads 는 선택이지만 snapshot 형태는 선택이 아니다. 부재 시 {} 를 주면
+        # core 의 snapshot['files'] 가 KeyError 로 죽고 저작자는 SAGE 내부 버그로 안내받는다.
+        core = ("CONTRACT_VERSION = '1'\n\n"
+                "def decide(event, profile, snapshot):\n"
+                "    valid = snapshot['glob_results'] == {} and snapshot['files'] == {}\n"
+                "    return {'status': 'ok' if valid else 'block', "
+                "'exit_code': 0 if valid else 2, 'message': 'snapshot shape checked'}\n")
+        temp, root, profile = self._runtime_root(core)
+        try:
+            with mock.patch.dict(os.environ, {"SAGE_PROFILE": profile}):
+                err = StringIO()
+                with redirect_stderr(err):
+                    rc = run_hook.dispatch("codex", "demo-project-gate", root,
+                                           os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                           self._raw("codex"))
+            self.assertEqual(rc, 0, err.getvalue())
+            self.assertIn("snapshot shape checked", err.getvalue())
+        finally:
+            temp.cleanup()
+
+    def test_plan_reads_without_globs_key_is_author_contract_failure(self):
+        # {} 반환은 계약 위반인데 통과했다. 차단하되 저작자가 고칠 수 있는 오류로 안내해야 한다.
+        core = ("CONTRACT_VERSION = '1'\n\n"
+                "def plan_reads(event, profile):\n"
+                "    return {}\n\n"
+                "def decide(event, profile, snapshot):\n"
+                "    return {'status': 'ok', 'exit_code': 0, 'message': 'reached decide'}\n")
+        temp, root, profile = self._runtime_root(core)
+        try:
+            with mock.patch.dict(os.environ, {"SAGE_PROFILE": profile}):
+                err = StringIO()
+                with redirect_stderr(err):
+                    rc = run_hook.dispatch("codex", "demo-project-gate", root,
+                                           os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                           self._raw("codex"))
+            self.assertEqual(rc, 2)
+            self.assertIn("plan_reads must return", err.getvalue())
+            self.assertIn("project hook contract failure", err.getvalue())
+            self.assertNotIn("internal dispatch failure", err.getvalue())
+            self.assertNotIn("reached decide", err.getvalue())
+        finally:
+            temp.cleanup()
+
+    def test_codex_move_destination_reaches_project_event_changes(self):
+        # project hook 도 Phase04 추출기를 쓴다. 이동 목적지가 빠지면 project 게이트도 함께 눈이 먼다.
+        core = ("CONTRACT_VERSION = '1'\n\n"
+                "def decide(event, profile, snapshot):\n"
+                "    seen = sorted((c['path'], c['op']) for c in event['changes'])\n"
+                "    return {'status': 'ok', 'exit_code': 0, 'message': repr(seen)}\n")
+        temp, root, profile = self._runtime_root(core)
+        try:
+            raw = json.dumps({"tool_name": "apply_patch", "tool_input": {
+                "command": "*** Update File: docs/scratch.md\n*** Move to: plan_docs/04-analyze/x.md\n+x\n"}})
+            with mock.patch.dict(os.environ, {"SAGE_PROFILE": profile}):
+                err = StringIO()
+                with redirect_stderr(err):
+                    rc = run_hook.dispatch("codex", "demo-project-gate", root,
+                                           os.path.join(root, "scripts", "sage_harness", "hooks"), raw)
+            self.assertEqual(rc, 0, err.getvalue())
+            self.assertIn("('plan_docs/04-analyze/x.md', 'move')", err.getvalue())
+            self.assertIn("('docs/scratch.md', 'update')", err.getvalue())
+        finally:
+            temp.cleanup()
+
     def test_external_core_dir_cannot_replace_registered_project_core(self):
         temp, root, profile = self._runtime_root()
         outside = tempfile.TemporaryDirectory()

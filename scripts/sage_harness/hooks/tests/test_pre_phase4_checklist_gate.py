@@ -131,6 +131,46 @@ class TestAdapters(unittest.TestCase):
                 p = run_adapter(runtime, self._raw(runtime), root)
                 self.assertEqual(p.returncode, 0, f"{runtime} ok exit0")
 
+    def test_codex_move_into_phase4_triggers_gate(self):
+        # apply_patch 이동으로 04 문서가 생겨도 다른 생성 경로와 같은 판정을 받아야 한다.
+        four = "plan_docs/04-analyze/feature_analyze.md"
+        raw = {"tool_name": "apply_patch", "session_id": "t", "tool_input": {
+            "command": f"*** Update File: docs/scratch.md\n*** Move to: {four}\n+x\n"}}
+        with tempfile.TemporaryDirectory() as root:
+            setup_tree(root, "- [ ] todo")
+            self.assertEqual(run_adapter("codex", raw, root).returncode, 2)
+        with tempfile.TemporaryDirectory() as root:
+            setup_tree(root, "- [x] done")
+            self.assertEqual(run_adapter("codex", raw, root).returncode, 0)
+
+    def test_codex_delete_of_phase4_does_not_trigger_gate(self):
+        raw = {"tool_name": "apply_patch", "session_id": "t", "tool_input": {
+            "command": "*** Delete File: plan_docs/04-analyze/feature_analyze.md\n"}}
+        with tempfile.TemporaryDirectory() as root:
+            setup_tree(root, "- [ ] todo")
+            self.assertEqual(run_adapter("codex", raw, root).returncode, 0)
+
+    def test_block_reason_reaches_host_channel(self):
+        # 판정과 문구가 맞아도 채널이 틀리면 사용자는 사유를 못 본다. claude 는 exit 2 의
+        # 사유를 stderr 에서 읽고, codex 도 block 은 stderr 다.
+        for runtime in ("claude", "codex"):
+            with self.subTest(runtime=runtime), tempfile.TemporaryDirectory() as root:
+                setup_tree(root, "- [ ] todo")
+                p = run_adapter(runtime, self._raw(runtime), root)
+                self.assertEqual(p.returncode, 2)
+                self.assertIn("체크리스트 미완료", p.stderr)
+                self.assertEqual(p.stdout, "")
+
+    def test_ok_stays_off_the_block_channel(self):
+        # stderr 는 차단 사유 채널이다. 차단이 아닌 출력을 거기 섞으면 진짜 사유가 잡음에 묻힌다.
+        for runtime in ("claude", "codex"):
+            with self.subTest(runtime=runtime), tempfile.TemporaryDirectory() as root:
+                setup_tree(root, "- [x] done")
+                p = run_adapter(runtime, self._raw(runtime), root)
+                self.assertEqual(p.returncode, 0)
+                self.assertNotEqual(p.stdout.strip(), "")
+                self.assertEqual(p.stderr, "")
+
     def test_malformed_compiled_profile_blocks_without_traceback(self):
         for runtime in ("claude", "codex"):
             with self.subTest(runtime=runtime), tempfile.TemporaryDirectory() as root:

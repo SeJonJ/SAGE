@@ -257,7 +257,7 @@ class TestRetroGateWiring(unittest.TestCase):
             prof_path, log_dir = self._setup(root, mode="enforce")
             p = self._run(root, prof_path, stop_hook_active=False)
             self.assertEqual(p.returncode, 2)
-            self.assertIn(self.RUN_ID, p.stdout)
+            self.assertIn(self.RUN_ID, p.stderr)
 
     def test_enforce_retry_never_blocks_twice(self):
         # 플랫폼 제약(stop_hook_active): 세션당 block 은 정확히 1회.
@@ -326,8 +326,8 @@ class TestRetroGateWiring(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             prof_path, log_dir = self._setup(root, mode="enforce", has_loop_run=False)
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)
-            self.assertIn("결속 불가", p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)
+            self.assertIn("결속 불가", p.stderr)
 
     def test_05_content_is_ignored_gate_reads_only_06(self):
         # codex W1: 게이트는 06 자기선언만 읽는다 — 05 문서의 Loop-Run(rl-different)은 무관하다.
@@ -341,9 +341,9 @@ class TestRetroGateWiring(unittest.TestCase):
                 f.write(json.dumps({"ts": f"{TODAY}T00:00:00Z", "tool": "Write", "file": "plan_docs/05-other.md",
                                     "type": "plan-doc", "branch": "main", "session": "sess-1"}) + "\n")
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)   # 06 이 선언한 rl-test123 미확인 → BLOCK
-            self.assertIn(self.RUN_ID, p.stdout)
-            self.assertNotIn("rl-different", p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)   # 06 이 선언한 rl-test123 미확인 → BLOCK
+            self.assertIn(self.RUN_ID, p.stderr)
+            self.assertNotIn("rl-different", p.stderr)
             missing_ids = {r["run_id"] for r in self._audit_records(root) if r["event"] == "retro_check_missing"}
             self.assertEqual({self.RUN_ID}, missing_ids)   # 미완료도 05 의 rl-different 아닌 06 의 rl-test123
 
@@ -362,9 +362,9 @@ class TestRetroGateWiring(unittest.TestCase):
             import retro_audit
             retro_audit.record_check(root, "rl-old", "wiki/old.md", "본문")
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)   # 옛 설계였다면 rl-old 로 오통과(exit 0)
-            self.assertIn("결속 불가", p.stdout)
-            self.assertNotIn("rl-old", p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)   # 옛 설계였다면 rl-old 로 오통과(exit 0)
+            self.assertIn("결속 불가", p.stderr)
+            self.assertNotIn("rl-old", p.stderr)
 
     def _run_codex_stop(self, root, prof_path, stop_hook_active=False):
         log_dir = os.path.join(root, ".codex", "logs")
@@ -435,8 +435,8 @@ class TestRetroGateWiring(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             prof_path, log_dir = self._setup(root, mode="enforce", log_05=False)   # 05 는 이전 세션(로그엔 없음)
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)   # 06 자기선언 결속 → 미확인 BLOCK
-            self.assertIn(self.RUN_ID, p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)   # 06 자기선언 결속 → 미확인 BLOCK
+            self.assertIn(self.RUN_ID, p.stderr)
             missing_ids = {r["run_id"] for r in self._audit_records(root) if r["event"] == "retro_check_missing"}
             self.assertEqual({self.RUN_ID}, missing_ids)
 
@@ -460,7 +460,7 @@ class TestRetroGateWiring(unittest.TestCase):
                 root, mode="enforce", glob06="plan_docs/06-report/**/*.md",
                 doc06="plan_docs/06-report/cycle.md")
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)   # fnmatch 였다면 0(무동작)
+            self.assertEqual(p.returncode, 2, p.stderr)   # fnmatch 였다면 0(무동작)
 
     def _add_second_06(self, root, log_dir, name, body):
         # 이번 세션에 두 번째 06 문서를 추가(다중 06 시나리오용).
@@ -480,8 +480,8 @@ class TestRetroGateWiring(unittest.TestCase):
             retro_audit.record_check(root, self.RUN_ID, "wiki/note.md", "본문")
             self._add_second_06(root, log_dir, "06-beta.md", "완료 보고\n마커 없음\n")
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)   # 집계였다면 exit 0(가림)
-            self.assertIn("결속 불가", p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)   # 집계였다면 exit 0(가림)
+            self.assertIn("결속 불가", p.stderr)
 
     def test_multi_06_all_declared_and_checked_passes(self):
         # codex W1 P1(teeth): 정상 다중 사이클(각 06 유일 선언·확인)을 모호로 오판해 차단하면 안 된다.
@@ -504,7 +504,7 @@ class TestRetroGateWiring(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             prof_path, log_dir = self._setup(root, mode="enforce")
             p = self._run(root, prof_path, stop_hook_active="false")
-            self.assertEqual(p.returncode, 2, p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)
 
     def test_stop_hook_active_string_true_does_not_block(self):
         # 재시도는 플랫폼이 true 를 보낼 때 성립 — 문자열 "true" 도 active 로 봐 루프-안전 유지.
@@ -521,8 +521,8 @@ class TestRetroGateWiring(unittest.TestCase):
             with open(os.path.join(root, "plan_docs", "06-cycle.md"), "w", encoding="utf-8") as f:
                 f.write("완료 보고\nLoop-Run: rl-aaa\n임의 본문\nLoop-Run: rl-bbb\n")
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)
-            self.assertIn("모호", p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)
+            self.assertIn("모호", p.stderr)
 
     def _audit_records(self, root):
         path = os.path.join(root, ".sage", "retro_audit.jsonl")
@@ -572,7 +572,7 @@ class TestRetroGateWiring(unittest.TestCase):
                                     "file": "./plan_docs/06-cycle.md", "type": "plan-doc",
                                     "branch": "main", "session": "sess-1"}) + "\n")
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)   # 정규화 안 하면 공집합→exit 0
+            self.assertEqual(p.returncode, 2, p.stderr)   # 정규화 안 하면 공집합→exit 0
 
     def test_audit_write_failure_surfaced_not_silent(self):
         # codex 구현리뷰 3R P1(teeth): 감사파일이 디렉토리라 기록 불가면, 리포트에 유실을 명시해야 한다
@@ -594,7 +594,7 @@ class TestRetroGateWiring(unittest.TestCase):
             os.rename(os.path.join(log_dir, f"session-{TODAY}.jsonl"),
                       os.path.join(log_dir, "session-2020-01-01.jsonl"))   # 로거가 다른 날짜로 씀
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)   # 세션 스코프 감지→block(오늘자 파일 부재 무관)
+            self.assertEqual(p.returncode, 2, p.stderr)   # 세션 스코프 감지→block(오늘자 파일 부재 무관)
 
     def test_enforce_retro_note_true_but_vault_empty_is_inactive(self):
         # codex 7R P1(teeth): retro_note=true 라도 vault_path 가 비면 retro CLI 는 노트를 안 써(--check
@@ -634,7 +634,7 @@ class TestRetroGateWiring(unittest.TestCase):
             prof_path, log_dir = self._setup(root, mode="enforce")   # 06-cycle → rl-test123(미확인)
             self._add_second_06(root, log_dir, "06-beta.md", "완료 보고\nLoop-Run: rl-beta\n")
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)
             missing = {r["run_id"] for r in self._audit_records(root) if r["event"] == "retro_check_missing"}
             self.assertEqual({self.RUN_ID, "rl-beta"}, missing)
 
@@ -645,8 +645,8 @@ class TestRetroGateWiring(unittest.TestCase):
             prof_path, log_dir = self._setup(root, mode="enforce")   # 06-cycle → rl-test123(미확인)
             self._add_second_06(root, log_dir, "06-beta.md", "완료 보고\n마커 없음\n")   # 미선언
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)
-            self.assertIn("결속 불가", p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)
+            self.assertIn("결속 불가", p.stderr)
             missing = {r["run_id"] for r in self._audit_records(root) if r["event"] == "retro_check_missing"}
             self.assertEqual({self.RUN_ID}, missing)   # 유효 선언·미확인 run 은 기록됨
 
@@ -657,7 +657,7 @@ class TestRetroGateWiring(unittest.TestCase):
             os.makedirs(os.path.join(root, "vlt"), exist_ok=True)
             prof_path, log_dir = self._setup(root, mode="enforce", vault_path="vlt")
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)   # raw 상대 isdir 였다면 CWD 기준→INFO(exit0)
+            self.assertEqual(p.returncode, 2, p.stderr)   # raw 상대 isdir 였다면 CWD 기준→INFO(exit0)
 
     def test_loop_run_in_body_code_block_is_ignored(self):
         # codex W1 R2 P2(teeth): 헤더의 실제 Loop-Run 뒤 본문 코드블록의 예시 Loop-Run 이 상충으로 잡혀
@@ -667,9 +667,9 @@ class TestRetroGateWiring(unittest.TestCase):
             with open(os.path.join(root, "plan_docs", "06-cycle.md"), "w", encoding="utf-8") as f:
                 f.write(f"# 완료 보고\nLoop-Run: {self.RUN_ID}\n\n## 예시\n```\nLoop-Run: rl-example\n```\n")
             p = self._run(root, prof_path, stop_hook_active=False)
-            self.assertEqual(p.returncode, 2, p.stdout)   # 모호 아님 — rl-test123 로 유일 결속 후 미확인 BLOCK
-            self.assertIn(self.RUN_ID, p.stdout)
-            self.assertNotIn("모호", p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)   # 모호 아님 — rl-test123 로 유일 결속 후 미확인 BLOCK
+            self.assertIn(self.RUN_ID, p.stderr)
+            self.assertNotIn("모호", p.stderr)
 
     # --- W2: writer-독립 06 감지 (SessionStart 스냅샷) ---
     def _run_session_start(self, root, prof_path, session_id="sess-1"):
@@ -710,8 +710,8 @@ class TestRetroGateWiring(unittest.TestCase):
             self._run_session_start(root, prof_path)                               # baseline: 06 없음
             self._bash_write_06(root)                                              # 로그 없이 06 생성
             p = self._run(root, prof_path, baseline=False)                         # 위 baseline 유지
-            self.assertEqual(p.returncode, 2, p.stdout)   # 스냅샷 diff 로 06 포착 → 미확인 enforce BLOCK
-            self.assertIn(self.RUN_ID, p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)   # 스냅샷 diff 로 06 포착 → 미확인 enforce BLOCK
+            self.assertIn(self.RUN_ID, p.stderr)
 
     def test_snapshot_write_once_preserves_baseline(self):
         # write-once(teeth): baseline 을 찍은 뒤 06 이 생겨도 재-SessionStart 가 baseline 을 덮지 않는다.
@@ -721,7 +721,7 @@ class TestRetroGateWiring(unittest.TestCase):
             self._bash_write_06(root)                    # 06 생성
             self._run_session_start(root, prof_path)     # 재-SessionStart — write-once 로 baseline 보존돼야
             p = self._run(root, prof_path, baseline=False)
-            self.assertEqual(p.returncode, 2, p.stdout)   # baseline 이 덮였다면 감지 실패
+            self.assertEqual(p.returncode, 2, p.stderr)   # baseline 이 덮였다면 감지 실패
 
     def test_unchanged_06_not_flagged_by_snapshot(self):
         # SessionStart 시점부터 있던(이번 세션 미변경) 06 은 스냅샷 diff 로 안 잡힌다. baseline 정상이라
@@ -763,8 +763,8 @@ class TestRetroGateWiring(unittest.TestCase):
             prof_path, log_dir = self._setup(root, mode="enforce", log_06=False)
             self._bash_write_06(root)
             p = self._run(root, prof_path, baseline=False)
-            self.assertEqual(p.returncode, 2, p.stdout)
-            self.assertIn("writer-독립 06 감지 불가", p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)
+            self.assertIn("writer-독립 06 감지 불가", p.stderr)
 
     def test_corrupt_baseline_enforce_blocks(self):
         # 손상 baseline + enforce → BLOCK(읽기 불가 baseline 은 신뢰 불가 → fail-closed).
@@ -773,7 +773,7 @@ class TestRetroGateWiring(unittest.TestCase):
             self._bash_write_06(root)
             self._plant_snapshot(root, "sess-1", '{"sha256": {trunc')   # 잘린 JSON
             p = self._run(root, prof_path, baseline=False)
-            self.assertEqual(p.returncode, 2, p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)
 
     def test_no_session_id_enforce_blocks(self):
         # session_id 없음 → 상관 불가(no_session) + enforce → BLOCK.
@@ -781,7 +781,7 @@ class TestRetroGateWiring(unittest.TestCase):
             prof_path, log_dir = self._setup(root, mode="enforce", log_06=False)
             self._bash_write_06(root)
             p = self._run(root, prof_path, baseline=False, session_id="")
-            self.assertEqual(p.returncode, 2, p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)
 
     def test_absent_baseline_advisory_warns_not_blocks(self):
         # advisory 는 같은 degraded 조건에서 차단하지 않고 WARN(rc 0) — 표면화만.
@@ -810,8 +810,8 @@ class TestRetroGateWiring(unittest.TestCase):
             retro_audit.record_check(root, self.RUN_ID, "wiki/note.md", "본문")   # 로그된 06 은 확인됨
             self._plant_snapshot(root, "sess-1", "{ broken")
             p = self._run(root, prof_path, baseline=False)
-            self.assertEqual(p.returncode, 2, p.stdout)   # 확인된 06 이 있어도 손상 baseline → BLOCK
-            self.assertIn("writer-독립 06 감지 불가", p.stdout)
+            self.assertEqual(p.returncode, 2, p.stderr)   # 확인된 06 이 있어도 손상 baseline → BLOCK
+            self.assertIn("writer-독립 06 감지 불가", p.stderr)
 
     # --- W4: --no-vault run 예외 (skip 이벤트) ---
     def test_no_vault_skip_passes_gate(self):
@@ -898,7 +898,7 @@ class TestWritebackGateWiring(unittest.TestCase):
             prof_path, _ = self._setup(root, mode="enforce", tier="L2", declared=False)
             p = self._run(root, prof_path, stop_hook_active=False)
             self.assertEqual(p.returncode, 2)
-            self.assertIn("Depth-Self-Review", p.stdout)
+            self.assertIn("Depth-Self-Review", p.stderr)
 
     def test_enforce_retry_never_blocks_twice(self):
         with tempfile.TemporaryDirectory() as root:
@@ -935,7 +935,7 @@ class TestWritebackGateWiring(unittest.TestCase):
             prof_path, _ = self._setup(root, mode="enforce", tier="L3", declared=False, forged_06_tier="L1")
             p = self._run(root, prof_path, stop_hook_active=False)
             self.assertEqual(p.returncode, 2)
-            self.assertIn("Depth-Self-Review", p.stdout)
+            self.assertIn("Depth-Self-Review", p.stderr)
 
     def test_no_00_defaults_to_l2_and_blocks(self):
         # 00 부재(결속 불가) → None → 보수적 L2 → 미선언이면 BLOCK(fail-closed).
@@ -962,7 +962,7 @@ class TestWritebackGateWiring(unittest.TestCase):
             stdin = json.dumps({"session_id": "sess-1", "stop_hook_active": False})
             p = subprocess.run(["bash", adapter], input=stdin, capture_output=True, text=True, env=env)
             self.assertEqual(p.returncode, 2)
-            self.assertIn("writer-독립", p.stdout)
+            self.assertIn("writer-독립", p.stderr)
 
 
 if __name__ == "__main__":

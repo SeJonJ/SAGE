@@ -891,14 +891,31 @@ class TestRenderChannels(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertIn("hookSpecificOutput", out.getvalue())
 
-    def test_claude_block_to_stdout_with_phase_text(self):
+    def test_claude_block_to_stderr_with_phase_text(self):
+        # host 는 exit 2 hook 의 차단 사유를 stderr 에서 읽는다. stdout 으로 내면 게이트가
+        # 사유를 만들었는데도 사용자에게는 "No stderr output" 만 보인다.
         d = {"message_key": "block_phase_incomplete", "status": "block", "exit_code": 2,
              "risk": "L2", "file_short": "f", "reason": "r", "missing_phases": ["00", "01"]}
-        out = io.StringIO()
-        with redirect_stdout(out):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
             rc = io_claude.render_gate(d, {})
         self.assertEqual(rc, 2)
-        self.assertIn("PDCA phase 미작성", out.getvalue())   # 게이트 출력 문자열 계약 보존
+        self.assertIn("PDCA phase 미작성", err.getvalue())   # 게이트 출력 문자열 계약 보존
+        self.assertEqual(out.getvalue(), "")
+
+    def test_claude_non_block_stays_on_stdout(self):
+        # stderr 는 차단 사유 채널이다(exit 2 에서 host 가 읽는 곳). 차단이 아닌 출력을 거기 섞으면
+        # 통과한 편집마다 사유 없는 잡음이 쌓여 진짜 차단 사유가 묻힌다.
+        for key, status, code in (("ok_l2", "ok", 0), ("warn_l2_no_plan", "warn", 0)):
+            with self.subTest(message_key=key):
+                d = {"message_key": key, "status": status, "exit_code": code,
+                     "file_short": "f", "reason": "r"}
+                out, err = io.StringIO(), io.StringIO()
+                with redirect_stdout(out), redirect_stderr(err):
+                    rc = io_claude.render_gate(d, {})
+                self.assertEqual(rc, code)
+                self.assertIn("[GATE", out.getvalue())
+                self.assertEqual(err.getvalue(), "")
 
 
 class TestLoggerExtraction(unittest.TestCase):
@@ -912,6 +929,30 @@ class TestLoggerExtraction(unittest.TestCase):
         ch = io_codex.extract_logged_changes({"tool_input": {"command": cmd}}, _ID)
         ops = {(c["path"], c["op"]) for c in ch}
         self.assertEqual(ops, {("a.src", "add"), ("b.src", "update"), ("c.src", "delete"), ("d.src", "move")})
+
+
+class TestCodexPhase4Extraction(unittest.TestCase):
+    CMD = ("*** Add File: a.src\n+x\n*** Update File: b.src\n+y\n"
+           "*** Delete File: c.src\n*** Move to: d.src")
+
+    def _phase4(self):
+        return {(c["path"], c["op"])
+                for c in io_codex.extract_phase4_changes({"tool_input": {"command": self.CMD}}, _ID)}
+
+    def test_move_destination_is_collected(self):
+        # Move 목적지를 버리면 임의 파일을 04-analyze 로 옮기는 것만으로 게이트를 지나간다.
+        self.assertIn(("d.src", "move"), self._phase4())
+
+    def test_delete_stays_excluded(self):
+        # 삭제는 체크리스트 증거를 요구할 대상이 아니다 — 의도된 제외이며 회귀로 고정한다.
+        self.assertNotIn(("c.src", "delete"), self._phase4())
+
+    def test_paths_match_general_extractor_except_delete(self):
+        # 같은 apply_patch 본문을 읽는 추출기끼리 인식 경로가 갈리면 게이트별 사각지대가 생긴다.
+        general = {c["path"] for c in io_codex.extract_changes({"tool_input": {"command": self.CMD}}, _ID)}
+        logged = {c["path"] for c in io_codex.extract_logged_changes({"tool_input": {"command": self.CMD}}, _ID)}
+        self.assertEqual(general, logged)
+        self.assertEqual({p for p, _ in self._phase4()}, general - {"c.src"})
 
 
 class TestSessionLogEntries(unittest.TestCase):

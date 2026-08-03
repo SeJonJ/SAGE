@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:de1ef09391551e9e1ce8d9250784c988171d2066c669994396742a291d5368f2 -->
+<!-- sage-doc-source: cli-reference.md sha256:86696191cb7a08005379f6ed1070b2bd690a0d5cf0b8fbc2411b1c2680e47b8e -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -37,8 +37,11 @@ run `sage generate --kind hook --write --target both` after registration or prof
 
 For `decide(event, profile, snapshot)`, `event` provides `hook_id`, `hook_event_name`
 (`PreToolUse`), `runtime`, `session_id`, and `changes`. `changes` is a possibly empty list of
-`{path, op}` objects extracted from the host input. Globs returned by optional `plan_reads()` read
-only regular files inside the project root, and `snapshot` has the shape `{glob_results, files}`.
+`{path, op}` objects extracted from the host input. `op` is `write` on claude and `add`/`update`/`move`
+on codex, where `move` is an `apply_patch` move destination. Deletions are not included. Globs returned by optional `plan_reads()` read only regular files inside the project
+root. `snapshot` always has the shape `{glob_results, files}` whether or not `plan_reads()` is
+declared — both are empty when it is not. `plan_reads()` must return exactly `{'globs': [...]}`;
+a missing `globs` key is a contract failure.
 Directories matched by recursive globs are skipped; root escapes including symlink ancestors,
 symlink leaf matches, and other non-regular paths are contract failures.
 
