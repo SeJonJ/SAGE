@@ -975,27 +975,42 @@ class TestLoggerExtraction(unittest.TestCase):
 
 
 class TestCodexPhase4Extraction(unittest.TestCase):
-    CMD = ("*** Add File: a.src\n+x\n*** Update File: b.src\n+y\n"
-           "*** Delete File: c.src\n*** Move to: d.src")
+    """phase4 추출기는 문서가 **생기는** 경로만 본다.
 
-    def _phase4(self):
-        return {(c["path"], c["op"])
-                for c in io_codex.extract_phase4_changes({"tool_input": {"command": self.CMD}}, _ID)}
+    extract_changes(위험 분류)·extract_logged_changes(로깅)는 건드린 모든 경로를 남긴다 —
+    이동으로 빠져나가는 파일도 그 파일을 건드린 것이다. phase4 는 다르다: 이동 원본에는
+    아무것도 쓰이지 않으므로 남기면 04 밖으로 빼는 작업이 작성으로 오인된다(J-10 실측).
+    """
+    CMD = ("*** Add File: a.src\n+x\n*** Update File: b.src\n*** Move to: d.src\n+y\n"
+           "*** Delete File: c.src\n")
 
-    def test_move_destination_is_collected(self):
-        # Move 목적지를 버리면 임의 파일을 04-analyze 로 옮기는 것만으로 게이트를 지나간다.
-        self.assertIn(("d.src", "move"), self._phase4())
+    def _phase4(self, cmd=None):
+        return [(c["path"], c["op"]) for c in
+                io_codex.extract_phase4_changes({"tool_input": {"command": cmd or self.CMD}}, _ID)]
 
-    def test_delete_stays_excluded(self):
-        # 삭제는 체크리스트 증거를 요구할 대상이 아니다 — 의도된 제외이며 회귀로 고정한다.
+    def test_move_replaces_origin_with_destination(self):
+        # 목적지를 버리면 이동만으로 게이트를 지나가고(J-8), 원본을 남기면 move-out 오탐이다(J-10).
+        got = self._phase4()
+        self.assertIn(("d.src", "move"), got)
+        self.assertNotIn(("b.src", "update"), got)
+
+    def test_move_out_of_phase4_leaves_no_phase4_path(self):
+        got = self._phase4("*** Update File: plan_docs/04-analyze/x.md\n*** Move to: docs/x.md\n+x\n")
+        self.assertEqual(got, [("docs/x.md", "move")])
+
+    def test_delete_stays_excluded_and_resets_block(self):
+        # 삭제는 증거 대상이 아니고, 삭제 뒤의 고아 Move 가 직전 블록을 오염시키지 않는다.
         self.assertNotIn(("c.src", "delete"), self._phase4())
+        got = self._phase4("*** Update File: a.md\n+x\n*** Delete File: b.md\n*** Move to: c.md\n")
+        self.assertEqual(got, [("a.md", "update"), ("c.md", "move")])
 
-    def test_paths_match_general_extractor_except_delete(self):
-        # 같은 apply_patch 본문을 읽는 추출기끼리 인식 경로가 갈리면 게이트별 사각지대가 생긴다.
+    def test_intended_divergence_from_touch_extractors(self):
+        # phase4 = 생기는 경로(원본 제외), general/logged = 건드린 경로(원본 포함).
         general = {c["path"] for c in io_codex.extract_changes({"tool_input": {"command": self.CMD}}, _ID)}
         logged = {c["path"] for c in io_codex.extract_logged_changes({"tool_input": {"command": self.CMD}}, _ID)}
         self.assertEqual(general, logged)
-        self.assertEqual({p for p, _ in self._phase4()}, general - {"c.src"})
+        self.assertIn("b.src", general)                       # 건드린 경로에는 이동 원본이 남는다
+        self.assertEqual({p for p, _ in self._phase4()}, general - {"c.src", "b.src"})
 
 
 class TestSessionLogEntries(unittest.TestCase):

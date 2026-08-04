@@ -613,7 +613,8 @@ class TestProjectHookRuntime(unittest.TestCase):
             temp.cleanup()
 
     def test_codex_move_destination_reaches_project_event_changes(self):
-        # project hook 도 Phase04 추출기를 쓴다. 이동 목적지가 빠지면 project 게이트도 함께 눈이 먼다.
+        # project hook 도 Phase04 추출기를 쓴다. 이동 목적지가 빠지면 project 게이트도 함께
+        # 눈이 멀고, 원본이 실리면 04 밖으로 빼는 작업이 작성으로 오인된다(J-10).
         core = ("CONTRACT_VERSION = '1'\n\n"
                 "def decide(event, profile, snapshot):\n"
                 "    seen = sorted((c['path'], c['op']) for c in event['changes'])\n"
@@ -629,7 +630,8 @@ class TestProjectHookRuntime(unittest.TestCase):
                                            os.path.join(root, "scripts", "sage_harness", "hooks"), raw)
             self.assertEqual(rc, 0, err.getvalue())
             self.assertIn("('plan_docs/04-analyze/x.md', 'move')", err.getvalue())
-            self.assertIn("('docs/scratch.md', 'update')", err.getvalue())
+            # 이동 원본은 문서가 생기는 경로가 아니다 — 실리면 move-out 오탐의 재료가 된다.
+            self.assertNotIn("docs/scratch.md", err.getvalue())
         finally:
             temp.cleanup()
 

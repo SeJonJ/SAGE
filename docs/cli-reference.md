@@ -36,7 +36,8 @@ YAML/compiled profile이 없거나 서로 다르면 편집을 exit 2로 차단�
 project core의 `decide(event, profile, snapshot)`에서 `event`는 `hook_id`, `hook_event_name`
 (`PreToolUse`), `runtime`, `session_id`, `changes`를 제공합니다. `changes`는 host 입력에서 추출한
 `{path, op}` 목록이며 비어 있을 수 있습니다. `op`는 claude에서 `write`, codex에서 `add`·`update`·`move`이며
-`move`는 `apply_patch`의 파일 이동 목적지입니다. 파일 삭제는 포함되지 않습니다.
+`move`는 `apply_patch`의 파일 이동 **목적지만** 담습니다 — 이동 원본은 문서가 생기는 경로가 아니므로
+포함되지 않습니다. 파일 삭제도 포함되지 않습니다.
 선택적 `plan_reads()`가 반환한 glob은 project root 안의 regular file만 읽습니다. `snapshot`은
 `plan_reads()` 선언 여부와 무관하게 항상 `{glob_results, files}` 형태이며, 선언하지 않으면 둘 다 비어
 있습니다. `plan_reads()`는 정확히 `{'globs': [...]}`를 반환해야 하고 `globs` 키가 없으면 계약 오류입니다. 재귀 glob이 매치한 디렉터리는
