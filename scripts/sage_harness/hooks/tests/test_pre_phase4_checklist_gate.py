@@ -161,15 +161,21 @@ class TestAdapters(unittest.TestCase):
                 self.assertIn("체크리스트 미완료", p.stderr)
                 self.assertEqual(p.stdout, "")
 
-    def test_ok_stays_off_the_block_channel(self):
-        # stderr 는 차단 사유 채널이다. 차단이 아닌 출력을 거기 섞으면 진짜 사유가 잡음에 묻힌다.
+    def test_ok_reaches_the_context_channel_on_both_runtimes(self):
+        """비차단은 양 런타임 모두 hookSpecificOutput 이어야 host 가 컨텍스트로 읽는다.
+
+        stdout 이 비어 있지 않은지만 보면 평문과 JSON 을 구분하지 못한다 — claude 평문은
+        디버그 로그로만 가므로 그 단언은 미도달을 통과시킨다.
+        """
         for runtime in ("claude", "codex"):
             with self.subTest(runtime=runtime), tempfile.TemporaryDirectory() as root:
                 setup_tree(root, "- [x] done")
                 p = run_adapter(runtime, self._raw(runtime), root)
                 self.assertEqual(p.returncode, 0)
-                self.assertNotEqual(p.stdout.strip(), "")
                 self.assertEqual(p.stderr, "")
+                doc = json.loads(p.stdout)              # 평문이면 여기서 실패한다
+                self.assertEqual(doc["hookSpecificOutput"]["hookEventName"], "PreToolUse")
+                self.assertIn("[GATE", doc["hookSpecificOutput"]["additionalContext"])
 
     def test_malformed_compiled_profile_blocks_without_traceback(self):
         for runtime in ("claude", "codex"):

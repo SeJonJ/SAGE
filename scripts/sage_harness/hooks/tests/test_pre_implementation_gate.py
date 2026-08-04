@@ -1504,6 +1504,31 @@ class TestAdapters(unittest.TestCase):
                 p = run_adapter(runtime, raw, root)
                 self.assertEqual(p.returncode, 0, f"{runtime} L1 pass")
 
+    def test_block_and_pass_use_the_channel_the_host_reads(self):
+        """차단 사유는 stderr, 비차단은 hookSpecificOutput — 양 런타임 동형.
+
+        Claude Code 는 exit 2 의 사유를 stderr 에서 읽고, exit 0 의 평문 stdout 은 디버그
+        로그에만 쓴다(승격 이벤트는 UserPromptSubmit 계열뿐). rc 만 단언하면 판정이 맞는데도
+        아무도 결과를 못 보는 상태를 통과시킨다.
+        """
+        block = {"claude": {"tool_name": "Write", "tool_input": {"file_path": "a/payment.java"}, "session_id": "t"},
+                 "codex": {"tool_name": "apply_patch", "tool_input": {"command": "*** Add File: a/payment.java\n+x\n"}, "session_id": "t"}}
+        ok = {"claude": {"tool_name": "Write", "tool_input": {"file_path": "frontend/static/js/x.js"}, "session_id": "t"},
+              "codex": {"tool_name": "apply_patch", "tool_input": {"command": "*** Add File: frontend/static/js/x.js\n+x\n"}, "session_id": "t"}}
+        for runtime in ("claude", "codex"):
+            with self.subTest(runtime=runtime, case="block"), tempfile.TemporaryDirectory() as root:
+                p = run_adapter(runtime, block[runtime], root)
+                self.assertEqual(p.returncode, 2)
+                self.assertIn("[GATE", p.stderr)
+                self.assertEqual(p.stdout, "")
+            with self.subTest(runtime=runtime, case="pass"), tempfile.TemporaryDirectory() as root:
+                p = run_adapter(runtime, ok[runtime], root)
+                self.assertEqual(p.returncode, 0)
+                self.assertEqual(p.stderr, "")
+                if p.stdout.strip():                       # 메시지가 있으면 봉투여야 한다
+                    doc = json.loads(p.stdout)
+                    self.assertEqual(doc["hookSpecificOutput"]["hookEventName"], "PreToolUse")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

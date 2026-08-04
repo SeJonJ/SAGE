@@ -6,6 +6,7 @@
 """
 import io
 import errno
+import json
 import os
 import sys
 import tempfile
@@ -903,9 +904,13 @@ class TestRenderChannels(unittest.TestCase):
         self.assertIn("PDCA phase 미작성", err.getvalue())   # 게이트 출력 문자열 계약 보존
         self.assertEqual(out.getvalue(), "")
 
-    def test_claude_non_block_stays_on_stdout(self):
-        # stderr 는 차단 사유 채널이다(exit 2 에서 host 가 읽는 곳). 차단이 아닌 출력을 거기 섞으면
-        # 통과한 편집마다 사유 없는 잡음이 쌓여 진짜 차단 사유가 묻힌다.
+    def test_claude_non_block_goes_to_context_channel(self):
+        """PreToolUse 비차단은 hookSpecificOutput 이어야 모델·사용자에게 닿는다.
+
+        Claude Code 는 exit 0 hook 의 평문 stdout 을 디버그 로그에만 쓴다 — 승격 이벤트는
+        UserPromptSubmit/UserPromptExpansion/SessionStart 뿐이다. 문구가 stdout 어딘가에
+        있는지만 보면 평문과 JSON 을 구분하지 못해 이 회귀를 놓친다.
+        """
         for key, status, code in (("ok_l2", "ok", 0), ("warn_l2_no_plan", "warn", 0)):
             with self.subTest(message_key=key):
                 d = {"message_key": key, "status": status, "exit_code": code,
@@ -914,8 +919,46 @@ class TestRenderChannels(unittest.TestCase):
                 with redirect_stdout(out), redirect_stderr(err):
                     rc = io_claude.render_gate(d, {})
                 self.assertEqual(rc, code)
-                self.assertIn("[GATE", out.getvalue())
                 self.assertEqual(err.getvalue(), "")
+                doc = json.loads(out.getvalue())          # 평문이면 여기서 실패한다
+                self.assertEqual(doc["hookSpecificOutput"]["hookEventName"], "PreToolUse")
+                self.assertIn("[GATE", doc["hookSpecificOutput"]["additionalContext"])
+
+    def test_claude_block_stays_plain_on_stderr(self):
+        # exit 2 에서 host 는 stdout 을 무시한다. BLOCK 까지 JSON 으로 감싸면 사유가 사라진다.
+        d = {"message_key": "block_l3_no_plan", "status": "block", "exit_code": 2,
+             "file_short": "f", "reason": "r"}
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = io_claude.render_gate(d, {})
+        self.assertEqual(rc, 2)
+        self.assertEqual(out.getvalue(), "")
+        self.assertIn("[GATE", err.getvalue())
+        self.assertNotIn("hookSpecificOutput", err.getvalue())
+
+    def test_claude_empty_message_emits_nothing(self):
+        # 빈 additionalContext 봉투를 내보내면 host 가 빈 컨텍스트를 주입한다.
+        d = {"message_key": "no_such_key", "status": "ok", "exit_code": 0,
+             "file_short": "f", "reason": "r"}
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = io_claude.render_gate(d, {})
+        self.assertEqual((rc, out.getvalue(), err.getvalue()), (0, "", ""))
+
+    def test_claude_user_prompt_submit_renderers_stay_plain(self):
+        """UserPromptSubmit 은 평문 stdout 이 승격되는 이벤트다.
+
+        PreToolUse 와 같이 취급해 일괄 JSON 으로 바꾸면 봉투 문자열이 그대로 노출된다.
+        """
+        for render in (lambda: io_claude.render_declared_capture("L2"),
+                       io_claude.render_declared_ambiguous,
+                       io_claude.render_declared_clear):
+            with self.subTest(render=render):
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    render()
+                self.assertNotIn("hookSpecificOutput", out.getvalue())
+                self.assertTrue(out.getvalue().strip())
 
 
 class TestLoggerExtraction(unittest.TestCase):

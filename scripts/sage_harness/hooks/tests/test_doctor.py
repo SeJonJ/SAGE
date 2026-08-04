@@ -365,7 +365,9 @@ class TestDoctor(unittest.TestCase):
             os.makedirs(os.path.join(root, "sage"))
             prof = os.path.join(root, "sage", "project-profile.yaml")
             Path(prof).write_text('project: { name: "t", prefix: "px" }\nruntime: { host: claude }\n')
-            install.run(IArgs())
+            # rc 를 단언하지 않으면 install 실패가 아래 write_text 의 FileNotFoundError 로만 나타나
+            # 진짜 사유가 가려진다(실측: run-all 중 InstallDriftError 가 이렇게 숨었다).
+            self.assertEqual(install.run(IArgs()), 0, "install must succeed before drift is seeded")
             # 스킬 렌더 변조 → stale
             Path(os.path.join(root, ".claude", "skills", "sage-cycle", "SKILL.md")).write_text(
                 "LOCAL_EDIT\n", encoding="utf-8")

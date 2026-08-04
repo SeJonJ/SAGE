@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARCHITECTURE.md sha256:a436183cfcaef6efa83a3bc0c81f2907c616164b99fcf7713d250c9139f7b264 -->
+<!-- sage-doc-source: ARCHITECTURE.md sha256:d802a52a7e1819ef9c9b247a0703f3cf8132e7bc8b67d97e166677d05a75f69c -->
 # SAGE Architecture
 
 [한국어](ARCHITECTURE.md) | [Documentation index](README.en.md)
@@ -35,6 +35,28 @@ The direction depends on what failed. The governing principle is **never disable
 The source contract is the "preservation principles" comment at the top of
 `scripts/sage_harness/hooks/runtime/hook_runtime.py` and the profile-loading and L3-strategy-loading
 paths.
+
+## Decision delivery channels
+
+**A decision that reaches nobody is the same as having no gate.** The principle above — never
+disable a gate silently — applies to delivery as well as to judgment. Both directions of loss have
+been observed in practice: block reasons disappearing so a block looks unexplained, and pass
+messages disappearing so a stale state stays invisible.
+
+Hosts read **different channels depending on the event and the exit code**, so the channel is chosen
+by runtime and event together.
+
+| Situation | Claude Code | Codex |
+|---|---|---|
+| Block (exit 2) | stderr — stdout is ignored | stderr |
+| PreToolUse pass (exit 0) | `hookSpecificOutput.additionalContext` | same |
+| UserPromptSubmit (exit 0) | plain stdout — becomes context directly | `hookSpecificOutput` |
+| Stop block | exit 2 with stderr | exit 0 with `decision: block` |
+
+In Claude Code the events whose exit-0 plain stdout is promoted to context are
+`UserPromptSubmit`, `UserPromptExpansion`, and `SessionStart`; every other event writes to the debug
+log only. Message text is owned solely by `runtime/messages.py`; `io_claude` and `io_codex` decide
+only the channel.
 
 ## Trust boundary: what SAGE blocks and does not block
 

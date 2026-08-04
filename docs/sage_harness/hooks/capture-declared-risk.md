@@ -27,6 +27,7 @@ degraded fail-closed로 판정한다.
 
 ## runtime_bindings
 - claude: { event: UserPromptSubmit, input: stdin JSON(prompt, session_id), output: plain text(stdout) }
+  UserPromptSubmit 은 exit 0 평문 stdout 이 컨텍스트로 승격되는 이벤트라 봉투가 필요 없다(PreToolUse 와 다름)
 - codex:  { event: UserPromptSubmit, input: stdin JSON(prompt, session_id), output: hookSpecificOutput JSON }
 - on_fail: capture/noop은 exit 0. 공유 baseline helper의 first-opportunity claim 생성 실패만 exit 2.
 
