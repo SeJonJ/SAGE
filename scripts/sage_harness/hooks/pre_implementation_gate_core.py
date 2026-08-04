@@ -373,18 +373,30 @@ def _report_gate(event: dict, profile: dict, snapshot: dict):
     if binding.get("error"):
         return {"approved": False, "report_phase": report_phase, "approve_phase": approve_phase,
                 "detail": binding["error"]}
-    marker = (cfg.get("approve_marker") or "APPROVED").upper()
-    approve_docs = (snapshot.get("phase_docs") or {}).get(approve_phase) or []
-    selected, error = cycle_binding.select_document(approve_docs, binding["stem"])
-    if error:
+    approved, detail, selected = _approval_state(binding["stem"], cfg, snapshot)
+    if selected is None:
         return {"approved": False, "report_phase": report_phase, "approve_phase": approve_phase,
-                "detail": error}
+                "detail": detail}
+    return {"approved": approved, "report_phase": report_phase, "approve_phase": approve_phase,
+            "detail": detail, "cycle_stem": binding["stem"]}
+
+
+def _approval_state(stem, cfg, snapshot):
+    """approve phase 문서의 승인 상태 → (approved, detail, selected).
+
+    report 게이트와 완결 판정이 같은 규칙을 쓰게 하는 단일소스다. 갈리면 "06 을 쓸 수 있는데
+    완결로는 안 보는" 상태가 생긴다. selected 가 None 이면 문서 선택 자체가 실패한 것이다.
+    """
+    approve_docs = (snapshot.get("phase_docs") or {}).get(str(cfg.get("approve_phase") or "")) or []
+    selected, error = cycle_binding.select_document(approve_docs, stem)
+    if error:
+        return False, error, None
+    marker = (cfg.get("approve_marker") or "APPROVED").upper()
     status, status_error = _final_status(selected.get("content") or "")
     approved = status_error is None and status == marker
     detail = (selected.get("path") if approved else
               f"{selected.get('path')} Final Status 오류: {status_error or f'{status!r} != {marker!r}'}")
-    return {"approved": approved, "report_phase": report_phase, "approve_phase": approve_phase,
-            "detail": detail, "cycle_stem": binding["stem"]}
+    return approved, detail, selected
 
 
 def _is_writing_report(event, cfg):
@@ -868,6 +880,33 @@ def _feedback_gate(event, profile, snapshot):
 
 
 _DECLARED_SOURCE = "event"      # cycle_binding 이 env 선언 기원에 붙이는 라벨
+_INFERRED_SOURCE = "branch-leaf"   # cycle_binding 이 브랜치 leaf 추론에 붙이는 라벨
+
+
+def _cycle_closed(stem, cfg, snapshot) -> bool:
+    """stem 이 완결된 사이클인가 — 그 stem 의 report 문서 존재 **그리고** approve 문서 승인.
+
+    report 문서는 stem 결속을 요구한다(`any_document`) — 저장소의 아무 06 이나 세면 06 이 한 건이라도
+    있는 순간 모든 stem 이 완결로 판정돼 대량 과차단이 된다.
+
+    승인까지 함께 요구하는 값은 "작성 중인 06 을 걸러내는 것"이 **아니다**. report 게이트가 05 승인
+    없이는 06 을 못 쓰게 하므로 게이트가 켜져 있던 저장소에서는 `06 존재 ⟹ 승인` 이고 두 조건의
+    논리곱은 `06 존재` 와 같다. 승인 확인이 실제로 거르는 것은 게이트 설치 전부터 있던 06,
+    override 로 만든 06, 사후에 승인을 되돌린 사이클 — 레거시·우회·되돌림 상태다.
+
+    판정 불가(문서 선택 실패·Final Status 오류)는 완결로 보지 않는다 — 여기서 fail-closed 하면
+    아직 끝나지 않은 사이클의 소스 편집이 통째로 막힌다.
+    """
+    report_phase = str(cfg.get("report_phase") or "")
+    if not report_phase:
+        return False
+    # stem 과 approve_phase 는 따로 검사하지 않는다. stem 은 호출부가 binding 오류를 먼저 걸러내므로
+    # 항상 값이 있고, approve_phase 미설정은 `_approval_state` 가 빈 문서 목록에서 선택 실패로
+    # 걸러낸다. 두 가드는 어떤 입력으로도 죽지 않는 등가 변이였다.
+    docs = snapshot.get("phase_docs") or {}
+    if not cycle_binding.any_document(docs.get(report_phase) or [], stem):
+        return False
+    return _approval_state(stem, cfg, snapshot)[0]
 
 
 def _stamp_cycle_identity(decision: dict, event: dict, profile: dict, snapshot: dict) -> dict:
@@ -923,6 +962,21 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
             return {"status": "block", "exit_code": 2, "risk": "PDCA",
                     "message_key": "block_cycle_binding",
                     "reason": f"cycle binding 실패: {binding['error']}",
+                    "file_short": c["file_short"]}
+        # 장수 브랜치에서 leaf 로 추론한 stem 은 이미 끝난 사이클을 가리키기 쉽다. 완결 사이클은
+        # 00~06 이 다 있어 모든 게이트를 통과하므로, 새 작업이 계획 문서 없이 조용히 진행된다.
+        # 명시 선언은 의도적 행위이고 감사에 남으므로 막지 않는다.
+        # 조건이 추론 하나로 충분한 이유: cycle_binding 은 phase 변경이 있으면 stem 을 경로에서 얻고
+        # branch-leaf 를 출처에 넣지 않는다. 따라서 추론 출처는 phase 변경 0건을 뜻하고, 그때 이
+        # 블록에 들어왔다는 것은 위 조건에 따라 계산 위험도가 L1 이상이라는 뜻이다.
+        # 주의: "L1 이상"은 "L0 경로가 아님"과 다르다. 세션 위험도 선언(declared_max)이 L0 경로를
+        # 상향시키므로, L3 를 선언한 세션에서는 문서 편집도 이 차단에 걸린다.
+        source = binding.get("source") or []
+        if (_DECLARED_SOURCE not in source and _INFERRED_SOURCE in source
+                and _cycle_closed(binding["stem"], cfg, snapshot)):
+            return {"status": "block", "exit_code": 2, "risk": risk,
+                    "message_key": "block_cycle_closed",
+                    "reason": f"브랜치에서 추론한 stem {binding['stem']!r} 은 완결된 사이클",
                     "file_short": c["file_short"]}
         changed_phases = _changed_phase_ids(event, cfg)
         report_phase = str(cfg.get("report_phase") or "")

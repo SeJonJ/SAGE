@@ -168,6 +168,169 @@ class TestHintPointsAtTheRealEscape(unittest.TestCase):
             self.assertIn("SAGE_CYCLE_STEM", messages.gate_text(d, {}, runtime), runtime)
 
 
+CLOSED_STEM = "sage_finished_cycle"
+
+CLOSED_PROFILE = {
+    "risk": {"l0_pass_globs": ["*plan_docs/*", "*.md"], "l2_path_globs": ["*backend/*.java"]},
+    "pdca": {
+        "enabled": True,
+        "phases": [{"id": pid, "glob": f"plan_docs/{pid}-x/**/*.md"} for pid in
+                   ("00", "01", "02", "03", "04", "05", "06")],
+        "pre_implementation_required": {"L2": ["00", "01", "02", "03"]},
+        "report_phase": "06",
+        "approve_phase": "05",
+        "approve_marker": "APPROVED",
+    },
+}
+
+
+def _closed_snapshot(stem, final_status="APPROVED", with_report=True):
+    approve = {"path": f"{stem}.md",
+               "content": f"Cycle-Stem: `{stem}`\nFinal Status: {final_status}\n", "recent": True}
+    docs = {pid: [_pdoc(stem)] for pid in ("01", "02", "03", "04")}
+    docs["00"] = [_pdoc(stem, risk="L2")]
+    docs["05"] = [approve]
+    if with_report:
+        docs["06"] = [_pdoc(stem)]
+    return {"plan_files": [_pdoc(stem)], "review_candidates": [], "phase_docs": docs}
+
+
+class TestClosedCycleIsNotSilentlyReused(unittest.TestCase):
+    """끝난 사이클은 00~06 이 다 있어 모든 게이트를 통과한다 — 새 작업이 계획 없이 진행된다."""
+
+    def _source_event(self, **kw):
+        return _event(branch=CLOSED_STEM, **kw)
+
+    def test_inferred_stem_on_a_closed_cycle_blocks_new_source_edits(self):
+        d = core.decide(self._source_event(), CLOSED_PROFILE, _closed_snapshot(CLOSED_STEM), None)
+        self.assertEqual(d["message_key"], "block_cycle_closed")
+        self.assertEqual(d["exit_code"], 2)
+        self.assertEqual(d["cycle_source"], ["branch-leaf"])
+
+    def test_block_names_both_escapes(self):
+        d = core.decide(self._source_event(), CLOSED_PROFILE, _closed_snapshot(CLOSED_STEM), None)
+        for runtime in ("claude", "codex"):
+            text = messages.gate_text(d, {}, runtime)
+            self.assertIn("Phase 00", text, runtime)
+            self.assertIn("SAGE_CYCLE_STEM", text, runtime)
+
+    def test_declared_stem_is_not_blocked(self):
+        # 선언은 의도적 행위이고 이미 감사에 남는다. 막을 대상은 모르는 채 결속되는 쪽이다.
+        d = core.decide(self._source_event(cycle_stem=CLOSED_STEM), CLOSED_PROFILE,
+                        _closed_snapshot(CLOSED_STEM), None)
+        self.assertNotEqual(d["message_key"], "block_cycle_closed")
+        self.assertEqual(d["exit_code"], 0)
+
+    def test_phase_edits_on_a_closed_cycle_stay_open(self):
+        # 끝난 사이클의 05·06 을 고치는 것은 정상 작업이다.
+        for phase in ("05", "06"):
+            event = {"hook_id": GATE, "branch": CLOSED_STEM, "session_id": "s",
+                     "changes": [{"path": f"plan_docs/{phase}-x/{CLOSED_STEM}.md", "op": "write",
+                                  "content": f"Cycle-Stem: `{CLOSED_STEM}`\n"}]}
+            d = core.decide(event, CLOSED_PROFILE, _closed_snapshot(CLOSED_STEM), None)
+            self.assertNotEqual(d["message_key"], "block_cycle_closed", phase)
+
+    def test_l0_change_on_a_closed_cycle_stays_open(self):
+        d = core.decide(self._source_event(path="notes/x.md"), CLOSED_PROFILE,
+                        _closed_snapshot(CLOSED_STEM), None)
+        self.assertNotEqual(d["message_key"], "block_cycle_closed")
+
+    def test_session_declaration_raises_l0_paths_into_the_block(self):
+        # "L0 경로는 대상이 아니다" 는 사실이 아니다 — declared_max 가 L0 를 상향시키므로 L3 를
+        # 선언한 세션에서는 문서 편집도 걸린다. 마찰이지만 effective-max 의 기존 의미와 일관되고,
+        # 탈출구(선언·신규 사이클)가 같다. 실제 동작을 못박아 문서가 다시 어긋나지 않게 한다.
+        event = dict(self._source_event(path="notes/x.md"), declared_max="L3")
+        d = core.decide(event, CLOSED_PROFILE, _closed_snapshot(CLOSED_STEM), None)
+        self.assertEqual(d["message_key"], "block_cycle_closed")
+
+    def test_another_cycles_report_does_not_close_mine(self):
+        # report 문서를 stem 결속 없이 세면 저장소에 06 이 한 건이라도 있는 순간 모든 stem 이
+        # 완결로 판정된다(대량 과차단).
+        snapshot = _closed_snapshot(CLOSED_STEM)
+        snapshot["phase_docs"] = {**snapshot["phase_docs"], "06": [_pdoc("some_other_stem")]}
+        d = core.decide(self._source_event(), CLOSED_PROFILE, snapshot, None)
+        self.assertNotEqual(d["message_key"], "block_cycle_closed")
+
+    def test_custom_approve_marker_is_honoured(self):
+        cfg = {**CLOSED_PROFILE, "pdca": {**CLOSED_PROFILE["pdca"], "approve_marker": "SHIPPED"}}
+        closed = _closed_snapshot(CLOSED_STEM, final_status="SHIPPED")
+        still_open = _closed_snapshot(CLOSED_STEM, final_status="APPROVED")
+        self.assertEqual(core.decide(self._source_event(), cfg, closed, None)["message_key"],
+                         "block_cycle_closed")
+        self.assertNotEqual(core.decide(self._source_event(), cfg, still_open, None)["message_key"],
+                            "block_cycle_closed")
+
+    def _with_approve_docs(self, docs):
+        snapshot = _closed_snapshot(CLOSED_STEM)
+        snapshot["phase_docs"] = {**snapshot["phase_docs"], "05": docs}
+        return snapshot
+
+    def test_unfinished_cycles_are_not_treated_as_closed(self):
+        # 완결 판정이 한 갈래라도 헐거우면 정상 진행 중인 사이클을 막는다 — 갈래별로 고정한다.
+        # 판정 불가(문서 선택 실패·상태 오류)도 완결이 아니다: 여기서 fail-closed 하면 아직 끝나지
+        # 않은 사이클의 소스 편집이 통째로 막힌다.
+        approve = f"Cycle-Stem: `{CLOSED_STEM}`\nFinal Status: APPROVED\n"
+        for label, snapshot in (
+                ("06 없음", _closed_snapshot(CLOSED_STEM, with_report=False)),
+                ("승인 아님", _closed_snapshot(CLOSED_STEM, final_status="BLOCKED")),
+                ("Final Status 중복", self._with_approve_docs(
+                    [{"path": f"{CLOSED_STEM}.md", "content": approve + "Final Status: APPROVED\n",
+                      "recent": True}])),
+                ("승인 문서 없음", self._with_approve_docs([])),
+                ("승인 문서 모호", self._with_approve_docs(
+                    [{"path": f"{CLOSED_STEM}.md", "content": approve, "recent": True},
+                     {"path": f"a/{CLOSED_STEM}.md", "content": approve, "recent": True}]))):
+            d = core.decide(self._source_event(), CLOSED_PROFILE, snapshot, None)
+            self.assertNotEqual(d["message_key"], "block_cycle_closed", label)
+
+    def test_profile_without_report_or_approve_phase_makes_no_judgment(self):
+        for key in ("report_phase", "approve_phase"):
+            cfg = {**CLOSED_PROFILE, "pdca": {**CLOSED_PROFILE["pdca"], key: ""}}
+            d = core.decide(self._source_event(), cfg, _closed_snapshot(CLOSED_STEM), None)
+            self.assertNotEqual(d["message_key"], "block_cycle_closed", key)
+
+
+class TestBindingIsAlwaysVisibleOnPass(unittest.TestCase):
+    """통과 줄에 stem 이 안 보이면 잘못된 결속이 화면에 드러나지 않는다."""
+
+    def _ok_line(self, decision):
+        return messages.gate_text(decision, {}, "claude")
+
+    def test_inferred_binding_is_shown_with_its_origin(self):
+        # 선언했을 때만 보여주면 정작 위험한 쪽(추론)이 안 보인다.
+        snapshot = _complete_snapshot(LONG_BRANCH)
+        d = core.decide(_event(), PDCA_PROFILE, snapshot, None)
+        self.assertEqual(d["exit_code"], 0)
+        self.assertIn(f"cycle: {LONG_BRANCH} (브랜치 leaf 추론)", self._ok_line(d))
+
+    def test_path_bound_origin_is_labelled(self):
+        # phase 문서만 고치면 L0 라 OK 줄 자체가 없다 — 소스를 함께 건드려 통과 줄을 만든다.
+        event = {"hook_id": GATE, "branch": LONG_BRANCH, "session_id": "s",
+                 "changes": [{"path": f"plan_docs/03-x/{REAL_STEM}.md", "op": "write",
+                              "content": f"Cycle-Stem: `{REAL_STEM}`\n"},
+                             {"path": "backend/App.java", "op": "write", "content": "x"}]}
+        d = core.decide(event, PDCA_PROFILE, _complete_snapshot(REAL_STEM), None)
+        self.assertEqual(d["exit_code"], 0)
+        self.assertIn(f"cycle: {REAL_STEM} (phase 문서)", self._ok_line(d))
+
+    def test_pdca_disabled_shows_nothing(self):
+        # OK 경로까지 도달해야 접미가 실제로 호출된다 — plan 이 없으면 WARN 으로 빠져 공허해진다.
+        profile = {"risk": {"l2_path_globs": ["*backend/*.java"], "plan_glob": "plan_docs/**/*.md"}}
+        snapshot = {"plan_files": [{"path": "plan_docs/p.md", "content": "x", "recent": True}],
+                    "review_candidates": [], "phase_docs": {}}
+        d = core.decide(_event(), profile, snapshot, None)
+        self.assertEqual(d["message_key"], "ok_l2")
+        self.assertNotIn("cycle:", self._ok_line(d))
+
+    def test_warn_pass_also_shows_the_binding(self):
+        # plan 없이 통과하는 상태가 결속이 가장 의심스러운 자리다 — 여기서 안 보이면 목적을 못 이룬다.
+        d = core.decide(_event(), PDCA_PROFILE,
+                        {"plan_files": [], "review_candidates": [],
+                         "phase_docs": _complete_snapshot(LONG_BRANCH)["phase_docs"]}, None)
+        self.assertEqual(d["message_key"], "warn_l2_no_plan")
+        self.assertIn(f"cycle: {LONG_BRANCH} (브랜치 leaf 추론)", self._ok_line(d))
+
+
 class TestDeclarationIsAudited(unittest.TestCase):
     """선언 통로 자체는 막지 않는다. 다만 무흔적 통과는 남기지 않는다."""
 
