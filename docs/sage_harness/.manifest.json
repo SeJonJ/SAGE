@@ -88,7 +88,7 @@
         "codex": "sha256:90a0205df56a47207e6e610a4a7f32dea87b2a42d893eef4ec59529f65e1747a"
       },
       "risk": [],
-      "spec_hash": "sha256:b2214db7b14023b09c7579973f66f8dac6f96cd7c606c2597aa98e39ec8def00",
+      "spec_hash": "sha256:efefbbe4a9eb20485cc5bc48c5d09dd6c697b31153c86714d202a43425acfa44",
       "test": "scripts/sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py",
       "unresolved": []
     },
@@ -131,7 +131,7 @@
   "generator_version": "0.9.78",
   "hook_runtime_hash": {
     "claude": "sha256:b4bffc51b3ca3d0b8cc5a62b3490af09a4c7935936d177cb4e11336edf0797a7",
-    "codex": "sha256:a90a0335f172b67d9526a54bdcb90dd95639e56283f42baf20c6d394b8e1cf9d",
+    "codex": "sha256:016abcf7122b1c23950365e17e5d7161b07347fb83aad725ee6ddeab11624f53",
     "shared": "sha256:c06d1a2801a11da2ff982ae94a2cfc5392392a74558df2871e7348a9e8a8ee13"
   },
   "host_runtime": "claude",

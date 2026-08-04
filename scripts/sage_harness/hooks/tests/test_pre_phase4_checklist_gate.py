@@ -143,6 +143,18 @@ class TestAdapters(unittest.TestCase):
             setup_tree(root, "- [x] done")
             self.assertEqual(run_adapter("codex", raw, root).returncode, 0)
 
+    def test_codex_move_out_of_phase4_does_not_trigger_gate(self):
+        # move-in 차단의 짝. 문서를 04 밖으로 빼는 작업은 Phase 04 작성이 아니다 —
+        # 원본 경로를 남기면 이 작업이 차단된다(J-10 실측, ChatForYou Phase 05 를 막았다).
+        raw = {"tool_name": "apply_patch", "session_id": "t", "tool_input": {
+            "command": "*** Update File: plan_docs/04-analyze/feature_analyze.md\n"
+                       "*** Move to: docs/feature_analyze.md\n+x\n"}}
+        with tempfile.TemporaryDirectory() as root:
+            setup_tree(root, "- [ ] todo")          # 미완료 체크리스트가 있어도
+            p = run_adapter("codex", raw, root)
+            self.assertEqual(p.returncode, 0, p.stderr)   # 트리거 자체가 안 돼야 한다
+            self.assertEqual(p.stderr, "")
+
     def test_codex_delete_of_phase4_does_not_trigger_gate(self):
         raw = {"tool_name": "apply_patch", "session_id": "t", "tool_input": {
             "command": "*** Delete File: plan_docs/04-analyze/feature_analyze.md\n"}}

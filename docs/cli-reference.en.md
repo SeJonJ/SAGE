@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:86696191cb7a08005379f6ed1070b2bd690a0d5cf0b8fbc2411b1c2680e47b8e -->
+<!-- sage-doc-source: cli-reference.md sha256:7db18772e0455e879a0e690997d5a6db61522edb63bc601e6189fb6ecceb6944 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -38,7 +38,8 @@ run `sage generate --kind hook --write --target both` after registration or prof
 For `decide(event, profile, snapshot)`, `event` provides `hook_id`, `hook_event_name`
 (`PreToolUse`), `runtime`, `session_id`, and `changes`. `changes` is a possibly empty list of
 `{path, op}` objects extracted from the host input. `op` is `write` on claude and `add`/`update`/`move`
-on codex, where `move` is an `apply_patch` move destination. Deletions are not included. Globs returned by optional `plan_reads()` read only regular files inside the project
+on codex, where `move` carries only the `apply_patch` move destination — the origin path is not a
+place where a document materializes, so it is excluded. Deletions are also excluded. Globs returned by optional `plan_reads()` read only regular files inside the project
 root. `snapshot` always has the shape `{glob_results, files}` whether or not `plan_reads()` is
 declared — both are empty when it is not. `plan_reads()` must return exactly `{'globs': [...]}`;
 a missing `globs` key is a contract failure.
