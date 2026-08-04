@@ -18,6 +18,10 @@ report phase 작성 전 approve phase APPROVED 확인. pdca 비활성이면 None
 - output: block=메시지+exit2 (양 host stderr — host 가 차단 사유를 읽는 채널),
   warn·ok=exit0 + hookSpecificOutput.additionalContext (양 host — 평문 stdout 은
   PreToolUse 에서 디버그 로그로만 가고 컨텍스트로 승격되지 않는다)
+- OK·WARN 줄은 판정 cycle stem 과 그 출처(선언 / 브랜치 leaf 추론 / phase 문서)를 표기한다.
+  선언일 때만 보여주면 정작 위험한 추론 결속이 화면에 드러나지 않는다. WARN 에도 붙이는 이유는
+  plan 없이 통과하는 상태가 결속이 가장 의심스러운 자리이기 때문이다. pdca 비활성이면 표기 없고,
+  L1/L0 통과는 message_key 가 없어 줄 자체가 생기지 않는다.
 
 ## canonical (부분추출 — IO-bound gate, 2단계 pure core)
 scripts/sage_harness/hooks/pre_implementation_gate_core.py
@@ -57,6 +61,18 @@ profile.pdca: { enabled, phases[{id,glob}], pre_implementation_required{L1,L2,L3
   이미 완결된 사이클을 지목해 전 게이트를 통과시킬 수 있어서, 기록 실패 시 통과를 허용하지 않는다
   (`block_cycle_stem_audit_failure`).
 - core `decide`: ① missing/conflicting/ambiguous binding은 `block_cycle_binding`
+  ①-b 브랜치 leaf 로 **추론한** stem 이 완결된 사이클(그 stem 의 report phase 문서 존재 **그리고**
+  approve phase 문서의 `Final Status` = approve marker)이면 새 소스 편집을 `block_cycle_closed` 로
+  차단한다. 완결 사이클은 00~06 이 다 갖춰져 모든 게이트를 통과하므로, 장수 브랜치에서 새 작업이
+  계획 문서 없이 조용히 진행되는 것을 막는 것이 목적이다. report 문서는 stem 결속을 요구한다 —
+  아무 06 이나 세면 저장소에 06 이 하나라도 있는 순간 모든 stem 이 완결이 된다.
+  **명시 선언 stem 은 차단하지 않고**(의도적 행위이며 이미 감사에 남는다), phase 문서 편집(끝난
+  사이클의 05·06 수정)도 대상이 아니다. 대상 여부는 경로 tier 가 아니라 **계산 위험도**로 갈리므로,
+  세션 위험도 선언(`declared_max`)이 L0 경로를 상향시키면 문서 편집도 걸린다.
+  두 조건 중 하나라도 판정 불가면 완결로 보지 않는다 — 여기서 fail-closed 하면 정상 진행을 막는다.
+  승인 조건이 실제로 거르는 것은 "작성 중인 06" 이 아니라(report 게이트가 승인 없는 06 작성을 이미
+  막으므로 `06 존재 ⟹ 승인` 이다) 게이트 설치 전 06·override 06·사후 승인 취소다.
+  이 차단은 override 가능하다(탈출구가 선언·신규 사이클로 명확).
   ② Phase 00 위험도 게이트: Phase 01-06 또는 L1/L2/L3 비-phase 변경 전에 current stem의 Phase 00을
   exact 선택하고 fence 밖 `Risk Level: L1|L2|L3` 선언을 정확히 한 개 요구한다. 누락·placeholder·malformed·
   duplicate·읽기 불가·ambiguous는 `block_cycle_risk_declaration`이다. 현재 `classify_risk` 결과

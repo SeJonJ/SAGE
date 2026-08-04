@@ -85,11 +85,25 @@ def _reconciliation_hint(decision, phase00_path, required_risk):
             f"`위험도 선언 해제`라고 입력해 지우세요 — {raise_00}")
 
 
-def _ok_suffix(decision):
-    """선언된 stem 은 OK 줄에도 노출한다 — 낡은 선언으로 조용히 통과하는 상태가 보이게."""
-    if not decision.get("cycle_stem_declared"):
+_CYCLE_ORIGIN = {"event": "SAGE_CYCLE_STEM 선언", "branch-leaf": "브랜치 leaf 추론"}
+
+
+def _cycle_suffix(decision):
+    """판정 stem 과 그 출처를 통과 줄(OK·WARN)에 노출한다.
+
+    선언일 때만 보여주면 정작 위험한 쪽이 안 보인다 — 장수 브랜치에서 leaf 로 추론된 stem 은
+    이미 끝난 사이클을 가리키기 쉽고, 그 상태로 통과하는 것이 조용한 오결속이다. 출처를 함께
+    적어야 사용자가 "이 사이클이 맞나"를 판단할 수 있다.
+
+    WARN 에도 붙이는 이유: plan 없이 통과하는 상태가 결속이 가장 의심스러운 자리다. pdca 비활성이면
+    stem 자체가 없어 아무것도 붙지 않는다. L1/L0 통과는 message_key 가 없어 줄 자체가 생기지 않는다.
+    """
+    stem = decision.get("cycle_stem")
+    if not stem:
         return ""
-    return f" | cycle: {decision.get('cycle_stem') or '(미상)'} (SAGE_CYCLE_STEM 선언)"
+    source = decision.get("cycle_source") or []
+    origin = next((_CYCLE_ORIGIN[s] for s in source if s in _CYCLE_ORIGIN), "phase 문서")
+    return f" | cycle: {stem} ({origin})"
 
 
 def _gate_record(decision, profile):
@@ -138,6 +152,11 @@ def _gate_record(decision, profile):
         "warn_report_without_audit": ("WARN", "PDCA", f"{rs}.", False,
                              "(advisory) Phase 05 리뷰 루프 audit 증거 권장 — {rv} 로 loop 실행 + 05 에 'Loop-Run: <run_id>' 기록"),
         "block_cycle_binding": ("BLOCK", "PDCA", f"{rs}.", False, _cycle_binding_hint(decision)),
+        "block_cycle_closed": ("BLOCK", "PDCA",
+                             f"cycle `{cycle_stem}` 은 이미 완결된 사이클입니다 — 새 소스 편집을 여기에 결속할 수 없습니다.",
+                             True,
+                             "새 사이클의 Phase 00 을 먼저 작성하거나, 이어서 작업할 stem 을 "
+                             "`SAGE_CYCLE_STEM` 으로 선언하세요"),
         "block_report_without_acceptance": ("BLOCK", "PDCA", f"{rs}.", False,
                              "04-analyze 에 acceptance evidence(PASS/FAIL/NOT TESTED/N/A)를 기록하고 05 를 다시 검토하세요"),
         "warn_report_without_acceptance": ("WARN", "PDCA", f"{rs}.", False,
@@ -167,11 +186,13 @@ def gate_text(decision, profile, runtime):
     tag = f"[GATE {sev}{_dash(runtime)}{scope}]" if scope else f"[GATE {sev}]"
     prefix = "" if runtime == "codex" else f"{_EMOJI[sev]} "
     if sev == "OK":
-        line = f"{prefix}{tag} {text} | {fs}{_ok_suffix(decision)}"
+        line = f"{prefix}{tag} {text} | {fs}{_cycle_suffix(decision)}"
     else:
         line = f"{prefix}{tag} {text} 파일: {fs}"
         if show_reason and rs:
             line += f" | 근거: {rs}"
+        if sev == "WARN":
+            line += _cycle_suffix(decision)
     if hint:
         hint = hint.replace("{rv}", _review_cmd(runtime))
         line += (" | " if runtime == "codex" else "\n  → ") + hint
