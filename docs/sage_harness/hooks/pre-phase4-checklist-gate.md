@@ -13,7 +13,7 @@ runtime_bindings:
 - claude: { event: PreToolUse, matcher: "Write|Edit|MultiEdit", input: tool_input.file_path }
 - codex:  { event: PreToolUse, matcher: "apply_patch", input: command Add/Update targets + Move 목적지 }
 - output: block=메시지+exit2 (양 host stderr — host 가 차단 사유를 읽는 채널),
-  warn·ok=메시지+exit0 (claude stdout / codex hookSpecificOutput)
+  warn·ok=메시지+exit0 + hookSpecificOutput.additionalContext (양 host)
 
 ## canonical (IO-bound gate — 2단계 pure core)
 scripts/sage_harness/hooks/pre_phase4_checklist_gate_core.py
@@ -37,7 +37,7 @@ scripts/sage_harness/hooks/pre_phase4_checklist_gate_core.py
 
 ## reverse_extract 분류
 - structural_io_adapter: file_path 단일 vs apply_patch Add/Update targets + Move 목적지
-- output_adapter: WARN/OK 렌더(claude plain vs codex hookSpecificOutput), block 채널
+- output_adapter: WARN/OK 렌더(양 host hookSpecificOutput — 문구 표기만 런타임별), block 채널
 - token_adapter: PROJECT_ROOT env, 경로
 - profile_bound: 트리거/타겟/suffixes
 - algorithm(공유, core): base 추출(suffix 반복제거), find_match(exact우선+prefix양방향), 미완료 스캔, 판정

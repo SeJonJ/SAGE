@@ -32,6 +32,26 @@ AI의 판단이 틀려도 core 게이트는 무너지지 않습니다. runtime�
 근거: `scripts/sage_harness/hooks/runtime/hook_runtime.py` 상단 "보존 원칙" 주석과
 profile 로드 · L3 전략 로드 경로.
 
+## 판정 전달 채널
+
+**판정이 맞아도 아무에게도 닿지 않으면 게이트가 없는 것과 같습니다.** 위 원칙("게이트를 조용히
+끄지 않는다")은 판정뿐 아니라 전달에도 적용됩니다. 실제로 두 방향의 유실이 모두 관측됐습니다 —
+차단 사유가 사라져 원인 불명 차단이 되거나, 통과 메시지가 사라져 낡은 상태가 보이지 않는 경우입니다.
+
+host 는 이벤트와 exit code 에 따라 **읽는 채널이 다릅니다.** 그래서 채널 선택은 런타임과 이벤트가
+함께 결정합니다.
+
+| 상황 | Claude Code | Codex |
+|---|---|---|
+| 차단 (exit 2) | stderr — stdout 은 무시된다 | stderr |
+| PreToolUse 통과 (exit 0) | `hookSpecificOutput.additionalContext` | 〃 |
+| UserPromptSubmit (exit 0) | 평문 stdout — 그대로 컨텍스트가 된다 | `hookSpecificOutput` |
+| Stop 차단 | exit 2 + stderr | exit 0 + `decision: block` |
+
+Claude Code 에서 exit 0 평문 stdout 이 컨텍스트로 올라가는 이벤트는
+`UserPromptSubmit`·`UserPromptExpansion`·`SessionStart` 뿐이고, 그 밖의 이벤트는 디버그 로그로만
+갑니다. 문구 자체는 `runtime/messages.py` 가 단독 소유하고 채널만 `io_claude`·`io_codex` 가 정합니다.
+
 ## 신뢰 경계 (막는 것 / 막지 않는 것)
 
 **막는 것**
