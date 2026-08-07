@@ -12,11 +12,11 @@ import textwrap
 from sage import __version__
 from sage.commands import (install, generate, validate, asset_check, review, absorb, doctor, change,
                            override, review_loop, retro, knowledge, sync_overlays, acceptance_waiver,
-                           authority, models, context, feedback)
+                           authority, models, context, feedback, cycle)
 
 _COMMANDS = [install, generate, validate, asset_check, review, absorb, doctor, change, override,
              review_loop, retro, knowledge, sync_overlays, acceptance_waiver, authority, models, context,
-             feedback]
+             feedback, cycle]
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -45,6 +45,10 @@ echo "### 5a2. cycle stem 선언 통로 (EH-7 장수 브랜치 오안내 + 선�
 python3 "$HERE/test_cycle_stem_declaration.py" || rc=1
 
 echo ""
+echo "### 5a3. 사이클 선언 통로 (.sage/cycle.json — root 해석 + 우선순위 + 가드 + 배선)"
+python3 "$HERE/test_cycle_state.py" || rc=1
+
+echo ""
 echo "### 5b. exact cycle/domain L3 review strategy"
 python3 "$HERE/test_cycle_domain_review.py" || rc=1
 

@@ -24,7 +24,7 @@
         "claude": "sha256:ec506d9e4e881f66ca7f8a8a4081b517c0b86d2cdafdf9e9f7f6a869e5facf93",
         "codex": "sha256:eef506545ad80aa90064de2471fce4350ce5454730d2473d988a6d1593b995de"
       },
-      "canonical_hash": "sha256:25fbc671664217bab7f45073121ae3f7b84924e75b5fc0a6f58f0b6973e8a6d0",
+      "canonical_hash": "sha256:166e6394ebf00edea3e8235fa4c42797977a414c74c91ae7dffb27c8b2158473",
       "conformance": "PASS",
       "form": "core_adapter",
       "render_hash": {
@@ -32,7 +32,7 @@
         "codex": "sha256:eef506545ad80aa90064de2471fce4350ce5454730d2473d988a6d1593b995de"
       },
       "risk": [],
-      "spec_hash": "sha256:7fd1eb07f28e8d9d38748fafc8696b2ff4b56a4b360bb1e8fae499bcacf99ac8",
+      "spec_hash": "sha256:abad0d2e9e1285b906a590a390b6cca79e91ba13fd70a23334db2b130abf89d0",
       "test": "scripts/sage_harness/hooks/tests/test_generated_artifact_write_guard.py",
       "unresolved": []
     },
@@ -60,7 +60,7 @@
         "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
         "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
       },
-      "canonical_hash": "sha256:d501f14913b407a10b631a54a0c8a222286ee9af9e4c50fc317b10ab32dd5cfb",
+      "canonical_hash": "sha256:b082b60c659a489892cf8964bd422ceec884dbe0629bff126ddbf1494ea63f8f",
       "conformance": "PASS",
       "form": "core_adapter",
       "l3_review_strategy": "codex_feature_signal",
@@ -70,7 +70,7 @@
       },
       "risk": [],
       "safety_degraded": false,
-      "spec_hash": "sha256:bfb704c33e31340816d477c2b5d6c6d0e65136989e939954b94f0d3ed67c98fd",
+      "spec_hash": "sha256:cccc699161bcb221519f9383fff76052719479cec548f6b474345317db868c81",
       "test": "scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py",
       "unresolved": []
     },
@@ -132,7 +132,7 @@
   "hook_runtime_hash": {
     "claude": "sha256:b4bffc51b3ca3d0b8cc5a62b3490af09a4c7935936d177cb4e11336edf0797a7",
     "codex": "sha256:016abcf7122b1c23950365e17e5d7161b07347fb83aad725ee6ddeab11624f53",
-    "shared": "sha256:a6c15e89950dc8152f6fb4e68f4b05e258119ce5dcdbc47deabe9c8e52fede65"
+    "shared": "sha256:41243ec36f881f89d552950350ae04c510257e72fd4372811db26778b8c02b96"
   },
   "host_runtime": "claude",
   "sage_version": "0.1.0",
