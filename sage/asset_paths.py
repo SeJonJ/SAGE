@@ -66,6 +66,11 @@ def hook_runtime_files(root: str) -> dict[str, list[str]]:
             # messages.py: io_claude/io_codex 가 import 하는 게이트/컴플라이언스 문구 SSOT(5-3).
             # 추적 안 하면 사용자 대상 게이트 문구가 validate 미감지로 표류(loop_audit 과 동일 논리).
             os.path.join(runtime, "messages.py"),
+            # cycle_state.py: 게이트가 "이 편집이 어느 사이클인가" 를 읽는 선언 파일의 해석 정본.
+            # 미추적 시 이 파일만 변조해도 hook_runtime_hash 가 PASS 하는데, read_declaration 이
+            # 항상 빈 stem 을 돌려주게 바꾸면 선언이 조용히 사라지고, 반대로 고정 stem 을 돌려주게
+            # 바꾸면 완결 사이클 차단이 통째로 무력화된다. override_audit 과 같은 근거다.
+            os.path.join(runtime, "cycle_state.py"),
         ] + strategy_files,
         "claude": [os.path.join(runtime, "io_claude.py")],
         "codex": [os.path.join(runtime, "io_codex.py")],

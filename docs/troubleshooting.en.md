@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:6e4813d9eea7d86e8f6157dccd9edd0c03a16c7498ae961765f9c169eb7bec35 -->
+<!-- sage-doc-source: troubleshooting.md sha256:4ec8276ae3ba4c95bb3a029426a155b104027c18f019eabbad5f2ebdd5d60e86 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -77,6 +77,51 @@ tells you which case you are in.
 
 A declaration is captured only from a plain statement naming a single level, and SAGE tells you when
 a prompt was not captured. An unused declaration expires after two days.
+
+## Every document exists but the gate reports missing PDCA phases
+
+When you edit a phase document the gate reads the cycle from its filename. Source edits have no such
+anchor, so the gate infers the cycle from the **last segment of the git branch name**. That is right
+when each cycle gets its own branch and permanently wrong when one branch carries many cycles — every
+governed edit is blocked as "phase documents missing" while all of them exist.
+
+Declare the cycle instead of renaming the branch.
+
+```bash
+sage cycle use <phase-document-basename>   # e.g. sage_project_profile_refresh
+sage cycle show                            # what is declared, and where it was read
+```
+
+This does not weaken the gate. It supplies the cycle identity the gate could not infer, and every
+phase, review, and acceptance requirement still applies to that stem. The first use in a session is
+recorded in `.sage/override.jsonl`.
+
+`sage cycle use` also prints the absolute path it wrote, whether git ignores it, and whether the
+compiled profile the gate reads is present. If a declaration seems to have no effect, read that
+output first.
+
+## The cycle is finished but new work is blocked as an already-completed cycle
+
+A declaration outlives the shell. If the finished cycle's declaration is still in place, new work
+binds to it, and the gate blocks that.
+
+```bash
+sage cycle clear                     # release the file declaration
+unset SAGE_CYCLE_STEM                # if you declared it through the environment
+```
+
+The block message states whether the binding was read as **declared** or **inferred from the
+branch**, so the guidance tells you which one to clear.
+
+## The write guard blocks an edit to the declaration file
+
+`.sage/cycle.json` is where the gate reads which cycle an edit belongs to. Writing it directly can
+point the gate at a completed cycle and switch it off, so the guard blocks that. Use
+`sage cycle use|show|clear` instead — the CLI does not go through edit tools and is never guarded.
+
+A `[사이클 선언 무시됨]` notice means the file exists but could not be read. The gate proceeds as if
+no declaration were present; rewrite it with `sage cycle use <stem>` or remove it with
+`sage cycle clear`.
 
 ## Missing arguments for `sage absorb` or `sage override`
 

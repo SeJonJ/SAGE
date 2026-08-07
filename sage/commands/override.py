@@ -72,7 +72,11 @@ def _run(args, root, ov):
         for b in bypasses[-5:]:
             print(f"   · bypass {b.get('ts')} gate={b.get('gate')} {b.get('message_key')} 파일 {len(b.get('files') or [])}건")
         for d in declared[-5:]:
-            print(f"   · SAGE_CYCLE_STEM {d.get('ts')} stem={d.get('cycle_stem')} "
+            # 통로를 읽은 자리 그대로 적는다 — 통로가 둘(env / .sage/cycle.json)인데 한쪽 이름으로
+            # 뭉치면 감사가 거짓을 말한다. 기원 필드가 없는 옛 레코드는 env 시절 기록이다.
+            channel = {"env": "SAGE_CYCLE_STEM", "cli": ".sage/cycle.json"}.get(
+                d.get("origin") or "", "SAGE_CYCLE_STEM")
+            print(f"   · 사이클 선언({channel}) {d.get('ts')} stem={d.get('cycle_stem')} "
                   f"판정={d.get('status')} by {d.get('user')}")
         return 0
 

@@ -543,7 +543,7 @@ def _runtime_root(d):
     strategies = os.path.join(hooks, "strategies", "pre_implementation_gate")
     os.makedirs(strategies, exist_ok=True)
     for fn in ("run_hook.py", "hook_runtime.py", "checklist_contract.py", "loop_audit.py", "retro_audit.py",
-               "acceptance_waiver.py", "override_audit.py", "messages.py",
+               "acceptance_waiver.py", "override_audit.py", "messages.py", "cycle_state.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(runtime, fn)).write_text(f"# {fn}\n", encoding="utf-8")
     Path(os.path.join(hooks, "cycle_binding.py")).write_text("# cycle_binding.py\n", encoding="utf-8")
@@ -595,6 +595,24 @@ class TestHookRuntimeHash(unittest.TestCase):
             sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
             self.assertEqual(sev, "FAIL")
             self.assertTrue(any("cycle_binding.py" in m for m in msgs))
+
+    def test_cycle_state_drift_and_missing_are_detected(self):
+        # 선언 해석 정본이 지문에서 빠지면 이 파일만 바꿔 게이트를 조용히 무력화할 수 있다 —
+        # read_declaration 이 항상 빈 stem 을 돌려주면 선언이 사라지고, 고정 stem 을 돌려주면
+        # 완결 사이클 차단이 통째로 꺼진다.
+        with tempfile.TemporaryDirectory() as d:
+            _runtime_root(d)
+            hashes, missing = calculate_hook_runtime_hash(d)
+            self.assertEqual(missing, [])
+            path = os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", "cycle_state.py")
+            Path(path).write_text("# permissive replacement\n", encoding="utf-8")
+            sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
+            self.assertEqual(sev, "STALE")
+            self.assertTrue(any("shared" in m for m in msgs))
+            os.remove(path)
+            sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
+            self.assertEqual(sev, "FAIL")
+            self.assertTrue(any("cycle_state.py" in m for m in msgs))
 
     def test_strategy_drift_and_removal_are_detected(self):
         with tempfile.TemporaryDirectory() as d:

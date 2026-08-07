@@ -80,9 +80,12 @@ def _complete_snapshot(stem):
             }}
 
 
-def _event(cycle_stem="", branch=LONG_BRANCH, path="backend/App.java"):
+def _event(cycle_stem="", branch=LONG_BRANCH, path="backend/App.java", origin="env"):
+    # origin 은 어댑터가 싣는다 — 선언 통로가 둘(env / .sage/cycle.json)이라 표시·감사가
+    # 어느 쪽을 읽었는지 갈라 말하려면 stem 만으로는 부족하다.
     return {"hook_id": GATE, "runtime": "test", "branch": branch, "session_id": "sess-1",
-            "cycle_stem": cycle_stem, "declared_max": None,
+            "cycle_stem": cycle_stem, "cycle_stem_origin": origin if cycle_stem else "",
+            "declared_max": None,
             "changes": [{"path": path, "op": "write", "content": "x"}]}
 
 
@@ -162,6 +165,14 @@ class TestHintPointsAtTheRealEscape(unittest.TestCase):
         self.assertIn(REAL_STEM, text)
         self.assertIn("SAGE_CYCLE_STEM 선언", text)
 
+    def test_file_declaration_is_labelled_as_the_file_not_the_env(self):
+        # 통로가 둘이므로 "선언" 으로 뭉치면 안 된다 — 읽은 자리를 그대로 적는다.
+        d = core.decide(_event(cycle_stem=REAL_STEM, origin="cli"), PDCA_PROFILE,
+                        _complete_snapshot(REAL_STEM), None)
+        text = self._render(d)
+        self.assertIn(".sage/cycle.json 선언", text)
+        self.assertNotIn("SAGE_CYCLE_STEM 선언", text)
+
     def test_both_runtimes_carry_the_same_guidance(self):
         d = core.decide(_event(), PDCA_PROFILE, _complete_snapshot(REAL_STEM), None)
         for runtime in ("claude", "codex"):
@@ -214,12 +225,33 @@ class TestClosedCycleIsNotSilentlyReused(unittest.TestCase):
             self.assertIn("Phase 00", text, runtime)
             self.assertIn("SAGE_CYCLE_STEM", text, runtime)
 
-    def test_declared_stem_is_not_blocked(self):
-        # 선언은 의도적 행위이고 이미 감사에 남는다. 막을 대상은 모르는 채 결속되는 쪽이다.
+    def test_declared_stem_is_blocked_too(self):
+        # 예전에는 선언을 면제했다. env 선언은 셸과 함께 죽어 무해했기 때문이다.
+        # 파일 선언은 세션을 넘겨 살아남으므로 3주 전 선언이 이 차단을 통째로 꺼버린다.
+        for origin in ("env", "cli"):
+            d = core.decide(self._source_event(cycle_stem=CLOSED_STEM, origin=origin),
+                            CLOSED_PROFILE, _closed_snapshot(CLOSED_STEM), None)
+            self.assertEqual(d["message_key"], "block_cycle_closed", origin)
+            self.assertEqual(d["exit_code"], 2, origin)
+
+    def test_block_reason_names_the_binding_origin(self):
+        # 사유가 `브랜치에서 추론한` 으로 고정돼 있으면 낡은 선언 때문에 막힌 사용자를 브랜치로
+        # 보내서 해제 안내를 정면으로 무효화한다.
+        declared = core.decide(self._source_event(cycle_stem=CLOSED_STEM), CLOSED_PROFILE,
+                               _closed_snapshot(CLOSED_STEM), None)
+        inferred = core.decide(self._source_event(), CLOSED_PROFILE,
+                               _closed_snapshot(CLOSED_STEM), None)
+        self.assertIn("선언된", declared["reason"])
+        self.assertNotIn("브랜치에서 추론한", declared["reason"])
+        self.assertIn("브랜치에서 추론한", inferred["reason"])
+
+    def test_block_points_at_the_release_channel(self):
+        # 낡은 선언이 원인일 때 해제 통로를 말하지 않으면 사용자는 나갈 길이 없다.
         d = core.decide(self._source_event(cycle_stem=CLOSED_STEM), CLOSED_PROFILE,
                         _closed_snapshot(CLOSED_STEM), None)
-        self.assertNotEqual(d["message_key"], "block_cycle_closed")
-        self.assertEqual(d["exit_code"], 0)
+        for runtime in ("claude", "codex"):
+            text = messages.gate_text(d, {}, runtime)
+            self.assertIn("sage cycle clear", text, runtime)
 
     def test_phase_edits_on_a_closed_cycle_stay_open(self):
         # 끝난 사이클의 05·06 을 고치는 것은 정상 작업이다.
@@ -229,6 +261,24 @@ class TestClosedCycleIsNotSilentlyReused(unittest.TestCase):
                                   "content": f"Cycle-Stem: `{CLOSED_STEM}`\n"}]}
             d = core.decide(event, CLOSED_PROFILE, _closed_snapshot(CLOSED_STEM), None)
             self.assertNotEqual(d["message_key"], "block_cycle_closed", phase)
+
+    def test_a_single_doc_line_mixed_into_source_edits_does_not_exempt(self):
+        """면제를 `any()` 로 쓰면 소스 열 개에 문서 한 줄만 섞어 차단 전체를 끌 수 있다.
+
+        실측으로 확인된 우회다 — 이 갈래가 열리면 D4 자체가 무의미해진다.
+        """
+        event = {"hook_id": GATE, "branch": CLOSED_STEM, "session_id": "s",
+                 "changes": [{"path": "backend/App.java", "op": "write", "content": "x"},
+                             {"path": f"plan_docs/05-x/{CLOSED_STEM}.md", "op": "update",
+                              "content": f"Cycle-Stem: `{CLOSED_STEM}`\n"}]}
+        d = core.decide(event, CLOSED_PROFILE, _closed_snapshot(CLOSED_STEM), None)
+        self.assertEqual(d["message_key"], "block_cycle_closed")
+
+    def test_zero_changes_is_not_an_exemption(self):
+        # 어댑터가 경로를 못 뽑은 상태가 차단을 사면하면 안 된다.
+        event = dict(self._source_event(), changes=[], declared_max="L3")
+        d = core.decide(event, CLOSED_PROFILE, _closed_snapshot(CLOSED_STEM), None)
+        self.assertEqual(d["message_key"], "block_cycle_closed")
 
     def test_l0_change_on_a_closed_cycle_stays_open(self):
         d = core.decide(self._source_event(path="notes/x.md"), CLOSED_PROFILE,

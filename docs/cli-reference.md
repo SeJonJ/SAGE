@@ -68,6 +68,9 @@ project core의 `decide(event, profile, snapshot)`에서 `event`는 `hook_id`, `
 | `sage feedback --release-gate` | 미해결 blocking feedback으로 릴리즈 차단 |
 | `sage override --reason R --ttl T` | 허용된 gate의 기간 제한 우회와 감사 기록 |
 | `sage acceptance-waiver {grant,list,revoke}` | exact L3 acceptance 운영 유예 관리 |
+| `sage cycle use STEM` | 지금 작업 중인 사이클을 게이트에 선언 (장수 브랜치 필수) |
+| `sage cycle show` | 현재 선언과 그 출처(env / `.sage/cycle.json`) 조회 |
+| `sage cycle clear` | 선언 해제 — 사이클이 끝나면 반드시 |
 
 ## 리뷰와 루프
 

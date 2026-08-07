@@ -29,6 +29,7 @@ if HOOKS_DIR not in sys.path:
     sys.path.insert(0, HOOKS_DIR)
 import cycle_binding
 import checklist_contract
+import cycle_state
 
 
 class ProfileLoadError(RuntimeError):
@@ -350,7 +351,7 @@ def _record_declared_cycle_stem(hook_id, root, decision, session_id):
         import override_audit
         override_audit.record_cycle_stem_declaration(
             root, hook_id, decision.get("cycle_stem") or "", session_id,
-            status=decision.get("status") or "")
+            status=decision.get("status") or "", origin=decision.get("cycle_stem_origin") or "")
         return decision
     except Exception as exc:
         if (decision or {}).get("status") == "block":
@@ -437,9 +438,13 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
     rel = make_rel(root)
     changes = io.extract_changes(raw, rel)       # ← 런타임별 (file_path vs apply_patch)
     declared = io.read_declared_level(raw, root)  # ← 런타임별 ($host/logs)
+    # 선언은 env(SAGE_CYCLE_STEM) 와 `<root>/.sage/cycle.json` 두 통로다. 기원을 함께 실어야
+    # 표시·감사가 "어느 통로로 읽었는지" 를 갈라 말할 수 있다 — env 가 이기는데 화면이
+    # "파일 선언" 이라고 적으면 확정적으로 거짓이 된다.
+    cycle_stem, cycle_origin, cycle_error = cycle_state.resolve_stem(root)
     event = {"hook_id": hid, "hook_event_name": "PreToolUse", "runtime": io.RUNTIME,
              "session_id": raw.get("session_id", "") or "", "branch": resolve_branch(root, ""),
-             "cycle_stem": os.environ.get("SAGE_CYCLE_STEM", ""),
+             "cycle_stem": cycle_stem, "cycle_stem_origin": cycle_origin,
              "declared_max": declared, "changes": changes}
     snapshot = build_snapshot(profile, root, rel)
     feedback_state = _build_feedback_state(profile, root, changes)
@@ -454,6 +459,10 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
     decision = _record_acceptance_waiver_uses(hid, root, decision)
     # override 우회보다 먼저 기록한다 — 우회로 통과하든 게이트가 통과시키든 선언 사실은 남아야 한다.
     decision = _record_declared_cycle_stem(hid, root, decision, event.get("session_id") or "")
+    # 선언 파일이 있는데 못 읽은 상태는 선언 부재로 degrade 하되 반드시 보이게 한다. 부재·손상이
+    # 똑같이 조용하면 파일을 1바이트만 잘라도 완결 사이클 차단이 사라지고 아무도 모른다.
+    if cycle_error and isinstance(decision, dict):
+        decision["cycle_declaration_error"] = cycle_error
     if _maybe_override(hid, root, decision, changes):   # P1-5: 활성 override 면 BLOCK 우회(감사 기록)
         return 0
     return io.render_gate(decision, profile)     # ← 런타임별 채널/포맷/exit

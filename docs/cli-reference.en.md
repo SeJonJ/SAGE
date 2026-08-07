@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:7db18772e0455e879a0e690997d5a6db61522edb63bc601e6189fb6ecceb6944 -->
+<!-- sage-doc-source: cli-reference.md sha256:cc8a1bb5de3f1f7f31e03cdf6f07c1762cd6bf07502105c5d4d0984c58a272ff -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -70,6 +70,9 @@ symlink leaf matches, and other non-regular paths are contract failures.
 | `sage feedback --release-gate` | Block a release when blocking feedback remains unresolved |
 | `sage override --reason R --ttl T` | Create a time-limited bypass for an eligible gate and record its audit trail |
 | `sage acceptance-waiver {grant,list,revoke}` | Manage exact L3 acceptance waivers |
+| `sage cycle use STEM` | Declare the cycle you are working on to the gate (required on long-lived branches) |
+| `sage cycle show` | Show the current declaration and where it was read (env or `.sage/cycle.json`) |
+| `sage cycle clear` | Release the declaration — always do this when the cycle ends |
 
 ## Reviews and loops
 

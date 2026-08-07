@@ -174,6 +174,24 @@ def _is_phase_write(event, cfg):
                for change in (event.get("changes") or []) for pattern in patterns if pattern)
 
 
+def _phase_only_change(event, cfg):
+    """변경이 1건 이상이고 **전부** phase 문서인가 — 완결 사이클 차단의 유일한 면제 조건.
+
+    `_is_phase_write` 를 쓰면 안 된다. 그건 `any()` 라 소스 파일 열 개에 문서 한 줄만 섞어도
+    참이 되고, 면제 조건에 넣는 순간 차단 전체가 꺼진다(실측: rc 0, 출력 0바이트).
+    유일한 호출부인 PDCA 진입 조건에서는 `any` 가 **넓게 잡는** 안전한 방향이라 그대로 옳다 —
+    같은 술어를 면제에 쓰면 방향이 뒤집힌다.
+
+    변경 0건도 면제가 아니다. 어댑터가 경로를 못 뽑은 상태가 차단을 사면하면 안 된다.
+    """
+    patterns = [item.get("glob") or "" for item in (cfg.get("phases") or [])]
+    changes = event.get("changes") or []
+    return bool(changes) and all(
+        any(cycle_binding.matches_glob(change.get("path") or "", pattern)
+            for pattern in patterns if pattern)
+        for change in changes)
+
+
 def _changed_phase_ids(event, cfg):
     changed = set()
     for phase in cfg.get("phases") or []:
@@ -883,6 +901,20 @@ _DECLARED_SOURCE = "event"      # cycle_binding 이 env 선언 기원에 붙이�
 _INFERRED_SOURCE = "branch-leaf"   # cycle_binding 이 브랜치 leaf 추론에 붙이는 라벨
 
 
+def _binding_origin_label(source) -> str:
+    """차단 사유가 결속 출처를 갈라 말하게 한다.
+
+    문구가 `브랜치에서 추론한` 으로 고정돼 있던 것은 조건이 추론 출처였을 때만 참이었다. 선언도
+    차단 대상이 된 지금 그 단정은 거짓이고, 거짓인 방향이 하필 나쁘다 — 낡은 선언 때문에 막힌
+    사용자를 브랜치 쪽으로 보내서 해제 안내를 정면으로 무효화한다.
+    """
+    if _DECLARED_SOURCE in source:
+        return "선언된"
+    if _INFERRED_SOURCE in source:
+        return "브랜치에서 추론한"
+    return "phase 문서에서 결속한"
+
+
 def _cycle_closed(stem, cfg, snapshot) -> bool:
     """stem 이 완결된 사이클인가 — 그 stem 의 report 문서 존재 **그리고** approve 문서 승인.
 
@@ -925,6 +957,9 @@ def _stamp_cycle_identity(decision: dict, event: dict, profile: dict, snapshot: 
     decision["cycle_stem"] = binding.get("stem") or ""
     decision["cycle_source"] = list(source)
     decision["cycle_stem_declared"] = _DECLARED_SOURCE in source
+    # 선언 통로가 둘(env / .sage/cycle.json)이라 출처만으로는 어디서 읽었는지 알 수 없다.
+    # 순수 판정 모듈(cycle_binding)은 건드리지 않고 어댑터가 실어 보낸 사실을 여기서 옮긴다.
+    decision["cycle_stem_origin"] = event.get("cycle_stem_origin") or ""
     return decision
 
 
@@ -963,20 +998,20 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
                     "message_key": "block_cycle_binding",
                     "reason": f"cycle binding 실패: {binding['error']}",
                     "file_short": c["file_short"]}
-        # 장수 브랜치에서 leaf 로 추론한 stem 은 이미 끝난 사이클을 가리키기 쉽다. 완결 사이클은
-        # 00~06 이 다 있어 모든 게이트를 통과하므로, 새 작업이 계획 문서 없이 조용히 진행된다.
-        # 명시 선언은 의도적 행위이고 감사에 남으므로 막지 않는다.
-        # 조건이 추론 하나로 충분한 이유: cycle_binding 은 phase 변경이 있으면 stem 을 경로에서 얻고
-        # branch-leaf 를 출처에 넣지 않는다. 따라서 추론 출처는 phase 변경 0건을 뜻하고, 그때 이
-        # 블록에 들어왔다는 것은 위 조건에 따라 계산 위험도가 L1 이상이라는 뜻이다.
+        # 완결 사이클은 00~06 이 다 있어 모든 게이트를 통과한다 — 새 작업이 계획 문서 없이 조용히
+        # 진행된다. 예전에는 브랜치 leaf 추론만 막았다. env 선언은 셸과 함께 죽어 무해했기 때문이다.
+        # 파일 선언(.sage/cycle.json)은 세션을 넘겨 살아남으므로 3주 전 선언이 이 차단을 통째로
+        # 꺼버린다(실측: exit 0, 출력 0바이트). 그래서 결속 출처가 아니라 **무엇을 고치는가**로 가른다.
+        # 면제는 "완결 사이클의 문서를 정정하는 편집" 하나뿐이고, 그건 정상 작업이다.
         # 주의: "L1 이상"은 "L0 경로가 아님"과 다르다. 세션 위험도 선언(declared_max)이 L0 경로를
         # 상향시키므로, L3 를 선언한 세션에서는 문서 편집도 이 차단에 걸린다.
         source = binding.get("source") or []
-        if (_DECLARED_SOURCE not in source and _INFERRED_SOURCE in source
+        if (not _phase_only_change(event, cfg)
                 and _cycle_closed(binding["stem"], cfg, snapshot)):
             return {"status": "block", "exit_code": 2, "risk": risk,
                     "message_key": "block_cycle_closed",
-                    "reason": f"브랜치에서 추론한 stem {binding['stem']!r} 은 완결된 사이클",
+                    "reason": f"{_binding_origin_label(source)} stem {binding['stem']!r} 은 "
+                              f"완결된 사이클",
                     "file_short": c["file_short"]}
         changed_phases = _changed_phase_ids(event, cfg)
         report_phase = str(cfg.get("report_phase") or "")
