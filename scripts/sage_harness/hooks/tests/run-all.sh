@@ -49,6 +49,10 @@ echo "### 5a3. 사이클 선언 통로 (.sage/cycle.json — root 해석 + 우�
 python3 "$HERE/test_cycle_state.py" || rc=1
 
 echo ""
+echo "### 5a4. 사이클 선언 사용성 (set/create + 생명주기 배선 + 문서)"
+python3 "$HERE/test_cycle_usability.py" || rc=1
+
+echo ""
 echo "### 5b. exact cycle/domain L3 review strategy"
 python3 "$HERE/test_cycle_domain_review.py" || rc=1
 

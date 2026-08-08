@@ -68,9 +68,20 @@ project core의 `decide(event, profile, snapshot)`에서 `event`는 `hook_id`, `
 | `sage feedback --release-gate` | 미해결 blocking feedback으로 릴리즈 차단 |
 | `sage override --reason R --ttl T` | 허용된 gate의 기간 제한 우회와 감사 기록 |
 | `sage acceptance-waiver {grant,list,revoke}` | exact L3 acceptance 운영 유예 관리 |
-| `sage cycle use STEM` | 지금 작업 중인 사이클을 게이트에 선언 (장수 브랜치 필수) |
+| `sage cycle set STEM` | 기존 Phase 00의 사이클을 게이트에 선언 (장수 브랜치 필수) |
+| `sage cycle set STEM --create --risk L1\|L2\|L3 [--path DIR]` | Phase 00 뼈대 하나를 만든 뒤 선언 (`DIR`은 root 상대 디렉터리) |
 | `sage cycle show` | 현재 선언과 그 출처(env / `.sage/cycle.json`) 조회 |
-| `sage cycle clear` | 선언 해제 — 사이클이 끝나면 반드시 |
+| `sage cycle clear` | 파일 선언 해제 — 정상 완료 뒤 실행; env 선언은 별도 `unset` 필요 |
+
+`sage-cycle` 우산은 `set`/`clear`를 직접 실행하지 않습니다. `sage-plan`이 검증된 stem을 선언하고,
+`sage-team`이 재개 시 `show`로 대조하며 write-back·retro·snapshot과 종료 게이트를 마친 뒤 해제합니다.
+`BLOCKED`/`FAIL`에서는 선언을 유지합니다. 현재 출처와 밀린 파일 선언은 `sage cycle show`로 확인하고,
+env가 이기면 `unset SAGE_CYCLE_STEM`으로 해제합니다.
+
+`set B`는 포인터만 전환하며 A의 phase 문서·증거·감사를 수정하지 않습니다. `set A`로 돌아가면
+A의 판정이 복원됩니다. `--create`는 Phase 00만 만들므로 profile이 01~03을 요구하면 해당 문서를
+작성해야 합니다. 긴급하게 면제 가능한 phase 결핍을 열 때는 `sage override --reason R --ttl 1h`처럼
+짧은 TTL을 사용하세요. Phase 00의 risk 선언·정합 차단은 override로 면제되지 않습니다.
 
 ## 리뷰와 루프
 

@@ -96,6 +96,15 @@ diff는 `sage absorb`로 spec patch 후보로 변환할 수 있습니다.
 `sage-review`는 Phase 05 리뷰와 적대적 반복을 담당합니다. `sage review-loop`는 라운드를 기록하고,
 `sage retro`는 완료 후 놓친 패턴을 분석합니다.
 
+장수 브랜치에서는 `sage cycle set <stem>`으로 현재 사이클을 선언합니다. Phase 00이 없다면
+`sage cycle set <stem> --create --risk L1|L2|L3`로 뼈대를 만든 뒤 내용을 채웁니다.
+`sage-cycle` 우산은 이 명령을 중복 실행하지 않습니다. `sage-plan`이 stem 검증 뒤 선언하고,
+`sage-team`이 재개 시 `sage cycle show`로 대조한 뒤 실제 완료 때 `sage cycle clear`로 해제합니다.
+리뷰가 `BLOCKED`/`FAIL`이면 재개를 위해 선언을 유지합니다. env 선언은 파일 해제 뒤에도 남으므로
+`unset SAGE_CYCLE_STEM`이 필요합니다.
+`set B`는 `.sage/cycle.json` 포인터만 바꾸며 A의 문서·증거·감사를 수정하지 않습니다. 다시
+`set A`하면 A의 판정이 복원됩니다.
+
 ### Profile
 
 `sage/project-profile.yaml`은 팀이 공유하는 정책이고, Git에서 제외되는

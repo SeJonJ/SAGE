@@ -229,7 +229,7 @@ class TestDeclarationFileIsGuarded(unittest.TestCase):
 
     def test_the_block_message_points_at_the_cli(self):
         message = guard.block_message(".sage/cycle.json")
-        self.assertIn("sage cycle use", message)
+        self.assertIn("sage cycle set", message)
         self.assertIn("sage cycle clear", message)
 
     def test_a_write_attempt_blocks_with_exit_two(self):
@@ -258,9 +258,9 @@ class TestDisplayAndAuditNameTheChannel(unittest.TestCase):
         self.assertNotIn("SAGE_CYCLE_STEM", self._suffix("cli"))
 
     def test_the_display_does_not_claim_who_wrote_it(self):
-        # 선언 파일은 프로젝트 안에 있어 무엇이든 직접 쓸 수 있다 — "sage cycle use 로 선언했다" 는
+        # 선언 파일은 프로젝트 안에 있어 무엇이든 직접 쓸 수 있다 — "sage cycle set 으로 선언했다" 는
         # 확인 불가능한 단언이다. 게이트가 아는 것은 읽은 자리뿐이다.
-        self.assertNotIn("sage cycle use", self._suffix("cli"))
+        self.assertNotIn("sage cycle set", self._suffix("cli"))
 
     def test_the_audit_dedupe_key_separates_the_two_channels(self):
         """기원을 dedupe 키에서 빼면 먼저 걸린 쪽만 남아, 세션을 넘겨 살아남는 파일 선언이
@@ -311,7 +311,7 @@ class TestCorruptionIsSurfaced(unittest.TestCase):
         # 조용히 무시되는 자리다.
         text = messages.gate_text(self._decision(), {}, "claude")
         self.assertIn("사이클 선언 무시됨", text)
-        self.assertIn("sage cycle use", text)
+        self.assertIn("sage cycle set", text)
 
     def test_the_notice_rides_along_with_an_existing_gate_line(self):
         text = messages.gate_text(
@@ -396,7 +396,7 @@ class TestFullWiring(unittest.TestCase):
         self.assertIn(BRANCH, text)              # 존재하지 않는 사이클에 결속돼 있다
 
     def test_the_cli_declaration_reaches_the_real_gate(self):
-        proc = subprocess.run([sys.executable, "-m", "sage", "cycle", "use", STEM],
+        proc = subprocess.run([sys.executable, "-m", "sage", "cycle", "set", STEM],
                               cwd=os.path.join(self.root, "plan_docs"), capture_output=True,
                               text=True, stdin=subprocess.DEVNULL,
                               env={**os.environ, "PYTHONPATH": PROJECT_ROOT})
@@ -447,20 +447,20 @@ class TestCliSurfacesWhatItChecked(unittest.TestCase):
             install._render_local_profile_gitignore(""), encoding="utf-8")
         return install._LOCAL_STATE_IGNORE_ENTRIES
 
-    def test_use_prints_the_absolute_root_and_file(self):
+    def test_set_prints_the_absolute_root_and_file(self):
         # CLI root 와 게이트 root 가 어긋날 수 있다는 것이 이 설계의 알려진 한계다.
         # 보장할 수 없는 것은 보이게 한다.
-        proc = self._cli("use", STEM)
+        proc = self._cli("set", STEM)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn(self.root, proc.stdout)
         self.assertIn(os.path.join(self.root, ".sage", "cycle.json"), proc.stdout)
 
-    def test_use_warns_when_the_profile_pair_is_absent(self):
+    def test_set_warns_when_the_profile_pair_is_absent(self):
         # 표식(manifest)과 게이트의 전제조건(profile 쌍)이 다르다 — 그 어긋남의 유일한 노출 지점.
-        self.assertIn("project-profile", self._cli("use", STEM).stdout)
+        self.assertIn("project-profile", self._cli("set", STEM).stdout)
 
-    def test_use_refuses_a_malformed_stem(self):
-        proc = self._cli("use", "a/b")
+    def test_set_refuses_a_malformed_stem(self):
+        proc = self._cli("set", "a/b")
         self.assertEqual(proc.returncode, 2)
         self.assertIn("형식 오류", proc.stderr)
 
@@ -468,7 +468,7 @@ class TestCliSurfacesWhatItChecked(unittest.TestCase):
         # cwd 로 떨어지면 게이트가 영영 읽지 않는 자리에 파일이 놓이고 사용자는 선언했다고 믿는다.
         plain = tempfile.mkdtemp()
         self.addCleanup(lambda: os.rmdir(plain))
-        proc = self._cli("use", STEM, cwd=plain)
+        proc = self._cli("set", STEM, cwd=plain)
         self.assertEqual(proc.returncode, 2)
         self.assertIn("SAGE 프로젝트가 아닙니다", proc.stderr)
         self.assertFalse(os.path.exists(os.path.join(plain, ".sage")))
@@ -478,7 +478,7 @@ class TestCliSurfacesWhatItChecked(unittest.TestCase):
         않게 바뀌면 이 이빨이 죽어야 한다. 커밋되면 남의 clone 에서 엉뚱하게 결속된다."""
         entries = self._git_repo_with_managed_ignore()
         self.assertIn("/.sage/*", entries)
-        self.assertEqual(self._cli("use", STEM).returncode, 0)
+        self.assertEqual(self._cli("set", STEM).returncode, 0)
         status = subprocess.run(["git", "-C", self.root, "status", "--porcelain"],
                                 capture_output=True, text=True).stdout
         self.assertNotIn(".sage", status)
@@ -486,15 +486,15 @@ class TestCliSurfacesWhatItChecked(unittest.TestCase):
             ["git", "-C", self.root, "check-ignore", "-q", cs.declaration_path(self.root)])
         self.assertEqual(ignored.returncode, 0)
 
-    def test_use_warns_when_the_file_is_not_ignored(self):
+    def test_set_warns_when_the_file_is_not_ignored(self):
         # D2 의 안전 근거가 install 이 쓴 관리 블록이므로 검증 없이 약속하지 않는다.
         subprocess.run(["git", "init", "-q", self.root], check=True, capture_output=True)
-        stdout = self._cli("use", STEM).stdout
+        stdout = self._cli("set", STEM).stdout
         self.assertIn("git 에 무시되지 않습니다", stdout)
         self.assertIn("sage install --force", stdout)     # 실측: 이 상태는 실제로 복구된다
 
     def test_show_reports_the_channel_and_the_losing_file(self):
-        self.assertEqual(self._cli("use", STEM).returncode, 0)
+        self.assertEqual(self._cli("set", STEM).returncode, 0)
         proc = subprocess.run([sys.executable, "-m", "sage", "cycle", "show"],
                               cwd=self.root, capture_output=True, text=True,
                               stdin=subprocess.DEVNULL,

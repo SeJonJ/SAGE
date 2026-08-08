@@ -99,6 +99,16 @@ and claims. `sage absorb` can turn an already blocked diff into a spec patch pro
 Phases 03-06, and `sage-review` owns Phase 05 review loops. `sage review-loop` records rounds and
 `sage retro` analyzes missed patterns after completion.
 
+On a long-lived branch, declare the current cycle with `sage cycle set <stem>`. If
+Phase 00 does not exist, use `sage cycle set <stem> --create --risk L1|L2|L3`, then
+fill in the generated skeleton. The `sage-cycle` umbrella does not duplicate these
+commands: `sage-plan` declares only after stem validation, and `sage-team` reconciles
+with `sage cycle show` on resume and runs `sage cycle clear` only after real completion.
+A `BLOCKED` or `FAIL` review retains the declaration for resume. An environment
+declaration survives file clear and must be removed with `unset SAGE_CYCLE_STEM`.
+`set B` changes only the `.sage/cycle.json` pointer; it does not modify cycle A's
+documents, evidence, or audits. Running `set A` restores A's evaluation.
+
 ### Profiles
 
 `sage/project-profile.yaml` contains shared team policy.

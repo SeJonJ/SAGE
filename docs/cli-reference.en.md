@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:cc8a1bb5de3f1f7f31e03cdf6f07c1762cd6bf07502105c5d4d0984c58a272ff -->
+<!-- sage-doc-source: cli-reference.md sha256:a0564fa8e79f8476a574364ba9dd6fe5371e2a56c8d9f1b17c573f22e020f660 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -70,9 +70,22 @@ symlink leaf matches, and other non-regular paths are contract failures.
 | `sage feedback --release-gate` | Block a release when blocking feedback remains unresolved |
 | `sage override --reason R --ttl T` | Create a time-limited bypass for an eligible gate and record its audit trail |
 | `sage acceptance-waiver {grant,list,revoke}` | Manage exact L3 acceptance waivers |
-| `sage cycle use STEM` | Declare the cycle you are working on to the gate (required on long-lived branches) |
+| `sage cycle set STEM` | Declare a cycle that already has Phase 00 (required on long-lived branches) |
+| `sage cycle set STEM --create --risk L1\|L2\|L3 [--path DIR]` | Create one Phase 00 skeleton, then declare it (`DIR` is project-root-relative) |
 | `sage cycle show` | Show the current declaration and where it was read (env or `.sage/cycle.json`) |
-| `sage cycle clear` | Release the declaration — always do this when the cycle ends |
+| `sage cycle clear` | Release the file declaration after completion; an env declaration needs `unset` |
+
+The `sage-cycle` umbrella does not run `set` or `clear` directly. `sage-plan` declares
+the verified stem, while `sage-team` reconciles it with `show` on resume and clears it
+after write-back, retro, snapshots, and closing gates. `BLOCKED` and `FAIL` retain the
+declaration. Use `sage cycle show` to inspect the effective source and the shadowed file;
+when the environment wins, release it with `unset SAGE_CYCLE_STEM`.
+
+`set B` switches only the pointer and does not modify cycle A's phase documents,
+evidence, or audits; `set A` restores A's evaluation. `--create` creates only Phase 00,
+so write any required Phases 01-03 before governed source edits. For an urgent,
+waivable phase gap, use a short TTL such as `sage override --reason R --ttl 1h`.
+Phase 00 risk declaration and reconciliation blocks are never waivable by override.
 
 ## Reviews and loops
 

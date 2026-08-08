@@ -82,15 +82,28 @@ phase 문서를 고칠 때 게이트는 파일명에서 사이클을 알아냅�
 브랜치 이름을 바꾸지 말고 사이클을 선언하세요.
 
 ```bash
-sage cycle use <phase-문서-파일명>   # 예: sage_project_profile_refresh
+sage cycle set <phase-문서-파일명>   # 기존 Phase 00이 있을 때
+sage cycle set <새-stem> --create --risk L2  # Phase 00이 없을 때
 sage cycle show                      # 무엇이 선언됐고 어디서 읽었는지
 ```
 
 게이트가 약해지는 것이 아닙니다 — 추론하지 못한 사이클 정체를 알려줄 뿐이고, phase·리뷰·acceptance
 요구는 그 stem에 그대로 적용됩니다. 세션의 첫 사용은 `.sage/override.jsonl`에 기록됩니다.
 
-`sage cycle use`는 자기가 쓴 절대경로와 git 무시 여부, 게이트가 읽는 profile 쌍의 존재를 함께
+`sage cycle set`은 자기가 쓴 절대경로와 git 무시 여부, 게이트가 읽는 profile 쌍의 존재를 함께
 출력합니다. 선언했는데 안 먹는다면 그 출력부터 보세요.
+기존 Phase 00과 충돌하면 아무것도 덮지 않고 충돌 경로와 사용 가능한 stem 후보 3개를 출력합니다.
+커스텀 Phase 00 glob 때문에 위치를 유도할 수 없을 때만 root 상대 디렉터리를 `--path DIR`로 지정하세요.
+
+`--create`는 Phase 00만 만듭니다. profile이 01~03을 요구하면 작성 전까지 소스 편집은 계속
+차단됩니다. 긴급 작업에서 면제 가능한 phase 결핍만 열려면
+`sage override --reason "hotfix" --ttl 1h`처럼 짧게 발급하세요. Phase 00의 risk 선언·정합 차단은
+override로 면제되지 않습니다.
+
+`sage-cycle` 우산은 직접 `set`/`clear`하지 않습니다. `sage-plan`이 stem 검증 뒤 선언하고,
+`sage-team`이 재개 시 `show`로 대조한 뒤 write-back·retro·snapshot과 종료 게이트까지 완료하면
+해제합니다. `BLOCKED`/`FAIL`에서는 재개를 위해 선언을 남깁니다.
+`set B`는 포인터만 바꾸므로 A의 문서·증거·감사는 그대로 남고, `set A`로 돌아가면 판정도 복원됩니다.
 
 ## 사이클을 끝냈는데 다음 작업이 "이미 완결된 사이클"로 막힘
 
@@ -108,11 +121,11 @@ unset SAGE_CYCLE_STEM                # env로 선언했다면
 ## 선언 파일을 편집 도구로 쓰려다 write guard에 막힘
 
 `.sage/cycle.json`은 게이트가 "이 편집이 어느 사이클인가"를 읽는 자리입니다. 직접 쓰면 완결된 사이클을
-지목해 게이트를 통과시킬 수 있어서 차단합니다. `sage cycle use|show|clear`를 쓰세요 — CLI는 편집 도구를
+지목해 게이트를 통과시킬 수 있어서 차단합니다. `sage cycle set|show|clear`를 쓰세요 — CLI는 편집 도구를
 거치지 않으므로 가드에 걸리지 않습니다.
 
 `[사이클 선언 무시됨]` 알림이 뜬다면 파일이 있는데 읽지 못한 것입니다. 게이트는 선언 없음으로
-진행하니 `sage cycle use <stem>`으로 다시 쓰거나 `sage cycle clear`로 지우세요.
+진행하니 `sage cycle set <stem>`으로 다시 쓰거나 `sage cycle clear`로 지우세요.
 
 ## `sage absorb` 또는 `sage override` 인자 누락
 

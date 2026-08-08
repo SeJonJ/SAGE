@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:4ec8276ae3ba4c95bb3a029426a155b104027c18f019eabbad5f2ebdd5d60e86 -->
+<!-- sage-doc-source: troubleshooting.md sha256:2bc18e136a0bfcec17bc6422acabbc294f722f2310fc82e66d6c3457a0aeae5e -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -88,7 +88,8 @@ governed edit is blocked as "phase documents missing" while all of them exist.
 Declare the cycle instead of renaming the branch.
 
 ```bash
-sage cycle use <phase-document-basename>   # e.g. sage_project_profile_refresh
+sage cycle set <phase-document-basename>   # when Phase 00 already exists
+sage cycle set <new-stem> --create --risk L2  # when Phase 00 does not exist
 sage cycle show                            # what is declared, and where it was read
 ```
 
@@ -96,9 +97,24 @@ This does not weaken the gate. It supplies the cycle identity the gate could not
 phase, review, and acceptance requirement still applies to that stem. The first use in a session is
 recorded in `.sage/override.jsonl`.
 
-`sage cycle use` also prints the absolute path it wrote, whether git ignores it, and whether the
+`sage cycle set` also prints the absolute path it wrote, whether git ignores it, and whether the
 compiled profile the gate reads is present. If a declaration seems to have no effect, read that
 output first.
+On a collision with an existing Phase 00, it overwrites nothing and prints every collision plus
+three available stem candidates. Use root-relative `--path DIR` only when a custom Phase 00 glob
+does not provide an unambiguous directory.
+
+`--create` creates only Phase 00. If the profile requires Phases 01-03, governed source edits remain
+blocked until those documents exist. For an urgent, waivable phase gap, grant a short override such
+as `sage override --reason "hotfix" --ttl 1h`. Phase 00 risk declaration and reconciliation blocks
+are never waivable by override.
+
+The `sage-cycle` umbrella does not run `set` or `clear` itself. `sage-plan` declares
+after stem validation, and `sage-team` reconciles with `show` on resume and clears only
+after write-back, retro, snapshots, and closing gates. `BLOCKED` or `FAIL` retains the
+declaration for resume.
+`set B` changes only the pointer, so cycle A's documents, evidence, and audits remain intact;
+`set A` restores A's evaluation.
 
 ## The cycle is finished but new work is blocked as an already-completed cycle
 
@@ -117,10 +133,10 @@ branch**, so the guidance tells you which one to clear.
 
 `.sage/cycle.json` is where the gate reads which cycle an edit belongs to. Writing it directly can
 point the gate at a completed cycle and switch it off, so the guard blocks that. Use
-`sage cycle use|show|clear` instead — the CLI does not go through edit tools and is never guarded.
+`sage cycle set|show|clear` instead — the CLI does not go through edit tools and is never guarded.
 
 A `[사이클 선언 무시됨]` notice means the file exists but could not be read. The gate proceeds as if
-no declaration were present; rewrite it with `sage cycle use <stem>` or remove it with
+no declaration were present; rewrite it with `sage cycle set <stem>` or remove it with
 `sage cycle clear`.
 
 ## Missing arguments for `sage absorb` or `sage override`
