@@ -413,6 +413,123 @@ EH-11 은 9개 하위 중 5개(J-4·J-5·J-6·J-8·J-9)를 `v0.9.78` 로 냈고
 
 ---
 
+## EH-17 — 스킬/훅 렌더가 오버레이 누적으로 계속 길어진다 — AGENT_GUIDE 라우팅 패턴 미적용
+
+- **배경**: AGENT_GUIDE는 `governance_docs` 라우팅 블록(path+label 포인터, 본문은 별도
+  문서)으로 무한정 길어지는 걸 이미 막고 있다(`docs/agent/bootstrap-authoring.md:97-105`).
+  반면 skill/agent CORE 렌더는 오버레이(`sage/asset_overrides/{agents,skills}/<id>.md`)가
+  overlay_materialize의 관리 블록으로 렌더 본문에 직접 물리화되는 구조라, 오버레이가
+  쌓일수록 렌더가 그대로 길어진다. ChatForYou_v2에서 sage-review 오버레이 1건을 추가하며
+  실측(2026-08-10).
+- **문제**: 이 growth를 막거나 완화하는 메커니즘이 CORE에 없다 — overlay_classify /
+  overlay_materialize / absorb / doctor 어디에도 렌더 콘텐츠 크기·중복·노후화를 보는
+  로직이 없음(코드 조사로 확인). 지금은 성장 속도가 느리지만(ChatForYou 3주 도그푸딩에
+  오버레이 1건), 여러 프로젝트가 오래 SAGE를 쓰면 스킬 파일이 AGENT_GUIDE처럼 부풀 수 있다.
+- **명시적 비-스코프(중요)**: "언제 지워야 하는가 / 무엇이 stale인가"를 CORE가 판정하는
+  기능은 **의도적으로 포함하지 않는다** — 오버레이 정리 정책은 조직마다 다른 운영 철학의
+  영역이라 SAGE가 강제하면 과도한 개입이다(ChatForYou 2026-08-10 논의에서 명시적으로
+  기각). 이 항목은 오직 "원하면 쓸 수 있는 구조적 선택지"만 다룬다.
+- **접근(스케치, 설계 아님)**: AGENT_GUIDE의 `governance_docs` 패턴을 스킬 오버레이에도
+  선택적으로 확장 — 오버레이 마크다운이 인라인 본문 대신 `{doc: <path>, label: ...}`
+  형태의 참조를 쓸 수 있게 하고, materialize가 그 경우 렌더에 포인터만 심는다. 기존
+  인라인 방식도 계속 유효(하위호환, 강제 이관 없음).
+- **규모·위험**: 낮음~중간. `overlay_materialize.py`의 관리 블록 물리화 로직에 "포인터
+  형식인가" 분기 하나 추가하는 정도로 보이나, `overlay_lint`(gate-relaxation 스캔)가
+  포인터가 가리키는 문서까지 스캔하도록 확장해야 한다 — 안 하면 포인터 뒤에 gate 완화
+  문구를 숨기는 새 우회로가 생긴다.
+- **트리거**: 실제로 어떤 소비 프로젝트의 스킬/훅 렌더가 눈에 띄게 길어져 리뷰 품질이나
+  토큰 비용에 실측 영향을 준다는 신호가 나오면. 지금은 관찰된 성장 속도가 느려 착수
+  필요 없음.
+- **상태**: 보류. ChatForYou_v2 2026-08-10 논의에서 제안, 착수는 트리거 대기.
+
+---
+
+## EH-18 — `sage-init` 대화형 profile 작성 범위와 실제 스키마의 완전성 감사
+
+- **배경**: SAGE profile 은 초기 버전보다 설정 축이 크게 늘었다. 현재 `sage-init` 은 프로젝트·컴포넌트·
+  검증 명령·위험도·모델·cross-model·review loop·vault 등을 대화로 채우고, `sage-init-local` 은
+  머신별 host/capability/model/vault 값을 맡는다. 그러나 `templates/project-profile.yaml`,
+  `schema/profile.schema.json`, `schema/profile.local.schema.json` 과 인터뷰 문서 사이의 **전체 키
+  대응표와 자동 회귀 검증은 없다**. Fast Cycle처럼 profile 항목을 새로 추가하면 스키마에는 있으나
+  최초 대화에서는 영구히 묻지 않는 설정이 다시 생길 수 있다.
+- **문제**: 목표 계약은 사용자가 YAML을 직접 해석해 채우는 것이 아니라 Claude/Codex와 대화해
+  공유 profile과 local profile을 완성하는 것이다. 현재는 어떤 키가 필수 인터뷰, 저장소에서 추론할
+  기본값, 조건부 질문, 고급 수동 설정인지 기계적으로 분류되지 않아 "지원 누락"과 "의도적 수동
+  전용"을 구분할 수 없다. `sage-init`·`sage-init-local`·`sage-profile-modify`가 서로 다른 질문
+  집합으로 드리프트할 위험도 있다.
+- **개발 범위**:
+  1. shared/local schema와 template의 모든 설정 경로를 inventory로 만들고 `owner`, `mode`
+     (`ask|required`, `propose`, `conditional`, `derived/default`, `manual-only`)를 명시한다.
+  2. 세 스킬의 실제 질문·쓰기 대상과 inventory를 대조해 누락, 중복 소유, local/shared 오기록,
+     제거된 키 질문을 검출한다.
+  3. 새 profile 키가 추가될 때 분류 없이 통과하지 못하는 문서/계약 회귀 테스트를 둔다. 모든 값을
+     무조건 질문하게 만들지는 않는다 — 사용자 의사 없이는 결정할 수 없는 값만 질문하고, 저장소에서
+     안전하게 추론 가능한 값은 근거와 함께 제안한다.
+  4. Claude/Codex 양 host에서 동일한 질문 계약과 승인 전 무기록, 승인 후 schema/semantic validate,
+     local profile Git 비추적을 실증한다.
+- **수용 기준**: shared/local의 허용 경로가 모두 정확히 한 분류를 가지며, 인터뷰 대상 경로는 해당
+  스킬 문서에 도달하고, manual-only/default 경로는 이유가 문서화된다. schema/template에 미분류 키를
+  추가하거나 local 소유 키를 shared에 쓰는 mutation이 테스트에서 실패해야 한다.
+- **Fast Cycle 관계**: Fast Cycle의 `pdca.fast_cycle`과 vault dashboard 설정도 이 inventory 대상이다.
+  다만 Fast Cycle 자체 설계를 막지는 않는다. `sage-fast-cycle` 구현 전에 최소한 해당 신규 키의 질문 소유자를
+  명시하고, EH-18에서 전체 profile로 일반화한다.
+- **실측 확인(2026-08-10, 착수 전 예비 조사)**: `schema/profile.schema.json`·`schema/profile.local.schema.json`을
+  실제 키 목록으로 덤프하고 `sage-init`/`sage-init-local`/`sage-profile-modify` SKILL.md +
+  `docs/agent/bootstrap-authoring.md`와 대조했다.
+  - **local(`profile.local.schema.json`, 14개 경로·5개 그룹)은 누락 0건.** `sage-init-local`이
+    "Allowed local sections are exactly ..."로 선언한 5개 그룹(`runtime.installed_hosts`,
+    `capabilities.{claude,codex}`, `cross_model.enabled`, `knowledge_capture.{enabled,vault_path}`,
+    `models.available.{claude,codex}`)이 스키마 전체와 정확히 1:1 일치하고, 4단계 인터뷰가 전부 다룬다.
+    **EH-18의 실제 범위는 local이 아니라 shared로 좁혀진다.**
+  - **shared(`profile.schema.json`, 104개 경로)에서 대화 어디서도 안 묻는 키 7건을 확인**:
+    1. `runtime.active_host`/`external_reviewer`/`asset_ssot` — `bootstrap-authoring.md:106-119`가
+       "configure every desired discovery surface... Prefer `active_host: auto`"라고 인터뷰 대상으로
+       **명시했는데** `sage-init`의 실제 Step1/2 토픽엔 `runtime.*`가 없다. 프로토콜 문서와 구현이
+       어긋난 확인된 드리프트 — 세 항목 중 가장 확실한 사례.
+    2. `feedback.*` — `/sage-feedback` 스킬은 `feedback.enabled`를 읽기만 하고 켜는 질문이 없다.
+       이 기능을 켜는 대화 경로 자체가 존재하지 않는다.
+    3. `verification.acceptance.*` — 기본 `enabled: true`로 L3를 실제 강제하는데(`report_gate_by_risk.L3: enforce`)
+       세 스킬 어디에도 언급이 없다.
+    4. `context_management.compaction.*` — 실동작 기본값(1MiB 등)이 있지만 대화 언급 0건.
+    5. `checklist_scan_targets`/`suffixes`/`phase4_trigger_glob` — `sage-init`·`bootstrap-authoring.md`·
+       `sage-profile-modify`의 편집 대상 섹션 목록 어디에도 없다(EH-19와 같은 사각지대 계열).
+    6. `conventions` — 스키마·템플릿에 예시가 있는데 `sage-profile-modify`의 "편집 가능 섹션" 목록에서도 빠졌다.
+    7. `risk.l2_content_keywords` — `sage-init` Topic5는 대칭 키인 `l3_content_keywords`만 이름을 명시한다.
+  - **누락이 아니라고 확인된 것**(참고, 개발 범위에서 제외 검토 대상): `runtime.installed_hosts`(→ 실제로는
+    `sage-init-local`이 다룸) · `pdca.retro.report_gate_enforce`/`pdca.writeback.depth_review_gate`(템플릿에
+    주석 처리된 의도적 opt-in) · `pdca.review_loop.architecture_escalation/termination_enforce/report_gate_enforce`
+    (합리적 파생/advisory 기본값 + 핵심 값은 실제 인터뷰됨) · `compliance`/`output_contract`(sage-init엔 없지만
+    `sage-profile-modify` 편집 목록엔 있음) · `extraction.config`(템플릿 주석에도 없는 고급 기능으로 보임).
+- **상태**: 미착수. 2026-08-10 Fast Cycle 설계 전 profile 대화 작성 목표를 재확인하며 등록,
+  같은 날 실측 확인으로 범위를 shared 7건으로 확정.
+
+---
+
+## EH-19 — Phase 00 체크리스트(Document Mapping)를 검증하는 게이트가 없다
+
+- **배경**: `templates/core/framework/docs/agent/pdca-templates.md`의 Phase 00 템플릿은 `## 5. Document
+  Mapping (Checklist)` 섹션을 명시적으로 갖는다. 그러나 유일하게 체크리스트 미완료를 검사하는 게이트인
+  `pre-phase4-checklist-gate`(`scripts/sage_harness/hooks/pre_phase4_checklist_gate_core.py`)는
+  profile의 `checklist_scan_targets`만 스캔하며, 기본값은 03-implementation + 컴포넌트 plan_docs이다.
+  코드 전체에 `00-base_plan`을 스캔 대상으로 삼는 로직이 없다(2026-08-10 코드 조사로 확인, grep 0건).
+- **문제**: 실사용에서는 그 섹션 이름조차 안 쓴다 — `plan_docs/00-base_plan/*.md` 21개 실 파일 중
+  어느 것도 `- [ ]` 체크박스나 "Document Mapping (Checklist)" 헤더를 쓰지 않고, 전부 "Done Criteria"
+  (번호 매긴 산문, 체크 불가능한 형식)로 드리프트했다. 즉 Phase 00은 "체크리스트라 이름 붙었지만
+  아무도 체크되는지 확인하지 않는" 상태다 — 있으나 마나 한 섹션이고, 실제 산출물 형식도 이미
+  그 사실을 반영해 스스로 벗어나 있다.
+- **접근(스케치, 설계 아님)**: (1) 템플릿의 "Checklist" 명칭과 실제 "Done Criteria" 산문 관행 중
+  하나로 정정 통일한다. (2) 체크박스 형식으로 통일한다면 `checklist_scan_targets`에 00-base_plan을
+  포함하는 옵션을 profile에 제공하거나, 04 트리거와 별개로 01/02 전환 시점에 00 완료 기준을 검사하는
+  경량 게이트를 검토한다. (3) 통일하지 않고 "Done Criteria는 애초에 체크박스가 아니라 검증 대상이
+  아니다"로 명시적 비-스코프 처리하는 안도 배제하지 않는다 — 결정은 설계 단계에서.
+- **규모/위험**: 낮음~중간. 템플릿 문서 정정은 작지만, 게이트 신설은 새 스캔 대상·profile 키·회귀를
+  동반한다.
+- **트리거**: Phase 00 Done Criteria가 실제로 미충족인 채 06까지 통과한 사례가 관측되거나, 템플릿·
+  실사용 불일치를 정리할 여유가 생길 때.
+- **상태**: 미착수. 2026-08-10 사용자 지적으로 확인·등록.
+
+---
+
 ## (참고) 보류 — 자산 사이클 내 기록
 - F5(클린 업그레이드)는 하드닝에서 해소(profile create-only). F1/F3/F7/malformed 동일.
 - 진행 로그: vault `TECH - SAGE 구현 진행 로그.md`
