@@ -27,13 +27,14 @@ from sage import overlay_common   # 오버레이 관리 블록 프리미티브(b
 from sage import overlay_materialize   # CORE 렌더 오버레이 물리화 + core_renders 앵커
 from sage import install_transaction as _tx
 
-# CORE roster (중립 6인) + CORE hook 7종(form) + CORE skill 9종. 도메인값 아님 = framework 메타.
+# CORE roster (중립 6인) + CORE hook 7종(form) + CORE skill 13종. 도메인값 아님 = framework 메타.
 # skill 3분할: sage-cycle(00~06 우산) → sage-plan(00~02 기획) → sage-team(03~06 개발).
 # sage-asset-override: CORE 자산 오버레이(sage/asset_overrides/**) 저작 — CORE 렌더 직접수정 대체 경로.
 _CORE_AGENTS = ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]
 # sage-feedback: 완료 사이클 코드의 개발자 의문 마커(`sage-feedback ::`) 해소 — 사이클 밖 독립 실행.
 _CORE_SKILLS = ["sage-cycle", "sage-plan", "sage-team", "sage-review", "sage-asset", "sage-profile-modify",
-                "sage-asset-override", "sage-feedback"]
+                "sage-asset-override", "sage-feedback",
+                "sage-cycle-fast", "sage-plan-fast", "sage-team-fast"]
 _CORE_BOOTSTRAP_SKILLS = ["sage-init", "sage-init-local"]
 # 은퇴한 CORE skill 이름 — install 시 잔존 사본을 정리(rename 수렴). 이름이 바뀌면 옛 이름을 여기 추가.
 # sage-pdca-start → sage-plan 으로 3분할 rename(옛 이름 잔존 사본 정리). pdca-start 는 그 이전 rename.
@@ -52,6 +53,7 @@ _LOCAL_STATE_IGNORE_ENTRIES = (
     "!/.sage/override.jsonl",
     "!/.sage/acceptance-waivers.jsonl",
     "!/.sage/loop_audit.jsonl",
+    "!/.sage/fast_cycle.jsonl",
 )
 _RETRO_AUDIT_REL = os.path.join(".sage", "retro_audit.jsonl")
 _CORE_HOOKS = [

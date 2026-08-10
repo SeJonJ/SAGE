@@ -173,6 +173,36 @@ If **off**, leave `review_loop.enabled: false` and skip the rest. If **on**, aut
 These flags require `vault_path` (the master gate); `sage validate` WARNs if a flag is
 true while `vault_path` is empty.
 
+#### Fast Cycle interview set (shared by sage-init and sage-profile-modify)
+
+Raise Fast Cycle as a separate shared-policy topic, default off:
+
+> "긴급하거나 범위가 작은 L2/L3 작업에 Fast Cycle을 허용할까요? (기본: off)"
+> · 표준 risk/build/test/lint/acceptance/05/06은 유지
+> · 물리 01~04를 composite 00에 합치고 리뷰 최소치를 별도 설정
+> · 모든 실행은 사유와 선택 렌즈를 `.sage/fast_cycle.jsonl`에 공유 감사
+
+If off, keep `pdca.fast_cycle.enabled: false` and preserve the template defaults.
+If on, propose these values from the project's risk domains and ask for one focused
+approval turn:
+
+| key | contract |
+|---|---|
+| `reason_required` | always `true`; never offer a disabling choice |
+| `minimum_rounds.L2/L3` | integer floor 1; a project may strengthen it |
+| `minimum_lenses.L2/L3` | integer floor 2; a project may strengthen it |
+| `lenses.L2/L3` | ordered, unique candidates from the closed engine vocabulary; each list must satisfy its minimum |
+
+Explain that actual `Risk Level` remains independent from `Fast-Review-Level`.
+An actual L3 run may choose L2 Fast but remains L3 for deterministic verification
+and acceptance and receives the explicit downgrade warning. The selected N lenses
+are the first N configured candidates; run-time arbitrary lens strings are not accepted.
+
+When Fast is enabled and an effective vault path exists, include
+`knowledge_capture.fast_cycle_dashboard` in the vault-output turn. This shared flag
+controls only the derived project dashboard; the private vault path remains in the
+local profile. `sage-init-local` must not ask for or write `pdca.fast_cycle`.
+
 **PDCA knowledge scan/write-back** — ask when `knowledge_capture.vault_path` is set
 (one turn, default both on):
 > "개발 전후로 vault 지식 캡처를 자동 실행할까요?"

@@ -27,6 +27,7 @@ _MAX_BLOB_BYTES = 5 * 1024 * 1024
 _MAX_PHASE_DOCS = 1_000
 _MAX_TOKEN_BYTES = ci_authority.MAX_TOKEN_BYTES
 _REGULAR_BLOB_MODES = frozenset({"100644", "100755"})
+_AUDIT_PATHS = (".sage/fast_cycle.jsonl", ".sage/loop_audit.jsonl")
 
 
 class AuthorityCliError(ValueError):
@@ -276,6 +277,19 @@ def _phase_docs(root: str, head_tree: dict[str, dict[str, str]],
     return docs
 
 
+def _audit_text(root: str, tree: dict[str, dict[str, str]], path: str) -> str:
+    entry = tree.get(path)
+    if entry is None:
+        return ""
+    if not _is_regular_blob(entry):
+        raise AuthorityCliError(f"audit evidence is not a regular git file: {path}")
+    raw = _blob(root, entry, label=f"head:{path}")
+    try:
+        return raw.decode("utf-8")
+    except UnicodeError as exc:
+        raise AuthorityCliError(f"audit evidence is not UTF-8: {path}") from exc
+
+
 def _request(args) -> dict[str, Any]:
     root = os.path.abspath(args.root)
     if not os.path.isdir(root):
@@ -286,7 +300,7 @@ def _request(args) -> dict[str, Any]:
     head_tree = _tree(root, head)
     base_profile = _profile(root, base_tree, "base")
     head_profile = _profile(root, head_tree, "head")
-    return {
+    request = {
         "base_profile": base_profile,
         "head_profile": head_profile,
         "changes": _changes(root, base, head, base_tree, head_tree),
@@ -297,6 +311,9 @@ def _request(args) -> dict[str, Any]:
         "head_sha": head,
         "expected_issuer": args.issuer,
     }
+    request["fast_cycle_audit"] = _audit_text(root, head_tree, _AUDIT_PATHS[0])
+    request["loop_audit"] = _audit_text(root, head_tree, _AUDIT_PATHS[1])
+    return request
 
 
 def _key() -> bytes:

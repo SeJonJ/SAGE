@@ -176,6 +176,27 @@ def build_snapshot(profile, root, rel):
                 docs.append({"path": rel(p), "content": cc, "recent": (now - os.path.getmtime(p)) <= 7 * 86400})
             phase_docs[pid] = docs
 
+        # Fast Cycle uses one physical 00 document as deterministic virtual 01..04 documents.
+        # The shared parser is also used by the CLI and server-side consumers.
+        try:
+            from sage.fast_cycle_contract import parse_fast_plan
+            for doc in list(phase_docs.get("00") or []):
+                plan, issues = parse_fast_plan(doc.get("content") or "")
+                if plan is None or issues or plan.metadata.get("Cycle-Mode") != "FAST":
+                    continue
+                header = (f"Cycle-Stem: `{plan.metadata.get('Cycle-Stem', '')}`\n"
+                          f"Risk Level: {plan.metadata.get('Risk Level', '')}\n")
+                for virtual_id in ("01", "02", "03", "04"):
+                    phase_docs.setdefault(virtual_id, []).append({
+                        "path": doc.get("path"),
+                        "content": header + plan.sections.get(virtual_id, ""),
+                        "recent": doc.get("recent", False),
+                        "virtual_fast": True,
+                    })
+        except Exception:
+            # Core receives parser/audit failures separately and closes only active Fast runs.
+            pass
+
     # 9.5 report←approve audit 증거: loop_audit 요약을 core 에 주입(2층 — adapter 가 .sage 읽기, core 순수).
     # fail-open: audit 없음/손상이어도 빈 요약(게이트가 advisory/enforce 로 처리, snapshot 빌드는 안 깸).
     try:
@@ -189,6 +210,15 @@ def build_snapshot(profile, root, rel):
             "has_any_records": False,
             "file_ok": False,
             "file_issues": [],
+            "snapshot_error": f"{type(exc).__name__}: {exc}",
+        }
+    try:
+        import fast_cycle_audit
+        fast_audit = fast_cycle_audit.audit_summary(root)
+    except Exception as exc:
+        fast_audit = {
+            "runs": {}, "active": [], "has_any_records": False,
+            "file_ok": False, "file_issues": [],
             "snapshot_error": f"{type(exc).__name__}: {exc}",
         }
     acceptance = ((profile.get("verification") or {}).get("acceptance") or {})
@@ -205,7 +235,7 @@ def build_snapshot(profile, root, rel):
         acceptance_waivers = {"valid": True, "active": [], "issues": [], "has_any_records": False}
     return {"plan_files": plan_files, "review_candidates": review_candidates,
             "l3_review_docs": l3_review_docs,
-            "phase_docs": phase_docs, "loop_audit": la,
+            "phase_docs": phase_docs, "loop_audit": la, "fast_cycle_audit": fast_audit,
             "acceptance_waivers": acceptance_waivers}
 
 
@@ -269,6 +299,7 @@ _NON_OVERRIDABLE_BLOCKS = {
     # 감사 기록 실패로 생긴 BLOCK 은 override 대상이 아니다 — override 는 그 자체가 감사에 남는 우회인데,
     # 감사를 못 쓰는 상태에서 감사로 우회한다는 건 성립하지 않는다. waiver 기록 실패와 같은 취급.
     "block_cycle_stem_audit_failure",
+    "block_fast_cycle_audit",
 }
 
 

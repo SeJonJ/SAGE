@@ -118,6 +118,24 @@ unset SAGE_CYCLE_STEM                # env로 선언했다면
 차단 메시지가 결속을 **선언된**으로 읽었는지 **브랜치에서 추론한**으로 읽었는지 알려주므로, 어느 쪽을
 지워야 하는지는 안내를 보고 판단하면 됩니다.
 
+## `sage cycle clear`가 활성 Fast run 때문에 막힘
+
+Fast 감사가 열린 상태에서 선언부터 지우면 이후 증거가 다른 stem에 결속될 수 있어 fail-closed로 막습니다.
+
+```bash
+sage fast-cycle show
+# 정상 완료
+sage fast-cycle close --run-id <fc-id>
+sage cycle clear
+# 또는 의도적 중단
+sage fast-cycle abort --run-id <fc-id> --reason "중단 사유"
+sage cycle clear
+```
+
+`close`가 거부되면 00이 최신 Fast review 뒤 바뀌었는지, 05/06의 `Fast-Run`·`Loop-Run`·
+`Final Status: APPROVED`가 같은 run을 가리키는지 확인합니다. 감사 원문이 손상됐으면 임의 삭제하거나
+새 run으로 덮지 말고 복구 가능한 Git 이력과 `.sage/fast_cycle.jsonl`을 함께 검토해야 합니다.
+
 ## 선언 파일을 편집 도구로 쓰려다 write guard에 막힘
 
 `.sage/cycle.json`은 게이트가 "이 편집이 어느 사이클인가"를 읽는 자리입니다. 직접 쓰면 완결된 사이클을

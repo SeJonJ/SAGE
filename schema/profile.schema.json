@@ -4,6 +4,16 @@
   "description": "project-profile.yaml→json 구조검증. 외부검토 R2/P0-2: risk/pdca 의 additionalProperties:false 가 'l3_filename_globs→l3_filename_glob' 류 오타(게이트 침묵 비활성)를 적발. 타입은 느슨(빈 프로파일/부분 작성 허용), 미지정 키만 차단.",
   "type": "object",
   "additionalProperties": false,
+  "definitions": {
+    "fastLensList": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["correctness", "security", "concurrency", "convention", "lifecycle", "performance", "error_handling", "data_integrity", "api_contract"]
+      }
+    }
+  },
   "properties": {
     "sage": {
       "type": "object",
@@ -403,6 +413,42 @@
                 "advisory",
                 "enforce"
               ]
+            }
+          }
+        },
+        "fast_cycle": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "reason_required", "minimum_rounds", "minimum_lenses", "lenses"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "reason_required": {"const": true},
+            "minimum_rounds": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["L2", "L3"],
+              "properties": {
+                "L2": {"type": "integer", "minimum": 1},
+                "L3": {"type": "integer", "minimum": 1}
+              }
+            },
+            "minimum_lenses": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["L2", "L3"],
+              "properties": {
+                "L2": {"type": "integer", "minimum": 2},
+                "L3": {"type": "integer", "minimum": 2}
+              }
+            },
+            "lenses": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["L2", "L3"],
+              "properties": {
+                "L2": {"$ref": "#/definitions/fastLensList"},
+                "L3": {"$ref": "#/definitions/fastLensList"}
+              }
             }
           }
         },

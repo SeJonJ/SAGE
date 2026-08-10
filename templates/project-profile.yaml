@@ -108,6 +108,15 @@ pdca:                            # PDCA phase 의무구조 — pre-implementatio
     termination_enforce: advisory                # 종료 검산 모드: advisory(불일치 경고만, 측정용) | enforce(불일치 close 거부). 수렴률 측정 후 enforce 전환 권장
     report_gate_enforce: advisory                # 06←05 audit 게이트: off(마커만) | advisory(WARN) | enforce(BLOCK). 05 가 가리키는 loop run 이 closed+APPROVED 인지 검사. enforce 는 모든 05 가 루프 돌 때만 안전
 
+  fast_cycle:                    # L2/L3 긴급·편의 개발용 축약 절차. 실제 risk/검증/acceptance는 낮추지 않음
+    enabled: false               # shared 정책으로 명시적으로 허용한 프로젝트만 사용
+    reason_required: true        # 고정 true — 실행별 사유는 감사 로그에 반드시 기록
+    minimum_rounds: { L2: 1, L3: 1 }
+    minimum_lenses: { L2: 2, L3: 2 }
+    lenses:
+      L2: [correctness, error_handling, convention]
+      L3: [correctness, security, data_integrity, concurrency]
+
   # retro:                          # Loop C(sage retro --check) 실행 여부를 Stop 훅이 사후 확인(9-C v1).
   #   report_gate_enforce: off      # off | advisory(WARN) | enforce(BLOCK, 양 host·세션당 최대 1회).
   #                                  # Claude는 exit 2, Codex는 Stop decision:block wire를 사용.
@@ -221,6 +230,7 @@ knowledge_capture:               # obsidian
                                #   { BUG:  ["> [!abstract]", "## 배경", "## 설계 결정", "## 변경 내역", "## 검증", "## 재발 방지", "## 관련 문서"],
                                #     TECH: ["> [!abstract]", "## 배경", "## 설계 결정", "## 변경 내역", "## 검증", "## 재발 방지", "## 관련 문서"] }
   loop_audit_dashboard: false    # 루프 종료 시 vault 에 Loop A 감사 대시보드 자동 갱신(sage review-loop show --vault). vault_path 필요
+  fast_cycle_dashboard: false    # Fast 종료/중단 시 프로젝트별 감사 대시보드 갱신. vault_path 필요
   retro_note: false              # sage retro 시 vault 에 human-gate 회고 노트 자동 작성(--vault). vault_path 필요
 
 feedback:                        # /sage-feedback — 완료된 사이클 코드에 개발자가 남기는 의문 마커

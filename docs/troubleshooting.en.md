@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:2bc18e136a0bfcec17bc6422acabbc294f722f2310fc82e66d6c3457a0aeae5e -->
+<!-- sage-doc-source: troubleshooting.md sha256:b11dbcc953312ba3ba5585191bfb3eead57f1fdeab68e619ad331107c01789c2 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -128,6 +128,26 @@ unset SAGE_CYCLE_STEM                # if you declared it through the environmen
 
 The block message states whether the binding was read as **declared** or **inferred from the
 branch**, so the guidance tells you which one to clear.
+
+## `sage cycle clear` is blocked by an active Fast run
+
+Clearing the declaration while a Fast audit remains open could bind later evidence to another stem,
+so SAGE fails closed.
+
+```bash
+sage fast-cycle show
+# Normal completion
+sage fast-cycle close --run-id <fc-id>
+sage cycle clear
+# Or intentional abandonment
+sage fast-cycle abort --run-id <fc-id> --reason "reason for stopping"
+sage cycle clear
+```
+
+When `close` is rejected, check whether Phase 00 changed after the latest Fast review and whether
+Phase 05/06 bind the same `Fast-Run`, `Loop-Run`, and `Final Status: APPROVED`. If the audit text is
+damaged, do not delete it or overwrite it with a new run; inspect recoverable Git history together
+with `.sage/fast_cycle.jsonl`.
 
 ## The write guard blocks an edit to the declaration file
 

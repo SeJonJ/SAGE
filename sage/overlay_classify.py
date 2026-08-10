@@ -40,6 +40,7 @@ CORE_IDS = {
     "skills": frozenset({
         "sage-cycle", "sage-plan", "sage-team", "sage-review", "sage-asset",
         "sage-profile-modify", "sage-asset-override", "sage-feedback",
+        "sage-cycle-fast", "sage-plan-fast", "sage-team-fast",
         "sage-init", "sage-init-local",
     }),
     "framework": frozenset({"AGENT_GUIDE", "CLAUDE", "CODEX", "AGENTS"}),

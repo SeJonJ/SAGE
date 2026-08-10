@@ -101,6 +101,18 @@ profile.pdca: { enabled, phases[{id,glob}], pre_implementation_required{L1,L2,L3
 - enabled=false/phases 없음 → `_pdca_cfg`=None → 강제 skip(기존 동작 보존). report/phase write는 snapshot과
   같은 configured glob semantics로 판정한다.
 
+### Fast Cycle virtual phase 계약
+
+`pdca.fast_cycle.enabled=true`이고 현재 stem의 Phase 00이 `Cycle-Mode: FAST`인 경우 어댑터는 composite
+00의 `## Phase 01`~`## Phase 04`를 파싱해 virtual phase snapshot으로 주입합니다. 물리 01~04를 자동
+생성하지 않으며, 같은 stem의 물리 문서가 함께 있으면 ambiguity를 숨기지 않습니다. source edit에는
+strict-chain `.sage/fast_cycle.jsonl`의 clean active run, exact stem, bound plan hash가 필요합니다.
+감사 부재·손상·terminal/mismatch는 `block_fast_cycle_audit`로 차단되고 override 대상이 아닙니다.
+
+활성 Fast run의 source edit은 실제 risk를 낮추지 않은 채 `warn_fast_cycle`을 출력합니다. standard L3
+pre-review 전략만 Fast review 계약으로 대체하고, acceptance·verification·report gate는 유지합니다.
+Fast 감사 snapshot을 읽지 못한 예외도 손상과 같은 fail-closed 입력으로 렌더합니다.
+
 ## report←approve audit 게이트 (9.5, profile.pdca.review_loop.report_gate_enforce — F-5)
 review_loop.enabled + report_gate_enforce ∈ {advisory, enforce} 일 때, 마커 검사에 더해 06 작성 시
 `_audit_gate` 가: current `Cycle-Stem`의 05 문서 1개를 exact 선택 → 그 동일 문서에서 APPROVED 마커와

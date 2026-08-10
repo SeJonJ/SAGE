@@ -252,6 +252,17 @@ toggle's detail entirely when it stays off.
     `knowledge_capture.vault_path` is set**, ask the one vault turn from the shared set —
     `loop_audit_dashboard` (감사 대시보드) and/or `retro_note` (회고 human-gate 노트).
     Skip this turn entirely when the loop is off or no vault is configured.
+- **Fast Cycle (`pdca.fast_cycle`)** — raise this shared-policy toggle in its own
+  turn, defaulting to `enabled: false`. If enabled, propose and confirm
+  `minimum_rounds` (L2/L3, engine floor 1), `minimum_lenses` (L2/L3, engine floor
+  2), and ordered L2/L3 `lenses` from the closed engine vocabulary. Keep
+  `reason_required: true`; never offer a switch that disables per-run reasons.
+  Explain that actual risk and its verification/acceptance remain unchanged and
+  that Fast consolidates physical 01 through 04 into the composite 00.
+  If effective vault capability/path is configured, ask in the vault-output turn
+  whether `knowledge_capture.fast_cycle_dashboard` should be enabled. This is a
+  shared automation flag; the private path remains local. `sage-init-local` does
+  not own or modify `pdca.fast_cycle`.
 - **`options.codegraph` / `codegraph`** — toggle and MCP name.
 
 MCP servers themselves are governed as the `mcp` asset kind

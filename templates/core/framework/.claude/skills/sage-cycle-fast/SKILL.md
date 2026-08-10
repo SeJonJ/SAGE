@@ -1,0 +1,30 @@
+---
+name: sage-cycle-fast
+description: Run the complete SAGE Fast Cycle by delegating planning to sage-plan-fast and implementation through completion to sage-team-fast.
+---
+
+# sage-cycle-fast
+
+Invoke as `/sage-cycle-fast` on Claude or `$sage-cycle-fast` on Codex.
+
+This is a **CORE framework bootstrap asset**, hand-shipped by `sage install` and
+not manifest-tracked. Do not edit an installed copy directly.
+
+Fast Cycle is an explicitly enabled L2/L3 alternate protocol, not an override.
+It keeps actual risk, deterministic verification, acceptance, independent
+approval, 05/06, and audit evidence while consolidating physical 01 through 04
+documents into one composite 00 Fast Plan.
+
+## Procedure
+
+1. Read the shared profile and stop unless `pdca.fast_cycle.enabled: true`.
+2. Resolve the current Cycle-Stem and inspect its exact 00 document and Fast audit.
+3. If no composite Fast Plan and active Fast run exist, delegate to
+   `sage-plan-fast`. Do not duplicate its interview or planning steps here.
+4. After planning/open succeeds, delegate to `sage-team-fast`. Do not duplicate
+   its implementation, review, close, or clear steps here.
+5. Report the actual risk, Fast review level, selected lenses, reason, Fast run,
+   Loop run, and final result.
+
+This umbrella does not execute cycle declaration or audit commands itself. The
+two delegated skills own those state transitions so there is one writer per step.

@@ -50,6 +50,8 @@ def register(sub):
     po.add_argument("--run-id", default=None, help="명시 run_id(기본: 자동 발급)")
     po.add_argument("--reviewer-requested", default=None,
                     help="의도한 리뷰어 모드(예: cross_model|same_runtime). close 의 --reviewer-actual 와 비교해 degraded 판정")
+    po.add_argument("--cycle-stem", default=None, help="Fast Cycle 결속용 exact cycle stem")
+    po.add_argument("--lenses", default=None, help="Fast Cycle 결속용 comma-separated 렌즈 목록")
     po.add_argument("--root", default=None)
     po.set_defaults(func=_run_open)
 
@@ -61,6 +63,8 @@ def register(sub):
     pr.add_argument("--accepted", required=True, type=_nonneg, help="REWORK 채택 수")
     pr.add_argument("--arch", default=0, type=_nonneg, help="아키텍처 에스컬레이션 수")
     pr.add_argument("--tokens", default=0, type=_nonneg, help="누적 토큰")
+    pr.add_argument("--lens-receipts", default=None,
+                    help="이번 라운드에 실제 완료한 comma-separated 렌즈 receipt")
     pr.add_argument("--root", default=None)
     pr.set_defaults(func=_run_round)
 
@@ -158,6 +162,15 @@ def _write_audit(la, operation):
         return None
 
 
+def _comma_list(value):
+    if value is None:
+        return None
+    items = [item.strip() for item in value.split(",")]
+    if not items or any(not item for item in items) or len(items) != len(set(items)):
+        raise ValueError("comma list must contain unique non-empty values")
+    return items
+
+
 def _run_open(args):
     la = _load_loop_audit()
     root = _root(args)
@@ -168,11 +181,17 @@ def _run_open(args):
     if args.run_id and _is_open(la, root, args.run_id):
         print(f"[sage review-loop] run_id '{args.run_id}' 이미 open 됨 — 중복 open 거부(integrity)", file=sys.stderr)
         return 2
+    try:
+        lenses = _comma_list(args.lenses)
+    except ValueError as exc:
+        print(f"[sage review-loop] --lenses invalid: {exc}", file=sys.stderr)
+        return 2
     rid = _write_audit(
         la,
         lambda: la.open_loop(root, args.risk, cfg=_cfg_snapshot(root, profile),
                              run_id=args.run_id,
-                             reviewer_requested=args.reviewer_requested),
+                             reviewer_requested=args.reviewer_requested,
+                             cycle_stem=args.cycle_stem, lenses=lenses),
     )
     if rid is None:
         return 2
@@ -202,11 +221,16 @@ def _run_round(args):
     if args.arch > args.survived:
         print(f"[sage review-loop] arch({args.arch}) > survived({args.survived}) 불가(아키텍처는 생존 중 분류)", file=sys.stderr)
         return 2
+    try:
+        lens_receipts = _comma_list(args.lens_receipts)
+    except ValueError as exc:
+        print(f"[sage review-loop] --lens-receipts invalid: {exc}", file=sys.stderr)
+        return 2
     written = _write_audit(
         la,
         lambda: la.record_round(root, args.run_id, args.iteration, args.found,
                                 args.survived, args.accepted, arch=args.arch,
-                                tokens=args.tokens),
+                                tokens=args.tokens, lens_receipts=lens_receipts),
     )
     if written is None:
         return 2

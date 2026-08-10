@@ -51,6 +51,9 @@ python3 "$HERE/test_cycle_state.py" || rc=1
 echo ""
 echo "### 5a4. 사이클 선언 사용성 (set/create + 생명주기 배선 + 문서)"
 python3 "$HERE/test_cycle_usability.py" || rc=1
+echo ""
+echo "### 5a5. Fast Cycle 통합 계약 (profile/audit/CLI/gate/skills)"
+python3 "$HERE/test_fast_cycle.py" || rc=1
 
 echo ""
 echo "### 5b. exact cycle/domain L3 review strategy"

@@ -266,6 +266,128 @@ def _selected_phases(phase_docs: dict[str, Any], cycle_stem: str, cycle_binding)
     return selected, errors
 
 
+def _expand_fast_phase_docs(phase_docs: dict[str, Any]):
+    """Project composite 00 documents into virtual 01..04 using the shared parser."""
+    expanded = {phase: list(docs or []) for phase, docs in (phase_docs or {}).items()}
+    for phase in ("00", "01", "02", "03", "04", "05"):
+        expanded.setdefault(phase, [])
+    issues = []
+    try:
+        from sage.fast_cycle_contract import parse_fast_plan
+        for doc in list(expanded["00"]):
+            plan, parse_issues = parse_fast_plan(doc.get("content") or "")
+            if plan is None or plan.metadata.get("Cycle-Mode") != "FAST":
+                continue
+            if parse_issues:
+                issues.extend(f"Fast composite: {issue}" for issue in parse_issues)
+                continue
+            header = (f"Cycle-Stem: `{plan.metadata.get('Cycle-Stem', '')}`\n"
+                      f"Risk Level: {plan.metadata.get('Risk Level', '')}\n")
+            for phase in ("01", "02", "03", "04"):
+                expanded[phase].append({
+                    "path": doc.get("path"),
+                    "content": header + plan.sections.get(phase, ""),
+                    "virtual_fast": True,
+                })
+    except Exception as exc:
+        issues.append(f"Fast composite parser failure: {type(exc).__name__}: {exc}")
+    return expanded, issues
+
+
+def _fast_evidence_reasons(request, selected, cycle_stem):
+    """Verify committed Fast and Loop audit evidence against the selected plan/review."""
+    plan_doc = selected.get("00") if isinstance(selected, dict) else None
+    review_doc = selected.get("05") if isinstance(selected, dict) else None
+    if not plan_doc:
+        return ["Fast authority requires selected Phase 00"]
+    from sage.fast_cycle_contract import evidence_marker_issues, parse_fast_plan
+    plan, plan_issues = parse_fast_plan(plan_doc.get("content") or "")
+    if plan is None or plan.metadata.get("Cycle-Mode") != "FAST":
+        return []
+    reasons = [f"Fast composite: {issue}" for issue in plan_issues]
+    if not review_doc:
+        reasons.append("Fast authority requires selected Phase 05")
+        return reasons
+    _trusted_gate_modules()  # inserts the trusted runtime directory
+    import loop_audit
+    try:
+        fast_raw = request.get("fast_cycle_audit")
+        loop_raw = request.get("loop_audit")
+        if not isinstance(fast_raw, str) or not isinstance(loop_raw, str):
+            return reasons + ["committed Fast and Loop audit text is required"]
+        fast_records, fast_file_issues = loop_audit._parse_bytes(fast_raw.encode("utf-8"))
+        loop_records, loop_file_issues = loop_audit._parse_bytes(loop_raw.encode("utf-8"))
+    except Exception as exc:
+        return reasons + [f"audit parse failed closed: {type(exc).__name__}: {exc}"]
+    reasons.extend(f"Fast audit: {issue}" for issue in fast_file_issues)
+    reasons.extend(f"Loop audit: {issue}" for issue in loop_file_issues)
+
+    fast_run = plan.metadata.get("Fast-Audit-Run")
+    fast = [record for record in fast_records if record.get("run_id") == fast_run]
+    fast_events = [record.get("event") for record in fast]
+    if (fast_events.count("fast_open") != 1 or fast_events.count("fast_close") != 1
+            or fast_events.count("fast_abort") != 0 or fast_events.count("fast_review") < 1
+            or fast_events[-1:] != ["fast_close"]):
+        reasons.append(f"Fast run {fast_run!r} is not clean terminal APPROVED evidence")
+        return reasons
+    if loop_audit._chain_states(fast_records).get(fast_run) is not True:
+        reasons.append(f"Fast run {fast_run!r} strict hash-chain is invalid or legacy")
+    if loop_audit._seq_ok([record.get("seq") for record in fast]) is not True:
+        reasons.append(f"Fast run {fast_run!r} seq is not strict and continuous")
+    opened = next(record for record in fast if record.get("event") == "fast_open")
+    reviewed = [record for record in fast if record.get("event") == "fast_review"][-1]
+    closed = fast[-1]
+    plan_hash = hashlib.sha256((plan_doc.get("content") or "").encode("utf-8")).hexdigest()
+    if opened.get("cycle_stem") != cycle_stem or plan.metadata.get("Cycle-Stem") != cycle_stem:
+        reasons.append("Fast run/plan cycle stem does not match authority stem")
+    if opened.get("actual_risk_open") != plan.metadata.get("Risk Level"):
+        reasons.append("Fast open actual risk does not match Phase 00")
+    if (reviewed.get("result") != "APPROVED" or closed.get("result") != "APPROVED"
+            or reviewed.get("plan_hash_before_review") != plan_hash
+            or closed.get("plan_hash_final") != plan_hash):
+        reasons.append("Fast review/close result or plan hash binding is invalid")
+    loop_run = reviewed.get("loop_run_id")
+    if closed.get("loop_run_id") != loop_run:
+        reasons.append("Fast close references a different Loop run")
+    review_text = review_doc.get("content") or ""
+    reasons.extend(
+        f"Phase 05 Fast evidence marker invalid: {issue}"
+        for issue in evidence_marker_issues(
+            review_text, fast_run_id=fast_run, loop_run_id=loop_run))
+
+    loop = [record for record in loop_records if record.get("run_id") == loop_run]
+    loop_events = [record.get("event") for record in loop]
+    if loop_events.count("loop_open") != 1 or loop_events.count("loop_close") != 1 or loop_events[-1:] != ["loop_close"]:
+        reasons.append(f"Loop run {loop_run!r} is not clean and closed")
+        return reasons
+    if loop_audit._chain_states(loop_records).get(loop_run) is not True:
+        reasons.append(f"Loop run {loop_run!r} strict hash-chain is invalid or legacy")
+    if loop_audit._seq_ok([record.get("seq") for record in loop]) is not True:
+        reasons.append(f"Loop run {loop_run!r} seq is not strict and continuous")
+    loop_open = next(record for record in loop if record.get("event") == "loop_open")
+    loop_close = loop[-1]
+    rounds = [record for record in loop if record.get("event") == "round"]
+    lenses = opened.get("lenses") or []
+    if (loop_open.get("cycle_stem") != cycle_stem or loop_open.get("lenses") != lenses
+            or loop_close.get("result") != "APPROVED"):
+        reasons.append("Loop run stem/lenses/result does not match Fast open")
+    if len(rounds) < int(opened.get("minimum_rounds") or 0) or reviewed.get("rounds") != len(rounds):
+        reasons.append("Loop round count does not satisfy Fast minimum/review receipt")
+    if any(record.get("lens_receipts") != lenses for record in rounds):
+        reasons.append("one or more Loop rounds lack exact selected lens receipts")
+    receipts_payload = json.dumps(
+        [{"iteration": record.get("iteration"), "lenses": record.get("lens_receipts")} for record in rounds],
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    receipts_hash = hashlib.sha256(receipts_payload.encode("utf-8")).hexdigest()
+    if reviewed.get("lens_receipts_hash") != receipts_hash:
+        reasons.append("Fast review lens receipt hash does not match Loop rounds")
+    requested = loop_open.get("reviewer_requested")
+    actual = loop_close.get("reviewer_actual")
+    if requested is not None and actual != requested:
+        reasons.append("Loop reviewer is degraded or unproven")
+    return reasons
+
+
 def _declared_risk(selected: dict[str, dict[str, Any]], cycle_binding, core):
     found = []
     for doc in selected.values():
@@ -335,7 +457,9 @@ def analyze(request: dict[str, Any], classifier: Callable | None = None) -> dict
     if cycle_stem is None:
         reasons.append("explicit safe cycle_stem is required")
     else:
-        selected, phase_errors = _selected_phases(request.get("phase_docs") or {}, cycle_stem, cycle_binding)
+        phase_docs, fast_phase_issues = _expand_fast_phase_docs(request.get("phase_docs") or {})
+        reasons.extend(fast_phase_issues)
+        selected, phase_errors = _selected_phases(phase_docs, cycle_stem, cycle_binding)
         try:
             declared = _declared_risk(selected, cycle_binding, core)
             if declared == "unknown":
@@ -347,6 +471,7 @@ def analyze(request: dict[str, Any], classifier: Callable | None = None) -> dict
         if risk in ("L2", "L3"):
             reasons.extend(phase_errors)
         if not phase_errors:
+            reasons.extend(_fast_evidence_reasons(request, selected, cycle_stem))
             if risk == "L3":
                 status, error = core._final_status(selected["05"].get("content") or "")
                 if error or status != "APPROVED":

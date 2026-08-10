@@ -92,6 +92,20 @@ Reason: [knowledge_capture disabled / provider unavailable]
 Decision: Proceeding from repository files only.
 ```
 
+## Fast Cycle composite plan
+
+Fast Cycle is available only when shared policy sets `pdca.fast_cycle.enabled: true` and only for
+actual L2/L3 work. It does not weaken actual risk, verification, acceptance, independent approval,
+write-back, retro, or snapshots. Before any write, collect Fast review level, lens count, and a
+one-line reason. Use one physical Phase 00 document with exact ordered headings `## Phase 00` through
+`## Phase 04`; embed the normal requirements, design, ownership, acceptance trace, implementation,
+and verification content under those headings. Physical Phase 05 and 06 remain separate.
+
+Open the audit only after every Phase 00 and Phase 03 pre-edit checklist item is checked. Bind every
+review round to the configured lenses, close or abort the Fast audit before clearing the cycle, and
+commit `.sage/fast_cycle.jsonl` with the delivery evidence. The standard `sage-cycle` skill never
+selects this mode implicitly; use `sage-cycle-fast`, `sage-plan-fast`, and `sage-team-fast`.
+
 ## Independent / Cross-model Review Protocol
 
 Independent review is **mandatory for L3** (recommended for L2). It is recorded in

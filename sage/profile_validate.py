@@ -29,7 +29,7 @@ _CLOSED_SECTION_FALLBACK = {
              "l3_filename_globs", "l3_review_strategy", "l3_review_glob", "content_l3_enforce",
              "domains", "plan_glob", "review_patterns"},
     "pdca": {"approve_marker", "approve_phase", "enabled", "phases",
-             "pre_implementation_required", "report_phase", "review_loop", "retro", "writeback"},
+             "pre_implementation_required", "report_phase", "review_loop", "fast_cycle", "retro", "writeback"},
     "output_contract": {"markers"},
     "mcp": {"enabled"},
     "extraction": {"config"},
@@ -47,6 +47,7 @@ _REVIEW_LOOP_KEYS = {"enabled", "lenses", "refuters", "refute_threshold", "max_i
                      "architecture_escalation", "termination_enforce", "report_gate_enforce"}
 _TERMINATION_MODES = {"advisory", "enforce"}   # 종료 검산 모드(기본 advisory)
 _REPORT_GATE_MODES = {"off", "advisory", "enforce"}   # 06←05 audit 게이트 모드(기본 advisory)
+_FAST_CYCLE_KEYS = {"enabled", "reason_required", "minimum_rounds", "minimum_lenses", "lenses"}
 _ACCEPTANCE_KEYS = {"enabled", "require_for_risk", "statuses", "unresolved_statuses",
                     "report_gate_enforce", "report_gate_by_risk", "waiver"}
 _ACCEPTANCE_TIERS = {"L1", "L2", "L3"}
@@ -54,6 +55,66 @@ _CANONICAL_ACCEPTANCE_STATUSES = {"PASS", "FAIL", "NOT TESTED", "N/A"}
 # §10-a-C sage-feedback: 닫힌 키 어휘. 미지 키는 오타로 게이트가 조용히 꺼지는 걸 막으려 FAIL.
 _FEEDBACK_KEYS = {"enabled", "block_release", "record", "record_target"}
 _FEEDBACK_RECORD_TARGETS = {"auto", "sage", "vault"}
+
+
+def _fast_cycle_issues(profile):
+    """Validate the closed Fast Cycle policy without relying on jsonschema."""
+    pdca = profile.get("pdca")
+    if pdca is not None and not isinstance(pdca, dict):
+        return []
+    fast = (pdca or {}).get("fast_cycle")
+    if fast is None:
+        return []
+    if not isinstance(fast, dict):
+        return [("FAIL", "pdca.fast_cycle 는 매핑(object)이어야 함")]
+
+    issues = []
+    unknown = sorted((key for key in fast if key not in _FAST_CYCLE_KEYS), key=str)
+    if unknown:
+        issues.append(("FAIL", f"pdca.fast_cycle 에 미지 키 {unknown} — 허용 키: {sorted(_FAST_CYCLE_KEYS)}"))
+    for key in ("enabled", "reason_required"):
+        value = fast.get(key)
+        if not isinstance(value, bool):
+            issues.append(("FAIL", f"pdca.fast_cycle.{key} 는 bool(true/false)이어야 함"))
+    if fast.get("reason_required") is not True:
+        issues.append(("FAIL", "pdca.fast_cycle.reason_required 는 false 로 완화할 수 없음"))
+
+    tier_values = {}
+    for key, floor in (("minimum_rounds", 1), ("minimum_lenses", 2)):
+        value = fast.get(key)
+        if not isinstance(value, dict):
+            issues.append(("FAIL", f"pdca.fast_cycle.{key} 는 L2/L3 매핑이어야 함"))
+            continue
+        keys = set(value)
+        if keys != _LOOP_TIERS:
+            issues.append(("FAIL", f"pdca.fast_cycle.{key} 는 L2/L3 키를 정확히 가져야 함"))
+        for tier in _LOOP_TIERS:
+            item = value.get(tier)
+            if type(item) is not int or item < floor:
+                issues.append(("FAIL", f"pdca.fast_cycle.{key}.{tier} 는 정수 {floor} 이상이어야 함"))
+            else:
+                tier_values[(key, tier)] = item
+
+    lenses = fast.get("lenses")
+    if not isinstance(lenses, dict):
+        issues.append(("FAIL", "pdca.fast_cycle.lenses 는 L2/L3 배열 매핑이어야 함"))
+        return issues
+    if set(lenses) != _LOOP_TIERS:
+        issues.append(("FAIL", "pdca.fast_cycle.lenses 는 L2/L3 키를 정확히 가져야 함"))
+    for tier in _LOOP_TIERS:
+        values = lenses.get(tier)
+        if not isinstance(values, list) or any(not isinstance(v, str) or not v for v in values):
+            issues.append(("FAIL", f"pdca.fast_cycle.lenses.{tier} 는 non-empty 문자열 배열이어야 함"))
+            continue
+        if len(values) != len(set(values)):
+            issues.append(("FAIL", f"pdca.fast_cycle.lenses.{tier} 에 중복 렌즈가 있음"))
+        bad = sorted(set(values) - _KNOWN_LENSES)
+        if bad:
+            issues.append(("FAIL", f"pdca.fast_cycle.lenses.{tier} 에 미지 렌즈 {bad}"))
+        minimum = tier_values.get(("minimum_lenses", tier))
+        if minimum is not None and len(values) < minimum:
+            issues.append(("FAIL", f"pdca.fast_cycle.lenses.{tier} 후보가 minimum_lenses.{tier} 미만"))
+    return issues
 
 
 def _review_loop_issues(profile):
@@ -646,7 +707,7 @@ def _knowledge_capture_issues(profile):
     if vp is not None and not isinstance(vp, str):
         issues.append(("WARN", f"knowledge_capture.vault_path={vp!r} 는 문자열이어야 함(경로). 비-str 은 vault 출력 시 무시/오류"))
     vault = (vp or "").strip() if isinstance(vp, str) else ""
-    for key in ("scan_before_dev", "update_after_dev", "loop_audit_dashboard", "retro_note"):
+    for key in ("scan_before_dev", "update_after_dev", "loop_audit_dashboard", "fast_cycle_dashboard", "retro_note"):
         v = kc.get(key)
         if v is None:
             continue
@@ -784,6 +845,7 @@ def validate_profile(profile, root):
         from sage.context_packet import profile_issues as context_profile_issues
 
         issues = issues + _semantic_issues(profile, root) + _review_loop_issues(profile) \
+            + _fast_cycle_issues(profile) \
             + _acceptance_issues(profile) + _knowledge_capture_issues(profile) \
             + _cross_model_issues(profile) + _team_agent_issues(profile) + _retro_gate_issues(profile) \
             + _writeback_gate_issues(profile) + _governance_docs_issues(profile, root) \

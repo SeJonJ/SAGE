@@ -72,6 +72,11 @@ project core의 `decide(event, profile, snapshot)`에서 `event`는 `hook_id`, `
 | `sage cycle set STEM --create --risk L1\|L2\|L3 [--path DIR]` | Phase 00 뼈대 하나를 만든 뒤 선언 (`DIR`은 root 상대 디렉터리) |
 | `sage cycle show` | 현재 선언과 그 출처(env / `.sage/cycle.json`) 조회 |
 | `sage cycle clear` | 파일 선언 해제 — 정상 완료 뒤 실행; env 선언은 별도 `unset` 필요 |
+| `sage fast-cycle open --stem S --level L2\|L3 --lens-count N --reason R` | composite 00 검증 후 Fast 감사 run 시작 |
+| `sage fast-cycle review --run-id F --loop-run-id L` | APPROVED Loop Audit의 stem·라운드·렌즈 영수증을 Fast run에 결속 |
+| `sage fast-cycle close --run-id F` | 최신 00 hash와 05/06 결속을 검증하고 정상 종료 |
+| `sage fast-cycle abort --run-id F --reason R` | 사유를 남기고 활성 Fast run 중단 |
+| `sage fast-cycle show [--run-id F] [--vault [PATH]]` | 감사 요약 표시 및 선택적 Obsidian dashboard 생성 |
 
 `sage-cycle` 우산은 `set`/`clear`를 직접 실행하지 않습니다. `sage-plan`이 검증된 stem을 선언하고,
 `sage-team`이 재개 시 `show`로 대조하며 write-back·retro·snapshot과 종료 게이트를 마친 뒤 해제합니다.
@@ -83,14 +88,19 @@ A의 판정이 복원됩니다. `--create`는 Phase 00만 만들므로 profile�
 작성해야 합니다. 긴급하게 면제 가능한 phase 결핍을 열 때는 `sage override --reason R --ttl 1h`처럼
 짧은 TTL을 사용하세요. Phase 00의 risk 선언·정합 차단은 override로 면제되지 않습니다.
 
+Fast 명령은 `pdca.fast_cycle.enabled: true`인 L2/L3에만 열립니다. 실제 Risk Level은 별도로 유지되고,
+`--level`은 적용할 Fast 리뷰 계약입니다. `open`은 필수 입력 셋을 모두 검증한 뒤에만 00과 감사를 쓰며,
+활성 Fast run이 있으면 `sage cycle clear`와 다른 stem 전환을 막습니다. 정상 순서는
+`fast-cycle close` 뒤 `cycle clear`이고, 중단은 `fast-cycle abort` 뒤 `cycle clear`입니다.
+
 ## 리뷰와 루프
 
 | 명령 | 역할 |
 |---|---|
 | `sage review` | 새 same-runtime headless reviewer 실행 |
 | `sage cross-check --packet-file FILE` | 반대 runtime의 cross-model reviewer 실행 |
-| `sage review-loop open` | review loop와 감사 run 시작 |
-| `sage review-loop round` | finding, 반박, 수정 결과 라운드 기록 |
+| `sage review-loop open [--cycle-stem S --lenses CSV]` | review loop 시작; Fast는 stem·렌즈를 exact 결속 |
+| `sage review-loop round [... --lens-receipts CSV]` | finding, 반박, 수정 결과와 Fast 렌즈 수행 영수증 기록 |
 | `sage review-loop next` | 결정론적 계속/종료 권고 |
 | `sage review-loop close` | `--result APPROVED|BLOCKED`로 loop 종료 |
 | `sage retro --feature STEM` | 완료 사이클 회고 노트와 distillation 입력 생성 |

@@ -18,9 +18,9 @@ SAGE를 돌리면 여러 리소스가 **서로 다른 목적으로 서로 다른
 
 | 위치 | 성격 | 대표 산출물 | 생성 주체 |
 |---|---|---|---|
-| `<root>/.sage/` | PDCA 실행 정본 (공유 감사 3종만 커밋) | 커밋: `override.jsonl` · `acceptance-waivers.jsonl` · `loop_audit.jsonl` / 로컬: `retro_audit.jsonl` · `plan_interview.md` · `knowledge_scan.md` · `tmp/` · `context/` | CLI · 스킬 · hook |
+| `<root>/.sage/` | PDCA 실행 정본 (공유 감사 4종만 커밋) | 커밋: `override.jsonl` · `acceptance-waivers.jsonl` · `loop_audit.jsonl` · `fast_cycle.jsonl` / 로컬: `retro_audit.jsonl` · `plan_interview.md` · `knowledge_scan.md` · `tmp/` · `context/` | CLI · 스킬 · hook |
 | `<root>/<host>/logs/` | 세션 단위 hook 기록 | `session-<date>.jsonl` · `compliance-<date>.md` · `declared-risk-<sid>.json` | hook 어댑터 |
-| Obsidian vault (`vault_path`/folder) | 최종 지식노트 | write-back TECH 노트 · loop audit 대시보드 · retro 노트 · `log.md` | `sage knowledge` · `review-loop` · `retro` |
+| Obsidian vault (`vault_path`/folder) | 최종 지식노트 | write-back TECH 노트 · loop/Fast audit 대시보드 · retro 노트 · `log.md` | `sage knowledge` · `review-loop` · `fast-cycle` · `retro` |
 | `<root>/sage/asset_overrides/` | CORE 오버레이 (커밋 대상, install 미배포) | `agents/<id>.md` · `skills/<id>.md` | 사람 작성 (absorb 안내) |
 | `<root>/<host>/…` + `docs/sage_harness/.manifest.json` | spec 생성물 + 무결성 스탬프 | hook/agent/skill/mcp 설정 파일 · manifest | `sage generate` |
 
@@ -42,9 +42,10 @@ PDCA를 돌리는 동안 남는 정본 데이터입니다. 프로젝트 루트(�
 !/.sage/override.jsonl
 !/.sage/acceptance-waivers.jsonl
 !/.sage/loop_audit.jsonl
+!/.sage/fast_cycle.jsonl
 ```
 
-- **커밋하는 것 = 공유 감사 이력 3종.** 게이트 우회·유예와 Phase 05 리뷰 정본은 동료·CI·리뷰어가
+- **커밋하는 것 = 공유 감사 이력 4종.** 게이트 우회·유예, Phase 05 리뷰, Fast 절차 정본은 동료·CI·리뷰어가
   clone 후 확인할 수 있어야 합니다.
 - **`retro_audit.jsonl`은 로컬입니다.** 개인 Obsidian 노트의 절대경로와 check 시점 digest는 볼트가 없는
   동료가 재검증할 수 없고, 개발자별 기록을 한 append-only 파일에 모으면 경로 노출과 머지 충돌만 생깁니다.
@@ -62,6 +63,8 @@ PDCA를 돌리는 동안 남는 정본 데이터입니다. 프로젝트 루트(�
 | `.sage/knowledge_scan.md` | 로컬 | 개발 착수 전 Obsidian vault에서 관련 선행지식을 조회한 스캔 리포트. PDCA 00의 prior-knowledge 입력 | `sage/commands/knowledge.py:228` `_write_scan_report(root, …)` |
 | `.sage/loop_audit.jsonl` | **커밋** | Loop A(적대적 Phase 05 리뷰) 라운드 감사의 **정본**. open/round/close가 append되고 run별 strict hash-chain과 시퀀스 무결성을 검증. vault 대시보드는 이 파일의 파생 뷰 | `sage/commands/review_loop.py`, `scripts/sage_harness/hooks/runtime/loop_audit.py` |
 | `.sage/loop_audit.jsonl.lock` | 로컬 | Loop Audit writer의 OS 소유 프로세스 lock sidecar. install이 배치하는 `SAGE LOCAL STATE` gitignore 블록으로 제외하며, 프로세스 종료 후 파일이 남아도 권한이나 감사 증거가 아니다 | `loop_audit._audit_lock`, `sage.commands.install._render_local_profile_gitignore` |
+| `.sage/fast_cycle.jsonl` | **커밋** | Fast Cycle open/review/close/abort 정본. 실제 risk, Fast level, 사유, 최소 라운드, 렌즈, 00 hash, Loop run과 05/06 결속을 run별 strict hash-chain으로 기록하며 로컬 hook과 서버 authority가 검증 | `sage fast-cycle`, `scripts/sage_harness/hooks/runtime/fast_cycle_audit.py` |
+| `.sage/fast_cycle.jsonl.lock` | 로컬 | Fast 감사 writer의 OS lock sidecar. 감사나 권한이 아니며 wildcard ignore에 남음 | `fast_cycle_audit`, `loop_audit._audit_lock` |
 | `.sage/retro_audit.jsonl` | 로컬 | Loop C(`sage retro --check`) 성공 증거의 append-only 로컬 감사(9-C v1). `sage retro --check`가 통과할 때마다 `{run_id, note_path, digest, ts}`를 기록 — Stop 훅(`retro_gate` 정책)이 같은 워킹카피에서 이 기록으로 "이 사이클이 실제로 check를 통과했는지" 사후 확인한다. 개인 vault 절대경로와 재검증할 수 없는 digest를 공유 저장소에 남기지 않도록 기본 무시한다. `pdca.retro.report_gate_enforce`가 off면 기록만 남고 아무것도 검사하지 않는다 | `sage/commands/retro.py::_check_note` → `scripts/sage_harness/hooks/runtime/retro_audit.py` |
 | `.sage/override.jsonl` | **커밋** | 게이트 임시 우회(`sage override`)의 append-only 감사 로그. 사유·TTL과 함께 사후 추적, 만료 시 자동 회수 | `sage/commands/override.py:6` |
 | `.sage/acceptance-waivers.jsonl` | **커밋** | exact L3 cycle/required acceptance ID의 명시적 `NOT TESTED` 유예. grant/use/revoke와 reason/scope/remaining evidence/confirmed_by를 append-only로 기록하며 malformed/중복/충돌은 fail-closed | `sage/commands/acceptance_waiver.py` → `scripts/sage_harness/hooks/runtime/acceptance_waiver.py` |
@@ -86,6 +89,9 @@ git rm --cached -- .sage/retro_audit.jsonl
 서버 권위 attestation은 로컬 `.sage/` 정본이 아니다. 보호된 CI가 `sage authority attest`의 stdout을 짧은
 수명의 job artifact로 전달하고, 같은 base/head/diff/cycle/risk 결속을 `sage authority gate`에서 검증한다.
 프로젝트 로컬 override/waiver audit은 이 판정의 입력에서 제외된다.
+Fast Cycle에서는 예외적으로 head Git tree의 `fast_cycle.jsonl`과 결속된 `loop_audit.jsonl`을 regular
+UTF-8 blob으로 읽어 strict chain, clean terminal, stem, plan hash, 라운드·렌즈 영수증, 05 marker를
+검증합니다. working tree나 vault dashboard는 서버 권위 입력이 아닙니다.
 
 ### 1.1 활성 우회 권한 — 저장소 밖
 
@@ -149,6 +155,7 @@ hook 어댑터가 세션 실행 중 남기는 기록입니다. host 디렉토리
 |---|---|---|
 | write-back TECH 노트 | PDCA 완료 후 산출 지식을 vault에 적재. 태그는 vault 작성가이드(AGENT_GUIDE/CLAUDE/GEMINI.md)를 읽어 결정하고 CLI `--tags`로 덮어쓸 수 있음(하드코딩 아님) | `sage/commands/knowledge.py:301` `_note_path` |
 | `TECH - <name> loop audit.md` | Loop A 대시보드. 프로젝트당 1페이지로 close마다 갱신되며 `.sage/loop_audit.jsonl`의 파생 뷰. run별 retro 링크 열 포함 | `sage/commands/review_loop.py:485, :492` |
+| `TECH - <name> fast cycle audit.md` | 프로젝트별 Fast Cycle 파생 대시보드. profile에서 켠 경우 close/abort 뒤 갱신되며 정본은 `.sage/fast_cycle.jsonl` | `sage fast-cycle show --vault`, `sage/commands/fast_cycle.py` |
 | `TECH - <name> retro <stem> <date>.md` | Loop C 회고 human-gate 노트. `approved:false`로 생성 — 사람이 승인(`approved:true`)하기 전엔 absorb되지 않으며 자동 반영되지 않음. 관련 loop audit로의 역링크 포함. `<stem>`은 `--feature` > 유일한 05 문서명 > run_id 순으로 정해짐. 같은 날 같은 stem의 **다른 run**이 회고를 남기면 뒤 노트는 `… <date> <run_id>.md`로 분리 생성(앞 run의 노트를 재사용해 완료 게이트를 통과하는 것을 막음). 대시보드 링크는 파일명이 아니라 frontmatter `run_id` 기준 | `sage/commands/retro.py` `_write_vault_note` |
 | `log.md` · index 링크 | 노트 생성 시 vault의 history-hub `log.md`와 index에 `- <date> [[note]] - title` 한 줄을 멱등 append | `sage/commands/knowledge.py:278` `_append_log_once` |
 
@@ -158,7 +165,7 @@ hook 어댑터가 세션 실행 중 남기는 기록입니다. host 디렉토리
 
 ## 4. `<root>/sage/asset_overrides/` — CORE 오버레이
 
-CORE 부트스트랩 자산(6 에이전트·9 스킬)은 `sage install`이 손으로 배포하고 `--force`가 덮어씁니다.
+CORE 부트스트랩 자산(6 에이전트·13 스킬)은 `sage install`이 손으로 배포하고 `--force`가 덮어씁니다.
 그 CORE 렌더를 **직접 고치는 대신** 프로젝트 로컬 오버레이로 커스터마이즈하는 자리입니다.
 
 | 산출물 | 역할 | 생성 코드 |

@@ -54,6 +54,9 @@ sage doctor
 ## 5. 개발 사이클 시작
 
 - 전체 PDCA: `sage-cycle`
+- profile이 허용한 L2/L3 축약 절차: `sage-cycle-fast`
+- Fast composite 00 작성: `sage-plan-fast`
+- Fast 구현·리뷰·종료: `sage-team-fast`
 - 기획 00-02: `sage-plan`
 - 구현 03-06: `sage-team`
 - 자산 추가·수정: `sage-asset`
@@ -61,6 +64,8 @@ sage doctor
 
 고위험 변경은 Phase 00의 정확한 `Risk Level: L1`, `L2`, `L3` 선언과 필요한 phase 문서를 먼저 요구합니다.
 Phase 05 리뷰가 APPROVED되기 전에는 Phase 06 완료 보고가 차단됩니다.
+Fast Cycle은 01~04 문서를 생략하는 대신 그 내용을 체크리스트가 있는 composite 00에 포함하며,
+Fast level·렌즈 수·사유를 모두 받기 전에는 문서나 감사를 쓰지 않습니다.
 
 ## 다음 문서
 

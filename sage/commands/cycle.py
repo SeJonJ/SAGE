@@ -49,6 +49,27 @@ def _load_cycle_state():
     return cycle_state
 
 
+def _load_fast_cycle_audit():
+    runtime = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks", "runtime")
+    if runtime not in sys.path:
+        sys.path.insert(0, runtime)
+    import fast_cycle_audit
+    return fast_cycle_audit
+
+
+def _active_fast_runs(root):
+    """Return active Fast runs; unreadable audit is a blocking integrity error."""
+    audit = _load_fast_cycle_audit()
+    path = audit.audit_path(root)
+    if not os.path.lexists(path):
+        return [], None
+    summary = audit.audit_summary(root)
+    issues = audit.integrity_issues(root)
+    if not summary.get("file_ok") or issues:
+        return [], "Fast Cycle audit 무결성 실패: " + "; ".join(issues[:3] or summary.get("file_issues", [])[:3])
+    return [(run_id, summary["runs"][run_id]) for run_id in summary.get("active", [])], None
+
+
 def _resolve_root(cs, explicit):
     """Resolve the declaration root without silently falling back to cwd."""
     if explicit:
@@ -148,6 +169,27 @@ def run(args):
         print(f"⛔ [sage cycle] {exc}", file=sys.stderr)
         return 2
     path = cs.declaration_path(root)
+    try:
+        active_fast, fast_error = _active_fast_runs(root)
+    except Exception as exc:
+        active_fast, fast_error = [], f"Fast Cycle audit 읽기 실패({type(exc).__name__}: {exc})"
+    if fast_error:
+        print(f"⛔ [sage cycle] {fast_error}", file=sys.stderr)
+        return 2
+    if active_fast and args.action == "clear":
+        run_id, state = active_fast[0]
+        print(f"⛔ [sage cycle] 활성 Fast run {run_id} (stem={state.get('cycle_stem')})이 있어 clear 할 수 없습니다.\n"
+              f"   → sage fast-cycle close --run-id {run_id}\n"
+              f"   → 또는 sage fast-cycle abort --run-id {run_id} --reason <사유>", file=sys.stderr)
+        return 2
+    if active_fast and args.action == "set":
+        mismatched = [(run_id, state) for run_id, state in active_fast
+                      if state.get("cycle_stem") != args.stem]
+        if mismatched:
+            run_id, state = mismatched[0]
+            print(f"⛔ [sage cycle] 활성 Fast run {run_id}의 stem={state.get('cycle_stem')} — "
+                  f"다른 stem {args.stem!r}으로 전환할 수 없습니다.", file=sys.stderr)
+            return 2
     if args.action == "set":
         return _set(cs, args, root, path)
     if args.action == "clear":

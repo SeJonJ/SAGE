@@ -251,7 +251,8 @@ def _pdca_cfg(profile: dict):
     return p
 
 
-def _missing_pre_impl_phases(event: dict, profile: dict, snapshot: dict, risk: str):
+def _missing_pre_impl_phases(event: dict, profile: dict, snapshot: dict, risk: str,
+                             fast_state=None):
     """구현 전 의무 phase 중 문서가 없는 것 목록. pdca 비활성이면 None(=강제 안 함).
 
     빈 리스트 = 강제 활성이나 결핍 없음(또는 해당 레벨 요구 phase 없음). 비어있지 않으면 결핍.
@@ -266,6 +267,8 @@ def _missing_pre_impl_phases(event: dict, profile: dict, snapshot: dict, risk: s
     required = (cfg.get("pre_implementation_required") or {}).get(risk) or []
     if not required:
         return []
+    if fast_state is not None and set(required).issubset({"00", "01", "02", "03"}):
+        return []
     phase_docs = snapshot.get("phase_docs") or {}
     binding = cycle_binding.resolve(event, snapshot, cfg)
     if binding.get("error"):
@@ -276,6 +279,57 @@ def _missing_pre_impl_phases(event: dict, profile: dict, snapshot: dict, risk: s
         if error:
             missing.append(pid)
     return missing
+
+
+def _fast_cycle_state(event, profile, snapshot, cfg):
+    """Return (active state or None, blocking detail or None)."""
+    phase_docs = snapshot.get("phase_docs") or {}
+    binding = cycle_binding.resolve(event, snapshot, cfg)
+    if binding.get("error"):
+        return None, None
+    doc, selection_error = cycle_binding.select_document(phase_docs.get("00") or [], binding["stem"])
+    if selection_error or not doc:
+        return None, None
+    content = doc.get("content") or ""
+    try:
+        from sage.fast_cycle_contract import open_issues, parse_fast_plan
+        plan, parse_issues = parse_fast_plan(content)
+    except Exception as exc:
+        return None, f"Fast Plan parser failure: {type(exc).__name__}: {exc}"
+    audit = snapshot.get("fast_cycle_audit") or {}
+    matching_active = [run_id for run_id in (audit.get("active") or [])
+                       if (audit.get("runs") or {}).get(run_id, {}).get("cycle_stem") == binding["stem"]]
+    mode = plan.metadata.get("Cycle-Mode") if plan is not None else None
+    if mode != "FAST" and not matching_active:
+        return None, None
+    if plan is None or parse_issues:
+        return None, "composite Fast Plan invalid: " + "; ".join(parse_issues[:3])
+    policy = cfg.get("fast_cycle")
+    if not isinstance(policy, dict) or policy.get("enabled") is not True:
+        return None, "pdca.fast_cycle.enabled=true is required for Cycle-Mode FAST"
+    if audit.get("snapshot_error"):
+        return None, f"Fast audit snapshot failed: {audit['snapshot_error']}"
+    if audit.get("file_ok") is not True:
+        details = "; ".join(str(item) for item in (audit.get("file_issues") or [])[:3])
+        return None, f"Fast audit file integrity failed: {details or 'cause unavailable'}"
+    run_id = plan.metadata.get("Fast-Audit-Run")
+    if len(matching_active) != 1 or matching_active[0] != run_id:
+        return None, f"Fast Plan run binding mismatch: plan={run_id!r}, active={matching_active}"
+    state = (audit.get("runs") or {}).get(run_id) or {}
+    if (not state.get("clean") or state.get("chain_ok") is not True
+            or state.get("seq_ok") is False or state.get("terminal")):
+        return None, "active Fast run integrity/state is invalid"
+    level = state.get("fast_review_level")
+    lenses = state.get("lenses") or []
+    issues = open_issues(
+        plan, stem=binding["stem"], level=level, lens_count=len(lenses),
+        reason=state.get("reason"), minimum_rounds=state.get("minimum_rounds"),
+        lenses=lenses, require_pending_phase4=False)
+    if state.get("actual_risk") != plan.metadata.get("Risk Level"):
+        issues.append("actual risk differs between Fast Plan and audit open snapshot")
+    if issues:
+        return None, "; ".join(issues[:5])
+    return state, None
 
 
 def _final_status(content):
@@ -991,6 +1045,7 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
     # Do not infer from branch numbers or recent mtimes: zero/multiple/conflicting candidates block.
     cfg = _pdca_cfg(profile)
     changed_phases = set()
+    fast_state = None
     if cfg is not None and (_is_phase_write(event, cfg) or risk in ("L1", "L2", "L3")):
         binding = cycle_binding.resolve(event, snapshot, cfg)
         if binding.get("error"):
@@ -1051,6 +1106,11 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
                     "risk_from_declaration": any(
                         str(s).startswith("declared_") for s in (c.get("trigger_sources") or [])),
                 }
+            fast_state, fast_error = _fast_cycle_state(event, profile, snapshot, cfg)
+            if fast_error:
+                return {"status": "block", "exit_code": 2, "risk": "PDCA",
+                        "message_key": "block_fast_cycle_audit",
+                        "reason": fast_error, "file_short": c["file_short"]}
 
     # PDCA report←approve 게이트: report phase 문서 작성은 L0(plan_docs)이라 아래 단축 전에 검사.
     # (pdca 비활성이거나 report/approve 미설정 → None → skip, 하위호환)
@@ -1113,7 +1173,7 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
 
     # PDCA 의무 phase 강제: 구현 전 필수 phase 결핍 시 L2/L3 BLOCK, L1 WARN.
     # missing=None(pdca 비활성) 또는 [](충족) → falsy → 기존 per-level 로직으로 (하위호환).
-    missing = _missing_pre_impl_phases(event, profile, snapshot, risk)
+    missing = _missing_pre_impl_phases(event, profile, snapshot, risk, fast_state)
     if missing:
         if risk in ("L2", "L3"):
             return {"status": "block", "exit_code": 2, "risk": risk,
@@ -1124,6 +1184,15 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
                 "reason": c["reason"], "file_short": c["file_short"]}
 
     plan_exists = _bound_plan_exists(event, profile, snapshot)
+
+    if fast_state is not None and risk in ("L2", "L3"):
+        return {"status": "warn", "exit_code": 0, "risk": risk,
+                "message_key": "warn_fast_cycle",
+                "reason": (f"Fast {fast_state.get('fast_review_level')} · "
+                           f"{fast_state.get('minimum_rounds')} round · "
+                           f"{len(fast_state.get('lenses') or [])} lenses · "
+                           f"{fast_state.get('reason')}"),
+                "file_short": c["file_short"]}
 
     if risk == "L3":
         # 강신호 + plan 없음 → 하드 블록 (공유)

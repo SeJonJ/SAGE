@@ -77,6 +77,26 @@ risk:
 Phase 00에 정확히 하나의 `Risk Level: L1`, `L2`, `L3` 선언이 필요하며 현재 변경보다 낮으면 먼저
 Phase 00을 상향해야 합니다.
 
+### Fast Cycle
+
+```yaml
+pdca:
+  fast_cycle:
+    enabled: false
+    reason_required: true
+    minimum_rounds: { L2: 1, L3: 1 }
+    minimum_lenses: { L2: 2, L3: 2 }
+    lenses:
+      L2: [correctness, error_handling, convention]
+      L3: [correctness, security, data_integrity, concurrency]
+```
+
+Fast Cycle은 L2/L3의 별도 축약 절차이며 일반 override가 아닙니다. `enabled`는 공유 정책이고 기본값은
+false입니다. `reason_required`는 true로 고정되며 완화할 수 없습니다. 최소 라운드는 1 이상, 최소 렌즈는
+2 이상이어야 하고 각 후보 목록은 최소 수 이상이어야 합니다. 실행자는 `sage-cycle-fast`에서 Fast
+level·렌즈 수·한 줄 사유를 모두 입력합니다. 실제 Risk Level은 composite 00에 별도로 남고 Fast level이
+이를 낮추지 않습니다. `sage-init`과 `sage-profile-modify`가 이 공유 설정을 대화로 수집합니다.
+
 ### Components
 
 ```yaml
@@ -144,6 +164,7 @@ knowledge_capture:
   provider: obsidian
   scan_before_dev: true
   update_after_dev: true
+  fast_cycle_dashboard: false
   note_convention:
     folder: "wiki"
     required_structure: {}
@@ -151,6 +172,8 @@ knowledge_capture:
 
 `vault_path`가 비면 vault 기능은 비활성입니다. write-back 깊이는 Phase 00 risk tier를 따르며 L2/L3는
 배경, 설계결정, 변경, 검증, 재발방지를 포함하는 심층 노트를 요구합니다.
+`fast_cycle_dashboard: true`이면 Fast run 종료·중단 뒤 vault에 프로젝트별 파생 dashboard를 갱신합니다.
+감사 정본은 항상 `.sage/fast_cycle.jsonl`이며 dashboard 실패는 이미 기록된 종료를 되돌리지 않습니다.
 
 ### Feedback
 

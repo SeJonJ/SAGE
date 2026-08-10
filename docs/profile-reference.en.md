@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:8a815b2a1541603362ec56951471137276fc0c842f27290dba31e49bc34740a6 -->
+<!-- sage-doc-source: profile-reference.md sha256:ae052589bd1f5b91f771a12885e94085b31504bed92fb8dcc6f2d63d4183cacc -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -82,6 +82,27 @@ governed cycle requires exactly one `Risk Level: L1`, `L2`, or `L3` declaration 
 document with the same stem. If that declaration is lower than the current change, raise Phase 00
 before continuing.
 
+### Fast Cycle
+
+```yaml
+pdca:
+  fast_cycle:
+    enabled: false
+    reason_required: true
+    minimum_rounds: { L2: 1, L3: 1 }
+    minimum_lenses: { L2: 2, L3: 2 }
+    lenses:
+      L2: [correctness, error_handling, convention]
+      L3: [correctness, security, data_integrity, concurrency]
+```
+
+Fast Cycle is a separate compressed L2/L3 protocol, not a generic override. `enabled` is shared
+policy and defaults to false. `reason_required` is fixed at true. Minimum rounds must be at least
+one, minimum lenses at least two, and each candidate list must satisfy its floor. The operator enters
+Fast level, lens count, and a one-line reason through `sage-cycle-fast`. Actual Risk Level remains in
+the composite Phase 00 and cannot be lowered by Fast level. `sage-init` and `sage-profile-modify`
+collect this shared policy conversationally.
+
 ### Components
 
 ```yaml
@@ -150,6 +171,7 @@ knowledge_capture:
   provider: obsidian
   scan_before_dev: true
   update_after_dev: true
+  fast_cycle_dashboard: false
   note_convention:
     folder: "wiki"
     required_structure: {}
@@ -158,6 +180,9 @@ knowledge_capture:
 Vault features are disabled when `vault_path` is empty. Write-back depth follows the Phase 00 risk
 tier. L2 and L3 require a detailed note covering background, design decisions, changes,
 verification, and recurrence prevention.
+With `fast_cycle_dashboard: true`, terminal Fast runs update a project dashboard in the vault. The
+source of truth remains `.sage/fast_cycle.jsonl`; dashboard failure does not roll back an audit event
+that was already recorded.
 
 ### Feedback
 

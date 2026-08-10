@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:a0564fa8e79f8476a574364ba9dd6fe5371e2a56c8d9f1b17c573f22e020f660 -->
+<!-- sage-doc-source: cli-reference.md sha256:d5d3c74eb1e6594b6c7cd65510a103d87b2723a36e939560f6b38c88b9801202 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -74,6 +74,11 @@ symlink leaf matches, and other non-regular paths are contract failures.
 | `sage cycle set STEM --create --risk L1\|L2\|L3 [--path DIR]` | Create one Phase 00 skeleton, then declare it (`DIR` is project-root-relative) |
 | `sage cycle show` | Show the current declaration and where it was read (env or `.sage/cycle.json`) |
 | `sage cycle clear` | Release the file declaration after completion; an env declaration needs `unset` |
+| `sage fast-cycle open --stem S --level L2\|L3 --lens-count N --reason R` | Validate composite Phase 00 and open a Fast audit run |
+| `sage fast-cycle review --run-id F --loop-run-id L` | Bind a clean APPROVED Loop Audit with matching stem, rounds, and lens receipts |
+| `sage fast-cycle close --run-id F` | Verify the latest plan hash and Phase 05/06 bindings, then close |
+| `sage fast-cycle abort --run-id F --reason R` | Abort an active Fast run with an audited reason |
+| `sage fast-cycle show [--run-id F] [--vault [PATH]]` | Show audit state and optionally render the Obsidian dashboard |
 
 The `sage-cycle` umbrella does not run `set` or `clear` directly. `sage-plan` declares
 the verified stem, while `sage-team` reconciles it with `show` on resume and clears it
@@ -87,14 +92,20 @@ so write any required Phases 01-03 before governed source edits. For an urgent,
 waivable phase gap, use a short TTL such as `sage override --reason R --ttl 1h`.
 Phase 00 risk declaration and reconciliation blocks are never waivable by override.
 
+Fast commands are available only for L2/L3 when `pdca.fast_cycle.enabled: true`. Actual risk remains
+separate from `--level`, which selects the Fast review contract. `open` validates the complete input
+set before writing either the plan or audit. An active Fast run blocks `sage cycle clear` and stem
+switching. Close normally with `fast-cycle close` before `cycle clear`; abandon with
+`fast-cycle abort` before `cycle clear`.
+
 ## Reviews and loops
 
 | Command | Purpose |
 |---|---|
 | `sage review` | Start a fresh same-runtime headless reviewer |
 | `sage cross-check --packet-file FILE` | Start a cross-model reviewer in the opposite runtime |
-| `sage review-loop open` | Start a review loop and its audit run |
-| `sage review-loop round` | Record findings, rebuttals, and fix outcomes for a round |
+| `sage review-loop open [--cycle-stem S --lenses CSV]` | Start a review loop; Fast binds exact stem and lenses |
+| `sage review-loop round [... --lens-receipts CSV]` | Record findings, rebuttals, fixes, and Fast lens receipts |
 | `sage review-loop next` | Produce a deterministic continue-or-stop recommendation |
 | `sage review-loop close` | Close the loop with `--result APPROVED|BLOCKED` |
 | `sage retro --feature STEM` | Generate a completed-cycle retrospective note and distillation input |

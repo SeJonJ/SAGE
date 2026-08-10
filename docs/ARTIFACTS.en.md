@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARTIFACTS.md sha256:e749ba1fbee9fbf25b62b93069a99a9ec970a5650014de7b98735d6ea1d38384 -->
+<!-- sage-doc-source: ARTIFACTS.md sha256:bc505ffe814aa754f9db14e1477749d9c767875fd2f20767e48068a5ce2730f2 -->
 # SAGE Artifact Map
 
 [한국어](ARTIFACTS.md) | [Documentation index](README.en.md)
@@ -22,9 +22,9 @@ Three principles apply throughout:
 
 | Location | Nature | Representative artifacts | Writer |
 |---|---|---|---|
-| `<root>/.sage/` | Source-of-truth PDCA execution data; only three shared audit files are committed | Committed: `override.jsonl`, `acceptance-waivers.jsonl`, `loop_audit.jsonl`; local: `retro_audit.jsonl`, `plan_interview.md`, `knowledge_scan.md`, `tmp/`, `context/` | CLI, skills, hooks |
+| `<root>/.sage/` | Source-of-truth PDCA execution data; only four shared audit files are committed | Committed: `override.jsonl`, `acceptance-waivers.jsonl`, `loop_audit.jsonl`, `fast_cycle.jsonl`; local: `retro_audit.jsonl`, `plan_interview.md`, `knowledge_scan.md`, `tmp/`, `context/` | CLI, skills, hooks |
 | `<root>/<host>/logs/` | Per-session hook records | `session-<date>.jsonl`, `compliance-<date>.md`, `declared-risk-<sid>.json` | Hook adapters |
-| Obsidian vault (`vault_path`/folder) | Final knowledge notes | Write-back TECH notes, loop audit dashboard, retrospective notes, `log.md` | `sage knowledge`, `review-loop`, `retro` |
+| Obsidian vault (`vault_path`/folder) | Final knowledge notes | Write-back TECH notes, loop/Fast audit dashboards, retrospective notes, `log.md` | `sage knowledge`, `review-loop`, `fast-cycle`, `retro` |
 | `<root>/sage/asset_overrides/` | CORE overlays, committed but not deployed by install | `agents/<id>.md`, `skills/<id>.md` | Human-authored, with absorb guidance |
 | `<root>/<host>/...` plus `docs/sage_harness/.manifest.json` | Generated spec assets and integrity stamps | Hook, agent, skill, and MCP configuration; manifest | `sage generate` |
 
@@ -48,9 +48,10 @@ review value**. The
 !/.sage/override.jsonl
 !/.sage/acceptance-waivers.jsonl
 !/.sage/loop_audit.jsonl
+!/.sage/fast_cycle.jsonl
 ```
 
-- **Commit the three shared audit trails.** Gate bypasses, evidence waivers, and the Phase 05 review
+- **Commit the four shared audit trails.** Gate bypasses, evidence waivers, Phase 05 review, and Fast
   source of truth must remain visible to peers, CI, and reviewers after cloning.
 - **Keep `retro_audit.jsonl` local.** Its private Obsidian note path and check-time digest cannot be
   reproduced by a peer without that vault. Combining per-developer records in one append-only file
@@ -70,6 +71,8 @@ review value**. The
 | `.sage/knowledge_scan.md` | Local | Pre-development report of related prior knowledge found in the Obsidian vault; an input to PDCA 00 | `sage/commands/knowledge.py:228`, `_write_scan_report(root, ...)` |
 | `.sage/loop_audit.jsonl` | **Commit** | Source of truth for Loop A adversarial Phase 05 review rounds. Open, round, and close events are appended, and the per-run strict hash chain plus sequence integrity are validated. The vault dashboard is a derived view | `sage/commands/review_loop.py`, `scripts/sage_harness/hooks/runtime/loop_audit.py` |
 | `.sage/loop_audit.jsonl.lock` | Local | OS-owned process-lock sidecar for the Loop Audit writer. The `SAGE LOCAL STATE` gitignore block installed by SAGE excludes it; a file left after process exit is neither authority nor audit evidence | `loop_audit._audit_lock`, `sage.commands.install._render_local_profile_gitignore` |
+| `.sage/fast_cycle.jsonl` | **Commit** | Fast Cycle open/review/close/abort source of truth. Its per-run strict hash chain binds actual risk, Fast level, reason, minimum rounds, lenses, Phase 00 hashes, Loop run, and Phase 05/06 evidence for local and server checks | `sage fast-cycle`, `scripts/sage_harness/hooks/runtime/fast_cycle_audit.py` |
+| `.sage/fast_cycle.jsonl.lock` | Local | OS-lock sidecar used by the Fast audit writer. It is neither authority nor audit evidence and remains ignored by the wildcard rule | `fast_cycle_audit`, `loop_audit._audit_lock` |
 | `.sage/retro_audit.jsonl` | Local | Append-only local evidence that Loop C (`sage retro --check`) succeeded. Each passing check records `{run_id, note_path, digest, ts}`. The Stop hook's `retro_gate` policy reads it in the same working copy to verify that the cycle actually passed. It is ignored by default so private vault paths and digests that peers cannot reproduce do not enter the shared repository. With `pdca.retro.report_gate_enforce` off, the event is recorded without enforcement | `sage/commands/retro.py::_check_note` to `scripts/sage_harness/hooks/runtime/retro_audit.py` |
 | `.sage/override.jsonl` | **Commit** | Append-only audit log for temporary gate bypasses from `sage override`; records reason and TTL, with automatic expiration | `sage/commands/override.py:6` |
 | `.sage/acceptance-waivers.jsonl` | **Commit** | Explicit `NOT TESTED` waivers for exact L3 cycle and required acceptance IDs. Grant, use, and revoke events include reason, scope, remaining evidence, and confirmer. Malformed, duplicate, and conflicting records fail closed | `sage/commands/acceptance_waiver.py` to `scripts/sage_harness/hooks/runtime/acceptance_waiver.py` |
@@ -96,6 +99,10 @@ Server-authority attestations are not local `.sage/` sources of truth. Protected
 `sage authority attest` output as a short-lived job artifact, and `sage authority gate` binds it to
 the same base, head, diff, cycle, and risk. Project-local override and waiver audits are excluded
 from that decision.
+Fast Cycle is the exception: authority reads committed `fast_cycle.jsonl` and its bound
+`loop_audit.jsonl` from the head Git tree as regular UTF-8 blobs, then verifies strict chains, clean
+terminal state, stem, plan hash, rounds, lens receipts, and Phase 05 markers. The working tree and
+vault dashboard are not authority inputs.
 
 ### 1.1 Active bypass permissions: outside the repository
 
@@ -168,6 +175,7 @@ when `vault_path` is empty.
 |---|---|---|
 | Write-back TECH note | Stores knowledge after PDCA completion. Tags follow the vault authoring guide in `AGENT_GUIDE.md`, `CLAUDE.md`, or `GEMINI.md` and can be overridden with CLI `--tags`; they are not hardcoded | `sage/commands/knowledge.py:301`, `_note_path` |
 | `TECH - <name> loop audit.md` | One Loop A dashboard per project. Updated on each close as a derived view of `.sage/loop_audit.jsonl`, with a retrospective-link column per run | `sage/commands/review_loop.py:485, :492` |
+| `TECH - <name> fast cycle audit.md` | Per-project Fast Cycle derived dashboard. When enabled in the profile it updates after close or abort; `.sage/fast_cycle.jsonl` remains authoritative | `sage fast-cycle show --vault`, `sage/commands/fast_cycle.py` |
 | `TECH - <name> retro <stem> <date>.md` | Human-gated Loop C retrospective. Created with `approved:false`; it is not absorbed or applied automatically until a person sets `approved:true`. Includes a backlink to the related loop audit. The stem is selected from `--feature`, then the unique Phase 05 filename, then `run_id`. If another run with the same stem writes a retrospective on the same day, the later note is named `TECH - <name> retro <stem> <date> <run_id>.md`, preventing reuse of a prior run's note to pass the completion gate. Dashboard links resolve by frontmatter `run_id`, not filename | `sage/commands/retro.py`, `_write_vault_note` |
 | `log.md` and index link | When a note is created, idempotently append `- <date> [[note]] - title` to the vault history hub `log.md` and index | `sage/commands/knowledge.py:278`, `_append_log_once` |
 
@@ -178,7 +186,7 @@ to each vault's conventions.
 
 ## 4. `<root>/sage/asset_overrides/`: CORE overlays
 
-`sage install` manually deploys six CORE bootstrap agents and nine skills, and `--force` overwrites
+`sage install` manually deploys six CORE bootstrap agents and thirteen skills, and `--force` overwrites
 them. This directory customizes those CORE renders through project-local overlays instead of direct
 edits.
 

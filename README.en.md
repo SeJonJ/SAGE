@@ -99,6 +99,13 @@ and claims. `sage absorb` can turn an already blocked diff into a spec patch pro
 Phases 03-06, and `sage-review` owns Phase 05 review loops. `sage review-loop` records rounds and
 `sage retro` analyzes missed patterns after completion.
 
+For urgent or intentionally compressed L2/L3 delivery, use `sage-cycle-fast` only when the shared
+profile explicitly enables it. Fast Cycle retains actual risk, acceptance, implementation and
+verification, independent review, Phases 05/06, write-back, retro, and snapshots. It consolidates
+physical Phases 01-04 into one composite Phase 00 Fast Plan. Fast level, lens count, and reason are
+all mandatory before the first write, and the committed `.sage/fast_cycle.jsonl` records the run.
+The standard `sage-cycle` never creates Fast state implicitly.
+
 On a long-lived branch, declare the current cycle with `sage cycle set <stem>`. If
 Phase 00 does not exist, use `sage cycle set <stem> --create --risk L1|L2|L3`, then
 fill in the generated skeleton. The `sage-cycle` umbrella does not duplicate these
@@ -114,6 +121,8 @@ documents, evidence, or audits. Running `set A` restores A's evaluation.
 `sage/project-profile.yaml` contains shared team policy.
 Git-ignored `sage/project-profile.local.yaml` contains machine capabilities such as host, model, and
 vault access. Local configuration cannot weaken shared risk or review policy.
+`sage-init` and `sage-profile-modify` interview for Fast enablement, per-level review and lens policy,
+and the optional vault dashboard. Fast is disabled by default.
 
 ## Documentation
 

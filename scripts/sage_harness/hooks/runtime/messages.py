@@ -206,6 +206,10 @@ def _gate_record(decision, profile):
                              "운영 검증 후 남은 evidence를 기록하고 waiver를 revoke하세요"),
         "block_report_waiver_audit_failure": ("BLOCK", "PDCA", f"{rs}.", False,
                              ".sage/acceptance-waivers.jsonl 쓰기 권한과 무결성을 확인하세요"),
+        "block_fast_cycle_audit": ("BLOCK", "FAST", f"Fast Cycle 감사·composite 결속 실패: {rs}.", False,
+                             "Fast Plan과 .sage/fast_cycle.jsonl을 복구한 뒤 `sage fast-cycle show`로 확인하세요"),
+        "warn_fast_cycle": ("WARN", risk, f"Fast Cycle 축약 절차 사용: {rs}.", False,
+                             ".sage/fast_cycle.jsonl에 감사되며 표준 절차보다 검증 보증이 낮습니다"),
         "block_cycle_stem_audit_failure": ("BLOCK", "PDCA", f"{rs}.", False,
                              ".sage/override.jsonl 쓰기 권한과 무결성을 확인하세요 — 선언된 cycle stem 을 "
                              "기록하지 못하면 감사 없이 통과시킬 수 없습니다"),

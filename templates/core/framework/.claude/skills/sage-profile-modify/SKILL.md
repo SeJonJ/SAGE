@@ -60,6 +60,8 @@ From the user's stated intent, or by asking, pin the **section**:
 - `project` (name/prefix) · `components[]` · `verification.commands` ·
   `risk.*` (L0–L3 globs / content keywords / `l3_review_strategy`) ·
   **`pdca.review_loop`** (the Phase-05 loop — use the shared interview set) ·
+  **`pdca.fast_cycle`** (`enabled`, `reason_required`, `minimum_rounds`,
+  `minimum_lenses`, ordered L2/L3 lenses) ·
   `options.*` · **`knowledge_capture`** (vault_path + `loop_audit_dashboard` / `retro_note`) ·
   `file_type_map` · `compliance` / `output_contract` ·
   **`governance_docs`** (session-start read-pointers rendered into the AGENT_GUIDE routing block) ·
@@ -94,6 +96,14 @@ For **`pdca.review_loop`** and the **vault outputs**, drive the *same* questions
 `/sage-init` via `docs/agent/bootstrap-authoring.md` (§ Review loop + vault interview
 set) — single source, so init and modify never diverge. (Vault turn applies only when
 the loop is on AND `knowledge_capture.vault_path` is set.)
+
+For **`pdca.fast_cycle`**, drive the same Fast Cycle question set as `/sage-init`:
+default off; when enabled, confirm L2/L3 `minimum_rounds`, `minimum_lenses`, and
+ordered lens candidates while keeping engine floors 1 round and 2 lenses and
+`reason_required: true`. State that lowering this policy reduces review breadth
+but does not lower actual risk, deterministic verification, acceptance, or 05/06.
+When a vault is available, include `knowledge_capture.fast_cycle_dashboard` in
+the same output turn.
 
 ## Step 2 — Propose diff + consequence, get approval
 

@@ -217,7 +217,7 @@ def _needs_line_separator(fd, size):
     return os.read(fd, 1) != b"\n"
 
 
-def _append(path, record):
+def _append(path, record, validator=None):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with _audit_lock(path):
         fd = None
@@ -233,6 +233,8 @@ def _append(path, record):
             run_id = record.get("run_id")
             if _chain_states(prior).get(run_id) is False:
                 raise AuditWriteError(f"run {run_id!r} strict hash-chain is invalid")
+            if validator is not None:
+                validator(prior, record)
 
             stamped = _stamp_record(prior, record)
             if _chain_states(prior + [stamped]).get(run_id) is False:
@@ -281,7 +283,8 @@ def new_run_id():
     return "rl-" + uuid.uuid4().hex[:12]
 
 
-def open_loop(root, risk, cfg=None, run_id=None, now=None, reviewer_requested=None):
+def open_loop(root, risk, cfg=None, run_id=None, now=None, reviewer_requested=None,
+              cycle_stem=None, lenses=None):
     """루프 시작 기록 → run_id 반환. risk ∈ {L2,L3}(호출자 검증). cfg=적용 설정 스냅샷(profile.pdca.review_loop).
     reviewer_requested=profile 이 의도한 리뷰어 모드(예: cross_model/same_runtime) — 실제값은 close 에 기록,
     불일치(degraded)는 audit_summary 가 파생(7차 배치3)."""
@@ -291,20 +294,28 @@ def open_loop(root, risk, cfg=None, run_id=None, now=None, reviewer_requested=No
            "risk": risk, "cfg": cfg or {}}
     if reviewer_requested is not None:
         rec["reviewer_requested"] = reviewer_requested
+    if cycle_stem is not None:
+        rec["cycle_stem"] = cycle_stem
+    if lenses is not None:
+        rec["lenses"] = list(lenses)
     _append(audit_path(root), rec)
     return rid
 
 
-def record_round(root, run_id, iteration, found, survived, accepted, arch=0, tokens=0, now=None):
+def record_round(root, run_id, iteration, found, survived, accepted, arch=0, tokens=0, now=None,
+                 lens_receipts=None):
     """라운드 1건 기록.
     found=FIND 발견수, survived=REFUTE 생존수, accepted=REWORK 채택수, arch=아키텍처 에스컬레이션수, tokens=누적 토큰.
     seq=append 순 단조 번호(라이브러리 stamp, 수기 위조·순서조작 탐지용 — 7차 배치3)."""
     t = time.time() if now is None else now
-    return _append(audit_path(root), {
+    record = {
         "event": "round", "run_id": run_id, "ts": _iso(t), "epoch": int(t),
         "iteration": int(iteration), "found": int(found), "survived": int(survived),
         "accepted": int(accepted), "arch": int(arch), "tokens": int(tokens),
-    })
+    }
+    if lens_receipts is not None:
+        record["lens_receipts"] = list(lens_receipts)
+    return _append(audit_path(root), record)
 
 
 def close_loop(root, run_id, result, reason, iterations, now=None, reviewer_actual=None):

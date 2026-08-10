@@ -54,6 +54,9 @@ contract violation such as a missing file, schema error, or failed execution smo
 ## 5. Start a Delivery Cycle
 
 - Full PDCA: `sage-cycle`
+- Profile-enabled compressed L2/L3 delivery: `sage-cycle-fast`
+- Author a composite Fast Phase 00: `sage-plan-fast`
+- Implement, review, and close Fast delivery: `sage-team-fast`
 - Planning Phases 00-02: `sage-plan`
 - Delivery Phases 03-06: `sage-team`
 - Add or modify assets: `sage-asset`
@@ -62,6 +65,8 @@ contract violation such as a missing file, schema error, or failed execution smo
 Governed changes require an exact Phase 00 declaration using `Risk Level: L1`, `Risk Level: L2`, or
 `Risk Level: L3`, plus the required phase documents. Phase 06 completion is blocked until Phase 05
 review is APPROVED.
+Fast Cycle omits physical Phases 01-04 only after embedding their content and checklists in a
+composite Phase 00. It writes no plan or audit until Fast level, lens count, and reason are present.
 
 ## Next
 

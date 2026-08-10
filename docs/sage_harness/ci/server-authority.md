@@ -18,6 +18,10 @@ waiver files.
 - Phase documents are pull-request-authored structural evidence. This gate does not authenticate the identity of the
   external model or person that produced Phase 05; independent reviewer attestation needs a separately protected issuer.
 - Never feed project-local override or acceptance-waiver audit data into the authority API.
+- For `Cycle-Mode: FAST`, read the committed `.sage/fast_cycle.jsonl` and `.sage/loop_audit.jsonl` from the head
+  Git tree as regular UTF-8 blobs. Expand virtual Phases 01-04 only from the exact composite Phase 00, then require
+  a clean strict-chain terminal Fast run whose stem, final plan hash, approved Loop run, minimum rounds, exact lens
+  receipts, and Phase 05 markers all match. Never use the working tree or vault dashboard as authority evidence.
 - Install the protected engine with its `schema` extra. Authority mode blocks if `jsonschema` is absent; it never
   accepts the normal CLI's WARN-only schema fallback.
 

@@ -96,6 +96,12 @@ diff는 `sage absorb`로 spec patch 후보로 변환할 수 있습니다.
 `sage-review`는 Phase 05 리뷰와 적대적 반복을 담당합니다. `sage review-loop`는 라운드를 기록하고,
 `sage retro`는 완료 후 놓친 패턴을 분석합니다.
 
+긴급하거나 축약된 전달이 필요한 L2/L3 작업은 공유 profile에서 명시적으로 허용한 경우에만
+`sage-cycle-fast`를 사용합니다. Fast Cycle도 실제 위험도, acceptance, 구현·검증, 독립 리뷰, 05/06,
+write-back·retro·snapshot을 유지합니다. 대신 물리 문서는 00 composite Fast Plan + 05 + 06으로 줄이고,
+01~04의 내용은 00에 포함합니다. 시작 전에 Fast level, 렌즈 수, 사유를 모두 받아야 하며 실행 이력은
+커밋 대상인 `.sage/fast_cycle.jsonl`에 남습니다. 일반 `sage-cycle`은 Fast 상태를 직접 만들지 않습니다.
+
 장수 브랜치에서는 `sage cycle set <stem>`으로 현재 사이클을 선언합니다. Phase 00이 없다면
 `sage cycle set <stem> --create --risk L1|L2|L3`로 뼈대를 만든 뒤 내용을 채웁니다.
 `sage-cycle` 우산은 이 명령을 중복 실행하지 않습니다. `sage-plan`이 stem 검증 뒤 선언하고,
@@ -110,6 +116,8 @@ diff는 `sage absorb`로 spec patch 후보로 변환할 수 있습니다.
 `sage/project-profile.yaml`은 팀이 공유하는 정책이고, Git에서 제외되는
 `sage/project-profile.local.yaml`은 현재 머신의 host/model/vault capability입니다. 로컬 profile은
 공유 risk나 review 정책을 완화할 수 없습니다.
+`sage-init`과 `sage-profile-modify`는 Fast Cycle 활성화, L2/L3 최소 라운드·렌즈 후보, vault dashboard를
+대화로 수집합니다. 기본값은 `enabled: false`입니다.
 
 ## 문서
 
