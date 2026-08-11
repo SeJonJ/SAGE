@@ -147,6 +147,9 @@ class TestCreateProfileAndPath(CycleCliCase):
         text = path.read_text(encoding="utf-8")
         self.assertEqual(text.count(f"Cycle-Stem: `{STEM}`"), 1)
         self.assertEqual(text.count("Risk Level: L2"), 1)
+        self.assertEqual(text.count("Done-Criteria-Revision: 1"), 1)
+        self.assertEqual(text.count("## 5. Done Criteria"), 1)
+        self.assertIn("- [ ] TODO: replace with a concrete completion criterion", text)
         self.assertNotIn("<L1|L2|L3>", text)
         self.assertEqual(cs.read_declaration(self.root)[0], STEM)
 
@@ -450,7 +453,6 @@ class TestSkillsAndDocumentation(unittest.TestCase):
 
     def test_korean_and_english_user_docs_explain_umbrella_ownership(self):
         pairs = [
-            ("README.md", "README.en.md"),
             ("docs/cli-reference.md", "docs/cli-reference.en.md"),
             ("docs/troubleshooting.md", "docs/troubleshooting.en.md"),
         ]

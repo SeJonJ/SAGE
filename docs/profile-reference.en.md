@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:2184abd680daba12c196b671f4f255359935f02dbc7449ccc4c0e8b5ad7df4bb -->
+<!-- sage-doc-source: profile-reference.md sha256:985c6bfd051fa7aaa10b80799a72e3489db93be8c829219226755ef39b0b63e8 -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -93,6 +93,22 @@ before continuing.
 `codex_feature_signal` | a project-custom module name). When it is empty, independent L3 review
 fails safely closed (BLOCK) — an L3 change that never gets past review is usually missing this
 value, not a review-loop problem.
+
+### Phase 00 Done Criteria
+
+```yaml
+pdca:
+  base_plan:
+    done_criteria_gate: advisory  # off | advisory | enforce
+```
+
+A missing key or `off` preserves existing behavior. `advisory` reports malformed completion
+criteria, invalid revisions, stale affected phases, and stale Phase 05 approval without blocking.
+`enforce` blocks those conditions at phase transitions, APPROVED, and Phase 06. Normal unresolved
+`[ ]` items remain allowed during Phases 01-04. A new Phase 00 starts with
+`Done-Criteria-Revision: 1`; changing criterion text or scope records a new revision, reason, and
+affected phases. `sage-init` and `sage-profile-modify` collect this shared policy;
+`sage-init-local` does not modify it.
 
 ### Review loop (Phase 05)
 

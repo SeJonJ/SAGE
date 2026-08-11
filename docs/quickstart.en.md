@@ -87,6 +87,11 @@ report "done" without a review.
 Fast Cycle omits physical Phases 01-04 only after embedding their content and checklists in a
 composite Phase 00. It writes no plan or audit until Fast level, lens count, and reason are present.
 
+A new Phase 00 declares `Done-Criteria-Revision: 1` and exactly one `## 5. Done Criteria`, with
+concrete outcomes written as `- [ ] ...`. Mark `[x]` only when evidence exists, and use
+`[~] ... (N/A: reason)` only for a reasoned exclusion. When criterion text or scope changes,
+record the new revision, reason, and affected phases, then rerun those phases and Phase 05 review.
+
 ## Next
 
 - [CLI reference](cli-reference.md)

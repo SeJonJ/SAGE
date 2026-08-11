@@ -37,6 +37,11 @@ assert os.path.isdir(os.path.join(root, "templates")), "번들에 templates 없�
 assert os.path.isfile(os.path.join(root, "scripts", "sage_harness", "hooks", "pre_implementation_gate_core.py")), "번들에 hook core 없음"
 assert os.path.isfile(os.path.join(root, "scripts", "sage_harness", "hooks", "runtime", "checklist_contract.py")), "번들에 checklist 계약 없음"
 assert os.path.isfile(os.path.join(root, "scripts", "sage_harness", "hooks", "runtime", "fast_cycle_audit.py")), "번들에 Fast 감사 runtime 없음"
+from sage.done_criteria_contract import parse_done_criteria, phase00_text_hash
+plan = "Done-Criteria-Revision: 1\n## 5. Done Criteria\n- [x] wheel contract\n"
+result = parse_done_criteria(plan, mode="standard")
+assert result.status == "valid" and not result.unresolved
+assert phase00_text_hash(plan).startswith("sha256:")
 print(f"   sage_root = {root} (번들 OK)")
 PYEOF
 

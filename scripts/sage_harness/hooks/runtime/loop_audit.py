@@ -318,7 +318,8 @@ def record_round(root, run_id, iteration, found, survived, accepted, arch=0, tok
     return _append(audit_path(root), record)
 
 
-def close_loop(root, run_id, result, reason, iterations, now=None, reviewer_actual=None):
+def close_loop(root, run_id, result, reason, iterations, now=None, reviewer_actual=None,
+               phase00_hash=None):
     """루프 종료 기록. result ∈ CLOSE_RESULTS, reason ∈ CLOSE_REASONS(호출 레이어가 강제).
     reviewer_actual=실제 수행된 리뷰어 모드(예: cross_model/same_runtime) — open 의 reviewer_requested 와
     비교해 audit_summary 가 degraded 를 파생(7차 배치3: cross-model 폴백 침묵 차단)."""
@@ -327,6 +328,8 @@ def close_loop(root, run_id, result, reason, iterations, now=None, reviewer_actu
            "result": result, "reason": reason, "iterations": int(iterations)}
     if reviewer_actual is not None:
         rec["reviewer_actual"] = reviewer_actual
+    if phase00_hash is not None:
+        rec["phase00_hash"] = phase00_hash
     return _append(audit_path(root), rec)
 
 
@@ -389,6 +392,8 @@ def audit_summary(root):
             e["closes"] += 1
             if r.get("reviewer_actual") is not None:
                 e["reviewer_actual"] = r.get("reviewer_actual")
+            if r.get("phase00_hash") is not None:
+                e["phase00_hash"] = r.get("phase00_hash")
     for rid, e in summary.items():
         e["clean"] = (e["opens"] == 1 and e["closes"] <= 1)
         e["seq_ok"] = _seq_ok(seqs.get(rid) or [])

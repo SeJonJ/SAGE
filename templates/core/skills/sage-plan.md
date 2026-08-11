@@ -45,12 +45,16 @@ L2/L3 code is written. Hands back an ownership map; `/sage-team` drives 03–06.
       of the user-declared level and the glob-implied risk; later gates and write-back
       use it as the durable cycle tier). Record exactly one declaration outside code
       fences and never leave the `<L1|L2|L3>` placeholder.
-   c. Distribute file ownership to implementer-a / implementer-b by component.
-   d. State the integration point where the two implementers connect.
+   c. Record `Done-Criteria-Revision: 1` and one exact `## 5. Done Criteria`
+      section. Convert the confirmed user outcomes into concrete `[ ]` items; do not
+      mark implementation results complete during planning and do not leave TODO.
+   d. Distribute file ownership to implementer-a / implementer-b by component.
+   e. State the integration point where the two implementers connect.
 6. Verify the plan doc exists before handing off:
    check that the file under `paths.plan_docs` is non-empty and references
    the feature scope, and that 00 carries exactly one filled `Risk Level: L[123]`
-   line outside code fences (not the `<L1|L2|L3>` placeholder), and that every file basename equals its
+   line outside code fences (not the `<L1|L2|L3>` placeholder), that the Done Criteria
+   contract is valid with revision 1 and at least one concrete `[ ]` item, and that every file basename equals its
    single `Cycle-Stem` declaration — if missing/unfilled/mismatched, block and have the
    leader set it.
 7. Report the ownership map to the user and confirm they are ready to proceed

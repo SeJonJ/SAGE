@@ -84,6 +84,11 @@ sage doctor
 Fast Cycle은 01~04 문서를 생략하는 대신 그 내용을 체크리스트가 있는 composite 00에 포함하며,
 Fast level·렌즈 수·사유를 모두 받기 전에는 문서나 감사를 쓰지 않습니다.
 
+새 Phase 00에는 `Done-Criteria-Revision: 1`과 정확한 `## 5. Done Criteria`를 두고 결과를
+`- [ ] ...`로 작성합니다. 증거가 생길 때만 `[x]`, 실제 범위 밖이면 `[~] ... (N/A: 사유)`를
+사용합니다. 기준 문구나 범위가 바뀌면 revision과 사유·영향 phase를 기록하고 해당 phase 및
+Phase 05 리뷰를 다시 수행합니다.
+
 ## 다음 문서
 
 - [CLI 레퍼런스](cli-reference.md)

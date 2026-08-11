@@ -295,6 +295,11 @@ _NON_OVERRIDABLE_BLOCKS = {
     "block_cycle_risk_reconciliation",
     "block_report_without_acceptance",
     "block_report_waiver_audit_failure",
+    "block_invalid_done_criteria",
+    "block_phase00_mixed_evidence",
+    "block_report_without_done_criteria",
+    "block_stale_done_criteria_revision",
+    "block_stale_done_criteria_approval",
     "block_gate_runtime_error",
     # 감사 기록 실패로 생긴 BLOCK 은 override 대상이 아니다 — override 는 그 자체가 감사에 남는 우회인데,
     # 감사를 못 쓰는 상태에서 감사로 우회한다는 건 성립하지 않는다. waiver 기록 실패와 같은 취급.

@@ -11,6 +11,8 @@ L3(profile.risk 고위험 도메인) + plan 없음 하드블록, L3 review 확�
 PDCA phase 의무구조 강제(F9): profile.pdca 활성 시 구현 전 의무 phase 결핍이면 L2/L3 BLOCK·L1 WARN,
 같은 cycle의 Phase 00에 유효한 위험도 선언이 없거나 현재 변경 위험도보다 낮으면 BLOCK,
 report phase 작성 전 approve phase APPROVED 확인. pdca 비활성이면 None → 기존 risk/plan 동작(하위호환).
+`pdca.base_plan.done_criteria_gate`가 켜지면 exact Phase 00 Done Criteria의 3상태·revision을 각 phase
+경계에서 검사하고, Phase 06은 unresolved 0과 현재 Phase 00에 hash-bound 된 Phase 05/Loop 승인을 요구한다.
 
 ## runtime_bindings
 - claude: { event: PreToolUse, matcher: "Write|Edit|MultiEdit", input: file_path + content/new_string/edits }
@@ -45,7 +47,8 @@ profile.risk: { desktop_block_glob, l0_pass_globs, l3_filename_globs, l2_path_gl
 - canonical 매칭 = **case-insensitive**(G2, 더 많은 L3 포착 = 안전). 키워드/파일패턴 lower 비교.
 
 ## PDCA phase 강제 (F9, profile.pdca — 독립)
-profile.pdca: { enabled, phases[{id,glob}], pre_implementation_required{L1,L2,L3}, report_phase, approve_phase, approve_marker }
+profile.pdca: { enabled, phases[{id,glob}], pre_implementation_required{L1,L2,L3}, report_phase, approve_phase, approve_marker,
+                base_plan.done_criteria_gate }
 - adapter 가 phase glob(root 상대, recursive) 스캔 → snapshot.phase_docs={id:[{path,content,recent}]}.
 - `cycle_binding`은 configured phase glob에 실제로 매칭되는 markdown basename과 정확히 한 번 선언된
   `Cycle-Stem`의 동일성을 검증한다. 선언은 fenced code block 밖에 있어야 한다. Phase 디렉터리 아래라도 glob 밖 파일은 cycle 문서가 아니다.
@@ -98,6 +101,16 @@ profile.pdca: { enabled, phases[{id,glob}], pre_implementation_required{L1,L2,L3
   fenced code example, substring `APPROVED`는 승인 증거가 아니다. 06과 다른 phase를 같은 변경에서 수정하면 pre-write
   snapshot으로 검증할 수 없으므로 분리 작성을 요구하고 차단한다.
   ④ 구현 전 의무 phase(current stem exact) — L2/L3 결핍=block_phase_incomplete, L1=warn_phase_incomplete.
+  ⑤ Done Criteria 게이트 — `off`/키 부재는 하위호환 skip, `advisory`는 WARN, `enforce`는 BLOCK.
+  Phase 00 단독 repair는 자기차단하지 않는다. Phase 00과 01~06을 같은 write에 섞으면 post-write
+  revision을 pre-write snapshot으로 증명할 수 없으므로 mode에 따라 BLOCK/WARN하고 분리 작성을 요구한다.
+  01~04의 valid `[ ]`는 진행률 WARN만 내고 허용하며,
+  malformed/duplicate/empty section, 잘못된 `[~]`, revision log 오류는 mode대로 처리한다. revision 2+
+  재계획은 앞선 affected phase 문서가 현재 revision을 선언해야 다음 phase로 진행할 수 있다.
+  06은 unresolved 0, Phase 05의 정확한 `Phase00-Hash: sha256:...`, 같은 문서의 `Loop-Run`, 해당
+  closed APPROVED loop record의 `phase00_hash`가 현재 Phase 00 전체 text hash와 모두 같아야 한다.
+  hash는 CRLF/CR만 LF로 바꾸며 공백·순서·상태·revision log를 모두 포함한다. 이 BLOCK들은 generic
+  override 대상이 아니다.
 - enabled=false/phases 없음 → `_pdca_cfg`=None → 강제 skip(기존 동작 보존). report/phase write는 snapshot과
   같은 configured glob semantics로 판정한다.
 
@@ -184,3 +197,4 @@ scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py
   + PDCA 강제(의무 phase block/통과/L3 review 보존/report 게이트/비활성 하위호환) + adapter(L3 block·L1 pass)
   + audit 게이트 file_ok/seq_ok/chain_ok/degraded 분기 + report_gate_enforce 기본 advisory(7차 배치3, 10-g)
   + acceptance evidence 게이트(matrix↔evidence 대조/미해결 block·warn/risk 미해당 skip)
+  + Done Criteria exact parser/진행률/revision/00+후속 phase 혼합 write/affected phase/Phase00 hash-bound approval

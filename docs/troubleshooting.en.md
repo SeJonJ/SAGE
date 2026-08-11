@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:5c1ce5990af433da35fcf97c8ab517acc28debc4b60b35f9fc4aa33f12eb71c8 -->
+<!-- sage-doc-source: troubleshooting.md sha256:54e85808c89c535403a9b0eb0774ea3285a5d7c898a51f77485f924d4e520e58 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -115,6 +115,15 @@ after write-back, retro, snapshots, and closing gates. `BLOCKED` or `FAIL` retai
 declaration for resume.
 `set B` changes only the pointer, so cycle A's documents, evidence, and audits remain intact;
 `set A` restores A's evaluation.
+
+## Blocked by Done Criteria or a stale Phase 05 approval
+
+Repair only the exact-stem Phase 00 first. Restore exactly one `## 5. Done Criteria`, a positive
+`Done-Criteria-Revision`, and valid `[ ]`, `[x]`, or reasoned `[~]` items. If criterion text or scope
+changed, increment the revision, record Changed-At, Reason, Affected-Phases, and Summary, then rerun
+affected phases in order. Do not reuse the previous Phase 05 approval. Run a new review loop with
+`--cycle-stem`, then record its `Loop-Run` and the APPROVED close's `Phase00-Hash` in Phase 05.
+Write Phase 00 and later phases separately because one mixed write cannot prove post-write evidence.
 
 ## The cycle is finished but new work is blocked as an already-completed cycle
 

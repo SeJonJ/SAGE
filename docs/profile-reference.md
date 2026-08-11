@@ -87,6 +87,21 @@ Phase 00을 상향해야 합니다.
 `codex_feature_signal` | 프로젝트 커스텀 모듈명). 비어 있으면 L3 독립 리뷰가 안전하게 BLOCK되므로,
 "L3인데 리뷰가 통과 안 된다"는 문제는 대개 이 값 누락이 원인입니다.
 
+### Phase 00 Done Criteria
+
+```yaml
+pdca:
+  base_plan:
+    done_criteria_gate: advisory  # off | advisory | enforce
+```
+
+키 부재나 `off`는 기존 동작을 유지합니다. `advisory`는 Phase 00의 완료 기준 구조, 3상태 항목,
+재계획 revision, 영향 phase 재실행, 최신 Phase 05 승인 결속 문제를 경고하되 진행을 허용합니다.
+`enforce`는 같은 문제를 phase 전환·APPROVED·Phase 06 경계에서 차단합니다. 정상적인 01~04의
+미완료 `[ ]`는 차단하지 않습니다. 신규 Phase 00은 `Done-Criteria-Revision: 1`에서 시작하며,
+기준 문구나 범위가 바뀌면 revision과 사유·영향 phase를 기록합니다. 이 shared 정책은
+`sage-init`과 `sage-profile-modify`가 수집하고 `sage-init-local`은 수정하지 않습니다.
+
 ### Review loop (Phase 05)
 
 ```yaml

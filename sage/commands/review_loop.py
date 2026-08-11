@@ -11,6 +11,7 @@ argparse 로 강제한다(라이브러리는 permissive recorder).
 import os
 import sys
 import re
+import glob
 
 from sage import _resources
 from sage.profile_layers import load_profile_layers
@@ -26,6 +27,14 @@ def _load_loop_audit():
         sys.path.insert(0, rt)
     import loop_audit as la
     return la
+
+
+def _load_cycle_binding():
+    hooks = _resources.hooks_src_dir()
+    if hooks not in sys.path:
+        sys.path.insert(0, hooks)
+    import cycle_binding
+    return cycle_binding
 
 
 def _nonneg(v):
@@ -247,6 +256,79 @@ def _run_risk(la, root, run_id):
     return None
 
 
+def _open_record(la, root, run_id):
+    return next((record for record in la.read_records(root)
+                 if record.get("event") == "loop_open" and record.get("run_id") == run_id), None)
+
+
+def _phase_docs(root, profile, phase):
+    pdca = profile.get("pdca") if isinstance(profile.get("pdca"), dict) else {}
+    entry = next((item for item in (pdca.get("phases") or [])
+                  if isinstance(item, dict) and str(item.get("id") or "") == phase), None)
+    pattern = (entry or {}).get("glob") or ""
+    if not pattern or os.path.isabs(pattern) or ".." in pattern.replace("\\", "/").split("/"):
+        raise ValueError(f"safe Phase {phase} glob is required in pdca.phases")
+    docs = []
+    root_real = os.path.realpath(root)
+    for path in glob.glob(os.path.join(root, pattern), recursive=True):
+        path_real = os.path.realpath(path)
+        try:
+            contained = os.path.commonpath((root_real, path_real)) == root_real
+        except ValueError:
+            contained = False
+        if not contained:
+            raise ValueError(f"Phase {phase} document escapes project root: {path}")
+        if not os.path.isfile(path) or os.path.islink(path):
+            continue
+        with open(path_real, encoding="utf-8") as fh:
+            content = fh.read()
+        docs.append({"path": os.path.relpath(path, root).replace(os.sep, "/"), "content": content})
+    return docs
+
+
+def _approved_phase00_hash(la, root, profile, run_id):
+    """Return the current Phase 00 hash or a mode-scoped approval issue."""
+    pdca = profile.get("pdca") if isinstance(profile.get("pdca"), dict) else {}
+    base_plan = pdca.get("base_plan") if isinstance(pdca.get("base_plan"), dict) else {}
+    mode = base_plan.get("done_criteria_gate", "off")
+    if mode == "off":
+        return None, None, mode
+    if mode not in ("advisory", "enforce"):
+        return None, f"invalid pdca.base_plan.done_criteria_gate={mode!r}", "enforce"
+    opened = _open_record(la, root, run_id) or {}
+    stem = opened.get("cycle_stem")
+    if not isinstance(stem, str) or not stem:
+        return None, "review-loop open record has no --cycle-stem", mode
+
+    binding = _load_cycle_binding()
+    selected, error = binding.select_document(_phase_docs(root, profile, "00"), stem)
+    if error:
+        return None, f"Phase 00 exact cycle selection failed: {error}", mode
+    from sage.done_criteria_contract import document_revision, parse_done_criteria, phase00_text_hash
+    content = selected.get("content") or ""
+    parse_mode = "fast" if re.search(r"(?m)^Cycle-Mode:\s*FAST\s*$", content) else "standard"
+    result = parse_done_criteria(content, mode=parse_mode)
+    if result.status != "valid":
+        return None, "Phase 00 Done Criteria invalid: " + "; ".join(result.issues[:3]), mode
+    if result.unresolved:
+        pending = "; ".join(f"line {item.line}: {item.text}" for item in result.unresolved[:3])
+        return None, f"Phase 00 Done Criteria unresolved={len(result.unresolved)}: {pending}", mode
+
+    if parse_mode == "standard" and result.latest_revision is not None:
+        stale = []
+        for phase in result.latest_revision.affected_phases:
+            phase_doc, phase_error = binding.select_document(_phase_docs(root, profile, phase), stem)
+            if phase_error:
+                stale.append(f"{phase}: {phase_error}")
+                continue
+            revision, revision_issues = document_revision(phase_doc.get("content"))
+            if revision_issues or revision != result.revision:
+                stale.append(f"{phase}: revision={revision!r}, expected={result.revision}")
+        if stale:
+            return None, "affected Phase rerun is stale: " + "; ".join(stale[:3]), mode
+    return phase00_text_hash(content), None, mode
+
+
 def _termination_discrepancies(la, root, run_id, result, reason, iterations, cfg, risk):
     """기록된 라운드 + cfg(review_loop)로 close 의 result/reason 일관성 검산 → [(kind, msg)].
     kind: 'mismatch'(사실과 모순 — enforce 가 거부) | 'skip'(cfg/데이터 부족으로 검증 불가 — 항상 WARN, 차단 안 함).
@@ -355,15 +437,32 @@ def _run_close(args):
         print("[sage review-loop] (advisory — 기록은 진행. profile 의 review_loop.termination_enforce=enforce 로 강제 가능)",
               file=sys.stderr)
 
+    phase00_hash = None
+    if args.result == "APPROVED":
+        try:
+            phase00_hash, done_issue, done_mode = _approved_phase00_hash(
+                la, root, profile, args.run_id)
+        except (OSError, UnicodeError, ValueError) as exc:
+            done_issue = f"Done Criteria approval check failed: {type(exc).__name__}: {exc}"
+            done_mode = "enforce"
+        if done_issue:
+            print(f"[sage review-loop] Done Criteria 승인 결속 실패: {done_issue}", file=sys.stderr)
+            if done_mode == "enforce":
+                return 2
+            print("[sage review-loop] (advisory — close는 기록하지만 Phase 06에서 경고)", file=sys.stderr)
+
     written = _write_audit(
         la,
         lambda: la.close_loop(root, args.run_id, args.result, args.reason,
                               args.iterations,
-                              reviewer_actual=args.reviewer_actual),
+                              reviewer_actual=args.reviewer_actual,
+                              phase00_hash=phase00_hash),
     )
     if written is None:
         return 2
     print(f"[sage review-loop] close run_id={args.run_id} {args.result}/{args.reason} iterations={args.iterations}", file=sys.stderr)
+    if phase00_hash is not None:
+        print(f"Phase00-Hash: {phase00_hash}", file=sys.stderr)
     _auto_write_vault_dashboard(la, root)
     return 0
 
@@ -381,6 +480,8 @@ def _run_show(args):
         close = la.close_of(root, rid)
         status = f"{close['result']}/{close['reason']} ({close['iterations']}회)" if close else "진행중(미종료)"
         print(f"  · {rid}: {status}, 라운드 {len(rounds)}건")
+        if close and close.get("phase00_hash"):
+            print(f"      Phase00-Hash: {close['phase00_hash']}")
         for r in rounds:
             print(f"      [{r.get('iteration')}] found={r.get('found')} survived={r.get('survived')} "
                   f"accepted={r.get('accepted')} arch={r.get('arch')} tokens={r.get('tokens')}")

@@ -8,7 +8,9 @@ Implement and verify an open Fast run, bind exact lens review receipts, write 05
 - When a composite Fast Plan has a clean active Fast audit run and is ready for implementation.
 ## procedure
 1. Verify the exact stem, composite plan, audit state, ownership, actual risk, Fast level, rounds, and lenses.
-2. Implement and verify, then run independent review with exact per-round lens receipts and bind APPROVED Phase 05.
+2. Implement and verify while updating composite Done Criteria. Replanning increments its
+   revision and records a reason plus affected virtual phases, which are rerun. Require all
+   criteria resolved, then run independent review with exact per-round lens receipts and bind APPROVED Phase 05.
 3. Write bound Phase 06, complete write-back, retro, and snapshot, then close the Fast audit before clearing the cycle.
 ## advisory_scope
 - self_overlay: unsupported; Fast state transitions are gate-bearing and have no independent overlay oracle.

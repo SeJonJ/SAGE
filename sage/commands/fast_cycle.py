@@ -12,6 +12,7 @@ from pathlib import Path
 from sage import _resources, overlay_common
 from sage.fast_cycle_contract import (
     bind_run_id,
+    done_criteria_issues,
     evidence_marker_issues,
     open_issues,
     parse_fast_plan,
@@ -127,6 +128,28 @@ def _fast_policy(profile):
     return fast
 
 
+def _done_criteria_mode(profile):
+    pdca = profile.get("pdca") if isinstance(profile, dict) else None
+    base_plan = pdca.get("base_plan") if isinstance(pdca, dict) else None
+    mode = base_plan.get("done_criteria_gate", "off") if isinstance(base_plan, dict) else "off"
+    if mode not in ("off", "advisory", "enforce"):
+        raise ValueError(f"invalid pdca.base_plan.done_criteria_gate={mode!r}")
+    return mode
+
+
+def _apply_done_criteria_policy(profile, plan, *, stage, include_unresolved):
+    mode = _done_criteria_mode(profile)
+    if mode == "off":
+        return
+    issues = done_criteria_issues(plan, include_unresolved=include_unresolved)
+    if not issues:
+        return
+    detail = "; ".join(issues[:3])
+    if mode == "enforce":
+        raise ValueError(f"Fast Plan Done Criteria rejected at {stage}: {detail}")
+    print(f"⚠️ [sage fast-cycle] Done Criteria advisory at {stage}: {detail}", file=sys.stderr)
+
+
 def _profile_hash(profile):
     payload = json.dumps(profile, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -197,6 +220,8 @@ def _run_open(args):
                                       minimum_rounds=rounds, lenses=lenses))
             if issues:
                 raise ValueError("; ".join(issues[:5]))
+            _apply_done_criteria_policy(
+                profile, plan, stage="open", include_unresolved=False)
             actual_risk = plan.metadata["Risk Level"]
             summary = audit.audit_summary(root)
             if summary.get("file_ok") is not True:
@@ -279,6 +304,8 @@ def _run_review(args):
         plan, issues = parse_fast_plan(content)
         if plan is None or issues:
             raise ValueError("invalid Fast Plan: " + "; ".join(issues[:3]))
+        _apply_done_criteria_policy(
+            profile, plan, stage="review", include_unresolved=True)
         if plan.metadata.get("Fast-Audit-Run") != args.run_id:
             raise ValueError("Fast Plan run id does not match")
         if "PENDING — implementation not started" in plan.sections.get("04", ""):
@@ -369,6 +396,8 @@ def _run_close(args):
         plan, parse_issues = parse_fast_plan(content)
         if plan is None or parse_issues:
             raise ValueError("Fast Plan is invalid at close")
+        _apply_done_criteria_policy(
+            profile, plan, stage="close", include_unresolved=True)
         audit.close_fast(root, args.run_id, loop_run_id=loop_run_id,
                          actual_risk=plan.metadata.get("Risk Level"),
                          plan_hash_final=current_hash,

@@ -94,6 +94,8 @@ pdca:                            # PDCA phase 의무구조 — pre-implementatio
   report_phase: "06"             # 이 phase 문서 작성 시 approve_phase 승인 확인
   approve_phase: "05"            # report 전 APPROVED 가 있어야 할 phase
   approve_marker: "APPROVED"     # approve_phase 문서에서 찾을 승인 마커(대소문자 무시)
+  base_plan:
+    done_criteria_gate: advisory  # off | advisory | enforce. 신규 프로젝트는 조기 관찰을 위해 advisory 권장
   review_loop:                   # Loop A — Phase 05 적대적 review-rework(찾기→반박→분류→수정→종료). 본문은 sage-review 스킬이 host 에서 실행, 여긴 게이트값만(결정론). 상세: docs/agent/review-protocol.md
     enabled: false               # 기본 OFF — 켜면 sage-review 가 단발 리뷰 대신 적대적 루프로 동작(advisory 먼저 권장)
     lenses: [correctness, security, concurrency, convention, lifecycle]  # FIND 렌즈(엔진 어휘). enabled 면 비울 수 없음

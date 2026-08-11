@@ -115,6 +115,9 @@ SAGE also provides a PDCA workflow from plan to delivery to review to completion
 that separates shared team policy from personal machine settings, and a compressed procedure (Fast
 Cycle) for urgent work. You do not need to learn all of it up front — explore the documents below as
 you need them.
+The plan records concrete completion criteria and updates their state only as implementation and
+verification evidence appears. When a criterion changes, affected design, delivery, verification,
+and review work runs again so an old approval cannot support a new completion report.
 
 ## Documentation
 

@@ -28,7 +28,7 @@ _CLOSED_SECTION_FALLBACK = {
              "l1_path_globs", "l2_content_keywords", "l2_path_globs", "l3_content_keywords",
              "l3_filename_globs", "l3_review_strategy", "l3_review_glob", "content_l3_enforce",
              "domains", "plan_glob", "review_patterns"},
-    "pdca": {"approve_marker", "approve_phase", "enabled", "phases",
+    "pdca": {"approve_marker", "approve_phase", "base_plan", "enabled", "phases",
              "pre_implementation_required", "report_phase", "review_loop", "fast_cycle", "retro", "writeback"},
     "output_contract": {"markers"},
     "mcp": {"enabled"},
@@ -47,6 +47,8 @@ _REVIEW_LOOP_KEYS = {"enabled", "lenses", "refuters", "refute_threshold", "max_i
                      "architecture_escalation", "termination_enforce", "report_gate_enforce"}
 _TERMINATION_MODES = {"advisory", "enforce"}   # 종료 검산 모드(기본 advisory)
 _REPORT_GATE_MODES = {"off", "advisory", "enforce"}   # 06←05 audit 게이트 모드(기본 advisory)
+_BASE_PLAN_KEYS = {"done_criteria_gate"}
+_DONE_CRITERIA_GATE_MODES = {"off", "advisory", "enforce"}
 _FAST_CYCLE_KEYS = {"enabled", "reason_required", "minimum_rounds", "minimum_lenses", "lenses"}
 _ACCEPTANCE_KEYS = {"enabled", "require_for_risk", "statuses", "unresolved_statuses",
                     "report_gate_enforce", "report_gate_by_risk", "waiver"}
@@ -55,6 +57,28 @@ _CANONICAL_ACCEPTANCE_STATUSES = {"PASS", "FAIL", "NOT TESTED", "N/A"}
 # §10-a-C sage-feedback: 닫힌 키 어휘. 미지 키는 오타로 게이트가 조용히 꺼지는 걸 막으려 FAIL.
 _FEEDBACK_KEYS = {"enabled", "block_release", "record", "record_target"}
 _FEEDBACK_RECORD_TARGETS = {"auto", "sage", "vault"}
+
+
+def _done_criteria_gate_issues(profile):
+    """Validate the closed Phase 00 Done Criteria policy without jsonschema."""
+    pdca = profile.get("pdca")
+    if pdca is not None and not isinstance(pdca, dict):
+        return []
+    base_plan = (pdca or {}).get("base_plan")
+    if base_plan is None:
+        return []
+    if not isinstance(base_plan, dict):
+        return [("FAIL", "pdca.base_plan 는 매핑(object)이어야 함")]
+    issues = []
+    unknown = sorted(set(base_plan) - _BASE_PLAN_KEYS, key=str)
+    if unknown:
+        issues.append(("FAIL", f"pdca.base_plan 에 미지 키(오타 추정) {unknown}. "
+                               f"허용 키: {sorted(_BASE_PLAN_KEYS)}"))
+    mode = base_plan.get("done_criteria_gate")
+    if mode is not None and (not isinstance(mode, str) or mode not in _DONE_CRITERIA_GATE_MODES):
+        issues.append(("FAIL", f"pdca.base_plan.done_criteria_gate={mode!r} 는 "
+                               f"{sorted(_DONE_CRITERIA_GATE_MODES)} 중 하나여야 함"))
+    return issues
 
 
 def _fast_cycle_issues(profile):
@@ -845,6 +869,7 @@ def validate_profile(profile, root):
         from sage.context_packet import profile_issues as context_profile_issues
 
         issues = issues + _semantic_issues(profile, root) + _review_loop_issues(profile) \
+            + _done_criteria_gate_issues(profile) \
             + _fast_cycle_issues(profile) \
             + _acceptance_issues(profile) + _knowledge_capture_issues(profile) \
             + _cross_model_issues(profile) + _team_agent_issues(profile) + _retro_gate_issues(profile) \

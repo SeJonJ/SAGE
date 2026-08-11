@@ -30,6 +30,11 @@ sage review-loop round ... --lens-receipts <comma-list>
 sage review-loop close ...
 ```
 
+Update the composite `### Done Criteria` after virtual Phase 03 and Phase 04 evidence.
+Only demonstrated items become `[x]`; exclusions require `[~] ... (N/A: reason)`. If an
+item or its scope changes, increment `Done-Criteria-Revision`, record the reason and affected
+virtual phases, and rerun those phases. Review and close require zero unresolved items.
+
    Continue until APPROVED or BLOCKED. Minimum rounds are a floor, not automatic
    approval. Every selected lens must run in every counted round.
 5. Write 05 with exact `Fast-Run`, `Loop-Run`, and `Final Status: APPROVED`, then:

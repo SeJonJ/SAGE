@@ -26,14 +26,14 @@ then re-validate. The profile-editing counterpart to /sage-init (first authoring
    do not bootstrap here), AGENT_GUIDE, bootstrap-authoring (incl. shared Review loop +
    vault interview set).
 2. Identify the target section (project/components including `runtime_models`/
-   verification/risk/pdca.review_loop/pdca.fast_cycle/options/knowledge_capture/file_type_map/compliance/
+   verification/risk/pdca.base_plan/pdca.review_loop/pdca.fast_cycle/options/knowledge_capture/file_type_map/compliance/
    `governance_docs`/`cross_model.reviewer`). For model edits, run `sage models --host <host>`
    and preserve its verification label; `cross_model.reviewer.host` scopes which peer the model
    was chosen for (the reviewer itself is resolved at run time) and must be an installed host
    other than a pinned `runtime.active_host`.
    `governance_docs` renders into the AGENT_GUIDE routing block (path + label only, never
    classification triggers).
-3. For pdca.review_loop, pdca.fast_cycle, and vault outputs, drive the SAME shared interview set as
+3. For pdca.base_plan, pdca.review_loop, pdca.fast_cycle, and vault outputs, drive the SAME shared interview set as
    /sage-init (bootstrap-authoring.md) — single source, no drift. Vault turn only when
    the matching feature is on AND an effective vault path is set. Fast keeps
    reason_required=true and engine floors of one round and two lenses.

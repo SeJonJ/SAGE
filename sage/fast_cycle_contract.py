@@ -93,6 +93,17 @@ def open_issues(plan: FastPlan, *, stem: str, level: str, lens_count: int,
     return issues
 
 
+def done_criteria_issues(plan: FastPlan, *, include_unresolved: bool) -> list[str]:
+    """Return Fast Done Criteria diagnostics without choosing policy severity."""
+    from sage.done_criteria_contract import parse_done_criteria
+    result = parse_done_criteria(plan.content, mode="fast")
+    issues = [f"Done Criteria: {issue}" for issue in result.issues]
+    if include_unresolved:
+        issues.extend(
+            f"Done Criteria unresolved at line {item.line}: {item.text}"
+            for item in result.unresolved
+        )
+    return issues
 def bind_run_id(content: str, run_id: str) -> str:
     matches = list(re.finditer(r"(?m)^Fast-Audit-Run:[ \t]*(pending|fc-[a-f0-9]{12})[ \t]*$", content))
     if len(matches) != 1:

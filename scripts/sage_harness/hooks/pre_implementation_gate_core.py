@@ -14,9 +14,28 @@ risk trigger(글롭/키워드)는 profile_bound(G3) — core 에 도메인값 0.
 """
 
 import fnmatch
+import os
 import re
+import sys
 
 import cycle_binding
+try:
+    from sage.done_criteria_contract import (
+        document_revision,
+        parse_done_criteria,
+        phase00_text_hash,
+    )
+except ModuleNotFoundError:
+    # Canonical-core unit tests intentionally import this file with only hooks/ on sys.path.
+    # A source checkout has sage/ three levels above; installed projects resolve the package normally.
+    _SOURCE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    if _SOURCE_ROOT not in sys.path:
+        sys.path.insert(0, _SOURCE_ROOT)
+    from sage.done_criteria_contract import (
+        document_revision,
+        parse_done_criteria,
+        phase00_text_hash,
+    )
 
 CONTRACT_VERSION = "2"   # EH-7: decide() 가 cycle_stem/cycle_source/cycle_stem_declared 를 싣고,
                          # 어댑터가 선언 사용을 감사해야 한다. 낡은 어댑터 + 새 core 조합은 스탬프만
@@ -904,6 +923,148 @@ def _audit_gate(event, profile, snapshot):
     return {"ok": True, "mode": mode, "detail": run_id}
 
 
+def _done_criteria_decision(mode, key, reason, file_short, **extra):
+    blocked = mode == "enforce" and key.startswith("block_")
+    decision = {
+        "status": "block" if blocked else "warn",
+        "exit_code": 2 if blocked else 0,
+        "risk": "PDCA",
+        "message_key": key if blocked else key.replace("block_", "warn_", 1),
+        "reason": reason,
+        "file_short": file_short,
+    }
+    decision.update(extra)
+    return decision
+
+
+def _done_criteria_gate(event, profile, snapshot):
+    """Validate bound Phase 00 progressively and bind final report to fresh approval."""
+    cfg = _pdca_cfg(profile)
+    if cfg is None:
+        return None
+    base_plan = cfg.get("base_plan") if isinstance(cfg.get("base_plan"), dict) else {}
+    mode = base_plan.get("done_criteria_gate", "off")
+    if mode == "off":
+        return None
+    if mode not in ("advisory", "enforce"):
+        return {"status": "block", "exit_code": 2, "risk": "PDCA",
+                "message_key": "block_gate_runtime_error",
+                "reason": f"invalid pdca.base_plan.done_criteria_gate={mode!r}", "file_short": ""}
+
+    changed = _changed_phase_ids(event, cfg)
+    governed = changed & {"01", "02", "03", "04", "05", "06"}
+    if "00" in changed and governed:
+        return _done_criteria_decision(
+            mode, "block_phase00_mixed_evidence",
+            "Phase 00과 후속 Phase를 같은 변경에서 쓰면 pre-write snapshot으로 "
+            "revision과 영향 Phase 재실행을 검증할 수 없음", "")
+    if not governed or _is_phase00_repair_only(event, cfg):
+        return None
+    binding = cycle_binding.resolve(event, snapshot, cfg)
+    if binding.get("error"):
+        return _done_criteria_decision(
+            mode, "block_invalid_done_criteria",
+            f"cycle binding 실패: {binding['error']}", "")
+    docs = snapshot.get("phase_docs") or {}
+    phase00, selection_error = cycle_binding.select_document(docs.get("00") or [], binding["stem"])
+    if selection_error:
+        return _done_criteria_decision(
+            mode, "block_invalid_done_criteria",
+            f"Phase 00 선택 실패: {selection_error}", "")
+    content = phase00.get("content")
+    parse_mode = "fast" if re.search(r"(?m)^Cycle-Mode:\s*FAST\s*$", content or "") else "standard"
+    result = parse_done_criteria(content, mode=parse_mode)
+    path = phase00.get("path") or ""
+    if result.status != "valid":
+        detail = "; ".join(result.issues[:3])
+        return _done_criteria_decision(
+            mode, "block_invalid_done_criteria",
+            f"Phase 00 Done Criteria 구조 오류: {detail}", path,
+            revision=result.revision, unresolved_items=[])
+
+    if parse_mode == "standard" and result.latest_revision is not None:
+        target_numbers = [int(phase) for phase in governed]
+        prior_affected = [phase for phase in result.latest_revision.affected_phases
+                          if any(int(phase) < target for target in target_numbers)]
+        stale = []
+        for phase in prior_affected:
+            selected, error = cycle_binding.select_document(docs.get(phase) or [], binding["stem"])
+            if error:
+                stale.append(f"{phase}: {error}")
+                continue
+            revision, revision_issues = document_revision(selected.get("content"))
+            if revision_issues or revision != result.revision:
+                stale.append(f"{phase}: revision={revision!r}, expected={result.revision}")
+        if stale:
+            return _done_criteria_decision(
+                mode, "block_stale_done_criteria_revision",
+                "영향 Phase 재실행 미확인: " + "; ".join(stale[:3]), path,
+                revision=result.revision, stale_phases=stale)
+
+    report_phase = str(cfg.get("report_phase") or "06")
+    is_report = report_phase in governed
+    if result.unresolved and is_report:
+        unresolved = [f"line {item.line}: {item.text}" for item in result.unresolved[:3]]
+        return _done_criteria_decision(
+            mode, "block_report_without_done_criteria",
+            f"미해결 Done Criteria {len(result.unresolved)}건: " + "; ".join(unresolved), path,
+            revision=result.revision, unresolved_items=unresolved,
+            resolved=len(result.items) - len(result.unresolved), total=len(result.items))
+
+    if is_report and not result.unresolved:
+        approve_phase = str(cfg.get("approve_phase") or "05")
+        approval, approval_error = cycle_binding.select_document(
+            docs.get(approve_phase) or [], binding["stem"])
+        # Missing/unapproved 05 belongs to the older report gate, which gives the established repair hint.
+        if not approval_error:
+            approval_content = approval.get("content") or ""
+            status, status_error = _final_status(approval_content)
+            marker = str(cfg.get("approve_marker") or "APPROVED").upper()
+            if not status_error and status == marker:
+                hash_values = []
+                run_ids = []
+                for raw in _non_fenced_lines(approval_content):
+                    line = _structured_declaration_line(raw)
+                    hash_match = re.fullmatch(r"Phase00-Hash:\s*(sha256:[0-9a-f]{64})", line)
+                    run_match = re.fullmatch(r"Loop-Run:\s*(\S+)", line, re.IGNORECASE)
+                    if hash_match:
+                        hash_values.append(hash_match.group(1))
+                    if run_match:
+                        run_ids.append(run_match.group(1))
+                current_hash = phase00_text_hash(content)
+                audit = snapshot.get("loop_audit") or {}
+                run = (audit.get("runs") or {}).get(
+                    run_ids[0] if len(run_ids) == 1 else "")
+                loop_hash = run.get("phase00_hash") if isinstance(run, dict) else None
+                if (len(hash_values) != 1 or len(run_ids) != 1
+                        or audit.get("file_ok") is not True
+                        or not isinstance(run, dict)
+                        or run.get("clean") is not True
+                        or run.get("closed") is not True
+                        or (run.get("result") or "").upper() != "APPROVED"
+                        or run.get("seq_ok") is not True
+                        or run.get("chain_ok") is not True
+                        or hash_values[0] != current_hash or loop_hash != current_hash):
+                    return _done_criteria_decision(
+                        mode, "block_stale_done_criteria_approval",
+                        "Phase 00이 최신 Phase 05/Loop 승인에 결속되지 않음 "
+                        f"(current={current_hash}, phase05={hash_values}, loop={loop_hash!r}, "
+                        f"file_ok={audit.get('file_ok')!r}, clean={run.get('clean') if isinstance(run, dict) else None!r}, "
+                        f"seq_ok={run.get('seq_ok') if isinstance(run, dict) else None!r}, "
+                        f"chain_ok={run.get('chain_ok') if isinstance(run, dict) else None!r})",
+                        path, revision=result.revision)
+
+    if result.unresolved:
+        unresolved = [f"line {item.line}: {item.text}" for item in result.unresolved[:3]]
+        return {"status": "warn", "exit_code": 0, "risk": "PDCA",
+                "message_key": "warn_done_criteria_progress",
+                "reason": f"Done Criteria 진행 중: {len(result.unresolved)}건 미해결",
+                "file_short": path, "revision": result.revision,
+                "unresolved_items": unresolved,
+                "resolved": len(result.items) - len(result.unresolved), "total": len(result.items)}
+    return None
+
+
 def _select_pending_gate_decision(decisions):
     blocked = next((decision for decision in decisions if decision["status"] == "block"), None)
     if blocked:
@@ -1125,6 +1286,9 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
     # Acceptance evidence gate: 04 가 요구사항별 PASS/FAIL/NOT TESTED 를 기록했는지 확인.
     # build/test/lint 통과가 사용자 요구사항 충족을 자동 증명하지 않는 갭을 advisory-first 로 닫는다.
     pending_gate_decisions = []
+    dcg = _done_criteria_gate(event, profile, snapshot)
+    if dcg is not None:
+        pending_gate_decisions.append(dcg)
     acg = _acceptance_gate(event, profile, snapshot)
     if acg is not None and not acg["ok"]:
         if acg.get("waived"):

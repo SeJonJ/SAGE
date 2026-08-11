@@ -59,6 +59,7 @@ Read, in order, before asking anything:
 From the user's stated intent, or by asking, pin the **section**:
 - `project` (name/prefix) · `components[]` · `verification.commands` ·
   `risk.*` (L0–L3 globs / content keywords / `l3_review_strategy`) ·
+  **`pdca.base_plan.done_criteria_gate`** (`off|advisory|enforce`) ·
   **`pdca.review_loop`** (the Phase-05 loop — use the shared interview set) ·
   **`pdca.fast_cycle`** (`enabled`, `reason_required`, `minimum_rounds`,
   `minimum_lenses`, ordered L2/L3 lenses) ·
@@ -103,7 +104,13 @@ ordered lens candidates while keeping engine floors 1 round and 2 lenses and
 `reason_required: true`. State that lowering this policy reduces review breadth
 but does not lower actual risk, deterministic verification, acceptance, or 05/06.
 When a vault is available, include `knowledge_capture.fast_cycle_dashboard` in
-the same output turn.
+   the same output turn.
+
+For **`pdca.base_plan.done_criteria_gate`**, use the shared question in
+`bootstrap-authoring.md`. Show the current value and explain that `advisory` adds warnings,
+while `enforce` blocks malformed/replanned phase transitions and unresolved or stale final
+approval. Changing to `off` removes this completion backstop. Do not edit historical plans
+or infer N/A reasons as part of a profile change.
 
 ## Step 2 — Propose diff + consequence, get approval
 
@@ -118,6 +125,8 @@ the same output turn.
 | remove `risk.l3_filename_globs` / `l3_content_keywords` | that domain no longer gets the L3 gate/review (loosened) |
 | empty/changed `risk.l3_review_strategy` | L3 becomes hard-blocked, or review matching changes |
 | remove a phase from `pdca.pre_implementation_required` | that phase no longer required before code (gate loosened) |
+| `done_criteria_gate` → `off` | Phase 00 completion/replanning/stale-approval checks are disabled |
+| `done_criteria_gate` → `enforce` | malformed or stale active cycles can block until their Phase 00 and affected phases are repaired |
 | empty a `verification.commands` entry | that check (build/test/lint) is skipped |
 | `review_loop.enabled` → false | Phase 05 reverts to single-pass review |
 | lower `review_loop.max_iterations[L3]` | fewer rework rounds before BLOCKED (e.g. 1 ≈ single-pass) |

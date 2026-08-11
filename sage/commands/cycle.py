@@ -399,13 +399,20 @@ def _phase00_skeleton(stem, risk):
         f"# [Base Plan] {stem}\n\n"
         f"Cycle-Stem: `{stem}`\n"
         f"Risk Level: {risk}\n"
-        "Status: DRAFT\n\n"
+        "Status: DRAFT\n"
+        "Done-Criteria-Revision: 1\n\n"
         "## 1. Context\n\n"
         "TODO: describe the problem and constraints.\n\n"
         "## 2. Goal\n\n"
         "TODO: define the intended outcome.\n\n"
         "## 3. Acceptance Criteria\n\n"
-        "- [ ] TODO\n"
+        "TODO: define requirement-level acceptance evidence.\n\n"
+        "## 4. Final Conclusion & UX Guide\n\n"
+        "TODO: summarize the selected direction.\n\n"
+        "## 5. Done Criteria\n\n"
+        "- [ ] TODO: replace with a concrete completion criterion\n\n"
+        "## 6. Done Criteria Revision Log\n\n"
+        "Initial revision 1. No replanning record.\n"
     )
 
 

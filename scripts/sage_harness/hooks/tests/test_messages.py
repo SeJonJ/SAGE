@@ -33,6 +33,7 @@ class TestGateText(unittest.TestCase):
                 "block_phase_incomplete", "warn_phase_incomplete",
                 "block_cycle_risk_declaration", "block_cycle_risk_reconciliation",
                 "block_report_without_approval", "block_report_mixed_evidence",
+                "block_phase00_mixed_evidence", "warn_phase00_mixed_evidence",
                 "block_report_without_audit",
                 "warn_report_without_audit", "block_report_without_acceptance",
                 "warn_report_without_acceptance", "warn_report_with_l3_waiver",

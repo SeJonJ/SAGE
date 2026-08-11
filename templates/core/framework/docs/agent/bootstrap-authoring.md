@@ -132,6 +132,23 @@ decisions that genuinely need user intent; author the rest from them:
 
 Present the filled profile (or the consequential choices) for user approval.
 
+#### Phase 00 Done Criteria gate (shared policy)
+
+Ask this in every first-authoring `/sage-init` conversation and when
+`/sage-profile-modify` targets PDCA completion policy:
+
+> "Phase 00 완료 기준을 각 단계와 최종 보고에서 어느 강도로 확인할까요?"
+> · `off` — 기존 문서와 동작을 유지하며 검사하지 않음
+> · `advisory` (신규 프로젝트 권장) — 구조·진행·재계획·stale 승인 문제를 경고하지만 진행 허용
+> · `enforce` — 잘못된 구조/재계획과 미완료·stale 05 승인을 차단
+
+Write the answer to `pdca.base_plan.done_criteria_gate`. Explain that `[ ]` is allowed
+during Phases 01–04, but APPROVED/06 requires every item resolved. Replanning increments
+`Done-Criteria-Revision`, records a reason and affected phases, reruns those phases, and
+invalidates the old Phase 05 approval. This is shared governance: `sage-init-local` must
+not ask for or modify it. When upgrading an existing profile without an explicit choice,
+preserve legacy behavior as `off`; do not silently opt it into a new block.
+
 #### Review loop + vault interview set (shared by sage-init and sage-profile-modify)
 
 Single source of the loop questions so the two skills never drift. Every toggle gets

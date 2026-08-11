@@ -105,6 +105,15 @@ override로 면제되지 않습니다.
 해제합니다. `BLOCKED`/`FAIL`에서는 재개를 위해 선언을 남깁니다.
 `set B`는 포인터만 바꾸므로 A의 문서·증거·감사는 그대로 남고, `set A`로 돌아가면 판정도 복원됩니다.
 
+## Done Criteria 또는 stale Phase 05 승인으로 차단됨
+
+같은 stem의 Phase 00만 먼저 수정하세요. 정확한 `## 5. Done Criteria`, 양의
+`Done-Criteria-Revision`, `[ ]`·`[x]`·사유 있는 `[~]` 형식을 복구합니다. 기준 문구나 범위가
+바뀌었다면 revision을 올리고 Changed-At·Reason·Affected-Phases·Summary를 기록한 뒤 영향 phase를
+순서대로 재실행합니다. 기존 Phase 05 승인은 재사용하지 말고 새 review loop를 `--cycle-stem`과
+함께 수행한 뒤, APPROVED close가 출력한 `Phase00-Hash`와 새 `Loop-Run`을 Phase 05에 기록하세요.
+Phase 00과 후속 phase를 한 번에 수정하면 pre-write 상태를 검증할 수 없어 차단되므로 나눠서 씁니다.
+
 ## 사이클을 끝냈는데 다음 작업이 "이미 완결된 사이클"로 막힘
 
 선언은 셸을 넘겨 살아남습니다. 끝난 사이클의 선언이 남아 있으면 새 작업이 거기 결속되고, 게이트가

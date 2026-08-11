@@ -17,6 +17,7 @@ from unittest import mock
 import yaml
 
 from sage import ci_authority
+from sage.done_criteria_contract import phase00_text_hash
 from sage.cli import main as cli_main
 from sage.commands import authority
 
@@ -105,6 +106,79 @@ def _claims(result, now=None):
 
 
 class PureAuthorityTests(unittest.TestCase):
+    def _done_request(self, mode="enforce", unresolved=False, revision=1,
+                      phase05_revision=None, approve_marker="APPROVED"):
+        request = _request()
+        request["head_profile"]["pdca"] = {
+            "approve_marker": approve_marker,
+            "base_plan": {"done_criteria_gate": mode}}
+        plan = (
+            f"Cycle-Stem: `{STEM}`\nRisk Level: L3\n"
+            f"Done-Criteria-Revision: {revision}\n\n## 5. Done Criteria\n\n"
+            + ("- [ ] protected result\n" if unresolved else "- [x] protected result\n")
+        )
+        if revision > 1:
+            plan += (f"\n## 6. Done Criteria Revision Log\n\n### Revision {revision}\n"
+                     "- Changed-At: Phase 05\n- Reason: approval scope changed\n"
+                     "- Affected-Phases: 05\n- Summary: rerun independent review\n")
+        digest = phase00_text_hash(plan)
+        request["phase_docs"]["00"][0]["content"] = plan
+        request["phase_docs"]["05"][0]["content"] = request["phase_docs"]["05"][0][
+            "content"].replace("Final Status: APPROVED", f"Final Status: {approve_marker}")
+        if phase05_revision is not None:
+            request["phase_docs"]["05"][0]["content"] += (
+                f"Done-Criteria-Revision: {phase05_revision}\n")
+        request["phase_docs"]["05"][0]["content"] += (
+            f"Loop-Run: rl-authority-done\nPhase00-Hash: {digest}\n")
+        ci_authority._trusted_gate_modules()
+        import loop_audit
+        with tempfile.TemporaryDirectory() as root:
+            loop_audit.open_loop(
+                root, "L3", run_id="rl-authority-done", cycle_stem=STEM)
+            loop_audit.record_round(root, "rl-authority-done", 1, 0, 0, 0)
+            loop_audit.close_loop(
+                root, "rl-authority-done", "APPROVED", "DRY", 1,
+                phase00_hash=digest)
+            request["loop_audit"] = Path(loop_audit.audit_path(root)).read_text(encoding="utf-8")
+        return request
+
+    def test_done_criteria_authority_honours_custom_approve_marker(self):
+        request = self._done_request(approve_marker="SHIPPED")
+        result = ci_authority.analyze(request, classifier=_classifier)
+        self.assertEqual("PASS", result["status"], result["reasons"])
+
+    def test_done_criteria_enforce_binds_current_plan_review_and_loop(self):
+        request = self._done_request()
+        result = ci_authority.analyze(request, classifier=_classifier)
+        self.assertEqual("PASS", result["status"], result["reasons"])
+
+        request["phase_docs"]["00"][0]["content"] += "\nchanged after approval\n"
+        result = ci_authority.analyze(request, classifier=_classifier)
+        self.assertEqual("BLOCK", result["status"])
+        self.assertTrue(any("Phase00-Hash" in reason for reason in result["reasons"]))
+
+    def test_done_criteria_unresolved_is_block_or_advisory_by_mode(self):
+        enforced = ci_authority.analyze(
+            self._done_request(unresolved=True), classifier=_classifier)
+        self.assertEqual("BLOCK", enforced["status"])
+        self.assertTrue(any("unresolved" in reason for reason in enforced["reasons"]))
+
+        advisory = ci_authority.analyze(
+            self._done_request(mode="advisory", unresolved=True), classifier=_classifier)
+        self.assertEqual("PASS", advisory["status"], advisory["reasons"])
+        self.assertTrue(any("unresolved" in item for item in advisory["advisories"]))
+
+    def test_done_criteria_authority_requires_affected_phase05_current_revision(self):
+        stale = ci_authority.analyze(
+            self._done_request(revision=2, phase05_revision=1), classifier=_classifier)
+        self.assertEqual("BLOCK", stale["status"])
+        self.assertTrue(any("Phase 05" in reason and "revision" in reason
+                            for reason in stale["reasons"]), stale["reasons"])
+
+        current = ci_authority.analyze(
+            self._done_request(revision=2, phase05_revision=2), classifier=_classifier)
+        self.assertEqual("PASS", current["status"], current["reasons"])
+
     def test_protected_adapter_materializes_domain_l0_exclusions(self):
         profile = {
             "risk": {

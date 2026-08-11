@@ -260,6 +260,10 @@ echo "### 46. protected CI authority (base/head max-risk + exact evidence + atte
 python3 "$HERE/test_ci_authority.py" || rc=1
 
 echo ""
+echo "### 46a. Phase 00 Done Criteria (3-state parser + revision + local/server approval binding)"
+python3 "$HERE/test_done_criteria.py" || rc=1
+
+echo ""
 echo "### 47. manual double-host (desired/actual/active host + opposite reviewer)"
 python3 "$HERE/test_runtime_hosts.py" || rc=1
 

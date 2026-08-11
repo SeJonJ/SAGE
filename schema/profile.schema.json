@@ -335,6 +335,20 @@
         "approve_marker": {
           "type": "string"
         },
+        "base_plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Phase 00 Done Criteria progressive and final gate policy.",
+          "properties": {
+            "done_criteria_gate": {
+              "enum": [
+                "off",
+                "advisory",
+                "enforce"
+              ]
+            }
+          }
+        },
         "review_loop": {
           "type": "object",
           "additionalProperties": false,

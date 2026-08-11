@@ -92,7 +92,7 @@ Load `cfg = pdca.review_loop`. Open the audit trail and capture the run id, reco
 
 ```
 REQ=$( [ cross_model true ] && echo cross_model || echo same_runtime )
-RUN_ID=$(sage review-loop open --risk <L2|L3> --reviewer-requested $REQ)
+RUN_ID=$(sage review-loop open --risk <L2|L3> --reviewer-requested $REQ --cycle-stem <stem>)
 ```
 
 `sage review-loop` auto-discovers the project root (the dir holding `sage/project-profile.yaml`),
@@ -160,6 +160,11 @@ can flag a degraded cross-model run — `$ACTUAL` from `sage cross-check`, or `s
 ```
 sage review-loop close --run-id $RUN_ID --result <APPROVED|BLOCKED> --reason <REASON> --iterations <n> --reviewer-actual $ACTUAL
 ```
+
+Before an APPROVED close, resolve every Phase 00 Done Criteria item and verify every
+affected Phase document declares the current `Done-Criteria-Revision`. The close command
+prints `Phase00-Hash: sha256:...`; copy that exact line into the Phase-05 document with
+`Loop-Run: $RUN_ID`. A later Phase 00 edit makes this approval stale and requires a new loop.
 
 **Record the run id in the Phase-05 doc** — add exactly one line `Loop-Run: $RUN_ID` outside
 fenced code blocks in this cycle's exact-`Cycle-Stem` Phase-05 document. The 06←05 audit gate

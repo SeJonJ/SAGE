@@ -82,6 +82,9 @@ Hand off to the `leader` agent with this briefing:
   higher of the user-declared level and the risk the change globs imply. This is the
   durable per-cycle tier used by later gates and knowledge write-back. Fill exactly one
   declaration with a real `L1`/`L2`/`L3`; never leave the `<L1|L2|L3>` placeholder.
+- Required: record `Done-Criteria-Revision: 1` and exactly one `## 5. Done Criteria`.
+  Translate confirmed outcomes into concrete `[ ]` items. Planning does not prove
+  implementation completion, so do not pre-check them and do not leave TODO.
 
 ## Step 3 — Verify plan doc exists
 
@@ -96,6 +99,8 @@ Also confirm the 00 base plan carries exactly one filled `Risk Level: L1`/`L2`/`
 line outside code fences (not the `<L1|L2|L3>` placeholder). If it is missing,
 unfilled, malformed, or duplicated, block and ask the leader to repair Phase 00 before
 handoff. Later-phase and governed source writes fail closed without this declaration.
+Also reject a missing/malformed/duplicate Done Criteria section, a missing revision 1,
+an empty list, or placeholder-only criteria before handoff.
 
 After all stem and risk checks pass, declare the verified identity:
 

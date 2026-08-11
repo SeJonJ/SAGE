@@ -133,6 +133,7 @@ is on and reachable — `docs/agent/review-protocol.md`).
 
 Cycle-Stem: `{phase-document-basename}`
 Risk Level: <L1|L2|L3>
+Done-Criteria-Revision: 1
 <!-- required: this cycle's max risk — the higher of the user-declared level and the risk the change globs
      imply. Replace <...> with one of L1/L2/L3. Knowledge write-back reads this exact `Risk Level: Lx` line
      to size the note (the durable per-cycle tier that survives session resume); the 06 acceptance-evidence
@@ -154,7 +155,20 @@ Risk Level: <L1|L2|L3>
 
 ## 4. Final Conclusion & UX Guide
 
-## 5. Document Mapping (Checklist)
+## 5. Done Criteria
+- [ ] {concrete user-visible or engineering completion outcome}
+
+## 6. Done Criteria Revision Log
+
+Initial revision 1. No replanning record.
+
+<!-- For revision 2+, increment Done-Criteria-Revision and append:
+### Revision 2
+- Changed-At: Phase 04
+- Reason: {why the approved plan was insufficient}
+- Affected-Phases: 02, 03, 04, 05
+- Summary: {what changed and what must be rerun}
+-->
 ```
 
 ---
@@ -165,6 +179,7 @@ Risk Level: <L1|L2|L3>
 # [Plan] {Feature Name}
 
 Cycle-Stem: `{phase-document-basename}`
+Done-Criteria-Revision: 1
 ## 1. User Stories & Requirements
 
 ## 2. Data Schema (Entities, DTOs)
@@ -185,6 +200,7 @@ Cycle-Stem: `{phase-document-basename}`
 # [Design] {Feature Name}
 
 Cycle-Stem: `{phase-document-basename}`
+Done-Criteria-Revision: 1
 ## 1. Architecture & Interface Design
 
 ## 2. Sequence Diagrams
@@ -200,6 +216,7 @@ Cycle-Stem: `{phase-document-basename}`
 # [Implementation] {Feature Name}
 
 Cycle-Stem: `{phase-document-basename}`
+Done-Criteria-Revision: 1
 ## 0. Pre-Implementation Checklist
 - [ ] File ownership assigned before source edits
 - [ ] Acceptance IDs from Phase 01 mapped to implementation tasks
@@ -227,6 +244,7 @@ Cycle-Stem: `{phase-document-basename}`
 # [Analyze] {Feature Name}
 
 Cycle-Stem: `{phase-document-basename}`
+Done-Criteria-Revision: 1
 **Reviewer:** leader (responsible)  **Contributor:** qa (coverage)  **Date:** {YYYY-MM-DD}
 
 > 04 issues no standalone verdict. The verdict is issued in 05.
@@ -259,6 +277,9 @@ Cycle-Stem: `{phase-document-basename}`
 # [Expert Review] {Feature Name}
 
 Cycle-Stem: `{phase-document-basename}`
+Done-Criteria-Revision: 1
+Loop-Run: {run_id}
+Phase00-Hash: sha256:{hash printed by APPROVED sage review-loop close}
 **Reviewer Role:** reviewer (synthesis) (+ cross-model reviewer when enabled)
 **Review Date:** {YYYY-MM-DD}
 **Final Status:** {APPROVED | FAIL | BLOCKED — replace with exactly one value}
@@ -324,6 +345,7 @@ only when the item was explicitly out of scope, deferred, or user-approved.
 # [Report] {Feature Name}
 
 Cycle-Stem: `{phase-document-basename}`
+Done-Criteria-Revision: 1
 Loop-Run: {run_id}
 Source-05: {root-relative path of the APPROVED Phase 05 doc}
 

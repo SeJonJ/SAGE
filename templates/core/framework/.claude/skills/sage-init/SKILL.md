@@ -263,6 +263,12 @@ toggle's detail entirely when it stays off.
   whether `knowledge_capture.fast_cycle_dashboard` should be enabled. This is a
   shared automation flag; the private path remains local. `sage-init-local` does
   not own or modify `pdca.fast_cycle`.
+- **Phase 00 Done Criteria gate (`pdca.base_plan.done_criteria_gate`)** — always ask
+  the shared `off | advisory | enforce` question from `bootstrap-authoring.md` during
+  first authoring. Recommend `advisory` for a new project, but record the user's actual
+  choice. Explain that 01–04 may retain `[ ]`, while APPROVED/06 requires resolved
+  criteria and a fresh approval after reasoned replanning. This is shared policy and is
+  never delegated to `sage-init-local`.
 - **`options.codegraph` / `codegraph`** — toggle and MCP name.
 
 MCP servers themselves are governed as the `mcp` asset kind

@@ -83,6 +83,22 @@ file existence:
 Start at the first stage whose anchor is absent. A doc that merely exists without its
 anchor is treated as incomplete (conservative).
 
+### Phase 00 Done Criteria at every boundary
+
+Before entering each remaining phase, re-open the exact-stem Phase 00. `[ ]` is normal
+progress, `[x]` means demonstrated completion, and `[~]` resolves only with a same-line
+`(N/A: reason)`. After Phase 03 implementation and Phase 04 verification, update only
+the criteria proven by that evidence. Do not mark an item complete because work merely
+started.
+
+Changing criterion text/scope, adding or deleting an item, reverting completion, or
+excluding an item is replanning. Increment `Done-Criteria-Revision`, append the required
+Changed-At/Reason/Affected-Phases/Summary record, then rerun affected phases in order and
+stamp each affected document with the current revision. A normal `[ ]` to `[x]` progress
+update is not replanning. Any prior Phase 05 approval becomes stale; run a new review loop.
+All criteria must resolve before APPROVED and must still resolve with the fresh hash-bound
+approval immediately before Phase 06.
+
 ## Step 1 — Implementation (Phase 03)
 
 Before source edits, open/update the 03 doc with file ownership, implementation

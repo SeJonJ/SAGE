@@ -223,8 +223,13 @@ Fast-Lenses: correctness, error_handling
 Fast-Reason: production outage
 Fast-Audit-Run: pending
 Status: IN PROGRESS
+Done-Criteria-Revision: 1
 
 ## Phase 00 — Base Plan
+### Done Criteria
+- [ ] hotfix behavior is verified
+
+### Document Mapping (Checklist)
 - [x] Phase 00 context complete
 - [x] Phase 01 requirements and acceptance matrix embedded
 - [x] Phase 02 design and failure handling embedded
@@ -247,6 +252,49 @@ Status: PENDING — implementation not started
         env = dict(os.environ, PYTHONPATH=REPO)
         return subprocess.run([sys.executable, "-m", "sage", *args, "--root", self.root],
                               text=True, capture_output=True, env=env, cwd=self.root)
+
+    def _set_done_mode(self, mode):
+        import yaml
+        path = Path(self.root, "sage", "project-profile.yaml")
+        profile = yaml.safe_load(path.read_text(encoding="utf-8"))
+        profile["pdca"]["base_plan"] = {"done_criteria_gate": mode}
+        path.write_text(yaml.safe_dump(profile, sort_keys=False), encoding="utf-8")
+
+    def test_done_criteria_mode_controls_fast_open(self):
+        plan_path = Path(self.root, "plan_docs", "00-base_plan", "hotfix.md")
+        without_done = plan_path.read_text(encoding="utf-8").replace(
+            "### Done Criteria\n- [ ] hotfix behavior is verified\n\n", "")
+        plan_path.write_text(without_done, encoding="utf-8")
+
+        off = self._run("fast-cycle", "open", "--stem", "hotfix", "--level", "L2",
+                        "--lens-count", "2", "--reason", "production outage")
+        self.assertEqual(off.returncode, 0, off.stderr)
+        self.assertNotIn("Done Criteria advisory", off.stderr)
+        run_id = off.stdout.strip()
+        self.assertEqual(self._run("fast-cycle", "abort", "--run-id", run_id,
+                                   "--reason", "mode check").returncode, 0)
+
+        Path(self.root, ".sage", "fast_cycle.jsonl").unlink()
+        plan_path.write_text(without_done.replace(f"Fast-Audit-Run: {run_id}",
+                                                  "Fast-Audit-Run: pending"), encoding="utf-8")
+        self._set_done_mode("advisory")
+        advisory = self._run("fast-cycle", "open", "--stem", "hotfix", "--level", "L2",
+                             "--lens-count", "2", "--reason", "production outage")
+        self.assertEqual(advisory.returncode, 0, advisory.stderr)
+        self.assertIn("Done Criteria advisory", advisory.stderr)
+        advisory_run = advisory.stdout.strip()
+        self.assertEqual(self._run("fast-cycle", "abort", "--run-id", advisory_run,
+                                   "--reason", "mode check").returncode, 0)
+
+        Path(self.root, ".sage", "fast_cycle.jsonl").unlink()
+        plan_path.write_text(without_done.replace(f"Fast-Audit-Run: {advisory_run}",
+                                                  "Fast-Audit-Run: pending"), encoding="utf-8")
+        self._set_done_mode("enforce")
+        enforced = self._run("fast-cycle", "open", "--stem", "hotfix", "--level", "L2",
+                             "--lens-count", "2", "--reason", "production outage")
+        self.assertEqual(enforced.returncode, 2)
+        self.assertIn("Done Criteria", enforced.stderr)
+        self.assertFalse(Path(self.root, ".sage", "fast_cycle.jsonl").exists())
 
     def test_open_binds_plan_and_writes_warning_and_audit(self):
         proc = self._run("fast-cycle", "open", "--stem", "hotfix", "--level", "L2",
@@ -411,7 +459,8 @@ Status: PENDING — implementation not started
         fast_run = opened.stdout.strip()
         plan_path = Path(self.root, "plan_docs", "00-base_plan", "hotfix.md")
         plan_path.write_text(plan_path.read_text(encoding="utf-8").replace(
-            "Status: PENDING — implementation not started", "Status: COMPLETE\nEvidence: A1 PASS"),
+            "Status: PENDING — implementation not started", "Status: COMPLETE\nEvidence: A1 PASS").replace(
+            "- [ ] hotfix behavior is verified", "- [x] hotfix behavior is verified"),
             encoding="utf-8")
         Path(self.root, "plan_docs", "05-expert-review").mkdir(parents=True)
         review_path = Path(self.root, "plan_docs", "05-expert-review", "hotfix.md")
@@ -464,6 +513,41 @@ Status: PENDING — implementation not started
         self.assertEqual(rereviewed.returncode, 0, rereviewed.stderr)
         closed = self._run("fast-cycle", "close", "--run-id", fast_run)
         self.assertEqual(closed.returncode, 0, closed.stderr)
+
+    def test_done_criteria_advisory_does_not_block_fast_review_or_close(self):
+        self._set_done_mode("advisory")
+        opened = self._run("fast-cycle", "open", "--stem", "hotfix", "--level", "L2",
+                           "--lens-count", "2", "--reason", "production outage")
+        self.assertEqual(opened.returncode, 0, opened.stderr)
+        fast_run = opened.stdout.strip()
+        plan_path = Path(self.root, "plan_docs", "00-base_plan", "hotfix.md")
+        plan_path.write_text(plan_path.read_text(encoding="utf-8").replace(
+            "Status: PENDING — implementation not started", "Status: COMPLETE\nEvidence: A1 PASS"),
+            encoding="utf-8")
+
+        Path(self.root, "plan_docs", "05-expert-review").mkdir(parents=True)
+        review_path = Path(self.root, "plan_docs", "05-expert-review", "hotfix.md")
+        import loop_audit as la
+        loop_run = la.open_loop(self.root, "L3", run_id="rl-fast-advisory", cycle_stem="hotfix",
+                                lenses=["correctness", "error_handling"])
+        la.record_round(self.root, loop_run, 1, 0, 0, 0,
+                        lens_receipts=["correctness", "error_handling"])
+        la.close_loop(self.root, loop_run, "APPROVED", "DRY", 1)
+        evidence = (f"Fast-Run: {fast_run}\nLoop-Run: {loop_run}\n"
+                    "Final Status: APPROVED\n")
+        review_path.write_text(evidence, encoding="utf-8")
+
+        reviewed = self._run("fast-cycle", "review", "--run-id", fast_run,
+                             "--loop-run-id", loop_run)
+        self.assertEqual(reviewed.returncode, 0, reviewed.stderr)
+        self.assertIn("Done Criteria advisory at review", reviewed.stderr)
+
+        Path(self.root, "plan_docs", "06-report").mkdir(parents=True)
+        Path(self.root, "plan_docs", "06-report", "hotfix.md").write_text(
+            evidence, encoding="utf-8")
+        closed = self._run("fast-cycle", "close", "--run-id", fast_run)
+        self.assertEqual(closed.returncode, 0, closed.stderr)
+        self.assertIn("Done Criteria advisory at close", closed.stderr)
 
     def test_show_can_derive_one_project_dashboard_in_explicit_vault(self):
         opened = self._run("fast-cycle", "open", "--stem", "hotfix", "--level", "L2",

@@ -388,6 +388,109 @@ def _fast_evidence_reasons(request, selected, cycle_stem):
     return reasons
 
 
+def _done_criteria_evidence(request, selected, cycle_stem, profile):
+    """Return blocking reasons and advisory diagnostics for the selected Phase 00."""
+    pdca = profile.get("pdca") if isinstance(profile, dict) else None
+    base_plan = pdca.get("base_plan") if isinstance(pdca, dict) else None
+    mode = base_plan.get("done_criteria_gate", "off") if isinstance(base_plan, dict) else "off"
+    if mode == "off":
+        return [], []
+    if mode not in ("advisory", "enforce"):
+        return [f"invalid pdca.base_plan.done_criteria_gate={mode!r}"], []
+
+    diagnostics = []
+    plan_doc = selected.get("00") if isinstance(selected, dict) else None
+    if not plan_doc:
+        diagnostics.append("Done Criteria authority requires selected Phase 00")
+    else:
+        from sage.done_criteria_contract import (
+            document_revision,
+            parse_done_criteria,
+            phase00_text_hash,
+        )
+        content = plan_doc.get("content") or ""
+        parse_mode = "fast" if re.search(r"(?m)^Cycle-Mode:\s*FAST\s*$", content) else "standard"
+        result = parse_done_criteria(content, mode=parse_mode)
+        diagnostics.extend(f"Phase 00 Done Criteria: {issue}" for issue in result.issues)
+        diagnostics.extend(
+            f"Phase 00 Done Criteria unresolved at line {item.line}: {item.text}"
+            for item in result.unresolved
+        )
+
+        if result.status == "valid" and parse_mode == "standard":
+            if result.latest_revision is not None:
+                for phase in result.latest_revision.affected_phases:
+                    phase_doc = selected.get(phase)
+                    if not phase_doc:
+                        diagnostics.append(f"affected Phase {phase} is missing for revision {result.revision}")
+                        continue
+                    revision, revision_issues = document_revision(phase_doc.get("content"))
+                    if revision_issues or revision != result.revision:
+                        diagnostics.append(
+                            f"affected Phase {phase} revision={revision!r}, expected={result.revision}")
+
+            review_doc = selected.get("05")
+            review_text = (review_doc or {}).get("content") or ""
+            core, _cycle_binding = _trusted_gate_modules()
+            final_status, status_error = core._final_status(review_text)
+            marker = str(pdca.get("approve_marker") or "APPROVED").upper()
+            if status_error or final_status != marker:
+                diagnostics.append(
+                    f"Phase 05 is not exactly {marker}: {status_error or final_status}")
+            hash_values = []
+            run_ids = []
+            for raw in core._non_fenced_lines(review_text):
+                line = core._structured_declaration_line(raw)
+                hash_match = re.fullmatch(
+                    r"Phase00-Hash:\s*(sha256:[0-9a-f]{64})", line)
+                run_match = re.fullmatch(r"Loop-Run:\s*(\S+)", line, re.IGNORECASE)
+                if hash_match:
+                    hash_values.append(hash_match.group(1))
+                if run_match:
+                    run_ids.append(run_match.group(1))
+            current_hash = phase00_text_hash(content)
+            if len(hash_values) != 1 or hash_values[0] != current_hash:
+                diagnostics.append(
+                    f"Phase 05 Phase00-Hash does not bind current Phase 00: "
+                    f"current={current_hash}, declared={hash_values}")
+            if len(run_ids) != 1:
+                diagnostics.append(
+                    f"Phase 05 Loop-Run must appear exactly once for Done Criteria authority; "
+                    f"found={len(run_ids)}")
+            else:
+                _trusted_gate_modules()
+                import loop_audit
+                try:
+                    raw = request.get("loop_audit")
+                    if not isinstance(raw, str):
+                        raise ValueError("committed Loop audit text is required")
+                    records, file_issues = loop_audit._parse_bytes(raw.encode("utf-8"))
+                except Exception as exc:
+                    diagnostics.append(
+                        f"Loop audit parse failed closed: {type(exc).__name__}: {exc}")
+                else:
+                    diagnostics.extend(f"Loop audit: {issue}" for issue in file_issues)
+                    run_id = run_ids[0]
+                    run = [record for record in records if record.get("run_id") == run_id]
+                    events = [record.get("event") for record in run]
+                    close = run[-1] if run else {}
+                    if (events.count("loop_open") != 1 or events.count("loop_close") != 1
+                            or events[-1:] != ["loop_close"]):
+                        diagnostics.append(f"Loop run {run_id!r} is not uniquely open/closed")
+                    elif (loop_audit._chain_states(records).get(run_id) is not True
+                          or loop_audit._seq_ok([record.get("seq") for record in run]) is not True):
+                        diagnostics.append(f"Loop run {run_id!r} lacks strict chain/sequence integrity")
+                    else:
+                        opened = next(record for record in run if record.get("event") == "loop_open")
+                        if (opened.get("cycle_stem") != cycle_stem
+                                or close.get("result") != "APPROVED"
+                                or close.get("phase00_hash") != current_hash):
+                            diagnostics.append(
+                                f"Loop run {run_id!r} does not bind cycle/result/current Phase 00 hash")
+
+    return (diagnostics, []) if mode == "enforce" else ([], diagnostics)
+
+
 def _declared_risk(selected: dict[str, dict[str, Any]], cycle_binding, core):
     found = []
     for doc in selected.values():
@@ -434,6 +537,7 @@ def _acceptance_evidence(selected: dict[str, dict[str, Any]], core):
 def analyze(request: dict[str, Any], classifier: Callable | None = None) -> dict[str, Any]:
     """Pure deterministic diff, policy, and current-cycle evidence analysis."""
     reasons = []
+    advisories = []
     if not isinstance(request, dict):
         return {"status": "BLOCK", "exit_code": 2, "risk": "unknown",
                 "reasons": ["authority request must be an object"]}
@@ -472,10 +576,18 @@ def analyze(request: dict[str, Any], classifier: Callable | None = None) -> dict
             reasons.extend(phase_errors)
         if not phase_errors:
             reasons.extend(_fast_evidence_reasons(request, selected, cycle_stem))
+            done_reasons, done_advisories = _done_criteria_evidence(
+                request, selected, cycle_stem, request.get("head_profile"))
+            reasons.extend(done_reasons)
+            advisories.extend(done_advisories)
             if risk == "L3":
                 status, error = core._final_status(selected["05"].get("content") or "")
-                if error or status != "APPROVED":
-                    reasons.append(f"Phase 05 is not exactly APPROVED: {error or status}")
+                head_profile = request.get("head_profile")
+                pdca = head_profile.get("pdca") if isinstance(head_profile, dict) else None
+                marker = str(pdca.get("approve_marker") or "APPROVED").upper() \
+                    if isinstance(pdca, dict) else "APPROVED"
+                if error or status != marker:
+                    reasons.append(f"Phase 05 is not exactly {marker}: {error or status}")
                 reasons.extend(_acceptance_evidence(selected, core))
     return {
         "status": "BLOCK" if reasons else "PASS",
@@ -487,6 +599,7 @@ def analyze(request: dict[str, Any], classifier: Callable | None = None) -> dict
         "cycle_stem": cycle_stem,
         "selected_phases": {phase: doc.get("path") for phase, doc in selected.items()},
         "reasons": reasons,
+        "advisories": advisories,
     }
 
 

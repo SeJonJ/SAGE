@@ -505,28 +505,42 @@ EH-11 은 9개 하위 중 5개(J-4·J-5·J-6·J-8·J-9)를 `v0.9.78` 로 냈고
 
 ---
 
-## EH-19 — Phase 00 체크리스트(Document Mapping)를 검증하는 게이트가 없다
+## EH-19 — Phase 00 Done Criteria 진행·재계획·최종 승인 결속 게이트
 
-- **배경**: `templates/core/framework/docs/agent/pdca-templates.md`의 Phase 00 템플릿은 `## 5. Document
-  Mapping (Checklist)` 섹션을 명시적으로 갖는다. 그러나 유일하게 체크리스트 미완료를 검사하는 게이트인
-  `pre-phase4-checklist-gate`(`scripts/sage_harness/hooks/pre_phase4_checklist_gate_core.py`)는
-  profile의 `checklist_scan_targets`만 스캔하며, 기본값은 03-implementation + 컴포넌트 plan_docs이다.
-  코드 전체에 `00-base_plan`을 스캔 대상으로 삼는 로직이 없다(2026-08-10 코드 조사로 확인, grep 0건).
-- **문제**: 실사용에서는 그 섹션 이름조차 안 쓴다 — `plan_docs/00-base_plan/*.md` 21개 실 파일 중
-  어느 것도 `- [ ]` 체크박스나 "Document Mapping (Checklist)" 헤더를 쓰지 않고, 전부 "Done Criteria"
-  (번호 매긴 산문, 체크 불가능한 형식)로 드리프트했다. 즉 Phase 00은 "체크리스트라 이름 붙었지만
-  아무도 체크되는지 확인하지 않는" 상태다 — 있으나 마나 한 섹션이고, 실제 산출물 형식도 이미
-  그 사실을 반영해 스스로 벗어나 있다.
-- **접근(스케치, 설계 아님)**: (1) 템플릿의 "Checklist" 명칭과 실제 "Done Criteria" 산문 관행 중
-  하나로 정정 통일한다. (2) 체크박스 형식으로 통일한다면 `checklist_scan_targets`에 00-base_plan을
-  포함하는 옵션을 profile에 제공하거나, 04 트리거와 별개로 01/02 전환 시점에 00 완료 기준을 검사하는
-  경량 게이트를 검토한다. (3) 통일하지 않고 "Done Criteria는 애초에 체크박스가 아니라 검증 대상이
-  아니다"로 명시적 비-스코프 처리하는 안도 배제하지 않는다 — 결정은 설계 단계에서.
-- **규모/위험**: 낮음~중간. 템플릿 문서 정정은 작지만, 게이트 신설은 새 스캔 대상·profile 키·회귀를
-  동반한다.
-- **트리거**: Phase 00 Done Criteria가 실제로 미충족인 채 06까지 통과한 사례가 관측되거나, 템플릿·
-  실사용 불일치를 정리할 여유가 생길 때.
-- **상태**: 미착수. 2026-08-10 사용자 지적으로 확인·등록.
+- **배경**: `templates/core/framework/docs/agent/pdca-templates.md`의 Phase 00 템플릿은 비어 있는
+  `Document Mapping (Checklist)`를 제공하지만 실제 완료 기준은 임의 산문으로 작성되고 어떤 게이트도
+  상태를 검사하지 않는다. 2026-08-11 재실측한 `plan_docs/00-base_plan/*.md` 34개 중 exact
+  `Done Criteria` heading은 13개, `Document Mapping (Checklist)`는 1개, 둘 다 없는 문서는 20개다.
+  과거 문서를 일괄 `[x]`로 바꾸는 것은 근거 없는 완료 증언이라 기각했다.
+- **확정 UX**: 신규 표준 Phase 00은 exact `## 5. Done Criteria`와 `[ ]`(미완료), `[x]`(완료),
+  `[~] ... (N/A: 사유)`(적용 제외) 3상태를 쓴다. Fast composite 00은 `### Done Criteria`와 기존
+  `### Document Mapping (Checklist)`를 별도로 유지한다. 전용 구조 파서가 해당 절만 읽으며 다른 절과
+  fenced code의 checkbox는 제외한다.
+- **Phase별 확인**: Phase 01..04 전환에서는 구조·revision과 진행률을 검사하되 정상 `[ ]`는 허용한다.
+  Phase 05 `APPROVED` 확정에는 미해결 0개와 영향 Phase 재실행을 요구하고, Phase 06에는 같은 조건과
+  최신 승인 결속을 강제한다. profile은 shared-only
+  `pdca.base_plan.done_criteria_gate: off|advisory|enforce`이며 신규 프로젝트 권장은 advisory,
+  기존 profile의 키 부재는 off다.
+- **재계획**: 같은 criterion의 `[ ] -> [x]`는 정상 진행 갱신이다. 항목 추가·삭제·문구 변경,
+  `[x] -> [ ]`, `[ ] -> [~]`는 `Done-Criteria-Revision`을 올리고 Phase 00에 변경 시점·사유·영향
+  Phase·요약을 기록한다. leader가 영향 Phase를 선언하고 해당 Phase를 순서대로 재실행한다. 이미 05가
+  APPROVED였다면 기존 승인과 Loop-Run은 stale이며 새 review loop와 05 승인이 필요하다.
+- **최소 hash 경계**: Phase별·항목별·의미 정규화 hash는 만들지 않는다. Phase 05 APPROVED 시점에만
+  CRLF/CR을 LF로 바꾼 Phase 00 전체 UTF-8 text의 SHA-256 하나를 05와 Loop close record에 결속한다.
+  Phase 06 전 현재 00·05·selected Loop run hash가 같아야 한다. 승인 후 공백·상태를 포함한 어떤 00
+  변경도 stale 승인이며 재리뷰한다. Fast는 기존 전체 Fast Plan hash 계약을 유지한다.
+- **강제 위치**: Stop 사후 차단이 아니라 `pre-implementation-gate`의 Phase 전환·report pre-write와
+  `review-loop` APPROVED 경계, `ci_authority` head-tree 검증에 같은 정본 parser를 사용한다. enforce의
+  구조·revision·미완료·stale 승인 BLOCK은 non-overridable이다. Phase 00 단독 repair는 허용하고 00과
+  후속 Phase를 같은 patch로 고치는 것은 기존 mixed-evidence 규칙으로 차단한다.
+- **하위 호환·범위**: profile 키 부재/off는 기존 동작을 유지하고 완료된 과거 Phase 00·audit은 자동
+  재작성하지 않는다. parser, profile schema/manual/init 대화, standard/Fast template·skills,
+  review-loop/loop audit, local/server gate, 한·영 사용자 문서, wheel·manifest 재스탬프가 구현 범위다.
+- **상태**: `feat/eh-19-done-criteria` 별도 worktree 구현·Claude 적대적 리뷰 3R 완료,
+  local main 통합 진행 중(2026-08-11). R1·R2의 유효 결함 4건은 재현 후 수정했고 R3의 Fast server
+  결속 누락 지적은 기존 독립 Fast authority 검증으로 재현되지 않아 기각했다. none/Claude/Codex 전체
+  hook suite, wheel smoke, all-kind schema/manifest 검증과 diff check 통과.
+  정본: vault `SAGE - Phase 00 Done Criteria 검증 게이트 설계 (EH-19, 26.08.10)`.
 
 ---
 

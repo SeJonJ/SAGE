@@ -40,7 +40,8 @@ a structured review report for the current implementation cycle.
    implementer summary (changed files, unit tests), qa findings, and the Phase 01/04
    acceptance matrix/evidence. Report findings verbatim.
 5. Loop A (find→refute→triage→rework→terminate): drive rounds per review-protocol.md;
-   record each boundary with `sage review-loop` (open/round/close). After each round call
+   record each boundary with `sage review-loop` (open with exact `--cycle-stem <stem>`,
+   then round/close). After each round call
    `sage review-loop next` for the deterministic continue/stop recommendation. Counters,
    budget, and termination are SAGE-owned (deterministic); judgement (find/refute/rework)
    runs in-host.
@@ -49,11 +50,15 @@ a structured review report for the current implementation cycle.
    required IDs, unknown Phase 04 IDs, and `FAIL` block `APPROVED`. `NOT TESTED` also
    blocks unless an exact active L3 waiver preserves the row as residual evidence;
    never convert it to PASS. Use `N/A` only with explicit reasoning.
-7. BLOCK / BLOCKED on an L3 change → record in the plan doc and stop (no release until cleared).
+7. Before an APPROVED close, require Phase 00 Done Criteria to be valid and fully resolved,
+   and require every affected phase to carry the current `Done-Criteria-Revision`. BLOCK /
+   BLOCKED on an L3 change → record in the plan doc and stop (no release until cleared).
    The report←approve hook (06←05 APPROVED) is the deterministic backstop — never bypass it.
 8. Record the outcome under `## Phase-05 Review` (Loop A: include Review Loop Iterations
    table + audit run_id). Write exactly one `Loop-Run: <run_id>` line outside fenced code blocks in the Phase-05 doc so the
    06←05 audit gate (report_gate_enforce) can bind the report to this closed APPROVED run.
+   Copy the exact `Phase00-Hash: sha256:...` printed by an APPROVED `review-loop close`
+   into the same Phase-05 document; never calculate or infer a different hash in prose.
    Record exactly one anchored `Final Status: APPROVED | FAIL | BLOCKED` line outside
    fenced code blocks and replace every placeholder before Phase 06 is written in a separate change.
 
