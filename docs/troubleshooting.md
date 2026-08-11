@@ -118,6 +118,25 @@ unset SAGE_CYCLE_STEM                # env로 선언했다면
 차단 메시지가 결속을 **선언된**으로 읽었는지 **브랜치에서 추론한**으로 읽었는지 알려주므로, 어느 쪽을
 지워야 하는지는 안내를 보고 판단하면 됩니다.
 
+## `sage fast-cycle open`이 rejected로 거부됨
+
+```
+⛔ [sage fast-cycle] open rejected: pdca.fast_cycle.enabled=true is required
+⛔ [sage fast-cycle] open rejected: lens-count must be at least 2 for L2
+⛔ [sage fast-cycle] open rejected: lens-count exceeds configured candidates (3)
+```
+
+Fast Cycle은 시작 시점에 공유 정책이 허용한 최소 조건을 전부 채워야 합니다. `enabled=true` 오류는
+`sage/project-profile.yaml`의 `pdca.fast_cycle.enabled`가 꺼져 있다는 뜻이고, `lens-count` 오류는
+`--lens-count`가 해당 risk level의 `minimum_lenses`보다 적거나 `lenses` 후보 수보다 많다는 뜻입니다.
+사유(`--reason`)가 비어 있거나 형식이 안 맞아도 같은 방식으로 거부됩니다.
+
+```bash
+sage fast-cycle open --stem <stem> --level L2 --lens-count 2 --reason "짧은 사유"
+```
+
+`reason_required`는 profile에서 완화할 수 없으므로, 값을 채워 다시 시도하는 것 외에 우회 경로는 없습니다.
+
 ## `sage cycle clear`가 활성 Fast run 때문에 막힘
 
 Fast 감사가 열린 상태에서 선언부터 지우면 이후 증거가 다른 stem에 결속될 수 있어 fail-closed로 막습니다.

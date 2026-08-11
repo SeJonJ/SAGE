@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:b11dbcc953312ba3ba5585191bfb3eead57f1fdeab68e619ad331107c01789c2 -->
+<!-- sage-doc-source: troubleshooting.md sha256:5c1ce5990af433da35fcf97c8ab517acc28debc4b60b35f9fc4aa33f12eb71c8 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -128,6 +128,26 @@ unset SAGE_CYCLE_STEM                # if you declared it through the environmen
 
 The block message states whether the binding was read as **declared** or **inferred from the
 branch**, so the guidance tells you which one to clear.
+
+## `sage fast-cycle open` is rejected
+
+```
+⛔ [sage fast-cycle] open rejected: pdca.fast_cycle.enabled=true is required
+⛔ [sage fast-cycle] open rejected: lens-count must be at least 2 for L2
+⛔ [sage fast-cycle] open rejected: lens-count exceeds configured candidates (3)
+```
+
+Fast Cycle requires every minimum the shared policy sets to be satisfied before it starts. The
+`enabled=true` error means `pdca.fast_cycle.enabled` is off in `sage/project-profile.yaml`. The
+`lens-count` errors mean `--lens-count` is below that risk level's `minimum_lenses` or above the
+number of configured `lenses` candidates. An empty or malformed `--reason` is rejected the same way.
+
+```bash
+sage fast-cycle open --stem <stem> --level L2 --lens-count 2 --reason "short reason"
+```
+
+`reason_required` cannot be relaxed from the profile, so filling in a valid value and retrying is
+the only path — there is no bypass.
 
 ## `sage cycle clear` is blocked by an active Fast run
 

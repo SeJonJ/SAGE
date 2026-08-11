@@ -62,6 +62,10 @@ Claude Code 에서 exit 0 평문 stdout 이 컨텍스트로 올라가는 이벤�
 - 06←05 우회 — 완료 보고를 APPROVED된 리뷰에 결정론으로 묶음
 - Loop A 감사 증거의 비재해시 수정·삽입·중간 삭제·재정렬 — run별 strict hash-chain,
   레코드 self-hash, 파일 파싱 무결성을 실제 report gate가 검산
+- 로컬 hook 부재·우회 — 로컬 hook은 기여자 머신에 SAGE가 설치돼 있다는 전제 위에서만 동작한다.
+  SD-9/Fast Cycle은 서버측 authority(`sage/ci_authority.py`, 순수·git 비의존)가 CI에서
+  `.sage/fast_cycle.jsonl`·`loop_audit.jsonl`의 strict hash-chain을 독립 재검증해, hook이 없거나
+  우회된 기여자의 PR도 required check로 걸러낸다 — 로컬 게이트가 유일한 방어선이 아니다
 
 **막지 않는 것 (설계상 범위 밖)**
 - **완전히 장악된 host runtime** — SAGE는 host가 규칙대로 CLI/스킬을 호출한다고 가정합니다.

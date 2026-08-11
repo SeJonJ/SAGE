@@ -60,6 +60,11 @@ cross_model:
 `active_host: auto`는 현재 실행 환경에서 host를 감지합니다. Phase 05 cross-model review는 실제 active
 host를 제외한 runtime을 선택합니다. peer CLI에 도달하지 못하면 required 정책은 BLOCKED입니다.
 
+`cross_model.policy`는 `required | recommended | off`입니다. `required`는 로컬 profile에서
+`cross_model.enabled: false`로 완화할 수 없습니다(local이 공유 정책을 완화 불가). `on_unavailable`은
+peer CLI에 도달하지 못했을 때의 처리이며 `block`(기본, required 정책에서 사실상 강제)이거나
+`clean_context_same_runtime`(같은 runtime의 새 세션으로 대체)입니다.
+
 ### Risk
 
 ```yaml
@@ -71,11 +76,39 @@ risk:
   l2_content_keywords: ["transaction"]
   l3_content_keywords: ["PrivateKey", "chargeCard"]
   plan_glob: "plan_docs/**/*.md"
+  l3_review_strategy: "claude_grep_first"
 ```
 
 경로, 파일명, 내용, 사용자 선언 중 가장 높은 tier가 effective risk입니다. Governed cycle은 같은 stem의
 Phase 00에 정확히 하나의 `Risk Level: L1`, `L2`, `L3` 선언이 필요하며 현재 변경보다 낮으면 먼저
 Phase 00을 상향해야 합니다.
+
+`l3_review_strategy`는 **L3가 리뷰 가능해지기 위한 필수 값**입니다(`claude_grep_first` |
+`codex_feature_signal` | 프로젝트 커스텀 모듈명). 비어 있으면 L3 독립 리뷰가 안전하게 BLOCK되므로,
+"L3인데 리뷰가 통과 안 된다"는 문제는 대개 이 값 누락이 원인입니다.
+
+### Review loop (Phase 05)
+
+```yaml
+pdca:
+  review_loop:
+    enabled: false
+    lenses: { L2: [correctness, security], L3: [correctness, security, concurrency] }
+    refuters: 2
+    refute_threshold: majority
+    max_iterations: { L2: 1, L3: 3 }
+    dry_rounds: 1
+    budget_tokens: { L2: 150000, L3: 400000 }
+    severity_block: ["P0", "P1"]
+    termination_enforce: advisory
+    report_gate_enforce: advisory
+```
+
+Phase 05의 find→refute→triage→rework 적대적 반복 루프입니다. 기본은 꺼져 있습니다. `lenses`가 각
+라운드에서 찾을 관점, `refuters`가 finding당 반박자 수, `max_iterations`가 라운드 상한,
+`dry_rounds`가 "신규 발견 0"이 몇 라운드 연속이면 수렴으로 볼지입니다. `termination_enforce`/
+`report_gate_enforce`는 `off | advisory | enforce`이며, `enforce`는 06 작성을 실제로 차단합니다.
+표준 사이클의 정식 절차이고, 명시적으로 허용된 L2/L3에서만 쓰는 축약판은 아래 Fast Cycle입니다.
 
 ### Fast Cycle
 
@@ -196,7 +229,31 @@ verification:
     build: "npm run build"
     test: "npm test"
     lint: "npm run lint"
+  acceptance:
+    enabled: true
+    require_for_risk: [L2, L3]
+    statuses: [PASS, FAIL, "NOT TESTED", N/A]
+    unresolved_statuses: [FAIL, "NOT TESTED"]
+    report_gate_by_risk: { L2: advisory, L3: enforce }
+    waiver: { enabled: true }
 ```
 
 검증 명령은 프로젝트가 소유합니다. SAGE는 profile과 phase 문서에 선언된 명령·증거를 연결하지만,
 프로젝트별 build system을 추측하지 않습니다.
+
+`acceptance`는 요구사항별 수용 증거 매트릭스입니다. 빌드·테스트가 통과해도 "사용자가 요청한 기능이
+실제로 동작한다"는 별개로 증명해야 한다는 전제 위에 있습니다. 기본 `enabled: true`이고 `require_for_risk`에
+포함된 위험도는 Phase 04에서 각 요구사항에 `PASS/FAIL/NOT TESTED/N/A`를 기록해야 합니다.
+`report_gate_by_risk`는 `unresolved_statuses`(기본 FAIL·NOT TESTED)가 남아있을 때 06 작성을 막을지
+결정하며, **L3는 profile만으로 advisory로 낮출 수 없습니다.** 예외가 필요하면 `waiver`로 사이클·요구사항
+ID가 정확히 일치하는 명시적 CLI grant만 사용합니다 — 조용한 통과는 없습니다.
+
+### 기타 게이트 토글
+
+| 키 | 기본값 | 의미 |
+|---|---|---|
+| `pdca.retro.report_gate_enforce` | `off` | `sage retro --check` 실행 여부를 Stop 훅이 사후 확인. `enforce`는 세션당 최대 1회 BLOCK |
+| `pdca.writeback.depth_review_gate` | `off` | L2/L3 write-back 노트가 host self-review를 거쳤다는 자기선언(`Depth-Self-Review: performed`)을 Stop 훅이 확인 |
+| `conventions` | `[]` | 스택별 컨벤션 문서 포인터. `[{ scope, stack, doc, file_globs }]` |
+| `context_management.compaction` | `enabled: true` | 세션 압축 시 보존할 항목(`architectural_decisions`, `open_bugs` 등)과 최대 스냅샷 크기 |
+| `hooks.register` | `[claude]` | 어느 host에 hook을 등록할지. cross-model 프로젝트는 `[claude, codex]` |
