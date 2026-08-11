@@ -536,9 +536,10 @@ EH-11 은 9개 하위 중 5개(J-4·J-5·J-6·J-8·J-9)를 `v0.9.78` 로 냈고
 - **하위 호환·범위**: profile 키 부재/off는 기존 동작을 유지하고 완료된 과거 Phase 00·audit은 자동
   재작성하지 않는다. parser, profile schema/manual/init 대화, standard/Fast template·skills,
   review-loop/loop audit, local/server gate, 한·영 사용자 문서, wheel·manifest 재스탬프가 구현 범위다.
-- **상태**: `feat/eh-19-done-criteria` 별도 worktree 구현·Claude 적대적 리뷰 3R 완료,
-  local main 통합 진행 중(2026-08-11). R1·R2의 유효 결함 4건은 재현 후 수정했고 R3의 Fast server
-  결속 누락 지적은 기존 독립 Fast authority 검증으로 재현되지 않아 기각했다. none/Claude/Codex 전체
+- **상태**: `feat/eh-19-done-criteria` 별도 worktree 구현·Claude 적대적 리뷰 3R 완료 후
+  local main에 `4ba3aa0`으로 통합(2026-08-11, push·release 전). R1·R2의 유효 결함 4건은 재현 후
+  수정했다. R3의 Fast server 결속 누락 지적은 기존 독립 Fast authority 검증으로 재현되지 않아
+  기각했다. none/Claude/Codex 전체
   hook suite, wheel smoke, all-kind schema/manifest 검증과 diff check 통과.
   정본: vault `SAGE - Phase 00 Done Criteria 검증 게이트 설계 (EH-19, 26.08.10)`.
 
