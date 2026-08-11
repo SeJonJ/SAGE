@@ -3,15 +3,24 @@
 - SAGE 개발 중 확인된 이슈들로 당장 개발해야하는 내용들은 아니지만, 추후 개발 필요시 참고한다.
 - 각 항목 = 배경 · 문제 · 접근 · 규모/위험 · 트리거 · 상태. 즉시 필요 아님 → 트리거 충족 시 착수.
 
-## 코드 검증 · 우선순위 (2026-07-28)
+## 전체 현황 (2026-08-12, `v0.9.84` 기준)
+
+**EH-1~EH-19 중 10건 완료 · 1건 일부 완료 · 8건 보류.**
+
+| 상태 | 항목 |
+|---|---|
+| ✅ 완료 | EH-1·2(`v0.9.x` 초기) · EH-3(`v0.9.75`) · EH-5(`v0.9.72`) · EH-6(`v0.9.65`) · EH-7(`v0.9.71`) · EH-9(`v0.9.77`) · EH-12(`v0.9.79`) · **EH-18·EH-19(`v0.9.84`)** |
+| 🕗 일부 완료 | EH-11 — 9개 하위 중 8개 완료(J-4·5·6·8·9 = `v0.9.78`, 결속 본체 J-1·2·3 = `v0.9.79`, J-11 기각), **잔여 J-7만 보류** |
+| 🕗 보류 | EH-4 · EH-8 · EH-10 · EH-13 · EH-14 · EH-15 · EH-16 · EH-17 |
+
+보류 8건의 성격: **EH-4·8·10**은 범위 경계로 분리된 독립 L3 설계 대상(각각 retro 게이트 잔여 우회,
+감사 로그 3종 무결성, adapter freshness)이고, **EH-13·14**는 원인 규명이 끝나 진단·테스트 하네스
+개선만 남은 소품, **EH-15·16**은 한 묶음의 가시성 개선(증거는 이미 남고 화면에만 안 보임),
+**EH-17**은 트리거 대기(오버레이 누적 성장이 실측될 때).
+
+### 코드 재검증 이력 (2026-07-28)
 
 전 항목 코드 재대조 완료(허위/과장 없음, 상태 그대로 유효).
-
-2026-08-04 기준 **EH-1~EH-14 중 8건 완료·6건 보류**(완료 EH-1·2·3·5·6·7·9·12 / 보류 EH-4·8·10·11·13·14).
-EH-8·EH-10·EH-11 은 각각 §10-g·§10-i·§10-j 에서 범위 경계로 분리된 항목이고, EH-12 는 §10-j-1 의
-Phase 05 독립 리뷰에서 나와 2026-08-04 에 완료(미릴리즈)했다. EH-13 은 그 사이클에서 나왔고, EH-14 는 결속 사이클의 게이트 실행에서 나왔다.
-EH-11 은 9개 하위 중 5개(J-4·J-5·J-6·J-8·J-9)를 `v0.9.78` 로 냈고
-결속 본체(J-1·J-2·J-3)와 J-7 이 남아 보류로 유지한다.
 
 - **EH-1·EH-2**: 완료 확인 — 추가 작업 불필요. (EH-1: `sage/commands/generate.py` roster kind + `test_gen_roster.py` /
   EH-2: `output_contract_check.py` `_DEFAULT_MARKERS` 중립화 + 주입 파라미터, 코드 상 실재)
@@ -297,9 +306,12 @@ EH-11 은 9개 하위 중 5개(J-4·J-5·J-6·J-8·J-9)를 `v0.9.78` 로 냈고
 - **규모/위험**: 중~중대. `cycle_binding`, pre-implementation gate, `capture-declared-risk` core,
   양 host io 렌더 채널, 신규 CLI(`sage cycle use`)와 머신 로컬 상태를 함께 다룬다. 하위 항목별 분할 착수 가능.
 - **트리거**: J-8은 게이트 우회 경로라 즉시 착수 후보다. 나머지는 장수 브랜치 다중 사이클 운용이 계속될 때.
-- **상태**: 🕗 **일부 완료(2026-08-03)**. J-4·J-5·J-6·J-8·J-9 는 두 사이클로 개발해 `v0.9.78` 릴리즈.
-  잔여: 결속 본체 J-1·J-2·J-3(EH-12 선행 필요 — J-2 가 그 위에 선다)과 J-7. 정본 위키:
-  `SAGE - 장수 브랜치 다중 사이클 결속·선언 risk 설계 (10-j, 26.08.02)`.
+- **상태**: 🕗 **일부 완료(2026-08-07 갱신)**. J-4·J-5·J-6·J-8·J-9·J-10 은 두 사이클로 개발해
+  `v0.9.78` 릴리즈, J-11 은 기각. 결속 본체 J-1·J-2·J-3 은 EH-12(선행) 완료 후 `v0.9.79` 로 릴리즈했다
+  (J-3 는 사이클 선언 통로를 env→프로젝트 파일로 재설계하며 7라운드 독립 리뷰를 거쳤다).
+  **잔여는 J-7(거버넌스 자산 자기분류 risk 오탐) 하나뿐이며 보류 유지.** 정본 위키:
+  `SAGE - 장수 브랜치 다중 사이클 결속·선언 risk 설계 (10-j, 26.08.02)` ·
+  `SAGE - 사이클 선언 통로 재설계 (J-3, 26.08.06)`.
 
 ## EH-12 — claude PreToolUse 의 비차단 메시지가 사용자에게 닿지 않음
 
@@ -320,7 +332,7 @@ EH-11 은 9개 하위 중 5개(J-4·J-5·J-6·J-8·J-9)를 `v0.9.78` 로 냈고
 - **규모·위험**: 코드는 작다(렌더러 2곳). 위험은 claude 출력 프로토콜이 평문→JSON 으로 바뀌는 것이라
   stdout 평문을 단언하는 기존 테스트가 흔들린다. §10-j-1 에서 채널 이동만으로 16건이 걸린 전례가 있다.
 - **트리거**: EH-11 의 J-2 착수 전. 또는 claude 에서 게이트 OK/WARN 이 안 보인다는 보고가 다시 나올 때.
-- **상태**: ✅ **완료(2026-08-04, 미릴리즈)**. `io_claude` 의 PreToolUse 비차단 렌더 둘을
+- **상태**: ✅ **완료·릴리즈 `v0.9.79`(구현 2026-08-04)**. `io_claude` 의 PreToolUse 비차단 렌더 둘을
   `hookSpecificOutput.additionalContext` 로 전환. 차단(stderr)·`UserPromptSubmit` 계열(평문)은 불변.
   정본 `plan_docs/00-base_plan/sage-claude-nonblock-context-channel.md`.
 
@@ -500,7 +512,7 @@ EH-11 은 9개 하위 중 5개(J-4·J-5·J-6·J-8·J-9)를 `v0.9.78` 로 냈고
     주석 처리된 의도적 opt-in) · `pdca.review_loop.architecture_escalation/termination_enforce/report_gate_enforce`
     (합리적 파생/advisory 기본값 + 핵심 값은 실제 인터뷰됨) · `compliance`/`output_contract`(sage-init엔 없지만
     `sage-profile-modify` 편집 목록엔 있음) · `extraction.config`(템플릿 주석에도 없는 고급 기능으로 보임).
-- **상태**: ✅ **완료(2026-08-11, 미릴리즈)**. 설계는 targeted patch 5건으로 범위를 확정했다
+- **상태**: ✅ **완료·릴리즈 `v0.9.84`(구현 2026-08-11)**. 설계는 targeted patch 5건으로 범위를 확정했다
   (원안의 전체 inventory + 분류체계는 후속 스코프로 남김 — 설계 정본 §3). `external_reviewer`/
   `asset_ssot`는 코드 조사로 소비 로직이 없는 예약 필드임을 추가 확인해 인터뷰 추가 대상에서
   제외하고 문서화만 했다. `sage-init` SKILL.md에 `runtime.active_host`(cross_model 앞 신규
@@ -549,11 +561,12 @@ EH-11 은 9개 하위 중 5개(J-4·J-5·J-6·J-8·J-9)를 `v0.9.78` 로 냈고
 - **하위 호환·범위**: profile 키 부재/off는 기존 동작을 유지하고 완료된 과거 Phase 00·audit은 자동
   재작성하지 않는다. parser, profile schema/manual/init 대화, standard/Fast template·skills,
   review-loop/loop audit, local/server gate, 한·영 사용자 문서, wheel·manifest 재스탬프가 구현 범위다.
-- **상태**: `feat/eh-19-done-criteria` 별도 worktree 구현·Claude 적대적 리뷰 3R 완료 후
-  local main에 `4ba3aa0`으로 통합(2026-08-11, push·release 전). R1·R2의 유효 결함 4건은 재현 후
-  수정했다. R3의 Fast server 결속 누락 지적은 기존 독립 Fast authority 검증으로 재현되지 않아
-  기각했다. none/Claude/Codex 전체
-  hook suite, wheel smoke, all-kind schema/manifest 검증과 diff check 통과.
+- **상태**: ✅ **완료·릴리즈 `v0.9.84`(구현 2026-08-11)**. `feat/eh-19-done-criteria` 별도 worktree
+  구현 후 Claude 적대적 리뷰 3R 을 거쳐 local main 에 `4ba3aa0` 으로 통합했다. R1·R2 의 유효 결함
+  4건은 재현 후 수정했고, R3 의 Fast server 결속 누락 지적은 기존 독립 Fast authority 검증으로
+  재현되지 않아 기각했다. none/Claude/Codex 전체 hook suite, wheel smoke, all-kind schema/manifest
+  검증과 diff check 를 통과했다. 신규 정본 모듈 `sage/done_criteria_contract.py` 를 로컬 게이트와
+  `ci_authority` 가 함께 소비하며, `test_done_criteria.py` 로 회귀를 박제했다.
   정본: vault `SAGE - Phase 00 Done Criteria 검증 게이트 설계 (EH-19, 26.08.10)`.
 
 ---

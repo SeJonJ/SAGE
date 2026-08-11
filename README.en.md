@@ -111,13 +111,17 @@ fail-open/fail-closed policy.
 
 ## Learn more
 
-SAGE also provides a PDCA workflow from plan to delivery to review to completion report, a profile
-that separates shared team policy from personal machine settings, and a compressed procedure (Fast
-Cycle) for urgent work. You do not need to learn all of it up front — explore the documents below as
-you need them.
-The plan records concrete completion criteria and updates their state only as implementation and
-verification evidence appears. When a criterion changes, affected design, delivery, verification,
-and review work runs again so an old approval cannot support a new completion report.
+There is more to SAGE than the above. You do not need to learn all of it up front — explore the
+documents below as you need them.
+
+- **PDCA workflow** — a delivery cycle from plan to implementation to review to completion report.
+- **Done Criteria** — the plan records concrete completion criteria up front, and each one's state
+  is updated only as implementation and verification evidence appears. When a criterion changes,
+  the affected phases and review run again, so an old approval cannot support a new completion
+  report.
+- **Profile** — separates shared team policy from settings that apply only to your machine.
+- **Fast Cycle** — a compressed procedure with fewer documents for urgent work (only when
+  explicitly enabled).
 
 ## Documentation
 
