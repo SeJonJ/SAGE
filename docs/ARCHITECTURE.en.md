@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARCHITECTURE.md sha256:d802a52a7e1819ef9c9b247a0703f3cf8132e7bc8b67d97e166677d05a75f69c -->
+<!-- sage-doc-source: ARCHITECTURE.md sha256:9fd2fe9bb2c900c713844e26e8cea31dbc3243e58dbcc6b34409009d8bf40c05 -->
 # SAGE Architecture
 
 [한국어](ARCHITECTURE.md) | [Documentation index](README.en.md)
@@ -71,6 +71,12 @@ only the channel.
 - Phase 06 bypassing Phase 05: completion reports are deterministically bound to an APPROVED review.
 - Unrehashed mutation, insertion, non-tail deletion, or reordering of Loop A evidence: the real
   report gate validates per-run strict hash chains, record self-hashes, and file parse integrity.
+- Missing or bypassed local hooks: local hooks only work if the contributor's machine has SAGE
+  installed. SD-9/Fast Cycle add a server-side authority (`sage/ci_authority.py`, pure and
+  git-independent) that independently re-verifies the strict hash chains of
+  `.sage/fast_cycle.jsonl` and `loop_audit.jsonl` in CI, so a PR from a contributor without hooks —
+  or one who bypassed them — is still caught by the required check. The local gate is not the only
+  line of defense.
 
 **SAGE does not block by design**
 

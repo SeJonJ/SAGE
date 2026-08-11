@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:ae052589bd1f5b91f771a12885e94085b31504bed92fb8dcc6f2d63d4183cacc -->
+<!-- sage-doc-source: profile-reference.md sha256:2184abd680daba12c196b671f4f255359935f02dbc7449ccc4c0e8b5ad7df4bb -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -64,6 +64,12 @@ cross_model:
 review selects a runtime other than the actual active host. If the peer CLI cannot be reached, a
 required review policy produces BLOCKED.
 
+`cross_model.policy` is `required | recommended | off`. `required` cannot be weakened by a local
+`cross_model.enabled: false` (a local profile can never weaken shared policy). `on_unavailable`
+governs what happens when the peer CLI cannot be reached: `block` (default, effectively mandatory
+under a `required` policy) or `clean_context_same_runtime` (fall back to a fresh session on the same
+runtime).
+
 ### Risk
 
 ```yaml
@@ -75,12 +81,43 @@ risk:
   l2_content_keywords: ["transaction"]
   l3_content_keywords: ["PrivateKey", "chargeCard"]
   plan_glob: "plan_docs/**/*.md"
+  l3_review_strategy: "claude_grep_first"
 ```
 
 Effective risk is the highest tier identified by path, filename, content, or user declaration. A
 governed cycle requires exactly one `Risk Level: L1`, `L2`, or `L3` declaration in the Phase 00
 document with the same stem. If that declaration is lower than the current change, raise Phase 00
 before continuing.
+
+`l3_review_strategy` is **required for L3 to be reviewable at all** (`claude_grep_first` |
+`codex_feature_signal` | a project-custom module name). When it is empty, independent L3 review
+fails safely closed (BLOCK) — an L3 change that never gets past review is usually missing this
+value, not a review-loop problem.
+
+### Review loop (Phase 05)
+
+```yaml
+pdca:
+  review_loop:
+    enabled: false
+    lenses: { L2: [correctness, security], L3: [correctness, security, concurrency] }
+    refuters: 2
+    refute_threshold: majority
+    max_iterations: { L2: 1, L3: 3 }
+    dry_rounds: 1
+    budget_tokens: { L2: 150000, L3: 400000 }
+    severity_block: ["P0", "P1"]
+    termination_enforce: advisory
+    report_gate_enforce: advisory
+```
+
+The Phase 05 find→refute→triage→rework adversarial loop. Disabled by default. `lenses` are the
+perspectives each round searches from, `refuters` is how many reviewers challenge each finding,
+`max_iterations` caps the rounds, and `dry_rounds` is how many consecutive rounds with zero new
+findings count as convergence. `termination_enforce`/`report_gate_enforce` are
+`off | advisory | enforce`; `enforce` actually blocks writing Phase 06. This is the standard
+cycle's full procedure — the compressed variant for explicitly allowed L2/L3 work is Fast Cycle,
+below.
 
 ### Fast Cycle
 
@@ -205,7 +242,32 @@ verification:
     build: "npm run build"
     test: "npm test"
     lint: "npm run lint"
+  acceptance:
+    enabled: true
+    require_for_risk: [L2, L3]
+    statuses: [PASS, FAIL, "NOT TESTED", N/A]
+    unresolved_statuses: [FAIL, "NOT TESTED"]
+    report_gate_by_risk: { L2: advisory, L3: enforce }
+    waiver: { enabled: true }
 ```
 
 The project owns its verification commands. SAGE connects commands and evidence declared in the
 profile and phase documents, but does not guess the project's build system.
+
+`acceptance` is the per-requirement evidence matrix. It rests on the premise that a passing build and
+test suite is not the same claim as "the feature the user asked for actually works." With the default
+`enabled: true`, any risk tier listed in `require_for_risk` must record `PASS/FAIL/NOT TESTED/N/A`
+for every requirement in Phase 04. `report_gate_by_risk` decides whether an `unresolved_statuses`
+entry (FAIL or NOT TESTED by default) blocks writing Phase 06 — **L3 cannot be lowered to advisory
+from the profile alone.** An exception requires an explicit CLI-issued waiver matched exactly to the
+cycle and requirement ID; there is no silent pass.
+
+### Other gate toggles
+
+| Key | Default | Meaning |
+|---|---|---|
+| `pdca.retro.report_gate_enforce` | `off` | Stop hook confirms after the fact that `sage retro --check` ran. `enforce` can BLOCK at most once per session |
+| `pdca.writeback.depth_review_gate` | `off` | Stop hook confirms an L2/L3 write-back note self-declared a host self-review (`Depth-Self-Review: performed`) |
+| `conventions` | `[]` | Pointers to stack-specific convention docs: `[{ scope, stack, doc, file_globs }]` |
+| `context_management.compaction` | `enabled: true` | What to preserve on session compaction (`architectural_decisions`, `open_bugs`, etc.) and the max snapshot size |
+| `hooks.register` | `[claude]` | Which hosts register hooks. Cross-model projects use `[claude, codex]` |

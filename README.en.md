@@ -7,46 +7,69 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/sage-harness/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**A deterministic governance harness for Claude Code and Codex.** SAGE manages hook/MCP specs and
-agent/skill host renders as authoritative inputs, detects drift, and blocks policy violations before
-tools modify the repository.
+**A tool that automatically checks and blocks AI coding agents — Claude Code or Codex — from
+editing risky code without a plan, or reporting "done" without a review.**
 
-## Why SAGE
+## Why you need this
 
-Coding agents can modify high-risk files without a plan, skip delivery phases, or edit generated
-configuration directly. SAGE replaces repeated prompt reminders with a closed loop:
+Telling an agent "plan first, be careful with risky files, always get a review" every single time
+is easy to forget or skip. SAGE turns those reminders into automatic checks (hooks) instead of
+something a human has to repeat.
 
-```
-write specs -> generate runtime assets -> validate manifests -> enforce hooks -> review and retro
-```
+- **Edits a risky file without a plan?** SAGE blocks it until a plan document exists.
+- **Reports "done" without a review?** SAGE checks for an approved review and blocks if there is
+  none.
+- **The AI edits an auto-generated config file directly?** SAGE redirects it to the source
+  definition instead (a direct edit would just be overwritten on the next generation anyway).
+- **One model reviewing its own code?** SAGE can hand the review to the opposite model
+  (Claude ↔ Codex) for an independent look.
 
-- **Spec SSOT**: track hook, agent, skill, and MCP definitions as reviewable documents.
-- **Runtime gates**: enforce risk, PDCA phase, review approval, and generated-file ownership.
-- **Dual host**: execute the same policy cores through Claude Code and Codex I/O contracts.
-- **Cross-model review**: ask a peer runtime other than the active host to review independently.
-- **Auditable delivery**: retain manifests, phase documents, review-loop rounds, and retrospectives.
+These checks are not the AI's "judgment" — they are code that decides **deterministically**. The
+same situation always produces the same result, so nobody has to re-explain the rules.
 
 ## Quickstart
 
 SAGE requires Python 3.10+ and Git. Installed hooks do not require bash, including on Windows.
 
+First, install SAGE itself.
+
 ```bash
 pipx install "sage-harness[schema]"
-
 cd your-project
-sage install --host codex --skill-scope project-local
-# First setup in Codex: $sage-init
-sage generate --kind hook --write --target codex
-sage validate --kind all
-
-# For Claude Code:
-# sage install --host claude
-# /sage-init
-# sage generate --kind hook --write --target claude
 ```
 
-When joining a repository that already has a shared profile, run only `sage-init-local`. See the
-[English quickstart](docs/quickstart.en.md) for the full sequence and
+Then follow **only the path that matches the AI tool you use** — you do not need to run both.
+
+### If you use Codex
+
+```bash
+sage install --host codex --skill-scope project-local
+```
+
+Once installed, run `$sage-init` **inside Codex** to fill in this project's configuration
+(profile) through conversation. Then come back to the terminal to finish:
+
+```bash
+sage generate --kind hook --write --target codex
+sage validate --kind all
+```
+
+### If you use Claude Code
+
+```bash
+sage install --host claude
+```
+
+Once installed, run `/sage-init` **inside Claude Code** to fill in this project's configuration
+(profile) through conversation. Then come back to the terminal to finish:
+
+```bash
+sage generate --kind hook --write --target claude
+sage validate --kind all
+```
+
+When joining a repository that already has a shared profile, run `sage-init-local` instead of
+`sage-init`. See the [English quickstart](docs/quickstart.en.md) for the full sequence and
 [troubleshooting](docs/troubleshooting.en.md) for installation failures.
 
 ## Windows
@@ -64,65 +87,34 @@ sage doctor
 The standard L2/L3 delivery flow still runs `scripts/verify-changes.sh`, and custom `.sh`
 regression tests also require Git Bash. Set `SAGE_BASH` explicitly for the latter on Windows.
 
-## How It Works
+## How it works
+
+SAGE separates two kinds of files — **definitions that a human edits**, and the **runtime files an
+AI actually reads**, generated automatically from those definitions.
 
 ```
-hook / MCP specs                  sage generate       host assets
-agent / skill host renders    <------------------>   .claude / .codex
-          |                                               |
-          +---- manifest hash <--- sage validate ---------+
-          +---- blocked edit ----> sage absorb proposal
+definitions (human-edited)        sage generate       runtime files (AI-read)
+hook / agent / skill spec     <------------------>   .claude / .codex
+          |                                                |
+          +---- check --- sage validate ---------------------+
+          +---- direct edit attempt ----> redirected to the definition
 ```
 
-Agents handle code and judgment. SAGE handles deterministic integrity, phase, and approval
-boundaries. See [Architecture](docs/ARCHITECTURE.en.md) for trust boundaries and fail-open/fail-closed
-policy.
+Editing a definition and running `sage generate` automatically refreshes the runtime files the AI
+reads. If the two drift apart — a direct edit, or a forgotten regeneration — `sage validate` catches
+it. If an AI tries to edit a runtime file directly, SAGE blocks it and points back to the
+definition.
 
-## Core Workflows
+Agents own judgment — writing code, reviewing it. SAGE owns deterministic boundaries — integrity,
+phase, and approval. See [Architecture](docs/ARCHITECTURE.en.md) for the full trust boundary and
+fail-open/fail-closed policy.
 
-### Asset Management
+## Learn more
 
-| Kind | Authoring flow | Typical output |
-|---|---|---|
-| hook | spec-first: `docs/sage_harness/hooks/{id}.md` | host registration + Python runtime |
-| agent | render-first: author both host renders, then extract spec/claims | `.claude/agents`, `.codex/agents` |
-| skill | render-first: author both host renders, then extract spec/claims | `.claude/skills`, `.codex/skills` |
-| MCP | spec-first: `docs/sage_harness/mcps/{id}.md` | `.mcp.json`, `.codex/config.toml` |
-
-The write guard blocks direct edits to generated files. For hooks and MCPs, update the spec and
-generate. For agents and skills, author both host renders and generate to reverse-extract the spec
-and claims. `sage absorb` can turn an already blocked diff into a spec patch proposal.
-
-### PDCA and Review
-
-`sage-cycle` drives Phases 00-06. `sage-plan` owns planning Phases 00-02, `sage-team` owns delivery
-Phases 03-06, and `sage-review` owns Phase 05 review loops. `sage review-loop` records rounds and
-`sage retro` analyzes missed patterns after completion.
-
-For urgent or intentionally compressed L2/L3 delivery, use `sage-cycle-fast` only when the shared
-profile explicitly enables it. Fast Cycle retains actual risk, acceptance, implementation and
-verification, independent review, Phases 05/06, write-back, retro, and snapshots. It consolidates
-physical Phases 01-04 into one composite Phase 00 Fast Plan. Fast level, lens count, and reason are
-all mandatory before the first write, and the committed `.sage/fast_cycle.jsonl` records the run.
-The standard `sage-cycle` never creates Fast state implicitly.
-
-On a long-lived branch, declare the current cycle with `sage cycle set <stem>`. If
-Phase 00 does not exist, use `sage cycle set <stem> --create --risk L1|L2|L3`, then
-fill in the generated skeleton. The `sage-cycle` umbrella does not duplicate these
-commands: `sage-plan` declares only after stem validation, and `sage-team` reconciles
-with `sage cycle show` on resume and runs `sage cycle clear` only after real completion.
-A `BLOCKED` or `FAIL` review retains the declaration for resume. An environment
-declaration survives file clear and must be removed with `unset SAGE_CYCLE_STEM`.
-`set B` changes only the `.sage/cycle.json` pointer; it does not modify cycle A's
-documents, evidence, or audits. Running `set A` restores A's evaluation.
-
-### Profiles
-
-`sage/project-profile.yaml` contains shared team policy.
-Git-ignored `sage/project-profile.local.yaml` contains machine capabilities such as host, model, and
-vault access. Local configuration cannot weaken shared risk or review policy.
-`sage-init` and `sage-profile-modify` interview for Fast enablement, per-level review and lens policy,
-and the optional vault dashboard. Fast is disabled by default.
+SAGE also provides a PDCA workflow from plan to delivery to review to completion report, a profile
+that separates shared team policy from personal machine settings, and a compressed procedure (Fast
+Cycle) for urgent work. You do not need to learn all of it up front — explore the documents below as
+you need them.
 
 ## Documentation
 
@@ -136,11 +128,7 @@ and the optional vault dashboard. Fast is disabled by default.
 | Output locations and ownership | [Artifacts](docs/ARTIFACTS.en.md) |
 | Browse all documentation | [English docs index](docs/README.en.md) |
 
-The README, documentation index, quickstart, and user references are maintained as Korean sources
-with English mirrors. Source-hash markers make the documentation test fail when a Korean reference
-changes and its English mirror marker has not been refreshed.
-
-## Who It Is For
+## Who it is for
 
 SAGE is for teams changing production repositories with Claude Code or Codex that need enforceable,
 reviewable policy rather than prompt-only guidance. It may be excessive when you only need prompt
