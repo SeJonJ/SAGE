@@ -108,7 +108,11 @@ decisions that genuinely need user intent; author the rest from them:
   (`which codex` / `which claude`) and blocks Phase 05 when the peer CLI is
   unavailable. No third-party tool is needed — SAGE calls
   the peer runtime directly (`codex exec` / `claude -p`). It is **not** resolved
-  from `runtime.external_reviewer` (which records the intended preference only).
+  from `runtime.external_reviewer` (which records the intended preference only) — no code
+  currently reads this key for a decision, so it is not part of the interview. The same is
+  true of `runtime.asset_ssot`: a reserved schema key with no consuming logic today. Do not
+  ask about either; if a later audit flags them as "missing from the interview," this note is
+  the answer — they have nothing to configure yet.
 - `runtime.installed_hosts` / `runtime.active_host` — configure every desired SAGE
   discovery surface, but keep exactly one active host. A double-host project does
   not run both hosts concurrently and SAGE never switches hosts or phases automatically.
@@ -129,6 +133,11 @@ decisions that genuinely need user intent; author the rest from them:
 - **Review loop (Phase 05)** — the optional adversarial review-rework loop. Use the
   shared interview set below (§ Review loop + vault interview set). Both `sage-init`
   (first authoring) and `sage-profile-modify` (later editing) drive the *same* set.
+
+`context_management.compaction` (what to preserve across session compaction, max snapshot
+bytes) is intentionally **not** interviewed. Its shipped default is a reasonable choice for
+nearly every project; treat it as advanced internal tuning reachable through
+`sage-profile-modify` if a project genuinely needs to change it, not a bootstrap question.
 
 Present the filled profile (or the consequential choices) for user approval.
 

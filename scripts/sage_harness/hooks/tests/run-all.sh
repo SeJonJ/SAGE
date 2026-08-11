@@ -285,5 +285,9 @@ echo "### 50. sage-feedback markers (language-agnostic token scan + git-tracked 
 python3 "$HERE/test_feedback.py" || rc=1
 
 echo ""
+echo "### 51. skill interview coverage (EH-18 — sage-init/sage-profile-modify/bootstrap-authoring drift guard)"
+python3 "$HERE/test_skill_interview_coverage.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"
