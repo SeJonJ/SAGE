@@ -500,8 +500,21 @@ EH-11 은 9개 하위 중 5개(J-4·J-5·J-6·J-8·J-9)를 `v0.9.78` 로 냈고
     주석 처리된 의도적 opt-in) · `pdca.review_loop.architecture_escalation/termination_enforce/report_gate_enforce`
     (합리적 파생/advisory 기본값 + 핵심 값은 실제 인터뷰됨) · `compliance`/`output_contract`(sage-init엔 없지만
     `sage-profile-modify` 편집 목록엔 있음) · `extraction.config`(템플릿 주석에도 없는 고급 기능으로 보임).
-- **상태**: 미착수. 2026-08-10 Fast Cycle 설계 전 profile 대화 작성 목표를 재확인하며 등록,
-  같은 날 실측 확인으로 범위를 shared 7건으로 확정.
+- **상태**: ✅ **완료(2026-08-11, 미릴리즈)**. 설계는 targeted patch 5건으로 범위를 확정했다
+  (원안의 전체 inventory + 분류체계는 후속 스코프로 남김 — 설계 정본 §3). `external_reviewer`/
+  `asset_ssot`는 코드 조사로 소비 로직이 없는 예약 필드임을 추가 확인해 인터뷰 추가 대상에서
+  제외하고 문서화만 했다. `sage-init` SKILL.md에 `runtime.active_host`(cross_model 앞 신규
+  토픽)·`feedback.*`(record/block_release/record_target 한 턴)·`verification.acceptance`
+  (기본값 존재 확인 단일 턴)·`checklist_scan_targets`(components[] 확정 시 파생 제안)·
+  `risk.l2_content_keywords`(기존 L3 턴에 한 줄) 5건을 반영했고, `sage-profile-modify`
+  편집 목록에 `conventions`를 추가했다. `bootstrap-authoring.md`에 `external_reviewer`/
+  `asset_ssot`/`context_management.compaction`을 "인터뷰 대상 아님" 근거와 함께 명시했다.
+  회귀 가드 `test_skill_interview_coverage.py`(8케이스, `run-all.sh` #51 등록)로 8개 문구가
+  스킬 문서에서 다시 사라지지 않게 박제했다. 독립 리뷰 3라운드: 1차 FAIL(`feedback.jsonl`이
+  "record와 무관하게 항상 쓴다"는 서술이 실제 `record_enabled` 게이트와 반대 — `record` 토글
+  자체를 안 물어봐 감사 로그가 조용히 안 쌓이는 결함, 수정) → 2차 FAIL(신규 회귀 테스트가
+  `run-all.sh`에 미등록돼 CI 미실행, 수정) → 3차 **APPROVED**. 정본
+  [[SAGE - profile 인터뷰 완전성 보완 설계 (EH-18, 26.08.10)]].
 
 ---
 

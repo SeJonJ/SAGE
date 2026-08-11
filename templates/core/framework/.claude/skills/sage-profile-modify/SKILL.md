@@ -63,7 +63,7 @@ From the user's stated intent, or by asking, pin the **section**:
   **`pdca.fast_cycle`** (`enabled`, `reason_required`, `minimum_rounds`,
   `minimum_lenses`, ordered L2/L3 lenses) ·
   `options.*` · **`knowledge_capture`** (vault_path + `loop_audit_dashboard` / `retro_note`) ·
-  `file_type_map` · `compliance` / `output_contract` ·
+  `file_type_map` · `compliance` / `output_contract` · `conventions` ·
   **`governance_docs`** (session-start read-pointers rendered into the AGENT_GUIDE routing block) ·
   **`team.core.<role>.runtime`** (`model` / `effort`) ·
   **`components[].runtime_models`** · **`cross_model.reviewer` / `.effort`**.
