@@ -28,8 +28,9 @@ _CLOSED_SECTION_FALLBACK = {
              "l1_path_globs", "l2_content_keywords", "l2_path_globs", "l3_content_keywords",
              "l3_filename_globs", "l3_review_strategy", "l3_review_glob", "content_l3_enforce",
              "domains", "plan_glob", "review_patterns"},
-    "pdca": {"approve_marker", "approve_phase", "base_plan", "enabled", "phases",
-             "pre_implementation_required", "report_phase", "review_loop", "fast_cycle", "retro", "writeback"},
+    "pdca": {"approve_marker", "approve_phase", "base_plan", "cycle_binding_visibility", "enabled",
+             "phases", "pre_implementation_required", "report_phase", "review_loop", "fast_cycle",
+             "retro", "writeback"},
     "output_contract": {"markers"},
     "mcp": {"enabled"},
     "extraction": {"config"},
@@ -49,6 +50,8 @@ _TERMINATION_MODES = {"advisory", "enforce"}   # 종료 검산 모드(기본 adv
 _REPORT_GATE_MODES = {"off", "advisory", "enforce"}   # 06←05 audit 게이트 모드(기본 advisory)
 _BASE_PLAN_KEYS = {"done_criteria_gate"}
 _DONE_CRITERIA_GATE_MODES = {"off", "advisory", "enforce"}
+# EH-15/16 통과 줄 결속 노출. 닫힌 어휘 — 오타가 조용히 기본값으로 떨어지면 켠 줄 알고 안 켜진다.
+_CYCLE_BINDING_VISIBILITY = {"gated", "all"}
 _FAST_CYCLE_KEYS = {"enabled", "reason_required", "minimum_rounds", "minimum_lenses", "lenses"}
 _ACCEPTANCE_KEYS = {"enabled", "require_for_risk", "statuses", "unresolved_statuses",
                     "report_gate_enforce", "report_gate_by_risk", "waiver"}
@@ -79,6 +82,20 @@ def _done_criteria_gate_issues(profile):
         issues.append(("FAIL", f"pdca.base_plan.done_criteria_gate={mode!r} 는 "
                                f"{sorted(_DONE_CRITERIA_GATE_MODES)} 중 하나여야 함"))
     return issues
+
+
+def _cycle_binding_visibility_issues(profile):
+    """EH-15/16: 통과 줄 결속 노출 어휘를 닫아둔다(오타 → 조용한 기본값 복귀 방지)."""
+    pdca = profile.get("pdca")
+    if not isinstance(pdca, dict):
+        return []
+    mode = pdca.get("cycle_binding_visibility")
+    if mode is None:
+        return []
+    if not isinstance(mode, str) or mode not in _CYCLE_BINDING_VISIBILITY:
+        return [("FAIL", f"pdca.cycle_binding_visibility={mode!r} 는 "
+                         f"{sorted(_CYCLE_BINDING_VISIBILITY)} 중 하나여야 함")]
+    return []
 
 
 def _fast_cycle_issues(profile):
@@ -870,6 +887,7 @@ def validate_profile(profile, root):
 
         issues = issues + _semantic_issues(profile, root) + _review_loop_issues(profile) \
             + _done_criteria_gate_issues(profile) \
+            + _cycle_binding_visibility_issues(profile) \
             + _fast_cycle_issues(profile) \
             + _acceptance_issues(profile) + _knowledge_capture_issues(profile) \
             + _cross_model_issues(profile) + _team_agent_issues(profile) + _retro_gate_issues(profile) \

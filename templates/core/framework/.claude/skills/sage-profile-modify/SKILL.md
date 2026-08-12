@@ -60,6 +60,8 @@ From the user's stated intent, or by asking, pin the **section**:
 - `project` (name/prefix) · `components[]` · `verification.commands` ·
   `risk.*` (L0–L3 globs / content keywords / `l3_review_strategy`) ·
   **`pdca.base_plan.done_criteria_gate`** (`off|advisory|enforce`) ·
+  **`pdca.cycle_binding_visibility`** (`gated|all` — `all` also discloses the bound cycle
+  on L1/L0 gate passes) ·
   **`pdca.review_loop`** (the Phase-05 loop — use the shared interview set) ·
   **`pdca.fast_cycle`** (`enabled`, `reason_required`, `minimum_rounds`,
   `minimum_lenses`, ordered L2/L3 lenses) ·

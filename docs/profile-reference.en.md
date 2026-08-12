@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:985c6bfd051fa7aaa10b80799a72e3489db93be8c829219226755ef39b0b63e8 -->
+<!-- sage-doc-source: profile-reference.md sha256:435e0693bf6f148ef610b825ed0bbfb85c1bd1b4a0c8d0bc674c78c01b275ce8 -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -282,6 +282,7 @@ cycle and requirement ID; there is no silent pass.
 
 | Key | Default | Meaning |
 |---|---|---|
+| `pdca.cycle_binding_visibility` | `gated` | How far gate **pass** lines disclose the bound cycle stem. `gated` shows it only where a verdict line already exists (L2/L3 pass, WARN). `all` also emits a line on L1/L0 passes — turn it on to catch mis-binding by eye on long-lived branches, at the cost of one line per edit. The binding evidence itself is recorded in `.sage/override.jsonl` regardless of this setting |
 | `pdca.retro.report_gate_enforce` | `off` | Stop hook confirms after the fact that `sage retro --check` ran. `enforce` can BLOCK at most once per session |
 | `pdca.writeback.depth_review_gate` | `off` | Stop hook confirms an L2/L3 write-back note self-declared a host self-review (`Depth-Self-Review: performed`) |
 | `conventions` | `[]` | Pointers to stack-specific convention docs: `[{ scope, stack, doc, file_globs }]` |

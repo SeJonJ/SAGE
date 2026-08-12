@@ -127,6 +127,22 @@ unset SAGE_CYCLE_STEM                # env로 선언했다면
 차단 메시지가 결속을 **선언된**으로 읽었는지 **브랜치에서 추론한**으로 읽었는지 알려주므로, 어느 쪽을
 지워야 하는지는 안내를 보고 판단하면 됩니다.
 
+## `sage install`이 "SAGE source resources changed"로 실패
+
+설치 도중 SAGE 엔진 소스가 바뀌면 반쯤 섞인 산출물이 나오므로 install이 스스로 중단하고 롤백합니다.
+검사는 정상 동작이고, 대부분 원인은 **테스트나 리뷰 도구가 저장소 파일을 잠깐 고쳤다 되돌리는 것**입니다.
+
+메시지가 어떤 논리경로가 달라졌는지 함께 알려줍니다.
+
+```
+❌ sage install apply 실패: InstallDriftError: SAGE source resources changed during install
+   — 변경 2건: hooks/runtime/messages.py, engine/commands/install.py
+```
+
+경로를 보고 무엇이 건드렸는지 특정한 뒤 그 작업을 끝내고 다시 설치하세요. 변이 테스트나 독립 리뷰를
+**전체 스위트와 동시에 돌리지 마세요** — 둘 다 저장소 소스를 일시 변경하므로 install 계열이 정당하게
+실패합니다.
+
 ## `sage fast-cycle open`이 rejected로 거부됨
 
 ```

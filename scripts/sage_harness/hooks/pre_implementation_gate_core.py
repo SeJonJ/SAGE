@@ -270,6 +270,19 @@ def _pdca_cfg(profile: dict):
     return p
 
 
+def _discloses_low_risk_binding(profile: dict) -> bool:
+    """EH-15/16: L1·L0 통과 줄에도 결속 stem 을 노출할지.
+
+    기본은 기존 동작(노출 안 함)이다. 통과 줄은 양 host 모두 비차단 컨텍스트 채널로 나가므로
+    (EH-12) 항상 켜면 편집 빈도가 가장 높은 tier 에서 매번 모델 컨텍스트에 한 줄이 쌓인다.
+    결속 증거 자체는 `.sage/override.jsonl` 에 위험도와 무관하게 남으므로 이건 손실 복구가
+    아니라 감시 편의이며, 필요한 프로젝트만 켜는 것이 맞다.
+
+    `pdca.enabled=false` 는 대상이 아니다 — 사이클 개념 자체가 없어 노출할 stem 이 없다.
+    """
+    return ((profile.get("pdca") or {}).get("cycle_binding_visibility") or "gated") == "all"
+
+
 def _missing_pre_impl_phases(event: dict, profile: dict, snapshot: dict, risk: str,
                              fast_state=None):
     """구현 전 의무 phase 중 문서가 없는 것 목록. pdca 비활성이면 None(=강제 안 함).
@@ -1164,9 +1177,12 @@ def _stamp_cycle_identity(decision: dict, event: dict, profile: dict, snapshot: 
     감사 — env 선언 stem 은 이미 완결된 사이클을 지목해 게이트 전체를 통과시킬 수 있어서, 어댑터가
     그 사실을 기록할 수 있어야 한다. core 는 IO 를 하지 않으므로 여기서는 사실만 싣는다.
     """
-    cfg = _pdca_cfg(profile)
-    if cfg is None or not isinstance(decision, dict):
+    if not isinstance(decision, dict):
         return decision
+    cfg = _pdca_cfg(profile)
+    if cfg is None:
+        # pdca 비활성이면 사이클 개념 자체가 없다 — 노출할 결속이 없으므로 줄도 만들지 않는다.
+        return _drop_contentless_binding_line(decision)
     binding = cycle_binding.resolve(event, snapshot, cfg)
     source = binding.get("source") or []
     decision["cycle_stem"] = binding.get("stem") or ""
@@ -1175,6 +1191,17 @@ def _stamp_cycle_identity(decision: dict, event: dict, profile: dict, snapshot: 
     # 선언 통로가 둘(env / .sage/cycle.json)이라 출처만으로는 어디서 읽었는지 알 수 없다.
     # 순수 판정 모듈(cycle_binding)은 건드리지 않고 어댑터가 실어 보낸 사실을 여기서 옮긴다.
     decision["cycle_stem_origin"] = event.get("cycle_stem_origin") or ""
+    return _drop_contentless_binding_line(decision)
+
+
+def _drop_contentless_binding_line(decision: dict) -> dict:
+    """EH-15/16: 결속할 stem 이 없으면 L1·L0 통과 줄을 만들지 않는다.
+
+    이 줄의 목적은 "이 편집이 어느 사이클에 결속됐나" 하나뿐이다. stem 이 없는데도 내보내면
+    정보가 0인 줄이 편집마다 모델 컨텍스트에 쌓인다 — 켠 사람이 얻는 것 없이 비용만 낸다.
+    """
+    if decision.get("message_key") in ("ok_l1", "ok_l0") and not decision.get("cycle_stem"):
+        decision["message_key"] = None
     return decision
 
 
@@ -1333,7 +1360,9 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
                     "message_key": "warn_l0_l3_content",
                     "reason": "L0 문서/plan 에 L3 내용 키워드 — 민감정보 노출 여부 점검",
                     "file_short": c["l0_l3_file"]}
-        return {"status": "ok", "exit_code": 0, "risk": risk, "message_key": None, "reason": c["reason"]}
+        return {"status": "ok", "exit_code": 0, "risk": risk,
+                "message_key": "ok_l0" if _discloses_low_risk_binding(profile) else None,
+                "reason": c["reason"], "file_short": c["file_short"]}
 
     # PDCA 의무 phase 강제: 구현 전 필수 phase 결핍 시 L2/L3 BLOCK, L1 WARN.
     # missing=None(pdca 비활성) 또는 [](충족) → falsy → 기존 per-level 로직으로 (하위호환).
@@ -1389,4 +1418,6 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
                 "message_key": "ok_l2", "reason": c["reason"], "file_short": c["file_short"]}
 
     # L1 통과
-    return {"status": "ok", "exit_code": 0, "risk": "L1", "message_key": None, "reason": c["reason"]}
+    return {"status": "ok", "exit_code": 0, "risk": "L1",
+            "message_key": "ok_l1" if _discloses_low_risk_binding(profile) else None,
+            "reason": c["reason"], "file_short": c["file_short"]}

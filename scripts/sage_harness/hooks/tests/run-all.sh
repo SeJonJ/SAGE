@@ -289,5 +289,9 @@ echo "### 51. skill interview coverage (EH-18 — sage-init/sage-profile-modify/
 python3 "$HERE/test_skill_interview_coverage.py" || rc=1
 
 echo ""
+echo "### 52. adapter stdin contract (EH-14 — adapter 실행 테스트가 stdin 을 닫는지 정적 검사)"
+python3 "$HERE/test_adapter_stdin_contract.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

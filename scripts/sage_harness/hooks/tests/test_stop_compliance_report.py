@@ -159,7 +159,10 @@ class TestAdapters(unittest.TestCase):
                 env = dict(os.environ, **{env_root: root, "SAGE_HOOK_CORE_DIR": HOOKS_DIR,
                                           "SAGE_PROFILE": PROFILE_PATH, "SAGE_TODAY": TODAY})
                 adapter = os.path.join(ADAPTERS, runtime, "stop-compliance-report.sh")
-                p = subprocess.run(["bash", adapter], capture_output=True, text=True, env=env)
+                # stdin 을 닫지 않으면 adapter 가 hook wire 계약대로 sys.stdin.read() 에서 EOF 를
+                # 기다린다 — 백그라운드·CI 실행처럼 부모 stdin 이 안 닫히는 환경에서 무한 대기다.
+                p = subprocess.run(["bash", adapter], stdin=subprocess.DEVNULL,
+                                   capture_output=True, text=True, env=env)
                 self.assertEqual(p.returncode, 0, runtime)
 
     def test_claude_wires_knowledge_capture(self):
