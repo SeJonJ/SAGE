@@ -139,6 +139,13 @@ bytes) is intentionally **not** interviewed. Its shipped default is a reasonable
 nearly every project; treat it as advanced internal tuning reachable through
 `sage-profile-modify` if a project genuinely needs to change it, not a bootstrap question.
 
+`pdca.cycle_binding_visibility` (`gated` default / `all`) is likewise **not** a bootstrap
+question. It only widens which gate *pass* lines disclose the bound cycle stem — `all` adds a
+line on every L1/L0 pass, which is the highest-frequency edit tier, so it is a deliberate
+opt-in for projects running many cycles on one long-lived branch rather than a default worth
+asking about. Nothing is lost while it is off: the binding is recorded in
+`.sage/override.jsonl` regardless. Reachable through `sage-profile-modify`.
+
 Present the filled profile (or the consequential choices) for user approval.
 
 #### Phase 00 Done Criteria gate (shared policy)

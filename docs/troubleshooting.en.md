@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:54e85808c89c535403a9b0eb0774ea3285a5d7c898a51f77485f924d4e520e58 -->
+<!-- sage-doc-source: troubleshooting.md sha256:c68da16eb98ddfbaf7baeed1c994ffba2f06d907ed4d8eadfd62cbd87607f862 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -137,6 +137,23 @@ unset SAGE_CYCLE_STEM                # if you declared it through the environmen
 
 The block message states whether the binding was read as **declared** or **inferred from the
 branch**, so the guidance tells you which one to clear.
+
+## `sage install` fails with "SAGE source resources changed"
+
+If the SAGE engine sources change while an install is running, the result would be a half-mixed
+tree, so install stops itself and rolls back. The check is working as designed; the usual cause is
+**a test or review tool editing repository files and reverting them**.
+
+The message names the logical paths that differ.
+
+```
+❌ sage install apply 실패: InstallDriftError: SAGE source resources changed during install
+   — 변경 2건: hooks/runtime/messages.py, engine/commands/install.py
+```
+
+Use the paths to identify what touched them, let that work finish, and install again. Do **not** run
+mutation tests or an independent review at the same time as the full suite — both change repository
+sources temporarily, so the install tests fail legitimately.
 
 ## `sage fast-cycle open` is rejected
 

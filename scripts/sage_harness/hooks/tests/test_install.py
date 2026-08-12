@@ -1308,6 +1308,28 @@ class TestInstall(unittest.TestCase):
 
             self.assertEqual(_tree_snapshot(d), {})
 
+    def test_source_resource_drift_names_the_changed_logical_paths(self):
+        # EH-13: "소스가 바뀌었다"만으로는 원인 특정에 가설 배제가 필요했다. 진단이 논리경로를
+        # 지목해야 한다 — 검사 자체(fail-closed·rollback)는 위 테스트가 계속 지킨다.
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            stderr = io.StringIO()
+            with mock.patch("sage.build_identity.source_core_content_hash",
+                            side_effect=["sha256:" + "1" * 64,
+                                         "sha256:" + "2" * 64,
+                                         "sha256:" + "2" * 64]), \
+                 mock.patch("sage.build_identity.source_core_content_snapshot",
+                            side_effect=[("sha256:" + "1" * 64, {"hooks/runtime/messages.py": "a" * 64}),
+                                         ("sha256:" + "2" * 64, {"hooks/runtime/messages.py": "b" * 64})]), \
+                 redirect_stderr(stderr):
+                self.assertEqual(install.run(Args("claude", d)), 1)
+
+            out = stderr.getvalue()
+            self.assertIn("SAGE source resources changed", out)
+            self.assertIn("hooks/runtime/messages.py", out)
+            self.assertIn("변경 1건", out)
+            self.assertEqual(_tree_snapshot(d), {})
+
     def test_install_owned_output_drift_before_commit_rolls_back_force(self):
         import unittest.mock as mock
         with tempfile.TemporaryDirectory() as d:

@@ -1298,8 +1298,22 @@ def _run_locked(args) -> int:
         return 1
 
     preconditions = _install_preconditions(dest, args, manifest_path)
-    from sage.build_identity import source_core_content_hash
+    from sage.build_identity import (describe_content_drift, source_core_content_hash,
+                                     source_core_content_snapshot)
+    # drift 판정은 기존과 똑같이 집계 해시 하나로 한다. 논리경로 맵은 오직 진단용이라
+    # 실패해도 판정에 영향을 주지 않는다.
     preflight_source_hash = source_core_content_hash()
+    preflight_source_files = source_core_content_snapshot()[1]
+
+    def _drift_detail():
+        """drift 시 어느 논리경로가 달라졌는지. 진단만 바꾸고 검사는 그대로 fail-closed 다."""
+        try:
+            detail = describe_content_drift(preflight_source_files,
+                                            source_core_content_snapshot()[1])
+        except OSError as exc:   # 인벤토리 재수집 실패까지 원래 오류를 가리지 않게
+            detail = f"(변경 경로 수집 실패: {exc})"
+        return f" — {detail}" if detail else ""
+
     confirmed_profile, confirmed_profile_error = _installed_profile(dest)
     confirmed_manifest = _load_manifest(dest)
     confirmed_overlay_errors = overlay_materialize.preflight_overlays(dest, confirmed_profile)
@@ -1481,7 +1495,8 @@ def _run_locked(args) -> int:
     next_manifest = _manifest(args.host, existing_manifest, core_renders,
                               skill_scope=skill_scope)
     if next_manifest.get("source_core_content_hash") != preflight_source_hash:
-        raise _tx.InstallDriftError("SAGE source resources changed during install")
+        raise _tx.InstallDriftError(
+            "SAGE source resources changed during install" + _drift_detail())
     _write(manifest_path,
            json.dumps(next_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
            True, created, skipped, transaction=transaction)
@@ -1499,7 +1514,8 @@ def _run_locked(args) -> int:
                    transaction=transaction)
 
     if source_core_content_hash() != preflight_source_hash:
-        raise _tx.InstallDriftError("SAGE source resources changed before install commit")
+        raise _tx.InstallDriftError(
+            "SAGE source resources changed before install commit" + _drift_detail())
     transaction.verify_unconsumed()
     transaction.verify_outputs()
     cleanup_errors = transaction.commit()

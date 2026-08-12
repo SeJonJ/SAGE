@@ -908,5 +908,35 @@ class TestWritebackGateIssues(unittest.TestCase):
         self.assertFalse(any("무음 no-op" in m for _, m in issues))
 
 
+class TestCycleBindingVisibility(unittest.TestCase):
+    """EH-15/16: 통과 줄 결속 노출 어휘가 닫혀 있어야 오타가 조용히 기본값으로 안 떨어진다."""
+
+    def _fails(self, profile):
+        with mock.patch.object(profile_validate, "_schema_issues", return_value=[]):
+            issues = validate_profile(profile, REPO)
+        return [m for sev, m in issues if sev == "FAIL" and "cycle_binding_visibility" in m]
+
+    def test_known_values_and_absence_pass(self):
+        for value in ("gated", "all"):
+            self.assertEqual(self._fails({"pdca": {"cycle_binding_visibility": value}}), [], value)
+        self.assertEqual(self._fails({"pdca": {}}), [])
+        self.assertEqual(self._fails({}), [])
+
+    def test_typo_and_wrong_type_fail(self):
+        for value in ("ALL", "on", True, 1, "", ["all"]):
+            with self.subTest(value=value):
+                self.assertTrue(self._fails({"pdca": {"cycle_binding_visibility": value}}))
+
+    @unittest.skipUnless(_HAS_JSONSCHEMA, "jsonschema 미설치")
+    def test_schema_matches_the_manual_validator(self):
+        import jsonschema
+        schema = json.loads(Path(REPO, "schema", "profile.schema.json").read_text(encoding="utf-8"))
+        validator = jsonschema.Draft202012Validator(schema)
+        for value in ("gated", "all"):
+            self.assertTrue(validator.is_valid({"pdca": {"cycle_binding_visibility": value}}))
+        for value in ("ALL", "on", True, 1, "", ["all"]):
+            self.assertFalse(validator.is_valid({"pdca": {"cycle_binding_visibility": value}}))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

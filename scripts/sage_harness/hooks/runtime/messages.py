@@ -138,7 +138,8 @@ def _cycle_suffix(decision):
     적어야 사용자가 "이 사이클이 맞나"를 판단할 수 있다.
 
     WARN 에도 붙이는 이유: plan 없이 통과하는 상태가 결속이 가장 의심스러운 자리다. pdca 비활성이면
-    stem 자체가 없어 아무것도 붙지 않는다. L1/L0 통과는 message_key 가 없어 줄 자체가 생기지 않는다.
+    stem 자체가 없어 아무것도 붙지 않는다. L1/L0 통과는 `pdca.cycle_binding_visibility: all` 일 때만
+    줄이 생긴다(EH-15/16) — 기본값에서는 여전히 아무것도 출력하지 않는다.
     """
     stem = decision.get("cycle_stem")
     if not stem:
@@ -239,14 +240,18 @@ def _gate_record(decision, profile):
                              "profile 타입과 설치된 SAGE runtime 무결성을 확인하고 validate를 다시 실행하세요"),
         "ok_l3": ("OK", "L3", "review 확인됨", False, None),
         "ok_l2": ("OK", "L2", "plan 확인", False, None),
+        # EH-15/16: 기본은 이 둘이 선택되지 않는다(core 가 profile opt-in 일 때만 key 를 싣는다).
+        # 켜면 편집 빈도가 가장 높은 자리라, 결속이 틀렸을 때 가장 먼저 눈에 띄는 자리이기도 하다.
+        "ok_l1": ("OK", "L1", "결속 확인", False, None),
+        "ok_l0": ("OK", "L0", "결속 확인", False, None),
     }.get(decision.get("message_key"))
 
 
 def gate_text(decision, profile, runtime):
     """게이트 결정 → 런타임별 렌더 문자열(매칭 없으면 ''). 채널/exit 은 io_* 가 처리."""
     rec = _gate_record(decision, profile)
-    # 선언 손상 알림은 판정과 독립이다 — L1/L0 통과는 message_key 가 없어 줄 자체가 안 생기는데,
-    # 거기가 바로 깨진 선언이 조용히 무시되는 자리다. 판정 줄이 없으면 이 알림만 내보낸다.
+    # 선언 손상 알림은 판정과 독립이다 — 기본 설정의 L1/L0 통과는 message_key 가 없어 줄 자체가
+    # 안 생기는데, 거기가 바로 깨진 선언이 조용히 무시되는 자리다. 판정 줄이 없으면 이 알림만 내보낸다.
     notice = _declaration_notice(decision, runtime)
     if not rec:
         return notice
@@ -256,7 +261,8 @@ def gate_text(decision, profile, runtime):
     tag = f"[GATE {sev}{_dash(runtime)}{scope}]" if scope else f"[GATE {sev}]"
     prefix = "" if runtime == "codex" else f"{_EMOJI[sev]} "
     if sev == "OK":
-        line = f"{prefix}{tag} {text} | {fs}{_cycle_suffix(decision)}"
+        # fs 가 빈 경우(경로가 판정에 안 쓰인 통과)까지 구분자를 붙이면 꼬리만 남은 줄이 된다.
+        line = f"{prefix}{tag} {text}" + (f" | {fs}" if fs else "") + _cycle_suffix(decision)
     else:
         line = f"{prefix}{tag} {text} 파일: {fs}"
         if show_reason and rs:

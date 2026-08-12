@@ -267,6 +267,7 @@ ID가 정확히 일치하는 명시적 CLI grant만 사용합니다 — 조용�
 
 | 키 | 기본값 | 의미 |
 |---|---|---|
+| `pdca.cycle_binding_visibility` | `gated` | 게이트 **통과** 줄에 결속 cycle stem을 어디까지 표기할지. `gated`는 판정 줄이 생기는 경우(L2/L3 통과·WARN)에만. `all`은 L1·L0 통과에도 한 줄을 내보낸다 — 장수 브랜치에서 오결속을 눈으로 잡을 때 켜되, 편집마다 한 줄이 쌓인다. 결속 증거 자체는 이 설정과 무관하게 `.sage/override.jsonl`에 남는다 |
 | `pdca.retro.report_gate_enforce` | `off` | `sage retro --check` 실행 여부를 Stop 훅이 사후 확인. `enforce`는 세션당 최대 1회 BLOCK |
 | `pdca.writeback.depth_review_gate` | `off` | L2/L3 write-back 노트가 host self-review를 거쳤다는 자기선언(`Depth-Self-Review: performed`)을 Stop 훅이 확인 |
 | `conventions` | `[]` | 스택별 컨벤션 문서 포인터. `[{ scope, stack, doc, file_globs }]` |

@@ -491,5 +491,77 @@ class TestDeclarationIsAudited(unittest.TestCase):
         self.assertIn("user", lines[0])
 
 
+class TestLowRiskBindingDisclosure(unittest.TestCase):
+    """EH-15/16: L1·L0 통과 줄의 결속 노출은 opt-in 이고 판정을 바꾸지 않는다."""
+
+    L1_PATH = "frontend/app.js"     # PDCA_PROFILE 의 어떤 상위 tier glob 에도 안 걸림
+    L0_PATH = "docs/note.md"
+
+    def _profile(self, visibility=None):
+        profile = json.loads(json.dumps(PDCA_PROFILE))
+        # 공용 PDCA_PROFILE 은 L1 글롭이 없어 미매칭이 전부 none/L0 으로 떨어진다. 두 tier 를
+        # 구분해서 봐야 하는 테스트라 여기서만 L1 글롭을 준다.
+        profile["risk"]["l1_path_globs"] = ["*frontend/*"]
+        if visibility is not None:
+            profile["pdca"]["cycle_binding_visibility"] = visibility
+        return profile
+
+    def _decide(self, path, visibility=None):
+        return core.decide(_event(path=path, branch=REAL_STEM), self._profile(visibility),
+                           _complete_snapshot(REAL_STEM), None)
+
+    def test_default_keeps_low_risk_passes_silent(self):
+        for path in (self.L1_PATH, self.L0_PATH):
+            for visibility in (None, "gated"):
+                d = self._decide(path, visibility)
+                self.assertIsNone(d["message_key"], (path, visibility))
+                self.assertEqual(messages.gate_text(d, self._profile(visibility), "codex"), "")
+
+    def test_all_discloses_bound_stem_on_l1_and_l0(self):
+        l1 = self._decide(self.L1_PATH, "all")
+        l0 = self._decide(self.L0_PATH, "all")
+        self.assertEqual(l1["message_key"], "ok_l1")
+        self.assertEqual(l0["message_key"], "ok_l0")
+        for decision in (l1, l0):
+            rendered = messages.gate_text(decision, self._profile("all"), "codex")
+            self.assertIn(f"cycle: {REAL_STEM}", rendered)
+            self.assertIn("GATE OK", rendered)
+
+    def test_disclosure_never_changes_the_verdict(self):
+        # 이 항목은 감시 개선이다 — status/exit_code 가 한 칸이라도 움직이면 범위를 벗어난다.
+        for path in (self.L1_PATH, self.L0_PATH):
+            quiet = self._decide(path)
+            loud = self._decide(path, "all")
+            self.assertEqual((quiet["status"], quiet["exit_code"]),
+                             (loud["status"], loud["exit_code"]), path)
+            self.assertEqual(quiet["risk"], loud["risk"], path)
+
+    def test_no_line_when_there_is_no_stem_to_disclose(self):
+        # 정보가 0 인 통과 줄은 켠 사람이 얻는 것 없이 컨텍스트 비용만 낸다. pdca 활성 상태에서는
+        # stem 부재가 애초에 block_cycle_binding 이라 여기까지 오지 않지만, 불변식 자체를 못박는다.
+        for key in ("ok_l1", "ok_l0"):
+            stemless = core._drop_contentless_binding_line(
+                {"status": "ok", "exit_code": 0, "message_key": key, "cycle_stem": ""})
+            self.assertIsNone(stemless["message_key"], key)
+            self.assertEqual(messages.gate_text(stemless, self._profile("all"), "codex"), "")
+        bound = core._drop_contentless_binding_line(
+            {"status": "ok", "exit_code": 0, "message_key": "ok_l1", "cycle_stem": REAL_STEM})
+        self.assertEqual(bound["message_key"], "ok_l1")
+
+    def test_stemless_pass_is_unreachable_while_pdca_enforces_binding(self):
+        # 위 불변식이 "이론상"이 아니라는 근거 — 실제로는 결속 불가가 먼저 차단된다.
+        d = core.decide(_event(path=self.L1_PATH, branch=""), self._profile("all"),
+                        {"plan_files": [], "review_candidates": [], "phase_docs": {}}, None)
+        self.assertEqual(d["message_key"], "block_cycle_binding")
+
+    def test_pdca_disabled_has_no_cycle_to_disclose(self):
+        profile = self._profile("all")
+        profile["pdca"]["enabled"] = False
+        d = core.decide(_event(path=self.L1_PATH, branch=REAL_STEM), profile,
+                        _complete_snapshot(REAL_STEM), None)
+        self.assertIsNone(d["message_key"])
+        self.assertEqual(messages.gate_text(d, profile, "codex"), "")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
