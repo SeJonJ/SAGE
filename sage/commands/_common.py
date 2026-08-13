@@ -31,10 +31,10 @@ STEP = {
 
 def not_implemented(command: str, detail: str = "", language=None) -> int:
     """아직 로직이 없는 명령을 정직하게 알린다 (조용한 실패 금지)."""
-    print(f"[sage {command}] 스캐폴드 단계 — 아직 미구현입니다.", file=sys.stderr)
-    print(f"  진행 단계: {STEP.get(command, 'N/A')}", file=sys.stderr)
+    print(tr(language, 'cli._common.msg01', command=command), file=sys.stderr)
+    print(tr(language, 'cli._common.msg02', step_get=STEP.get(command, 'N/A')), file=sys.stderr)
     if detail:
-        print(f"  예정 동작: {detail}", file=sys.stderr)
+        print(tr(language, 'cli._common.msg03', detail=detail), file=sys.stderr)
     return 2
 
 

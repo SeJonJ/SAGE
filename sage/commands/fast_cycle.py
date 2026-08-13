@@ -159,13 +159,13 @@ def _profile_hash(profile):
 def _warn(actual_risk, level, rounds, lenses, reason, run_id, language=None):
     print(f"⚠️ [SAGE FAST {actual_risk}]", file=sys.stderr)
     if actual_risk == "L3" and level == "L2":
-        print("이 작업은 L3 위험도로 분류됐지만 L2 Fast 리뷰 절차를 사용합니다.", file=sys.stderr)
+        print(tr(language, 'cli.fast_cycle.msg01'), file=sys.stderr)
     else:
-        print(f"표준 {actual_risk} PDCA 대신 Fast Cycle을 사용합니다.", file=sys.stderr)
-    print(f"리뷰가 {rounds}라운드·{len(lenses)}개 렌즈로 축약되어 표준 절차보다 검증 보증이 낮습니다.", file=sys.stderr)
-    print(f"선택 렌즈: {', '.join(lenses)}", file=sys.stderr)
-    print(f"사유: {reason}", file=sys.stderr)
-    print(f"감사 기록: .sage/fast_cycle.jsonl ({run_id})", file=sys.stderr)
+        print(tr(language, 'cli.fast_cycle.msg02', actual_risk=actual_risk), file=sys.stderr)
+    print(tr(language, 'cli.fast_cycle.msg03', rounds=rounds, count=len(lenses)), file=sys.stderr)
+    print(tr(language, 'cli.fast_cycle.msg04', items=', '.join(lenses)), file=sys.stderr)
+    print(tr(language, 'cli.fast_cycle.msg05', reason=reason), file=sys.stderr)
+    print(tr(language, 'cli.fast_cycle.msg06', run_id=run_id), file=sys.stderr)
 
 
 def _open_snapshot_issues(state, *, stem, actual_risk, level, rounds, lenses,

@@ -111,7 +111,7 @@ def run(args):
 
     print(f"== sage asset-check ({args.kind}) — auto_approve_safe_default ==")
     if args.batch:
-        print(tr(language_of(args), "cli.asset_check.msg03", count=len(auto), items=', '.join(a for a, _ in auto) or '없음'))
+        print(tr(language_of(args), "cli.asset_check.msg03", count=len(auto), items=', '.join(a for a, _ in auto) or tr(language_of(args), 'cli.common.none')))
     else:
         print(tr(language_of(args), "cli.asset_check.msg04", count=len(auto)))
         for aid, _ in auto:

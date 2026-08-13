@@ -341,10 +341,10 @@ def _read_packet(path, command, language=None):
     try:
         prompt = Path(path).read_text(encoding="utf-8")
     except Exception as exc:
-        print(f"[{command}] TOOL ERROR: 패킷 파일 읽기 실패: {exc}", file=sys.stderr)
+        print(tr(language, 'cli.review.msg01', command=command, exc=exc), file=sys.stderr)
         return None
     if not prompt.strip():
-        print(f"[{command}] TOOL ERROR: 패킷이 비어 있음", file=sys.stderr)
+        print(tr(language, 'cli.review.msg02', command=command), file=sys.stderr)
         return None
     return prompt
 

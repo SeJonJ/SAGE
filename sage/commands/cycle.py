@@ -591,8 +591,8 @@ def _clear(cs, root, path, language=None):
         print(tr(language, "cli.cycle.msg23", path=path, arg=type(exc).__name__),
               file=sys.stderr)
         return 2
-    print(f"✅ 사이클 선언 해제 — {path}" if existed
-          else f"[sage cycle] 선언이 없습니다 — {path}")
+    print(tr(language, "cli.cycle.cleared" if existed else "cli.cycle.no_declaration",
+             path=path))
     env = _env_stem()
     if env:
         print(tr(language, "cli.cycle.msg24", env=env))

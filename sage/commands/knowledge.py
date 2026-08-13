@@ -267,8 +267,7 @@ def _append_link_once(vault, folder, target_file, note_stem, title, language=Non
     if os.path.islink(path):
         # symlink escape 방지(기존 설계): 따라가지 않고 끊은 뒤 vault 내부 일반파일로 대체(외부 타깃 내용 보존).
         # 비silent 화(codex 중R2): 의도된 심링크 목차/로그였다면 따라가지 않음을 알린다.
-        print(f"[sage knowledge write-back] ⚠️  {os.path.basename(path)} 가 심링크 — 보안상 따라가지 않고 "
-              f"vault 내부 일반파일로 대체합니다(외부 타깃 내용은 보존, append 는 내부 파일에 기록).")
+        print(tr(language, 'cli.knowledge.msg01', os_path=os.path.basename(path)))
         os.unlink(path)
     line = f"- {_dt.date.today().isoformat()} [[{note_stem}]] - {title}\n"
     body = ""

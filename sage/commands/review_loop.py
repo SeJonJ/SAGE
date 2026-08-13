@@ -15,7 +15,7 @@ import glob
 
 from sage import _resources
 from sage.profile_layers import load_profile_layers
-from sage.i18n import tr
+from sage.i18n import language_of, tr
 
 # result↔reason 의미 짝(설계 §3) — APPROVED 는 수렴/dry 로만, BLOCKED 는 예산초과/아키텍처로만.
 _APPROVED_REASONS = {"CONVERGED", "DRY"}
@@ -131,7 +131,7 @@ def _load_profile(root):
     return layers.shared if layers.has_fail else layers.effective
 
 
-def _validated_profile(root):
+def _validated_profile(root, language=None):
     """게이트 판단용 profile. 설치되지 않은 저장소는 legacy {}, 손상된 계층은 FAIL."""
     ppath = os.path.join(root, "sage", "project-profile.yaml")
     if not os.path.exists(ppath):
@@ -141,8 +141,7 @@ def _validated_profile(root):
     if not failures:
         return layers.effective
     for message in failures:
-        print(f"[sage review-loop] profile 계층 FAIL: {message} "
-              f"(shared={layers.shared_path}, local={layers.local_path})", file=sys.stderr)
+        print(tr(language, "cli.review_loop.msg01", message=message, layers_shared_path=layers.shared_path, layers_local_path=layers.local_path), file=sys.stderr)
     return None
 
 
@@ -163,12 +162,12 @@ def _is_closed(la, root, run_id):
     return la.close_of(root, run_id) is not None
 
 
-def _write_audit(la, operation):
+def _write_audit(la, operation, language=None):
     """Convert fail-closed audit writer failures into the CLI's blocking contract."""
     try:
         return operation()
     except (la.AuditWriteError, OSError) as exc:
-        print(f"[sage review-loop] audit write failed — 기록하지 않음: {exc}", file=sys.stderr)
+        print(tr(language, "cli.review_loop.msg02", exc=exc), file=sys.stderr)
         return None
 
 
@@ -184,12 +183,12 @@ def _comma_list(value):
 def _run_open(args):
     la = _load_loop_audit()
     root = _root(args)
-    profile = _validated_profile(root)
+    profile = _validated_profile(root, language_of(args))
     if profile is None:
         return 2
     # 명시 run_id 중복 open 거부(integrity 불변식을 write 시점에 강제 — strict CLI 레이어).
     if args.run_id and _is_open(la, root, args.run_id):
-        print(f"[sage review-loop] run_id '{args.run_id}' 이미 open 됨 — 중복 open 거부(integrity)", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg03", args_run_id=args.run_id), file=sys.stderr)
         return 2
     try:
         lenses = _comma_list(args.lenses)
@@ -202,6 +201,7 @@ def _run_open(args):
                              run_id=args.run_id,
                              reviewer_requested=args.reviewer_requested,
                              cycle_stem=args.cycle_stem, lenses=lenses),
+        language=language_of(args),
     )
     if rid is None:
         return 2
@@ -215,21 +215,21 @@ def _run_round(args):
     root = _root(args)
     # orphan 차단: loop_open 없는 run_id 의 round 거부(codex S3 P2 — CLI 가 integrity 를 write 시 강제).
     if not _is_open(la, root, args.run_id):
-        print(f"[sage review-loop] run_id '{args.run_id}' 의 loop_open 없음 — orphan round 거부. 먼저 open", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg04", args_run_id=args.run_id), file=sys.stderr)
         return 2
     if _is_closed(la, root, args.run_id):
-        print(f"[sage review-loop] run_id '{args.run_id}' 이미 종료됨 — 종료 후 round 거부", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg05", args_run_id=args.run_id), file=sys.stderr)
         return 2
     # 불가능 튜플 거부(순수 산술, 읽기 불요): survived ≤ found, accepted ≤ survived, arch ≤ survived.
     #   (REFUTE 는 발견 부분집합, REWORK 채택은 생존 부분집합, arch 에스컬레이션은 생존 중 분류.)
     if args.survived > args.found:
-        print(f"[sage review-loop] survived({args.survived}) > found({args.found}) 불가(생존은 발견의 부분집합)", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg06", args_survived=args.survived, args_found=args.found), file=sys.stderr)
         return 2
     if args.accepted > args.survived:
-        print(f"[sage review-loop] accepted({args.accepted}) > survived({args.survived}) 불가(채택은 생존의 부분집합)", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg07", args_accepted=args.accepted, args_survived=args.survived), file=sys.stderr)
         return 2
     if args.arch > args.survived:
-        print(f"[sage review-loop] arch({args.arch}) > survived({args.survived}) 불가(아키텍처는 생존 중 분류)", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg08", args_arch=args.arch, args_survived=args.survived), file=sys.stderr)
         return 2
     try:
         lens_receipts = _comma_list(args.lens_receipts)
@@ -241,6 +241,7 @@ def _run_round(args):
         lambda: la.record_round(root, args.run_id, args.iteration, args.found,
                                 args.survived, args.accepted, arch=args.arch,
                                 tokens=args.tokens, lens_receipts=lens_receipts),
+        language=language_of(args),
     )
     if written is None:
         return 2
@@ -393,21 +394,21 @@ def _termination_discrepancies(la, root, run_id, result, reason, iterations, cfg
 def _run_close(args):
     # result↔reason 의미 짝 강제(감사 트레일 일관성). 라이브러리는 permissive 이므로 여기서 게이트.
     if args.result == "APPROVED" and args.reason not in _APPROVED_REASONS:
-        print(f"[sage review-loop] APPROVED 는 reason ∈ {sorted(_APPROVED_REASONS)} 만 — 받음 '{args.reason}'", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg09", arg=sorted(_APPROVED_REASONS), args_reason=args.reason), file=sys.stderr)
         return 2
     if args.result == "BLOCKED" and args.reason not in _BLOCKED_REASONS:
-        print(f"[sage review-loop] BLOCKED 는 reason ∈ {sorted(_BLOCKED_REASONS)} 만 — 받음 '{args.reason}'", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg10", arg=sorted(_BLOCKED_REASONS), args_reason=args.reason), file=sys.stderr)
         return 2
     la = _load_loop_audit()
     root = _root(args)
     if not _is_open(la, root, args.run_id):
-        print(f"[sage review-loop] run_id '{args.run_id}' 의 loop_open 없음 — orphan close 거부. 먼저 open", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg11", args_run_id=args.run_id), file=sys.stderr)
         return 2
     if _is_closed(la, root, args.run_id):
-        print(f"[sage review-loop] run_id '{args.run_id}' 이미 종료됨 — 중복 close 거부", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg12", args_run_id=args.run_id), file=sys.stderr)
         return 2
 
-    profile = _validated_profile(root)
+    profile = _validated_profile(root, language_of(args))
     if profile is None:
         return 2
 
@@ -417,25 +418,24 @@ def _run_close(args):
     raw_mode = cfg.get("termination_enforce", "advisory")
     mode = raw_mode if raw_mode in ("advisory", "enforce") else "advisory"
     if raw_mode != mode:   # 미지 mode 는 침묵 말고 알림(런타임 fail-open 방지)
-        print(f"[sage review-loop] termination_enforce='{raw_mode}' 미지원 → advisory 로 처리(profile 점검)", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg13", raw_mode=raw_mode), file=sys.stderr)
     # audit 무결성 경고(손상/orphan) 있으면 라운드 사실을 못 믿으므로 enforce 라도 advisory 로 degrade(§2).
     integ = la.integrity_issues(root)
     if integ and mode == "enforce":
-        print(f"[sage review-loop] audit 무결성 경고 {len(integ)}건 — 검산 신뢰 불가 → 이번 close 는 advisory 로 degrade", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg14", count=len(integ)), file=sys.stderr)
         mode = "advisory"
     risk = _run_risk(la, root, args.run_id)
     checks = _termination_discrepancies(la, root, args.run_id, args.result, args.reason, args.iterations, cfg, risk)
     mismatches = [m for k, m in checks if k == "mismatch"]
     for _, m in [(k, m) for k, m in checks if k == "skip"]:
-        print(f"[sage review-loop] 종료 검산 skip(데이터 부족): {m}", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg15", m=m), file=sys.stderr)
     if mismatches:
         for m in mismatches:
-            print(f"[sage review-loop] 종료 검산 불일치: {m}", file=sys.stderr)
+            print(tr(language_of(args), "cli.review_loop.msg16", m=m), file=sys.stderr)
         if mode == "enforce":
-            print("[sage review-loop] termination_enforce=enforce → close 거부. 일관된 result/reason 으로 "
-                  "재close 하거나 BLOCKED 로 닫으세요.", file=sys.stderr)
+            print(tr(language_of(args), "cli.review_loop.msg17"), file=sys.stderr)
             return 2
-        print("[sage review-loop] (advisory — 기록은 진행. profile 의 review_loop.termination_enforce=enforce 로 강제 가능)",
+        print(tr(language_of(args), "cli.review_loop.msg18"),
               file=sys.stderr)
 
     phase00_hash = None
@@ -447,10 +447,10 @@ def _run_close(args):
             done_issue = f"Done Criteria approval check failed: {type(exc).__name__}: {exc}"
             done_mode = "enforce"
         if done_issue:
-            print(f"[sage review-loop] Done Criteria 승인 결속 실패: {done_issue}", file=sys.stderr)
+            print(tr(language_of(args), "cli.review_loop.msg19", done_issue=done_issue), file=sys.stderr)
             if done_mode == "enforce":
                 return 2
-            print("[sage review-loop] (advisory — close는 기록하지만 Phase 06에서 경고)", file=sys.stderr)
+            print(tr(language_of(args), "cli.review_loop.msg20"), file=sys.stderr)
 
     written = _write_audit(
         la,
@@ -458,13 +458,14 @@ def _run_close(args):
                               args.iterations,
                               reviewer_actual=args.reviewer_actual,
                               phase00_hash=phase00_hash),
+        language=language_of(args),
     )
     if written is None:
         return 2
     print(f"[sage review-loop] close run_id={args.run_id} {args.result}/{args.reason} iterations={args.iterations}", file=sys.stderr)
     if phase00_hash is not None:
         print(f"Phase00-Hash: {phase00_hash}", file=sys.stderr)
-    _auto_write_vault_dashboard(la, root)
+    _auto_write_vault_dashboard(la, root, language_of(args))
     return 0
 
 
@@ -475,24 +476,24 @@ def _run_show(args):
     integ = la.integrity_issues(root)
     target_runs = [args.run_id] if args.run_id else la.runs(root)
     if not target_runs:
-        print("기록 없음.")
+        print(tr(language_of(args), "cli.review_loop.msg21"))
     for rid in target_runs:
         rounds = la.rounds_of(root, rid)
         close = la.close_of(root, rid)
         status = f"{close['result']}/{close['reason']} ({close['iterations']}회)" if close else "진행중(미종료)"
-        print(f"  · {rid}: {status}, 라운드 {len(rounds)}건")
+        print(tr(language_of(args), "cli.review_loop.msg22", rid=rid, status=status, count=len(rounds)))
         if close and close.get("phase00_hash"):
             print(f"      Phase00-Hash: {close['phase00_hash']}")
         for r in rounds:
             print(f"      [{r.get('iteration')}] found={r.get('found')} survived={r.get('survived')} "
                   f"accepted={r.get('accepted')} arch={r.get('arch')} tokens={r.get('tokens')}")
     if integ:
-        print("⚠️  무결성 경고:")
+        print(tr(language_of(args), "cli.review_loop.msg23"))
         for i in integ:
             print(f"   - {i}")
 
     if args.vault is not None:
-        _write_vault_dashboard(la, root, args.vault or None)
+        _write_vault_dashboard(la, root, args.vault or None, language_of(args))
     return 1 if integ else 0
 
 
@@ -549,29 +550,28 @@ def _run_next(args):
     la = _load_loop_audit()
     root = _root(args)
     if not _is_open(la, root, args.run_id):
-        print(f"[sage review-loop] run_id '{args.run_id}' 의 loop_open 없음 — 먼저 open", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg24", args_run_id=args.run_id), file=sys.stderr)
         return 2
     if _is_closed(la, root, args.run_id):
         close = la.close_of(root, args.run_id)
-        print(f"[sage review-loop] run_id '{args.run_id}' 이미 종료됨: {close['result']}/{close['reason']}", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg25", args_run_id=args.run_id, arg=close['result'], arg2=close['reason']), file=sys.stderr)
         print("NEXT: DONE")
         return 0
-    profile = _validated_profile(root)
+    profile = _validated_profile(root, language_of(args))
     if profile is None:
         return 2
     cfg = _cfg_snapshot(root, profile)
     risk = _run_risk(la, root, args.run_id)
     action, result, reason, why, skips = _next_recommendation(la, root, args.run_id, cfg, risk)
     for s in skips:
-        print(f"[sage review-loop] 권고 skip: {s}", file=sys.stderr)
-    print(f"[sage review-loop] 근거: {why}", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg26", s=s), file=sys.stderr)
+    print(tr(language_of(args), "cli.review_loop.msg27", why=why), file=sys.stderr)
     if action == "CONTINUE":
         print("NEXT: CONTINUE")
     else:
         print(f"NEXT: STOP result={result} reason={reason}")
-        print(f"[sage review-loop] 권고 close: sage review-loop close --run-id {args.run_id} "
-              f"--result {result} --reason {reason} --iterations {len(la.rounds_of(root, args.run_id))}", file=sys.stderr)
-    print("[sage review-loop] (권고만 — 감사 기록/종료는 close 가 수행. 사실이 다르면 host 는 무시 가능)", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg28", args_run_id=args.run_id, result=result, reason=reason, count=len(la.rounds_of(root, args.run_id))), file=sys.stderr)
+    print(tr(language_of(args), "cli.review_loop.msg29"), file=sys.stderr)
     return 0
 
 
@@ -668,22 +668,22 @@ def _dashboard_filename(profile):
     return _note_filename(profile, "TECH", f"{name} loop audit")
 
 
-def _write_vault_dashboard(la, root, override):
+def _write_vault_dashboard(la, root, override, language=None):
     from sage.commands import _vault
     profile = _load_profile(root)
     vault, folder = _vault.vault_target(profile, override, root)
     if not vault:
-        print("  ℹ️  vault 비활성(knowledge_capture.vault_path 미설정, --vault 경로도 없음) → 대시보드 생략", file=sys.stderr)
+        print(tr(language, "cli.review_loop.msg30"), file=sys.stderr)
         return
     import datetime
     fm = {"tags": ["sage", "loop-audit"], "updated": datetime.date.today().isoformat(),
           "generated_by": "sage review-loop (close 자동 / show --vault)"}
     path = _vault.write_note(vault, folder, _dashboard_filename(profile), fm,
                              _dashboard_md(la, root, _retro_links_by_run(vault, folder)))
-    print(f"  ✅ Obsidian 대시보드 작성: {path}", file=sys.stderr)
+    print(tr(language, "cli.review_loop.msg31", path=path), file=sys.stderr)
 
 
-def _auto_write_vault_dashboard(la, root):
+def _auto_write_vault_dashboard(la, root, language=None):
     """profile opt-in 이면 close 직후 vault 대시보드를 갱신한다.
 
     `loop_audit_dashboard` 는 사람이 별도 `show --vault` 를 실행해야 하는 힌트가 아니라
@@ -696,6 +696,6 @@ def _auto_write_vault_dashboard(la, root):
     if kc.get("loop_audit_dashboard") is not True:
         return
     try:
-        _write_vault_dashboard(la, root, None)
+        _write_vault_dashboard(la, root, None, language)
     except Exception as e:
-        print(f"  ⚠️  Obsidian 대시보드 자동 갱신 실패: {type(e).__name__}: {e}", file=sys.stderr)
+        print(tr(language, "cli.review_loop.msg32", arg=type(e).__name__, e=e), file=sys.stderr)

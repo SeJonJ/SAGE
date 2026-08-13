@@ -26,7 +26,7 @@ from sage import _resources   # 번들 리소스 경로 단일 해석(env overri
 from sage import overlay_common   # 오버레이 관리 블록 프리미티브(base_of 로 렌더 base 대조)
 from sage import overlay_materialize   # CORE 렌더 오버레이 물리화 + core_renders 앵커
 from sage import install_transaction as _tx
-from sage.i18n import tr
+from sage.i18n import language_of, tr
 
 # CORE roster (중립 6인) + CORE hook 7종(form) + CORE skill 13종. 도메인값 아님 = framework 메타.
 # skill 3분할: sage-cycle(00~06 우산) → sage-plan(00~02 기획) → sage-team(03~06 개발).
@@ -190,7 +190,7 @@ def _write_local_profile_gitignore(dest, created, skipped, transaction):
     created.append(path)
 
 
-def _warn_if_retro_audit_tracked(dest):
+def _warn_if_retro_audit_tracked(dest, language=None):
     """Report the one-time index migration without changing Git or local audit bytes."""
     try:
         result = subprocess.run(
@@ -205,10 +205,7 @@ def _warn_if_retro_audit_tracked(dest):
     if result.returncode != 0:
         return
     print(
-        "⚠️  `.sage/retro_audit.jsonl` 이 이미 Git 추적 중입니다. "
-        "새 기본값은 로컬 전용이지만 install 은 index나 파일을 자동 변경하지 않습니다.\n"
-        "   프로젝트 루트에서 실행: git rm --cached -- .sage/retro_audit.jsonl\n"
-        "   이 명령은 로컬 파일을 보존합니다. 기존 Git 이력의 경로는 남으므로 이력 재작성은 별도로 판단하세요.",
+        tr(language, 'cli.install.msg01'),
         file=sys.stderr,
     )
 
@@ -1058,32 +1055,32 @@ def _materialized_anchor_conflicts(dest, host, profile, core_renders, codex_skil
     return conflicts
 
 
-def _print_core_trust_conflicts(dest, conflicts):
-    print("❌ CORE trust preflight 충돌 — 기존 렌더를 정본 anchor로 기록하지 않습니다.", file=sys.stderr)
+def _print_core_trust_conflicts(dest, conflicts, language=None):
+    print(tr(language, 'cli.install.msg02'), file=sys.stderr)
     for item in sorted(conflicts, key=lambda value: (value["key"], value["path"])):
         print(f"  - [{item['key']}] {os.path.relpath(item['path'], dest)}", file=sys.stderr)
         print(f"      reason: {item['reason']}", file=sys.stderr)
         print(f"      expected_sha256: {item['expected_sha']}", file=sys.stderr)
         print(f"      actual_sha256:   {item['actual_sha']}", file=sys.stderr)
-    print("  선택 후 다시 실행하세요:", file=sys.stderr)
-    print("    1) 기존 파일을 inventory/백업하고 프로젝트 지침을 sage/asset_overrides 또는 absorb/migration 흐름으로 이전",
+    print(tr(language, 'cli.install.msg03'), file=sys.stderr)
+    print(tr(language, 'cli.install.msg04'),
           file=sys.stderr)
-    print("    2) 기존 내용을 버리기로 명시한 경우에만 같은 명령에 --force 추가", file=sys.stderr)
-    print("  preflight 단계에서 project 파일과 manifest anchor는 변경되지 않았습니다.", file=sys.stderr)
+    print(tr(language, 'cli.install.msg05'), file=sys.stderr)
+    print(tr(language, 'cli.install.msg06'), file=sys.stderr)
 
 
-def _cleanup_blocked_core_renders(dest, host, codex_skill_scope=None):
+def _cleanup_blocked_core_renders(dest, host, codex_skill_scope=None, language=None):
     """Remove safely identifiable legacy blocked blocks before non-force install preflights."""
     plans, errors = overlay_materialize.plan_blocked_cleanup(
         dest, host, path_guard=lambda path: _core_render_path_issue(dest, path),
         codex_skill_scope=codex_skill_scope)
     changed = overlay_materialize.apply_materialization(plans)
     for path in sorted(changed):
-        print(f"  ~ blocked 관리 블록 제거: {os.path.relpath(path, dest)}")
+        print(tr(language, 'cli.install.msg07', os_path=os.path.relpath(path, dest)))
     for path, message in errors:
-        print(f"❌ blocked block 정리 실패({os.path.relpath(path, dest)}): {message}", file=sys.stderr)
+        print(tr(language, 'cli.install.msg08', os_path=os.path.relpath(path, dest), message=message), file=sys.stderr)
     if errors:
-        print("---- sage install: FAIL (안전한 blocked block만 제거, manifest 미갱신) ----",
+        print(tr(language, 'cli.install.msg09'),
               file=sys.stderr)
     return errors
 
@@ -1189,9 +1186,7 @@ def run(args) -> int:
     # 게이트가 SAGE 개발을 막는다(2026-06-17·07-24 두 번 발생). --dest 기본값이 cwd 라 엔진
     # 저장소에서 무인자 실행이 곧 이 사고다. 예외 플래그를 두지 않는다 — 플래그가 곧 우회로다.
     if _resources.is_engine_source_tree(args.dest):
-        print("[sage install] BLOCK: 설치 대상이 SAGE 엔진 저장소입니다 — 엔진 저장소는 프레임워크와 "
-              "CORE 만 담고 설치 산출물을 보유하지 않습니다.\n"
-              "  소비 프로젝트 디렉토리에서 실행하거나 --dest 로 그 경로를 지정하세요.", file=sys.stderr)
+        print(tr(language_of(args), 'cli.install.msg10'), file=sys.stderr)
         return 2
     skill_scope, scope_error = _resolve_skill_scope(args)
     if scope_error:
@@ -1213,7 +1208,7 @@ def run(args) -> int:
             lock.acquire()
             acquired.append(lock)
     except (_tx.InstallBusyError, _tx.InstallDriftError) as exc:
-        print(f"❌ sage install lock 실패: {exc}", file=sys.stderr)
+        print(tr(language_of(args), 'cli.install.msg11', exc=exc), file=sys.stderr)
         for lock in reversed(acquired):
             lock.release()
         delattr(args, "_sage_skill_scope")
@@ -1224,23 +1219,23 @@ def run(args) -> int:
         if transaction is not None and rc != 0 and not transaction.committed:
             rollback_errors = transaction.rollback()
             for message in rollback_errors:
-                print(f"❌ install rollback 실패: {message}", file=sys.stderr)
+                print(tr(language_of(args), 'cli.install.msg12', message=message), file=sys.stderr)
         return rc
     except BaseException as exc:
         transaction = getattr(args, "_sage_install_transaction", transaction)
         rollback_errors = (transaction.rollback()
                            if transaction is not None and not transaction.committed else [])
-        print(f"❌ sage install apply 실패: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print(tr(language_of(args), 'cli.install.msg13', arg=type(exc).__name__, exc=exc), file=sys.stderr)
         if rollback_errors:
             for message in rollback_errors:
-                print(f"❌ install rollback 실패: {message}", file=sys.stderr)
+                print(tr(language_of(args), 'cli.install.msg14', message=message), file=sys.stderr)
         elif transaction is not None and transaction.committed:
-            print("   install commit 이후 보고 단계에서 실패했습니다; committed 상태는 rollback하지 않습니다.",
+            print(tr(language_of(args), 'cli.install.msg15'),
                   file=sys.stderr)
         elif transaction is not None:
-            print("   transaction rollback 완료 — install 전 상태를 복구했습니다.", file=sys.stderr)
+            print(tr(language_of(args), 'cli.install.msg16'), file=sys.stderr)
         else:
-            print("   preflight 단계에서 install mutation은 시작되지 않았습니다.", file=sys.stderr)
+            print(tr(language_of(args), 'cli.install.msg17'), file=sys.stderr)
         if not isinstance(exc, Exception):
             raise
         return 1
@@ -1266,7 +1261,7 @@ def _run_locked(args) -> int:
             path = _codex_project_skill_path(dest, skill_id)
             issue = _core_render_path_issue(dest, path)
             if issue:
-                print(f"❌ project-local CORE skill 경로가 안전하지 않습니다: {path}", file=sys.stderr)
+                print(tr(language_of(args), 'cli.install.msg18', path=path), file=sys.stderr)
                 print(f"   reason: {issue[0]}", file=sys.stderr)
                 return 1
     # FB12 migration safety: non-force install은 이후 어느 preflight가 실패하더라도 과거
@@ -1274,7 +1269,7 @@ def _run_locked(args) -> int:
     # parent/leaf path를 검증하고 exact SAGE marker만 제거한다. force install은 정본 copy가
     # 렌더 자체를 원자 교체하므로 이 pre-step이 없다.
     if not args.force:
-        if _cleanup_blocked_core_renders(dest, args.host, skill_scope):
+        if _cleanup_blocked_core_renders(dest, args.host, skill_scope, language_of(args)):
             return 1
     # 첫 install 은 profile 이 없어 빈 dict. 주입은 claude host 만(아래 5c) — codex 는 해석 기전이 없다.
     # 단 구조 검사는 host 무관: 오타 역할/키는 어느 host 에서든 설정을 조용히 죽인다.
@@ -1289,7 +1284,7 @@ def _run_locked(args) -> int:
     if _fails:
         for _m in _fails:
             print(f"❌ {_m}", file=sys.stderr)
-        print("   sage/project-profile.yaml 의 team.core 를 고친 뒤 다시 실행하세요 (`sage validate` 로 확인).",
+        print(tr(language_of(args), 'cli.install.msg19'),
               file=sys.stderr)
         return 1
 
@@ -1298,24 +1293,24 @@ def _run_locked(args) -> int:
     manifest_issue = (_manifest_structure_issue(existing_manifest)
                       if existing_manifest is not None else "읽을 수 없거나 최상위 mapping이 아님")
     if os.path.lexists(manifest_path) and manifest_issue and not args.force:
-        print(f"❌ 기존 manifest 구조가 손상되었습니다: {manifest_path}", file=sys.stderr)
+        print(tr(language_of(args), 'cli.install.msg20', manifest_path=manifest_path), file=sys.stderr)
         print(f"   reason: {manifest_issue}", file=sys.stderr)
-        print("   등록 자산/host/CORE anchor 유실을 막기 위해 non-force install을 차단합니다.", file=sys.stderr)
-        print("   manifest를 복구하거나, 기존 내용을 버리기로 명시한 경우에만 --force를 사용하세요.", file=sys.stderr)
+        print(tr(language_of(args), 'cli.install.msg21'), file=sys.stderr)
+        print(tr(language_of(args), 'cli.install.msg22'), file=sys.stderr)
         return 1
 
     trust_conflicts = _core_trust_conflicts(
         dest, args.host, agent_profile, existing_manifest, allow_base_replacement=args.force,
         codex_skill_scope=skill_scope)
     if trust_conflicts:
-        _print_core_trust_conflicts(dest, trust_conflicts)
+        _print_core_trust_conflicts(dest, trust_conflicts, language_of(args))
         return 1
 
     overlay_preflight_errors = overlay_materialize.preflight_overlays(dest, _profile)
     for path, message in overlay_preflight_errors:
-        print(f"❌ install preflight 실패({os.path.relpath(path, dest)}): {message}", file=sys.stderr)
+        print(tr(language_of(args), 'cli.install.msg23', os_path=os.path.relpath(path, dest), message=message), file=sys.stderr)
     if overlay_preflight_errors:
-        print("---- sage install: FAIL (일반 install mutation 없음) ----", file=sys.stderr)
+        print(tr(language_of(args), 'cli.install.msg24'), file=sys.stderr)
         return 1
 
     preconditions = _install_preconditions(dest, args, manifest_path)
@@ -1361,8 +1356,7 @@ def _run_locked(args) -> int:
                                   for name in ("project-profile.yaml", "project-profile.json")
                                   if os.path.lexists(os.path.join(dest, "sage", name))), None)
     if existing_profile_path is not None:
-        print(f"보존: {os.path.relpath(existing_profile_path, dest)} "
-              "(인스턴스 profile — --force 라도 덮어쓰지 않음)")
+        print(tr(language_of(args), 'cli.install.msg25', os_path=os.path.relpath(existing_profile_path, dest)))
     else:
         _write(prof_dst, _profile_with_host(args.host, args.prefix), args.force, created, skipped,
                transaction=transaction)
@@ -1380,7 +1374,7 @@ def _run_locked(args) -> int:
     project_local_script = ((_profile.get("verification") or {}).get("project_local_script")
                             if isinstance(_profile.get("verification"), dict) else None)
     if project_local_script == "scripts/verify-changes.sh" and os.path.isfile(verify_dst):
-        print("보존: scripts/verify-changes.sh (profile verification.project_local_script)")
+        print(tr(language_of(args), 'cli.install.msg26'))
         skipped.append(verify_dst)
     else:
         _copy_file(os.path.join(fw, "scripts", "verify-changes.sh"),
@@ -1497,21 +1491,21 @@ def _run_locked(args) -> int:
     core_renders, materialization_plans, overlay_errors = overlay_materialize.plan_materialize(
         dest, args.host, skill_scope)
     for p, msg in overlay_errors:
-        print(f"  ❌ 오버레이 물리화 실패({os.path.relpath(p, dest)}): {msg}", file=sys.stderr)
+        print(tr(language_of(args), 'cli.install.msg27', os_path=os.path.relpath(p, dest), msg=msg), file=sys.stderr)
     if overlay_errors:
-        print("---- sage install: FAIL (manifest 미갱신) ----", file=sys.stderr)
+        print(tr(language_of(args), 'cli.install.msg28'), file=sys.stderr)
         return 1
     anchor_conflicts = _materialized_anchor_conflicts(
         dest, args.host, agent_profile, core_renders, skill_scope)
     if anchor_conflicts:
-        _print_core_trust_conflicts(dest, anchor_conflicts)
+        _print_core_trust_conflicts(dest, anchor_conflicts, language_of(args))
         return 1
     transaction.verify_unconsumed()
     overlay_changed = overlay_materialize.apply_materialization(
         materialization_plans,
         writer=lambda path, text: _atomic_write(path, text, transaction=transaction))
     for p in sorted(overlay_changed):
-        print(f"  ~ 오버레이 물리화: {os.path.relpath(p, dest)}")
+        print(tr(language_of(args), 'cli.install.msg29', os_path=os.path.relpath(p, dest)))
 
     # 6. manifest (CORE hook 등록 — generate 가 hash 스탬프 + core_renders 앵커). --force 재설치는 기존
     #    manifest 의 인스턴스 등록 자산(mcps/agents/skills)을 보존하고 CORE hook·core_renders 만 리셋.
@@ -1543,20 +1537,20 @@ def _run_locked(args) -> int:
     transaction.verify_outputs()
     cleanup_errors = transaction.commit()
     for message in cleanup_errors:
-        print(f"⚠️ install transaction backup 정리 실패: {message}", file=sys.stderr)
-    _warn_if_retro_audit_tracked(dest)
+        print(tr(language_of(args), 'cli.install.msg30', message=message), file=sys.stderr)
+    _warn_if_retro_audit_tracked(dest, language_of(args))
 
     # 보고
     print(f"== sage install (host={args.host}, prefix={args.prefix}) → {dest} ==")
-    print(f"생성 {len(created)}건 (framework + CORE hook {len(_CORE_HOOKS)} + roster agent {len(_CORE_AGENTS)} + CORE agent render {len(_CORE_AGENTS)} + CORE skill {len(core_skill_ids())}):")
+    print(tr(language_of(args), 'cli.install.msg31', count=len(created), count2=len(_CORE_HOOKS), count3=len(_CORE_AGENTS), count4=len(_CORE_AGENTS), count5=len(core_skill_ids())))
     for p in sorted(created):
         print(f"  + {os.path.relpath(p, dest)}")
     if skipped:
-        print(f"skip {len(skipped)}건 (이미 존재 — --force 로 덮어쓰기):")
+        print(tr(language_of(args), 'cli.install.msg32', count=len(skipped)))
         for p in sorted(skipped):
             print(f"  = {os.path.relpath(p, dest)}")
     if pruned:
-        print(f"정리 {len(pruned)}건 (은퇴한 CORE 잔존 자산 제거):")
+        print(tr(language_of(args), 'cli.install.msg33', count=len(pruned)))
         for p in sorted(pruned):
             print(f"  - {p}")
     # --force(업그레이드) 재설치는 CORE 자산을 갱신하므로, 인스턴스가 등록한 kind(mcp/agent/skill)
@@ -1564,8 +1558,8 @@ def _run_locked(args) -> int:
     #    를 돌려야만 orphan drift 를 발견).
     if args.force:
         print("")
-        print("   ℹ️  --force 재설치 완료. CORE hook 은 `sage generate --kind hook --write` 로 재스탬프하기")
-        print("       전까지 STALE 이 정상입니다. 등록 자산(mcp/agent/skill) 보존 여부는 아래로 확인:")
+        print(tr(language_of(args), 'cli.install.msg34'))
+        print(tr(language_of(args), 'cli.install.msg35'))
         print("         sage validate --check --kind all")
 
     # 다음 단계 안내 — 설계상 진입점은 "AI 대화로 profile 채우기"다(직접 편집 아님).
@@ -1574,12 +1568,12 @@ def _run_locked(args) -> int:
     init_cmd = "/sage-init" if args.host == "claude" else "$sage-init"
     gen_cmd = "sage generate --kind hook --write" + ("" if args.host == "claude" else " --target codex")
     print("")
-    print("다음 단계:")
-    print(f"  1) 이 폴더에서 {runner} 실행 → `{init_cmd}` 입력")
-    print("     AI 가 인터뷰로 공유 project-profile.yaml 과 로컬 project-profile.local.yaml 을 채웁니다.")
-    print(f"  2) 완료되면: {gen_cmd} → sage validate")
+    print(tr(language_of(args), 'cli.install.msg36'))
+    print(tr(language_of(args), 'cli.install.msg37', runner=runner, init_cmd=init_cmd))
+    print(tr(language_of(args), 'cli.install.msg38'))
+    print(tr(language_of(args), 'cli.install.msg39', gen_cmd=gen_cmd))
     print("")
-    print("   설정을 마치기 전에는 `sage generate` 가 차단됩니다 (거버넌스 게이트).")
+    print(tr(language_of(args), 'cli.install.msg40'))
 
     if args.host == "claude":
         # CORE 렌더(skill/agent)는 create-only 라 --force 없이는 기존 사본이 skip 된다 →
@@ -1589,24 +1583,23 @@ def _run_locked(args) -> int:
                                                                  or os.sep + "agents" + os.sep in p)]
         if skipped_core and not args.force:
             print("")
-            print(f"   ℹ️  기존 CORE 렌더 {len(skipped_core)}건 skip(이미 존재). 번들과 다를 수 있으니 "
-                  "`sage doctor` 로 drift 확인 — 갱신은 `sage install --host claude --force`.")
+            print(tr(language_of(args), 'cli.install.msg41', count=len(skipped_core)))
     if args.host == "codex":
         _print_codex_skill_summary(bootstrap_skill_status, core_skill_status,
-                                   skill_scope)
+                                   skill_scope, language_of(args))
         if agents_md_collision:
             print("")
-            print("   ⚠️  기존 AGENTS.md 가 있어 codex 부트스트랩 라우터를 배치하지 못했습니다.")
-            print("       --force 로 교체하거나 templates 의 AGENTS.md 부트스트랩 섹션을 수동 병합하세요.")
+            print(tr(language_of(args), 'cli.install.msg42'))
+            print(tr(language_of(args), 'cli.install.msg43'))
     return 0
 
 
-def _print_codex_skill_summary(bootstrap_skill_status, core_skill_status, skill_scope):
+def _print_codex_skill_summary(bootstrap_skill_status, core_skill_status, skill_scope, language=None):
     """Summarize the selected Codex CORE skill discovery surface."""
     if (skill_scope == "disabled" and not core_skill_status
             and all(status[0] == "disabled" for _skill_id, status in bootstrap_skill_status)):
         print("")
-        print("   CORE skill 설치 생략(--no-global-skill, deprecated). AGENTS.md 라우터만 배치됐습니다.")
+        print(tr(language, 'cli.install.msg44'))
         return
 
     # (id, status) 전체 수집 — full/local init + CORE 스킬.
@@ -1623,13 +1616,13 @@ def _print_codex_skill_summary(bootstrap_skill_status, core_skill_status, skill_
     err = counts.get("error", 0) + counts.get("missing", 0)
 
     print("")
-    scope_label = "전역" if skill_scope == "global" else "프로젝트 로컬"
-    print(f"   {scope_label} CORE skill {total}종: 최신 {ok}" + (f", 갱신필요 {stale}" if stale else "") + (f", 실패 {err}" if err else ""))
+    scope_label = tr(language, "cli.install.scope_global" if skill_scope == "global"
+                     else "cli.install.scope_project_local")
+    print(tr(language, 'cli.install.msg45', scope_label=scope_label, total=total, ok=ok) + (tr(language, 'cli.install.stale_suffix', stale=stale) if stale else "") + (tr(language, "cli.install.failed_suffix", err=err) if err else ""))
     if stale:
         stale_ids = ", ".join(f"${sid}" for sid, st in entries if st == "stale")
-        print(f"   ⚠️  갱신 필요: {stale_ids}")
-        print(f"       → `sage install --host codex --skill-scope {skill_scope} --force` "
-              "(선택 scope의 로컬 수정은 덮어써집니다)")
+        print(tr(language, 'cli.install.msg46', stale_ids=stale_ids))
+        print(tr(language, 'cli.install.msg47', skill_scope=skill_scope))
     if err:
         err_ids = ", ".join(f"${sid}" for sid, st in entries if st in ("error", "missing"))
-        print(f"   ⚠️  설치 실패: {err_ids} (권한/읽기전용 home 또는 번들 손상?)")
+        print(tr(language, 'cli.install.msg48', err_ids=err_ids))

@@ -240,7 +240,7 @@ def _check_note(path, root, run_id=None, language=None):
 
     n = len(proposals)
     print(f"== sage retro --check ({os.path.basename(path)}) — OK ==")
-    print(tr(language, "cli.retro.msg05", n=n) + (" (전부 유효 target)" if n else ""))
+    print(tr(language, "cli.retro.msg05", n=n) + (tr(language, 'cli.retro.all_valid_target') if n else ""))
     if n == 0:
         print(tr(language, "cli.retro.msg06"))
 
