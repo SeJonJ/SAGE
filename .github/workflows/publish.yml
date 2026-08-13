@@ -22,6 +22,8 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Publish preflight (증거 불일치면 여기서 차단 — publish 는 되돌릴 수 없다)
+        run: python scripts/ci/publish_preflight.py --tag "${{ github.ref_name }}"
       - name: Install build tools
         run: pip install build twine
 

@@ -12,6 +12,7 @@ Start with the document that matches your task.
 | User resolving installation or runtime errors | [Troubleshooting](troubleshooting.en.md) |
 | Contributor changing SAGE internals | [Architecture](ARCHITECTURE.en.md) |
 | Developer locating generated artifacts and deciding what to commit | [Artifacts](ARTIFACTS.en.md) |
+| Maintainer deciding whether a release is possible | [Release readiness](release-readiness.en.md) |
 
 ## Harness Specifications
 

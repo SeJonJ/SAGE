@@ -337,5 +337,9 @@ echo "### 63. sage upgrade (읽기 전용 진단 · 트랜잭션 적용 · 멱�
 python3 "$HERE/test_upgrade.py" || rc=1
 
 echo ""
+echo "### 64. 릴리스 증거 게이트 (플랫폼 smoke 계약 · publish preflight 차단)"
+python3 "$HERE/test_release_readiness.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

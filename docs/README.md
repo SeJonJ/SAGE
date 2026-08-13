@@ -12,6 +12,7 @@
 | 설치·실행 오류를 해결하는 사용자 | [문제 해결](troubleshooting.md) |
 | SAGE에 기여하는 개발자 | [Architecture](ARCHITECTURE.md) |
 | 생성물 위치·소유권과 커밋 대상을 확인하는 개발자 | [Artifacts](ARTIFACTS.md) |
+| 릴리스 가능 여부를 판단하는 관리자 | [릴리스 준비 상태](release-readiness.md) |
 
 ## 거버넌스 하네스
 
