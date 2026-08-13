@@ -478,9 +478,15 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
     # 표시·감사가 "어느 통로로 읽었는지" 를 갈라 말할 수 있다 — env 가 이기는데 화면이
     # "파일 선언" 이라고 적으면 확정적으로 거짓이 된다.
     cycle_stem, cycle_origin, cycle_error = cycle_state.resolve_stem(root)
+    # 문서 언어 미러는 **선언 파일이 이긴 stem 일 때만** 실린다. env 가 다른 stem 으로 이기면
+    # 파일의 언어는 다른 사이클의 값이고, 그걸 실으면 게이트가 남의 사이클 선언과 대조한다.
+    declaration = cycle_state.read_declaration_record(root)
+    document_language = (declaration.document_language
+                         if declaration.stem and declaration.stem == cycle_stem else None)
     event = {"hook_id": hid, "hook_event_name": "PreToolUse", "runtime": io.RUNTIME,
              "session_id": raw.get("session_id", "") or "", "branch": resolve_branch(root, ""),
              "cycle_stem": cycle_stem, "cycle_stem_origin": cycle_origin,
+             "cycle_document_language": document_language,
              "declared_max": declared, "changes": changes}
     snapshot = build_snapshot(profile, root, rel)
     feedback_state = _build_feedback_state(profile, root, changes)

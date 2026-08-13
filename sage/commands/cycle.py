@@ -37,6 +37,9 @@ def register(sub):
                         help="Phase 00을 만들 프로젝트 root 상대 디렉터리")
     parser.add_argument("--root", default=None,
                         help="대상 프로젝트 루트 (기본: cwd 에서 가장 가까운 SAGE 설치본)")
+    parser.add_argument("--document-language", dest="document_language",
+                        default=None, choices=("ko", "en"),
+                        help="이 사이클의 00~06 문서를 쓸 언어 (기본: 표시 언어)")
     parser.set_defaults(func=run)
 
 
@@ -393,10 +396,13 @@ def _available_stems(root, patterns, stem, cs):
     return result
 
 
-def _phase00_skeleton(stem, risk):
+def _phase00_skeleton(stem, risk, document_language):
+    # 마커를 여기서 함께 박는 것이 계약이다. 선언 미러만 쓰고 Phase 00 을 비워두면 `--create` 가
+    # 자기 게이트가 경고할 상태(미러는 선언, 문서는 미선언)를 스스로 만든다.
     return (
         "<!-- SAGE Phase 00 skeleton: fill the plan before governed source edits. -->\n"
         f"# [Base Plan] {stem}\n\n"
+        f"Document-Language: {document_language}\n"
         f"Cycle-Stem: `{stem}`\n"
         f"Risk Level: {risk}\n"
         "Status: DRAFT\n"
@@ -460,9 +466,17 @@ def _write_phase00_exclusive(path, payload):
 def _document_language(cs, args):
     """이 사이클이 00~06 내내 쓸 문서 언어. 시작 시 한 번만 정하고 이후 바뀌지 않는다.
 
-    CLI 가 실은 LanguageContext 를 쓰되, 없으면 기본값이다 — 언어 배선 없이 호출되는 경로
-    (테스트·직접 호출)가 여기서 죽으면 사이클 선언 자체가 언어 기능에 묶인다.
+    `--document-language` 가 정본이다. 표시 언어를 기본값으로만 쓰는 이유는 둘의 수명이 달라서다
+    — 표시 언어는 실행 하나의 성질이고 문서 언어는 사이클 전체의 성질이다. 파생으로 **고정**하면
+    영어 도움말을 한 번 본 사용자가 한국어로 쓰는 사이클에 `en` 을 박고, 다음 편집부터 게이트가
+    자기가 만든 충돌로 막는다.
+
+    표시 언어조차 없으면 `ko` 다 — 언어 배선 없이 호출되는 경로(테스트·직접 호출)가 여기서
+    죽으면 사이클 선언 자체가 언어 기능에 묶인다.
     """
+    explicit = getattr(args, "document_language", None)
+    if explicit in cs.DOCUMENT_LANGUAGES:
+        return explicit
     context = getattr(args, "_language_context", None)
     language = getattr(context, "language", None)
     return language if language in cs.DOCUMENT_LANGUAGES else "ko"
@@ -531,7 +545,9 @@ def _create_and_set(cs, args, root, declaration_path, stem):
         os.makedirs(target_dir, exist_ok=True)
         if not _contained(root, target_dir):
             raise CycleUsageError("생성 디렉터리가 프로젝트 root 밖으로 바뀌었습니다")
-        _write_phase00_exclusive(target, _phase00_skeleton(stem, args.risk).encode("utf-8"))
+        _write_phase00_exclusive(
+            target,
+            _phase00_skeleton(stem, args.risk, _document_language(cs, args)).encode("utf-8"))
     except FileExistsError:
         print(f"⛔ [sage cycle] 대상 엔트리가 이미 존재해 덮지 않습니다: {rel_target}",
               file=sys.stderr)

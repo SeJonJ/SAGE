@@ -31,6 +31,12 @@ L2/L3 code is written. Hands back an ownership map; `/sage-team` drives 03–06.
    On a resumed session with a user-supplied packet, first run
    `sage context restore --snapshot <path>` and read the generated briefing. A restore
    failure is a hard stop; never fall back to an unverified packet.
+   Settle the cycle's document language in the same pass: Phase 00's `Document-Language:`
+   line if that document exists, else `document_language` in `.sage/cycle.json`, else ask
+   the user and record it with `sage cycle set <stem> --document-language <ko|en>`. Every
+   phase document carries that one line outside any code fence and is written in that
+   language, fixed for the whole cycle. It is independent of the conversation language —
+   see `docs/agent/language-policy.md`.
 4. If `knowledge_capture.scan_before_dev: true` and `knowledge_capture.vault_path`
    is set, write the task scope to `.sage/knowledge_query.txt` and run
    `python -m sage knowledge scan --query-file .sage/knowledge_query.txt`. The

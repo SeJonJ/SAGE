@@ -135,6 +135,143 @@ class TestDeclarationRecord(unittest.TestCase):
             cs.write_declaration(self._root(), "demo")
 
 
+class TestGateWiring(unittest.TestCase):
+    """파서가 아니라 **게이트가 파서를 부르는가**를 본다.
+
+    B7 의 실패 형태가 정확히 이거였다 — 파서와 스키마가 있고 그 단위 테스트가 전부 통과하는데
+    게이트가 호출하지 않아 아무것도 막지 않았다. 파서만 검사하는 테스트는 그 상태를 통과시킨다.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, str(REPO / "scripts/sage_harness/hooks"))
+        import pre_implementation_gate_core as core
+        self.core = core
+
+    PROFILE = {
+        "pdca": {"enabled": True, "report_phase": "06", "approve_phase": "05",
+                 "phases": [{"id": pid, "glob": f"plan_docs/{pid}-*/**/*.md"}
+                            for pid in ("00", "01", "02", "03", "04", "05", "06")]},
+        "risk": {},
+    }
+
+    def _snapshot(self, docs):
+        phase_docs = {}
+        for pid, text in docs.items():
+            phase_docs[pid] = [{"path": f"plan_docs/{pid}-x/demo.md",
+                                "content": f"Cycle-Stem: `demo`\n{text}", "recent": True}]
+        return {"phase_docs": phase_docs, "plan_files": [], "l3_review_docs": []}
+
+    def _event(self, language=None):
+        return {"hook_id": "pre-implementation-gate", "branch": "feat/demo",
+                "cycle_stem": "demo", "cycle_stem_origin": "cli",
+                "cycle_document_language": language, "declared_max": "",
+                "changes": [{"path": "plan_docs/03-x/demo.md"}]}
+
+    def _gate(self, docs, language=None):
+        return self.core._document_language_gate(
+            self._event(language), self.PROFILE, self._snapshot(docs), "demo")
+
+    def test_unmarked_cycle_passes(self):
+        """마커 이전에 시작한 사이클을 즉시 막으면 그건 이 기능이 만든 과차단이다."""
+        self.assertIsNone(self._gate({"00": "", "01": ""}))
+
+    def test_agreeing_markers_pass(self):
+        self.assertIsNone(self._gate({"00": "Document-Language: en\n",
+                                      "01": "Document-Language: en\n"}))
+
+    def test_disagreeing_markers_block(self):
+        result = self._gate({"00": "Document-Language: en\n",
+                             "01": "Document-Language: ko\n"})
+        self.assertEqual(result["status"], "block")
+
+    def test_state_mirror_disagreement_blocks(self):
+        result = self._gate({"00": "Document-Language: en\n"}, language="ko")
+        self.assertEqual(result["status"], "block")
+        self.assertIn("state-mismatch", result["reason"])
+
+    def test_partial_declaration_warns_but_does_not_block(self):
+        """부분 이관이 완전 이관과 똑같이 조용하면 언제 끝났는지 셀 수 없다."""
+        result = self._gate({"00": "Document-Language: en\n", "01": ""})
+        self.assertEqual(result["status"], "warn")
+
+    def test_mirror_without_any_marker_warns(self):
+        self.assertEqual(self._gate({"00": ""}, language="en")["status"], "warn")
+
+    def test_damaged_marker_blocks_rather_than_reading_as_absent(self):
+        for text in ("Document-Language: fr\n",
+                     "Document-Language: ko\nDocument-Language: en\n"):
+            self.assertEqual(self._gate({"00": text})["status"], "block", text)
+
+    def test_other_cycles_documents_are_not_compared(self):
+        snapshot = {"phase_docs": {
+            "00": [{"path": "plan_docs/00-base_plan/demo.md",
+                    "content": "Cycle-Stem: `demo`\nDocument-Language: en\n", "recent": True}],
+            "01": [{"path": "plan_docs/01-plan/other.md",
+                    "content": "Cycle-Stem: `other`\nDocument-Language: ko\n", "recent": True}]}}
+        self.assertIsNone(self.core._document_language_gate(
+            self._event(), self.PROFILE, snapshot, "demo"))
+
+    def test_decide_actually_reaches_the_gate(self):
+        """`decide` 를 통과시켜 확인한다 — 함수만 맞고 배선이 없으면 여기서 걸린다."""
+        decision = self.core.decide(
+            self._event(language="ko"),
+            self.PROFILE,
+            self._snapshot({"00": "Document-Language: en\nRisk Level: L2\n",
+                            "03": "Document-Language: en\n"}),
+            None)
+        self.assertEqual(decision["message_key"], "block_document_language_conflict")
+        self.assertEqual((decision["status"], decision["exit_code"]), ("block", 2))
+
+    def test_both_message_keys_render_in_both_locales(self):
+        sys.path.insert(0, str(RUNTIME))
+        import messages
+        for key, status in (("block_document_language_conflict", "block"),
+                            ("warn_document_language_missing", "warn")):
+            for language in ("ko", "en"):
+                text = messages.gate_text(
+                    {"message_key": key, "status": status, "reason": "r",
+                     "cycle_stem": "demo", "risk": "PDCA"},
+                    {}, "claude", language=language)
+                self.assertTrue(text and "message_key=" not in text, (key, language))
+
+
+class TestContextPacketCarriesLanguage(unittest.TestCase):
+    """복원된 세션이 이어서 쓸 언어. packet 이 안 실으면 host 가 자기 기본값으로 쓴다."""
+
+    def setUp(self):
+        sys.path.insert(0, str(REPO))
+        from sage import context_packet
+        self.packet = context_packet
+
+    def test_schema_declares_the_field_and_rejects_a_bad_value(self):
+        self.assertEqual(self.packet.SCHEMA_VERSION, 2)
+        self.assertEqual(self.packet.DOCUMENT_LANGUAGES, ("ko", "en"))
+
+    def test_mirror_is_read_when_the_stem_matches(self):
+        root = Path(tempfile.mkdtemp())
+        (root / ".sage").mkdir()
+        cs.write_declaration(str(root), "demo", document_language="en")
+        self.assertEqual(self.packet._document_language(root, "demo", None), "en")
+
+    def test_another_cycles_mirror_is_not_borrowed(self):
+        """남의 사이클 선언을 실으면 게이트가 없는 충돌을 만든다."""
+        root = Path(tempfile.mkdtemp())
+        (root / ".sage").mkdir()
+        cs.write_declaration(str(root), "other", document_language="en")
+        self.assertIsNone(self.packet._document_language(root, "demo", None))
+
+    def test_absence_stays_none_rather_than_defaulting(self):
+        root = Path(tempfile.mkdtemp())
+        (root / ".sage").mkdir()
+        self.assertIsNone(self.packet._document_language(root, "demo", None))
+
+    def test_explicit_value_wins_over_the_mirror(self):
+        root = Path(tempfile.mkdtemp())
+        (root / ".sage").mkdir()
+        cs.write_declaration(str(root), "demo", document_language="en")
+        self.assertEqual(self.packet._document_language(root, "demo", "ko"), "ko")
+
+
 class TestProductionCallSites(unittest.TestCase):
     def test_every_production_write_passes_a_language(self):
         """정적 call-site 검사 — 새 호출부가 인자를 빠뜨리면 런타임 전에 잡는다."""

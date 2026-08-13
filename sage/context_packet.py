@@ -19,7 +19,11 @@ from sage import _resources
 from sage.runtime_hosts import active_host, configured_hosts, profile_issues as runtime_profile_issues
 
 
-SCHEMA_VERSION = 1
+# v2: cycle 에 document_language 를 실는다. 복원된 세션이 이어서 쓸 언어를 packet 이 나르지
+# 않으면 host 가 자기 기본값으로 쓰고, 사이클 절반이 다른 언어가 된다 — 그 시점에 사이클 문서
+# 언어 게이트가 사용자가 하지 않은 선택 때문에 차단한다.
+SCHEMA_VERSION = 2
+DOCUMENT_LANGUAGES = ("ko", "en")
 DEFAULT_MAX_SNAPSHOT_BYTES = 1024 * 1024
 MIN_MAX_SNAPSHOT_BYTES = 1024
 MAX_MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
@@ -220,6 +224,25 @@ def _semantic_profile(profile: dict[str, Any]) -> dict[str, Any]:
     return semantic
 
 
+def _document_language(root: Path, stem: str, explicit: str | None) -> str | None:
+    """이 사이클의 문서 언어. 명시값 > `.sage/cycle.json` 미러 > 미선언(None).
+
+    미선언을 `ko` 로 채우지 않는다. 채우면 마커 이전 사이클과 한국어를 고른 사이클이 같은 값이
+    되고, 복원된 세션은 사용자가 하지 않은 선택을 확정으로 받는다.
+
+    미러의 stem 이 다르면 남의 사이클 값이므로 쓰지 않는다.
+    """
+    if explicit in DOCUMENT_LANGUAGES:
+        return explicit
+    try:
+        record = _cycle_state().read_declaration_record(str(root))
+    except Exception:
+        return None
+    if record.stem != stem or record.document_language not in DOCUMENT_LANGUAGES:
+        return None
+    return record.document_language
+
+
 def _cycle_binding():
     hooks = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks")
     import sys
@@ -227,6 +250,16 @@ def _cycle_binding():
         sys.path.insert(0, hooks)
     import cycle_binding
     return cycle_binding
+
+
+def _cycle_state():
+    hooks = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks")
+    import sys
+    for path in (os.path.join(hooks, "runtime"), hooks):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+    import cycle_state
+    return cycle_state
 
 
 def _safe_glob(pattern: Any) -> str:
@@ -347,7 +380,8 @@ def _created_at(value: str | None) -> str:
 
 
 def create_snapshot(root: str | os.PathLike[str], cycle_stem: str, completed_phase: str,
-                    *, created_at: str | None = None) -> dict[str, Any]:
+                    *, created_at: str | None = None,
+                    document_language: str | None = None) -> dict[str, Any]:
     """Create a corruption-detecting packet bound to live repository sources at restore."""
     project_root = _root_path(root)
     profile, profile_raw = _load_profile(project_root)
@@ -368,7 +402,8 @@ def create_snapshot(root: str | os.PathLike[str], cycle_stem: str, completed_pha
             "name": str(project.get("name") or ""),
             "prefix": str(project.get("prefix") or ""),
         },
-        "cycle": {"stem": stem, "completed_phase": str(completed_phase), "next_phase": next_phase},
+        "cycle": {"stem": stem, "completed_phase": str(completed_phase), "next_phase": next_phase,
+                  "document_language": _document_language(project_root, stem, document_language)},
         "runtime": {"active_host": active_host(profile), "installed_hosts": configured_hosts(profile)},
         "profile": {
             "path": "sage/project-profile.yaml",
@@ -427,7 +462,10 @@ def _load_packet(root: Path, snapshot_path: str | os.PathLike[str], limit: int) 
     payload = _expect_mapping(packet["payload"], "payload", {
         "project", "cycle", "runtime", "profile", "manifest", "phase_docs", "compaction",
     })
-    cycle = _expect_mapping(payload["cycle"], "cycle", {"stem", "completed_phase", "next_phase"})
+    cycle = _expect_mapping(payload["cycle"], "cycle",
+                            {"stem", "completed_phase", "next_phase", "document_language"})
+    if cycle["document_language"] is not None and cycle["document_language"] not in DOCUMENT_LANGUAGES:
+        raise ContextError("malformed context packet cycle")
     binding = _cycle_binding()
     if (not isinstance(cycle["stem"], str) or binding.normalize_stem(cycle["stem"]) != cycle["stem"]
             or not isinstance(cycle["completed_phase"], str) or not cycle["completed_phase"]
@@ -506,6 +544,10 @@ def _render_briefing(packet: dict[str, Any], profile: dict[str, Any], docs: list
         f"Cycle-Stem: `{cycle['stem']}`",
         f"Completed-Phase: `{cycle['completed_phase']}`",
         f"Next-Phase: `{cycle['next_phase'] or 'N/A'}`",
+        # 선언이 없으면 줄을 지어내지 않는다. `ko` 로 채우면 "선언한 적 없음"과 "한국어로
+        # 선언함"이 같은 화면이 되어, 복원된 세션이 정하지 않은 언어를 확정으로 읽는다.
+        f"Document-Language: `{cycle['document_language']}`"
+        if cycle["document_language"] else "Document-Language: (not declared)",
         f"Host-Handoff: `{from_host} -> {to_host}`",
         "",
         "This briefing was materialized from an integrity-checked packet and current hash-matched repository files.",
@@ -597,4 +639,5 @@ def restore_snapshot(root: str | os.PathLike[str], snapshot_path: str | os.PathL
         "to_host": to_host,
         "host_handoff": from_host != to_host,
         "next_phase": cycle["next_phase"],
+        "document_language": cycle["document_language"],
     }

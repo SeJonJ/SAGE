@@ -33,6 +33,8 @@ MESSAGES = {
     "block_stale_done_criteria_approval": "{rs}.",
     "warn_stale_done_criteria_approval": "{rs}.",
     "block_cycle_binding": "{rs}.",
+    "block_document_language_conflict": "cycle `{cycle_stem}` declares conflicting document languages.",
+    "warn_document_language_missing": "cycle `{cycle_stem}` has documents without a language declaration.",
     "block_cycle_closed": "Cycle `{cycle_stem}` is already closed — a new source edit cannot be bound to it.",
     "block_report_without_acceptance": "{rs}.",
     "warn_report_without_acceptance": "{rs}.",

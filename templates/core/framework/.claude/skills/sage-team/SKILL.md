@@ -52,6 +52,14 @@ declaration to equal that stem. Match every phase doc and audit run to it — ig
 docs from other cycles and never use recency as identity. Missing/conflicting/ambiguous
 stems are a hard stop.
 
+Read the cycle's document language from Phase 00's `Document-Language:` line before writing
+anything. Every phase document you author (03–06) carries that same line and is written in that
+language. Phase 00 is the source of truth; if `.sage/cycle.json` disagrees with it, that is a
+conflict to raise, not one to resolve by picking a side. If Phase 00 has no such line, the cycle
+predates the marker — keep writing in the language the existing documents already use and do not
+introduce the marker on some documents only. Talking to the user in another language is fine and
+separate; see `docs/agent/language-policy.md`.
+
 Only after that hard stop passes, reconcile the machine-local declaration before
 choosing a resume point:
 

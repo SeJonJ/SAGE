@@ -29,6 +29,11 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
    On a resumed session with a user-supplied context packet, first run
    `sage context restore --snapshot <path>` and read the generated briefing. Reject a
    failed/stale packet instead of using it as advisory context.
+   Read the cycle's document language from Phase 00's `Document-Language:` line and author
+   every 03–06 document with that same line, in that language. Phase 00 is the source of
+   truth; disagreement with `.sage/cycle.json` is a conflict to raise, not one to resolve by
+   choosing a side. A cycle with no marker predates it — follow the language the existing
+   documents use and do not mark only some of them.
    Before every 01–05 phase boundary, re-open Phase 00 and inspect its exact Done Criteria:
    `[ ]` is normal progress, `[x]` is demonstrated completion, and `[~]` is resolved only
    with a same-line `(N/A: reason)`. Update only criteria actually satisfied by the completed

@@ -458,6 +458,58 @@ def _bound_phase00_risk(event, profile, snapshot):
             "detail": "", "cycle_stem": binding["stem"]}
 
 
+def _document_language_gate(event, profile, snapshot, stem):
+    """같은 사이클 문서들의 `Document-Language` 일관성 판정.
+
+    Phase 00 마커가 정본이고 `.sage/cycle.json` 은 재개 편의를 위한 미러다. 둘이 다르면 파일이
+    이기는 게 아니라 hard conflict 이고, 게이트는 어느 쪽도 자동으로 고치지 않는다 — 고르는
+    순간 사용자가 선언하지 않은 언어로 사이클 절반이 계속 쓰인다.
+
+    **부재는 차단하지 않는다.** 마커 이전에 시작한 사이클이 전부 즉시 막히는 과차단이 되고,
+    그건 이 기능이 만든 결함이다. 대신 **일부만 선언한 상태**는 WARN 으로 드러낸다. 부분 이관과
+    완전 이관이 똑같이 조용하면 마이그레이션이 언제 끝났는지 셀 수 없다.
+
+    손상(중복 선언·미지원 값)과 불일치는 차단한다. 이건 부재가 아니라 선언이 서로 다른 답을
+    내는 상태이고, 그 위에서 쓴 문서는 어느 언어로 검토돼야 하는지 정할 수 없다.
+
+    반환: None(해당없음) | {"status": "block"|"warn", "reason": str}
+    """
+    if _pdca_cfg(profile) is None or not stem:
+        return None
+    try:
+        import document_language
+    except Exception:
+        return None                     # 모듈 부재 → 판정 불가, 다른 게이트에 맡김
+
+    documents = {}
+    for docs in (snapshot.get("phase_docs") or {}).values():
+        for doc in docs or []:
+            path = (doc or {}).get("path") or ""
+            if path and cycle_binding.path_stem(path) == stem:
+                documents.setdefault(path, doc.get("content") or "")
+    if not documents:
+        return None
+
+    declared = event.get("cycle_document_language")
+    issues = document_language.consistency_issues(documents, declared)
+    if not issues:
+        return None
+
+    missing = sorted(path for path, reason in issues if reason == document_language.MISSING)
+    if len(missing) == len(issues):
+        # 전부 미선언이고 미러도 비었으면 마커 도입 이전의 사이클이다 — legacy 로 통과시킨다.
+        if len(missing) == len(documents) and declared is None:
+            return None
+        return {"status": "warn",
+                "reason": (f"문서 언어 선언 누락 {len(missing)}건 — {', '.join(missing[:3])}"
+                           f"{' 외' if len(missing) > 3 else ''}")}
+
+    hard = sorted((path, reason) for path, reason in issues
+                  if reason != document_language.MISSING)
+    detail = "; ".join(f"{path}: {reason}" for path, reason in hard[:3])
+    return {"status": "block", "reason": f"문서 언어 선언 충돌 {len(hard)}건 — {detail}"}
+
+
 def _report_gate(event: dict, profile: dict, snapshot: dict):
     """report phase 문서를 쓰는 변경이면 approve phase 의 승인 마커 존재 여부 판정.
 
@@ -1234,6 +1286,7 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
     cfg = _pdca_cfg(profile)
     changed_phases = set()
     fast_state = None
+    language_warning = None
     if cfg is not None and (_is_phase_write(event, cfg) or risk in ("L1", "L2", "L3")):
         binding = cycle_binding.resolve(event, snapshot, cfg)
         if binding.get("error"):
@@ -1256,6 +1309,18 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
                     "reason": f"{_binding_origin_label(source)} stem {binding['stem']!r} 은 "
                               f"완결된 사이클",
                     "file_short": c["file_short"]}
+        # 문서 언어는 사이클 결속이 성립한 뒤에만 물을 수 있다 — stem 이 없으면 "같은 사이클의
+        # 문서" 라는 집합 자체가 정의되지 않는다. 결속 실패는 위에서 이미 차단된다.
+        language = _document_language_gate(event, profile, snapshot, binding["stem"])
+        if language and language["status"] == "block":
+            return {"status": "block", "exit_code": 2, "risk": "PDCA",
+                    "message_key": "block_document_language_conflict",
+                    "reason": language["reason"], "file_short": c["file_short"]}
+        if language:
+            language_warning = {"status": "warn", "exit_code": 0, "risk": "PDCA",
+                                "message_key": "warn_document_language_missing",
+                                "reason": language["reason"], "file_short": c["file_short"]}
+
         changed_phases = _changed_phase_ids(event, cfg)
         report_phase = str(cfg.get("report_phase") or "")
         dependency_phases = {str(phase.get("id") or "") for phase in (cfg.get("phases") or [])}
@@ -1313,6 +1378,8 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
     # Acceptance evidence gate: 04 가 요구사항별 PASS/FAIL/NOT TESTED 를 기록했는지 확인.
     # build/test/lint 통과가 사용자 요구사항 충족을 자동 증명하지 않는 갭을 advisory-first 로 닫는다.
     pending_gate_decisions = []
+    if language_warning is not None:
+        pending_gate_decisions.append(language_warning)
     dcg = _done_criteria_gate(event, profile, snapshot)
     if dcg is not None:
         pending_gate_decisions.append(dcg)

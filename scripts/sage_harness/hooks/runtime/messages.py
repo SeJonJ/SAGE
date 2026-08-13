@@ -233,6 +233,15 @@ def _gate_record(decision, profile):
         "warn_stale_done_criteria_approval": ("WARN", "PDCA", False,
                              "(advisory) Phase 00 변경으로 기존 승인이 stale입니다. Phase 05를 다시 검토하세요"),
         "block_cycle_binding": ("BLOCK", "PDCA", False, _cycle_binding_hint(decision)),
+        # 문서 언어 충돌. 게이트가 어느 쪽도 고르지 않으므로 안내도 한쪽을 지목하지 않는다 —
+        # 정본은 Phase 00 이고, 미러를 맞추는 명령을 함께 적어야 탈출 경로가 닫히지 않는다.
+        "block_document_language_conflict": ("BLOCK", "PDCA", True,
+                             "Phase 00 의 `Document-Language:` 한 줄을 정본으로 삼아 같은 사이클 문서를 "
+                             "맞추고, `sage cycle set <stem> --document-language <ko|en>` 으로 "
+                             ".sage/cycle.json 미러를 갱신하세요"),
+        "warn_document_language_missing": ("WARN", "PDCA", True,
+                             "(advisory) 같은 사이클 문서에 `Document-Language: <ko|en>` 을 한 줄씩 "
+                             "추가하세요"),
         "block_cycle_closed": ("BLOCK", "PDCA",
                              True,
                              "새 사이클의 Phase 00 을 먼저 작성한 뒤 `sage cycle set <새 stem>` 으로 "

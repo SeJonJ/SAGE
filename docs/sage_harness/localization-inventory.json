@@ -4,7 +4,7 @@
     "cli": "sage/i18n",
     "hook": "scripts/sage_harness/hooks/runtime/i18n"
   },
-  "total": 542,
+  "total": 543,
   "entries": [
     {
       "id": "_common:33:print0",
@@ -1779,12 +1779,30 @@
       ]
     },
     {
-      "id": "cycle:544:print0",
+      "id": "cycle:40:help",
+      "domain": "cli",
+      "key": null,
+      "source_file": "sage/commands/cycle.py",
+      "source_symbol": "register",
+      "source_line": 40,
+      "channel": "stdout",
+      "exit_contract": "unchanged",
+      "format": "static",
+      "placeholders": [],
+      "machine_consumer": null,
+      "classification": "argparse.help",
+      "text": "이 사이클의 00~06 문서를 쓸 언어 (기본: 표시 언어)",
+      "required_tests": [
+        "help_tree"
+      ]
+    },
+    {
+      "id": "cycle:560:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_create_and_set",
-      "source_line": 544,
+      "source_line": 560,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -1799,12 +1817,12 @@
       ]
     },
     {
-      "id": "cycle:545:print0",
+      "id": "cycle:561:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_create_and_set",
-      "source_line": 545,
+      "source_line": 561,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -1819,12 +1837,12 @@
       ]
     },
     {
-      "id": "cycle:565:print0",
+      "id": "cycle:581:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_report_set",
-      "source_line": 565,
+      "source_line": 581,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -1839,12 +1857,12 @@
       ]
     },
     {
-      "id": "cycle:573:print0",
+      "id": "cycle:589:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_report_set",
-      "source_line": 573,
+      "source_line": 589,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -1859,12 +1877,12 @@
       ]
     },
     {
-      "id": "cycle:181:print0",
+      "id": "cycle:184:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "run",
-      "source_line": 181,
+      "source_line": 184,
       "channel": "stderr",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -1879,12 +1897,12 @@
       ]
     },
     {
-      "id": "cycle:515:print0",
+      "id": "cycle:529:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_create_and_set",
-      "source_line": 515,
+      "source_line": 529,
       "channel": "stderr",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -1899,12 +1917,12 @@
       ]
     },
     {
-      "id": "cycle:519:print0",
+      "id": "cycle:533:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_create_and_set",
-      "source_line": 519,
+      "source_line": 533,
       "channel": "stderr",
       "exit_contract": "unchanged",
       "format": "static",
@@ -1919,12 +1937,12 @@
       ]
     },
     {
-      "id": "cycle:549:print0",
+      "id": "cycle:565:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_create_and_set",
-      "source_line": 549,
+      "source_line": 565,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -1939,12 +1957,12 @@
       ]
     },
     {
-      "id": "cycle:569:print0",
+      "id": "cycle:585:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_report_set",
-      "source_line": 569,
+      "source_line": 585,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -1959,12 +1977,12 @@
       ]
     },
     {
-      "id": "cycle:588:print0",
+      "id": "cycle:604:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_clear",
-      "source_line": 588,
+      "source_line": 604,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -1979,12 +1997,12 @@
       ]
     },
     {
-      "id": "cycle:599:print0",
+      "id": "cycle:615:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_show",
-      "source_line": 599,
+      "source_line": 615,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -1999,12 +2017,12 @@
       ]
     },
     {
-      "id": "cycle:600:print0",
+      "id": "cycle:616:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_show",
-      "source_line": 600,
+      "source_line": 616,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -2019,12 +2037,12 @@
       ]
     },
     {
-      "id": "cycle:602:print0",
+      "id": "cycle:618:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_show",
-      "source_line": 602,
+      "source_line": 618,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -2039,12 +2057,12 @@
       ]
     },
     {
-      "id": "cycle:605:print0",
+      "id": "cycle:621:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_show",
-      "source_line": 605,
+      "source_line": 621,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -2059,12 +2077,12 @@
       ]
     },
     {
-      "id": "cycle:190:print0",
+      "id": "cycle:193:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "run",
-      "source_line": 190,
+      "source_line": 193,
       "channel": "stderr",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -2079,12 +2097,12 @@
       ]
     },
     {
-      "id": "cycle:485:print0",
+      "id": "cycle:499:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_set",
-      "source_line": 485,
+      "source_line": 499,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -2099,12 +2117,12 @@
       ]
     },
     {
-      "id": "cycle:486:print0",
+      "id": "cycle:500:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_set",
-      "source_line": 486,
+      "source_line": 500,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -2119,12 +2137,12 @@
       ]
     },
     {
-      "id": "cycle:489:print0",
+      "id": "cycle:503:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_set",
-      "source_line": 489,
+      "source_line": 503,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -2139,12 +2157,12 @@
       ]
     },
     {
-      "id": "cycle:492:print0",
+      "id": "cycle:506:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_set",
-      "source_line": 492,
+      "source_line": 506,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -2159,12 +2177,12 @@
       ]
     },
     {
-      "id": "cycle:493:print0",
+      "id": "cycle:507:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_set",
-      "source_line": 493,
+      "source_line": 507,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -2179,12 +2197,12 @@
       ]
     },
     {
-      "id": "cycle:498:print0",
+      "id": "cycle:512:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_set",
-      "source_line": 498,
+      "source_line": 512,
       "channel": "stderr",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -2199,12 +2217,12 @@
       ]
     },
     {
-      "id": "cycle:523:print0",
+      "id": "cycle:537:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_create_and_set",
-      "source_line": 523,
+      "source_line": 537,
       "channel": "stderr",
       "exit_contract": "unchanged",
       "format": "static",
@@ -2219,12 +2237,12 @@
       ]
     },
     {
-      "id": "cycle:527:print0",
+      "id": "cycle:541:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_create_and_set",
-      "source_line": 527,
+      "source_line": 541,
       "channel": "stderr",
       "exit_contract": "unchanged",
       "format": "static",
@@ -2239,12 +2257,12 @@
       ]
     },
     {
-      "id": "cycle:536:print0",
+      "id": "cycle:552:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_create_and_set",
-      "source_line": 536,
+      "source_line": 552,
       "channel": "stderr",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -2259,12 +2277,12 @@
       ]
     },
     {
-      "id": "cycle:540:print0",
+      "id": "cycle:556:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_create_and_set",
-      "source_line": 540,
+      "source_line": 556,
       "channel": "stderr",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -2279,12 +2297,12 @@
       ]
     },
     {
-      "id": "cycle:555:print0",
+      "id": "cycle:571:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_create_and_set",
-      "source_line": 555,
+      "source_line": 571,
       "channel": "stderr",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -2299,12 +2317,12 @@
       ]
     },
     {
-      "id": "cycle:557:print0",
+      "id": "cycle:573:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_create_and_set",
-      "source_line": 557,
+      "source_line": 573,
       "channel": "stderr",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -2319,12 +2337,12 @@
       ]
     },
     {
-      "id": "cycle:581:print0",
+      "id": "cycle:597:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_clear",
-      "source_line": 581,
+      "source_line": 597,
       "channel": "stderr",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -2339,12 +2357,12 @@
       ]
     },
     {
-      "id": "cycle:608:print0",
+      "id": "cycle:624:print0",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/cycle.py",
       "source_symbol": "_show",
-      "source_line": 608,
+      "source_line": 624,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",

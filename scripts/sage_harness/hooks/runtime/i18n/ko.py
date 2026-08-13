@@ -36,6 +36,8 @@ MESSAGES = {
     "block_stale_done_criteria_approval": "{rs}.",
     "warn_stale_done_criteria_approval": "{rs}.",
     "block_cycle_binding": "{rs}.",
+    "block_document_language_conflict": "cycle `{cycle_stem}` 의 문서 언어 선언이 서로 다릅니다.",
+    "warn_document_language_missing": "cycle `{cycle_stem}` 의 일부 문서에 언어 선언이 없습니다.",
     "block_cycle_closed": "cycle `{cycle_stem}` 은 이미 완결된 사이클입니다 — 새 소스 편집을 여기에 결속할 수 없습니다.",
     "block_report_without_acceptance": "{rs}.",
     "warn_report_without_acceptance": "{rs}.",

@@ -48,6 +48,11 @@ leader authors 00/01 from. Skip/shorten only if the user already gave rich detai
 "enough" (record what you have). The interview elicits *requirements*; it does NOT re-ask
 profile config (`components`/`risk`/`cross_model`) that `sage-init` already settled.
 
+Ask which language this cycle's Phase 00–06 documents should be written in (`ko` or `en`)
+unless an existing Phase 00 for this stem already carries a `Document-Language:` line — that
+line wins and is not re-asked. This is the document language, not the language you talk in;
+see `docs/agent/language-policy.md`.
+
 Do not proceed to leader handoff until scope + interview are confirmed.
 
 ## Step 2 — Invoke the leader
@@ -78,6 +83,11 @@ Hand off to the `leader` agent with this briefing:
   point
 - Required: choose one markdown basename as the cycle identity and declare the
   exact same `Cycle-Stem: <basename>` once near the top of every 00–02 document.
+- Required: declare the agreed document language once per document as a standalone
+  `Document-Language: <ko|en>` line outside any code fence, and write the prose in that
+  language. It is fixed for the whole cycle — the pre-implementation gate blocks when
+  documents of one cycle disagree. After the stem is chosen, mirror it for resumed sessions
+  with `sage cycle set <stem> --document-language <ko|en>`.
 - Required: the 00 base plan must record a `Risk Level: Lx` line — L1/L2/L3, the
   higher of the user-declared level and the risk the change globs imply. This is the
   durable per-cycle tier used by later gates and knowledge write-back. Fill exactly one
