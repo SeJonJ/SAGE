@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 from sage.asset_paths import AssetPaths
-from sage.commands._common import contract_version_of, not_implemented
+from sage.commands._common import contract_version_of
 from sage.hook_runtime_hash import calculate_hook_runtime_hash
 
 # severity rank (exit code 매핑은 _exit_code)

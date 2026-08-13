@@ -17,7 +17,7 @@ from sage import overlay_materialize as m  # noqa: E402
 from sage import overlay_common as oc  # noqa: E402
 from sage import overlay_classify as cls  # noqa: E402
 from sage.routing_block import render_routing_body, routing_input_issues  # noqa: E402
-from sage.profile_validate import validate_profile, severity_of  # noqa: E402
+from sage.profile_validate import validate_profile  # noqa: E402
 from sage.profile_layers import profile_layer_issues  # noqa: E402
 
 

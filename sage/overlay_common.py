@@ -14,7 +14,6 @@ import os
 import re
 import stat
 import uuid
-from pathlib import Path
 
 # 버전 붙은 HTML 주석 마커. 전 대상이 markdown 이라 주석 하나로 통일한다. START 는 편집
 # 리다이렉트 힌트를 담고, 버전(v1)은 미래 포맷 변경 시 옛 마커를 식별·재합성하는 근거.

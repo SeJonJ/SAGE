@@ -3,7 +3,6 @@
 
 마스터 게이트 = knowledge_capture.vault_path (비면 vault 출력 전부 OFF). 스키마 키 추가 없음.
 """
-import json
 import os
 import subprocess
 import sys

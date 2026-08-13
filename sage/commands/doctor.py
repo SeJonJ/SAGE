@@ -12,7 +12,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from sage.runtime_hosts import (active_host, configured_hosts, opposite_host, profile_issues,
+from sage.runtime_hosts import (active_host, configured_hosts, profile_issues,
                                 receipt_hosts, receipt_issues)
 from sage.hook_launcher import resolve_sage_hook
 from sage.profile_layers import load_profile_layers, local_profile_git_issues
@@ -249,7 +249,6 @@ def _check_core_render_drift(profile, prof_path):
         except Exception:
             manifest = None
     hosts = receipt_hosts(manifest, host)
-    desired_hosts = configured_hosts(profile)
     print("## CORE 렌더 drift 점검 (스킬 + 로스터 에이전트)")
     print(f"  installed_hosts={hosts} · 기준: `sage install` hand-shipped CORE 렌더")
     for _, message in receipt_issues(profile, manifest):
@@ -296,9 +295,7 @@ def _check_core_render_drift(profile, prof_path):
 
     # 오버레이 물리화 drift 표면화(진단용). 권위 게이트는 `sage validate`(exit 1) — 여기선 가시성만 제공.
     if root is not None:
-        import json as _json
         from sage import overlay_materialize as _mat
-        mpath = os.path.join(root, "docs", "sage_harness", ".manifest.json")
         _mani = manifest
         cr = _mani.get("core_renders") if isinstance(_mani, dict) else None
         if cr:

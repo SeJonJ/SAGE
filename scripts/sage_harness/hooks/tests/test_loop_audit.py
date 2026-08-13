@@ -148,7 +148,7 @@ class TestLoopAudit(unittest.TestCase):
         self.assertIsNone(la.close_of(self.tmp, "rl-x"))
 
     def test_unicode_safe(self):
-        rid = la.open_loop(self.tmp, "L3", cfg={"note": "보안 렌즈 검토"}, now=0)
+        la.open_loop(self.tmp, "L3", cfg={"note": "보안 렌즈 검토"}, now=0)
         self.assertEqual(la.read_records(self.tmp)[0]["cfg"]["note"], "보안 렌즈 검토")
 
     # --- codex S2 후속: valid-but-non-dict 줄이 소비자 .get() 크래시 안 내게 skip ---
@@ -213,7 +213,7 @@ class TestLoopAudit(unittest.TestCase):
 
     def test_seq_handwritten_round_detected(self):
         # CLI/라이브러리 우회한 수기 round(seq 없음) → seq_ok False + integrity 위반.
-        rid = la.open_loop(self.tmp, "L3", run_id="rl-forge", now=0)
+        la.open_loop(self.tmp, "L3", run_id="rl-forge", now=0)
         with open(la.audit_path(self.tmp), "a", encoding="utf-8") as f:
             f.write(json.dumps({"event": "round", "run_id": "rl-forge", "iteration": 1,
                                 "found": 9, "survived": 9, "accepted": 9}) + "\n")   # seq 누락
@@ -239,7 +239,7 @@ class TestLoopAudit(unittest.TestCase):
 
     # --- 7차 배치3: reviewer degraded (cross-model 폴백 침묵 차단) ---
     def test_reviewer_degraded_on_mismatch(self):
-        rid = la.open_loop(self.tmp, "L3", run_id="rl-x", now=0, reviewer_requested="cross_model")
+        la.open_loop(self.tmp, "L3", run_id="rl-x", now=0, reviewer_requested="cross_model")
         la.close_loop(self.tmp, "rl-x", "APPROVED", "CONVERGED", 1, now=1,
                       reviewer_actual="same_runtime")
         run = la.audit_summary(self.tmp)["runs"]["rl-x"]
@@ -248,14 +248,14 @@ class TestLoopAudit(unittest.TestCase):
         self.assertTrue(run["degraded"])
 
     def test_reviewer_not_degraded_when_match(self):
-        rid = la.open_loop(self.tmp, "L3", run_id="rl-y", now=0, reviewer_requested="cross_model")
+        la.open_loop(self.tmp, "L3", run_id="rl-y", now=0, reviewer_requested="cross_model")
         la.close_loop(self.tmp, "rl-y", "APPROVED", "CONVERGED", 1, now=1,
                       reviewer_actual="cross_model")
         self.assertFalse(la.audit_summary(self.tmp)["runs"]["rl-y"]["degraded"])
 
     def test_reviewer_absent_not_degraded(self):
         # reviewer 미기록(legacy/미사용) → degraded False(오탐 방지).
-        rid = la.open_loop(self.tmp, "L3", run_id="rl-z", now=0)
+        la.open_loop(self.tmp, "L3", run_id="rl-z", now=0)
         la.close_loop(self.tmp, "rl-z", "APPROVED", "CONVERGED", 1, now=1)
         self.assertFalse(la.audit_summary(self.tmp)["runs"]["rl-z"]["degraded"])
 
