@@ -317,5 +317,9 @@ echo "### 58. language context (우선순위·공유산출물 격리·채널/exi
 python3 "$HERE/test_language_context.py" || rc=1
 
 echo ""
+echo "### 59. localization inventory (사용자 표시 literal 목록이 코드와 어긋나지 않는지)"
+python3 "$HERE/test_localization_inventory.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"
