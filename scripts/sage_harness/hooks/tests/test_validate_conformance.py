@@ -16,6 +16,7 @@ from unittest import mock
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
 from sage.commands import validate as V  # noqa: E402
+from pathlib import Path
 
 try:
     import yaml  # noqa: F401
@@ -208,7 +209,7 @@ class TestManifestTestPath(unittest.TestCase):
 
     def test_generate_no_longer_stamps_an_engine_test_path(self):
         # 회귀 방지: 소스에 엔진 테스트 경로를 다시 박으면 배포 안 된 경로가 되살아난다.
-        source = open(os.path.join(REPO, "sage", "commands", "generate.py"), encoding="utf-8").read()
+        source = Path(os.path.join(REPO, "sage", "commands", "generate.py")).read_text(encoding="utf-8")
         self.assertNotIn('f"scripts/sage_harness/hooks/tests/test_reverse_extract_{kind}.py"', source)
 
     def _mu(self):

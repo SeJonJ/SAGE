@@ -14,6 +14,7 @@ import glob
 import os
 import re
 import sys
+from pathlib import Path
 
 from sage.profile_layers import load_profile_layers
 
@@ -191,7 +192,7 @@ def _check_note(path, root, run_id=None):
         print(f"[sage retro --check] 노트 파일 없음: {path}", file=sys.stderr)
         return 2
     try:
-        text = open(path, encoding="utf-8").read()
+        text = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as e:
         print(f"[sage retro --check] 노트 읽기 실패: {type(e).__name__}: {e}", file=sys.stderr)
         return 2
@@ -370,7 +371,7 @@ def _write_vault_note(profile, root, rid, raw_stem, out_lines, override):
         if os.path.isfile(prior):
             from sage.commands.absorb import frontmatter_value
             try:
-                prev_rid = frontmatter_value(open(prior, encoding="utf-8").read(), "run_id")
+                prev_rid = frontmatter_value(Path(prior).read_text(encoding="utf-8"), "run_id")
             except (OSError, UnicodeDecodeError):
                 prev_rid = None
             if prev_rid and prev_rid != rid:

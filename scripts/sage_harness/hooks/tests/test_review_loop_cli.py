@@ -18,6 +18,7 @@ import unittest
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
 from sage.commands import review_loop as review_loop_command  # noqa: E402
+from pathlib import Path
 
 
 def sage(*args, root=None):
@@ -114,7 +115,7 @@ class TestReviewLoopCli(unittest.TestCase):
         os.makedirs(os.path.join(self.tmp, "sage"), exist_ok=True)
         with open(os.path.join(self.tmp, "sage", "project-profile.yaml"), "w", encoding="utf-8") as f:
             f.write("pdca:\n  review_loop:\n    enabled: true\n    refuters: 3\n    lenses: [security]\n")
-        rid = self._open()
+        self._open()
         with open(os.path.join(self.tmp, ".sage", "loop_audit.jsonl"), encoding="utf-8") as f:
             rec = json.loads(f.readline())
         self.assertEqual(rec["cfg"]["refuters"], 3)
@@ -270,7 +271,7 @@ class TestTerminationEnforcement(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("불일치", r.stderr)
         # 거부됐으니 close 레코드 없음
-        self.assertNotIn("loop_close", open(os.path.join(self.tmp, ".sage", "loop_audit.jsonl"), encoding="utf-8").read())
+        self.assertNotIn("loop_close", Path(os.path.join(self.tmp, ".sage", "loop_audit.jsonl")).read_text(encoding="utf-8"))
 
     def test_close_blocks_when_local_profile_becomes_malformed(self):
         self._profile("enforce")
@@ -283,7 +284,7 @@ class TestTerminationEnforcement(unittest.TestCase):
 
         self.assertEqual(r.returncode, 2)
         self.assertIn("project-profile.local.yaml", r.stderr)
-        self.assertNotIn("loop_close", open(os.path.join(self.tmp, ".sage", "loop_audit.jsonl"), encoding="utf-8").read())
+        self.assertNotIn("loop_close", Path(os.path.join(self.tmp, ".sage", "loop_audit.jsonl")).read_text(encoding="utf-8"))
 
     def test_advisory_warns_but_proceeds(self):
         self._profile("advisory")
@@ -293,7 +294,7 @@ class TestTerminationEnforcement(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("불일치", r.stderr)
         self.assertIn("advisory", r.stderr)
-        self.assertIn("loop_close", open(os.path.join(self.tmp, ".sage", "loop_audit.jsonl"), encoding="utf-8").read())
+        self.assertIn("loop_close", Path(os.path.join(self.tmp, ".sage", "loop_audit.jsonl")).read_text(encoding="utf-8"))
 
     def test_enforce_passes_consistent_close(self):
         self._profile("enforce")
@@ -352,13 +353,13 @@ class TestTerminationEnforcement(unittest.TestCase):
         path = os.path.join(self.tmp, ".sage", "loop_audit.jsonl")
         with open(path, "a", encoding="utf-8") as f:
             f.write("{ corrupt line\n")   # 무결성 경고 유발
-        before = open(path, "rb").read()
+        before = Path(path).read_bytes()
         r = sage("close", "--run-id", rid, "--result", "APPROVED", "--reason", "CONVERGED",
                  "--iterations", "1", root=self.tmp)
         self.assertEqual(r.returncode, 2)
         self.assertIn("audit write failed", r.stderr)
         self.assertNotIn("Traceback", r.stderr)
-        self.assertEqual(open(path, "rb").read(), before)
+        self.assertEqual(Path(path).read_bytes(), before)
 
     def test_missing_budget_cfg_skip_warn(self):
         # P2: budget 미설정인데 APPROVED → 예산 검산 skip + WARN(차단 안 함).
@@ -452,9 +453,9 @@ class TestReviewLoopNext(unittest.TestCase):
         rid = self._open()
         self._round(rid, 1, found=5, survived=2, tokens=1000)
         path = os.path.join(self.tmp, ".sage", "loop_audit.jsonl")
-        before = open(path, encoding="utf-8").read()
+        before = Path(path).read_text(encoding="utf-8")
         sage("next", "--run-id", rid, root=self.tmp)
-        self.assertEqual(open(path, encoding="utf-8").read(), before)   # 감사 로그 불변
+        self.assertEqual(Path(path).read_text(encoding="utf-8"), before)   # 감사 로그 불변
 
 
 if __name__ == "__main__":

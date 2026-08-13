@@ -19,6 +19,7 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from sage.commands import doctor as _doctor
 
@@ -337,7 +338,7 @@ def _find_root(explicit):
 
 def _read_packet(path, command):
     try:
-        prompt = open(path, encoding="utf-8").read()
+        prompt = Path(path).read_text(encoding="utf-8")
     except Exception as exc:
         print(f"[{command}] TOOL ERROR: 패킷 파일 읽기 실패: {exc}", file=sys.stderr)
         return None

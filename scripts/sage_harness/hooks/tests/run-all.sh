@@ -293,5 +293,21 @@ echo "### 52. adapter stdin contract (EH-14 — adapter 실행 테스트가 stdi
 python3 "$HERE/test_adapter_stdin_contract.py" || rc=1
 
 echo ""
+echo "### 53. runner inventory (디스크의 모든 test 파일이 실행망에 있거나 사유와 함께 제외됐는지)"
+python3 "$HERE/test_runner_inventory.py" || rc=1
+
+echo ""
+echo "### 54. build identity (source hash 안정성 + install stamp + content drift 진단)"
+python3 "$HERE/test_build_identity.py" || rc=1
+
+echo ""
+echo "### 55. profile compile (domain 물질화 + trigger 계약 + 무효 profile 불변성)"
+python3 "$HERE/test_profile_compile.py" || rc=1
+
+echo ""
+echo "### 56. resource hygiene (핸들을 놓지 않는 open 정적 검사 — ResourceWarning 재발 차단)"
+python3 "$HERE/test_resource_hygiene.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

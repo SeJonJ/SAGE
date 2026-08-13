@@ -524,7 +524,7 @@ class TestReviewLoop(unittest.TestCase):
         # 예외 backstop 이 정상 입력의 로직버그를 가리지 않는지 — 대표 valid 프로파일(템플릿 + enabled 루프)이
         # "의미검증 중 예외" FAIL 을 내지 않아야 한다(codex 재리뷰 #2 완화).
         import yaml
-        tmpl = yaml.safe_load(open(os.path.join(REPO, "templates", "project-profile.yaml"), encoding="utf-8"))
+        tmpl = yaml.safe_load(Path(os.path.join(REPO, "templates", "project-profile.yaml")).read_text(encoding="utf-8"))
         valid_full = {"options": {"cross_model": True}, "risk": {"l3_filename_globs": ["*secret*"]},
                       "pdca": {"phases": [{"id": "00", "glob": "x"}],
                                "pre_implementation_required": {"L3": ["00"]},

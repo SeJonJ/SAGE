@@ -13,6 +13,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import contextmanager, redirect_stdout, redirect_stderr
+from pathlib import Path
 from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
@@ -345,7 +346,7 @@ class TestReview(_StableHostTestCase):
 class TestCrossCheck(_StableHostTestCase):
     def _packet(self, d):
         p = os.path.join(d, "pkt.txt")
-        open(p, "w", encoding="utf-8").write("review this diff")
+        Path(p).write_text("review this diff", encoding="utf-8")
         return p
 
     def test_unknown_running_host_blocks_before_calling_a_peer(self):
