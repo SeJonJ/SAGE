@@ -15,14 +15,19 @@ HOSTS = ("claude", "codex")
 POLICIES = ("required", "recommended", "off")
 LOCAL_PROFILE_NAME = "project-profile.local.yaml"
 _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")
-_LOCAL_KEYS = frozenset({"runtime", "capabilities", "cross_model", "knowledge_capture", "models"})
+_LOCAL_KEYS = frozenset({"runtime", "capabilities", "cross_model", "knowledge_capture", "models",
+                         "interface"})
 _SECTION_KEYS = {
     "runtime": frozenset({"installed_hosts"}),
     "capabilities": frozenset(HOSTS),
     "cross_model": frozenset({"enabled"}),
     "knowledge_capture": frozenset({"enabled", "vault_path"}),
     "models": frozenset({"available"}),
+    "interface": frozenset({"language"}),
 }
+# 표시 언어. local 전용이고 `effective_profile` 이 복사하지 않아 공유 profile·manifest·생성물·
+# profile hash 어디에도 들어가지 않는다 — 판정에 관여하지 않는 개인 설정이기 때문이다.
+INTERFACE_LANGUAGES = ("ko", "en")
 
 
 @dataclass(frozen=True)
@@ -103,6 +108,15 @@ def _local_type_issues(local: dict[str, Any]) -> list[tuple[str, str]]:
     cross = local.get("cross_model")
     if isinstance(cross, dict) and "enabled" in cross and not isinstance(cross["enabled"], bool):
         issues.append(("FAIL", "local cross_model.enabled는 boolean이어야 함"))
+
+    interface = local.get("interface")
+    if isinstance(interface, dict) and "language" in interface:
+        # 정확한 소문자만 받는다. 대소문자·공백을 관대하게 받으면 profile 마다 표기가 갈리고
+        # 그 다양성이 그대로 hook·skill 의 언어 해석 분기로 흘러간다.
+        if interface["language"] not in INTERFACE_LANGUAGES:
+            issues.append(("FAIL",
+                           "local interface.language는 "
+                           f"{' 또는 '.join(INTERFACE_LANGUAGES)} 여야 함"))
 
     knowledge = local.get("knowledge_capture")
     if isinstance(knowledge, dict):

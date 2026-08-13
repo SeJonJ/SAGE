@@ -313,5 +313,9 @@ echo "### 57. language policy asset (정본·설치본·영수증·논리경로 
 python3 "$HERE/test_language_policy_asset.py" || rc=1
 
 echo ""
+echo "### 58. language context (우선순위·공유산출물 격리·채널/exit·catalog 정합)"
+python3 "$HERE/test_language_context.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"
