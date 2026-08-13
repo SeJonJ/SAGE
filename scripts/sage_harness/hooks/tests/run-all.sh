@@ -321,5 +321,9 @@ echo "### 59. localization inventory (사용자 표시 literal 목록이 코드�
 python3 "$HERE/test_localization_inventory.py" || rc=1
 
 echo ""
+echo "### 60. hook locale (엔진 비의존 독립 실행 + 두 도메인 분리·정합)"
+python3 "$HERE/test_hook_locale.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"
