@@ -32,8 +32,11 @@ def _emitted_keys():
     for node in ast.walk(tree):
         if isinstance(node, ast.Dict):
             for key, value in zip(node.keys, node.values):
+                # (sev, scope, show_reason, hint) — 문구는 catalog 소유라 여기 없다.
                 if (isinstance(key, ast.Constant) and isinstance(key.value, str)
-                        and isinstance(value, ast.Tuple) and len(value.elts) == 5):
+                        and isinstance(value, ast.Tuple) and len(value.elts) == 4
+                        and isinstance(value.elts[0], ast.Constant)
+                        and value.elts[0].value in ("BLOCK", "WARN", "OK")):
                     keys.add(key.value)
     return keys
 
@@ -150,6 +153,42 @@ class TestLanguageResolution(unittest.TestCase):
         source = (LOCALE / "context.py").read_text(encoding="utf-8")
         self.assertNotRegex(source, r"^\s*import yaml", )
         self.assertIsNotNone(re.search(r"^import re$", source, re.M))
+
+
+class TestDecisionIndependence(unittest.TestCase):
+    """언어가 판정에 닿으면 같은 입력이 사람마다 다른 결과를 낸다 — 거버넌스가 개인 설정에 물린다."""
+
+    def _decision(self, key):
+        return {"message_key": key, "status": "block", "exit_code": 2,
+                "risk": "L3", "file_short": "a/b.py", "reason": "근거",
+                "missing_phases": ["01", "02"], "cycle_stem": "demo"}
+
+    def test_only_the_sentence_differs_between_locales(self):
+        import messages
+        for key in sorted(HOOK_MESSAGE_KEYS):
+            decision = self._decision(key)
+            before = dict(decision)
+            rendered = {lang: messages.gate_text(decision, {}, "claude", lang)
+                        for lang in ("ko", "en")}
+            self.assertEqual(decision, before, f"{key}: 렌더가 decision 을 변형했다")
+            self.assertTrue(rendered["ko"] and rendered["en"], key)
+
+    def test_severity_tag_and_exit_are_locale_invariant(self):
+        import messages
+        for key in sorted(HOOK_MESSAGE_KEYS):
+            decision = self._decision(key)
+            tags = set()
+            for lang in ("ko", "en"):
+                line = messages.gate_text(decision, {}, "claude", lang)
+                tags.add(line.split("]")[0] + "]")
+            self.assertEqual(len(tags), 1, f"{key}: locale 별 GATE 태그가 다르다 — {tags}")
+
+    def test_unknown_locale_falls_back_without_changing_the_tag(self):
+        import messages
+        decision = self._decision("block_l3_no_plan")
+        korean = messages.gate_text(decision, {}, "claude", "ko")
+        unknown = messages.gate_text(decision, {}, "claude", "fr")
+        self.assertEqual(korean, unknown)
 
 
 if __name__ == "__main__":
