@@ -45,8 +45,9 @@ class TestLocalizationInventory(unittest.TestCase):
     def test_channel_and_classification_are_closed_vocabularies(self):
         for entry in _document()["entries"]:
             self.assertIn(entry["channel"], ("stdout", "stderr"), entry["id"])
-            self.assertTrue(entry["classification"].startswith(("argparse.", "command_")),
-                            entry["id"])
+            self.assertTrue(
+                entry["classification"].startswith(("argparse.", "command_", "validation_")),
+                entry["id"])
 
     def test_assigned_keys_use_the_cli_namespace(self):
         """이관하면서 key 를 채울 때 namespace 를 벗어나면 hook 도메인과 충돌할 수 있다."""
@@ -59,6 +60,64 @@ class TestLocalizationInventory(unittest.TestCase):
         self.assertEqual(owner["cli"], "sage/i18n")
         self.assertEqual(owner["hook"], "scripts/sage_harness/hooks/runtime/i18n")
 
+
+
+class TestInventoryCountsWhatTheScreenShows(unittest.TestCase):
+    """세는 범위가 화면보다 좁으면 셈 자체가 거짓이 된다.
+
+    실측된 실패: `sage/commands` 이관이 끝나 인벤토리가 **0 을 보고하는 시점**에도
+    `sage --lang en doctor` 는 한국어를 냈다. 원인이 둘이었다.
+
+      1. 깊이 — 조건식 안의 한국어(`... + (f", 갱신필요 {n}" if n else "")`)를 따라가지 않았다.
+      2. 범위 — 검증 계층(`profile_validate` 등)이 화면에 찍히는데 세지 않았다.
+
+    0 이 "남은 게 없다"로 읽히는 자리라, 이 두 구멍은 조용한 통과와 같은 값이었다.
+    """
+
+    def _generate(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("_inv", GENERATOR)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_korean_inside_a_conditional_expression_is_counted(self):
+        import ast
+        inv = self._generate()
+        source = 'print(f"a" + (f", 갱신필요 {n}" if n else ""))\n'
+        node = ast.parse(source).body[0].value
+        found = inv._korean_literals(node, source)
+        self.assertTrue(found, "조건식 안의 한국어를 세지 않는다")
+
+    def test_an_fstring_counts_once_not_per_fragment(self):
+        import ast
+        inv = self._generate()
+        source = 'x = f"앞 {a} 뒤 {b} 끝"\n'
+        node = ast.parse(source).body[0].value
+        self.assertEqual(len(inv._korean_literals(node, source)), 1)
+
+    def test_the_validation_layer_is_in_scope(self):
+        inv = self._generate()
+        modules = {parts[-1] for parts in inv.VALIDATION_RELS}
+        self.assertIn("profile_validate.py", modules)
+        self.assertIn("model_routing.py", modules)
+
+    def test_hook_reachable_modules_are_marked(self):
+        """hook 경로 모듈에 `sage.i18n` 을 넣으면 hook 이 엔진 의존이 된다 — 표시가 그 경계다."""
+        entries = _document()["entries"]
+        validation = [e for e in entries if e["classification"] == "validation_message"]
+        if not validation:
+            self.skipTest("검증 계층 이관 완료 — 표시할 항목이 없다")
+        self.assertTrue(all("hook_reachable" in e for e in validation))
+        marked = {e["source_file"] for e in validation if e["hook_reachable"]}
+        self.assertTrue(marked, "hook 경로 모듈이 하나도 표시되지 않았다")
+
+    def test_commands_layer_has_no_remaining_korean(self):
+        """이관이 끝난 계층이 다시 늘어나면 즉시 잡는다."""
+        entries = _document()["entries"]
+        remaining = [e for e in entries
+                     if e["source_file"].replace("\\", "/").startswith("sage/commands/")]
+        self.assertEqual(remaining, [], f"sage/commands 에 한국어가 다시 생겼다: {remaining[:3]}")
 
 if __name__ == "__main__":
     unittest.main()
