@@ -52,7 +52,8 @@ class TestSyncOverlays(unittest.TestCase):
             self.assertEqual(sync_overlays.run(SyncArgs(root)), 0)
 
             manifest = load_manifest(root)
-            receipt_hosts = {key.split("/", 1)[0] for key in manifest["core_renders"]}
+            # `shared/...` 는 host 축이 아니라 양 host 가 공유하는 managed framework doc 영수증이다.
+            receipt_hosts = {key.split("/", 1)[0] for key in manifest["core_renders"]} - {"shared"}
             self.assertEqual(receipt_hosts, {"claude", "codex"})
             self.assertIn("Project-local implementation rule",
                           Path(os.path.join(root, ".claude", "agents", "implementer-a.md")).read_text())

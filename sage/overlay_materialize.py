@@ -325,6 +325,37 @@ def preflight_overlays(dest, profile=None):
     return errors
 
 
+# 언어 정책은 host별 렌더가 아니라 양 host 가 같은 설치본을 공유하는 managed framework doc 이라
+# host 축이 없는 `shared` 앵커를 쓴다. overlay 합성 대상이 아니므로 plan 은 만들지 않고 영수증만 남긴다.
+_LANGUAGE_POLICY_SOURCE = "core/framework/docs/agent/language-policy.md"
+_LANGUAGE_POLICY_INSTALLED = ("docs", "agent", "language-policy.md")
+_LANGUAGE_POLICY_ANCHOR = anchor_key("shared", "framework-doc", "docs/agent/language-policy")
+
+
+def _language_policy_receipt(dest):
+    """(receipt, error). 설치본이 없으면 (None, None) — 구버전 소비자는 upgrade 가 추가한다."""
+    installed_path = os.path.join(dest, *_LANGUAGE_POLICY_INSTALLED)
+    if not os.path.isfile(installed_path):
+        return None, None
+    installed, read_error = _oc.read_text_lf(installed_path)
+    if read_error:
+        return None, (installed_path, read_error)
+
+    from sage import _resources
+    source_path = os.path.join(_resources.core_dir(), "framework",
+                               *_LANGUAGE_POLICY_INSTALLED)
+    source, source_error = _oc.read_text_lf(source_path)
+    if source_error:
+        return None, (source_path, source_error)
+
+    return {
+        "base_sha256": _sha256(installed),
+        "sage_version": __version__,
+        "semantic_source": _LANGUAGE_POLICY_SOURCE,
+        "semantic_source_sha256": _sha256(source),
+    }, None
+
+
 def plan_materialize(dest, host, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
     """모든 CORE 렌더의 물리화 계획과 앵커를 쓰기 없이 계산한다.
 
@@ -355,6 +386,12 @@ def plan_materialize(dest, host, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
             "base_sha256": _sha256(base),
             "sage_version": __version__,
         }
+
+    policy_receipt, policy_error = _language_policy_receipt(dest)
+    if policy_error:
+        errors.append(policy_error)
+    elif policy_receipt:
+        core_renders[_LANGUAGE_POLICY_ANCHOR] = policy_receipt
 
     if errors:
         return {}, [], errors

@@ -410,7 +410,8 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(manifest["installed_hosts"], ["claude", "codex"])
             self.assertTrue(os.path.isdir(os.path.join(d, ".claude")))
             self.assertTrue(os.path.isdir(os.path.join(d, ".codex")))
-            receipt_hosts = {key.split("/", 1)[0] for key in manifest["core_renders"]}
+            # `shared/...` 는 host 축이 아니라 양 host 가 공유하는 managed framework doc 영수증이다.
+            receipt_hosts = {key.split("/", 1)[0] for key in manifest["core_renders"]} - {"shared"}
             self.assertEqual(receipt_hosts, {"claude", "codex"})
             self.assertEqual(manifest["core_renders"]["claude/framework/AGENT_GUIDE"],
                              manifest["core_renders"]["codex/framework/AGENT_GUIDE"])
@@ -441,7 +442,8 @@ class TestInstall(unittest.TestCase):
             manifest = json.loads(Path(os.path.join(
                 d, "docs", "sage_harness", ".manifest.json")).read_text(encoding="utf-8"))
             self.assertEqual(manifest["installed_hosts"], ["claude", "codex"])
-            receipt_hosts = {key.split("/", 1)[0] for key in manifest["core_renders"]}
+            # `shared/...` 는 host 축이 아니라 양 host 가 공유하는 managed framework doc 영수증이다.
+            receipt_hosts = {key.split("/", 1)[0] for key in manifest["core_renders"]} - {"shared"}
             self.assertEqual(receipt_hosts, {"claude", "codex"})
 
     def test_legacy_manifest_seeds_installed_hosts_before_append(self):

@@ -737,15 +737,31 @@ def _valid_asset_entry(value):
     return _asset_entry_issue(value) is None
 
 
+# managed framework doc 은 엔진 정본과 설치본이 다른 파일이라, 설치본 해시만으로는 "정본이 바뀌었다"와
+# "설치본이 손댔다"를 구분할 수 없다. 그 둘만 semantic_source 쌍을 함께 기록한다.
+_CORE_RECEIPT_KEYS = {"base_sha256", "sage_version"}
+_CORE_RECEIPT_OPTIONAL = {"semantic_source", "semantic_source_sha256"}
+
+
 def _valid_core_receipt(receipt):
     if not isinstance(receipt, dict):
         return False
-    if set(receipt) != {"base_sha256", "sage_version"}:
+    if not _CORE_RECEIPT_KEYS <= set(receipt) <= (_CORE_RECEIPT_KEYS | _CORE_RECEIPT_OPTIONAL):
         return False
     base_sha = receipt.get("base_sha256")
-    return (isinstance(base_sha, str)
-            and re.fullmatch(r"[0-9a-f]{64}", base_sha) is not None
-            and isinstance(receipt.get("sage_version"), str))
+    if not (isinstance(base_sha, str) and re.fullmatch(r"[0-9a-f]{64}", base_sha) is not None
+            and isinstance(receipt.get("sage_version"), str)):
+        return False
+    # 한쪽만 있으면 정본을 지목하지 못하거나 지목만 하고 대조할 값이 없다 — 둘 다이거나 둘 다 아니어야 한다.
+    present = _CORE_RECEIPT_OPTIONAL & set(receipt)
+    if not present:
+        return True
+    if present != _CORE_RECEIPT_OPTIONAL:
+        return False
+    source_sha = receipt.get("semantic_source_sha256")
+    return (isinstance(receipt.get("semantic_source"), str)
+            and isinstance(source_sha, str)
+            and re.fullmatch(r"[0-9a-f]{64}", source_sha) is not None)
 
 
 def _valid_core_skill_receipt(receipt):
@@ -788,9 +804,13 @@ def _manifest_structure_issue(manifest):
             if not isinstance(key, str) or not isinstance(receipt, dict):
                 return f"core_renders entry가 string -> mapping 형식이 아님: {key!r}"
             if not _valid_core_receipt(receipt):
-                unknown = sorted(set(receipt) - {"base_sha256", "sage_version"})
+                unknown = sorted(set(receipt) - _CORE_RECEIPT_KEYS - _CORE_RECEIPT_OPTIONAL)
                 if unknown:
                     return f"core_renders/{key}/허용되지 않은 필드가 있음: {', '.join(unknown)}"
+                partial = _CORE_RECEIPT_OPTIONAL & set(receipt)
+                if partial and partial != _CORE_RECEIPT_OPTIONAL:
+                    missing = sorted(_CORE_RECEIPT_OPTIONAL - partial)
+                    return f"core_renders/{key}/semantic_source 쌍이 불완전함: {', '.join(missing)} 누락"
                 base_sha = receipt.get("base_sha256")
                 if isinstance(base_sha, str) and re.fullmatch(r"[0-9a-f]{64}", base_sha):
                     return f"core_renders/{key}/sage_version이 string이 아님"
@@ -1434,10 +1454,12 @@ def _run_locked(args) -> int:
                    os.path.join(dest, "docs", "sage_harness", "agents", f"{aid}.md"), args.force,
                    created, skipped, transaction=transaction)
 
-    # 5b. CORE skill spec(중립 6종) → docs/sage_harness/skills/ (host 무관 — CORE agent spec 과 대칭).
-    #     CORE 부트스트랩 자산이라 sage-init/CORE agent spec 과 동일하게 manifest 비추적(reference spec).
+    # 5b. CORE skill 중립 spec → docs/sage_harness/skills/ (host 무관 — CORE agent spec 과 대칭).
+    #     CORE 부트스트랩 자산이라 CORE agent spec 과 동일하게 manifest 비추적(reference spec).
     #     manifest 추적 skill(spec+claims+render hash)은 generate/extract 흐름이 소유한다.
-    for sid in _CORE_SKILLS:
+    #     부트스트랩 skill 도 같은 정본을 갖는다 — 렌더만 배포하면 그 두 개만 canonical source 가
+    #     없어 영어 의미 정본 대조에서 빠진다.
+    for sid in core_skill_ids():
         _copy_file(os.path.join(core, "skills", f"{sid}.md"),
                    os.path.join(dest, "docs", "sage_harness", "skills", f"{sid}.md"), args.force,
                    created, skipped, transaction=transaction)

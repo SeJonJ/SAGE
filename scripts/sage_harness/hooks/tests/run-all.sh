@@ -309,5 +309,9 @@ echo "### 56. resource hygiene (핸들을 놓지 않는 open 정적 검사 — R
 python3 "$HERE/test_resource_hygiene.py" || rc=1
 
 echo ""
+echo "### 57. language policy asset (정본·설치본·영수증·논리경로 4축 고정)"
+python3 "$HERE/test_language_policy_asset.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

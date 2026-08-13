@@ -35,7 +35,7 @@ assets), then hand off to `sage generate` to extract and register.
 ## advisory_scope
 - role_boundary: does not edit generated artifacts to change assets (edit spec/render
   then regenerate); does not bypass validate FAIL; does not author single-runtime
-  interpretive assets (codex 함께 — both renders required)
+  interpretive assets (codex included — both renders required)
 - hook contract: lowercase kebab id, structured frontmatter bindings for both hosts,
   `CONTRACT_VERSION` in the core, and first registration with `--target both`
 - uses: sage generate / sage validate / sage doctor, bootstrap-authoring.md

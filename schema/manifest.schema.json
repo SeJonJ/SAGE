@@ -65,7 +65,16 @@
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         },
-        "sage_version": { "type": "string" }
+        "sage_version": { "type": "string" },
+        "semantic_source": {
+          "type": "string",
+          "description": "이 렌더의 엔진 정본 논리 경로. managed framework doc 처럼 정본과 설치본이 다른 파일일 때만 기록한다."
+        },
+        "semantic_source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "semantic_source 의 해시. 설치본이 아니라 정본이 바뀌었음을 구분하기 위한 값."
+        }
       },
       "additionalProperties": false
     },
