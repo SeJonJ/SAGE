@@ -22,18 +22,19 @@ import sys
 from pathlib import Path
 
 from sage.commands import doctor as _doctor
+from sage.i18n import tr
 
 _DEFAULT_TIMEOUT = 540   # codex/claude 비대화 1턴 상한(초). gstack /codex 의 330~600 대역과 정합.
 
 
-def register(sub):
-    pr = sub.add_parser("review", help="Phase 05 same-runtime 리뷰(cross_model=false 경로)")
+def register(sub, context):
+    pr = sub.add_parser("review", help=tr(context, "cli.review.review"))
     pr.add_argument("--packet-file",
-                    help="리뷰 패킷(phase 문서 + 변경 파일) — active host headless stdin으로 전달")
+                    help=tr(context, "cli.review.packet_file"))
     pr.add_argument("--host", choices=["claude", "codex"],
-                    help="현재 active host. profile 값과 충돌하면 실행 차단")
+                    help=tr(context, "cli.review.host"))
     pr.add_argument("--timeout", type=int, default=_DEFAULT_TIMEOUT,
-                    help=f"headless 호출 상한 초(기본 {_DEFAULT_TIMEOUT})")
+                    help=tr(context, "cli.review.timeout", default=_DEFAULT_TIMEOUT))
     pr.add_argument("--root", default=None)
     # 마이그레이션 shim(codex 배치2 R3 P1): `sage review` 는 자산분류→Phase05 리뷰로 의미가 바뀌었다.
     # 구 자산분류 플래그를 hidden 으로 받아, 쓰이면 친절히 `sage asset-check` 로 안내(암호적 argparse 실패 방지).
@@ -43,14 +44,14 @@ def register(sub):
     pr.add_argument("--gate", action="store_true", help=argparse.SUPPRESS)
     pr.set_defaults(func=run_review)
 
-    pc = sub.add_parser("cross-check", help="Phase 05 cross-model 리뷰 — 반대 런타임 CLI 직접 호출")
+    pc = sub.add_parser("cross-check", help=tr(context, "cli.review.cross_check"))
     pc.add_argument("--packet-file", required=True,
-                    help="리뷰 패킷(변경 diff + 05 맥락) 파일 — peer 에게 전달할 프롬프트")
+                    help=tr(context, "cli.review.packet_file_2"))
     pc.add_argument("--host", choices=["claude", "codex"],
-                    help="현재 실행 중인 host. env 판별이 모호할 때(중첩 실행 등) 필수")
-    pc.add_argument("--timeout", type=int, default=_DEFAULT_TIMEOUT, help=f"peer 호출 상한 초(기본 {_DEFAULT_TIMEOUT})")
+                    help=tr(context, "cli.review.host_2"))
+    pc.add_argument("--timeout", type=int, default=_DEFAULT_TIMEOUT, help=tr(context, "cli.review.timeout_peer", default=_DEFAULT_TIMEOUT))
     pc.add_argument("--strict", action="store_true",
-                    help="하위호환 플래그. reviewer 실패는 설정과 무관하게 BLOCKED/nonzero")
+                    help=tr(context, "cli.review.strict"))
     pc.add_argument("--root", default=None)
     pc.set_defaults(func=run_cross_check)
 

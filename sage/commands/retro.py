@@ -17,20 +17,20 @@ import sys
 from pathlib import Path
 
 from sage.profile_layers import load_profile_layers
+from sage.i18n import tr
 
 
-def register(sub):
-    p = sub.add_parser("retro", help="리뷰 사이클 학습을 자산 개선 제안으로 정리합니다(Loop C, 자동반영 없음)")
-    p.add_argument("--run-id", default=None, help="대상 loop_audit run_id(기본: 최신)")
+def register(sub, context):
+    p = sub.add_parser("retro", help=tr(context, "cli.retro.retro"))
+    p.add_argument("--run-id", default=None, help=tr(context, "cli.retro.run_id"))
     p.add_argument("--feature", default=None,
-                   help="사이클 스템 — 05 문서 경로 필터 + human-gate 노트 제목. 예: loop-engineering")
+                   help=tr(context, "cli.retro.feature"))
     p.add_argument("--vault", nargs="?", const="", default=None,
-                   help="Obsidian vault 에 human-gate 노트(approved:false) 작성. 경로 생략 시 profile.knowledge_capture.vault_path")
+                   help=tr(context, "cli.retro.vault"))
     p.add_argument("--no-vault", action="store_true",
-                   help="이번 실행만 vault 노트 생략(retro_note 플래그가 켜져 있어도). --vault 보다 우선")
+                   help=tr(context, "cli.retro.no_vault"))
     p.add_argument("--check", default=None, metavar="NOTE",
-                   help="retro 노트가 실제로 채워졌는지 결정론 검사(빈 템플릿/무효 제안이면 non-zero). "
-                        "--run-id 를 함께 주면 그 run 의 노트인지도 대조")
+                   help=tr(context, "cli.retro.check"))
     p.add_argument("--root", default=None)
     p.set_defaults(func=run)
 

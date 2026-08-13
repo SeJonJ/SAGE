@@ -14,31 +14,30 @@ import sys
 
 from sage import feedback as fb
 from sage.profile_layers import load_profile_layers
+from sage.i18n import tr
 
 
-def register(sub):
-    parser = sub.add_parser("feedback", help="sage-feedback 마커를 스캔해 보여줍니다")
-    parser.add_argument("--root", default=None, help="프로젝트 루트(기본: profile 을 가진 상위 디렉토리)")
+def register(sub, context):
+    parser = sub.add_parser("feedback", help=tr(context, "cli.feedback.feedback"))
+    parser.add_argument("--root", default=None, help=tr(context, "cli.feedback.root"))
     parser.add_argument("--output", choices=["text", "json"], default="text")
     parser.add_argument("--blocking-only", action="store_true",
-                        help="차단성(!sage-feedback) 마커만 표시")
+                        help=tr(context, "cli.feedback.blocking_only"))
     parser.add_argument("--exit-code", action="store_true",
-                        help="미해결 차단성 마커가 있으면 2 로 종료(스크립트·CI 용)")
+                        help=tr(context, "cli.feedback.exit_code"))
     parser.add_argument("--release-gate", action="store_true",
-                        help="feedback.block_release 가 true 일 때만 미해결 차단성 마커로 2 종료 "
-                             "(릴리즈 CI 가 무조건 호출하고 판정은 프로필이 한다)")
+                        help=tr(context, "cli.feedback.release_gate"))
     parser.add_argument("--record", action="store_true",
-                        help="마커 1건의 처리 결과를 기록한다(--path/--line/--verdict/--note 필요)")
-    parser.add_argument("--path", help="--record: 마커가 있던 저장소 상대 경로")
-    parser.add_argument("--line", type=int, help="--record: 마커 줄 번호")
+                        help=tr(context, "cli.feedback.record"))
+    parser.add_argument("--path", help=tr(context, "cli.feedback.path"))
+    parser.add_argument("--line", type=int, help=tr(context, "cli.feedback.line"))
     parser.add_argument("--verdict", choices=list(fb.VERDICTS),
-                        help="--record: 3분기 판정 (fixed=수정함 | intentional=불일치 아님 | "
-                             "undetermined=판단 불가·마커 유지)")
-    parser.add_argument("--note", help="--record: 판단 근거 한 줄(계획 문서의 어느 부분인지)")
+                        help=tr(context, "cli.feedback.verdict"))
+    parser.add_argument("--note", help=tr(context, "cli.feedback.note"))
     parser.add_argument("--cycle-stem", default=None,
-                        help="--record: 그 코드를 만든 사이클 stem(vault 노트 단위)")
+                        help=tr(context, "cli.feedback.cycle_stem"))
     parser.add_argument("--vault", nargs="?", const="", default=None,
-                        help="--record: vault 경로 오버라이드(생략 시 profile vault_path)")
+                        help=tr(context, "cli.feedback.vault"))
     parser.set_defaults(func=run)
 
 

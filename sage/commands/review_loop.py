@@ -15,6 +15,7 @@ import glob
 
 from sage import _resources
 from sage.profile_layers import load_profile_layers
+from sage.i18n import tr
 
 # result↔reason 의미 짝(설계 §3) — APPROVED 는 수렴/dry 로만, BLOCKED 는 예산초과/아키텍처로만.
 _APPROVED_REASONS = {"CONVERGED", "DRY"}
@@ -49,53 +50,53 @@ def _nonneg(v):
     return n
 
 
-def register(sub):
-    p = sub.add_parser("review-loop", help="Loop A(Phase 05 적대적 리뷰) 라운드 감사를 기록·조회합니다")
+def register(sub, context):
+    p = sub.add_parser("review-loop", help=tr(context, "cli.review_loop.review_loop"))
     sp = p.add_subparsers(dest="action", metavar="<action>")
     sp.required = True
 
-    po = sp.add_parser("open", help="루프 시작 기록 → run_id 출력")
-    po.add_argument("--risk", required=True, choices=["L2", "L3"], help="위험 tier(루프는 L2/L3 만)")
-    po.add_argument("--run-id", default=None, help="명시 run_id(기본: 자동 발급)")
+    po = sp.add_parser("open", help=tr(context, "cli.review_loop.open"))
+    po.add_argument("--risk", required=True, choices=["L2", "L3"], help=tr(context, "cli.review_loop.risk"))
+    po.add_argument("--run-id", default=None, help=tr(context, "cli.review_loop.run_id"))
     po.add_argument("--reviewer-requested", default=None,
-                    help="의도한 리뷰어 모드(예: cross_model|same_runtime). close 의 --reviewer-actual 와 비교해 degraded 판정")
-    po.add_argument("--cycle-stem", default=None, help="Fast Cycle 결속용 exact cycle stem")
-    po.add_argument("--lenses", default=None, help="Fast Cycle 결속용 comma-separated 렌즈 목록")
+                    help=tr(context, "cli.review_loop.reviewer_requested"))
+    po.add_argument("--cycle-stem", default=None, help=tr(context, "cli.review_loop.cycle_stem"))
+    po.add_argument("--lenses", default=None, help=tr(context, "cli.review_loop.lenses"))
     po.add_argument("--root", default=None)
     po.set_defaults(func=_run_open)
 
-    pr = sp.add_parser("round", help="라운드 1건 기록(찾기/반박/채택 집계)")
+    pr = sp.add_parser("round", help=tr(context, "cli.review_loop.round"))
     pr.add_argument("--run-id", required=True)
     pr.add_argument("--iteration", required=True, type=_nonneg)
-    pr.add_argument("--found", required=True, type=_nonneg, help="FIND 발견 수")
-    pr.add_argument("--survived", required=True, type=_nonneg, help="REFUTE 생존 수")
-    pr.add_argument("--accepted", required=True, type=_nonneg, help="REWORK 채택 수")
-    pr.add_argument("--arch", default=0, type=_nonneg, help="아키텍처 에스컬레이션 수")
-    pr.add_argument("--tokens", default=0, type=_nonneg, help="누적 토큰")
+    pr.add_argument("--found", required=True, type=_nonneg, help=tr(context, "cli.review_loop.found"))
+    pr.add_argument("--survived", required=True, type=_nonneg, help=tr(context, "cli.review_loop.survived"))
+    pr.add_argument("--accepted", required=True, type=_nonneg, help=tr(context, "cli.review_loop.accepted"))
+    pr.add_argument("--arch", default=0, type=_nonneg, help=tr(context, "cli.review_loop.arch"))
+    pr.add_argument("--tokens", default=0, type=_nonneg, help=tr(context, "cli.review_loop.tokens"))
     pr.add_argument("--lens-receipts", default=None,
-                    help="이번 라운드에 실제 완료한 comma-separated 렌즈 receipt")
+                    help=tr(context, "cli.review_loop.lens_receipts"))
     pr.add_argument("--root", default=None)
     pr.set_defaults(func=_run_round)
 
-    pc = sp.add_parser("close", help="루프 종료 기록(result/reason/iterations)")
+    pc = sp.add_parser("close", help=tr(context, "cli.review_loop.close"))
     pc.add_argument("--run-id", required=True)
     pc.add_argument("--result", required=True, choices=["APPROVED", "BLOCKED"])
     pc.add_argument("--reason", required=True,
                     choices=sorted(_APPROVED_REASONS | _BLOCKED_REASONS))
     pc.add_argument("--iterations", required=True, type=_nonneg)
     pc.add_argument("--reviewer-actual", default=None,
-                    help="실제 수행된 리뷰어 모드(예: cross_model|same_runtime). open 의 --reviewer-requested 와 다르면 degraded")
+                    help=tr(context, "cli.review_loop.reviewer_actual"))
     pc.add_argument("--root", default=None)
     pc.set_defaults(func=_run_close)
 
-    ps = sp.add_parser("show", help="루프 감사 요약(+무결성 점검). --vault 면 Obsidian 대시보드 노트도 작성")
-    ps.add_argument("--run-id", default=None, help="특정 run_id(미지정: 전체 요약)")
+    ps = sp.add_parser("show", help=tr(context, "cli.review_loop.show"))
+    ps.add_argument("--run-id", default=None, help=tr(context, "cli.review_loop.run_id_2"))
     ps.add_argument("--vault", nargs="?", const="", default=None,
-                    help="Obsidian vault 대시보드 작성. 경로 생략 시 profile.knowledge_capture.vault_path 사용")
+                    help=tr(context, "cli.review_loop.vault"))
     ps.add_argument("--root", default=None)
     ps.set_defaults(func=_run_show)
 
-    pn = sp.add_parser("next", help="기록된 라운드 + profile cfg 로 계속/종료를 결정론 권고(감사 기록 안 함)")
+    pn = sp.add_parser("next", help=tr(context, "cli.review_loop.next"))
     pn.add_argument("--run-id", required=True)
     pn.add_argument("--root", default=None)
     pn.set_defaults(func=_run_next)

@@ -20,6 +20,7 @@ from sage.fast_cycle_contract import (
 )
 from sage.profile_layers import load_profile_layers
 from sage.profile_validate import validate_profile
+from sage.i18n import tr
 
 
 def _positive(value):
@@ -33,12 +34,12 @@ def _positive(value):
     return parsed
 
 
-def register(sub):
-    parser = sub.add_parser("fast-cycle", help="축약 PDCA Fast Cycle 감사를 시작·검증·종료합니다")
+def register(sub, context):
+    parser = sub.add_parser("fast-cycle", help=tr(context, "cli.fast_cycle.fast_cycle"))
     actions = parser.add_subparsers(dest="action", metavar="<action>")
     actions.required = True
 
-    opened = actions.add_parser("open", help="composite Fast Plan을 감사 run에 결속합니다")
+    opened = actions.add_parser("open", help=tr(context, "cli.fast_cycle.open"))
     opened.add_argument("--stem", required=True)
     opened.add_argument("--level", required=True, choices=["L2", "L3"])
     opened.add_argument("--lens-count", required=True, type=_positive)
@@ -46,24 +47,24 @@ def register(sub):
     opened.add_argument("--root", default=None)
     opened.set_defaults(func=_run_open)
 
-    reviewed = actions.add_parser("review", help="APPROVED Loop Audit을 Fast run에 결속합니다")
+    reviewed = actions.add_parser("review", help=tr(context, "cli.fast_cycle.review"))
     reviewed.add_argument("--run-id", required=True)
     reviewed.add_argument("--loop-run-id", required=True)
     reviewed.add_argument("--root", default=None)
     reviewed.set_defaults(func=_run_review)
 
-    closed = actions.add_parser("close", help="승인·보고 증거를 검증하고 Fast run을 종료합니다")
+    closed = actions.add_parser("close", help=tr(context, "cli.fast_cycle.close"))
     closed.add_argument("--run-id", required=True)
     closed.add_argument("--root", default=None)
     closed.set_defaults(func=_run_close)
 
-    aborted = actions.add_parser("abort", help="사유를 남기고 활성 Fast run을 중단합니다")
+    aborted = actions.add_parser("abort", help=tr(context, "cli.fast_cycle.abort"))
     aborted.add_argument("--run-id", required=True)
     aborted.add_argument("--reason", required=True)
     aborted.add_argument("--root", default=None)
     aborted.set_defaults(func=_run_abort)
 
-    shown = actions.add_parser("show", help="Fast Cycle 감사 요약을 표시합니다")
+    shown = actions.add_parser("show", help=tr(context, "cli.fast_cycle.show"))
     shown.add_argument("--run-id", default=None)
     shown.add_argument("--vault", nargs="?", const="", default=None)
     shown.add_argument("--root", default=None)

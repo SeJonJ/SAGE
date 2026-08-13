@@ -28,23 +28,22 @@ from sage.install_transaction import (
     capture_paths,
 )
 from sage.manifest_io import atomic_write_json
+from sage.i18n import tr
 
 
-def register(sub):
-    p = sub.add_parser("generate", help="spec 파일을 읽어 Claude/Codex용 설정 파일을 생성합니다")
+def register(sub, context):
+    p = sub.add_parser("generate", help=tr(context, "cli.generate.generate"))
     p.add_argument("--kind", choices=["hook", "agent", "skill", "roster", "mcp"], required=True)
-    p.add_argument("--id", default=None, help="단일 자산 (없으면 kind 전체; roster 는 profile.components 에서 파생)")
-    p.add_argument("--write", action="store_true", help="파일 기록 (없으면 dry-run 미리보기)")
+    p.add_argument("--id", default=None, help=tr(context, "cli.generate.id"))
+    p.add_argument("--write", action="store_true", help=tr(context, "cli.generate.write"))
     p.add_argument("--target", choices=["claude", "codex", "both"], default="claude",
-                   help="등록 대상 런타임 (both 는 cross_model on)")
-    p.add_argument("--dest", default=".", help="등록 산출물 기록 루트 (기본 cwd)")
-    p.add_argument("--root", default=None, help="SAGE 루트 (manifest 탐색)")
+                   help=tr(context, "cli.generate.target"))
+    p.add_argument("--dest", default=".", help=tr(context, "cli.generate.dest"))
+    p.add_argument("--root", default=None, help=tr(context, "cli.generate.root"))
     p.add_argument("--from-existing", default=None, metavar="AGENT_ID",
-                   help="(--kind roster) 기존 implementer 의 렌더+프로젝트 오버레이를 새 "
-                        "implementer-<component> 정체성으로 시드한다(create-only). 예: implementer-a")
+                   help=tr(context, "cli.generate.from_existing"))
     p.add_argument("--deploy-codex", action="store_true",
-                   help="(--kind skill) repo .codex/skills 정본을 codex 전역 $CODEX_HOME/skills 에 배포(prefix 네임스페이스). "
-                        "codex 는 repo-스코프 skill 미자동발견 → 전역 배포해야 호출 가능. 명시적 opt-in(환경 부작용 분리).")
+                   help=tr(context, "cli.generate.deploy_codex"))
     p.set_defaults(func=run)
 
 

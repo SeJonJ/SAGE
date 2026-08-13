@@ -14,38 +14,38 @@ from pathlib import Path
 
 from sage.commands import _vault
 from sage.profile_layers import load_profile_layers
+from sage.i18n import tr
 
 
-def register(sub):
-    p = sub.add_parser("knowledge", help="Obsidian vault 사전조회/개발후 갱신을 실행합니다")
+def register(sub, context):
+    p = sub.add_parser("knowledge", help=tr(context, "cli.knowledge.knowledge"))
     sp = p.add_subparsers(dest="action", metavar="<action>")
     sp.required = True
 
-    ps = sp.add_parser("scan", help="개발 전 vault 관련 노트를 조회하고 .sage/knowledge_scan.md 를 갱신합니다")
-    ps.add_argument("--query", default="", help="조회할 작업/기능 설명")
-    ps.add_argument("--query-file", default=None, help="조회 문구를 읽을 파일(자유문자 shell 인자 주입 방지)")
-    ps.add_argument("--profile", default=None, help="project-profile.yaml 경로")
+    ps = sp.add_parser("scan", help=tr(context, "cli.knowledge.scan"))
+    ps.add_argument("--query", default="", help=tr(context, "cli.knowledge.query"))
+    ps.add_argument("--query-file", default=None, help=tr(context, "cli.knowledge.query_file"))
+    ps.add_argument("--profile", default=None, help=tr(context, "cli.knowledge.profile"))
     ps.add_argument("--vault", nargs="?", const="", default=None,
-                    help="vault 경로 override. 경로 생략 시 profile.knowledge_capture.vault_path 사용")
-    ps.add_argument("--limit", type=int, default=8, help="최대 결과 수(기본 8)")
-    ps.add_argument("--root", default=None, help="프로젝트 루트 override")
+                    help=tr(context, "cli.knowledge.vault"))
+    ps.add_argument("--limit", type=int, default=8, help=tr(context, "cli.knowledge.limit"))
+    ps.add_argument("--root", default=None, help=tr(context, "cli.knowledge.root"))
     ps.set_defaults(func=_run_scan)
 
-    pw = sp.add_parser("write-back", help="개발 완료 후 vault 노트와 wiki/log.md 를 갱신합니다")
-    pw.add_argument("--title", required=True, help="작성할 노트 제목")
-    pw.add_argument("--summary", default="", help="요약 본문")
-    pw.add_argument("--summary-file", default=None, help="요약 본문을 읽을 파일(자유문자 shell 인자 주입 방지)")
-    pw.add_argument("--profile", default=None, help="project-profile.yaml 경로")
+    pw = sp.add_parser("write-back", help=tr(context, "cli.knowledge.write_back"))
+    pw.add_argument("--title", required=True, help=tr(context, "cli.knowledge.title"))
+    pw.add_argument("--summary", default="", help=tr(context, "cli.knowledge.summary"))
+    pw.add_argument("--summary-file", default=None, help=tr(context, "cli.knowledge.summary_file"))
+    pw.add_argument("--profile", default=None, help=tr(context, "cli.knowledge.profile_2"))
     pw.add_argument("--vault", nargs="?", const="", default=None,
-                    help="vault 경로 override. 경로 생략 시 profile.knowledge_capture.vault_path 사용")
-    pw.add_argument("--prefix", default="TECH", help="노트 prefix(기본 TECH)")
+                    help=tr(context, "cli.knowledge.vault_2"))
+    pw.add_argument("--prefix", default="TECH", help=tr(context, "cli.knowledge.prefix"))
     pw.add_argument("--tags", default=None,
-                    help="쉼표구분 태그(벌트 작성 가이드대로 host 가 제공; 미지정 시 기본 tech,sage,knowledge-capture)")
-    pw.add_argument("--append-log", action="store_true", help="wiki/log.md 에 wikilink 라인 추가")
+                    help=tr(context, "cli.knowledge.tags"))
+    pw.add_argument("--append-log", action="store_true", help=tr(context, "cli.knowledge.append_log"))
     pw.add_argument("--skip-structure-check", action="store_true",
-                    help="required_structure advisory 골격 검증을 끈다(L1 사소 노트·기획 인터뷰 등 심층 골격 대상이 아닌 노트용). "
-                         "risk tier·노트 종류 판단은 host 가 하고 CLI 는 그 결과만 결정론으로 반영한다(SAGE 경계)")
-    pw.add_argument("--root", default=None, help="프로젝트 루트 override")
+                    help=tr(context, "cli.knowledge.skip_structure_check"))
+    pw.add_argument("--root", default=None, help=tr(context, "cli.knowledge.root_2"))
     pw.set_defaults(func=_run_write_back)
 
 

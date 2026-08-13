@@ -334,7 +334,8 @@ class TestReview(_StableHostTestCase):
     def test_review_parser_allows_legacy_flag_to_reach_migration_shim(self):
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
-        RV.register(sub)
+        from sage.i18n.context import LanguageContext
+        RV.register(sub, LanguageContext())
 
         args = parser.parse_args(["review", "--gate"])
 

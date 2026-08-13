@@ -18,13 +18,14 @@ import sys
 from pathlib import Path
 
 from sage.commands import validate as V
+from sage.i18n import tr
 
 
-def register(sub):
-    p = sub.add_parser("asset-check", help="프레임워크 자산 중 자동 통과 가능/사람 확인 필요를 나눕니다(구 sage review)")
+def register(sub, context):
+    p = sub.add_parser("asset-check", help=tr(context, "cli.asset_check.asset_check"))
     p.add_argument("--kind", choices=["hook", "agent", "skill", "mcp", "all"], default="all")
-    p.add_argument("--batch", action="store_true", help="auto 버킷을 1줄 요약")
-    p.add_argument("--gate", action="store_true", help="review 버킷 있으면 exit 1 (CI 게이트)")
+    p.add_argument("--batch", action="store_true", help=tr(context, "cli.asset_check.batch"))
+    p.add_argument("--gate", action="store_true", help=tr(context, "cli.asset_check.gate"))
     p.add_argument("--root", default=None)
     p.set_defaults(func=run)
 

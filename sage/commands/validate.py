@@ -21,22 +21,23 @@ from pathlib import Path
 from sage.asset_paths import AssetPaths
 from sage.commands._common import contract_version_of
 from sage.hook_runtime_hash import calculate_hook_runtime_hash
+from sage.i18n import tr
 
 # severity rank (exit code 매핑은 _exit_code)
 _SEV_RANK = {"PASS": 0, "WARN": 1, "STALE": 2, "FAIL": 3}
 _EXIT = {"PASS": 0, "WARN": 0, "FAIL": 1, "STALE": 3}
 
 
-def register(sub):
+def register(sub, context):
     # 주: JSON Schema 검증이 아니라 hash 기반 drift/staleness + regression 검사다(schema 파일은 참조 문서).
-    p = sub.add_parser("validate", help="spec과 생성 파일이 서로 어긋났는지 검사합니다")
-    p.add_argument("--check", action="store_true", help="staleness 만 (regression 미실행, 빠른 CI/hook용)")
-    p.add_argument("--schema", action="store_true", help="manifest 를 JSON Schema 로 구조검증 (jsonschema 선택의존, 미설치 시 WARN skip)")
+    p = sub.add_parser("validate", help=tr(context, "cli.validate.validate"))
+    p.add_argument("--check", action="store_true", help=tr(context, "cli.validate.check"))
+    p.add_argument("--schema", action="store_true", help=tr(context, "cli.validate.schema"))
     p.add_argument("--strict", action="store_true",
-                   help="안전 allowlist check-id의 WARN을 FAIL로 승격(CI 자산 무결성용)")
+                   help=tr(context, "cli.validate.strict"))
     p.add_argument("--kind", choices=["hook", "agent", "skill", "mcp", "all"], default="hook")
-    p.add_argument("--id", default=None, help="단일 자산 검사")
-    p.add_argument("--root", default=None, help="SAGE 레포 루트 (기본: cwd 에서 탐색)")
+    p.add_argument("--id", default=None, help=tr(context, "cli.validate.id"))
+    p.add_argument("--root", default=None, help=tr(context, "cli.validate.root"))
     p.set_defaults(func=run)
 
 

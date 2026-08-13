@@ -15,18 +15,19 @@ import sys
 import time
 
 from sage import _resources
+from sage.i18n import tr
 
 _GATES = ["pre-implementation-gate", "pre-phase4-checklist-gate", "all"]
 
 
-def register(sub):
-    p = sub.add_parser("override", help="막힌 작업을 사유와 시간 제한을 남기고 임시로 허용합니다")
-    p.add_argument("--reason", help="우회 사유 (grant 시 필수 — 감사 기록)")
-    p.add_argument("--ttl", help="유효기간: 30m | 2h | 1d | 90s | 1800(초)")
-    p.add_argument("--gate", default="all", help=f"대상 게이트 ({' | '.join(_GATES)}). 기본 all")
-    p.add_argument("--list", action="store_true", help="활성 override + 최근 감사 요약")
-    p.add_argument("--revoke", metavar="GRANT_ID", help="활성 grant 를 만료 전에 회수 (--list 의 id)")
-    p.add_argument("--root", default=None, help="대상 프로젝트 루트 (기본 cwd)")
+def register(sub, context):
+    p = sub.add_parser("override", help=tr(context, "cli.override.override"))
+    p.add_argument("--reason", help=tr(context, "cli.override.reason"))
+    p.add_argument("--ttl", help=tr(context, "cli.override.ttl"))
+    p.add_argument("--gate", default="all", help=tr(context, "cli.override.gate", gates=" | ".join(_GATES)))
+    p.add_argument("--list", action="store_true", help=tr(context, "cli.override.list"))
+    p.add_argument("--revoke", metavar="GRANT_ID", help=tr(context, "cli.override.revoke"))
+    p.add_argument("--root", default=None, help=tr(context, "cli.override.root"))
     p.set_defaults(func=run)
 
 

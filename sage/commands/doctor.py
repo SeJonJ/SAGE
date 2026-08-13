@@ -16,11 +16,12 @@ from sage.runtime_hosts import (active_host, configured_hosts, profile_issues,
                                 receipt_hosts, receipt_issues)
 from sage.hook_launcher import resolve_sage_hook
 from sage.profile_layers import load_profile_layers, local_profile_git_issues
+from sage.i18n import tr
 
 
-def register(sub):
-    p = sub.add_parser("doctor", help="SAGE 실행에 필요한 도구와 리뷰 설정을 점검합니다")
-    p.add_argument("--profile", default=None, help="project-profile.yaml 경로 (없으면 templates 기본)")
+def register(sub, context):
+    p = sub.add_parser("doctor", help=tr(context, "cli.doctor.doctor"))
+    p.add_argument("--profile", default=None, help=tr(context, "cli.doctor.profile"))
     p.set_defaults(func=run)
 
 

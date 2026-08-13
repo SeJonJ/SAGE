@@ -43,7 +43,7 @@ def build_parser(context: LanguageContext | None = None) -> argparse.ArgumentPar
     sub = parser.add_subparsers(dest="command", metavar="<command>")
     sub.required = True
     for mod in _COMMANDS:
-        mod.register(sub)
+        mod.register(sub, context)
     return parser
 
 

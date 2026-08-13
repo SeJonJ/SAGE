@@ -26,6 +26,7 @@ from sage import _resources   # 번들 리소스 경로 단일 해석(env overri
 from sage import overlay_common   # 오버레이 관리 블록 프리미티브(base_of 로 렌더 base 대조)
 from sage import overlay_materialize   # CORE 렌더 오버레이 물리화 + core_renders 앵커
 from sage import install_transaction as _tx
+from sage.i18n import tr
 
 # CORE roster (중립 6인) + CORE hook 7종(form) + CORE skill 13종. 도메인값 아님 = framework 메타.
 # skill 3분할: sage-cycle(00~06 우산) → sage-plan(00~02 기획) → sage-team(03~06 개발).
@@ -68,24 +69,24 @@ _CORE_HOOKS = [
 _SKIP_DIRS = {"tests", "__pycache__"}
 
 
-def register(sub):
+def register(sub, context):
     p = sub.add_parser(
         "install",
-        help="현재 프로젝트에 SAGE 기본 파일을 설치합니다",
+        help=tr(context, "cli.install.install"),
         add_help=False,
         usage="sage install --host {claude,codex} [--skill-scope {global,project-local}] [--prefix PREFIX] [--dest DEST] [--force] [--help]",
     )
-    p.add_argument("--help", action="help", help="도움말을 보여주고 종료합니다")
+    p.add_argument("--help", action="help", help=tr(context, "cli.install.help"))
     p.add_argument("--host", choices=["claude", "codex"], required=True,
-                   help="SAGE를 설치할 AI 도구를 선택합니다: claude 또는 codex (필수)")
-    p.add_argument("--prefix", default="sage", help="자산 네이밍 prefix (선택, 기본값: sage)")
-    p.add_argument("--dest", default=".", help="설치 대상 프로젝트 루트 (선택, 기본값: 현재 디렉토리)")
-    p.add_argument("--force", action="store_true", help="기존 파일 덮어쓰기 (기본: skip)")
+                   help=tr(context, "cli.install.host"))
+    p.add_argument("--prefix", default="sage", help=tr(context, "cli.install.prefix"))
+    p.add_argument("--dest", default=".", help=tr(context, "cli.install.dest"))
+    p.add_argument("--force", action="store_true", help=tr(context, "cli.install.force"))
     p.add_argument("--skill-scope", choices=["global", "project-local"], default=None,
-                   help="codex host: CORE skill 설치 위치를 명시적으로 선택 (필수: global 또는 project-local)")
+                   help=tr(context, "cli.install.skill_scope"))
     p.add_argument("--no-global-skill", action="store_true",
-                   help="DEPRECATED codex CI/샌드박스 호환: CORE skill 설치를 완전히 생략")
-    p._optionals.title = "옵션"
+                   help=tr(context, "cli.install.no_global_skill"))
+    p._optionals.title = tr(context, "cli.install.optionals_title")
     p.set_defaults(func=run)
 
 

@@ -12,6 +12,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import re
+import pathlib
 import unittest
 from pathlib import Path
 
@@ -198,6 +200,60 @@ class TestDriftDiagnosticInvariance(unittest.TestCase):
         for language in ("ko", "en"):
             self.assertEqual(describe_content_drift(same, same, language), "")
 
+
+
+class TestHelpTreeIsLocalized(unittest.TestCase):
+    """`--lang en --help` 이 실제로 영어를 내는가 — 루트 화면만이 아니라 하위 명령까지.
+
+    B4 는 루트 help 만 catalog 를 거쳤다. 사용자가 실제로 읽는 화면은 `sage <cmd> --help` 쪽이라
+    그 상태로는 "언어를 고를 수 있다"가 화면에서 거짓이었다.
+    """
+
+    HANGUL = re.compile(r"[가-힣]")
+
+    def _tree(self, language):
+        from sage.cli import build_parser
+        from sage.i18n.context import LanguageContext
+        parser = build_parser(LanguageContext(language=language))
+        pages = {"": parser.format_help()}
+        for name, sub in parser._subparsers._group_actions[0].choices.items():
+            pages[name] = sub.format_help()
+            nested = [a for a in sub._actions if hasattr(a, "choices") and isinstance(a.choices, dict)]
+            for action in nested:
+                for inner, page in (action.choices or {}).items():
+                    if hasattr(page, "format_help"):
+                        pages[f"{name} {inner}"] = page.format_help()
+        return pages
+
+    def test_english_help_has_no_korean_left(self):
+        offenders = []
+        for name, page in self._tree("en").items():
+            # 한국어 도움말로 건너가는 안내 한 줄은 의도적으로 한국어다 — 영어를 읽는 사람에게
+            # 한국어 화면의 존재를 알리는 유일한 통로라 번역하면 목적이 사라진다.
+            body = page.replace("한국어 도움말: sage --help", "")
+            found = self.HANGUL.search(body)
+            if found:
+                offenders.append((name, found.group(), body[max(0, found.start() - 40):found.start() + 40]))
+        self.assertEqual(offenders, [], f"en help 에 한글이 남았다: {offenders[:5]}")
+
+    def test_korean_help_is_the_compatibility_default(self):
+        """ko 는 catalog 도입 전 출력을 그대로 재현해야 한다 — 언어 배선과 문구 변경은 별개다."""
+        for name, page in self._tree("ko").items():
+            self.assertTrue(page.strip(), name)
+            self.assertNotIn("message_key=", page, name)
+
+    def test_every_command_registers_with_a_context(self):
+        """register(sub) 시그니처가 하나라도 남으면 그 명령만 조용히 한국어로 남는다."""
+        import ast
+        offenders = []
+        for path in sorted(pathlib.Path("sage/commands").glob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in tree.body:
+                if isinstance(node, ast.FunctionDef) and node.name == "register":
+                    names = [a.arg for a in node.args.args]
+                    if names != ["sub", "context"]:
+                        offenders.append((path.name, names))
+        self.assertEqual(offenders, [], f"context 를 받지 않는 register: {offenders}")
 
 if __name__ == "__main__":
     unittest.main()

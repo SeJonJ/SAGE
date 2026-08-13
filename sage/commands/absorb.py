@@ -16,20 +16,21 @@ import sys
 from pathlib import Path
 
 from sage.asset_paths import AssetPaths
+from sage.i18n import tr
 
 
-def register(sub):
-    p = sub.add_parser("absorb", help="직접 고친 생성 파일을 spec 수정안으로 되돌려 제안합니다")
+def register(sub, context):
+    p = sub.add_parser("absorb", help=tr(context, "cli.absorb.absorb"))
     # --kind/--id 는 기본 absorb 에 필수, --from-retro 모드에선 불요(아래 run 에서 검증).
     p.add_argument("--kind", choices=["hook", "agent", "skill"])
     p.add_argument("--id")
     p.add_argument("--from-blocked-diff", action="store_true",
-                   help="write guard 에 막힌 diff 를 재입력 없이 바로 patch 후보로 변환")
+                   help=tr(context, "cli.absorb.from_blocked_diff"))
     p.add_argument("--from-retro", default=None, metavar="NOTE",
-                   help="승인된(approved:true) retro human-gate 노트를 읽어 제안→자산 patch 후보로 변환(Loop C)")
-    p.add_argument("--claude", default="", help="(agent/skill) 수정된 .claude 산출물 경로")
-    p.add_argument("--codex", default="", help="(agent/skill) 수정된 .codex 산출물 경로")
-    p.add_argument("--guide", default="", help="(agent/skill) AGENT_GUIDE 경로")
+                   help=tr(context, "cli.absorb.from_retro"))
+    p.add_argument("--claude", default="", help=tr(context, "cli.absorb.claude"))
+    p.add_argument("--codex", default="", help=tr(context, "cli.absorb.codex"))
+    p.add_argument("--guide", default="", help=tr(context, "cli.absorb.guide"))
     p.add_argument("--config", default="", help="(agent/skill) ExtractConfig (module:VAR | *.json)")
     p.add_argument("--root", default=None)
     p.set_defaults(func=run)

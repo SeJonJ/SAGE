@@ -13,6 +13,7 @@ from pathlib import Path
 import yaml
 
 from sage import _resources
+from sage.i18n import tr
 
 _ACTIONS = ("set", "show", "clear")
 _RISKS = ("L1", "L2", "L3")
@@ -23,23 +24,23 @@ class CycleUsageError(ValueError):
     """User-facing cycle command contract failure."""
 
 
-def register(sub):
-    parser = sub.add_parser("cycle", help="지금 작업 중인 사이클을 게이트에 알려줍니다")
+def register(sub, context):
+    parser = sub.add_parser("cycle", help=tr(context, "cli.cycle.cycle"))
     parser.add_argument("action", metavar="{set,show,clear}",
                         help="set <stem> | show | clear")
-    parser.add_argument("stem", nargs="?", default=None, help="set 할 Cycle-Stem")
+    parser.add_argument("stem", nargs="?", default=None, help=tr(context, "cli.cycle.stem"))
     parser.add_argument("extra", nargs="*", help=argparse.SUPPRESS)
     parser.add_argument("--create", action="store_true",
-                        help="Phase 00 뼈대를 만든 뒤 stem 을 선언합니다")
+                        help=tr(context, "cli.cycle.create"))
     parser.add_argument("--risk", default=None, metavar="L1|L2|L3",
-                        help="--create 로 만들 Phase 00의 위험도")
+                        help=tr(context, "cli.cycle.risk"))
     parser.add_argument("--path", default=None, metavar="DIR",
-                        help="Phase 00을 만들 프로젝트 root 상대 디렉터리")
+                        help=tr(context, "cli.cycle.path"))
     parser.add_argument("--root", default=None,
-                        help="대상 프로젝트 루트 (기본: cwd 에서 가장 가까운 SAGE 설치본)")
+                        help=tr(context, "cli.cycle.root"))
     parser.add_argument("--document-language", dest="document_language",
                         default=None, choices=("ko", "en"),
-                        help="이 사이클의 00~06 문서를 쓸 언어 (기본: 표시 언어)")
+                        help=tr(context, "cli.cycle.document_language"))
     parser.set_defaults(func=run)
 
 

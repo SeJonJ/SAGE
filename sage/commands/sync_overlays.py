@@ -17,12 +17,13 @@ from sage.build_identity import source_core_content_hash
 from sage import overlay_classify as _cls
 from sage import overlay_common as _oc
 from sage import overlay_materialize as _mat
+from sage.i18n import tr
 
 
-def register(sub):
+def register(sub, context):
     p = sub.add_parser("sync-overlays",
-                       help="오버레이 편집 후 CORE 렌더의 관리 블록을 다시 물리화합니다")
-    p.add_argument("--root", default=None, help="SAGE 레포 루트 (기본: cwd 에서 탐색)")
+                       help=tr(context, "cli.sync_overlays.sync_overlays"))
+    p.add_argument("--root", default=None, help=tr(context, "cli.sync_overlays.root"))
     p.set_defaults(func=run)
 
 

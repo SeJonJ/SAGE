@@ -13,15 +13,16 @@ from pathlib import Path
 
 from sage.commands import validate as V
 from sage.commands import asset_check as R
+from sage.i18n import tr
 
 # action 분류 — absorb 를 generate 보다 먼저 판정(이미 고친 산출물 흡수 우선). 그 외는 generate (default).
 _ABSORB_KW = ["이미 고쳤", "이미 수정", "직접 수정", "직접수정", "생성물", "산출물", "blocked", "되돌려", "흡수"]
 _KIND_HINT = {"hook": "hook", "hooks": "hook", "agent": "agent", "agents": "agent", "skill": "skill", "skills": "skill"}
 
 
-def register(sub):
-    p = sub.add_parser("change", help="하고 싶은 변경을 어떤 SAGE 명령으로 처리할지 안내합니다")
-    p.add_argument("intent", help='예: "capture-declared-risk hook 고쳐줘"')
+def register(sub, context):
+    p = sub.add_parser("change", help=tr(context, "cli.change.change"))
+    p.add_argument("intent", help=tr(context, "cli.change.intent"))
     p.add_argument("--root", default=None)
     p.set_defaults(func=run)
 
