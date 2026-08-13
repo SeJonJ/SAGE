@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 from sage.commands import validate as V
-from sage.i18n import tr
+from sage.i18n import language_of, tr
 
 
 def register(sub, context):
@@ -64,12 +64,12 @@ def auto_approve_decision(asset_id, validate_sev, entry):
 def run(args):
     root = V._find_root(args.root)
     if not root:
-        print("[sage asset-check] TOOL ERROR: manifest 없음", file=sys.stderr)
+        print(tr(language_of(args), "cli.asset_check.msg01"), file=sys.stderr)
         return 2
     try:
         manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
     except Exception as e:
-        print(f"[sage asset-check] TOOL ERROR: manifest 파싱 실패: {e}", file=sys.stderr)
+        print(tr(language_of(args), "cli.asset_check.msg02", e=e), file=sys.stderr)
         return 2
 
     assets = manifest.get("assets", {})
@@ -111,16 +111,16 @@ def run(args):
 
     print(f"== sage asset-check ({args.kind}) — auto_approve_safe_default ==")
     if args.batch:
-        print(f"✅ auto-approved (batch): {len(auto)}건 — {', '.join(a for a, _ in auto) or '없음'}")
+        print(tr(language_of(args), "cli.asset_check.msg03", count=len(auto), items=', '.join(a for a, _ in auto) or '없음'))
     else:
-        print(f"✅ auto-approved: {len(auto)}건 (사람 확인 불필요)")
+        print(tr(language_of(args), "cli.asset_check.msg04", count=len(auto)))
         for aid, _ in auto:
             print(f"   - {aid}")
-    print(f"⚠️  review 필요: {len(review)}건 (사람 검토 예외)")
+    print(tr(language_of(args), "cli.asset_check.msg05", count=len(review)))
     for aid, reasons in review:
         print(f"   - {aid}: {', '.join(reasons)}")
 
     if args.gate and review:
-        print("---- GATE: review 버킷 존재 → exit 1 ----")
+        print(tr(language_of(args), "cli.asset_check.msg06"))
         return 1
     return 0

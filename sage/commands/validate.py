@@ -21,7 +21,7 @@ from pathlib import Path
 from sage.asset_paths import AssetPaths
 from sage.commands._common import contract_version_of
 from sage.hook_runtime_hash import calculate_hook_runtime_hash
-from sage.i18n import tr
+from sage.i18n import language_of, tr
 
 # severity rank (exit code 매핑은 _exit_code)
 _SEV_RANK = {"PASS": 0, "WARN": 1, "STALE": 2, "FAIL": 3}
@@ -708,16 +708,16 @@ def run(args):
 
     root = _find_root(args.root)
     if not root:
-        print("[sage validate] TOOL ERROR: docs/sage_harness/.manifest.json 을 찾을 수 없음", file=sys.stderr)
+        print(tr(language_of(args), "cli.validate.msg01"), file=sys.stderr)
         return 2
     try:
         manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
     except Exception as e:
-        print(f"[sage validate] TOOL ERROR: manifest 파싱 실패: {e}", file=sys.stderr)
+        print(tr(language_of(args), "cli.validate.msg02", e=e), file=sys.stderr)
         return 2
     if not isinstance(manifest, dict):
         # 최상위가 object 아님(오염 manifest 가 []/null/문자열) — manifest.get() 크래시 대신 TOOL ERROR.
-        print("[sage validate] TOOL ERROR: manifest 최상위가 object(dict) 아님 (오염 manifest)", file=sys.stderr)
+        print(tr(language_of(args), "cli.validate.msg03"), file=sys.stderr)
         return 2
 
     assets = manifest.get("assets")
@@ -739,14 +739,14 @@ def run(args):
     if args.id:
         target_ids = [k for k in target_ids if k.split("/", 1)[1] == args.id or k == args.id]
         if not target_ids:
-            print(f"[sage validate] TOOL ERROR: manifest 에 '{args.id}' 없음", file=sys.stderr)
+            print(tr(language_of(args), "cli.validate.msg04", args_id=args.id), file=sys.stderr)
             return 2
 
     overall = "PASS"
     strict_hits = []
     if assets_malformed:
         overall = "FAIL"
-        print("❌ FAIL  manifest.assets 구조 오류 — object(dict) 여야 함 (오염/레거시 manifest)")
+        print(tr(language_of(args), "cli.validate.msg05"))
 
     version_severity = _report_version_contract(_version_profile(root), manifest)
     if _SEV_RANK[version_severity] > _SEV_RANK[overall]:
@@ -758,20 +758,19 @@ def run(args):
             from sage.build_identity import source_core_content_hash
             current_source_hash = source_core_content_hash()
             if current_source_hash != installed_core_hash:
-                print("🔶 STALE source-build-identity: 현재 SAGE CORE와 install 시 배치 CORE가 다름 — "
-                      "sage install --force 필요")
+                print(tr(language_of(args), "cli.validate.msg06"))
                 if _SEV_RANK["STALE"] > _SEV_RANK[overall]:
                     overall = "STALE"
             else:
                 print("✅ PASS  source-build-identity")
         except Exception as e:
-            print(f"⚠️  WARN  source-build-identity 검사 실패: {type(e).__name__}: {e}")
+            print(tr(language_of(args), "cli.validate.msg07", arg=type(e).__name__, e=e))
             if overall == "PASS":
                 overall = "WARN"
     else:
-        print("ℹ️  source-build-identity 미스탬프(legacy) — sage install --force 권장")
+        print(tr(language_of(args), "cli.validate.msg08"))
     if manifest.get("dirty_flag"):
-        print("⚠️  WARN  install source가 dirty worktree였음(개발 도그푸딩 빌드)")
+        print(tr(language_of(args), "cli.validate.msg09"))
         if overall == "PASS":
             overall = "WARN"
     cssev, csmsgs = _validate_core_skill_receipts(root, manifest)
@@ -805,7 +804,7 @@ def run(args):
             # 오염 항목(entry 가 object 아님) — 하위 _validate_* 는 dict 를 가정하므로 크래시 대신 FAIL 로 표면화.
             if _SEV_RANK["FAIL"] > _SEV_RANK[overall]:
                 overall = "FAIL"
-            print(f"❌ FAIL  {aid} — manifest entry 구조 오류(object 아님)")
+            print(tr(language_of(args), "cli.validate.msg10", aid=aid))
             continue
         if entry.get("safety_degraded"):
             strict_hits.append("safety-degraded")
@@ -840,7 +839,7 @@ def run(args):
                         _metadata, orphan_issues = inspect_project_hook(root, orphan_id)
                         if orphan_issues:
                             overall = "FAIL"
-                            print(f"❌ FAIL  orphan hook spec을 등록할 수 없음: hooks/{orphan_id}")
+                            print(tr(language_of(args), "cli.validate.msg11", orphan_id=orphan_id))
                             for issue in orphan_issues:
                                 print(f"  {issue}")
                         else:
@@ -851,7 +850,7 @@ def run(args):
                     else:
                         if overall == "PASS":
                             overall = "WARN"
-                        print(f"⚠️  WARN  orphan spec (manifest 미등록): {subdir}/{orphan_id}")
+                        print(tr(language_of(args), "cli.validate.msg12", subdir=subdir, orphan_id=orphan_id))
 
     # MCP 소유권: .mcp.json/.codex managed-block 의 manifest 밖 서버 표면화 (mcp/all 대상)
     if args.kind in ("mcp", "all"):
@@ -931,11 +930,10 @@ def run(args):
         if overall == "PASS":
             overall = "WARN"
         for relpath, hits in ov:
-            print(f"⚠️  WARN  overlay 게이트-완화 의심: {relpath}")
+            print(tr(language_of(args), "cli.validate.msg13", relpath=relpath))
             for pattern_id, desc in hits:
                 print(f"        - [{pattern_id}] {desc}")
-        print("        오버레이는 AGENT_GUIDE/phase/review/verification 게이트를 완화할 수 없습니다. "
-              "오탐이면 문구를 수정하고 다시 검증하세요.")
+        print(tr(language_of(args), "cli.validate.msg14"))
         strict_hits.append("overlay-gate-relaxation")
 
     profile_for_overlay = {}
@@ -955,7 +953,7 @@ def run(args):
                 yaml_profile = profile_for_overlay
             break
         except Exception as e:
-            print(f"❌ FAIL  critical-domain-drift: profile 로드 실패({candidate}): {e}")
+            print(tr(language_of(args), "cli.validate.msg15", candidate=candidate, e=e))
             overall = "FAIL"
             break
     try:
@@ -990,17 +988,17 @@ def run(args):
                 overall = "FAIL"
                 expected_profile = None
             if expected_profile is not None and expected_profile != json_profile:
-                print("⚠️  WARN  profile-yaml-json-stale: YAML과 컴파일 JSON 불일치 — sage generate 필요")
+                print(tr(language_of(args), "cli.validate.msg16"))
                 if overall == "PASS":
                     overall = "WARN"
                 strict_hits.append("profile-yaml-json-stale")
         elif os.path.isfile(yaml_path) != os.path.isfile(json_path):
-            print("⚠️  WARN  profile-yaml-json-stale: YAML/JSON 중 하나가 없음 — sage generate 필요")
+            print(tr(language_of(args), "cli.validate.msg17"))
             if overall == "PASS":
                 overall = "WARN"
             strict_hits.append("profile-yaml-json-stale")
     except Exception as e:
-        print(f"⚠️  WARN  profile-yaml-json-stale: freshness 검사 실패: {type(e).__name__}: {e}")
+        print(tr(language_of(args), "cli.validate.msg18", arg=type(e).__name__, e=e))
         if overall == "PASS":
             overall = "WARN"
         strict_hits.append("profile-yaml-json-stale")
@@ -1015,7 +1013,7 @@ def run(args):
                    if isinstance(profile_for_overlay, dict) else []):
         pointer = domain.get("protocol_pointer") if isinstance(domain, dict) else None
         if pointer and not os.path.isfile(os.path.join(root, pointer)):
-            print(f"⚠️  WARN  critical-domain-drift: {domain.get('id')}: protocol pointer 없음: {pointer}")
+            print(tr(language_of(args), "cli.validate.msg19", domain_get=domain.get('id'), pointer=pointer))
             if overall == "PASS":
                 overall = "WARN"
             strict_hits.append("critical-domain-drift")
@@ -1033,19 +1031,19 @@ def run(args):
         from sage import overlay_materialize
         if "core_renders" not in manifest:
             # 키 자체가 없음 = 이 기능 이전 설치 → pre-migration 안내(기존 green 설치 보존).
-            print("ℹ️  overlay materialize 게이트 비활성 — `sage install --force` 로 core_renders 앵커 생성 권장")
+            print(tr(language_of(args), "cli.validate.msg20"))
         else:
             cr = manifest.get("core_renders")
             if not isinstance(cr, dict) or not cr:
                 # 키는 있는데 비었거나 dict 아님 = 손상/변조로 게이트가 조용히 무력화된 상태. 앵커 부재를
                 #   per-render FAIL 로 흘리는 대신 한 줄로 명확히 FAIL 한다(조용한 bypass 금지).
-                print("❌ FAIL  overlay-materialize-drift: core_renders 앵커가 비었거나 손상됨(게이트 무력화) — `sage install --force` 필요")
+                print(tr(language_of(args), "cli.validate.msg21"))
                 overall = "FAIL"
             else:
                 for host in (_installed_hosts(manifest) or [manifest.get("host_runtime") or "claude"]):
                     surface = os.path.join(root, f".{host}")
                     if not os.path.isdir(surface):
-                        print(f"❌ FAIL  installed-host-missing [{host}]: discovery surface 없음: .{host}")
+                        print(tr(language_of(args), "cli.validate.msg22", host=host, host2=host))
                         overall = "FAIL"
                     skill_scope = (overlay_materialize.resolve_codex_skill_scope(
                         root, manifest=manifest) if host == "codex" else None)
@@ -1058,7 +1056,7 @@ def run(args):
 
     if getattr(args, "strict", False) and strict_hits:
         ids = sorted(set(strict_hits))
-        print(f"❌ FAIL  strict allowlist 승격: {', '.join(ids)}")
+        print(tr(language_of(args), "cli.validate.msg23", items=', '.join(ids)))
         overall = "FAIL"
-    print(f"---- 종합: {overall} (exit {_EXIT[overall]}) ----")
+    print(tr(language_of(args), "cli.validate.msg24", overall=overall, arg=_EXIT[overall]))
     return _EXIT[overall]

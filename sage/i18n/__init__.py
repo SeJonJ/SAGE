@@ -10,7 +10,8 @@ from sage.i18n.context import (DEFAULT_LANGUAGE, LanguageContext, resolve, suppo
 
 CATALOGS = {"ko": _ko.MESSAGES, "en": _en.MESSAGES}
 
-__all__ = ["CATALOGS", "DEFAULT_LANGUAGE", "LanguageContext", "resolve", "supported", "tr"]
+__all__ = ["CATALOGS", "DEFAULT_LANGUAGE", "LanguageContext", "language_of", "resolve",
+           "supported", "tr"]
 
 
 def tr(context: LanguageContext | str | None, key: str, **arguments) -> str:
@@ -32,3 +33,12 @@ def tr(context: LanguageContext | str | None, key: str, **arguments) -> str:
         # 인자 불일치는 build gate 가 잡아야 할 결함이다. 런타임에서는 문장을 포기하되
         # 무엇을 렌더하려다 실패했는지 남긴다.
         return f"[SAGE] message_key={key}"
+
+
+def language_of(args) -> LanguageContext:
+    """`args` 에 실린 표시 언어. 없으면 기본값이다.
+
+    parser 가 붙여주는 값이지만, 언어 배선 없이 호출되는 경로(테스트·직접 호출)가 여기서
+    죽으면 명령 자체가 언어 기능에 묶인다. 표시 계층이 실행 계층을 무너뜨리면 안 된다.
+    """
+    return getattr(args, "_language_context", None) or LanguageContext()

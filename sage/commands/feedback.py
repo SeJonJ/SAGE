@@ -14,7 +14,7 @@ import sys
 
 from sage import feedback as fb
 from sage.profile_layers import load_profile_layers
-from sage.i18n import tr
+from sage.i18n import language_of, tr
 
 
 def register(sub, context):
@@ -70,8 +70,7 @@ def run(args):
         if args.output == "json":
             print(json.dumps({"enabled": False, "markers": []}, ensure_ascii=False, indent=2))
         else:
-            print("[sage feedback] feedback.enabled 가 false — 스캔하지 않습니다 "
-                  "(sage/project-profile.yaml 의 feedback.enabled 를 true 로).")
+            print(tr(language_of(args), "cli.feedback.msg01"))
         return 0
 
     try:
@@ -80,12 +79,12 @@ def run(args):
         # 스캔 불능은 "마커 없음" 이 아니다. 판정을 요구한 호출(--exit-code·--release-gate)에는
         # 통과를 줄 수 없으므로 fail-closed 로 막고, 단순 조회에는 오류만 알린다.
         enforcing = args.exit_code or args.release_gate
-        print(f"[sage feedback] 스캔 실패 — {exc}", file=sys.stderr)
+        print(tr(language_of(args), "cli.feedback.msg02", exc=exc), file=sys.stderr)
         if args.output == "json":
             print(json.dumps({"enabled": True, "error": str(exc), "markers": []},
                              ensure_ascii=False, indent=2))
         if enforcing:
-            print("  스캔 결과를 확정할 수 없어 통과시키지 않습니다(fail-closed).", file=sys.stderr)
+            print(tr(language_of(args), "cli.feedback.msg03"), file=sys.stderr)
             return 2
         return 1
 
@@ -99,21 +98,20 @@ def run(args):
                          ensure_ascii=False, indent=2))
     else:
         if not shown:
-            print("[sage feedback] 마커 없음.")
+            print(tr(language_of(args), "cli.feedback.msg04"))
         for marker in shown:
             mark = "!" if marker.blocking else " "
             print(f"  {mark} {marker.path}:{marker.line}  {marker.text}")
-        print(f"\n총 {len(markers)}건 (차단성 {len(blockers)}건)")
+        print(tr(language_of(args), "cli.feedback.msg05", count=len(markers), count2=len(blockers)))
         if blockers:
-            print("차단성 마커는 해당 코드를 포함하는 범위의 03 구현 진입을 막습니다. "
-                  "`/sage-feedback` 으로 처리하세요.")
+            print(tr(language_of(args), "cli.feedback.msg06"))
 
     if blockers and args.exit_code:
         return 2
     # --release-gate 는 강제력 판단을 프로필로 넘긴다. CI 는 프로젝트마다 분기하지 않고 항상
     # 이 한 줄을 호출하고, 막을지 말지는 feedback.block_release 가 정한다.
     if blockers and args.release_gate and fb.block_release(profile):
-        print("차단성 마커가 남아 릴리즈를 차단합니다 (feedback.block_release=true).")
+        print(tr(language_of(args), "cli.feedback.msg07"))
         return 2
     return 0
 
@@ -145,28 +143,25 @@ def _run_record(args, root, profile):
                                         ("--verdict", args.verdict), ("--note", args.note))
                if value is None]
     if missing:
-        print(f"[sage feedback] --record 에는 {', '.join(missing)} 이(가) 필요합니다", file=sys.stderr)
+        print(tr(language_of(args), "cli.feedback.msg08", items=', '.join(missing)), file=sys.stderr)
         return 2
     rel = _safe_rel(args.path)
     if rel is None:
-        print(f"[sage feedback] --path 가 저장소 상대경로가 아님: {args.path!r}", file=sys.stderr)
+        print(tr(language_of(args), "cli.feedback.msg09", arg=repr(args.path)), file=sys.stderr)
         return 2
     if not fb.enabled(profile):
         # 스캔은 조용히 무동작이지만 기록은 명시 요청이라 침묵하면 안 된다 — 기록됐다고 오인한다.
-        print("[sage feedback] feedback.enabled 가 false — 기록하지 않습니다 "
-              "(sage/project-profile.yaml 의 feedback.enabled 를 true 로).", file=sys.stderr)
+        print(tr(language_of(args), "cli.feedback.msg10"), file=sys.stderr)
         return 2
     if not fb.record_enabled(profile):
-        print("[sage feedback] feedback.record 가 false — 기록 없이 채팅 응답만 남깁니다(기본 정책).")
+        print(tr(language_of(args), "cli.feedback.msg11"))
         return 0
 
     marker = _marker_at(root, rel, args.line)
     if args.verdict == fb.VERDICT_UNDETERMINED and marker is None:
-        print(f"  ⚠️  판단 불가로 기록하는데 {rel}:{args.line} 에 마커가 없습니다 — "
-              "판단 불가 분기는 마커를 유지해야 합니다.", file=sys.stderr)
+        print(tr(language_of(args), "cli.feedback.msg12", rel=rel, args_line=args.line), file=sys.stderr)
     if args.verdict != fb.VERDICT_UNDETERMINED and marker is not None:
-        print(f"  ⚠️  해소로 기록하는데 {rel}:{args.line} 에 마커가 남아 있습니다 — "
-              "해소 분기는 마커를 제거합니다.", file=sys.stderr)
+        print(tr(language_of(args), "cli.feedback.msg13", rel=rel, args_line=args.line), file=sys.stderr)
 
     record = fb.build_record(rel, args.line, args.verdict, args.note,
                              blocking=marker.blocking if marker else False,
@@ -176,18 +171,17 @@ def _run_record(args, root, profile):
     # 감사 로그는 **항상** 쓴다. vault 는 저장소 밖(별도 git)이라 노트만 남기면 이 저장소에는
     # 처리 이력이 하나도 없어지고, 커밋되는 감사 축(override.jsonl 과 같은 관례)이 끊긴다.
     # record_target 은 "감사 로그 대신 어디" 가 아니라 "사람이 읽는 노트를 더 쓸지" 를 정한다.
-    print(f"  ✅ 기록: {fb.append_record(root, record)}")
+    print(tr(language_of(args), "cli.feedback.msg14", fb_append_record=fb.append_record(root, record)))
     if target == "sage":
         return 0
     # `--vault` bare("") 는 profile vault_path 사용(retro 와 동일 관례) — override 는 명시 경로만.
     note_path = _write_vault_entry(profile, root, record, args.vault or None)
     if note_path:
-        print(f"  ✅ vault 사이클 노트: {note_path}")
+        print(tr(language_of(args), "cli.feedback.msg15", note_path=note_path))
         return 0
     if target == "vault":
         # 명시 vault 는 노트가 요구사항이다 — 조용한 폴백은 설정이 지켜졌다고 오인하게 만든다.
-        print("  ⚠️  record_target=vault 이나 vault 가 비활성입니다"
-              "(knowledge_capture.vault_path 미설정) — 감사 로그만 남았습니다.", file=sys.stderr)
+        print(tr(language_of(args), "cli.feedback.msg16"), file=sys.stderr)
         return 1
     return 0
 

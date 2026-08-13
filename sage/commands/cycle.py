@@ -13,7 +13,7 @@ from pathlib import Path
 import yaml
 
 from sage import _resources
-from sage.i18n import tr
+from sage.i18n import language_of, tr
 
 _ACTIONS = ("set", "show", "clear")
 _RISKS = ("L1", "L2", "L3")
@@ -182,23 +182,20 @@ def run(args):
         return 2
     if active_fast and args.action == "clear":
         run_id, state = active_fast[0]
-        print(f"⛔ [sage cycle] 활성 Fast run {run_id} (stem={state.get('cycle_stem')})이 있어 clear 할 수 없습니다.\n"
-              f"   → sage fast-cycle close --run-id {run_id}\n"
-              f"   → 또는 sage fast-cycle abort --run-id {run_id} --reason <사유>", file=sys.stderr)
+        print(tr(language_of(args), "cli.cycle.msg01", run_id=run_id, state_get=state.get('cycle_stem'), run_id2=run_id, run_id3=run_id), file=sys.stderr)
         return 2
     if active_fast and args.action == "set":
         mismatched = [(run_id, state) for run_id, state in active_fast
                       if state.get("cycle_stem") != args.stem]
         if mismatched:
             run_id, state = mismatched[0]
-            print(f"⛔ [sage cycle] 활성 Fast run {run_id}의 stem={state.get('cycle_stem')} — "
-                  f"다른 stem {args.stem!r}으로 전환할 수 없습니다.", file=sys.stderr)
+            print(tr(language_of(args), "cli.cycle.msg02", run_id=run_id, state_get=state.get('cycle_stem'), arg=repr(args.stem)), file=sys.stderr)
             return 2
     if args.action == "set":
         return _set(cs, args, root, path)
     if args.action == "clear":
-        return _clear(cs, root, path)
-    return _show(cs, root, path)
+        return _clear(cs, root, path, language_of(args))
+    return _show(cs, root, path, language_of(args))
 
 
 def _normalized_stem(cs, value):
@@ -497,23 +494,22 @@ def _set(cs, args, root, declaration_path):
         phase00, _ = _phase_globs(profile)
         valid, candidates = _valid_phase00_docs(root, phase00, stem, cs)
         if len(valid) != 1:
-            print(f"⚠️  Cycle-Stem '{stem}' 에 정확히 결속되는 Phase 00이 {len(valid)}개입니다.")
-            print(f"   검색 glob: {phase00}")
+            print(tr(language_of(args), "cli.cycle.msg03", stem=stem, count=len(valid)))
+            print(tr(language_of(args), "cli.cycle.msg04", phase00=phase00))
             for candidate in candidates:
                 print(f"   - {candidate}")
-            print("   선언은 계속하지만 실제 소스 편집 전에 Phase 00 결속을 확인하세요.")
+            print(tr(language_of(args), "cli.cycle.msg05"))
         print(f"   profile:       {profile_path}")
     except CycleUsageError as exc:
-        print(f"⚠️  Phase 00 존재 여부를 확인하지 못했습니다: {exc}")
-        print("   선언은 계속하지만 실제 소스 편집 전에 profile과 Phase 00을 확인하세요.")
+        print(tr(language_of(args), "cli.cycle.msg06", exc=exc))
+        print(tr(language_of(args), "cli.cycle.msg07"))
 
     try:
         cs.write_declaration(root, stem, document_language=_document_language(cs, args))
     except OSError as exc:
-        print(f"⛔ [sage cycle] 선언을 쓰지 못했습니다: {declaration_path} "
-              f"({type(exc).__name__})", file=sys.stderr)
+        print(tr(language_of(args), "cli.cycle.msg08", declaration_path=declaration_path, arg=type(exc).__name__), file=sys.stderr)
         return 2
-    return _report_set(cs, root, declaration_path, stem)
+    return _report_set(cs, root, declaration_path, stem, language_of(args))
 
 
 def _create_and_set(cs, args, root, declaration_path, stem):
@@ -527,19 +523,19 @@ def _create_and_set(cs, args, root, declaration_path, stem):
 
     collisions = _same_basename_candidates(root, phase00, stem, target)
     if collisions:
-        print(f"⛔ [sage cycle] Cycle-Stem '{stem}' 와 충돌하는 Phase 00 후보가 있습니다.",
+        print(tr(language_of(args), "cli.cycle.msg09", stem=stem),
               file=sys.stderr)
         for candidate in collisions:
             print(f"  - {candidate}", file=sys.stderr)
-        print("\n기존 사이클을 계속하려면 중복을 정리한 뒤:", file=sys.stderr)
+        print(tr(language_of(args), "cli.cycle.msg10"), file=sys.stderr)
         print(f"  → sage cycle set {stem}", file=sys.stderr)
         suggestions = _available_stems(root, all_globs, stem, cs)
         if suggestions:
-            print("\n새 사이클에 사용할 수 있는 충돌 없는 후보:", file=sys.stderr)
+            print(tr(language_of(args), "cli.cycle.msg11"), file=sys.stderr)
             for candidate in suggestions:
                 print(f"  - {candidate}", file=sys.stderr)
         else:
-            print("\n새 사이클에는 160자 이하의 다른 stem 을 정하세요.", file=sys.stderr)
+            print(tr(language_of(args), "cli.cycle.msg12"), file=sys.stderr)
         return 2
 
     try:
@@ -550,79 +546,75 @@ def _create_and_set(cs, args, root, declaration_path, stem):
             target,
             _phase00_skeleton(stem, args.risk, _document_language(cs, args)).encode("utf-8"))
     except FileExistsError:
-        print(f"⛔ [sage cycle] 대상 엔트리가 이미 존재해 덮지 않습니다: {rel_target}",
+        print(tr(language_of(args), "cli.cycle.msg13", rel_target=rel_target),
               file=sys.stderr)
         return 2
     except (OSError, CycleUsageError) as exc:
-        print(f"⛔ [sage cycle] Phase 00을 만들지 못했습니다: {rel_target} "
-              f"({type(exc).__name__})", file=sys.stderr)
+        print(tr(language_of(args), "cli.cycle.msg14", rel_target=rel_target, arg=type(exc).__name__), file=sys.stderr)
         return 2
 
-    print(f"✅ Phase 00 생성됨: {rel_target}")
-    print("   이 파일은 뼈대입니다. 실제 소스 편집 전에 TODO 내용을 채우세요.")
+    print(tr(language_of(args), "cli.cycle.msg15", rel_target=rel_target))
+    print(tr(language_of(args), "cli.cycle.msg16"))
     print(f"   YAML profile:  {yaml_path}")
     print(f"   compiled JSON: {json_path}")
     if compiled_missing:
-        print("⚠️  compiled profile 이 없습니다. 실제 소스 편집 전에 반드시 생성하세요:")
+        print(tr(language_of(args), "cli.cycle.msg17"))
         print("   → sage generate --kind hook --write")
 
     try:
         cs.write_declaration(root, stem, document_language=_document_language(cs, args))
     except OSError as exc:
-        print(f"⛔ [sage cycle] 선언을 쓰지 못했습니다: {declaration_path} "
-              f"({type(exc).__name__})", file=sys.stderr)
-        print(f"→ Phase 00은 그대로 있습니다. `sage cycle set {stem}` 로 선언만 다시 하세요.",
+        print(tr(language_of(args), "cli.cycle.msg18", declaration_path=declaration_path, arg=type(exc).__name__), file=sys.stderr)
+        print(tr(language_of(args), "cli.cycle.msg19", stem=stem),
               file=sys.stderr)
         return 2
-    return _report_set(cs, root, declaration_path, stem)
+    return _report_set(cs, root, declaration_path, stem, language_of(args))
 
 
-def _report_set(cs, root, path, stem):
+def _report_set(cs, root, path, stem, language=None):
     effective, origin, _error = cs.resolve_stem(root)
-    print(f"✅ 사이클 선언 — {stem}")
+    print(tr(language, "cli.cycle.msg20", stem=stem))
     for line in _location(root, path):
         print(line)
     if origin == "env":
-        print(f"⚠️  지금은 SAGE_CYCLE_STEM='{effective}' 이 이깁니다 — 파일 선언을 쓰려면 "
-              f"`unset SAGE_CYCLE_STEM` 하세요.")
+        print(tr(language, "cli.cycle.msg21", effective=effective))
     for line in _warnings(root, path):
         print(line)
-    print("   (해제: sage cycle clear)")
+    print(tr(language, "cli.cycle.msg22"))
     return 0
 
 
-def _clear(cs, root, path):
+def _clear(cs, root, path, language=None):
     try:
         existed = cs.clear_declaration(root)
     except OSError as exc:
-        print(f"⛔ [sage cycle] 선언을 지우지 못했습니다: {path} ({type(exc).__name__})",
+        print(tr(language, "cli.cycle.msg23", path=path, arg=type(exc).__name__),
               file=sys.stderr)
         return 2
     print(f"✅ 사이클 선언 해제 — {path}" if existed
           else f"[sage cycle] 선언이 없습니다 — {path}")
     env = _env_stem()
     if env:
-        print(f"⚠️  SAGE_CYCLE_STEM='{env}' 은 그대로 남아 있습니다 — "
-              f"`unset SAGE_CYCLE_STEM` 으로 지우세요.")
+        print(tr(language, "cli.cycle.msg24", env=env))
     return 0
 
 
-def _show(cs, root, path):
+def _show(cs, root, path, language=None):
     stem, origin, error = cs.resolve_stem(root)
     print("== sage cycle show ==")
     for line in _location(root, path):
         print(line)
     if error:
-        print(f"⚠️  선언 파일을 읽지 못했습니다: {error}")
-        print("    → 게이트는 선언 없음으로 진행합니다. `sage cycle set <stem>` 으로 다시 쓰세요.")
+        print(tr(language, "cli.cycle.msg25", error=error))
+        print(tr(language, "cli.cycle.msg26"))
     if not stem:
-        print("현재 선언: 없음 — 게이트는 브랜치 이름 마지막 조각에서 사이클을 추론합니다.")
+        print(tr(language, "cli.cycle.msg27"))
     else:
         label = {"env": "SAGE_CYCLE_STEM", "cli": ".sage/cycle.json"}[origin]
-        print(f"현재 선언: {stem}  ({label})")
+        print(tr(language, "cli.cycle.msg28", stem=stem, label=label))
         file_stem, _ = cs.read_declaration(root)
         if origin == "env" and file_stem:
-            print(f"   (파일 선언 '{file_stem}' 은 env 에 밀려 쓰이지 않습니다)")
+            print(tr(language, "cli.cycle.msg29", file_stem=file_stem))
     for line in _warnings(root, path):
         print(line)
     return 0

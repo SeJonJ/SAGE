@@ -3,6 +3,7 @@
 import os
 import re
 import sys
+from sage.i18n import language_of, tr
 
 _CV_RE = re.compile(r'^CONTRACT_VERSION\s*=\s*["\']([^"\']+)["\']', re.M)
 
@@ -28,7 +29,7 @@ STEP = {
 }
 
 
-def not_implemented(command: str, detail: str = "") -> int:
+def not_implemented(command: str, detail: str = "", language=None) -> int:
     """아직 로직이 없는 명령을 정직하게 알린다 (조용한 실패 금지)."""
     print(f"[sage {command}] 스캐폴드 단계 — 아직 미구현입니다.", file=sys.stderr)
     print(f"  진행 단계: {STEP.get(command, 'N/A')}", file=sys.stderr)

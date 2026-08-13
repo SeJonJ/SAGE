@@ -17,7 +17,7 @@ from sage.build_identity import source_core_content_hash
 from sage import overlay_classify as _cls
 from sage import overlay_common as _oc
 from sage import overlay_materialize as _mat
-from sage.i18n import tr
+from sage.i18n import language_of, tr
 
 
 def register(sub, context):
@@ -49,20 +49,20 @@ def _installed_hosts(manifest):
 def run(args):
     root = _find_root(args.root)
     if not root:
-        print("[sage sync-overlays] TOOL ERROR: docs/sage_harness/.manifest.json 을 찾을 수 없음", file=sys.stderr)
+        print(tr(language_of(args), "cli.sync_overlays.msg01"), file=sys.stderr)
         return 2
     manifest_path = os.path.join(root, "docs", "sage_harness", ".manifest.json")
     try:
         manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
     except Exception as e:
-        print(f"[sage sync-overlays] TOOL ERROR: manifest 파싱 실패: {e}", file=sys.stderr)
+        print(tr(language_of(args), "cli.sync_overlays.msg02", e=e), file=sys.stderr)
         return 2
     if not isinstance(manifest, dict):
-        print("[sage sync-overlays] TOOL ERROR: manifest 최상위가 object 아님", file=sys.stderr)
+        print(tr(language_of(args), "cli.sync_overlays.msg03"), file=sys.stderr)
         return 2
     hosts = _installed_hosts(manifest)
     if not hosts:
-        print("[sage sync-overlays] TOOL ERROR: 설치 host 영수증 없음 — `sage install --host ... --force` 필요",
+        print(tr(language_of(args), "cli.sync_overlays.msg04"),
               file=sys.stderr)
         return 2
 
@@ -74,8 +74,7 @@ def run(args):
             continue
         receipt_state, _receipt_scope = _mat.codex_skill_scope_receipt_state(manifest)
         if receipt_state == "malformed":
-            print("❌ 손상된 Codex CORE skill scope 영수증 — "
-                  "`sage install --host codex --skill-scope <global|project-local|disabled> --force` 필요",
+            print(tr(language_of(args), "cli.sync_overlays.msg05"),
                   file=sys.stderr)
             hard_fail = True
         skill_scopes[host] = _mat.resolve_codex_skill_scope(root, manifest=manifest)
@@ -88,13 +87,13 @@ def run(args):
         host_cleanup, cleanup_errors = _mat.plan_blocked_cleanup(
             root, host, codex_skill_scope=skill_scopes[host])
         for p, msg in cleanup_errors:
-            print(f"❌ blocked block 정리 실패[{host}]({os.path.relpath(p, root)}): {msg}", file=sys.stderr)
+            print(tr(language_of(args), "cli.sync_overlays.msg06", host=host, os_path=os.path.relpath(p, root), msg=msg), file=sys.stderr)
             hard_fail = True
         cleanup_plans.extend(host_cleanup)
     deduped_cleanup = {plan[0]: plan for plan in cleanup_plans}
     cleanup_changed = _mat.apply_materialization(deduped_cleanup.values())
     for p in sorted(cleanup_changed):
-        print(f"  ~ blocked 관리 블록 제거: {os.path.relpath(p, root)}")
+        print(tr(language_of(args), "cli.sync_overlays.msg07", os_path=os.path.relpath(p, root)))
     if hard_fail:
         suffix = "정리 가능한 blocked 관리 블록만 제거됨, manifest 미갱신" if cleanup_changed else "렌더/manifest 미갱신"
         print(f"---- sync-overlays: FAIL ({suffix}) ----")
@@ -104,8 +103,7 @@ def run(args):
     # 이후 검사는 일반 overlay/receipt를 재스탬프하지 못하게 기존 fail-closed 순서를 유지한다.
     installed_hash = manifest.get("installed_core_content_hash")
     if installed_hash and installed_hash != source_core_content_hash():
-        print("❌ 현재 SAGE 엔진과 install source identity가 다름 — blocked block 정리 후 "
-              "`sage install --force` 로 base/영수증을 함께 갱신하세요", file=sys.stderr)
+        print(tr(language_of(args), "cli.sync_overlays.msg08"), file=sys.stderr)
         return 1
 
     existing_renders = manifest.get("core_renders")
@@ -114,8 +112,7 @@ def run(args):
             if key.split("/", 1)[0] in hosts
             and (not isinstance(value, dict) or value.get("sage_version") != __version__)]
     if skew:
-        print(f"❌ {len(skew)}개 CORE 렌더가 현재 SAGE {__version__}와 다른 버전 — blocked block 정리 후 "
-              "`sage install --force`를 요구합니다", file=sys.stderr)
+        print(tr(language_of(args), "cli.sync_overlays.msg09", count=len(skew), version=__version__), file=sys.stderr)
         return 1
 
     # 1. 오버레이 파일 선열거 → 오타/미지 CORE id, (c)/미분류 자산은 하드-리포트(fail-closed).
@@ -126,10 +123,10 @@ def run(args):
             print(f"❌ {filename_error}: {rel}", file=sys.stderr)
             hard_fail = True
         elif not _cls.is_core(kind, id):
-            print(f"❌ 미지/오타 CORE 자산 오버레이: {rel} — '{id}' 는 CORE {kind} 가 아닙니다", file=sys.stderr)
+            print(tr(language_of(args), "cli.sync_overlays.msg10", rel=rel, id_=id, kind=kind), file=sys.stderr)
             hard_fail = True
         elif _cls.classify(kind, id) == "blocked":
-            print(f"❌ 오버레이 미지원 자산: {rel} — {kind}/{id} 는 게이트-미보증(독립 오라클 미보증 blocked)", file=sys.stderr)
+            print(tr(language_of(args), "cli.sync_overlays.msg11", rel=rel, kind=kind, id_=id), file=sys.stderr)
             hard_fail = True
 
     if hard_fail:
@@ -145,7 +142,7 @@ def run(args):
         host_renders, host_plans, errors = _mat.plan_materialize(
             root, host, skill_scopes[host])
         for p, msg in errors:
-            print(f"❌ 물리화 실패[{host}]({os.path.relpath(p, root)}): {msg}", file=sys.stderr)
+            print(tr(language_of(args), "cli.sync_overlays.msg12", host=host, os_path=os.path.relpath(p, root), msg=msg), file=sys.stderr)
             hard_fail = True
         if errors:
             continue
@@ -155,19 +152,18 @@ def run(args):
         merged_renders.update(host_renders)
 
     if hard_fail:
-        print("---- sync-overlays: FAIL (렌더/manifest 미갱신) ----")
+        print(tr(language_of(args), "cli.sync_overlays.msg13"))
         return 1
 
     # 모든 host가 preflight를 통과한 뒤에만 렌더를 쓴다. 파일시스템 장애 자체를 원자적으로
     # 롤백할 수는 없지만, 알려진 host별 검증 오류로 mixed state가 생기는 것은 방지한다.
     changed = _mat.apply_materialization(all_plans)
     for p in sorted(set(changed)):
-        print(f"  ~ 물리화: {os.path.relpath(p, root)}")
+        print(tr(language_of(args), "cli.sync_overlays.msg14", os_path=os.path.relpath(p, root)))
 
     # 3. manifest.core_renders 앵커 갱신(엔진 소유 최상위 맵만 교체, 나머지 보존).
     manifest["core_renders"] = merged_renders
     _oc.write_text_lf(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
 
-    print(f"---- sync-overlays: OK ({len(set(changed))}개 갱신, {len(merged_renders)}개 앵커, "
-          f"hosts={hosts}) ----")
+    print(tr(language_of(args), "cli.sync_overlays.msg15", count=len(set(changed)), count2=len(merged_renders), hosts=hosts))
     return 0

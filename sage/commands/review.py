@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 from sage.commands import doctor as _doctor
-from sage.i18n import tr
+from sage.i18n import language_of, tr
 
 _DEFAULT_TIMEOUT = 540   # codex/claude 비대화 1턴 상한(초). gstack /codex 의 330~600 대역과 정합.
 
@@ -337,7 +337,7 @@ def _find_root(explicit):
         cur = parent
 
 
-def _read_packet(path, command):
+def _read_packet(path, command, language=None):
     try:
         prompt = Path(path).read_text(encoding="utf-8")
     except Exception as exc:
@@ -396,8 +396,8 @@ def _blocked_review(command, message, status_code=3):
     return status_code
 
 
-def _run_same_runtime(profile, host, packet_file, timeout, command="sage review"):
-    prompt = _read_packet(packet_file, command)
+def _run_same_runtime(profile, host, packet_file, timeout, command="sage review", language=None):
+    prompt = _read_packet(packet_file, command, language)
     if prompt is None:
         return _blocked_review(command, "유효한 리뷰 패킷이 필요합니다", 2)
     model = _same_runtime_model(profile)
@@ -422,8 +422,7 @@ def run_review(args):
     """Run a clean-context headless review on the explicitly active host."""
     # 구 `sage review`(자산분류) 플래그 감지 → 친절한 이름변경 안내(codex 배치2 R3 P1).
     if getattr(args, "kind", None) is not None or getattr(args, "batch", False) or getattr(args, "gate", False):
-        print("[sage review] 이 명령은 Phase 05 리뷰로 의미가 바뀌었습니다. 자산 자동승인 분류는 "
-              "`sage asset-check` 로 이름이 변경됐습니다 — `sage asset-check --kind … [--batch] [--gate]`.",
+        print(tr(language_of(args), "cli.review.msg03"),
               file=sys.stderr)
         return 2
     root = _find_root(args.root)
@@ -471,7 +470,8 @@ def run_review(args):
         return _blocked_review(
             "sage review", f"명시적 local opt-out 없이 cross-model을 same-runtime으로 완화할 수 없음 ({reason})"
         )
-    return _run_same_runtime(profile, host, args.packet_file, args.timeout)
+    return _run_same_runtime(profile, host, args.packet_file, args.timeout,
+                             language=language_of(args))
 
 
 def run_cross_check(args):
@@ -523,9 +523,10 @@ def run_cross_check(args):
             host = _profile_active_host(profile)
             if host is None:
                 return _blocked_review("sage cross-check", "same-runtime fallback의 active host를 확인할 수 없음", 2)
-            print(f"[sage cross-check] cross-model 비활성 정책 → {host} intentional same-runtime headless 실행",
+            print(tr(language_of(args), "cli.review.msg04", host=host),
                   file=sys.stderr)
-            return _run_same_runtime(profile, host, args.packet_file, args.timeout, command="sage cross-check")
+            return _run_same_runtime(profile, host, args.packet_file, args.timeout,
+                                     command="sage cross-check", language=language_of(args))
         reason = rr.get("reviewer_degrade_reason") or "peer_unavailable"
         return _blocked_review("sage cross-check", f"cross-model reviewer를 실행할 수 없음 ({reason})")
 
@@ -540,7 +541,7 @@ def run_cross_check(args):
         return 2
     reviewer_model, model_note_suffix = _model_for_peer(profile, peer, reviewer_model)
 
-    prompt = _read_packet(args.packet_file, "sage cross-check")
+    prompt = _read_packet(args.packet_file, "sage cross-check", language_of(args))
     if prompt is None:
         return _blocked_review("sage cross-check", "유효한 리뷰 패킷이 필요합니다", 2)
 
@@ -548,7 +549,7 @@ def run_cross_check(args):
         print(f"[sage cross-check] ⚠️  {model_note_suffix}", file=sys.stderr)
     eff_note = f"effort={effort}" + ("" if configured else " (기본값)")
     model_note = reviewer_model or "peer CLI default"
-    print(f"[sage cross-check] {peer} 직접 호출 중(timeout {args.timeout}s, {eff_note}, model={model_note})…", file=sys.stderr)
+    print(tr(language_of(args), "cli.review.msg05", peer=peer, args_timeout=args.timeout, eff_note=eff_note, model_note=model_note), file=sys.stderr)
     if reviewer_model:
         ok, review, err = _invoke_peer(peer, prompt, args.timeout, effort, reviewer_model)
     else:

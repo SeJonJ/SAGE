@@ -14,7 +14,7 @@ from pathlib import Path
 
 from sage.commands import _vault
 from sage.profile_layers import load_profile_layers
-from sage.i18n import tr
+from sage.i18n import language_of, tr
 
 
 def register(sub, context):
@@ -257,7 +257,7 @@ def _note_filename(profile, prefix, title):
     return os.path.basename(name)
 
 
-def _append_link_once(vault, folder, target_file, note_stem, title):
+def _append_link_once(vault, folder, target_file, note_stem, title, language=None):
     """vault/folder/<target_file> 에 `- <date> [[note]] - title` 한 줄을 멱등 append(이미 링크되면 skip).
     log.md(이력)·index(목차) 공용(7차 배치2 4-3). target_file 는 basename 만(경로 탈출 방지)."""
     root = os.path.realpath(vault)
@@ -534,7 +534,7 @@ def _run_write_back(args):
         path, created = _write_or_append_note(vault, folder, filename, fm, note_stem, summary, tag_line=tag_line)
         if path is None:
             # write_note 가 create_only 충돌(경쟁 생성)로 None 반환 — "note written: None" 오보 대신 정확 보고.
-            print(f"[sage knowledge write-back] note already exists (동시 생성) — 신규 작성 skip: {filename}")
+            print(tr(language_of(args), "cli.knowledge.msg02", filename=filename))
         else:
             print(f"[sage knowledge write-back] note written: {path}")
         # advisory 구조 검증(옵트인): authoring guide 가 요구하는 PREFIX 별 필수 마커의 존재만 확인.
@@ -546,16 +546,13 @@ def _run_write_back(args):
         if markers:
             missing = _missing_structure(path, markers)
             if missing:
-                print(f"[sage knowledge write-back] ⚠️  advisory: authoring guide 필수 구조 누락 "
-                      f"({args.prefix}) — {', '.join(missing)}")
+                print(tr(language_of(args), "cli.knowledge.msg03", args_prefix=args.prefix, items=', '.join(missing)))
             # 존재하는 마커 중 '빈 헤더'(내용 0) 섹션도 표면화 — 마커 존재만으론 hollow 골격을 통과시킨다.
             hollow = _hollow_sections(path, markers)
             if hollow:
-                print(f"[sage knowledge write-back] ⚠️  advisory: 필수 섹션이 빈 헤더 "
-                      f"({args.prefix}) — {', '.join(hollow)} (헤더만 있고 본문 없음 → depth self-review 로 채우세요)")
+                print(tr(language_of(args), "cli.knowledge.msg04", args_prefix=args.prefix, items=', '.join(hollow)))
             if not missing and not hollow:
-                print(f"[sage knowledge write-back] ✅ 골격 마커 존재+본문 확인 ({args.prefix}) — "
-                      f"내용 깊이(질)는 미검증(skill 지침·host depth self-review 영역)")
+                print(tr(language_of(args), "cli.knowledge.msg05", args_prefix=args.prefix))
         if args.append_log:
             log_path, added = _append_log_once(vault, folder, note_stem, title)
             print(f"[sage knowledge write-back] log {'updated' if added else 'already linked'}: {log_path}")

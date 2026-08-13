@@ -20,7 +20,7 @@ from sage.fast_cycle_contract import (
 )
 from sage.profile_layers import load_profile_layers
 from sage.profile_validate import validate_profile
-from sage.i18n import tr
+from sage.i18n import language_of, tr
 
 
 def _positive(value):
@@ -156,7 +156,7 @@ def _profile_hash(profile):
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _warn(actual_risk, level, rounds, lenses, reason, run_id):
+def _warn(actual_risk, level, rounds, lenses, reason, run_id, language=None):
     print(f"⚠️ [SAGE FAST {actual_risk}]", file=sys.stderr)
     if actual_risk == "L3" and level == "L2":
         print("이 작업은 L3 위험도로 분류됐지만 L2 Fast 리뷰 절차를 사용합니다.", file=sys.stderr)
@@ -280,7 +280,8 @@ def _run_open(args):
                     raise ValueError("Fast-Audit-Run does not match its audit snapshot: "
                                      + "; ".join(snapshot_issues))
         print(run_id)
-        _warn(actual_risk, args.level, rounds, lenses, args.reason, run_id)
+        _warn(actual_risk, args.level, rounds, lenses, args.reason, run_id,
+              language_of(args))
         return 0
     except (OSError, ValueError, KeyError) as exc:
         print(f"⛔ [sage fast-cycle] open rejected: {exc}", file=sys.stderr)

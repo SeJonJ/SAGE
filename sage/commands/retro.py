@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 from sage.profile_layers import load_profile_layers
-from sage.i18n import tr
+from sage.i18n import language_of, tr
 
 
 def register(sub, context):
@@ -172,7 +172,7 @@ def _summary_body(text):
     return rest[:nxt.start()] if nxt else rest
 
 
-def _check_note(path, root, run_id=None):
+def _check_note(path, root, run_id=None, language=None):
     """retro 노트가 실제로 채워졌는지 결정론 검사 → exit code.
 
     CLI 는 빈 템플릿만 쓰고 distill/작성은 host AI 에 맡긴다(설계: gather=결정론, distillation=판단).
@@ -189,12 +189,12 @@ def _check_note(path, root, run_id=None):
 
     # isfile: 디렉토리 경로도 exists() 는 참이라 read() 가 IsADirectoryError 로 터진다(오타 흔함).
     if not os.path.isfile(path):
-        print(f"[sage retro --check] 노트 파일 없음: {path}", file=sys.stderr)
+        print(tr(language, "cli.retro.msg01", path=path), file=sys.stderr)
         return 2
     try:
         text = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as e:
-        print(f"[sage retro --check] 노트 읽기 실패: {type(e).__name__}: {e}", file=sys.stderr)
+        print(tr(language, "cli.retro.msg02", arg=type(e).__name__, e=e), file=sys.stderr)
         return 2
     problems = []
 
@@ -232,18 +232,17 @@ def _check_note(path, root, run_id=None):
                 problems.append(f"제안[{i}] proposed_change 가 비었음")
 
     if problems:
-        print(f"== sage retro --check ({os.path.basename(path)}) — 미완성 ==", file=sys.stderr)
+        print(tr(language, "cli.retro.msg03", os_path=os.path.basename(path)), file=sys.stderr)
         for p in problems:
             print(f"  ✗ {p}", file=sys.stderr)
-        print("\n노트를 열어 distiller 결과로 `## 요약`(사람용 1~2줄)과 `## 제안`(JSON 배열)을 채운 뒤 "
-              "다시 실행하세요. 증거·프롬프트는 노트 하단 <details> 에 있습니다.", file=sys.stderr)
+        print(tr(language, "cli.retro.msg04"), file=sys.stderr)
         return 1
 
     n = len(proposals)
     print(f"== sage retro --check ({os.path.basename(path)}) — OK ==")
-    print(f"  요약 작성됨 · 제안 {n}건" + (" (전부 유효 target)" if n else ""))
+    print(tr(language, "cli.retro.msg05", n=n) + (" (전부 유효 target)" if n else ""))
     if n == 0:
-        print("  ⚠️  제안 0건 — 구조적 패턴이 정말 없었다면 정상이나, 그 판단 근거를 완료 보고에 남기세요.")
+        print(tr(language, "cli.retro.msg06"))
 
     # 9-C: 성공 증거를 .sage/retro_audit.jsonl 에 기록 — Stop 훅(retro_gate)이 이 run 이 실제로
     # check 를 통과했는지 사후 대조한다. 기록 실패는 --check 자체를 실패로 본다: 기록 안 된 성공은
@@ -255,18 +254,17 @@ def _check_note(path, root, run_id=None):
             ra = _load_retro_audit()
             ra.record_check(root, bind_id, path, text)
         except Exception as e:
-            print(f"[sage retro --check] retro_audit 기록 실패: {type(e).__name__}: {e} "
-                  f"— 게이트가 이 사이클을 완료로 인식할 수 없습니다.", file=sys.stderr)
+            print(tr(language, "cli.retro.msg07", arg=type(e).__name__, e=e), file=sys.stderr)
             return 2
 
-    print("  다음: 사람이 검토 후 frontmatter `approved: true` → `sage absorb --from-retro <노트>`")
+    print(tr(language, "cli.retro.msg08"))
     return 0
 
 
 def run(args):
     root = os.path.abspath(args.root) if args.root else _find_project_root(os.getcwd())
     if args.check:
-        return _check_note(args.check, root, args.run_id)
+        return _check_note(args.check, root, args.run_id, language_of(args))
 
     profile = _load_profile(root)
     la = _load_loop_audit(root)
@@ -311,25 +309,22 @@ def run(args):
         target = None
         if args.run_id:
             if args.run_id not in real_runs:
-                print(f"⛔ [sage retro --no-vault] run_id={args.run_id} 는 실재하는 loop_audit run 이 아닙니다 "
-                      f"— skip 미기록(게이트 우회 방지).", file=sys.stderr)
+                print(tr(language_of(args), "cli.retro.msg09", args_run_id=args.run_id), file=sys.stderr)
                 return 2
             target = args.run_id
         elif len(real_runs) == 1:
             target = real_runs[0]   # 단일 run 자동 결속
         elif len(real_runs) >= 2:
-            print(f"⛔ [sage retro --no-vault] loop_audit run 이 {len(real_runs)}개 — 어느 run 을 면제할지 "
-                  f"모호합니다. --run-id 로 명시하세요(엉뚱한 최신 run 자동 면제 방지).", file=sys.stderr)
+            print(tr(language_of(args), "cli.retro.msg10", count=len(real_runs)), file=sys.stderr)
             return 2
         else:
             # 결속할 run 자체가 없음(단발 리뷰 등) — 게이트는 06 Loop-Run 결속으로만 판정하므로 skip 불필요.
-            print("  ℹ️  [--no-vault] 결속할 loop_audit run 이 없어 skip 미기록(노트만 생략).", file=sys.stderr)
+            print(tr(language_of(args), "cli.retro.msg11"), file=sys.stderr)
         if target:
             try:
                 _load_retro_audit().record_skip(root, target, reason="no_vault")
             except Exception as e:
-                print(f"⛔ [sage retro --no-vault] retro_audit skip 기록 실패: {type(e).__name__}: {e} "
-                      f"— 기록 안 된 skip 은 게이트가 못 봅니다(false BLOCK).", file=sys.stderr)
+                print(tr(language_of(args), "cli.retro.msg12", arg=type(e).__name__, e=e), file=sys.stderr)
                 return 2
     else:
         vault_arg = args.vault
@@ -339,16 +334,17 @@ def run(args):
         raw_stem, stem_hint = _derive_stem(args.feature, docs, rid)
         if stem_hint:
             print(f"  ℹ️  {stem_hint}", file=sys.stderr)
-        _write_vault_note(profile, root, rid, raw_stem, out, vault_arg or None)
+        _write_vault_note(profile, root, rid, raw_stem, out, vault_arg or None,
+                          language_of(args))
     return 0
 
 
-def _write_vault_note(profile, root, rid, raw_stem, out_lines, override):
+def _write_vault_note(profile, root, rid, raw_stem, out_lines, override, language=None):
     """retro 패킷을 vault 에 human-gate 노트(approved:false)로 작성. 사람이 Obsidian 에서 검토·승인."""
     from sage.commands import _vault
     vault, folder = _vault.vault_target(profile, override, root)
     if not vault:
-        print("  ℹ️  vault 비활성(knowledge_capture.vault_path 미설정, --vault 경로도 없음) → 노트 생략", file=sys.stderr)
+        print(tr(language, "cli.retro.msg13"), file=sys.stderr)
         return
     import datetime
     from sage.commands.knowledge import _note_filename
@@ -376,7 +372,7 @@ def _write_vault_note(profile, root, rid, raw_stem, out_lines, override):
                 prev_rid = None
             if prev_rid and prev_rid != rid:
                 fname = _note_filename(profile, "TECH", f"{name} retro {stem} {today} {rid}")
-                print(f"  ℹ️  같은 이름의 노트가 다른 run({prev_rid})의 것 → 이번 run 은 별도 노트로 작성",
+                print(tr(language, "cli.retro.msg14", prev_rid=prev_rid),
                       file=sys.stderr)
     dash_name = _dashboard_filename(profile)
     fm = {"tags": ["sage", "retro", "loop-c"], "approved": False, "run_id": rid or "",
@@ -398,15 +394,14 @@ def _write_vault_note(profile, root, rid, raw_stem, out_lines, override):
     path = _vault.write_note(vault, folder, fname, fm, body, create_only=True)
     if path is None:
         path = os.path.join(vault, folder, fname)
-        print(f"  ℹ️  retro 노트가 이미 존재 — 사람 검토 상태 보존(덮지 않음): {path}", file=sys.stderr)
+        print(tr(language, "cli.retro.msg15", path=path), file=sys.stderr)
     else:
-        print(f"  ✅ Obsidian retro human-gate 노트 작성(approved:false): {path}", file=sys.stderr)
+        print(tr(language, "cli.retro.msg16", path=path), file=sys.stderr)
     # 노트는 빈 템플릿으로 나간다 — 채우는 건 host 몫이므로, 검산 명령을 여기서 못박아 전달한다.
     # --run-id 를 포함해 출력한다: 빠뜨리면 run 결속 검사가 꺼져 남의 노트로 통과할 수 있다.
     rid_arg = f' --run-id {rid}' if rid else ""
-    print(f'  ▶ 다음: 노트의 `## 요약`/`## 제안` 을 distill 결과로 채운 뒤 '
-          f'`python -m sage retro --check "{path}"{rid_arg}` (미완성이면 non-zero)', file=sys.stderr)
+    print(tr(language, "cli.retro.msg17", path=path, rid_arg=rid_arg), file=sys.stderr)
     try:
         _write_vault_dashboard(_load_loop_audit(root), root, override)
     except Exception as e:
-        print(f"  ⚠️  loop audit 대시보드 retro 링크 갱신 실패: {type(e).__name__}: {e}", file=sys.stderr)
+        print(tr(language, "cli.retro.msg18", arg=type(e).__name__, e=e), file=sys.stderr)
