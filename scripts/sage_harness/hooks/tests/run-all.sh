@@ -325,5 +325,9 @@ echo "### 60. hook locale (엔진 비의존 독립 실행 + 두 도메인 분리
 python3 "$HERE/test_hook_locale.py" || rc=1
 
 echo ""
+echo "### 61. cycle document language (Phase 00 정본 · state 미러 · legacy 해석)"
+python3 "$HERE/test_document_language.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

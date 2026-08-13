@@ -202,7 +202,7 @@ class TestFastCLI(unittest.TestCase):
         runtime = Path(REPO, "scripts", "sage_harness", "hooks", "runtime")
         sys.path.insert(0, str(runtime))
         import cycle_state
-        cycle_state.write_declaration(self.root, "hotfix")
+        cycle_state.write_declaration(self.root, "hotfix", document_language="ko")
         Path(self.root, "plan_docs", "00-base_plan", "hotfix.md").write_text(
             self._plan(), encoding="utf-8")
 

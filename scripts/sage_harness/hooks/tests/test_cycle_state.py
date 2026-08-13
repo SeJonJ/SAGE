@@ -112,14 +112,14 @@ class TestReadWriteClear(unittest.TestCase):
         self.root = _mark_project(os.path.realpath(self.tmp.name))
 
     def test_round_trip(self):
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         self.assertEqual(cs.read_declaration(self.root), (STEM, ""))
 
     def test_absent_declaration_is_not_an_error(self):
         self.assertEqual(cs.read_declaration(self.root), ("", ""))
 
     def test_clear_reports_whether_it_existed(self):
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         self.assertTrue(cs.clear_declaration(self.root))
         self.assertFalse(cs.clear_declaration(self.root))
         self.assertEqual(cs.read_declaration(self.root), ("", ""))
@@ -128,7 +128,7 @@ class TestReadWriteClear(unittest.TestCase):
         # 게이트가 문서 부재로 걸러주긴 하지만, 경로 구분자·제어문자는 형식 자체가 틀렸다.
         for bad in ("", "   ", "a/b", "a\\b", "..", ".", "x\ty", "z" * 161):
             with self.assertRaises(ValueError, msg=bad):
-                cs.write_declaration(self.root, bad)
+                cs.write_declaration(self.root, bad, document_language="ko")
         self.assertEqual(cs.read_declaration(self.root), ("", ""))
 
     def test_corruption_is_reported_not_silently_absent(self):
@@ -137,7 +137,7 @@ class TestReadWriteClear(unittest.TestCase):
         선언이 차단 근거로 승격됐으므로(완결 사이클) 그 침묵이 곧 우회 레버다.
         """
         path = cs.declaration_path(self.root)
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         for label, blob in (("잘린 JSON", '{"cycle_stem": "x"'),
                             ("객체 아님", '["x"]'),
                             ("stem 없음", '{"version": 1}'),
@@ -154,10 +154,10 @@ class TestReadWriteClear(unittest.TestCase):
         `open(w)` 은 여는 순간 대상을 잘라내므로, 쓰기가 중단되면 게이트가 읽는 자리에 잘린
         파일이 남는다. `mkstemp` + `os.replace` 는 온전한 파일을 만든 뒤 한 번에 갈아끼운다.
         """
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         with mock.patch.object(os, "replace", side_effect=OSError("boom")):
             with self.assertRaises(OSError):
-                cs.write_declaration(self.root, "other-cycle")
+                cs.write_declaration(self.root, "other-cycle", document_language="ko")
         self.assertEqual(cs.read_declaration(self.root), (STEM, ""))
         leftovers = [n for n in os.listdir(os.path.join(self.root, ".sage")) if n != "cycle.json"]
         self.assertEqual(leftovers, [])          # 실패한 임시 파일이 남으면 다음 진단을 흐린다
@@ -165,7 +165,7 @@ class TestReadWriteClear(unittest.TestCase):
     def test_a_stale_entry_at_a_predictable_temp_name_does_not_block_writes(self):
         # 고정 tmp 이름으로 되돌리면 크래시가 남긴 잔해가 이후 모든 선언을 영구히 막는다.
         os.makedirs(os.path.join(self.root, ".sage", "cycle.json.tmp"))
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         self.assertEqual(cs.read_declaration(self.root), (STEM, ""))
 
 
@@ -179,7 +179,7 @@ class TestPrecedenceAndIsolation(unittest.TestCase):
 
     def test_env_beats_file_beats_nothing(self):
         self.assertEqual(cs.resolve_stem(self.root, environ={}), ("", "", ""))
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         self.assertEqual(cs.resolve_stem(self.root, environ={}), (STEM, "cli", ""))
         self.assertEqual(cs.resolve_stem(self.root, environ={"SAGE_CYCLE_STEM": "from-env"}),
                          ("from-env", "env", ""))
@@ -198,7 +198,7 @@ class TestPrecedenceAndIsolation(unittest.TestCase):
     def test_declaring_does_not_export_anything_to_child_processes(self):
         # env 와 다를 게 없어지면 이 기능의 존재 이유가 사라진다.
         os.environ.pop("SAGE_CYCLE_STEM", None)
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         self.assertIsNone(os.environ.get("SAGE_CYCLE_STEM"))
         child = subprocess.run(
             [sys.executable, "-c",
@@ -208,7 +208,7 @@ class TestPrecedenceAndIsolation(unittest.TestCase):
 
     def test_one_projects_declaration_does_not_reach_another(self):
         other = _mark_project(os.path.realpath(tempfile.mkdtemp()))
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         self.assertEqual(cs.resolve_stem(other, environ={}), ("", "", ""))
 
 
@@ -408,7 +408,7 @@ class TestFullWiring(unittest.TestCase):
         self.assertIn(".sage/cycle.json 선언", text)
 
     def test_clear_returns_the_gate_to_inference(self):
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         self.assertEqual(self._run_gate()[0], 0)
         proc = subprocess.run([sys.executable, "-m", "sage", "cycle", "clear"],
                               cwd=self.root, capture_output=True, text=True,
@@ -418,7 +418,7 @@ class TestFullWiring(unittest.TestCase):
         self.assertEqual(self._run_gate()[0], 2)
 
     def test_a_corrupt_declaration_degrades_and_says_so_through_the_real_gate(self):
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         Path(cs.declaration_path(self.root)).write_text('{"cycle_stem"', encoding="utf-8")
         rc, text = self._run_gate()
         self.assertEqual(rc, 2)                  # 선언 부재와 같은 판정 — 차단이 아니라 degrade

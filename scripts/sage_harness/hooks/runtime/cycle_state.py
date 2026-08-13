@@ -25,7 +25,12 @@ import cycle_binding
 # "여기가 SAGE 프로젝트다" 의 정의 — sage install 이 만든다. git 과 무관하다.
 MARKER_REL = os.path.join("docs", "sage_harness", ".manifest.json")
 DECLARATION_REL = os.path.join(".sage", "cycle.json")
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# 문서 언어는 Phase 00 의 `Document-Language` 마커가 정본이고 이 파일은 재개·cross-host 를 위한
+# 미러다. 둘이 다르면 어느 쪽이 이기는 게 아니라 hard conflict — 자동으로 어느 쪽도 고치지 않는다.
+DOCUMENT_LANGUAGES = ("ko", "en")
+LEGACY_DOCUMENT_LANGUAGE = "ko"
 
 
 class DeclarationRootError(RuntimeError):
@@ -84,7 +89,61 @@ def read_declaration(root):
     return stem, ""
 
 
-def write_declaration(root, stem, now=None):
+class CycleDeclarationRead:
+    """선언 파일의 전체 record. 언어 중립이고 읽기 과정에서 파일을 고치지 않는다.
+
+    `legacy` 는 version 1 이거나 문서 언어가 없는 상태다. 그 경우 `document_language` 는 None
+    이며, 해석은 호출부가 한다 — 여기서 `ko` 로 채우면 "선언한 적 없음"과 "한국어로 선언함"이
+    같은 값이 되어 마이그레이션이 언제 끝났는지 셀 수 없다.
+    """
+
+    __slots__ = ("stem", "document_language", "schema_version", "legacy", "error")
+
+    def __init__(self, stem="", document_language=None, schema_version=None,
+                 legacy=False, error=""):
+        self.stem = stem
+        self.document_language = document_language
+        self.schema_version = schema_version
+        self.legacy = legacy
+        self.error = error
+
+    def __repr__(self):
+        return (f"CycleDeclarationRead(stem={self.stem!r}, "
+                f"document_language={self.document_language!r}, "
+                f"schema_version={self.schema_version!r}, legacy={self.legacy!r}, "
+                f"error={self.error!r})")
+
+    def __eq__(self, other):
+        return isinstance(other, CycleDeclarationRead) and all(
+            getattr(self, name) == getattr(other, name) for name in self.__slots__)
+
+
+def read_declaration_record(root):
+    """부재·version 1 legacy·version 2·손상을 구분해 돌려준다."""
+    stem, error = read_declaration(root)
+    if error:
+        return CycleDeclarationRead(error=error)
+    if not stem:
+        return CycleDeclarationRead()
+    path = declaration_path(root)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.loads(handle.read())
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        return CycleDeclarationRead(error=f"{path}: 재읽기 실패 ({type(exc).__name__})")
+    version = data.get("version")
+    language = data.get("document_language")
+    if version != SCHEMA_VERSION or language is None:
+        return CycleDeclarationRead(stem=stem, schema_version=version, legacy=True)
+    if language not in DOCUMENT_LANGUAGES:
+        return CycleDeclarationRead(
+            stem=stem, schema_version=version,
+            error=f"{path}: document_language 값이 유효하지 않음 ({language!r})")
+    return CycleDeclarationRead(stem=stem, document_language=language,
+                                schema_version=version)
+
+
+def write_declaration(root, stem, now=None, *, document_language):
     """선언을 원자적으로 기록하고 파일 경로를 돌려준다. 형식이 틀린 stem 은 ValueError.
 
     `mkstemp` + `os.replace`: 같은 디렉터리에 온전한 파일을 만든 뒤 한 번에 갈아끼운다.
@@ -95,7 +154,10 @@ def write_declaration(root, stem, now=None):
         raise ValueError(f"cycle stem 형식 오류: {stem!r}")
     target = declaration_path(root)
     os.makedirs(os.path.dirname(target), exist_ok=True)
+    if document_language not in DOCUMENT_LANGUAGES:
+        raise ValueError(f"document_language 형식 오류: {document_language!r}")
     payload = json.dumps({"version": SCHEMA_VERSION, "cycle_stem": normalized,
+                          "document_language": document_language,
                           "declared_at": time.strftime(
                               "%Y-%m-%dT%H:%M:%SZ",
                               time.gmtime(time.time() if now is None else now))},

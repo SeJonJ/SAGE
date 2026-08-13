@@ -457,6 +457,17 @@ def _write_phase00_exclusive(path, payload):
         raise
 
 
+def _document_language(cs, args):
+    """이 사이클이 00~06 내내 쓸 문서 언어. 시작 시 한 번만 정하고 이후 바뀌지 않는다.
+
+    CLI 가 실은 LanguageContext 를 쓰되, 없으면 기본값이다 — 언어 배선 없이 호출되는 경로
+    (테스트·직접 호출)가 여기서 죽으면 사이클 선언 자체가 언어 기능에 묶인다.
+    """
+    context = getattr(args, "_language_context", None)
+    language = getattr(context, "language", None)
+    return language if language in cs.DOCUMENT_LANGUAGES else "ko"
+
+
 def _set(cs, args, root, declaration_path):
     try:
         stem = _normalized_stem(cs, args.stem)
@@ -482,7 +493,7 @@ def _set(cs, args, root, declaration_path):
         print("   선언은 계속하지만 실제 소스 편집 전에 profile과 Phase 00을 확인하세요.")
 
     try:
-        cs.write_declaration(root, stem)
+        cs.write_declaration(root, stem, document_language=_document_language(cs, args))
     except OSError as exc:
         print(f"⛔ [sage cycle] 선언을 쓰지 못했습니다: {declaration_path} "
               f"({type(exc).__name__})", file=sys.stderr)
@@ -539,7 +550,7 @@ def _create_and_set(cs, args, root, declaration_path, stem):
         print("   → sage generate --kind hook --write")
 
     try:
-        cs.write_declaration(root, stem)
+        cs.write_declaration(root, stem, document_language=_document_language(cs, args))
     except OSError as exc:
         print(f"⛔ [sage cycle] 선언을 쓰지 못했습니다: {declaration_path} "
               f"({type(exc).__name__})", file=sys.stderr)
