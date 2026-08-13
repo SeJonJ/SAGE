@@ -333,5 +333,9 @@ echo "### 62. 소비 프로젝트 locale e2e (설치본 host 2 × locale 2 동�
 python3 "$HERE/test_locale_consumer_e2e.py" || rc=1
 
 echo ""
+echo "### 63. sage upgrade (읽기 전용 진단 · 트랜잭션 적용 · 멱등 · 소유 경계)"
+python3 "$HERE/test_upgrade.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

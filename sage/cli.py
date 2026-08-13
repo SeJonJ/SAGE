@@ -14,11 +14,12 @@ from sage.i18n.context import INTERFACE_LANGUAGES
 from sage.i18n.parser import LanguageArgumentError, context_for
 from sage.commands import (install, generate, validate, asset_check, review, absorb, doctor, change,
                            override, review_loop, retro, knowledge, sync_overlays, acceptance_waiver,
-                           authority, models, context, feedback, cycle, fast_cycle)
+                           authority, models, context, feedback, cycle, fast_cycle,
+                           upgrade)
 
 _COMMANDS = [install, generate, validate, asset_check, review, absorb, doctor, change, override,
              review_loop, retro, knowledge, sync_overlays, acceptance_waiver, authority, models, context,
-             feedback, cycle, fast_cycle]
+             feedback, cycle, fast_cycle, upgrade]
 
 
 def build_parser(context: LanguageContext | None = None) -> argparse.ArgumentParser:
