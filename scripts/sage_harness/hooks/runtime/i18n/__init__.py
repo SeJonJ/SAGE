@@ -7,18 +7,21 @@ runtime 으로 도는데, 거기에 엔진이 설치돼 있으리라는 보장�
 CLI 와 key 집합을 공유하지 않는다. `ok_l1` 같은 기존 hook key 는 호환 계약이라 여기에만 있고,
 CLI 는 `cli.*` 를 쓴다. 두 도메인이 겹치면 같은 문장의 소유자가 둘이 된다.
 """
+from . import context
 from . import en as _en
 from . import ko as _ko
 
 DEFAULT_LANGUAGE = "ko"
 LANGUAGES = ("ko", "en")
 CATALOGS = {"ko": _ko.MESSAGES, "en": _en.MESSAGES}
+FRAGMENTS = {"ko": _ko.FRAGMENTS, "en": _en.FRAGMENTS}
 
 # 판정 core 가 낼 수 있는 message_key 전부. build-time oracle 이 이 집합과 두 catalog 를
 # 대조한다 — 번역 문자열을 뒤지거나 AST 를 추측하면 새 key 하나가 조용히 빠진다.
 HOOK_MESSAGE_KEYS = frozenset(_ko.MESSAGES)
 
-__all__ = ["CATALOGS", "DEFAULT_LANGUAGE", "HOOK_MESSAGE_KEYS", "LANGUAGES", "tr"]
+__all__ = ["CATALOGS", "DEFAULT_LANGUAGE", "FRAGMENTS", "HOOK_MESSAGE_KEYS",
+           "LANGUAGES", "context", "frag", "tr"]
 
 
 def tr(language, key, **arguments):
@@ -32,3 +35,13 @@ def tr(language, key, **arguments):
         return template.format(**arguments)
     except (KeyError, IndexError, ValueError):
         return f"[SAGE] message_key={key}"
+
+
+def frag(language, key):
+    """문장을 감싸는 조각. 없으면 기본 언어, 그것도 없으면 빈 문자열이다.
+
+    조각이 비어도 판정 줄은 서야 하므로 `tr` 처럼 key 를 노출하지 않는다 — 라벨 자리에
+    `[SAGE] message_key=...` 가 끼면 줄 전체가 못 읽는 상태가 된다.
+    """
+    table = FRAGMENTS.get(language) or {}
+    return table.get(key) or FRAGMENTS[DEFAULT_LANGUAGE].get(key, "")

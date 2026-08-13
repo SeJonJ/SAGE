@@ -49,3 +49,63 @@ MESSAGES = {
     "ok_l1": "binding confirmed",
     "ok_l0": "binding confirmed",
 }
+
+# 판정 문장이 아니라 그 문장을 **감싸는 조각**이다. message_key 와 섞으면 build-time oracle
+# (core 가 낼 수 있는 key 집합과의 대조)이 조각까지 message_key 로 세어 무너진다.
+FRAGMENTS = {
+    # 판정 줄에 이어 붙는 해소 안내. 본문만 번역하고 이걸 두면 en 출력의 절반이
+    # 한국어로 남아, 번역하지 않은 것보다 읽기 어려운 줄이 된다.
+    # key 는 `hint.<message_key>` 규약이다 — 표를 한 벌 더 두지 않기 위해서다.
+    "hint.block_feedback_unresolved": "Resolve the marker with `/sage-feedback` (an edit that removes it passes), or issue a waiver recording the reason and a deadline if this is urgent",
+    "hint.block_l3_no_plan": "Author a plan document and run the L3 review protocol (two rounds)",
+    "hint.block_l3_strategy_unresolved": "(override required: select a canonical find_l3_review strategy in the SAGE manifest)",
+    "hint.block_l3_review_evidence": "Check the review frontmatter, domain_ref and round [1, 2] for this Cycle-Stem",
+    "hint.block_report_without_approval": "Record APPROVED in the approve phase document before writing the report",
+    "hint.block_report_mixed_evidence": "Finish the 01/04/05 changes first, then write the 06 report as a separate change",
+    "hint.block_phase00_mixed_evidence": "Complete the Phase 00 fix as its own change, then re-run the affected phases in order",
+    "hint.warn_phase00_mixed_evidence": "(advisory) Split Phase 00 and the phases that follow it into separate changes",
+    "hint.block_report_without_audit": "Run Phase 05 through {rv} to close the loop (APPROVED) and record 'Loop-Run: <run_id>' in the 05 document",
+    "hint.warn_report_without_audit": "(advisory) Review-loop audit evidence is recommended for Phase 05 — run the loop with {rv} and record 'Loop-Run: <run_id>' in 05",
+    "hint.block_invalid_done_criteria": "Fix the Phase 00 Done Criteria structure and Done-Criteria-Revision first",
+    "hint.warn_invalid_done_criteria": "(advisory) Improve the Phase 00 Done Criteria structure",
+    "hint.warn_done_criteria_progress": "Mark [x] only for items actually met in this phase, and [~] with a reason for what is out of scope",
+    "hint.block_stale_done_criteria_revision": "Re-run the affected phases declared in Phase 00 and record the current revision",
+    "hint.warn_stale_done_criteria_revision": "(advisory) Re-run the affected phases and record the current revision",
+    "hint.block_report_without_done_criteria": "Fix Phase 00 first: [x] for what is met, [~] with a reason for what is genuinely out of scope",
+    "hint.warn_report_without_done_criteria": "(advisory) Resolve every Phase 00 Done Criteria item before Phase 06",
+    "hint.block_stale_done_criteria_approval": "Run a new review loop after the Phase 00 change and write the Phase 05 approval again",
+    "hint.warn_stale_done_criteria_approval": "(advisory) The Phase 00 change made the existing approval stale. Review Phase 05 again",
+    "hint.block_document_language_conflict": "Take the `Document-Language:` line in Phase 00 as the source of truth, align the cycle's other documents to it, and update the .sage/cycle.json mirror with `sage cycle set <stem> --document-language <ko|en>`",
+    "hint.warn_document_language_missing": "(advisory) Add one `Document-Language: <ko|en>` line to each document of this cycle",
+    "hint.block_report_without_acceptance": "Record acceptance evidence (PASS/FAIL/NOT TESTED/N/A) in 04-analyze and review 05 again",
+    "hint.warn_report_without_acceptance": "(advisory) Strengthen the acceptance evidence in 04-analyze",
+    "hint.warn_report_with_l3_waiver": "Record the remaining evidence after operational verification and revoke the waiver",
+    "hint.block_report_waiver_audit_failure": "Check write permission and integrity for .sage/acceptance-waivers.jsonl",
+    "hint.block_fast_cycle_audit": "Restore the Fast Plan and .sage/fast_cycle.jsonl, then confirm with `sage fast-cycle show`",
+    "hint.warn_fast_cycle": "This is audited to .sage/fast_cycle.jsonl and carries a weaker verification guarantee than the standard procedure",
+    "hint.block_cycle_stem_audit_failure": "Check write permission and integrity for .sage/override.jsonl — a declared cycle stem that cannot be recorded cannot be allowed through unaudited",
+    "hint.block_gate_runtime_error": "Check the profile types and the integrity of the installed SAGE runtime, then run validate again",
+    "gate.frame.file": "file",
+    "gate.frame.reason": "evidence",
+
+    # 계산 hint 의 조각. 출처에 따라 문장이 갈리므로 완성문이 아니라 조각으로 둔다.
+    "hint.phase_doc": "Write the phase document first (docs/agent/pdca-templates.md)",
+    "hint.binding": "Make the phase document's filename match its Cycle-Stem declaration so the current cycle resolves to exactly one",
+    "hint.declare_stem": "The cycle stem was inferred from the branch leaf `{stem}` — if that is not the current cycle, declare it with `sage cycle set <stem>` (required on long-lived branches; for a single CI process use `export SAGE_CYCLE_STEM=<stem>`, audited to .sage/override.jsonl)",
+    "hint.if_this_cycle": "{lead}. If this is the right cycle: {tail}",
+    "hint.clear_cycle": "An already declared cycle may be the cause — check with `sage cycle show` and release it with `sage cycle clear` (or `unset SAGE_CYCLE_STEM` if it was declared through the environment)",
+    "hint.binding_non_phase": "{binding}. For a non-phase edit, select the cycle with `sage cycle set <stem>` (in CI, `export SAGE_CYCLE_STEM=<stem>`). {clear}",
+    "hint.binding_phase": "{binding}. {clear}",
+    "hint.risk_declaration": "Record exactly one of `Risk Level: L1`, `Risk Level: L2` or `Risk Level: L3` as a single line in the Phase 00 document for this Cycle-Stem",
+    "hint.raise_phase00": "If this really is {required_risk} work, raise the Phase 00 Risk Level in `{phase00_path}` to {required_risk} or higher and try again",
+    "hint.risk_from_declaration": "This risk level came from a {required_risk} declaration made in this session. If it was captured by mistake, clear it by typing `위험도 선언 해제` — {raise_00}",
+    "hint.cycle_closed": "Write the new cycle's Phase 00 first, then declare it with `sage cycle set <new stem>` (in CI, `export SAGE_CYCLE_STEM=<new stem>`). {clear}",
+    "hint.desktop_default": "Edit the source path and re-sync",
+
+    # 결속을 어디서 읽었는지 말하는 라벨. 통과 줄 꼬리에 붙어 사용자가 읽는다.
+    "origin.env": "SAGE_CYCLE_STEM declaration",
+    "origin.cli": ".sage/cycle.json declaration",
+    "origin.declared": "declaration",
+    "origin.branch_leaf": "branch-leaf inference",
+    "origin.phase_doc": "phase document",
+}

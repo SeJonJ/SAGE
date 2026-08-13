@@ -59,9 +59,10 @@ def read_declared_level(raw, root):
         return None
 
 
-def render_gate(decision, profile):
+def render_gate(decision, profile, root=None):
     # 문구는 messages 공유(SSOT), 채널은 Codex=block→stderr / 그 외→hookSpecific JSON.
-    m = messages.gate_text(decision, profile, RUNTIME)
+    m = messages.gate_text(decision, profile, RUNTIME,
+                           language=messages.display_language(root))
     if decision["status"] == "block":
         if m:
             print(m, file=sys.stderr)

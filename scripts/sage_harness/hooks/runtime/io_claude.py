@@ -63,11 +63,12 @@ def _pre_tool_context(text):
         "hookEventName": "PreToolUse", "additionalContext": text}}, ensure_ascii=False)
 
 
-def render_gate(decision, profile):
+def render_gate(decision, profile, root=None):
     # 문구는 messages 공유(SSOT), 채널만 여기 소유.
     # BLOCK 은 stderr 평문 — Claude Code 는 exit 2 의 차단 사유를 stderr 에서 읽고 stdout 을
     # 무시하므로, 여기에 JSON 을 얹으면 무의미하고 형식 오류 시 진단만 흐려진다.
-    m = messages.gate_text(decision, profile, RUNTIME)
+    m = messages.gate_text(decision, profile, RUNTIME,
+                           language=messages.display_language(root))
     if not m:
         return decision["exit_code"]
     if decision["status"] == "block":

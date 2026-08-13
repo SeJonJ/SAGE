@@ -507,7 +507,7 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
         decision["cycle_declaration_error"] = cycle_error
     if _maybe_override(hid, root, decision, changes):   # P1-5: 활성 override 면 BLOCK 우회(감사 기록)
         return 0
-    return io.render_gate(decision, profile)     # ← 런타임별 채널/포맷/exit
+    return io.render_gate(decision, profile, root)   # ← 런타임별 채널/포맷/exit
 
 
 def run_generated_artifact_write_guard(raw_text, core_dir, direct_path=None):

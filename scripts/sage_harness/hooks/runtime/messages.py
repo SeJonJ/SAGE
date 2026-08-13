@@ -28,12 +28,10 @@ def _review_cmd(runtime):
     return "$sage-review" if runtime == "codex" else "/sage-review"
 
 
-def desktop_hint(profile):
-    return (profile.get("risk") or {}).get("desktop_block_hint", "원본 경로 수정 후 동기화")
-
-
-_PHASE_DOC_HINT = "해당 phase 문서를 먼저 작성하세요 (docs/agent/pdca-templates.md)"
-_BINDING_HINT = "phase 문서의 파일명과 Cycle-Stem 선언을 일치시키고 current cycle을 하나로 특정하세요"
+def desktop_hint(profile, language=DEFAULT_LANGUAGE):
+    """프로젝트가 지정한 문구가 있으면 그것을 쓴다 — 프로젝트 소유 문자열은 번역 대상이 아니다."""
+    configured = (profile.get("risk") or {}).get("desktop_block_hint")
+    return configured or _i18n.frag(language, "hint.desktop_default")
 
 
 def _inferred_stem(decision):
@@ -48,25 +46,24 @@ def _inferred_stem(decision):
     return decision.get("cycle_stem") or ""
 
 
-def _declare_hint(stem):
-    return (f"cycle stem 을 브랜치 leaf `{stem}` 에서 추론했습니다 — 지금 사이클이 이게 아니면 "
-            f"`sage cycle set <stem>` 으로 선언하세요(장수 브랜치에서는 필수, "
-            f"CI 처럼 프로세스 1회용이면 `export SAGE_CYCLE_STEM=<stem>`, "
-            f".sage/override.jsonl 에 감사 기록)")
+def _declare_hint(stem, language):
+    return _i18n.frag(language, "hint.declare_stem").format(stem=stem)
 
 
-def _phase_incomplete_hint(decision):
+def _with_stem(decision, language, tail):
+    """추론 stem 이 있으면 선언 안내를 앞에 붙인다. 어순은 catalog 조각이 정한다."""
     stem = _inferred_stem(decision)
     if stem is None:
-        return _PHASE_DOC_HINT
-    return f"{_declare_hint(stem)}. 이 사이클이 맞으면 {_PHASE_DOC_HINT}"
+        return tail
+    return _i18n.frag(language, "hint.if_this_cycle").format(
+        lead=_declare_hint(stem, language), tail=tail)
 
 
-_CLEAR_HINT = ("이미 선언한 사이클이 원인일 수 있습니다 — `sage cycle show` 로 확인하고 "
-               "`sage cycle clear` (env 로 선언했다면 `unset SAGE_CYCLE_STEM`) 로 해제하세요")
+def _phase_incomplete_hint(decision, language=DEFAULT_LANGUAGE):
+    return _with_stem(decision, language, _i18n.frag(language, "hint.phase_doc"))
 
 
-def _cycle_binding_hint(decision):
+def _cycle_binding_hint(decision, language=DEFAULT_LANGUAGE):
     # binding 자체가 실패한 경우다. 비-phase 편집이면 브랜치 leaf 가 후보였으므로 선언이 탈출구고,
     # phase 문서 편집이면 경로/선언 불일치라 기존 안내가 정확하다.
     #
@@ -76,40 +73,35 @@ def _cycle_binding_hint(decision):
     # 안내("새 사이클의 Phase 00 을 쓰라")를 따른 사용자가 여기서 다시 막히고, 두 안내가 서로를
     # 가리키는 고리에 갇힌다(파일 선언은 세션을 넘겨 살아남아 사이클 경계마다 발생한다).
     source = decision.get("cycle_source") or []
-    if source and "branch-leaf" not in source:
-        return f"{_BINDING_HINT}. {_CLEAR_HINT}"
-    return (f"{_BINDING_HINT}. 비-phase 편집이면 `sage cycle set <stem>` 으로 사이클을 지정하세요"
-            f"(CI 는 `export SAGE_CYCLE_STEM=<stem>`). {_CLEAR_HINT}")
+    binding = _i18n.frag(language, "hint.binding")
+    clear = _i18n.frag(language, "hint.clear_cycle")
+    key = "hint.binding_phase" if (source and "branch-leaf" not in source) else "hint.binding_non_phase"
+    return _i18n.frag(language, key).format(binding=binding, clear=clear)
 
 
-def _cycle_risk_declaration_hint(decision):
-    repair = ("같은 Cycle-Stem의 Phase 00 문서에 `Risk Level: L1`, "
-              "`Risk Level: L2`, `Risk Level: L3` 중 하나를 정확히 한 줄 기록하세요")
-    stem = _inferred_stem(decision)
-    if stem is None:
-        return repair
-    return f"{_declare_hint(stem)}. 이 사이클이 맞으면 {repair}"
+def _cycle_risk_declaration_hint(decision, language=DEFAULT_LANGUAGE):
+    return _with_stem(decision, language, _i18n.frag(language, "hint.risk_declaration"))
 
 
-def _reconciliation_hint(decision, phase00_path, required_risk):
+def _reconciliation_hint(decision, phase00_path, required_risk, language=DEFAULT_LANGUAGE):
     """계산 위험도가 00 선언을 넘었을 때의 안내. 출처에 따라 첫 행동이 갈린다.
 
     위험도가 세션 선언에서 왔다면 00 상향은 **실제보다 높은 위험도를 기록하는 행동**이다.
     실측: 가정 질문에서 L3 가 잘못 포착돼 L2 사이클의 모든 편집이 막혔고, 안내대로 00 을
     올렸다면 위험도 기록이 허위로 상향됐을 것이다. 그래서 선언 정정을 먼저 제시한다.
     """
-    raise_00 = (f"실제로 {required_risk} 작업이면 `{phase00_path}`의 Phase 00 Risk Level을 "
-                f"{required_risk} 이상으로 상향한 뒤 재시도하세요")
+    raise_00 = _i18n.frag(language, "hint.raise_phase00").format(
+        required_risk=required_risk, phase00_path=phase00_path)
     if not decision.get("risk_from_declaration"):
         return raise_00
-    return (f"이 위험도는 이번 세션의 {required_risk} 선언에서 왔습니다. 잘못 잡힌 선언이면 "
-            f"`위험도 선언 해제`라고 입력해 지우세요 — {raise_00}")
+    return _i18n.frag(language, "hint.risk_from_declaration").format(
+        required_risk=required_risk, raise_00=raise_00)
 
 
-_DECLARED_ORIGIN = {"env": "SAGE_CYCLE_STEM 선언", "cli": ".sage/cycle.json 선언"}
+_DECLARED_ORIGIN = {"env": "origin.env", "cli": "origin.cli"}
 
 
-def _cycle_origin_label(decision):
+def _cycle_origin_label(decision, language=DEFAULT_LANGUAGE):
     """결속을 **어디서 읽었는지**만 말한다.
 
     선언 통로가 둘이라 "선언" 한 마디로 뭉치면 안 된다 — env 가 파일을 이기는 상태에서 화면이
@@ -119,10 +111,12 @@ def _cycle_origin_label(decision):
     """
     source = decision.get("cycle_source") or []
     if "event" in source:
-        return _DECLARED_ORIGIN.get(decision.get("cycle_stem_origin") or "", "선언")
-    if "branch-leaf" in source:
-        return "브랜치 leaf 추론"
-    return "phase 문서"
+        key = _DECLARED_ORIGIN.get(decision.get("cycle_stem_origin") or "", "origin.declared")
+    elif "branch-leaf" in source:
+        key = "origin.branch_leaf"
+    else:
+        key = "origin.phase_doc"
+    return _i18n.frag(language, key)
 
 
 def _declaration_notice(decision, runtime):
@@ -139,7 +133,7 @@ def _declaration_notice(decision, runtime):
     return core if runtime == "codex" else f"⚠️  {core}"
 
 
-def _cycle_suffix(decision):
+def _cycle_suffix(decision, language=DEFAULT_LANGUAGE):
     """판정 stem 과 그 출처를 통과 줄(OK·WARN)에 노출한다.
 
     선언일 때만 보여주면 정작 위험한 쪽이 안 보인다 — 장수 브랜치에서 leaf 로 추론된 stem 은
@@ -153,7 +147,7 @@ def _cycle_suffix(decision):
     stem = decision.get("cycle_stem")
     if not stem:
         return ""
-    return f" | cycle: {stem} ({_cycle_origin_label(decision)})"
+    return f" | cycle: {stem} ({_cycle_origin_label(decision, language)})"
 
 
 def _gate_fields(decision):
@@ -167,7 +161,7 @@ def _gate_fields(decision):
     }
 
 
-def _gate_record(decision, profile):
+def _gate_record(decision, profile, language=DEFAULT_LANGUAGE):
     """message_key → (sev, scope, show_reason, hint). 문구 자체는 catalog 가 소유한다 —
     여기 한 벌 더 두면 같은 문장의 소유자가 둘이 되어 어느 쪽이 나가는지 알 수 없다."""
     rs = decision.get("reason", "")
@@ -178,92 +172,56 @@ def _gate_record(decision, profile):
     cycle_stem = decision.get("cycle_stem") or "(미상)"
     phase00_path = decision.get("phase00_path") or decision.get("file_short") or "(미상)"
     return {
-        "block_desktop": ("BLOCK", "", False, desktop_hint(profile)),
+        "block_desktop": ("BLOCK", "", False, desktop_hint(profile, language)),
         # §10-a-C: 미해결 차단성 마커를 남긴 채 그 파일에 쓰는 것을 막는다. 마커를 걷어내는
         # 편집은 통과하므로(자기차단 방지) 안내는 "해소하라" 가 정확한 탈출 경로다.
-        "block_feedback_unresolved": ("BLOCK", "", True,
-                             "`/sage-feedback` 으로 마커를 해소하거나(마커를 걷어내는 편집은 통과), "
-                             "진행이 급하면 사유·기한을 남기는 waiver 를 발급"),
-        "block_l3_no_plan": ("BLOCK", "L3", True,
-                             "plan 문서 생성 + L3 리뷰 프로토콜(2라운드) 수행"),
-        "block_l3_strategy_unresolved": ("BLOCK", "L3", True,
-                             "(override required: SAGE manifest 에서 find_l3_review 전략 canonical 선택 필요)"),
-        "block_l3_review_evidence": ("BLOCK", "L3", True,
-                             "같은 Cycle-Stem의 review frontmatter, domain_ref, round [1, 2]를 확인하세요"),
+        "block_feedback_unresolved": ("BLOCK", "", True, None),
+        "block_l3_no_plan": ("BLOCK", "L3", True, None),
+        "block_l3_strategy_unresolved": ("BLOCK", "L3", True, None),
+        "block_l3_review_evidence": ("BLOCK", "L3", True, None),
         "warn_l3_no_review": ("WARN", "L3", True, None),
         "warn_l2_no_plan": ("WARN", "L2", True, None),
         "warn_l0_l3_content": ("WARN", "L0", False, None),
         "block_phase_incomplete": ("BLOCK", risk, True,
-                             _phase_incomplete_hint(decision)),
+                             _phase_incomplete_hint(decision, language)),
         "warn_phase_incomplete": ("WARN", "L1", False, None),
         "block_cycle_risk_declaration": (
             "BLOCK", "PDCA", True,
-            _cycle_risk_declaration_hint(decision)),
+            _cycle_risk_declaration_hint(decision, language)),
         "block_cycle_risk_reconciliation": (
             "BLOCK", "PDCA", True,
-            _reconciliation_hint(decision, phase00_path, required_risk)),
-        "block_report_without_approval": ("BLOCK", "PDCA", False,
-                             "approve phase 문서에 APPROVED 기록 후 report 작성"),
-        "block_report_mixed_evidence": ("BLOCK", "PDCA", False,
-                             "01/04/05 변경을 먼저 완료한 뒤 06 report를 별도 변경으로 작성하세요"),
-        "block_phase00_mixed_evidence": ("BLOCK", "PDCA", False,
-                             "Phase 00 수정부터 별도 변경으로 완료한 뒤 영향 Phase를 순서대로 재실행하세요"),
-        "warn_phase00_mixed_evidence": ("WARN", "PDCA", False,
-                             "(advisory) Phase 00과 후속 Phase를 별도 변경으로 나누세요"),
-        "block_report_without_audit": ("BLOCK", "PDCA", False,
-                             "Phase 05 를 {rv} 로 돌려 loop 을 닫고(APPROVED) 05 문서에 'Loop-Run: <run_id>' 를 기록하세요"),
-        "warn_report_without_audit": ("WARN", "PDCA", False,
-                             "(advisory) Phase 05 리뷰 루프 audit 증거 권장 — {rv} 로 loop 실행 + 05 에 'Loop-Run: <run_id>' 기록"),
-        "block_invalid_done_criteria": ("BLOCK", "PDCA", False,
-                             "Phase 00 Done Criteria 구조와 Done-Criteria-Revision을 먼저 고치세요"),
-        "warn_invalid_done_criteria": ("WARN", "PDCA", False,
-                             "(advisory) Phase 00 Done Criteria 구조를 보완하세요"),
-        "warn_done_criteria_progress": ("WARN", "PDCA", False,
-                             "현재 Phase에서 실제 충족된 항목만 [x], 범위 밖은 사유 있는 [~]로 갱신하세요"),
-        "block_stale_done_criteria_revision": ("BLOCK", "PDCA", False,
-                             "Phase 00에 선언한 영향 Phase를 재실행하고 현재 revision을 기록하세요"),
-        "warn_stale_done_criteria_revision": ("WARN", "PDCA", False,
-                             "(advisory) 영향 Phase를 재실행하고 현재 revision을 기록하세요"),
-        "block_report_without_done_criteria": ("BLOCK", "PDCA", False,
-                             "Phase 00을 먼저 수정해 충족 항목은 [x], 실제 범위 밖은 사유 있는 [~]로 해결하세요"),
-        "warn_report_without_done_criteria": ("WARN", "PDCA", False,
-                             "(advisory) Phase 06 전에 Phase 00 Done Criteria를 모두 해결하세요"),
-        "block_stale_done_criteria_approval": ("BLOCK", "PDCA", False,
-                             "Phase 00 변경 뒤 새 review loop를 실행하고 Phase 05 승인을 다시 작성하세요"),
-        "warn_stale_done_criteria_approval": ("WARN", "PDCA", False,
-                             "(advisory) Phase 00 변경으로 기존 승인이 stale입니다. Phase 05를 다시 검토하세요"),
-        "block_cycle_binding": ("BLOCK", "PDCA", False, _cycle_binding_hint(decision)),
+            _reconciliation_hint(decision, phase00_path, required_risk, language)),
+        "block_report_without_approval": ("BLOCK", "PDCA", False, None),
+        "block_report_mixed_evidence": ("BLOCK", "PDCA", False, None),
+        "block_phase00_mixed_evidence": ("BLOCK", "PDCA", False, None),
+        "warn_phase00_mixed_evidence": ("WARN", "PDCA", False, None),
+        "block_report_without_audit": ("BLOCK", "PDCA", False, None),
+        "warn_report_without_audit": ("WARN", "PDCA", False, None),
+        "block_invalid_done_criteria": ("BLOCK", "PDCA", False, None),
+        "warn_invalid_done_criteria": ("WARN", "PDCA", False, None),
+        "warn_done_criteria_progress": ("WARN", "PDCA", False, None),
+        "block_stale_done_criteria_revision": ("BLOCK", "PDCA", False, None),
+        "warn_stale_done_criteria_revision": ("WARN", "PDCA", False, None),
+        "block_report_without_done_criteria": ("BLOCK", "PDCA", False, None),
+        "warn_report_without_done_criteria": ("WARN", "PDCA", False, None),
+        "block_stale_done_criteria_approval": ("BLOCK", "PDCA", False, None),
+        "warn_stale_done_criteria_approval": ("WARN", "PDCA", False, None),
+        "block_cycle_binding": ("BLOCK", "PDCA", False, _cycle_binding_hint(decision, language)),
         # 문서 언어 충돌. 게이트가 어느 쪽도 고르지 않으므로 안내도 한쪽을 지목하지 않는다 —
         # 정본은 Phase 00 이고, 미러를 맞추는 명령을 함께 적어야 탈출 경로가 닫히지 않는다.
-        "block_document_language_conflict": ("BLOCK", "PDCA", True,
-                             "Phase 00 의 `Document-Language:` 한 줄을 정본으로 삼아 같은 사이클 문서를 "
-                             "맞추고, `sage cycle set <stem> --document-language <ko|en>` 으로 "
-                             ".sage/cycle.json 미러를 갱신하세요"),
-        "warn_document_language_missing": ("WARN", "PDCA", True,
-                             "(advisory) 같은 사이클 문서에 `Document-Language: <ko|en>` 을 한 줄씩 "
-                             "추가하세요"),
-        "block_cycle_closed": ("BLOCK", "PDCA",
-                             True,
-                             "새 사이클의 Phase 00 을 먼저 작성한 뒤 `sage cycle set <새 stem>` 으로 "
-                             "선언하세요(CI 는 `export SAGE_CYCLE_STEM=<새 stem>`). "
-                             + _CLEAR_HINT),
-        "block_report_without_acceptance": ("BLOCK", "PDCA", False,
-                             "04-analyze 에 acceptance evidence(PASS/FAIL/NOT TESTED/N/A)를 기록하고 05 를 다시 검토하세요"),
-        "warn_report_without_acceptance": ("WARN", "PDCA", False,
-                             "(advisory) 04-analyze 의 acceptance evidence 를 보강하세요"),
-        "warn_report_with_l3_waiver": ("WARN", "PDCA", False,
-                             "운영 검증 후 남은 evidence를 기록하고 waiver를 revoke하세요"),
-        "block_report_waiver_audit_failure": ("BLOCK", "PDCA", False,
-                             ".sage/acceptance-waivers.jsonl 쓰기 권한과 무결성을 확인하세요"),
-        "block_fast_cycle_audit": ("BLOCK", "FAST", False,
-                             "Fast Plan과 .sage/fast_cycle.jsonl을 복구한 뒤 `sage fast-cycle show`로 확인하세요"),
-        "warn_fast_cycle": ("WARN", risk, False,
-                             ".sage/fast_cycle.jsonl에 감사되며 표준 절차보다 검증 보증이 낮습니다"),
-        "block_cycle_stem_audit_failure": ("BLOCK", "PDCA", False,
-                             ".sage/override.jsonl 쓰기 권한과 무결성을 확인하세요 — 선언된 cycle stem 을 "
-                             "기록하지 못하면 감사 없이 통과시킬 수 없습니다"),
-        "block_gate_runtime_error": ("BLOCK", "PDCA", False,
-                             "profile 타입과 설치된 SAGE runtime 무결성을 확인하고 validate를 다시 실행하세요"),
+        "block_document_language_conflict": ("BLOCK", "PDCA", True, None),
+        "warn_document_language_missing": ("WARN", "PDCA", True, None),
+        "block_cycle_closed": ("BLOCK", "PDCA", True,
+                             _i18n.frag(language, "hint.cycle_closed").format(
+                                 clear=_i18n.frag(language, "hint.clear_cycle"))),
+        "block_report_without_acceptance": ("BLOCK", "PDCA", False, None),
+        "warn_report_without_acceptance": ("WARN", "PDCA", False, None),
+        "warn_report_with_l3_waiver": ("WARN", "PDCA", False, None),
+        "block_report_waiver_audit_failure": ("BLOCK", "PDCA", False, None),
+        "block_fast_cycle_audit": ("BLOCK", "FAST", False, None),
+        "warn_fast_cycle": ("WARN", risk, False, None),
+        "block_cycle_stem_audit_failure": ("BLOCK", "PDCA", False, None),
+        "block_gate_runtime_error": ("BLOCK", "PDCA", False, None),
         "ok_l3": ("OK", "L3", False, None),
         "ok_l2": ("OK", "L2", False, None),
         # EH-15/16: 기본은 이 둘이 선택되지 않는다(core 가 profile opt-in 일 때만 key 를 싣는다).
@@ -273,13 +231,25 @@ def _gate_record(decision, profile):
     }.get(decision.get("message_key"))
 
 
+def display_language(root=None):
+    """대상 프로젝트의 표시 언어. 결정할 수 없으면 기본값이며 절대 예외를 올리지 않는다.
+
+    렌더 직전에만 부른다. 여기서 실패해 게이트가 죽으면 언어 설정 하나가 차단을 통째로 꺼버리고,
+    그건 표시 계층이 판정 계층을 무너뜨리는 방향이다.
+    """
+    try:
+        return _i18n.context.resolve(root)[0]
+    except Exception:
+        return DEFAULT_LANGUAGE
+
+
 def gate_text(decision, profile, runtime, language=DEFAULT_LANGUAGE):
     """게이트 결정 → 런타임별 렌더 문자열(매칭 없으면 ''). 채널/exit 은 io_* 가 처리.
 
     언어는 마지막에만 닿는다. `decision` 은 이미 언어 중립으로 확정돼 있고 여기서 바꾸는 것은
     사람이 읽는 문장 하나뿐이다 — status·exit_code·message_key·evidence 는 건드리지 않는다.
     """
-    rec = _gate_record(decision, profile)
+    rec = _gate_record(decision, profile, language)
     # 선언 손상 알림은 판정과 독립이다 — 기본 설정의 L1/L0 통과는 message_key 가 없어 줄 자체가
     # 안 생기는데, 거기가 바로 깨진 선언이 조용히 무시되는 자리다. 판정 줄이 없으면 이 알림만 내보낸다.
     notice = _declaration_notice(decision, runtime)
@@ -293,13 +263,16 @@ def gate_text(decision, profile, runtime, language=DEFAULT_LANGUAGE):
     prefix = "" if runtime == "codex" else f"{_EMOJI[sev]} "
     if sev == "OK":
         # fs 가 빈 경우(경로가 판정에 안 쓰인 통과)까지 구분자를 붙이면 꼬리만 남은 줄이 된다.
-        line = f"{prefix}{tag} {text}" + (f" | {fs}" if fs else "") + _cycle_suffix(decision)
+        line = f"{prefix}{tag} {text}" + (f" | {fs}" if fs else "") + _cycle_suffix(decision, language)
     else:
-        line = f"{prefix}{tag} {text} 파일: {fs}"
+        line = f"{prefix}{tag} {text} {_i18n.frag(language, 'gate.frame.file')}: {fs}"
         if show_reason and rs:
-            line += f" | 근거: {rs}"
+            line += f" | {_i18n.frag(language, 'gate.frame.reason')}: {rs}"
         if sev == "WARN":
-            line += _cycle_suffix(decision)
+            line += _cycle_suffix(decision, language)
+    # 계산 hint(출처에 따라 문장이 갈리는 것)가 우선이고, 그 외에는 `hint.<message_key>` 규약으로
+    # catalog 에서 찾는다. 표에 문구를 남겨두면 같은 문장의 소유자가 둘이 된다.
+    hint = hint or _i18n.frag(language, f"hint.{decision.get('message_key')}")
     if hint:
         hint = hint.replace("{rv}", _review_cmd(runtime))
         line += (" | " if runtime == "codex" else "\n  → ") + hint

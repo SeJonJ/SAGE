@@ -191,5 +191,59 @@ class TestDecisionIndependence(unittest.TestCase):
         self.assertEqual(korean, unknown)
 
 
+
+class TestEnglishRenderHasNoKoreanLeftovers(unittest.TestCase):
+    """en 렌더에 한글이 남는지 본다 — 이관은 "옮겼다"가 아니라 "남은 게 없다"로만 끝난다.
+
+    key 대조만으로는 부족하다. 표에 문구가 한 벌 더 남아 있으면 두 catalog 는 완전히 일치하는데
+    화면에는 표의 한국어가 나간다. 실제로 hint 가 그 상태였고, catalog 정합 테스트는 통과했다.
+
+    `reason` 은 예외다. 판정 core 가 만든 언어 중립 증거이고 두 언어가 **같아야** 하므로 여기서
+    번역 대상이 아니다 — 그래서 인자를 비워 렌더한다.
+    """
+
+    HANGUL = re.compile(r"[가-힣]")
+    # 백틱 안은 사용자가 **그대로 입력하거나 실행해야 하는 토큰**이다. `위험도 선언 해제` 는
+    # capture_declared_risk_core 가 실제로 매칭하는 구절이라, 번역하면 안내대로 따라한 사용자가
+    # 아무 일도 일어나지 않는 문구를 입력하게 된다. 번역 대상 문장과 불변 토큰의 경계다
+    # (docs/agent/language-policy.md).
+    TOKEN = re.compile(r"`[^`]*`")
+
+    def _prose(self, text):
+        return self.TOKEN.sub("", text or "")
+
+    def test_no_message_key_renders_korean_in_english(self):
+        offenders = []
+        import messages
+        for key in sorted(HOOK_MESSAGE_KEYS):
+            for runtime in ("claude", "codex"):
+                decision = {"message_key": key, "status": _status_of(key), "risk": "L2",
+                            "reason": "", "file_short": "a.src", "missing_phases": ["01"],
+                            "cycle_stem": "demo", "cycle_source": ["branch-leaf"],
+                            "phase00_risk": "L1", "required_risk": "L2"}
+                text = messages.gate_text(decision, {}, runtime, language="en")
+                found = self.HANGUL.search(self._prose(text))
+                if found:
+                    offenders.append((key, runtime, found.group()))
+        self.assertEqual(offenders, [], f"en 렌더에 한글이 남았다: {offenders}")
+
+    def test_the_declaration_repair_path_is_also_english(self):
+        """계산 hint 는 분기마다 다른 조각을 쓴다 — 한 분기만 보면 나머지가 한국어로 남는다."""
+        import messages
+        for source in (["branch-leaf"], ["event"], []):
+            for flag in (True, False):
+                decision = {"message_key": "block_cycle_risk_reconciliation", "status": "block",
+                            "risk": "L2", "reason": "", "file_short": "a.src",
+                            "cycle_stem": "demo", "cycle_source": source,
+                            "phase00_risk": "L1", "required_risk": "L2",
+                            "risk_from_declaration": flag, "phase00_path": "p.md"}
+                text = messages.gate_text(decision, {}, "claude", language="en")
+                self.assertIsNone(self.HANGUL.search(self._prose(text)),
+                                  f"source={source} flag={flag}: {text}")
+
+
+def _status_of(key):
+    return "block" if key.startswith("block") else ("warn" if key.startswith("warn") else "ok")
+
 if __name__ == "__main__":
     unittest.main()

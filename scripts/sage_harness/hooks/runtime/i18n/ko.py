@@ -52,3 +52,63 @@ MESSAGES = {
     "ok_l1": "결속 확인",
     "ok_l0": "결속 확인",
 }
+
+# 판정 문장이 아니라 그 문장을 **감싸는 조각**이다. message_key 와 섞으면 build-time oracle
+# (core 가 낼 수 있는 key 집합과의 대조)이 조각까지 message_key 로 세어 무너진다.
+FRAGMENTS = {
+    # 판정 줄에 이어 붙는 해소 안내. 본문만 번역하고 이걸 두면 en 출력의 절반이
+    # 한국어로 남아, 번역하지 않은 것보다 읽기 어려운 줄이 된다.
+    # key 는 `hint.<message_key>` 규약이다 — 표를 한 벌 더 두지 않기 위해서다.
+    "hint.block_feedback_unresolved": "`/sage-feedback` 으로 마커를 해소하거나(마커를 걷어내는 편집은 통과), 진행이 급하면 사유·기한을 남기는 waiver 를 발급",
+    "hint.block_l3_no_plan": "plan 문서 생성 + L3 리뷰 프로토콜(2라운드) 수행",
+    "hint.block_l3_strategy_unresolved": "(override required: SAGE manifest 에서 find_l3_review 전략 canonical 선택 필요)",
+    "hint.block_l3_review_evidence": "같은 Cycle-Stem의 review frontmatter, domain_ref, round [1, 2]를 확인하세요",
+    "hint.block_report_without_approval": "approve phase 문서에 APPROVED 기록 후 report 작성",
+    "hint.block_report_mixed_evidence": "01/04/05 변경을 먼저 완료한 뒤 06 report를 별도 변경으로 작성하세요",
+    "hint.block_phase00_mixed_evidence": "Phase 00 수정부터 별도 변경으로 완료한 뒤 영향 Phase를 순서대로 재실행하세요",
+    "hint.warn_phase00_mixed_evidence": "(advisory) Phase 00과 후속 Phase를 별도 변경으로 나누세요",
+    "hint.block_report_without_audit": "Phase 05 를 {rv} 로 돌려 loop 을 닫고(APPROVED) 05 문서에 'Loop-Run: <run_id>' 를 기록하세요",
+    "hint.warn_report_without_audit": "(advisory) Phase 05 리뷰 루프 audit 증거 권장 — {rv} 로 loop 실행 + 05 에 'Loop-Run: <run_id>' 기록",
+    "hint.block_invalid_done_criteria": "Phase 00 Done Criteria 구조와 Done-Criteria-Revision을 먼저 고치세요",
+    "hint.warn_invalid_done_criteria": "(advisory) Phase 00 Done Criteria 구조를 보완하세요",
+    "hint.warn_done_criteria_progress": "현재 Phase에서 실제 충족된 항목만 [x], 범위 밖은 사유 있는 [~]로 갱신하세요",
+    "hint.block_stale_done_criteria_revision": "Phase 00에 선언한 영향 Phase를 재실행하고 현재 revision을 기록하세요",
+    "hint.warn_stale_done_criteria_revision": "(advisory) 영향 Phase를 재실행하고 현재 revision을 기록하세요",
+    "hint.block_report_without_done_criteria": "Phase 00을 먼저 수정해 충족 항목은 [x], 실제 범위 밖은 사유 있는 [~]로 해결하세요",
+    "hint.warn_report_without_done_criteria": "(advisory) Phase 06 전에 Phase 00 Done Criteria를 모두 해결하세요",
+    "hint.block_stale_done_criteria_approval": "Phase 00 변경 뒤 새 review loop를 실행하고 Phase 05 승인을 다시 작성하세요",
+    "hint.warn_stale_done_criteria_approval": "(advisory) Phase 00 변경으로 기존 승인이 stale입니다. Phase 05를 다시 검토하세요",
+    "hint.block_document_language_conflict": "Phase 00 의 `Document-Language:` 한 줄을 정본으로 삼아 같은 사이클 문서를 맞추고, `sage cycle set <stem> --document-language <ko|en>` 으로 .sage/cycle.json 미러를 갱신하세요",
+    "hint.warn_document_language_missing": "(advisory) 같은 사이클 문서에 `Document-Language: <ko|en>` 을 한 줄씩 추가하세요",
+    "hint.block_report_without_acceptance": "04-analyze 에 acceptance evidence(PASS/FAIL/NOT TESTED/N/A)를 기록하고 05 를 다시 검토하세요",
+    "hint.warn_report_without_acceptance": "(advisory) 04-analyze 의 acceptance evidence 를 보강하세요",
+    "hint.warn_report_with_l3_waiver": "운영 검증 후 남은 evidence를 기록하고 waiver를 revoke하세요",
+    "hint.block_report_waiver_audit_failure": ".sage/acceptance-waivers.jsonl 쓰기 권한과 무결성을 확인하세요",
+    "hint.block_fast_cycle_audit": "Fast Plan과 .sage/fast_cycle.jsonl을 복구한 뒤 `sage fast-cycle show`로 확인하세요",
+    "hint.warn_fast_cycle": ".sage/fast_cycle.jsonl에 감사되며 표준 절차보다 검증 보증이 낮습니다",
+    "hint.block_cycle_stem_audit_failure": ".sage/override.jsonl 쓰기 권한과 무결성을 확인하세요 — 선언된 cycle stem 을 기록하지 못하면 감사 없이 통과시킬 수 없습니다",
+    "hint.block_gate_runtime_error": "profile 타입과 설치된 SAGE runtime 무결성을 확인하고 validate를 다시 실행하세요",
+    "gate.frame.file": "파일",
+    "gate.frame.reason": "근거",
+
+    # 계산 hint 의 조각. 출처에 따라 문장이 갈리므로 완성문이 아니라 조각으로 둔다.
+    "hint.phase_doc": "해당 phase 문서를 먼저 작성하세요 (docs/agent/pdca-templates.md)",
+    "hint.binding": "phase 문서의 파일명과 Cycle-Stem 선언을 일치시키고 current cycle을 하나로 특정하세요",
+    "hint.declare_stem": "cycle stem 을 브랜치 leaf `{stem}` 에서 추론했습니다 — 지금 사이클이 이게 아니면 `sage cycle set <stem>` 으로 선언하세요(장수 브랜치에서는 필수, CI 처럼 프로세스 1회용이면 `export SAGE_CYCLE_STEM=<stem>`, .sage/override.jsonl 에 감사 기록)",
+    "hint.if_this_cycle": "{lead}. 이 사이클이 맞으면 {tail}",
+    "hint.clear_cycle": "이미 선언한 사이클이 원인일 수 있습니다 — `sage cycle show` 로 확인하고 `sage cycle clear` (env 로 선언했다면 `unset SAGE_CYCLE_STEM`) 로 해제하세요",
+    "hint.binding_non_phase": "{binding}. 비-phase 편집이면 `sage cycle set <stem>` 으로 사이클을 지정하세요(CI 는 `export SAGE_CYCLE_STEM=<stem>`). {clear}",
+    "hint.binding_phase": "{binding}. {clear}",
+    "hint.risk_declaration": "같은 Cycle-Stem의 Phase 00 문서에 `Risk Level: L1`, `Risk Level: L2`, `Risk Level: L3` 중 하나를 정확히 한 줄 기록하세요",
+    "hint.raise_phase00": "실제로 {required_risk} 작업이면 `{phase00_path}`의 Phase 00 Risk Level을 {required_risk} 이상으로 상향한 뒤 재시도하세요",
+    "hint.risk_from_declaration": "이 위험도는 이번 세션의 {required_risk} 선언에서 왔습니다. 잘못 잡힌 선언이면 `위험도 선언 해제`라고 입력해 지우세요 — {raise_00}",
+    "hint.cycle_closed": "새 사이클의 Phase 00 을 먼저 작성한 뒤 `sage cycle set <새 stem>` 으로 선언하세요(CI 는 `export SAGE_CYCLE_STEM=<새 stem>`). {clear}",
+    "hint.desktop_default": "원본 경로 수정 후 동기화",
+
+    # 결속을 어디서 읽었는지 말하는 라벨. 통과 줄 꼬리에 붙어 사용자가 읽는다.
+    "origin.env": "SAGE_CYCLE_STEM 선언",
+    "origin.cli": ".sage/cycle.json 선언",
+    "origin.declared": "선언",
+    "origin.branch_leaf": "브랜치 leaf 추론",
+    "origin.phase_doc": "phase 문서",
+}

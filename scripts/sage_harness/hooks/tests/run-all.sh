@@ -329,5 +329,9 @@ echo "### 61. cycle document language (Phase 00 정본 · state 미러 · legacy
 python3 "$HERE/test_document_language.py" || rc=1
 
 echo ""
+echo "### 62. 소비 프로젝트 locale e2e (설치본 host 2 × locale 2 동일 판정)"
+python3 "$HERE/test_locale_consumer_e2e.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"
