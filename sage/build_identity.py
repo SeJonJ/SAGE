@@ -3,6 +3,8 @@
 import hashlib
 import os
 import subprocess
+
+from sage.i18n import DEFAULT_LANGUAGE, tr
 from pathlib import Path
 
 from sage import _resources
@@ -56,7 +58,7 @@ def source_core_content_hash():
     return source_core_content_snapshot()[0]
 
 
-def describe_content_drift(before, after):
+def describe_content_drift(before, after, language=DEFAULT_LANGUAGE):
     """두 snapshot 맵의 차이를 사람이 읽을 한 줄로. 같은 내용이면 "".
 
     "소스가 바뀌었다"까지만 말하는 진단은 원인 특정에 가설 배제 작업을 강요한다. 인벤토리는
@@ -69,11 +71,14 @@ def describe_content_drift(before, after):
     removed = sorted(set(before) - set(after))
     changed = sorted(k for k in set(before) & set(after) if before[k] != after[k])
     parts = []
-    for label, paths in (("변경", changed), ("추가", added), ("삭제", removed)):
+    for key, paths in (("changed", changed), ("added", added), ("removed", removed)):
         if paths:
             shown = ", ".join(paths[:5])
-            more = f" 외 {len(paths) - 5}건" if len(paths) > 5 else ""
-            parts.append(f"{label} {len(paths)}건: {shown}{more}")
+            more = (tr(language, "cli.drift.more", count=len(paths) - 5)
+                    if len(paths) > 5 else "")
+            parts.append(tr(language, "cli.drift.part",
+                            label=tr(language, f"cli.drift.{key}"),
+                            count=len(paths), shown=shown, more=more))
     return " | ".join(parts)
 
 

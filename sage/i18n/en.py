@@ -33,4 +33,12 @@ MESSAGES = {
         "The local profile's interface.language could not be read, so output stays in Korean — "
         "check {path}"
     ),
+
+    # EH-13 drift 진단. 라벨만 번역하고 논리 경로·건수·구분자는 언어와 무관하게 같다 —
+    # 값이 달라지면 같은 drift 가 언어마다 다른 증거로 보인다.
+    "cli.drift.changed": "changed",
+    "cli.drift.added": "added",
+    "cli.drift.removed": "removed",
+    "cli.drift.more": " and {count} more",
+    "cli.drift.part": "{label} {count}: {shown}{more}",
 }

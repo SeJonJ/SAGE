@@ -39,4 +39,12 @@ MESSAGES = {
         "local profile 의 interface.language 를 읽을 수 없어 한국어로 표시합니다 — "
         "{path} 를 확인하세요"
     ),
+
+    # EH-13 drift 진단. 라벨만 번역하고 논리 경로·건수·구분자는 언어와 무관하게 같다 —
+    # 값이 달라지면 같은 drift 가 언어마다 다른 증거로 보인다.
+    "cli.drift.changed": "변경",
+    "cli.drift.added": "추가",
+    "cli.drift.removed": "삭제",
+    "cli.drift.more": " 외 {count}건",
+    "cli.drift.part": "{label} {count}건: {shown}{more}",
 }

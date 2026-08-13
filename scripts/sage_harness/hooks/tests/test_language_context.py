@@ -172,5 +172,32 @@ class TestCatalog(unittest.TestCase):
                          "[SAGE] message_key=cli.lang.unsupported")
 
 
+class TestDriftDiagnosticInvariance(unittest.TestCase):
+    """라벨만 번역한다. 경로·건수가 언어마다 다르면 같은 drift 가 다른 증거로 보인다."""
+
+    def _rendered(self, language):
+        from sage.build_identity import describe_content_drift
+        before = {f"p{i}": str(i) for i in range(9)}
+        after = {**{f"p{i}": "x" for i in range(7)}, "new": "1"}
+        return describe_content_drift(before, after, language)
+
+    def test_paths_and_counts_are_identical_across_locales(self):
+        import re as _re
+        korean, english = self._rendered("ko"), self._rendered("en")
+        token = _re.compile(r"p\d+|new|\d+")
+        self.assertEqual(token.findall(korean), token.findall(english))
+        self.assertEqual(korean.count("|"), english.count("|"))
+
+    def test_only_the_label_words_differ(self):
+        self.assertIn("변경", self._rendered("ko"))
+        self.assertIn("changed", self._rendered("en"))
+
+    def test_identical_snapshots_describe_nothing_in_both_locales(self):
+        from sage.build_identity import describe_content_drift
+        same = {"a": "1"}
+        for language in ("ko", "en"):
+            self.assertEqual(describe_content_drift(same, same, language), "")
+
+
 if __name__ == "__main__":
     unittest.main()
