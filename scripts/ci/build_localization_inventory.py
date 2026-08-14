@@ -108,6 +108,25 @@ def _channel(call: ast.Call) -> str:
     return "stdout"
 
 
+def _joinedstr_text(node: ast.JoinedStr, source: str) -> str:
+    """JoinedStr 의 실제 런타임 문자열에 가깝게 재구성한다(리터럴 조각 + `{expr}` 자리).
+
+    `ast.get_source_segment(source, node)` 는 노드의 시작~끝 사이 **원본 소스를 그대로 슬라이스**
+    한다. 인접 문자열 리터럴이 괄호 안에서 줄바꿈되며 그 사이에 주석이 끼면(허용된 문법), 그
+    주석의 원문까지 슬라이스에 포함된다 — 실행 시 그 주석은 값에 전혀 안 들어가는데도 스캐너가
+    "한국어가 있다"고 오판한다(`generate.py::_promoted_render` 의 배너 조립에서 실측). 조각
+    단위로 다시 조립하면 이 문제가 원천적으로 없다.
+    """
+    parts = []
+    for value in node.values:
+        if isinstance(value, ast.Constant):
+            parts.append(str(value.value))
+        elif isinstance(value, ast.FormattedValue):
+            expr_src = ast.get_source_segment(source, value.value) or "..."
+            parts.append("{" + expr_src + "}")
+    return "".join(parts)
+
+
 def _korean_literals(node: ast.AST, source: str) -> list[tuple[str, bool]]:
     """(텍스트, 보간 여부). f-string 은 조각이 아니라 통째로 하나의 문장이다.
 
@@ -118,7 +137,7 @@ def _korean_literals(node: ast.AST, source: str) -> list[tuple[str, bool]]:
     """
     found: list[tuple[str, bool]] = []
     if isinstance(node, ast.JoinedStr):
-        segment = ast.get_source_segment(source, node) or ""
+        segment = _joinedstr_text(node, source)
         if HANGUL.search(segment):
             found.append((segment, True))
         return found                     # 안쪽 조각까지 세면 한 문장이 여러 건으로 쪼개진다

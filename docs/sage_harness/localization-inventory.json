@@ -4,7 +4,7 @@
     "cli": "sage/i18n",
     "hook": "scripts/sage_harness/hooks/runtime/i18n"
   },
-  "total": 540,
+  "total": 539,
   "entries": [
     {
       "id": "_common:125:cmd1",
@@ -179,7 +179,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"CORE 대상 아님: {kind}/{asset_id} (새 프로젝트 자산은 /sage-asset)\"",
+      "text": "CORE 대상 아님: {kind}/{asset_id} (새 프로젝트 자산은 /sage-asset)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -219,7 +219,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"대상 확인 필요: {_overlay_hint(p)} (asset_id 지정 후 COMPOSE_ALLOWED 검증)\"",
+      "text": "대상 확인 필요: {_overlay_hint(p)} (asset_id 지정 후 COMPOSE_ALLOWED 검증)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -239,7 +239,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"eligible overlay 후보: {hint}\"",
+      "text": "eligible overlay 후보: {hint}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -259,7 +259,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"overlay 미지원: {kind}/{asset_id} (gate-bearing 또는 독립 oracle 미보증)\"",
+      "text": "overlay 미지원: {kind}/{asset_id} (gate-bearing 또는 독립 oracle 미보증)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -499,7 +499,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"제안 JSON 파싱 실패: {e}\"",
+      "text": "제안 JSON 파싱 실패: {e}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -539,7 +539,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"unresolved {len(entry['unresolved'])}건\"",
+      "text": "unresolved {len(entry['unresolved'])}건",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -559,7 +559,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"risk {len(entry['risk'])}건\"",
+      "text": "risk {len(entry['risk'])}건",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -799,7 +799,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"   프로젝트 루트: {root}\"",
+      "text": "   프로젝트 루트: {root}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -819,7 +819,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"   선언 파일:     {path}\"",
+      "text": "   선언 파일:     {path}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -839,7 +839,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "\"`use` 는 `set` 으로 이름이 바뀌었습니다.\\n\"\n                f\"   → sage cycle set {args.stem or '<stem>'}\"",
+      "text": "`use` 는 `set` 으로 이름이 바뀌었습니다.\n   → sage cycle set {args.stem or '<stem>'}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -859,7 +859,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"알 수 없는 동작입니다: {action!r}\\n\"\n                \"   → sage cycle set <stem> | sage cycle show | sage cycle clear\"",
+      "text": "알 수 없는 동작입니다: {action}\n   → sage cycle set <stem> | sage cycle show | sage cycle clear",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -879,7 +879,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{action} 는 stem·--create·--risk·--path 를 받지 않습니다.\\n   → sage cycle {action}\"",
+      "text": "{action} 는 stem·--create·--risk·--path 를 받지 않습니다.\n   → sage cycle {action}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -899,7 +899,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"여기는 SAGE 프로젝트가 아닙니다 — '{cs.MARKER_REL}' 를 가진 상위 디렉터리를 \"\n            f\"찾지 못했습니다 (cwd: {os.getcwd()}).\\n\"\n            f\"→ SAGE 설치본 안에서 실행하거나 `--root <경로>` 로 지정하세요.\"",
+      "text": "여기는 SAGE 프로젝트가 아닙니다 — '{cs.MARKER_REL}' 를 가진 상위 디렉터리를 찾지 못했습니다 (cwd: {os.getcwd()}).\n→ SAGE 설치본 안에서 실행하거나 `--root <경로>` 로 지정하세요.",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1081,7 +1081,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"set 은 stem 을 하나만 받습니다: {args.extra!r}\\n\"\n                    f\"   → sage cycle set {args.stem}\"",
+      "text": "set 은 stem 을 하나만 받습니다: {args.extra}\n   → sage cycle set {args.stem}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1101,7 +1101,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "\"--risk 는 L1|L2|L3 중 하나여야 합니다.\\n\"\n                    f\"   → sage cycle set {args.stem} --create --risk L1|L2|L3\"",
+      "text": "--risk 는 L1|L2|L3 중 하나여야 합니다.\n   → sage cycle set {args.stem} --create --risk L1|L2|L3",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1121,7 +1121,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "\"--risk 는 --create 로 만들 Phase 00에 쓰는 값입니다.\\n\"\n                    f\"   → sage cycle set {args.stem} --create --risk {args.risk}\"",
+      "text": "--risk 는 --create 로 만들 Phase 00에 쓰는 값입니다.\n   → sage cycle set {args.stem} --create --risk {args.risk}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1141,7 +1141,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "\"--path 는 --create 와 함께만 사용할 수 있습니다.\\n\"\n                    f\"   → sage cycle set {args.stem} --create --risk L1|L2|L3 \"\n                    f\"--path {args.path}\"",
+      "text": "--path 는 --create 와 함께만 사용할 수 있습니다.\n   → sage cycle set {args.stem} --create --risk L1|L2|L3 --path {args.path}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1161,7 +1161,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "\"--create 에는 --risk 가 필요합니다.\\n\"\n                    f\"   → sage cycle set {args.stem} --create --risk L1|L2|L3\"",
+      "text": "--create 에는 --risk 가 필요합니다.\n   → sage cycle set {args.stem} --create --risk L1|L2|L3",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1201,7 +1201,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"cycle stem 형식 오류: {value!r} — 경로 구분자·제어문자 없이 160자 이하여야 합니다\"",
+      "text": "cycle stem 형식 오류: {value} — 경로 구분자·제어문자 없이 160자 이하여야 합니다",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1221,7 +1221,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"cycle stem 형식 오류: {value!r} — 줄 구분 문자는 사용할 수 없습니다\"",
+      "text": "cycle stem 형식 오류: {value} — 줄 구분 문자는 사용할 수 없습니다",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1241,7 +1241,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"YAML profile 최상위는 mapping 이어야 합니다: {path}\"",
+      "text": "YAML profile 최상위는 mapping 이어야 합니다: {path}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1281,7 +1281,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"profile pdca.phases 에 id '00' 항목이 정확히 하나여야 합니다 \"\n            f\"(found {len(phase00_entries)})\"",
+      "text": "profile pdca.phases 에 id '00' 항목이 정확히 하나여야 합니다 (found {len(phase00_entries)})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1321,7 +1321,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"compiled profile 최상위는 mapping 이어야 합니다: {json_path}\"",
+      "text": "compiled profile 최상위는 mapping 이어야 합니다: {json_path}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1381,7 +1381,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"--path 는 프로젝트 root 상대경로여야 합니다: {value!r}\"",
+      "text": "--path 는 프로젝트 root 상대경로여야 합니다: {value}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1401,7 +1401,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"--path 에 '..' 또는 빈 경로를 사용할 수 없습니다: {value!r}\"",
+      "text": "--path 에 '..' 또는 빈 경로를 사용할 수 없습니다: {value}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1421,7 +1421,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"phase 00 glob 에서 생성 디렉터리를 유도할 수 없습니다: {pattern!r}\\n\"\n            \"   → --path <프로젝트-root-상대-디렉터리> 를 지정하세요\"",
+      "text": "phase 00 glob 에서 생성 디렉터리를 유도할 수 없습니다: {pattern}\n   → --path <프로젝트-root-상대-디렉터리> 를 지정하세요",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1441,7 +1441,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"--path 가 symlink 를 통해 프로젝트 root 밖으로 나갑니다: {directory!r}\"",
+      "text": "--path 가 symlink 를 통해 프로젝트 root 밖으로 나갑니다: {directory}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1461,7 +1461,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"생성 대상이 phase 00 glob 에 매치하지 않습니다: {rel_target!r} vs {pattern!r}\\n\"\n            \"   → --path 에 phase 00 glob 안의 디렉터리를 지정하세요\"",
+      "text": "생성 대상이 phase 00 glob 에 매치하지 않습니다: {rel_target} vs {pattern}\n   → --path 에 phase 00 glob 안의 디렉터리를 지정하세요",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1681,7 +1681,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"Fast Cycle audit 읽기 실패({type(exc).__name__}: {exc})\"",
+      "text": "Fast Cycle audit 읽기 실패({type(exc).__name__}: {exc})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1741,7 +1741,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"cycle stem 형식 오류: {value!r} — UTF-8로 기록할 수 있는 문자만 허용됩니다\"",
+      "text": "cycle stem 형식 오류: {value} — UTF-8로 기록할 수 있는 문자만 허용됩니다",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1801,7 +1801,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"YAML profile 이 없습니다: {path}\"",
+      "text": "YAML profile 이 없습니다: {path}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1821,7 +1821,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"YAML profile 을 읽지 못했습니다: {path} ({type(exc).__name__})\"",
+      "text": "YAML profile 을 읽지 못했습니다: {path} ({type(exc).__name__})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -1881,7 +1881,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"compiled profile 을 읽지 못했습니다: {json_path} ({type(exc).__name__})\"",
+      "text": "compiled profile 을 읽지 못했습니다: {json_path} ({type(exc).__name__})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -2281,7 +2281,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"> `/sage-feedback` 개발자 피드백 마커 처리 이력 — 사이클 `{record.get('cycle_stem') or '미분류'}`.\\n\"\n              \"> 기계 판독용 원본은 `.sage/feedback.jsonl` 이다.\\n\\n\"\n              \"## 처리 이력\\n\\n\"",
+      "text": "> `/sage-feedback` 개발자 피드백 마커 처리 이력 — 사이클 `{record.get('cycle_stem') or '미분류'}`.\n> 기계 판독용 원본은 `.sage/feedback.jsonl` 이다.\n\n## 처리 이력\n\n",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -2361,7 +2361,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{name} feedback 미분류\"",
+      "text": "{name} feedback 미분류",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -2441,7 +2441,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"- 판단: {record['note']}\"",
+      "text": "- 판단: {record['note']}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -2481,7 +2481,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"- 마커: {record['marker_text']}\"",
+      "text": "- 마커: {record['marker_text']}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -2561,7 +2561,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "\"#!/usr/bin/env bash\\n\"\n        \"# generated by sage generate — do not edit. canonical: scripts/sage_harness/hooks (단일소스).\\n\"\n        f'ROOT=\"${{SAGE_PROJECT_ROOT:-${{{root_env}:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}}}\"\\n'\n        'export SAGE_HOOK_CORE_DIR=\"$ROOT/scripts/sage_harness/hooks\"\\n'\n        '[ -z \"${SAGE_PROFILE:-}\" ] && [ -f \"$ROOT/sage/project-profile.json\" ] && '\n        'export SAGE_PROFILE=\"$ROOT/sage/project-profile.json\"\\n'\n        f'exec bash \"{canon}\" \"$@\"\\n'",
+      "text": "#!/usr/bin/env bash\n# generated by sage generate — do not edit. canonical: scripts/sage_harness/hooks (단일소스).\nROOT=\"${SAGE_PROJECT_ROOT:-${{root_env}:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}\"\nexport SAGE_HOOK_CORE_DIR=\"$ROOT/scripts/sage_harness/hooks\"\n[ -z \"${SAGE_PROFILE:-}\" ] && [ -f \"$ROOT/sage/project-profile.json\" ] && export SAGE_PROFILE=\"$ROOT/sage/project-profile.json\"\nexec bash \"{canon}\" \"$@\"\n",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -2582,26 +2582,6 @@
       "machine_consumer": null,
       "classification": "command_output_indirect",
       "text": "아래는 이 프로젝트",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot",
-        "no_leakage"
-      ]
-    },
-    {
-      "id": "generate:692:cmd1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/commands/generate.py",
-      "source_symbol": "_promoted_render",
-      "source_line": 692,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "command_output_indirect",
-      "text": "f\"<!-- seeded by `sage generate --kind roster --from-existing {src_id}` \"\n              f\"for profile.components[{comp}]. This render is project-owned: edit it directly \"\n              f\"(no overlay), then run `sage generate --kind agent --id {new_id} --write`. -->\\n\"\n              # 소유 경계를 시드 시점에 못박는다 — 원본 렌더의 문장은 \"네게 배정된 컴포넌트\"\n              # 라는 일반형이라, 그대로 물려주면 새 워커가 자기 경계를 스스로 추측한다.\n              f\"\\n> **Ownership (seeded from profile.components[{comp}].paths):** {owned}\\n\"",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -2681,7 +2661,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"원본 렌더를 찾지 못함: {src_id} (.claude/.codex agents 어디에도 없음)\"",
+      "text": "원본 렌더를 찾지 못함: {src_id} (.claude/.codex agents 어디에도 없음)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -2701,7 +2681,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{target} hook registration JSON 루트는 object여야 함\"",
+      "text": "{target} hook registration JSON 루트는 object여야 함",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -2721,7 +2701,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"    skip(기존 렌더 보존): {os.path.relpath(out, dest)}\"",
+      "text": "    skip(기존 렌더 보존): {os.path.relpath(out, dest)}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -2741,7 +2721,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"    ⚠️  {os.path.relpath(out, dest)}: 원본 정체성 잔존 — `{token}`\"",
+      "text": "    ⚠️  {os.path.relpath(out, dest)}: 원본 정체성 잔존 — `{token}`",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -2801,7 +2781,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{target} hook registration JSON 손상: {exc}\"",
+      "text": "{target} hook registration JSON 손상: {exc}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -2961,7 +2941,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"team.core.*.runtime.model={model!r} 는 알 수 없는 값 \"\n                f\"(허용: {', '.join(AGENT_MODEL_ALIASES)} 또는 claude-* 전체 id)\"",
+      "text": "team.core.*.runtime.model={model} 는 알 수 없는 값 (허용: {', '.join(AGENT_MODEL_ALIASES)} 또는 claude-* 전체 id)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -2981,7 +2961,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"team.core.*.runtime.effort={effort!r} 는 알 수 없는 값 \"\n                f\"(허용: {', '.join(AGENT_EFFORTS)} 또는 양의 정수)\"",
+      "text": "team.core.*.runtime.effort={effort} 는 알 수 없는 값 (허용: {', '.join(AGENT_EFFORTS)} 또는 양의 정수)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3021,7 +3001,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"허용되지 않은 필드가 있음: {', '.join(unknown)}\"",
+      "text": "허용되지 않은 필드가 있음: {', '.join(unknown)}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3201,7 +3181,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\".gitignore {label} 관리 마커가 손상됨\"",
+      "text": ".gitignore {label} 관리 마커가 손상됨",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3361,7 +3341,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{key}가 sha256:<64 hex> 형식이 아님\"",
+      "text": "{key}가 sha256:<64 hex> 형식이 아님",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3381,7 +3361,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{key}가 non-empty mapping이 아님\"",
+      "text": "{key}가 non-empty mapping이 아님",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3401,7 +3381,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{key}에 허용되지 않은 target이 있음: {', '.join(unknown_targets)}\"",
+      "text": "{key}에 허용되지 않은 target이 있음: {', '.join(unknown_targets)}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3421,7 +3401,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{key}가 string이 아님\"",
+      "text": "{key}가 string이 아님",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3461,7 +3441,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"assets entry가 string -> mapping 형식이 아님: {key!r}\"",
+      "text": "assets entry가 string -> mapping 형식이 아님: {key}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3581,7 +3561,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\".gitignore {label} 관리 마커가 손상됨\"",
+      "text": ".gitignore {label} 관리 마커가 손상됨",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3601,7 +3581,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\".gitignore가 일반 파일이 아님: {path}\"",
+      "text": ".gitignore가 일반 파일이 아님: {path}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3641,7 +3621,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"team 은 매핑이어야 함 (받음: {type(team).__name__})\"",
+      "text": "team 은 매핑이어야 함 (받음: {type(team).__name__})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3661,7 +3641,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"team.core 는 매핑이어야 함 (받음: {type(core).__name__})\"",
+      "text": "team.core 는 매핑이어야 함 (받음: {type(core).__name__})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3681,7 +3661,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f'{indent}required_version: \"{__version__}\" # 프로젝트가 요구하는 exact SAGE 버전. local에서 변경 불가'",
+      "text": "{indent}required_version: \"{__version__}\" # 프로젝트가 요구하는 exact SAGE 버전. local에서 변경 불가",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3761,7 +3741,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{key}/{target}가 sha256:<64 hex> 형식이 아님\"",
+      "text": "{key}/{target}가 sha256:<64 hex> 형식이 아님",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3801,7 +3781,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{key}가 string array가 아님\"",
+      "text": "{key}가 string array가 아님",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3841,7 +3821,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"core_renders entry가 string -> mapping 형식이 아님: {key!r}\"",
+      "text": "core_renders entry가 string -> mapping 형식이 아님: {key}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3861,7 +3841,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"core_renders/{key}/base_sha256가 SHA-256 형식이 아님\"",
+      "text": "core_renders/{key}/base_sha256가 SHA-256 형식이 아님",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3881,7 +3861,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"core_skill_receipts에 알 수 없는 host가 있음: {host!r}\"",
+      "text": "core_skill_receipts에 알 수 없는 host가 있음: {host}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3901,7 +3881,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"core_skill_receipts/{host}가 유효한 scope/sage_version 영수증이 아님\"",
+      "text": "core_skill_receipts/{host}가 유효한 scope/sage_version 영수증이 아님",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -3981,7 +3961,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{location} symlink CORE render 경로는 project-owned base로 자동 신뢰할 수 없음: \"\n                    f\"{rel_cursor}\"",
+      "text": "{location} symlink CORE render 경로는 project-owned base로 자동 신뢰할 수 없음: {rel_cursor}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4001,7 +3981,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"CORE render 상위 경로가 directory가 아님: {rel_cursor}\"",
+      "text": "CORE render 상위 경로가 directory가 아님: {rel_cursor}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4021,7 +4001,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"CORE render가 regular file이 아님: {rel_cursor}\"",
+      "text": "CORE render가 regular file이 아님: {rel_cursor}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4121,7 +4101,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"(변경 경로 수집 실패: {exc})\"",
+      "text": "(변경 경로 수집 실패: {exc})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4221,7 +4201,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"team.core.{role!s} 는 알 수 없는 역할 — 오타면 조용히 무시된다 \"\n                                   f\"(CORE 로스터: {', '.join(_CORE_AGENTS)})\"",
+      "text": "team.core.{role} 는 알 수 없는 역할 — 오타면 조용히 무시된다 (CORE 로스터: {', '.join(_CORE_AGENTS)})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4241,7 +4221,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"team.core.{role} 은 매핑이어야 함 (받음: {type(spec).__name__})\"",
+      "text": "team.core.{role} 은 매핑이어야 함 (받음: {type(spec).__name__})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4261,7 +4241,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"team.core.{role} 의 알 수 없는 키: \"\n                                   f\"{', '.join(sorted(str(k) for k in stray))} \"\n                                   f\"(허용: {', '.join(sorted(_ROLE_KEYS))})\"",
+      "text": "team.core.{role} 의 알 수 없는 키: {', '.join(sorted(str(k) for k in stray))} (허용: {', '.join(sorted(_ROLE_KEYS))})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4281,7 +4261,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"team.core.{role}.{'/'.join(legacy)} 는 무동작 — 실행 바인딩은 \"\n                                   f\"team.core.{role}.runtime.{{model,effort}} 로 옮기세요\"",
+      "text": "team.core.{role}.{'/'.join(legacy)} 는 무동작 — 실행 바인딩은 team.core.{role}.runtime.{model,effort} 로 옮기세요",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4301,7 +4281,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"team.core.{role}.runtime 은 매핑이어야 함 (받음: {type(rt).__name__})\"",
+      "text": "team.core.{role}.runtime 은 매핑이어야 함 (받음: {type(rt).__name__})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4321,7 +4301,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"team.core.{role}.runtime 의 알 수 없는 키: \"\n                                   f\"{', '.join(sorted(str(k) for k in unknown))} (허용: model, effort)\"",
+      "text": "team.core.{role}.runtime 의 알 수 없는 키: {', '.join(sorted(str(k) for k in unknown))} (허용: model, effort)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4341,7 +4321,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"team.core.{role}.runtime 의 model/effort 는 codex host 에서 무동작 \"\n                                   f\"(.codex/agents/*.md 는 해석 기전 없음)\"",
+      "text": "team.core.{role}.runtime 의 model/effort 는 codex host 에서 무동작 (.codex/agents/*.md 는 해석 기전 없음)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4381,7 +4361,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{indent}installed_hosts: [{host}]       # 원하는 discovery surface. double-host면 [claude, codex]\"",
+      "text": "{indent}installed_hosts: [{host}]       # 원하는 discovery surface. double-host면 [claude, codex]",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4461,7 +4441,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"core_renders/{key}/허용되지 않은 필드가 있음: {', '.join(unknown)}\"",
+      "text": "core_renders/{key}/허용되지 않은 필드가 있음: {', '.join(unknown)}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4481,7 +4461,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"core_renders/{key}/semantic_source 쌍이 불완전함: {', '.join(missing)} 누락\"",
+      "text": "core_renders/{key}/semantic_source 쌍이 불완전함: {', '.join(missing)} 누락",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4501,7 +4481,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"core_renders/{key}/sage_version이 string이 아님\"",
+      "text": "core_renders/{key}/sage_version이 string이 아님",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4581,7 +4561,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"알 수 없는 CORE render kind: {kind}\"",
+      "text": "알 수 없는 CORE render kind: {kind}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4601,7 +4581,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"CORE render 경로 상태 확인 실패: {cursor} ({exc})\"",
+      "text": "CORE render 경로 상태 확인 실패: {cursor} ({exc})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -4923,7 +4903,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{indent}active_host: auto               # auto = 실행 시점 판별. claude|codex 로 고정도 가능\"",
+      "text": "{indent}active_host: auto               # auto = 실행 시점 판별. claude|codex 로 고정도 가능",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -5083,7 +5063,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"CORE skill write와 rollback 모두 실패: {dst} ({restore_error})\"",
+      "text": "CORE skill write와 rollback 모두 실패: {dst} ({restore_error})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -5225,7 +5205,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  합계: found={tot['found']} survived={tot['survived']} accepted={tot['accepted']} \"\n                 f\"arch={tot['arch']}  → accepted={tot['accepted']} 가 '리뷰가 채운 체계적 누락'의 양\"",
+      "text": "  합계: found={tot['found']} survived={tot['survived']} accepted={tot['accepted']} arch={tot['arch']}  → accepted={tot['accepted']} 가 '리뷰가 채운 체계적 누락'의 양",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -5245,7 +5225,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"05 문서 {len(docs)}건 — 사이클 특정 불가\"",
+      "text": "05 문서 {len(docs)}건 — 사이클 특정 불가",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -5285,7 +5265,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"노트 제목에 run_id 를 사용합니다({reason}). 제목만으로 사이클을 알아보려면 \"\n        f\"`--feature <사이클 stem>` 을 주세요.\"",
+      "text": "노트 제목에 run_id 를 사용합니다({reason}). 제목만으로 사이클을 알아보려면 `--feature <사이클 stem>` 을 주세요.",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -5405,7 +5385,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"sage retro --check <이 노트>\"",
+      "text": "sage retro --check <이 노트>",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -5465,7 +5445,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  종료: {close.get('result')}/{close.get('reason')} ({close.get('iterations')}회)\"",
+      "text": "  종료: {close.get('result')}/{close.get('reason')} ({close.get('iterations')}회)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -5605,7 +5585,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"`## 제안` 파싱 불가: {err}\"",
+      "text": "`## 제안` 파싱 불가: {err}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -5625,7 +5605,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  (없음 — {os.path.relpath(pattern, root)} 매치 0. 05 리뷰 문서가 있어야 패턴 분류 가능)\"",
+      "text": "  (없음 — {os.path.relpath(pattern, root)} 매치 0. 05 리뷰 문서가 있어야 패턴 분류 가능)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -5665,7 +5645,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "\"> **Loop C retro — human gate.** `## 요약` 에 사람용 회고 1~2줄, `## 제안` JSON 에 distill 결과를\\n\"\n            f\"> 채운 뒤(`{check_cmd}` 로 확인) 검토해 frontmatter `approved: true` 로 승인하세요.\\n\"\n            \"> 그 다음 `sage absorb --from-retro <이 노트>` 로 자산 patch 후보를 받습니다.\\n\"\n            \"> 자동 반영되지 않습니다(SSOT 보호).\\n\\n\"\n            f\"관련 loop audit: [[{_wiki_stem(dash_name)}]]\\n\\n\"\n            \"## 요약\\n\"\n            f\"{_SUMMARY_PLACEHOLDER}\\n\\n\"\n            \"## 제안 (proposals) — distill 결과를 JSON 배열로 채우세요. target ∈ {profile,hook,agent,skill}\\n\"\n            \"```json\\n[]\\n```\\n\\n\"\n            \"---\\n\"\n            \"<details>\\n<summary>증거 · distiller 프롬프트 (참고 — 채울 때만 사용, absorb 는 위 `## 제안` JSON 만 읽음)</summary>\\n\\n\"\n            \"```\\n\"",
+      "text": "> **Loop C retro — human gate.** `## 요약` 에 사람용 회고 1~2줄, `## 제안` JSON 에 distill 결과를\n> 채운 뒤(`{check_cmd}` 로 확인) 검토해 frontmatter `approved: true` 로 승인하세요.\n> 그 다음 `sage absorb --from-retro <이 노트>` 로 자산 patch 후보를 받습니다.\n> 자동 반영되지 않습니다(SSOT 보호).\n\n관련 loop audit: [[{_wiki_stem(dash_name)}]]\n\n## 요약\n{_SUMMARY_PLACEHOLDER}\n\n## 제안 (proposals) — distill 결과를 JSON 배열로 채우세요. target ∈ {profile,hook,agent,skill}\n```json\n[]\n```\n\n---\n<details>\n<summary>증거 · distiller 프롬프트 (참고 — 채울 때만 사용, absorb 는 위 `## 제안` JSON 만 읽음)</summary>\n\n```\n",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -5765,7 +5745,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"노트 run_id={noted!r} ≠ 대상 run_id={run_id!r} — 다른 사이클의 회고 노트\"",
+      "text": "노트 run_id={noted} ≠ 대상 run_id={run_id} — 다른 사이클의 회고 노트",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -5785,7 +5765,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"--run-id 미전달 — 이 노트는 run_id={noted!r} 에 결속돼 있어 대조가 필요합니다 \"\n                        f\"(`--run-id {noted}`)\"",
+      "text": "--run-id 미전달 — 이 노트는 run_id={noted} 에 결속돼 있어 대조가 필요합니다 (`--run-id {noted}`)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6087,7 +6067,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"제안[{i}] 이 객체가 아님: {p!r}\"",
+      "text": "제안[{i}] 이 객체가 아님: {p}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6107,7 +6087,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"제안[{i}] target={p.get('target')!r} — {list(_PROPOSAL_TARGETS)} 중 하나여야 absorb 가 분기\"",
+      "text": "제안[{i}] target={p.get('target')} — {list(_PROPOSAL_TARGETS)} 중 하나여야 absorb 가 분기",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6127,7 +6107,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"제안[{i}] proposed_change 가 비었음\"",
+      "text": "제안[{i}] proposed_change 가 비었음",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6267,7 +6247,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"cross_model.effort: 알 수 없는 peer {peer!r}\"",
+      "text": "cross_model.effort: 알 수 없는 peer {peer}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6287,7 +6267,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"cross_model.effort={effort!r} 는 {peer} 가 모르는 값 \"\n                f\"(허용: {', '.join(PEER_EFFORTS[peer])}). {peer} 는 모르는 값을 조용히 무시하므로 차단합니다\"",
+      "text": "cross_model.effort={effort} 는 {peer} 가 모르는 값 (허용: {', '.join(PEER_EFFORTS[peer])}). {peer} 는 모르는 값을 조용히 무시하므로 차단합니다",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6387,7 +6367,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{peer} CLI 미설치(PATH 없음)\"",
+      "text": "{peer} CLI 미설치(PATH 없음)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6407,7 +6387,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{peer} 비정상 종료(exit {r.returncode}): {(r.stderr or '').strip()[:200]}\"",
+      "text": "{peer} 비정상 종료(exit {r.returncode}): {(r.stderr or '').strip()[:200]}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6427,7 +6407,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{peer} 출력에서 리뷰 메시지 파싱 실패\"",
+      "text": "{peer} 출력에서 리뷰 메시지 파싱 실패",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6447,7 +6427,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"active_host={declared}(프로필)와 감지된 실행 host={detected} 가 다릅니다 \"\n                     f\"— 감지값으로 진행합니다. 프로필을 auto 로 두면 이 경고가 사라집니다\"",
+      "text": "active_host={declared}(프로필)와 감지된 실행 host={detected} 가 다릅니다 — 감지값으로 진행합니다. 프로필을 auto 로 두면 이 경고가 사라집니다",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6467,7 +6447,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"감지된 실행 host={detected} 가 installed_hosts={installed} 에 없습니다 \"\n                     f\"— install 영수증이 낡았을 수 있습니다\"",
+      "text": "감지된 실행 host={detected} 가 installed_hosts={installed} 에 없습니다 — install 영수증이 낡았을 수 있습니다",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6487,7 +6467,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"cross_model.reviewer.model={model!r} 은 {chosen_for} 용으로 지정됐는데 실제 \"\n                      f\"peer 는 {peer} 입니다 — 모델을 넘기지 않고 {peer} CLI 기본값을 씁니다\"",
+      "text": "cross_model.reviewer.model={model} 은 {chosen_for} 용으로 지정됐는데 실제 peer 는 {peer} 입니다 — 모델을 넘기지 않고 {peer} CLI 기본값을 씁니다",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6567,7 +6547,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"--host={host}와 {source}={expected}가 다릅니다\"",
+      "text": "--host={host}와 {source}={expected}가 다릅니다",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6627,7 +6607,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"명시적 local opt-out 없이 cross-model을 same-runtime으로 완화할 수 없음 ({reason})\"",
+      "text": "명시적 local opt-out 없이 cross-model을 same-runtime으로 완화할 수 없음 ({reason})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6667,7 +6647,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"cross-model reviewer를 실행할 수 없음 ({reason})\"",
+      "text": "cross-model reviewer를 실행할 수 없음 ({reason})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6727,7 +6707,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{peer} 리뷰 실패: {err}\"",
+      "text": "{peer} 리뷰 실패: {err}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6747,7 +6727,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"cross_model 은 매핑이어야 함 (받음: {type(cm).__name__})\"",
+      "text": "cross_model 은 매핑이어야 함 (받음: {type(cm).__name__})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6767,7 +6747,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"cross_model 의 알 수 없는 키: {', '.join(sorted(str(k) for k in unknown))} \"\n                               f\"(허용: {', '.join(sorted(CROSS_MODEL_KEYS))})\"",
+      "text": "cross_model 의 알 수 없는 키: {', '.join(sorted(str(k) for k in unknown))} (허용: {', '.join(sorted(CROSS_MODEL_KEYS))})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6787,7 +6767,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"cross_model.policy={policy!r} — required, recommended, off 중 하나여야 함\"",
+      "text": "cross_model.policy={policy} — required, recommended, off 중 하나여야 함",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6827,7 +6807,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{peer} 호출 timeout({timeout}s)\"",
+      "text": "{peer} 호출 timeout({timeout}s)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -6847,7 +6827,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{peer} 호출 예외: {e}\"",
+      "text": "{peer} 호출 예외: {e}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -7267,7 +7247,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"cross_model.{key}={val!r} 는 엔진이 구현하지 않는 값 — \"\n                                   f\"`{only}` 만 지원합니다(다른 값은 무동작이라 안전정책으로 오인됩니다)\"",
+      "text": "cross_model.{key}={val} 는 엔진이 구현하지 않는 값 — `{only}` 만 지원합니다(다른 값은 무동작이라 안전정책으로 오인됩니다)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -7387,7 +7367,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"마지막 survived={last_survived}(미해결 남음), 예산·반복상한 여유 — 라운드 계속\"",
+      "text": "마지막 survived={last_survived}(미해결 남음), 예산·반복상한 여유 — 라운드 계속",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -7407,7 +7387,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"# SAGE Loop A 감사 대시보드{title_suffix}\"",
+      "text": "# SAGE Loop A 감사 대시보드{title_suffix}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -7507,7 +7487,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"음수 불가: {n}\"",
+      "text": "음수 불가: {n}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -7527,7 +7507,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{close['result']}/{close['reason']} ({close['iterations']}회)\"",
+      "text": "{close['result']}/{close['reason']} ({close['iterations']}회)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -7567,7 +7547,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"budget_tokens[{risk}] 미설정 — 예산 초과 종료 권고 불가\"",
+      "text": "budget_tokens[{risk}] 미설정 — 예산 초과 종료 권고 불가",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -7587,7 +7567,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"max_iterations[{risk}] 미설정 — 반복상한 종료 권고 불가\"",
+      "text": "max_iterations[{risk}] 미설정 — 반복상한 종료 권고 불가",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -7647,7 +7627,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"누적 tokens={total_tokens} ≥ budget[{risk}]={budget}\"",
+      "text": "누적 tokens={total_tokens} ≥ budget[{risk}]={budget}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -7667,7 +7647,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"반복 상한 도달(iter={iterations}=max[{risk}]={max_iter}) + survived={last_survived}(미수렴)\"",
+      "text": "반복 상한 도달(iter={iterations}=max[{risk}]={max_iter}) + survived={last_survived}(미수렴)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -7807,7 +7787,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"정수가 아님: {v!r}\"",
+      "text": "정수가 아님: {v}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -7847,7 +7827,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"APPROVED 인데 마지막 라운드 survived={last_survived}(미해결 남음) — 수렴 아님\"",
+      "text": "APPROVED 인데 마지막 라운드 survived={last_survived}(미해결 남음) — 수렴 아님",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -7867,7 +7847,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"CONVERGED 인데 마지막 라운드 survived={last_survived}(0 이어야)\"",
+      "text": "CONVERGED 인데 마지막 라운드 survived={last_survived}(0 이어야)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -7987,7 +7967,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"반복 상한 도달(iter={iterations}=max[{risk}]={max_iter}) + 마지막 survived=0(수렴)\"",
+      "text": "반복 상한 도달(iter={iterations}=max[{risk}]={max_iter}) + 마지막 survived=0(수렴)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -8207,7 +8187,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"budget_tokens[{risk}] 미설정 — 예산 검산 skip\"",
+      "text": "budget_tokens[{risk}] 미설정 — 예산 검산 skip",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -8227,7 +8207,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"max_iterations[{risk}] 미설정 — 반복상한 검산 skip\"",
+      "text": "max_iterations[{risk}] 미설정 — 반복상한 검산 skip",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -8327,7 +8307,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"APPROVED 인데 누적 tokens={total_tokens} ≥ budget={budget} — BUDGET_TOK/BLOCKED 여야\"",
+      "text": "APPROVED 인데 누적 tokens={total_tokens} ≥ budget={budget} — BUDGET_TOK/BLOCKED 여야",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -8347,7 +8327,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"BUDGET_TOK 인데 누적 tokens={total_tokens} < budget={budget}(초과 아님)\"",
+      "text": "BUDGET_TOK 인데 누적 tokens={total_tokens} < budget={budget}(초과 아님)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -8387,7 +8367,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"BUDGET_ITER 인데 iterations={iterations} < max[{risk}]={max_iter}(상한 미도달)\"",
+      "text": "BUDGET_ITER 인데 iterations={iterations} < max[{risk}]={max_iter}(상한 미도달)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -8427,7 +8407,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"DRY 인데 마지막 {dry} 라운드에 found>0(신규 있음) 또는 라운드 부족\"",
+      "text": "DRY 인데 마지막 {dry} 라운드에 found>0(신규 있음) 또는 라운드 부족",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -8627,7 +8607,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"알 수 없는 write kind: {item['kind']}\"",
+      "text": "알 수 없는 write kind: {item['kind']}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -8647,7 +8627,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"삭제 실패 {rel}: {type(exc).__name__}\"",
+      "text": "삭제 실패 {rel}: {type(exc).__name__}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -8667,7 +8647,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"복원 실패 {rel}: {type(exc).__name__}\"",
+      "text": "복원 실패 {rel}: {type(exc).__name__}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -8687,7 +8667,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"{name} 단계가 exit {code}\"",
+      "text": "{name} 단계가 exit {code}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -8867,7 +8847,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  WARN 엔진 소유 테스트 경로가 manifest 에 남아 있음: {test} \"\n                    \"— `sage generate --kind agent|skill --write` 재실행으로 정리됩니다\"",
+      "text": "  WARN 엔진 소유 테스트 경로가 manifest 에 남아 있음: {test} — `sage generate --kind agent|skill --write` 재실행으로 정리됩니다",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -8987,7 +8967,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"손상된 CORE skill 영수증: {host!r}\"",
+      "text": "손상된 CORE skill 영수증: {host}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9027,7 +9007,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  FAIL write-guard 실행 스모크 rc={result.returncode}, expected={expected}{suffix}\"",
+      "text": "  FAIL write-guard 실행 스모크 rc={result.returncode}, expected={expected}{suffix}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9047,7 +9027,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "\"  FAIL project hook origin 스탬프 누락/손상 — sage generate --kind hook \"\n                        f\"--id {hook_id} --write --target both 로 복구\"",
+      "text": "  FAIL project hook origin 스탬프 누락/손상 — sage generate --kind hook --id {hook_id} --write --target both 로 복구",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9167,7 +9147,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  STALE hook_runtime_hash[{key}] 미스탬프\"",
+      "text": "  STALE hook_runtime_hash[{key}] 미스탬프",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9227,7 +9207,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  FAIL conformance[{rt}] — 누락 required claim: {mr} | 금지위반: {ct}\"",
+      "text": "  FAIL conformance[{rt}] — 누락 required claim: {mr} | 금지위반: {ct}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9287,7 +9267,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  INFO interpretive 계약버전 검사 skip — 모듈 로드 실패: {e}\"",
+      "text": "  INFO interpretive 계약버전 검사 skip — 모듈 로드 실패: {e}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9307,7 +9287,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  STALE 계약버전 불일치 ({have_cv}→{want_cv}) — \"\n                \"sage generate --kind agent|skill --write 재스탬프 필요\"",
+      "text": "  STALE 계약버전 불일치 ({have_cv}→{want_cv}) — sage generate --kind agent|skill --write 재스탬프 필요",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9327,7 +9307,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  INFO descriptive unresolved {descriptive}건 (비게이팅 — 절차/서술 의미 누락 주의, {os.path.basename(claims)} 확인)\"",
+      "text": "  INFO descriptive unresolved {descriptive}건 (비게이팅 — 절차/서술 의미 누락 주의, {os.path.basename(claims)} 확인)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9407,7 +9387,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  STALE MCP 계약버전 불일치 ({have_cv}→{M.CONTRACT_VERSION}) — sage generate 재스탬프 필요\"",
+      "text": "  STALE MCP 계약버전 불일치 ({have_cv}→{M.CONTRACT_VERSION}) — sage generate 재스탬프 필요",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9427,7 +9407,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  FAIL spec 구조 오류: {exception_text(language, e)}\"",
+      "text": "  FAIL spec 구조 오류: {exception_text(language, e)}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9447,7 +9427,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  STALE render_hash[{tgt}] 불일치 (spec 변경 → 재생성 필요)\"",
+      "text": "  STALE render_hash[{tgt}] 불일치 (spec 변경 → 재생성 필요)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9507,7 +9487,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"❌ FAIL  config.toml managed-block 안에 미선언 서버 {len(extra)}건: {', '.join(extra)} \"\n                                      \"(SAGE 소유 영역 주입/변조 — 제거 후 재생성)\"",
+      "text": "❌ FAIL  config.toml managed-block 안에 미선언 서버 {len(extra)}건: {', '.join(extra)} (SAGE 소유 영역 주입/변조 — 제거 후 재생성)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9547,7 +9527,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  FAIL schema 위반 @ {loc}: {e.message}\"",
+      "text": "  FAIL schema 위반 @ {loc}: {e.message}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9607,7 +9587,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  FAIL write-guard 실행 스모크 오류: {type(exc).__name__}: {exc}\"",
+      "text": "  FAIL write-guard 실행 스모크 오류: {type(exc).__name__}: {exc}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9767,7 +9747,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  STALE hook_runtime_hash[{key}] 불일치\"",
+      "text": "  STALE hook_runtime_hash[{key}] 불일치",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9787,7 +9767,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  INFO conformance skip — 모듈 로드 실패: {e}\"",
+      "text": "  INFO conformance skip — 모듈 로드 실패: {e}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9807,7 +9787,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  INFO conformance skip — claims 파싱 실패: {e}\"",
+      "text": "  INFO conformance skip — claims 파싱 실패: {e}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9827,7 +9807,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  INFO conformance[{rt}] skip — lint 오류: {e}\"",
+      "text": "  INFO conformance[{rt}] skip — lint 오류: {e}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -9887,7 +9867,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  INFO conformance[{rt}] WARN(비게이팅) — 미검출 {n_w}건, 금지주제 미언급 {n_mp}건\"",
+      "text": "  INFO conformance[{rt}] WARN(비게이팅) — 미검출 {n_w}건, 금지주제 미언급 {n_mp}건",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -10007,7 +9987,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  FAIL regression 실패: {test}\"",
+      "text": "  FAIL regression 실패: {test}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -10107,7 +10087,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  STALE render_hash[{tgt}] 미스탬프\"",
+      "text": "  STALE render_hash[{tgt}] 미스탬프",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -10147,7 +10127,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  FAIL config.toml managed-block 밖에 [mcp_servers.{sid}] 중복(소유권 충돌)\"",
+      "text": "  FAIL config.toml managed-block 밖에 [mcp_servers.{sid}] 중복(소유권 충돌)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -10187,7 +10167,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"⚠️  WARN  .mcp.json 에 manifest 밖 서버 {len(extra)}건: {', '.join(extra)} (absorb 대상 또는 수동 추가)\"",
+      "text": "⚠️  WARN  .mcp.json 에 manifest 밖 서버 {len(extra)}건: {', '.join(extra)} (absorb 대상 또는 수동 추가)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -10207,7 +10187,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"❌ FAIL  .mcp.json 파싱 실패: {e}\"",
+      "text": "❌ FAIL  .mcp.json 파싱 실패: {e}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -10327,7 +10307,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  STALE adapter_hash[{rt}] 불일치\"",
+      "text": "  STALE adapter_hash[{rt}] 불일치",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -10347,7 +10327,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  STALE 계약버전 불일치 ({have}→{want}) — sage generate 재스탬프 필요\"",
+      "text": "  STALE 계약버전 불일치 ({have}→{want}) — sage generate 재스탬프 필요",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -10367,7 +10347,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  FAIL regression 실행 불가: {test} ({runner_error})\"",
+      "text": "  FAIL regression 실행 불가: {test} ({runner_error})",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -10787,7 +10767,7 @@
       "placeholders": [],
       "machine_consumer": null,
       "classification": "command_output_indirect",
-      "text": "f\"  FAIL regression 실패: {test}\"",
+      "text": "  FAIL regression 실패: {test}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",
@@ -10862,7 +10842,7 @@
       "source_file": "sage/overlay_common.py",
       "source_symbol": "compose_block",
       "source_line": 147,
-      "text": "f\"## Project-Local Additions (sage/asset_overrides/{kind}/{id}.md)\\n\"\n        \"아래는 이 프로젝트 로컬 추가 지침이며 CORE 기본 지침에 **더한다**.\\n\"\n        \"AGENT_GUIDE·phase·review·verification·안전 경계를 **완화할 수 없다**.\"",
+      "text": "## Project-Local Additions (sage/asset_overrides/{kind}/{id}.md)\n아래는 이 프로젝트 로컬 추가 지침이며 CORE 기본 지침에 **더한다**.\nAGENT_GUIDE·phase·review·verification·안전 경계를 **완화할 수 없다**.",
       "reason": "렌더 산출물에 기록되는 본문. base 해시 앵커의 입력이라 표시 언어에 따라 달라지면 같은 프로젝트에서 사용자마다 다른 drift 가 잡힌다."
     },
     {

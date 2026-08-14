@@ -118,6 +118,30 @@ class TestInventoryCountsWhatTheScreenShows(unittest.TestCase):
         self.assertTrue(all(e["classification"] == "command_output_indirect" for e in entries),
                         "print() 인자에 없는데 direct로 분류됐다")
 
+    def test_comment_between_concatenated_fstring_fragments_is_not_counted(self):
+        """실측 오탐 고정: 괄호로 이어진 f-string 조각 사이의 코드 주석은 값에 안 들어간다.
+
+        `ast.get_source_segment(source, node)` 는 노드 시작~끝의 원본 소스를 그대로 슬라이스한다.
+        조각 사이에 주석이 끼면(합법적 문법) 그 주석 원문까지 슬라이스에 포함돼, 실행 시 전혀
+        출력되지 않는 한국어가 있다고 오판한다(`generate.py::_promoted_render` 배너 조립에서
+        실측). `_joinedstr_text()` 로 조각 단위 재구성하면 이 오탐이 없어야 한다.
+        """
+        inv = self._generate()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "probe.py")
+            Path(path).write_text(
+                'def run():\n'
+                '    banner = (f"<!-- all-ascii banner {1} -->"\n'
+                '              # 한국어 주석 — 실행 시 값에 안 들어간다\n'
+                '              f"\\nmore-ascii\\n")\n'
+                '    print(banner)\n',
+                encoding="utf-8")
+            entries, _exclusions = inv._scan_korean_literals(
+                path, "probe.py", id_prefix="cmd", required_tests=[],
+                direct_classification="command_output",
+                indirect_classification="command_output_indirect")
+        self.assertEqual(entries, [], f"주석의 한국어를 값으로 오판했다: {entries}")
+
     def test_an_fstring_counts_once_not_per_fragment(self):
         import ast
         inv = self._generate()
@@ -169,13 +193,18 @@ class TestInventoryCountsWhatTheScreenShows(unittest.TestCase):
         처음부터 안 보였다). 이 배치는 스캐너를 정확하게 만드는 것까지만 하고 이관은 다음
         배치로 미룬다(plan_docs/04-analyze §4). 그래도 조용히 더 늘면 안 되므로 상한을 고정한다
         — 늘면 이 테스트가 잡고, 줄면(이관 진행) 이 숫자를 낮춰서 갱신한다.
+
+        539 인 이유: 540 중 1건(`generate.py::_promoted_render`)은 실제 누출이 아니라 스캐너
+        오탐이었다 — 괄호로 이어진 f-string 조각 사이의 **코드 주석**이 `ast.get_source_segment`
+        슬라이스에 끼어든 것(실행 시 값에는 전혀 안 들어감). `_joinedstr_text()` 로 조각 단위
+        재구성해 고쳤다.
         """
         entries = _document()["entries"]
         remaining = [e for e in entries
                      if e["source_file"].replace("\\", "/").startswith("sage/commands/")
                      and e["source_file"] != "sage/commands/sync_overlays.py"]
-        self.assertLessEqual(len(remaining), 540,
-                             f"sage/commands 잔여 한국어가 알려진 상한(540)을 넘었다: "
+        self.assertLessEqual(len(remaining), 539,
+                             f"sage/commands 잔여 한국어가 알려진 상한(539)을 넘었다: "
                              f"{len(remaining)}건")
 
 if __name__ == "__main__":
