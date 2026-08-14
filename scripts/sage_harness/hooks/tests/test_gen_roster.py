@@ -5,7 +5,10 @@
 naming=implementer-<comp>(접두, 함수역할 충돌 회피) / 빈 components=폴백(생성 없음) /
 create-only(기존 손편집 보존) / dry-run(--write 없으면 미기록) / malformed component fail-closed.
 """
+import contextlib
+import io
 import os
+from contextlib import redirect_stdout
 from pathlib import Path
 import sys
 import tempfile
@@ -15,14 +18,17 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.d
 sys.path.insert(0, REPO)
 from sage.commands import generate as G  # noqa: E402
 from sage import overlay_common as oc  # noqa: E402
+from sage.i18n.context import LanguageContext  # noqa: E402
 
 
 class Args:
-    def __init__(self, dest, write=False, from_existing=None):
+    def __init__(self, dest, write=False, from_existing=None, language=None):
         self.dest = dest
         self.write = write
         self.root = dest
         self.from_existing = from_existing
+        if language:
+            self._language_context = LanguageContext(language=language, source="cli")
 
 
 def _instance(tmp, profile_yaml):
@@ -80,6 +86,17 @@ class TestGenRoster(unittest.TestCase):
             _instance(tmp, _TWO)
             G._gen_roster(Args(tmp, write=False), tmp)
             self.assertFalse(os.path.exists(_agent(tmp, "implementer-core")))
+
+    def test_mode_label_follows_language(self):
+        """dry-run/생성 모드 문구도 language_of() 를 따른다."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _instance(tmp, _TWO)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                G._gen_roster(Args(tmp, write=False, language="en"), tmp)
+            text = buf.getvalue()
+            self.assertIn("would generate (dry-run", text)
+            self.assertNotIn("생성예정", text)
 
     def test_empty_components_fallback_no_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -254,6 +271,28 @@ class TestPromoteFromExisting(unittest.TestCase):
             Path(out).write_text("손편집 렌더\n", encoding="utf-8")
             self.assertEqual(G._gen_roster(Args(tmp, write=True, from_existing="implementer-a"), tmp), 0)
             self.assertEqual(Path(out).read_text(encoding="utf-8"), "손편집 렌더\n")
+
+    def test_skip_existing_note_follows_language(self):
+        """"skip(기존 렌더 보존)" 노트도 language_of() 를 따른다."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out = self._project(tmp)
+            Path(out).write_text("손편집 렌더\n", encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                G._gen_roster(Args(tmp, write=True, from_existing="implementer-a", language="en"), tmp)
+            text = buf.getvalue()
+            self.assertIn("kept existing render", text)
+            self.assertNotIn("기존 렌더 보존", text)
+
+    def test_missing_source_render_error_follows_language(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._project(tmp, render=None)
+            buf = io.StringIO()
+            with redirect_stdout(io.StringIO()), contextlib.redirect_stderr(buf):
+                G._gen_roster(Args(tmp, write=True, from_existing="implementer-a", language="en"), tmp)
+            text = buf.getvalue()
+            self.assertIn("source render not found", text)
+            self.assertNotIn("원본 렌더를 찾지 못함", text)
 
     def test_dry_run_writes_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
