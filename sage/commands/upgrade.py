@@ -41,7 +41,7 @@ import sys
 import time
 import uuid
 
-from sage.i18n import language_of, tr
+from sage.i18n import language_of, render_issue, tr
 
 # 이 값만 바꾼다. 공유 YAML 전체를 재직렬화하면 주석·순서·따옴표 스타일이 통째로 바뀌어
 # 사용자가 upgrade 한 번에 자기 파일이 다시 쓰였다고 읽는다 — diff 가 계약을 넘어선다.
@@ -57,6 +57,16 @@ REPORT_REL = os.path.join(".sage", "upgrades")
 EXIT_OK = 0
 EXIT_BLOCKED = 1        # blocker 가 있거나, apply 가 실패했지만 rollback 은 완료됨
 EXIT_UNSAFE = 2         # usage·손상·내부 안전 실패·rollback 불완전
+
+
+def _exception_text(language, exc):
+    """예외를 사람이 읽는 문장으로. 진단을 든 예외는 선택 언어로, 나머지는 원문 그대로.
+
+    하부 계층(`install_transaction`)은 어느 도메인의 catalog 도 알 수 없어 code 만 들고
+    올라온다. 문장은 잡은 쪽인 여기서 만든다.
+    """
+    diagnostic = getattr(exc, "diagnostic", None)
+    return render_issue(language, diagnostic) if diagnostic is not None else f"{exc}"
 
 
 def register(sub, context):
@@ -500,7 +510,8 @@ def _apply(root, plan, language):
     try:
         lock = DestinationLock(upgrade_lock_root)
     except InstallBusyError as exc:
-        return 0, tr(language, "cli.upgrade.lock_failed", error=str(exc)), True
+        return 0, tr(language, "cli.upgrade.lock_failed",
+                     error=_exception_text(language, exc)), True
 
     lock.acquire()
     snapshot = _snapshot_tree(root)

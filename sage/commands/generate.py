@@ -31,6 +31,16 @@ from sage.manifest_io import atomic_write_json
 from sage.i18n import language_of, render_issue, tr
 
 
+def _exception_text(language, exc):
+    """예외를 사람이 읽는 문장으로. 진단을 든 예외는 선택 언어로, 나머지는 원문 그대로.
+
+    하부 계층(`install_transaction`)은 어느 도메인의 catalog 도 알 수 없어 code 만 들고
+    올라온다. 문장은 잡은 쪽인 여기서 만든다.
+    """
+    diagnostic = getattr(exc, "diagnostic", None)
+    return render_issue(language, diagnostic) if diagnostic is not None else f"{exc}"
+
+
 def register(sub, context):
     p = sub.add_parser("generate", help=tr(context, "cli.generate.generate"))
     p.add_argument("--kind", choices=["hook", "agent", "skill", "roster", "mcp"], required=True)
@@ -287,7 +297,8 @@ def _gen_hook(args, root):
             lock.acquire()
         return _gen_hook_locked(args, root)
     except (OSError, ValueError, InstallBusyError, InstallDriftError) as exc:
-        print(tr(language_of(args), 'cli.generate.msg05', arg=type(exc).__name__, exc=exc),
+        print(tr(language_of(args), 'cli.generate.msg05', arg=type(exc).__name__,
+                    exc=_exception_text(language_of(args), exc)),
               file=sys.stderr)
         return 1
     finally:

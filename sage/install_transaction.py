@@ -13,12 +13,31 @@ import tempfile
 import unicodedata
 import uuid
 
+from sage.diagnostics import Diagnostic
 
-class InstallBusyError(RuntimeError):
+
+class _DiagnosticError(RuntimeError):
+    """진단을 실어 나르는 예외의 공통 형태.
+
+    이 모듈은 install·generate·upgrade 가 모두 쓰는 하부 계층이라 어느 도메인의 catalog 도 알
+    수 없다. 그래서 완성 문장 대신 code 를 들고 올라가고, 문장은 잡은 쪽이 만든다.
+
+    `str(exc)` 는 code 와 evidence 를 낸다 — 사람이 읽는 문장은 아니지만, 이 예외를 그대로
+    찍던 경로에서도 정보가 사라지지 않는다.
+    """
+
+    def __init__(self, diagnostic):
+        self.diagnostic = diagnostic
+        detail = getattr(diagnostic, "evidence", "")
+        code = getattr(diagnostic, "code", str(diagnostic))
+        super().__init__(f"{code}: {detail}" if detail else code)
+
+
+class InstallBusyError(_DiagnosticError):
     pass
 
 
-class InstallDriftError(RuntimeError):
+class InstallDriftError(_DiagnosticError):
     pass
 
 
@@ -58,7 +77,7 @@ def path_fingerprint(path):
             != (after.st_dev, after.st_ino, after.st_mode, after.st_size,
                 after.st_mtime_ns, after.st_ctime_ns)
             or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)):
-        raise InstallDriftError(f"fingerprint 중 파일이 변경됨: {path}")
+        raise InstallDriftError(Diagnostic("install.file_changed_during_fingerprint", path=path))
     return common + (before.st_size, digest.hexdigest())
 
 
@@ -111,10 +130,11 @@ def verify_captured(captured):
         try:
             actual = tree_fingerprint(path) if form == "tree" else path_fingerprint(path)
         except (OSError, InstallDriftError) as exc:
-            findings.append(f"{path}: {exc}")
+            findings.append(Diagnostic("install.path_unreadable", path=path,
+                                       evidence=str(exc)))
             continue
         if actual != expected:
-            findings.append(f"{path}: preflight 이후 입력이 변경됨")
+            findings.append(Diagnostic("install.input_changed_since_preflight", path=path))
     return findings
 
 
@@ -150,11 +170,11 @@ class DestinationLock:
             pass
         current = os.lstat(self.lock_root)
         if not stat.S_ISDIR(current.st_mode) or stat.S_ISLNK(current.st_mode):
-            raise InstallBusyError(f"install lock root가 안전한 directory가 아님: {self.lock_root}")
+            raise InstallBusyError(Diagnostic("install.lock_root_unsafe", path=self.lock_root))
         if hasattr(os, "geteuid") and current.st_uid != os.geteuid():
-            raise InstallBusyError(f"install lock root 소유자가 현재 사용자와 다름: {self.lock_root}")
+            raise InstallBusyError(Diagnostic("install.lock_root_foreign_owner", path=self.lock_root))
         if os.name != "nt" and stat.S_IMODE(current.st_mode) & 0o077:
-            raise InstallBusyError(f"install lock root 권한이 0700보다 넓음: {self.lock_root}")
+            raise InstallBusyError(Diagnostic("install.lock_root_permissive", path=self.lock_root))
 
     def verify_identity(self):
         current = unicodedata.normalize(
@@ -184,7 +204,7 @@ class DestinationLock:
             os.write(fd, f"pid={os.getpid()}\n".encode("ascii"))
         except (ImportError, OSError) as exc:
             os.close(fd)
-            raise InstallBusyError("같은 destination에서 다른 sage install이 실행 중입니다") from exc
+            raise InstallBusyError(Diagnostic("install.destination_busy")) from exc
         self._locks.append((fd, backend))
 
     def acquire(self):
@@ -275,12 +295,15 @@ class InstallTransaction:
             try:
                 actual = self._actual(path, expected)
             except (OSError, InstallDriftError) as exc:
-                findings.append(f"{path}: {exc}")
+                findings.append(Diagnostic("install.path_unreadable", path=path,
+                                           evidence=str(exc)))
                 continue
             if actual != expected[1]:
-                findings.append(f"{path}: preflight 이후 변경됨")
+                findings.append(Diagnostic("install.output_changed_since_preflight", path=path))
         if findings:
-            raise InstallDriftError("install input changed during preflight: " + "; ".join(findings))
+            raise InstallDriftError(Diagnostic(
+                "install.inputs_changed_during_preflight",
+                evidence="; ".join(str(item) for item in findings)))
 
     def _ensure_parents(self, path):
         missing = []
@@ -377,7 +400,9 @@ class InstallTransaction:
     def verify_outputs(self):
         findings = verify_captured(self._outputs)
         if findings:
-            raise InstallDriftError("install output changed before commit: " + "; ".join(findings))
+            raise InstallDriftError(Diagnostic(
+                "install.outputs_changed_before_commit",
+                evidence="; ".join(str(item) for item in findings)))
 
     @staticmethod
     def _remove(path):
