@@ -59,29 +59,20 @@ def check_tag_matches_version(tag):
 
 
 def check_catalog_parity():
-    """두 catalog 의 key 집합과 placeholder 가 같은가.
+    """catalog 가 key·placeholder·**내용**까지 정합한가.
 
     한쪽에만 있는 key 는 런타임 fallback 으로 조용히 넘어간다 — 그 상태로 릴리스하면 사용자가
-    빈틈을 대신 발견한다. build 시점에 실패로 바꾸는 것이 이 검사의 목적이다.
+    빈틈을 대신 발견한다. 영어 값에 남은 한국어도 인벤토리가 세지 못하는 누출이라 같이 본다.
+
+    검사 자체를 여기서 다시 구현하지 않고 `sage.i18n.validation` 의 단일 oracle 을 부른다 —
+    두 벌로 두면 한쪽에만 검사가 추가돼 publish 게이트가 테스트보다 느슨해진다.
     """
     sys.path.insert(0, str(REPO))
-    findings = []
     try:
-        from sage.i18n import CATALOGS
+        from sage.i18n.validation import catalog_issues
     except Exception as exc:
         return [Finding("catalog", f"catalog 를 import 하지 못했다: {type(exc).__name__}: {exc}")]
-
-    ko, en = CATALOGS["ko"], CATALOGS["en"]
-    for missing in sorted(set(ko) - set(en)):
-        findings.append(Finding("catalog", f"en 에 없는 key: {missing}"))
-    for extra in sorted(set(en) - set(ko)):
-        findings.append(Finding("catalog", f"ko 에 없는 key: {extra}"))
-    for key in sorted(set(ko) & set(en)):
-        left = set(re.findall(r"\{(\w+)\}", ko[key]))
-        right = set(re.findall(r"\{(\w+)\}", en[key]))
-        if left != right:
-            findings.append(Finding("catalog", f"{key}: placeholder 불일치 {sorted(left ^ right)}"))
-    return findings
+    return [Finding("catalog", issue) for issue in catalog_issues(str(REPO))]
 
 
 def check_document_pairs():

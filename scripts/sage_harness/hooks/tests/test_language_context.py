@@ -23,7 +23,8 @@ sys.path.insert(0, str(REPO))
 from sage.i18n import CATALOGS, LanguageContext, tr  # noqa: E402
 from sage.i18n.context import DEFAULT_LANGUAGE, read_local_language, resolve  # noqa: E402
 from sage.i18n.parser import LanguageArgumentError, context_for, scan  # noqa: E402
-from sage.i18n.validation import catalog_issues  # noqa: E402
+from sage.i18n.validation import (KOREAN_IN_ENGLISH_ALLOWED,  # noqa: E402
+                                  KOREAN_IN_ENGLISH_DEBT, catalog_issues)
 from sage.profile_layers import effective_profile, profile_layer_issues  # noqa: E402
 
 
@@ -172,6 +173,63 @@ class TestCatalog(unittest.TestCase):
     def test_argument_mismatch_does_not_raise(self):
         self.assertEqual(tr(LanguageContext(), "cli.lang.unsupported"),
                          "[SAGE] message_key=cli.lang.unsupported")
+
+
+class TestCatalogContent(unittest.TestCase):
+    """key 집합이 맞아도 값이 잘못될 수 있다 — catalog 내용 자체를 게이트한다.
+
+    인벤토리는 코드를 스캔하므로 영어 catalog 안에 남은 한국어를 세지 못한다. 이관이 끝나
+    인벤토리가 0 이 되어도 그 누출은 그대로 `--lang en` 화면에 나간다. 그래서 이 검사는 건수가
+    아니라 **정확한 key 집합**으로 관리한다 — 건수 baseline 은 한 건을 고치면서 다른 한 건이
+    새로 들어와도 총계가 같아 통과한다.
+    """
+    def _mutated(self, language, key, text):
+        """catalog 를 한 건만 바꿔 `catalog_issues` 가 그걸 잡는지 본다(원복 보장)."""
+        original = CATALOGS[language].get(key)
+        CATALOGS[language][key] = text
+        try:
+            return catalog_issues(str(REPO))
+        finally:
+            if original is None:
+                del CATALOGS[language][key]
+            else:
+                CATALOGS[language][key] = original
+
+    def test_known_english_korean_debt_is_an_exact_key_set(self):
+        korean = re.compile(r"[가-힣]")
+        actual = {key for key, text in CATALOGS["en"].items() if korean.search(text)}
+        self.assertEqual(KOREAN_IN_ENGLISH_DEBT | KOREAN_IN_ENGLISH_ALLOWED, actual)
+
+    def test_the_only_intended_korean_english_value_points_at_the_other_language(self):
+        # 영어 도움말에서 한국어로 가는 안내라 en 값이 한국어인 것이 맞다.
+        self.assertEqual({"cli.root.switch_hint"}, set(KOREAN_IN_ENGLISH_ALLOWED))
+        self.assertIn("--lang en", CATALOGS["ko"]["cli.root.switch_hint"])
+        self.assertNotIn("--lang", CATALOGS["en"]["cli.root.switch_hint"])
+
+    def test_a_new_korean_english_value_fails_immediately(self):
+        issues = self._mutated("en", "cli.root.help_option", "이 문장은 영어여야 한다")
+        self.assertTrue(any("cli.root.help_option[en]" in issue and "한국어" in issue
+                            for issue in issues), issues)
+
+    def test_resolved_debt_must_be_removed_from_the_list(self):
+        # 부채를 고치고 목록을 그대로 두면 다음 사람이 남은 건수를 신뢰할 수 없다.
+        debt_key = sorted(KOREAN_IN_ENGLISH_DEBT)[0]
+        issues = self._mutated("en", debt_key, "no Korean here")
+        self.assertTrue(any(debt_key in issue and "KOREAN_IN_ENGLISH_DEBT" in issue
+                            for issue in issues), issues)
+
+    def test_escaped_newline_in_any_catalog_fails(self):
+        for language in ("ko", "en"):
+            with self.subTest(language=language):
+                issues = self._mutated(language, "cli.root.help_option", "first\\nsecond")
+                self.assertTrue(any(f"cli.root.help_option[{language}]" in issue
+                                    and "개행" in issue for issue in issues), issues)
+
+    def test_english_catalog_prints_real_newlines(self):
+        # 리터럴 두 글자가 남아 있으면 영어 사용자는 줄바꿈 대신 `\n` 을 읽는다.
+        for key, korean in CATALOGS["ko"].items():
+            with self.subTest(key=key):
+                self.assertEqual(korean.count("\n"), CATALOGS["en"][key].count("\n"))
 
 
 class TestDriftDiagnosticInvariance(unittest.TestCase):

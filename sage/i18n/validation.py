@@ -20,6 +20,25 @@ CLI_NAMESPACE = "cli."
 
 _HOOK_LOCALE_REL = ("scripts", "sage_harness", "hooks", "runtime", "i18n")
 
+_KOREAN = re.compile(r"[가-힣]")
+
+# 영어 catalog 값 안에 이스케이프된 개행 두 글자가 들어오면 사용자는 줄바꿈 대신 `\n` 을 읽는다.
+# 한국어 쪽이 실제 개행인데 영어 쪽만 리터럴이면 같은 문장이 언어마다 다른 모양으로 깨진다.
+_ESCAPED_NEWLINE = re.compile(r"\\n")
+
+# 영어 값이 한국어인 것이 **의도**인 key. 다른 언어로 가는 안내라 문안 자체가 반대 언어다.
+KOREAN_IN_ENGLISH_ALLOWED = frozenset({"cli.root.switch_hint"})
+
+# 아직 이관되지 않은 영어 catalog 부채. **건수가 아니라 정확한 key 집합**이다 — 건수만 세면
+# 한 건을 고치면서 다른 한 건이 새로 들어와도 총계가 같아 통과한다. 해소한 key 는 반드시 이
+# 집합에서 지워야 하고(낡은 항목도 실패로 보고한다), 이관이 끝나면 비어야 한다.
+KOREAN_IN_ENGLISH_DEBT = frozenset({
+    "cli.retro.msg04",     # `## 요약`/`## 제안` — retro heading 계약에서 en 이름으로 교체 예정
+    "cli.retro.msg17",     # 같은 heading 이름
+    "cli.validate.review_loop_arch_escalation_ineffective",   # en 값이 ko 원문 그대로 복사됨
+    "cli.validate.review_loop_cross_model_ineffective",       # 같은 복사
+})
+
 
 def _placeholders(template: str) -> set[str]:
     """named placeholder 집합. positional 은 이름이 없어 번역자가 순서를 맞출 근거가 없다."""
@@ -77,9 +96,36 @@ def _domain_issues(label: str, catalogs: dict[str, dict]) -> list[str]:
     return issues
 
 
+def _content_issues(label: str, catalogs: dict[str, dict], *,
+                    korean_debt: frozenset[str] = frozenset()) -> list[str]:
+    """catalog **내용** 검사 — key 집합이 맞아도 값 자체가 잘못될 수 있다.
+
+    인벤토리는 코드를 스캔하므로 영어 catalog 안에 한국어가 남은 누출을 세지 못한다. 그 상태로
+    이관이 끝나면 인벤토리 0 인데도 `--lang en` 화면에 한국어가 나간다 — 부재가 통과로 떨어지는
+    바로 그 형태라, 여기서 값을 직접 본다.
+    """
+    issues: list[str] = []
+    if set(catalogs) != {"ko", "en"}:
+        return issues
+
+    leaked = {key for key, text in catalogs["en"].items()
+              if isinstance(text, str) and _KOREAN.search(text)}
+    for key in sorted(leaked - KOREAN_IN_ENGLISH_ALLOWED - korean_debt):
+        issues.append(f"{label}/{key}[en]: 영어 값에 한국어가 남아 있음 — `--lang en` 화면에 그대로 나간다")
+    for key in sorted(korean_debt - leaked):
+        issues.append(f"{label}/{key}[en]: 한국어가 해소됐다 — KOREAN_IN_ENGLISH_DEBT 에서 지우세요")
+
+    for language in ("ko", "en"):
+        for key, text in sorted(catalogs[language].items()):
+            if isinstance(text, str) and _ESCAPED_NEWLINE.search(text):
+                issues.append(f"{label}/{key}[{language}]: 이스케이프된 개행 두 글자 — 실제 개행을 쓰세요")
+    return issues
+
+
 def catalog_issues(repo_root: str | None = None, hook_message_keys: set[str] | None = None) -> list[str]:
     """전체 검사 결과. 빈 리스트가 통과다."""
     issues = _domain_issues("cli", CATALOGS)
+    issues.extend(_content_issues("cli", CATALOGS, korean_debt=KOREAN_IN_ENGLISH_DEBT))
 
     for key in sorted(CATALOGS.get("ko", {})):
         if not key.startswith(CLI_NAMESPACE):
@@ -87,6 +133,7 @@ def catalog_issues(repo_root: str | None = None, hook_message_keys: set[str] | N
 
     hooks = load_hook_catalogs(repo_root) if repo_root else {}
     issues.extend(_domain_issues("hook", hooks))
+    issues.extend(_content_issues("hook", hooks))
 
     if hooks:
         overlap = sorted(set(CATALOGS.get("ko", {})) & set(hooks.get("ko", {})))

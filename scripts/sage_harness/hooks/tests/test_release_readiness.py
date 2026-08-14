@@ -54,6 +54,24 @@ class TestPreflightBlocksWhatItClaims(unittest.TestCase):
         finally:
             CATALOGS["en"][removed_key] = removed_value
 
+    def test_korean_left_in_the_english_catalog_blocks(self):
+        """publish 게이트는 key 결손만 보지 않는다 — 영어 값 안의 한국어도 막아야 한다.
+
+        인벤토리는 코드를 스캔하므로 catalog 값에 남은 한국어를 세지 못한다. 게이트가 이걸
+        놓치면 인벤토리 0 으로 release 해도 `--lang en` 화면에 한국어가 나간다.
+        """
+        module = _load_preflight()
+        from sage.i18n import CATALOGS
+        key = "cli.root.help_option"
+        original = CATALOGS["en"][key]
+        for probe in ("이 문장은 영어여야 한다", "first\\nsecond"):
+            CATALOGS["en"][key] = probe
+            try:
+                self.assertTrue(module.check_catalog_parity(),
+                                f"catalog 내용 결함을 잡지 못했다: {probe!r}")
+            finally:
+                CATALOGS["en"][key] = original
+
     def test_a_missing_english_pair_blocks(self):
         module = _load_preflight()
         self.assertEqual(module.check_document_pairs(), [],
