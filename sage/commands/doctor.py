@@ -16,7 +16,7 @@ from sage.runtime_hosts import (active_host, configured_hosts, profile_issues,
                                 receipt_hosts, receipt_issues)
 from sage.hook_launcher import resolve_sage_hook
 from sage.profile_layers import load_profile_layers, local_profile_git_issues
-from sage.i18n import language_of, tr
+from sage.i18n import language_of, render_issue, tr
 
 
 def register(sub, context):
@@ -421,7 +421,7 @@ def _report_model_routing(profile, current=None, language=None):
               f" stale={catalog.get('stale')}")
 
 
-def _report_version_contract(profile, manifest):
+def _report_version_contract(profile, manifest, language=None):
     from sage import __version__
     from sage.version_contract import version_axes, version_contract_issues
 
@@ -434,9 +434,10 @@ def _report_version_contract(profile, manifest):
     failed = False
     for issue in version_contract_issues(profile, manifest, __version__):
         mark = "❌" if issue.severity == "FAIL" else ("⚠️ " if issue.severity == "WARN" else "ℹ️ ")
-        print(f"  {mark} {issue.severity} [{issue.axis}] {issue.message}")
+        print(f"  {mark} {issue.severity} [{issue.axis}] "
+              f"{render_issue(language, issue.message)}")
         if issue.remediation:
-            print(f"      → `{issue.remediation}`")
+            print(f"      → `{render_issue(language, issue.remediation)}`")
         failed = failed or issue.severity == "FAIL"
     return failed
 
@@ -541,7 +542,7 @@ def run(args):
             manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
         except Exception:
             manifest = None
-    if _report_version_contract(profile, manifest):
+    if _report_version_contract(profile, manifest, language):
         rc = 1
     _report_codex_core_skill_scope(root, manifest, language)
     if _check_core_render_drift(profile, prof_path, language):

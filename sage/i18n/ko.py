@@ -715,4 +715,12 @@ MESSAGES = {
     "cli.feedback.git_failed": "git ls-files 를 실행하지 못했습니다 ({root})",
     "cli.feedback.git_exit": "git ls-files 가 exit {code} 로 끝났습니다",
     "cli.feedback.unreadable_file": "추적 파일을 읽지 못했습니다 ({path}) — 마커 없음이 아니라 알 수 없음입니다",
+    "cli.version.sage_section_not_mapping": "sage 섹션은 매핑(object)이어야 합니다.",
+    "cli.version.required_not_semver": "sage.required_version={value} 은 exact SemVer 형식이 아닙니다.",
+    "cli.version.required_semver_example": "예: sage.required_version: 1.2.3",
+    "cli.version.required_absent": "프로젝트가 요구하는 SAGE 버전이 없습니다 (legacy profile).",
+    "cli.version.set_required": "shared profile 의 sage.required_version 을 exact 버전으로 설정하세요",
+    "cli.version.axis_malformed": "SAGE {axis} 버전의 형식이 잘못됐습니다 ({value})",
+    "cli.version.axis_unknown": "SAGE {axis} 버전을 확인할 수 없습니다",
+    "cli.version.axis_differs": "SAGE {axis} 버전이 요구 버전과 다릅니다: {current} != {required}",
 }

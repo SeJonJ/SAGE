@@ -147,7 +147,7 @@ def _version_profile(root):
         return {}
 
 
-def _report_version_contract(profile, manifest):
+def _report_version_contract(profile, manifest, language=None):
     from sage import __version__
     from sage.version_contract import version_axes, version_contract_issues
 
@@ -158,8 +158,9 @@ def _report_version_contract(profile, manifest):
     severity = "PASS"
     for issue in version_contract_issues(profile, manifest, __version__):
         mark = "❌" if issue.severity == "FAIL" else ("⚠️ " if issue.severity == "WARN" else "ℹ️ ")
-        print(f"{mark} SAGE VERSION {issue.severity} [{issue.axis}] {issue.message}"
-              + (f" → `{issue.remediation}`" if issue.remediation else ""))
+        print(f"{mark} SAGE VERSION {issue.severity} [{issue.axis}] "
+              f"{render_issue(language, issue.message)}"
+              + (f" → `{render_issue(language, issue.remediation)}`" if issue.remediation else ""))
         if issue.severity == "FAIL":
             severity = "FAIL"
         elif issue.severity == "WARN" and severity == "PASS":
@@ -748,7 +749,8 @@ def run(args):
         overall = "FAIL"
         print(tr(language_of(args), "cli.validate.msg05"))
 
-    version_severity = _report_version_contract(_version_profile(root), manifest)
+    version_severity = _report_version_contract(_version_profile(root), manifest,
+                                               language_of(args))
     if _SEV_RANK[version_severity] > _SEV_RANK[overall]:
         overall = version_severity
 

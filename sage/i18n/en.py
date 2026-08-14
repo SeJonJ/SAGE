@@ -709,4 +709,12 @@ MESSAGES = {
     "cli.feedback.git_failed": "git ls-files could not be run ({root})",
     "cli.feedback.git_exit": "git ls-files exited with {code}",
     "cli.feedback.unreadable_file": "a tracked file could not be read ({path}) — this is unknown, not marker-free",
+    "cli.version.sage_section_not_mapping": "The sage section must be a mapping (object).",
+    "cli.version.required_not_semver": "sage.required_version={value} is not an exact SemVer.",
+    "cli.version.required_semver_example": "Example: sage.required_version: 1.2.3",
+    "cli.version.required_absent": "The project declares no required SAGE version (legacy profile).",
+    "cli.version.set_required": "Set sage.required_version in the shared profile to an exact version",
+    "cli.version.axis_malformed": "The SAGE {axis} version is malformed ({value})",
+    "cli.version.axis_unknown": "The SAGE {axis} version cannot be determined",
+    "cli.version.axis_differs": "The SAGE {axis} version differs from the required one: {current} != {required}",
 }

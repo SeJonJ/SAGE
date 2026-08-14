@@ -142,4 +142,12 @@ FRAGMENTS = {
     "hook.entry.usage_root": "Project root (default: resolved from env/git/cwd)",
     "hook.entry.usage_core_dir": "Hook core path (default: project-local, then bundled)",
     "hook.entry.usage_path": "Compatibility path for calling the write guard directly (takes precedence over stdin JSON)",
+    "hook.version.sage_section_not_mapping": "The sage section must be a mapping (object).",
+    "hook.version.required_not_semver": "sage.required_version={value} is not an exact SemVer.",
+    "hook.version.required_semver_example": "Example: sage.required_version: 1.2.3",
+    "hook.version.required_absent": "The project declares no required SAGE version (legacy profile).",
+    "hook.version.set_required": "Set sage.required_version in the shared profile to an exact version",
+    "hook.version.axis_malformed": "The SAGE {axis} version is malformed ({value})",
+    "hook.version.axis_unknown": "The SAGE {axis} version cannot be determined",
+    "hook.version.axis_differs": "The SAGE {axis} version differs from the required one: {current} != {required}",
 }

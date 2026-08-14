@@ -145,4 +145,12 @@ FRAGMENTS = {
     "hook.entry.usage_root": "프로젝트 루트(기본: env/git/cwd 자동 해석)",
     "hook.entry.usage_core_dir": "hook 코어 경로(기본: 프로젝트 로컬→번들)",
     "hook.entry.usage_path": "write-guard 직접호출 호환 경로(stdin JSON보다 우선)",
+    "hook.version.sage_section_not_mapping": "sage 섹션은 매핑(object)이어야 합니다.",
+    "hook.version.required_not_semver": "sage.required_version={value} 은 exact SemVer 형식이 아닙니다.",
+    "hook.version.required_semver_example": "예: sage.required_version: 1.2.3",
+    "hook.version.required_absent": "프로젝트가 요구하는 SAGE 버전이 없습니다 (legacy profile).",
+    "hook.version.set_required": "shared profile 의 sage.required_version 을 exact 버전으로 설정하세요",
+    "hook.version.axis_malformed": "SAGE {axis} 버전의 형식이 잘못됐습니다 ({value})",
+    "hook.version.axis_unknown": "SAGE {axis} 버전을 확인할 수 없습니다",
+    "hook.version.axis_differs": "SAGE {axis} 버전이 요구 버전과 다릅니다: {current} != {required}",
 }
