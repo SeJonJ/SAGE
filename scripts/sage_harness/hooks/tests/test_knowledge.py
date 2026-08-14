@@ -11,6 +11,7 @@ from pathlib import Path
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
 from sage.commands import knowledge  # noqa: E402
+from sage.i18n.context import LanguageContext  # noqa: E402
 
 
 class ScanArgs:
@@ -35,10 +36,12 @@ class WriteArgs:
     append_log = True
     skip_structure_check = False
 
-    def __init__(self, root, title, summary):
+    def __init__(self, root, title, summary, language=None):
         self.root = root
         self.title = title
         self.summary = summary
+        if language:
+            self._language_context = LanguageContext(language=language, source="cli")
 
 
 def _profile(root, vault, scan=True, write=True):
@@ -589,6 +592,16 @@ class TestKnowledge(unittest.TestCase):
             self.assertIn("태그: #tech #sage #knowledge-capture", body)   # 본문 인라인 태그
             fm = body.split("---")[1] if body.startswith("---") else ""
             self.assertNotIn("tags:", fm)                                  # frontmatter 엔 tags 없음
+
+    def test_tags_style_inline_lang_en(self):
+        """vault 노트 본문도 language_of() 를 따른다 — 인라인 태그줄 접두어가 --lang en 에서 English."""
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:
+            self._profile_conv(root, vault, 'tags_style: inline')
+            with redirect_stdout(io.StringIO()):
+                knowledge._run_write_back(WriteArgs(root, "IN-EN", "s", language="en"))
+            body = Path(os.path.join(vault, "wiki", "TECH - IN-EN.md")).read_text(encoding="utf-8")
+            self.assertIn("Tags: #tech #sage #knowledge-capture", body)
+            self.assertNotIn("태그:", body)
 
     def test_tags_style_none(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as vault:

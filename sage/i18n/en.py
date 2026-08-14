@@ -243,6 +243,10 @@ MESSAGES = {
     "cli.fast_cycle.msg04": "Selected lenses: {items}",
     "cli.fast_cycle.msg05": "Reason: {reason}",
     "cli.fast_cycle.msg06": "Audit record: .sage/fast_cycle.jsonl ({run_id})",
+    "cli.fast_cycle.dashboard_title": "# SAGE Fast Cycle Audit Dashboard",
+    "cli.fast_cycle.dashboard_note": "> Source of truth: `.sage/fast_cycle.jsonl`. This note is a derived dashboard, not the source of truth.",
+    "cli.fast_cycle.dashboard_empty_row": "| (no records) | | | | | | | | | | | |",
+    "cli.fast_cycle.dashboard_integrity_heading": "## Integrity Warnings",
 
     "cli.review.msg01": "[{command}] TOOL ERROR: failed to read the packet file: {exc}",
     "cli.review.msg02": "[{command}] TOOL ERROR: the packet is empty",
@@ -255,6 +259,7 @@ MESSAGES = {
     "cli.knowledge.msg03": "[sage knowledge write-back] ⚠️  advisory: required structure from the authoring guide is missing ({args_prefix}) — {items}",
     "cli.knowledge.msg04": "[sage knowledge write-back] ⚠️  advisory: a required section is an empty header ({args_prefix}) — {items} (header present but no body → fill it in during the depth self-review)",
     "cli.knowledge.msg05": "[sage knowledge write-back] ✅ skeleton markers present with body text ({args_prefix}) — the depth and quality of the content is not verified (that belongs to the skill instructions and the host's depth self-review)",
+    "cli.knowledge.tag_line_prefix": "Tags: ",
 
     "cli.sync_overlays.msg01": "[sage sync-overlays] TOOL ERROR: cannot find docs/sage_harness/.manifest.json",
     "cli.sync_overlays.msg02": "[sage sync-overlays] TOOL ERROR: failed to parse the manifest: {e}",
@@ -328,6 +333,14 @@ MESSAGES = {
     "cli.feedback.msg14": "  ✅ recorded: {fb_append_record}",
     "cli.feedback.msg15": "  ✅ vault cycle note: {note_path}",
     "cli.feedback.msg16": "  ⚠️  record_target=vault but the vault is disabled (knowledge_capture.vault_path is unset) — only the audit log was written.",
+    "cli.feedback.unclassified": "unclassified",
+    "cli.feedback.vault_header": "> `/sage-feedback` developer feedback marker history — cycle `{stem}`.\n> The machine-readable source is `.sage/feedback.jsonl`.\n\n## History\n\n",
+    "cli.feedback.verdict_fixed": "fixed",
+    "cli.feedback.verdict_not_mismatch": "not a mismatch",
+    "cli.feedback.verdict_undetermined": "undetermined (marker kept)",
+    "cli.feedback.force_blocking": "blocking",
+    "cli.feedback.marker_line": "- marker: {marker_text}",
+    "cli.feedback.note_line": "- note: {note}",
 
     "cli.validate.msg01": "[sage validate] TOOL ERROR: cannot find docs/sage_harness/.manifest.json",
     "cli.validate.msg02": "[sage validate] TOOL ERROR: failed to parse the manifest: {e}",

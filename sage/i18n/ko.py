@@ -249,6 +249,10 @@ MESSAGES = {
     "cli.fast_cycle.msg04": "선택 렌즈: {items}",
     "cli.fast_cycle.msg05": "사유: {reason}",
     "cli.fast_cycle.msg06": "감사 기록: .sage/fast_cycle.jsonl ({run_id})",
+    "cli.fast_cycle.dashboard_title": "# SAGE Fast Cycle 감사 대시보드",
+    "cli.fast_cycle.dashboard_note": "> 정본 데이터: `.sage/fast_cycle.jsonl`. 이 노트는 파생 대시보드이며 정본이 아닙니다.",
+    "cli.fast_cycle.dashboard_empty_row": "| (기록 없음) | | | | | | | | | | | |",
+    "cli.fast_cycle.dashboard_integrity_heading": "## 무결성 경고",
 
     "cli.review.msg01": "[{command}] TOOL ERROR: 패킷 파일 읽기 실패: {exc}",
     "cli.review.msg02": "[{command}] TOOL ERROR: 패킷이 비어 있음",
@@ -261,6 +265,7 @@ MESSAGES = {
     "cli.knowledge.msg03": "[sage knowledge write-back] ⚠️  advisory: authoring guide 필수 구조 누락 ({args_prefix}) — {items}",
     "cli.knowledge.msg04": "[sage knowledge write-back] ⚠️  advisory: 필수 섹션이 빈 헤더 ({args_prefix}) — {items} (헤더만 있고 본문 없음 → depth self-review 로 채우세요)",
     "cli.knowledge.msg05": "[sage knowledge write-back] ✅ 골격 마커 존재+본문 확인 ({args_prefix}) — 내용 깊이(질)는 미검증(skill 지침·host depth self-review 영역)",
+    "cli.knowledge.tag_line_prefix": "태그: ",
 
     "cli.sync_overlays.msg01": "[sage sync-overlays] TOOL ERROR: docs/sage_harness/.manifest.json 을 찾을 수 없음",
     "cli.sync_overlays.msg02": "[sage sync-overlays] TOOL ERROR: manifest 파싱 실패: {e}",
@@ -334,6 +339,14 @@ MESSAGES = {
     "cli.feedback.msg14": "  ✅ 기록: {fb_append_record}",
     "cli.feedback.msg15": "  ✅ vault 사이클 노트: {note_path}",
     "cli.feedback.msg16": "  ⚠️  record_target=vault 이나 vault 가 비활성입니다(knowledge_capture.vault_path 미설정) — 감사 로그만 남았습니다.",
+    "cli.feedback.unclassified": "미분류",
+    "cli.feedback.vault_header": "> `/sage-feedback` 개발자 피드백 마커 처리 이력 — 사이클 `{stem}`.\n> 기계 판독용 원본은 `.sage/feedback.jsonl` 이다.\n\n## 처리 이력\n\n",
+    "cli.feedback.verdict_fixed": "수정함",
+    "cli.feedback.verdict_not_mismatch": "불일치 아님",
+    "cli.feedback.verdict_undetermined": "판단 불가(마커 유지)",
+    "cli.feedback.force_blocking": "차단성",
+    "cli.feedback.marker_line": "- 마커: {marker_text}",
+    "cli.feedback.note_line": "- 판단: {note}",
 
     "cli.validate.msg01": "[sage validate] TOOL ERROR: docs/sage_harness/.manifest.json 을 찾을 수 없음",
     "cli.validate.msg02": "[sage validate] TOOL ERROR: manifest 파싱 실패: {e}",

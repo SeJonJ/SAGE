@@ -176,7 +176,7 @@ def _run_record(args, root, profile):
     if target == "sage":
         return 0
     # `--vault` bare("") 는 profile vault_path 사용(retro 와 동일 관례) — override 는 명시 경로만.
-    note_path = _write_vault_entry(profile, root, record, args.vault or None)
+    note_path = _write_vault_entry(profile, root, record, args.vault or None, language_of(args))
     if note_path:
         print(tr(language_of(args), "cli.feedback.msg15", note_path=note_path))
         return 0
@@ -187,7 +187,7 @@ def _run_record(args, root, profile):
     return 0
 
 
-def _write_vault_entry(profile, root, record, override):
+def _write_vault_entry(profile, root, record, override, language=None):
     """사이클 stem 단위 노트에 사람이 읽는 서술을 누적한다(없으면 헤더와 함께 생성).
 
     기계 판독·감사는 단일 누적 JSONL, 사람이 읽는 서술은 사이클 단위 — 같은 사건을 두 축에 남긴다.
@@ -203,14 +203,13 @@ def _write_vault_entry(profile, root, record, override):
     # 구분자만 제거하면 탈출은 막히고, ASCII-only 로 깎으면 한글 사이클명이 통째로 사라진다.
     stem = re.sub(r"[^\w.-]", "-", record.get("cycle_stem") or "", flags=re.UNICODE).strip("-.")
     name = _project_name(profile) or "SAGE"
+    unclassified = tr(language, "cli.feedback.unclassified")
     # stem 미특정(사이클 식별 실패)은 별도 노트로 모은다 — 엉뚱한 사이클 노트에 섞는 것보다 낫다.
-    title = f"{name} feedback {stem}" if stem else f"{name} feedback 미분류"
+    title = f"{name} feedback {stem}" if stem else f"{name} feedback {unclassified}"
     fname = _note_filename(profile, "SAGE", title)
     fm = {"tags": ["sage", "feedback"], "cycle_stem": record.get("cycle_stem") or "",
           "source": "sage feedback --record"}
-    header = (f"> `/sage-feedback` 개발자 피드백 마커 처리 이력 — 사이클 `{record.get('cycle_stem') or '미분류'}`.\n"
-              "> 기계 판독용 원본은 `.sage/feedback.jsonl` 이다.\n\n"
-              "## 처리 이력\n\n")
+    header = tr(language, "cli.feedback.vault_header", stem=record.get("cycle_stem") or unclassified)
     path = _vault.write_note(vault, folder, fname, fm, header, create_only=True)
     if path is None:                     # 이미 있는 노트에 누적
         # 경로를 직접 조립하지 않는다 — 중간 디렉토리 심링크로 vault 밖을 가리키면 append 가
@@ -221,19 +220,22 @@ def _write_vault_entry(profile, root, record, override):
             os.unlink(path)
             path = _vault.write_note(vault, folder, fname, fm, header, create_only=True) or path
     with open(path, "a", encoding="utf-8") as handle:
-        handle.write(_vault_entry_md(record))
+        handle.write(_vault_entry_md(record, language))
     return path
 
 
-_VERDICT_LABEL = {fb.VERDICT_FIXED: "수정함", fb.VERDICT_INTENTIONAL: "불일치 아님",
-                  fb.VERDICT_UNDETERMINED: "판단 불가(마커 유지)"}
+_VERDICT_KEY = {fb.VERDICT_FIXED: "cli.feedback.verdict_fixed",
+               fb.VERDICT_INTENTIONAL: "cli.feedback.verdict_not_mismatch",
+               fb.VERDICT_UNDETERMINED: "cli.feedback.verdict_undetermined"}
 
 
-def _vault_entry_md(record):
-    force = "차단성" if record.get("blocking") else "advisory"
-    lines = [f"### `{record['path']}:{record['line']}` — {_VERDICT_LABEL.get(record['verdict'], record['verdict'])}",
+def _vault_entry_md(record, language=None):
+    verdict_key = _VERDICT_KEY.get(record["verdict"])
+    verdict_label = tr(language, verdict_key) if verdict_key else record["verdict"]
+    force = tr(language, "cli.feedback.force_blocking") if record.get("blocking") else "advisory"
+    lines = [f"### `{record['path']}:{record['line']}` — {verdict_label}",
              f"- {record['ts']} · {force} · by {record['user']}"]
     if record.get("marker_text"):
-        lines.append(f"- 마커: {record['marker_text']}")
-    lines.append(f"- 판단: {record['note']}")
+        lines.append(tr(language, "cli.feedback.marker_line", marker_text=record["marker_text"]))
+    lines.append(tr(language, "cli.feedback.note_line", note=record["note"]))
     return "\n".join(lines) + "\n\n"

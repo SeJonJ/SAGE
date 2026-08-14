@@ -564,6 +564,22 @@ Status: PENDING — implementation not started
         self.assertIn(run_id, text)
         self.assertIn(".sage/fast_cycle.jsonl", text)
 
+    def test_dashboard_note_body_follows_lang_en(self):
+        """vault 대시보드 노트 본문도 language_of() 를 따른다 — --lang en 이면 영어 제목/안내."""
+        opened = self._run("fast-cycle", "open", "--stem", "hotfix", "--level", "L2",
+                           "--lens-count", "2", "--reason", "production outage")
+        run_id = opened.stdout.strip()
+        self.assertEqual(self._run("fast-cycle", "abort", "--run-id", run_id,
+                                   "--reason", "cancelled").returncode, 0)
+        vault = Path(self.root, "vault")
+        shown = self._run("--lang", "en", "fast-cycle", "show", "--vault", str(vault))
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        text = list(vault.rglob("*.md"))[0].read_text(encoding="utf-8")
+        self.assertIn("# SAGE Fast Cycle Audit Dashboard", text)
+        self.assertIn("Source of truth", text)
+        self.assertNotIn("감사 대시보드", text)
+        self.assertNotIn("정본 데이터", text)
+
 
 class TestFastSourceGate(unittest.TestCase):
     @classmethod

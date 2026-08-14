@@ -238,14 +238,16 @@ class TestInventoryCountsWhatTheScreenShows(unittest.TestCase):
         `# SAGE Loop A 감사 대시보드{title_suffix}` 에서 실측, 자세한 내막은
         `test_scan_korean_literals_does_not_double_count_fstring_fragments` 참고). 이 정정으로
         `overlay_common.py::compose_block` 의 `NOT_TRANSLATED` 선언 건수도 2 → 1로 함께 고쳤다.
-        이 커밋은 스캐너 정확도 수정만 담는다(배치 B-1 이관은 별도 커밋).
+
+        300 → 286: 배치 B-1(vault 노트 언어 배선) 중 `knowledge.py`(1)·`fast_cycle.py`(4)·
+        `feedback.py`(14) 를 `language_of()` 기반 catalog 로 이관했다.
         """
         entries = _document()["entries"]
         remaining = [e for e in entries
                      if e["source_file"].replace("\\", "/").startswith("sage/commands/")
                      and e["source_file"] != "sage/commands/sync_overlays.py"]
-        self.assertLessEqual(len(remaining), 300,
-                             f"sage/commands 잔여 한국어가 알려진 상한(300)을 넘었다: "
+        self.assertLessEqual(len(remaining), 286,
+                             f"sage/commands 잔여 한국어가 알려진 상한(286)을 넘었다: "
                              f"{len(remaining)}건")
 
 if __name__ == "__main__":

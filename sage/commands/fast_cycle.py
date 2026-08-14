@@ -406,7 +406,7 @@ def _run_close(args):
                          plan_hash_final=current_hash,
                          report_path=os.path.relpath(report_path, root).replace(os.sep, "/"))
         print(f"[sage fast-cycle] closed {args.run_id}")
-        _auto_dashboard(root)
+        _auto_dashboard(root, language_of(args))
         _warn(plan.metadata.get("Risk Level"), state.get("fast_review_level"),
               state.get("minimum_rounds"), state.get("lenses") or [],
               state.get("reason"), args.run_id)
@@ -438,7 +438,7 @@ def _run_abort(args):
         print(f"⛔ [sage fast-cycle] abort audit failure: {exc}", file=sys.stderr)
         return 2
     print(f"[sage fast-cycle] aborted {args.run_id}")
-    _auto_dashboard(root)
+    _auto_dashboard(root, language_of(args))
     return 0
 
 
@@ -460,7 +460,7 @@ def _run_show(args):
               f"fast={state.get('fast_review_level')} result={state.get('result') or 'ACTIVE'}")
     if args.vault is not None:
         try:
-            _write_dashboard(root, args.vault or None)
+            _write_dashboard(root, args.vault or None, language_of(args))
         except Exception as exc:
             print(f"⚠️ [sage fast-cycle] vault dashboard failed: {type(exc).__name__}: {exc}", file=sys.stderr)
             return 2
@@ -471,7 +471,7 @@ def _table(value):
     return str(value if value is not None else "").replace("|", "\\|").replace("\n", " ")
 
 
-def _dashboard_body(root):
+def _dashboard_body(root, language=None):
     audit = _runtime("fast_cycle_audit")
     records = audit.read_records(root)
     summary = audit.audit_summary(root)
@@ -491,19 +491,20 @@ def _dashboard_body(root):
             state.get("loop_run_id") or "-", result,
             opened.get("ts") or "-", terminal.get("ts") or "-")) + " |")
     body = [
-        "# SAGE Fast Cycle 감사 대시보드", "",
-        "> 정본 데이터: `.sage/fast_cycle.jsonl`. 이 노트는 파생 대시보드이며 정본이 아닙니다.", "",
+        tr(language, "cli.fast_cycle.dashboard_title"), "",
+        tr(language, "cli.fast_cycle.dashboard_note"), "",
         "| run | stem | actual risk | Fast level | min rounds | actual rounds | lenses | reason | Loop run | result | opened | terminal |",
         "|---|---|---|---|---:|---:|---|---|---|---|---|---|",
-        *(rows or ["| (기록 없음) | | | | | | | | | | | |"]),
+        *(rows or [tr(language, "cli.fast_cycle.dashboard_empty_row")]),
     ]
     issues = audit.integrity_issues(root)
     if issues:
-        body.extend(["", "## 무결성 경고", *[f"- {_table(issue)}" for issue in issues]])
+        body.extend(["", tr(language, "cli.fast_cycle.dashboard_integrity_heading"),
+                    *[f"- {_table(issue)}" for issue in issues]])
     return "\n".join(body) + "\n"
 
 
-def _write_dashboard(root, override=None):
+def _write_dashboard(root, override=None, language=None):
     import datetime
     from sage.commands import _vault
     from sage.commands._common import _project_name
@@ -517,17 +518,17 @@ def _write_dashboard(root, override=None):
     frontmatter = {"tags": ["sage", "fast-cycle", "audit"],
                    "updated": datetime.date.today().isoformat(),
                    "generated_by": "sage fast-cycle"}
-    path = _vault.write_note(vault, folder, filename, frontmatter, _dashboard_body(root))
+    path = _vault.write_note(vault, folder, filename, frontmatter, _dashboard_body(root, language))
     print(f"[sage fast-cycle] Obsidian dashboard: {path}", file=sys.stderr)
 
 
-def _auto_dashboard(root):
+def _auto_dashboard(root, language=None):
     try:
         profile = _profile(root)
         capture = profile.get("knowledge_capture") if isinstance(profile, dict) else None
         if not isinstance(capture, dict) or capture.get("fast_cycle_dashboard") is not True:
             return
-        _write_dashboard(root)
+        _write_dashboard(root, language=language)
     except Exception as exc:
         print(f"⚠️ [sage fast-cycle] automatic vault dashboard failed: {type(exc).__name__}: {exc}",
               file=sys.stderr)

@@ -529,7 +529,7 @@ def _run_write_back(args):
     if style == "frontmatter":
         fm["tags"] = tags
     elif style == "inline":
-        tag_line = "태그: " + " ".join(f"#{t}" for t in tags)
+        tag_line = tr(language_of(args), "cli.knowledge.tag_line_prefix") + " ".join(f"#{t}" for t in tags)
     try:
         path, created = _write_or_append_note(vault, folder, filename, fm, note_stem, summary, tag_line=tag_line)
         if path is None:
