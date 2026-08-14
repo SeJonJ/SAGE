@@ -4,6 +4,7 @@
 마스터 게이트 = knowledge_capture.vault_path (비면 vault 출력 전부 OFF). 스키마 키 추가 없음.
 """
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -195,8 +196,10 @@ def _profile(tmp, vault, retro_note=False, loop_audit_dashboard=False):
                     f"  retro_note: {str(retro_note).lower()}\n")
 
 
-def _sage(*args, root):
-    return subprocess.run([sys.executable, "-m", "sage", *args, "--root", root],
+def _sage(*args, root, lang=None):
+    # `--lang` 은 전역 옵션이라 서브커맨드보다 앞에 온다.
+    prefix = ["--lang", lang] if lang else []
+    return subprocess.run([sys.executable, "-m", "sage", *prefix, *args, "--root", root],
                           cwd=REPO, capture_output=True, text=True)
 
 
@@ -265,6 +268,38 @@ class TestVaultDashboard(unittest.TestCase):
         _profile(tmp, vault, loop_audit_dashboard=False)
         _run_loop(tmp)
         self.assertFalse(os.path.exists(os.path.join(vault, "wiki", DASH)))
+
+    def test_dashboard_body_follows_display_language_but_keeps_audit_vocabulary(self):
+        """대시보드 본문은 표시 언어를 따르고, 구조·감사 어휘는 언어 중립으로 남는다.
+
+        노트는 사용자가 받는 산출물이라 `--lang en` 이면 본문도 영어여야 한다. 다만 표 구조와
+        `run_id`·`APPROVED/DRY` 같은 감사 어휘까지 번역하면 같은 사실이 언어마다 다른 문자열로
+        남아 대조가 불가능해진다 — 그 경계가 유지되는지 두 언어를 생성해 대조한다.
+        """
+        korean = re.compile(r"[가-힣]")
+        written = {}
+        for lang in (None, "en"):
+            tmp, vault = tempfile.mkdtemp(), tempfile.mkdtemp()
+            _profile(tmp, vault)
+            rid = _run_loop(tmp)
+            r = _sage("review-loop", "show", "--vault", root=tmp, lang=lang)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            written[lang] = (rid, Path(os.path.join(vault, "wiki", DASH)).read_text(encoding="utf-8"))
+
+        ko_rid, ko_text = written[None]
+        en_rid, en_text = written["en"]
+
+        self.assertIn("감사 대시보드", ko_text)                     # 기본은 한국어 유지
+        leaked = [line for line in en_text.splitlines() if korean.search(line)]
+        self.assertEqual([], leaked, f"en 대시보드에 한국어가 남았다: {leaked}")
+
+        for rid, text in ((ko_rid, ko_text), (en_rid, en_text)):
+            self.assertIn(rid, text)                              # run ID 는 언어 중립
+            self.assertIn("APPROVED/DRY", text)                   # 감사 어휘도 언어 중립
+            self.assertIn("| run_id | risk | rounds |", text)      # 필드명 열은 그대로
+            self.assertIn("|---|---:|---:|", text)                 # 표 구조 marker 불변
+            self.assertIn('generated_by: "sage review-loop', text)  # frontmatter 는 언어 중립
+        self.assertIn("| found (sum) | accepted (sum) | result |", en_text)
 
     def test_dashboard_title_sanitizes_project_name_newline(self):
         # project.name 에 개행이 섞여도 H1 이 주입 헤딩으로 깨지지 않아야 한다.

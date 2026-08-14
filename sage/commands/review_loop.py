@@ -14,6 +14,7 @@ import re
 import glob
 
 from sage import _resources
+from sage.diagnostics import Diagnostic
 from sage.profile_layers import load_profile_layers
 from sage.i18n import language_of, render_issue, tr
 
@@ -38,19 +39,30 @@ def _load_cycle_binding():
     return cycle_binding
 
 
-def _nonneg(v):
-    """argparse type — 음수/비정수 거부(라운드 카운트는 ≥0 정수)."""
+def _nonneg_of(context):
+    """argparse type 콜러블을 만든다 — 음수/비정수 거부(라운드 카운트는 ≥0 정수).
+
+    argparse 는 type 콜러블에 args 를 넘기지 않으므로 `language_of(args)` 를 쓸 수 없다.
+    parser 를 세울 때 이미 결정된 표시 언어를 닫아두면, 파싱 실패 문장도 나머지 화면과 같은
+    언어로 나온다.
+    """
     import argparse
-    try:
-        n = int(v)
-    except (ValueError, TypeError):
-        raise argparse.ArgumentTypeError(f"정수가 아님: {v!r}")
-    if n < 0:
-        raise argparse.ArgumentTypeError(f"음수 불가: {n}")
-    return n
+
+    def _nonneg(v):
+        try:
+            n = int(v)
+        except (ValueError, TypeError):
+            raise argparse.ArgumentTypeError(
+                tr(context, "cli.review_loop.not_an_integer", value=repr(v)))
+        if n < 0:
+            raise argparse.ArgumentTypeError(
+                tr(context, "cli.review_loop.negative_not_allowed", n=n))
+        return n
+    return _nonneg
 
 
 def register(sub, context):
+    _nonneg = _nonneg_of(context)
     p = sub.add_parser("review-loop", help=tr(context, "cli.review_loop.review_loop"))
     sp = p.add_subparsers(dest="action", metavar="<action>")
     sp.required = True
@@ -334,17 +346,20 @@ def _approved_phase00_hash(la, root, profile, run_id):
 
 
 def _termination_discrepancies(la, root, run_id, result, reason, iterations, cfg, risk):
-    """기록된 라운드 + cfg(review_loop)로 close 의 result/reason 일관성 검산 → [(kind, msg)].
+    """기록된 라운드 + cfg(review_loop)로 close 의 result/reason 일관성 검산 → [(kind, Diagnostic)].
     kind: 'mismatch'(사실과 모순 — enforce 가 거부) | 'skip'(cfg/데이터 부족으로 검증 불가 — 항상 WARN, 차단 안 함).
-    7.8단계 A. 결정론(LLM 0, audit 사실 vs cfg 산술 비교만, codex 리뷰 A 반영)."""
+    7.8단계 A. 결정론(LLM 0, audit 사실 vs cfg 산술 비교만, codex 리뷰 A 반영).
+
+    검산 결과는 언어 중립 진단이다 — 여기서 문장을 만들면 같은 모순이 표시 언어마다 다른
+    문자열로 남아, enforce 거부 사유를 나중에 대조할 수 없다. 문장은 `_run_close` 가 만든다."""
     out = []
     rounds = la.rounds_of(root, run_id)
     if not rounds:
         # 라운드 0 — 수렴/승인을 뒷받침할 증거 없음(codex P1). BLOCKED 는 즉시차단 가능하므로 미해당.
         if result == "APPROVED" or reason in ("CONVERGED", "DRY"):
-            out.append(("mismatch", "라운드 기록 0 — 루프가 돈 증거 없는데 수렴/승인 주장"))
+            out.append(("mismatch", Diagnostic("review_loop.term_no_rounds_claims_convergence")))
         else:
-            out.append(("skip", "라운드 기록 0 — 검산할 사실 없음"))
+            out.append(("skip", Diagnostic("review_loop.term_no_rounds_nothing_to_check")))
         return out
     last_survived = int(rounds[-1].get("survived", 0) or 0)
     total_tokens = max((int(r.get("tokens", 0) or 0) for r in rounds), default=0)  # tokens=누적 → max=총량
@@ -360,36 +375,42 @@ def _termination_discrepancies(la, root, run_id, result, reason, iterations, cfg
 
     # APPROVED/CONVERGED 는 미해결(survived>0)과 공존 불가 (cfg 불요)
     if result == "APPROVED" and last_survived > 0:
-        out.append(("mismatch", f"APPROVED 인데 마지막 라운드 survived={last_survived}(미해결 남음) — 수렴 아님"))
+        out.append(("mismatch", Diagnostic("review_loop.term_approved_with_survivors",
+                                           survived=last_survived)))
     if reason == "CONVERGED" and last_survived > 0:
-        out.append(("mismatch", f"CONVERGED 인데 마지막 라운드 survived={last_survived}(0 이어야)"))
+        out.append(("mismatch", Diagnostic("review_loop.term_converged_with_survivors",
+                                           survived=last_survived)))
     # 예산(cfg 필요): APPROVED 면 미초과, BUDGET_TOK 면 초과여야. budget 미설정 → skip+WARN
     if reason == "BUDGET_TOK" or (result == "APPROVED"):
         if budget is None:
-            out.append(("skip", f"budget_tokens[{risk}] 미설정 — 예산 검산 skip"))
+            out.append(("skip", Diagnostic("review_loop.term_budget_unset", risk=risk)))
         else:
             if result == "APPROVED" and total_tokens >= budget:
-                out.append(("mismatch", f"APPROVED 인데 누적 tokens={total_tokens} ≥ budget={budget} — BUDGET_TOK/BLOCKED 여야"))
+                out.append(("mismatch", Diagnostic("review_loop.term_approved_over_budget",
+                                                   tokens=total_tokens, budget=budget)))
             if reason == "BUDGET_TOK" and total_tokens < budget:
-                out.append(("mismatch", f"BUDGET_TOK 인데 누적 tokens={total_tokens} < budget={budget}(초과 아님)"))
+                out.append(("mismatch", Diagnostic("review_loop.term_budget_tok_under_budget",
+                                                   tokens=total_tokens, budget=budget)))
     # 반복 상한(cfg 필요): BUDGET_ITER 면 상한 도달 AND 미수렴(survived>0). max 미설정 → skip
     if reason == "BUDGET_ITER":
         if max_iter is None:
-            out.append(("skip", f"max_iterations[{risk}] 미설정 — 반복상한 검산 skip"))
+            out.append(("skip", Diagnostic("review_loop.term_max_iterations_unset", risk=risk)))
         else:
             if int(iterations) < max_iter:
-                out.append(("mismatch", f"BUDGET_ITER 인데 iterations={iterations} < max[{risk}]={max_iter}(상한 미도달)"))
+                out.append(("mismatch", Diagnostic("review_loop.term_budget_iter_below_max",
+                                                   iterations=iterations, risk=risk,
+                                                   max_iterations=max_iter)))
             if last_survived == 0:
-                out.append(("mismatch", "BUDGET_ITER 인데 마지막 survived=0(수렴함 — CONVERGED 여야)"))
+                out.append(("mismatch", Diagnostic("review_loop.term_budget_iter_converged")))
     # 아키텍처 에스컬레이션(cfg 불요)
     if reason == "BLOCKED_ARCH" and not any_arch:
-        out.append(("mismatch", "BLOCKED_ARCH 인데 arch>0 인 라운드 없음"))
+        out.append(("mismatch", Diagnostic("review_loop.term_blocked_arch_without_arch")))
     # dry 수렴(cfg 필요): 마지막 dry 라운드가 각각 found==0. dry 미설정 → skip
     if reason == "DRY":
         if dry is None:
-            out.append(("skip", "dry_rounds 미설정 — dry 검산 skip"))
+            out.append(("skip", Diagnostic("review_loop.term_dry_rounds_unset")))
         elif len(rounds) < dry or any(int(r.get("found", 0) or 0) > 0 for r in rounds[-dry:]):
-            out.append(("mismatch", f"DRY 인데 마지막 {dry} 라운드에 found>0(신규 있음) 또는 라운드 부족"))
+            out.append(("mismatch", Diagnostic("review_loop.term_dry_not_dry", dry=dry)))
     return out
 
 
@@ -430,10 +451,12 @@ def _run_close(args):
     checks = _termination_discrepancies(la, root, args.run_id, args.result, args.reason, args.iterations, cfg, risk)
     mismatches = [m for k, m in checks if k == "mismatch"]
     for _, m in [(k, m) for k, m in checks if k == "skip"]:
-        print(tr(language_of(args), "cli.review_loop.msg15", m=m), file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg15",
+                 m=render_issue(language_of(args), m)), file=sys.stderr)
     if mismatches:
         for m in mismatches:
-            print(tr(language_of(args), "cli.review_loop.msg16", m=m), file=sys.stderr)
+            print(tr(language_of(args), "cli.review_loop.msg16",
+                     m=render_issue(language_of(args), m)), file=sys.stderr)
         if mode == "enforce":
             print(tr(language_of(args), "cli.review_loop.msg17"), file=sys.stderr)
             return 2
@@ -482,7 +505,10 @@ def _run_show(args):
     for rid in target_runs:
         rounds = la.rounds_of(root, rid)
         close = la.close_of(root, rid)
-        status = f"{close['result']}/{close['reason']} ({close['iterations']}회)" if close else "진행중(미종료)"
+        # result/reason 은 감사 어휘라 번역하지 않는다 — 셈 단위와 미종료 표기만 표시 언어를 따른다.
+        status = (tr(language_of(args), "cli.review_loop.status_closed", result=close["result"],
+                     reason=close["reason"], iterations=close["iterations"])
+                  if close else tr(language_of(args), "cli.review_loop.status_open"))
         print(tr(language_of(args), "cli.review_loop.msg22", rid=rid, status=status, count=len(rounds)))
         if close and close.get("phase00_hash"):
             print(f"      Phase00-Hash: {close['phase00_hash']}")
@@ -504,7 +530,9 @@ def _next_recommendation(la, root, run_id, cfg, risk):
     _termination_discrepancies 와 같은 신호(survived/tokens/arch + cfg tier)를 쓰되, 사후 검산이
     아니라 전향 권고를 낸다. 반환: (action, result, reason, why, skips).
     action == 'STOP' 이면 result/reason 은 close 에 그대로 넘길 값. 권고는 사실 기반이라, 자료가
-    부족한 축(cfg tier 미설정)은 STOP 을 권하지 않고 skip 사유만 남긴다(false STOP 방지)."""
+    부족한 축(cfg tier 미설정)은 STOP 을 권하지 않고 skip 사유만 남긴다(false STOP 방지).
+
+    `why`·`skips` 는 언어 중립 진단이다 — 권고 근거는 판정이고 문장은 `_run_next` 가 만든다."""
     rounds = la.rounds_of(root, run_id)
 
     def _tier_int(section):
@@ -516,12 +544,12 @@ def _next_recommendation(la, root, run_id, cfg, risk):
 
     skips = []
     if budget is None:
-        skips.append(f"budget_tokens[{risk}] 미설정 — 예산 초과 종료 권고 불가")
+        skips.append(Diagnostic("review_loop.next_budget_unset", risk=risk))
     if max_iter is None:
-        skips.append(f"max_iterations[{risk}] 미설정 — 반복상한 종료 권고 불가")
+        skips.append(Diagnostic("review_loop.next_max_iterations_unset", risk=risk))
 
     if not rounds:
-        return ("CONTINUE", None, None, "라운드 기록 0 — 첫 라운드부터 진행", skips)
+        return ("CONTINUE", None, None, Diagnostic("review_loop.next_no_rounds"), skips)
 
     iterations = len(rounds)
     last_survived = int(rounds[-1].get("survived", 0) or 0)
@@ -532,20 +560,23 @@ def _next_recommendation(la, root, run_id, cfg, risk):
     # 우선순위: 아키텍처 > 예산 > 반복상한 > 수렴 > 계속.
     if any_arch:
         return ("STOP", "BLOCKED", "BLOCKED_ARCH",
-                "아키텍처 에스컬레이션 기록됨(arch>0) — 루프 밖 상위 결정 필요", skips)
+                Diagnostic("review_loop.next_arch_escalated"), skips)
     if budget is not None and total_tokens >= budget:
         return ("STOP", "BLOCKED", "BUDGET_TOK",
-                f"누적 tokens={total_tokens} ≥ budget[{risk}]={budget}", skips)
+                Diagnostic("review_loop.next_over_budget", tokens=total_tokens, risk=risk,
+                           budget=budget), skips)
     if max_iter is not None and iterations >= max_iter:
         if converged:
             return ("STOP", "APPROVED", "CONVERGED",
-                    f"반복 상한 도달(iter={iterations}=max[{risk}]={max_iter}) + 마지막 survived=0(수렴)", skips)
+                    Diagnostic("review_loop.next_max_iter_converged", iterations=iterations,
+                               risk=risk, max_iterations=max_iter), skips)
         return ("STOP", "BLOCKED", "BUDGET_ITER",
-                f"반복 상한 도달(iter={iterations}=max[{risk}]={max_iter}) + survived={last_survived}(미수렴)", skips)
+                Diagnostic("review_loop.next_max_iter_unresolved", iterations=iterations,
+                           risk=risk, max_iterations=max_iter, survived=last_survived), skips)
     if converged:
-        return ("STOP", "APPROVED", "CONVERGED", "마지막 라운드 survived=0 — 미해결 없음(수렴)", skips)
+        return ("STOP", "APPROVED", "CONVERGED", Diagnostic("review_loop.next_converged"), skips)
     return ("CONTINUE", None, None,
-            f"마지막 survived={last_survived}(미해결 남음), 예산·반복상한 여유 — 라운드 계속", skips)
+            Diagnostic("review_loop.next_continue", survived=last_survived), skips)
 
 
 def _run_next(args):
@@ -566,8 +597,10 @@ def _run_next(args):
     risk = _run_risk(la, root, args.run_id)
     action, result, reason, why, skips = _next_recommendation(la, root, args.run_id, cfg, risk)
     for s in skips:
-        print(tr(language_of(args), "cli.review_loop.msg26", s=s), file=sys.stderr)
-    print(tr(language_of(args), "cli.review_loop.msg27", why=why), file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg26",
+                 s=render_issue(language_of(args), s)), file=sys.stderr)
+    print(tr(language_of(args), "cli.review_loop.msg27",
+             why=render_issue(language_of(args), why)), file=sys.stderr)
     if action == "CONTINUE":
         print("NEXT: CONTINUE")
     else:
@@ -623,9 +656,13 @@ def _retro_links_by_run(vault, folder):
     return out
 
 
-def _dashboard_md(la, root, retro_links=None):
+def _dashboard_md(la, root, retro_links=None, language=None):
     """loop_audit → Obsidian 대시보드 마크다운(plain 테이블 — DataView 플러그인 무관 항상 가독).
-    run 별 1행: run_id·risk·rounds·found/accepted 합계·종료. 무결성 경고 섹션."""
+    run 별 1행: run_id·risk·rounds·found/accepted 합계·종료. 무결성 경고 섹션.
+
+    사용자가 vault 에서 읽는 산출물이라 본문 문장은 표시 언어를 따른다. 반대로 표 구조 marker,
+    감사 레코드의 필드명 열, `run_id`, `result/reason` 어휘는 언어와 무관하게 고정한다 — 같은
+    사실이 언어마다 다른 문자열로 남으면 두 언어로 쓴 노트를 나중에 대조할 수 없다."""
     retro_links = retro_links or {}
     rows = []
     for rid in la.runs(root):
@@ -635,7 +672,8 @@ def _dashboard_md(la, root, retro_links=None):
                      if r.get("event") == "loop_open" and r.get("run_id") == rid), "")
         f_tot = sum(int(r.get("found", 0) or 0) for r in rounds)
         a_tot = sum(int(r.get("accepted", 0) or 0) for r in rounds)
-        status = f"{close['result']}/{close['reason']}" if close else "진행중"
+        status = (f"{close['result']}/{close['reason']}" if close
+                  else tr(language, "cli.review_loop.dashboard_status_open"))
         iters = close["iterations"] if close else len(rounds)
         retro = ", ".join(retro_links.get(rid, [])) or "-"
         rows.append(f"| {rid} | {risk} | {len(rounds)} | {f_tot} | {a_tot} | {status} | {iters} | {retro} |")
@@ -645,15 +683,23 @@ def _dashboard_md(la, root, retro_links=None):
     # 섞인 개행(`\n## x`)이 H1 본문에 살아 대시보드가 주입 헤딩으로 깨진다.
     name = _project_name(_load_profile(root))
     title_suffix = f" — {_safe_title(name)}" if name else ""
-    body = [f"# SAGE Loop A 감사 대시보드{title_suffix}", "",
-            "> Phase 05 적대적 review-rework 루프 이력. `accepted` 합계 = 리뷰가 채운 host 의 체계적 누락.",
-            "> 정본 데이터: `.sage/loop_audit.jsonl`. 이 노트는 `sage review-loop show --vault` 또는 `loop_audit_dashboard: true` 상태의 close 로 갱신.", "",
-            "| run_id | risk | rounds | found(합) | accepted(합) | 종료 | iters | retro |",
+    # 열 개수는 코드가 고정한다 — 헤더 행 전체를 catalog 에 두면 번역하면서 열이 늘거나 줄어
+    # 구분자 행과 어긋난다. 사람이 읽는 열 이름만 번역하고 감사 필드명 열은 그대로 둔다.
+    header = ("| run_id | risk | rounds"
+              f" | {tr(language, 'cli.review_loop.dashboard_col_found')}"
+              f" | {tr(language, 'cli.review_loop.dashboard_col_accepted')}"
+              f" | {tr(language, 'cli.review_loop.dashboard_col_result')}"
+              " | iters | retro |")
+    body = [f"# {tr(language, 'cli.review_loop.dashboard_title')}{title_suffix}", "",
+            f"> {tr(language, 'cli.review_loop.dashboard_note_accepted')}",
+            f"> {tr(language, 'cli.review_loop.dashboard_note_source')}", "",
+            header,
             "|---|---|---:|---:|---:|---|---:|---|"]
-    body += rows or ["| (기록 없음) | | | | | | | |"]
+    body += rows or [f"| {tr(language, 'cli.review_loop.dashboard_no_records')} | | | | | | | |"]
     integ = la.integrity_issues(root)
     if integ:
-        body += ["", "## ⚠️ 무결성 경고", ""] + [f"- {i}" for i in integ]
+        body += ["", f"## ⚠️ {tr(language, 'cli.review_loop.dashboard_integrity_heading')}", ""]
+        body += [f"- {i}" for i in integ]
     return "\n".join(body) + "\n"
 
 
@@ -678,10 +724,13 @@ def _write_vault_dashboard(la, root, override, language=None):
         print(tr(language, "cli.review_loop.msg30"), file=sys.stderr)
         return
     import datetime
+    # frontmatter 는 노트의 출처 기록이다 — 표시 언어를 따라 흔들리면 같은 산출물이 언어마다 다른
+    # provenance 를 갖고, 나중에 vault 를 훑어 생성기별로 모을 수 없다. 언어 중립으로 고정한다.
     fm = {"tags": ["sage", "loop-audit"], "updated": datetime.date.today().isoformat(),
-          "generated_by": "sage review-loop (close 자동 / show --vault)"}
+          "generated_by": "sage review-loop (close auto / show --vault)"}
     path = _vault.write_note(vault, folder, _dashboard_filename(profile), fm,
-                             _dashboard_md(la, root, _retro_links_by_run(vault, folder)))
+                             _dashboard_md(la, root, _retro_links_by_run(vault, folder),
+                                           language=language))
     print(tr(language, "cli.review_loop.msg31", path=path), file=sys.stderr)
 
 

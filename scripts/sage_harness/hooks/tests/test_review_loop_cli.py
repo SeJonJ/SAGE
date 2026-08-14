@@ -10,6 +10,7 @@ loop_audit 라이브러리(permissive)는 test_loop_audit.py 가 검증. 여기�
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -20,10 +21,18 @@ sys.path.insert(0, REPO)
 from sage.commands import review_loop as review_loop_command  # noqa: E402
 from pathlib import Path
 
+KOREAN = re.compile(r"[가-힣]")
 
-def sage(*args, root=None):
-    """python3 -m sage review-loop <args> 실행 → CompletedProcess."""
-    cmd = [sys.executable, "-m", "sage", "review-loop", *args]
+
+def sage(*args, root=None, lang=None):
+    """python3 -m sage [--lang L] review-loop <args> 실행 → CompletedProcess.
+
+    `--lang` 은 전역 옵션이라 서브커맨드보다 앞에 와야 한다(argparse 계약).
+    """
+    cmd = [sys.executable, "-m", "sage"]
+    if lang:
+        cmd += ["--lang", lang]
+    cmd += ["review-loop", *args]
     if root:
         cmd += ["--root", root]
     return subprocess.run(cmd, cwd=REPO, capture_output=True, text=True)
@@ -456,6 +465,126 @@ class TestReviewLoopNext(unittest.TestCase):
         before = Path(path).read_text(encoding="utf-8")
         sage("next", "--run-id", rid, root=self.tmp)
         self.assertEqual(Path(path).read_text(encoding="utf-8"), before)   # 감사 로그 불변
+
+
+class TestReviewLoopDisplayLanguage(unittest.TestCase):
+    """`--lang en` 에서 종료 검산·권고·요약이 한국어를 흘리지 않고, 판정은 그대로여야 한다.
+
+    이 명령의 판정 문장은 `_termination_discrepancies`·`_next_recommendation` 이 만든다 —
+    둘 다 화면 문구를 직접 들고 있었으므로, 언어를 바꿔도 문장만 바뀌고 exit code 와 기계
+    판독 줄(`NEXT:`)은 바뀌지 않는지 같은 실행을 두 언어로 대조해 확인한다.
+    """
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def _profile(self, body):
+        os.makedirs(os.path.join(self.tmp, "sage"), exist_ok=True)
+        with open(os.path.join(self.tmp, "sage", "project-profile.yaml"), "w", encoding="utf-8") as f:
+            f.write(body)
+
+    def _open(self, risk="L3", lang=None):
+        return sage("open", "--risk", risk, root=self.tmp, lang=lang).stdout.strip().splitlines()[0]
+
+    def _round(self, rid, it=1, found=5, survived=2, accepted=0, tokens=0, arch=0):
+        sage("round", "--run-id", rid, "--iteration", str(it), "--found", str(found),
+             "--survived", str(survived), "--accepted", str(accepted), "--tokens", str(tokens),
+             "--arch", str(arch), root=self.tmp)
+
+    def _assertNoKorean(self, text, label):
+        leaked = [line for line in text.splitlines() if KOREAN.search(line)]
+        self.assertEqual([], leaked, f"{label} 에 한국어가 남았다: {leaked}")
+
+    def test_termination_mismatch_and_skip_are_english_with_same_exit(self):
+        # budget 미설정(=skip) + survived>0 인데 APPROVED(=mismatch) → 두 종류가 한 실행에 다 나온다.
+        self._profile("pdca:\n  review_loop:\n    enabled: true\n    termination_enforce: advisory\n")
+        args = ("close", "--result", "APPROVED", "--reason", "CONVERGED", "--iterations", "1")
+
+        ko_rid = self._open()
+        self._round(ko_rid, survived=2)
+        ko = sage(*args, "--run-id", ko_rid, root=self.tmp)
+        en_rid = self._open()
+        self._round(en_rid, survived=2)
+        en = sage(*args, "--run-id", en_rid, root=self.tmp, lang="en")
+
+        self.assertEqual(0, ko.returncode, ko.stderr)
+        self.assertEqual(ko.returncode, en.returncode)          # 판정 불변
+        self.assertIn("불일치", ko.stderr)                       # 기본은 한국어 유지
+        self._assertNoKorean(en.stderr, "close --lang en stderr")
+        self.assertIn("mismatch", en.stderr)
+        self.assertIn("survived=2", en.stderr)                  # 사실 조각은 언어 무관
+        self.assertIn("skipped", en.stderr)
+
+    def test_enforce_refusal_is_english_and_still_exit_2(self):
+        # 라운드 0 + APPROVED → 근거 없음. enforce 면 거부(exit 2) — 문장만 영어여야 한다.
+        self._profile("pdca:\n  review_loop:\n    enabled: true\n    termination_enforce: enforce\n")
+        args = ("close", "--result", "APPROVED", "--reason", "CONVERGED", "--iterations", "0")
+
+        ko = sage(*args, "--run-id", self._open(), root=self.tmp)
+        en = sage(*args, "--run-id", self._open(), root=self.tmp, lang="en")
+
+        self.assertEqual(2, ko.returncode)
+        self.assertEqual(2, en.returncode)
+        self.assertIn("라운드 기록 0", ko.stderr)
+        self._assertNoKorean(en.stderr, "close enforce --lang en stderr")
+        self.assertIn("no rounds", en.stderr)
+        audit = Path(os.path.join(self.tmp, ".sage", "loop_audit.jsonl")).read_text(encoding="utf-8")
+        self.assertNotIn("loop_close", audit)                   # 거부는 기록하지 않는다(부작용 불변)
+
+    def test_next_recommendation_is_english_with_identical_machine_line(self):
+        self._profile("pdca:\n  review_loop:\n    enabled: true\n"
+                      "    max_iterations: { L3: 3 }\n")   # budget 미설정 → 권고 skip 도 함께 나온다
+        rid = self._open()
+        self._round(rid, survived=2)
+
+        ko = sage("next", "--run-id", rid, root=self.tmp)
+        en = sage("next", "--run-id", rid, root=self.tmp, lang="en")
+
+        self.assertEqual(0, ko.returncode, ko.stderr)
+        self.assertEqual(ko.returncode, en.returncode)
+        self.assertIn("NEXT: CONTINUE", ko.stdout)
+        self.assertEqual(ko.stdout, en.stdout)                  # 기계 판독 줄은 언어 중립
+        self._assertNoKorean(en.stderr, "next --lang en stderr")
+        self.assertIn("budget_tokens[L3]", en.stderr)            # cfg key 는 번역하지 않는다
+
+    def test_next_stop_recommendation_is_english(self):
+        self._profile("pdca:\n  review_loop:\n    enabled: true\n"
+                      "    max_iterations: { L3: 1 }\n    budget_tokens: { L3: 100 }\n")
+        rid = self._open()
+        self._round(rid, survived=0, tokens=10)                 # 수렴 → STOP/APPROVED/CONVERGED
+
+        en = sage("next", "--run-id", rid, root=self.tmp, lang="en")
+
+        self.assertIn("NEXT: STOP result=APPROVED reason=CONVERGED", en.stdout)
+        self._assertNoKorean(en.stderr, "next STOP --lang en stderr")
+
+    def test_show_status_is_english_for_open_and_closed_runs(self):
+        open_rid = self._open()                                  # 미종료 = '진행중'
+        closed_rid = self._open()
+        self._round(closed_rid, survived=0)
+        sage("close", "--run-id", closed_rid, "--result", "APPROVED", "--reason", "CONVERGED",
+             "--iterations", "1", root=self.tmp)
+
+        ko = sage("show", root=self.tmp)
+        en = sage("show", root=self.tmp, lang="en")
+
+        self.assertEqual(ko.returncode, en.returncode)
+        self.assertIn("진행중", ko.stdout)
+        self._assertNoKorean(en.stdout, "show --lang en stdout")
+        self.assertIn(open_rid, en.stdout)
+        self.assertIn("APPROVED/CONVERGED", en.stdout)           # 어휘는 감사 계약 — 번역 안 함
+
+    def test_argparse_count_rejection_is_english(self):
+        rid = self._open()
+        common = ("round", "--run-id", rid, "--iteration", "1", "--survived", "0", "--accepted", "0")
+
+        ko = sage(*common, "--found", "-1", root=self.tmp)
+        en = sage(*common, "--found", "-1", root=self.tmp, lang="en")
+        en_type = sage(*common, "--found", "abc", root=self.tmp, lang="en")
+
+        self.assertEqual(ko.returncode, en.returncode)
+        self.assertNotEqual(0, en.returncode)
+        self._assertNoKorean(en.stderr, "round --found -1 --lang en stderr")
+        self._assertNoKorean(en_type.stderr, "round --found abc --lang en stderr")
 
 
 if __name__ == "__main__":
