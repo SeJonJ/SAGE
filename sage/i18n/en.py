@@ -688,4 +688,10 @@ MESSAGES = {
     "cli.upgrade.lock_failed": "⛔ upgrade lock failed: {error}",
     "cli.upgrade.apply_failed": "⛔ apply failed — everything was rolled back: {error}",
     "cli.upgrade.rollback_failed": "⛔ apply failed ({error}) and the rollback also failed ({rollback}) — the files are in an incomplete state. Restore from the backup named in the report.",
+    "cli.upgrade.blocker_no_scope_receipt": "⛔ the codex CORE skill scope receipt is missing or damaged — the install location is not guessed. Settle it first with `sage install --host codex --skill-scope <global|project-local> --force`.",
+    "cli.upgrade.step": "   · step {name} complete",
+    "cli.upgrade.steps_header": "{count} delegated steps (each owner writes its own bytes):",
+    "cli.upgrade.user_owned_restored": "   ↩ restored user-owned path: {path} (a delegated step touched it, but it is not an upgrade write target)",
+    "cli.upgrade.declaration_only": "   ℹ️  the profile is not bootstrapped, so CORE deployment and hook regeneration are skipped — only the declared values are aligned. Run `/sage-init`, then try again.",
+    "cli.upgrade.blocker_unbootstrapped": "⛔ the profile is not bootstrapped, so CORE cannot be deployed — finishing here would look like an upgrade while the new assets are absent. Fill in the profile with `/sage-init` and run again.",
 }

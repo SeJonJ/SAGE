@@ -6,6 +6,7 @@ self-contained: 합성 skill 입력 + config. 특정 프로젝트 비의존(독�
 import os
 import sys
 import unittest
+import warnings
 
 SAGE_SCRIPTS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, SAGE_SCRIPTS)
@@ -87,6 +88,12 @@ class TestSkillExtract(unittest.TestCase):
         a = rs.claims_to_yaml(rs.extract_claims(CLAUDE, CODEX, GUIDE, CFG))
         b = rs.claims_to_yaml(rs.extract_claims(CLAUDE, CODEX, GUIDE, CFG))
         self.assertEqual(a, b)
+
+    def test_step_label_emits_no_deprecation_warning(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            self.assertEqual(rs._step_label("**변경 파일 감지**: git diff 로 추출"), "변경 파일 감지")
+            self.assertEqual(rs._step_label("path — 설명"), "path")
 
     def test_noise_filters(self):
         # design-review 추출 노이즈 보강: when_to_use 부분문자열 단어 + procedure 읽기대상 파일참조 배제

@@ -23,8 +23,8 @@ Every check in `publish_preflight.py` is independent and all of them run. Stoppi
 | `version` | Publishing a placeholder such as `0.0.0` cannot be undone |
 | `catalog` | A key present on only one side falls through to a runtime fallback, so users discover the gap instead of the build |
 | `docs-pair` | Releasing with only one language updated lets the two documents drift apart |
-| `inventory` | If the inventory disagrees with the code, the remaining scope is not a fact, and the release judgement rests on it |
-| `upgrade` | An upgrade contract that is not wired into the runner lets regressions in at any time |
+| `inventory` | The inventory must match the code and contain zero user-visible literals pending catalog migration. A current list is not completion |
+| `upgrade` | A real v0.9.84 consumer must receive each new managed CORE file and its receipt together. Command and test registration alone are insufficient |
 | `mutation` | A repository that changed during release preparation means a version was raised without approval |
 
 `publish` cannot be undone. PyPI will not accept the same version twice, and a tag has already spread to other clones. So this check asks not "does it build" but **"does the artifact claim the same thing the repository claims"**.

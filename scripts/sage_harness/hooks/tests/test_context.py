@@ -110,6 +110,28 @@ class TestContextPacket(unittest.TestCase):
         self.assertIn("Decision: portable packet", briefing)
         self.assertIn("source_sha256", briefing)
 
+    def test_restore_reads_legacy_v1_packet_without_document_language(self):
+        made = self._snapshot()
+        current = Path(made["path"])
+        packet = json.loads(current.read_text(encoding="utf-8"))
+        packet["schema_version"] = 1
+        del packet["payload"]["cycle"]["document_language"]
+
+        import hashlib
+        core = {key: packet[key] for key in ("schema_version", "created_at", "payload")}
+        canonical = json.dumps(
+            core, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        digest = hashlib.sha256(canonical).hexdigest()
+        packet["integrity_sha256"] = "sha256:" + digest
+        packet["snapshot_id"] = "ctx-" + digest[:16]
+        legacy = current.parent / f"02-{packet['snapshot_id']}.json"
+        legacy.write_text(json.dumps(packet), encoding="utf-8")
+
+        restored = restore_snapshot(self.root, legacy)
+        self.assertIsNone(restored["document_language"])
+        self.assertEqual(restored["next_phase"], "03")
+
     def test_snapshot_requires_every_phase_through_completed_boundary(self):
         (self.root / "plan_docs/01-plan/sandbox-cycle.md").unlink()
 

@@ -5,18 +5,30 @@
 없다. 그래서 여기서는 부트스트랩 게이트도, profile 검증 실패도 실행 자체를 막지 않는다 —
 읽을 수 있는 만큼 읽고 못 읽은 축은 `unknown` 으로 보고한다.
 
-쓰는 것과 안 쓰는 것을 좁고 명시적으로 가른다. upgrade 가 소유하는 것은 **선언 값**뿐이다:
+upgrade 는 **소비 프로젝트를 현재 엔진 상태로 끌어올린다.** 신규 managed CORE 자산 배포,
+manifest·receipt 갱신, hook 재생성, overlay 재적용, 전체 검증까지가 한 단위다. 선언 값만 고치면
+사용자는 "upgrade 했다"고 믿는데 새 CORE 파일은 없는 상태로 남는다 — 그 상태가 조용히 통과하는
+것이 이 명령의 가장 위험한 실패다.
+
+**각 단계의 바이트는 원래 주인이 만든다.** CORE 배포는 `install`, hook 산출물은 `generate`,
+overlay 물리화는 `sync-overlays` 가 소유한다. upgrade 는 그것들을 **순서대로 부르고 하나의
+트랜잭션으로 감싼다** — 여기서 배치 로직을 다시 구현하면 같은 바이트의 주인이 둘이 되고,
+그 뒤로는 drift 의 원인을 아무도 역추적할 수 없다.
+
+upgrade 자신이 직접 쓰는 것은 선언 값 둘뿐이다:
 
   · `sage/project-profile.yaml` 의 `sage.required_version` scalar 한 개
   · `.sage/cycle.json` 의 schema 1 → 2 미러 이행
 
-local profile·policy·overlay·authored asset·plan/evidence/audit/vault·프로젝트 코드·검증
-스크립트는 **write target 이 아니다**. 렌더 바이트도 아니다 — 그건 `sage install --force` 가
-소유하고, upgrade 가 남의 소유물을 대신 덮으면 어느 명령이 그 파일을 만들었는지 알 수 없게 된다.
+local profile·policy·overlay 원본·authored asset·plan/evidence/audit/vault·프로젝트 코드·검증
+스크립트는 **어느 단계에서도 write target 이 아니다.**
 
-`--force` 는 "남의 파일을 덮어라"가 아니라 **"내가 소유하지 않은 drift 가 있어도 내 write set 은
-진행하라"**다. 덮는 범위를 넓히는 플래그로 만들면 이름과 동작이 어긋나고, 사용자는 그 차이를
-사고가 난 뒤에 알게 된다.
+**실패하면 일괄 되돌린다.** 각 단계가 자기 트랜잭션을 갖고 있어도 단계 사이에서 실패하면 앞
+단계는 이미 커밋돼 있다. 그래서 upgrade 는 시작 전에 프로젝트 트리 전체를 스냅샷하고, 어느
+단계에서 실패하든 그 스냅샷으로 복원한다 — 부분 적용 상태는 사용자가 무엇을 믿어야 할지 알 수
+없게 만든다.
+
+`--force` 는 "남의 파일을 덮어라"가 아니라 **"내가 소유하지 않은 drift 가 있어도 진행하라"**다.
 
 자동 downgrade 는 없다. 되돌리려면 apply 가 남긴 backup 으로 복구한다(보고서에 경로가 있다).
 """
@@ -152,10 +164,37 @@ def _plan(root, language):
     # 진행하라"는 뜻이지 이걸 덮으라는 뜻이 아니다.
     unowned = _unowned_drift(axes, __version__, language)
 
+    # 위임 단계에 넘길 설치 형태. **추측하지 않는다** — scope 를 잘못 고르면 CORE skill 이
+    # 사용자가 고르지 않은 자리에 깔리고, 그건 upgrade 가 만든 새 drift 다.
+    receipts = (manifest or {}).get("core_skill_receipts")
+    host = (manifest or {}).get("host_runtime") or UNKNOWN
+    scope = None
+    if isinstance(receipts, dict) and isinstance(receipts.get(host), dict):
+        scope = receipts[host].get("scope")
+    if host == "codex" and scope not in ("global", "project-local", "disabled"):
+        blockers.append(tr(language, "cli.upgrade.blocker_no_scope_receipt"))
+
+    project = (profile or {}).get("project") if isinstance(profile, dict) else None
+    prefix = project.get("prefix") if isinstance(project, dict) else None
+
+    # 부트스트랩 미완이면 CORE 배포가 의미를 갖지 못한다(risk glob 0 → 게이트 무력). 그렇다고
+    # upgrade 자체를 막으면 버전 불일치의 탈출 통로가 사라지므로(FR-U03), 선언 값만 맞추고
+    # 무엇을 건너뛰었는지 화면에 남긴다.
+    from sage.commands._common import is_bootstrapped
+    bootstrapped = bool(profile) and is_bootstrapped(profile)
+    if profile_raw and not profile_error and not bootstrapped:
+        # **성공으로 끝내지 않는다.** CORE 배포를 건너뛰고 exit 0 을 내면 사용자는 업그레이드가
+        # 됐다고 믿는데 새 자산은 없다 — 이 명령에서 가장 위험한 실패다. 명령은 여전히 서고
+        # (FR-U03) 무엇이 왜 안 됐는지 말하되, 상태는 blocker 다.
+        blockers.append(tr(language, "cli.upgrade.blocker_unbootstrapped"))
+
     return {
         "axes": {"required": axes.required, "installed": axes.installed,
                  "generated": axes.generated, "runtime": axes.runtime},
-        "host_runtime": (manifest or {}).get("host_runtime") or UNKNOWN,
+        "host_runtime": host,
+        "bootstrapped": bootstrapped,
+        "skill_scope": scope,
+        "prefix": prefix if isinstance(prefix, str) and prefix else None,
         "writes": writes,
         "unowned_drift": unowned,
         "notes": notes,
@@ -252,6 +291,58 @@ def _print_report(plan, blockers, language, applied):
         print(tr(language, "cli.upgrade.applied", count=applied))
 
 
+# --- 전체 트랜잭션 -----------------------------------------------------------
+
+# 스냅샷에서 뺄 것. `.git` 은 크고 upgrade 가 건드리지 않는다. 나머지는 재생성 가능한 캐시다.
+_SNAPSHOT_SKIP = {".git", "__pycache__", ".venv", "node_modules", ".mypy_cache", ".pytest_cache"}
+
+
+def _snapshot_tree(root):
+    """(경로 → (mode, bytes)). 단계 사이 실패에서 되돌릴 유일한 근거다.
+
+    각 단계(install·generate·sync-overlays)는 자기 트랜잭션을 갖지만, **단계와 단계 사이**에서
+    실패하면 앞 단계는 이미 커밋돼 있다. 부분 적용 상태는 사용자가 무엇을 믿어야 할지 알 수
+    없게 만들므로, 전체를 한 단위로 되돌린다.
+    """
+    captured = {}
+    for base, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in _SNAPSHOT_SKIP]
+        for name in files:
+            path = os.path.join(base, name)
+            try:
+                if os.path.islink(path):
+                    continue          # 심링크는 대상이 바깥일 수 있어 되돌리기 대상이 아니다
+                with open(path, "rb") as handle:
+                    captured[os.path.relpath(path, root)] = (
+                        os.stat(path).st_mode & 0o777, handle.read())
+            except OSError:
+                continue
+    return captured
+
+
+def _restore_tree(root, captured):
+    """스냅샷 상태로 되돌린다. (복원 성공 여부, 남은 문제)."""
+    problems = []
+    current = _snapshot_tree(root)
+    for rel in sorted(set(current) - set(captured)):
+        try:
+            os.unlink(os.path.join(root, rel))
+        except OSError as exc:
+            problems.append(f"삭제 실패 {rel}: {type(exc).__name__}")
+    for rel, (mode, body) in sorted(captured.items()):
+        if current.get(rel) == (mode, body):
+            continue
+        path = os.path.join(root, rel)
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as handle:
+                handle.write(body)
+            os.chmod(path, mode)
+        except OSError as exc:
+            problems.append(f"복원 실패 {rel}: {type(exc).__name__}")
+    return (not problems), problems
+
+
 # --- 적용 -------------------------------------------------------------------
 
 def _apply_required_version(raw, item):
@@ -266,64 +357,200 @@ def _apply_required_version(raw, item):
     return raw[:start] + replacement + raw[end:]
 
 
+class _StepArgs:
+    """위임 대상 명령이 기대하는 최소 인자 묶음."""
+
+    def __init__(self, **fields):
+        self.__dict__.update(fields)
+
+
+def _managed_steps(root, plan, language):
+    """위임할 단계들. 각 단계는 (이름, 호출) 이며 바이트의 주인은 그 명령이다.
+
+    upgrade 는 순서와 트랜잭션만 소유한다 — 배치 로직을 여기서 다시 구현하면 같은 바이트의
+    주인이 둘이 되고, 그 뒤로는 drift 의 원인을 역추적할 수 없다.
+    """
+    host = plan["host_runtime"]
+    scope = plan.get("skill_scope")
+    steps = []
+
+    def install_core():
+        from sage.commands import install
+        # `--skill-scope` 는 codex 전용이다. claude 에 넘기면 install 이 usage 오류로 끝나고,
+        # upgrade 는 "CORE 배포 실패" 로 읽어 전체를 되돌린다 — 원인이 두 단계 떨어져 보인다.
+        args = _StepArgs(host=host, dest=root, prefix=plan.get("prefix") or "sage",
+                         force=True, no_global_skill=False,
+                         skill_scope=(scope if host == "codex" else None))
+        return install.run(args)
+
+    def regenerate_hooks():
+        from sage.commands import generate
+        args = _StepArgs(kind="hook", id=None, write=True, target="both",
+                         dest=root, root=root, deploy_codex=False)
+        return generate.run(args)
+
+    def rematerialize_overlays():
+        from sage.commands import sync_overlays
+        return sync_overlays.run(_StepArgs(root=root))
+
+    def validate_all():
+        from sage.commands import validate
+        return validate.run(_StepArgs(check=False, schema=True, strict=False,
+                                      kind="all", id=None, root=root))
+
+    if host in ("claude", "codex") and plan.get("bootstrapped"):
+        steps.append(("core-assets", install_core))
+        steps.append(("hooks", regenerate_hooks))
+        steps.append(("overlays", rematerialize_overlays))
+        steps.append(("validate", validate_all))
+    return steps
+
+
+# FR-U05 보호 집합. **위임 단계가 이걸 건드려도 upgrade 는 되돌린다.**
+#
+# `install --force` 는 profile 이 선언하지 않은 `verify-changes.sh` 를 자기 자산으로 보고 덮는다.
+# install 단독 실행에서는 사용자가 `--force` 를 직접 친 것이라 그 계약이 성립하지만, upgrade 는
+# 사용자가 "버전을 맞춰라" 라고 한 것이지 "내 검증 스크립트를 버려라" 라고 한 것이 아니다.
+# 위임한다고 해서 위임처의 계약이 이쪽 계약을 덮어쓰지는 않는다.
+_USER_OWNED_PREFIXES = (
+    os.path.join("sage", "project-profile.local.yaml"),
+    os.path.join("sage", "asset_overrides") + os.sep,
+    "plan_docs" + os.sep,
+    os.path.join(".sage", "override.jsonl"),
+    os.path.join(".sage", "acceptance-waivers.jsonl"),
+    os.path.join(".sage", "loop_audit.jsonl"),
+    os.path.join(".sage", "retro_audit.jsonl"),
+    os.path.join(".sage", "fast_cycle.jsonl"),
+    os.path.join("scripts", "verify-changes.sh"),
+)
+
+
+def _is_user_owned(rel):
+    normalized = rel.replace("/", os.sep)
+    return any(normalized == prefix or normalized.startswith(prefix)
+               for prefix in _USER_OWNED_PREFIXES)
+
+
+def _capture_times(root, snapshot):
+    """사용자 소유 경로의 mtime. 복원이 흔적을 남기면 그것도 사용자 파일을 건드린 것이다."""
+    times = {}
+    for rel in snapshot:
+        if not _is_user_owned(rel):
+            continue
+        try:
+            stat_result = os.stat(os.path.join(root, rel))
+            times[rel] = (stat_result.st_atime_ns, stat_result.st_mtime_ns)
+        except OSError:
+            continue
+    return times
+
+
+def _restore_user_owned(root, snapshot, times=None):
+    """위임 단계가 건드린 사용자 소유 경로를 원래대로 되돌린다. 되돌린 경로 목록을 준다."""
+    reverted = []
+    current = _snapshot_tree(root)
+    for rel in sorted(set(snapshot) | set(current)):
+        if not _is_user_owned(rel):
+            continue
+        was, now = snapshot.get(rel), current.get(rel)
+        if was == now:
+            continue
+        path = os.path.join(root, rel)
+        if was is None:
+            try:
+                os.unlink(path)
+                reverted.append(rel)
+            except OSError:
+                pass
+            continue
+        mode, body = was
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as handle:
+            handle.write(body)
+        os.chmod(path, mode)
+        stamp = (times or {}).get(rel)
+        if stamp:
+            try:
+                os.utime(path, ns=stamp)
+            except OSError:
+                pass
+        reverted.append(rel)
+    return reverted
+
+
+# 각 단계가 성공으로 인정하는 exit code. validate 의 STALE(3) 은 여기서 실패다 — upgrade 가
+# 끝난 뒤에도 STALE 이면 그건 hook 재생성이 제 일을 못 했다는 뜻이다.
+_STEP_OK = {"core-assets": {0}, "hooks": {0}, "overlays": {0}, "validate": {0}}
+
+
 def _apply(root, plan, language):
-    """(applied_count, error, rollback_complete). 실패하면 전부 되돌린다."""
-    from sage.install_transaction import (DestinationLock, InstallBusyError, InstallDriftError,
-                                          InstallTransaction, capture_paths, verify_captured)
+    """(applied_count, error, rollback_complete).
 
-    targets = [os.path.join(root, item["path"]) for item in plan["writes"]]
-    if not targets:
-        return 0, "", True
+    선언 write 와 위임 단계를 **하나의 단위**로 다룬다. 단계 사이에서 실패하면 앞 단계는 이미
+    자기 트랜잭션을 커밋했으므로, 시작 전 스냅샷으로 전체를 되돌리는 것이 유일한 방법이다.
+    """
+    from sage.install_transaction import DestinationLock, InstallBusyError
 
+    # **install 과 같은 lock 을 쥐면 안 된다.** upgrade 는 install 을 위임 단계로 부르는데,
+    # 같은 destination lock 을 이미 들고 있으면 그 단계가 "다른 install 이 실행 중" 으로 실패한다.
+    # 그래서 upgrade 는 `.sage` 를 identity 로 하는 별도 lock 을 쥔다 — upgrade 끼리는 상호
+    # 배타이고, 각 단계는 자기 lock 을 정상적으로 얻는다.
+    upgrade_lock_root = os.path.join(root, ".sage")
+    os.makedirs(upgrade_lock_root, exist_ok=True)
     try:
-        lock = DestinationLock(root)
+        lock = DestinationLock(upgrade_lock_root)
     except InstallBusyError as exc:
         return 0, tr(language, "cli.upgrade.lock_failed", error=str(exc)), True
 
     lock.acquire()
+    snapshot = _snapshot_tree(root)
+    user_times = _capture_times(root, snapshot)
+    applied = 0
     try:
-        captured = capture_paths(targets)
-        transaction = InstallTransaction(expected=captured, write_roots=(root,))
-        try:
-            for item in plan["writes"]:
-                absolute = os.path.join(root, item["path"])
-                if item["kind"] == "required_version":
-                    with open(absolute, encoding="utf-8") as handle:
-                        raw = handle.read()
-                    updated = _apply_required_version(raw, item)
-                    if updated is None:
-                        raise InstallDriftError("required_version 위치가 판정 시점과 다름")
-                    body = updated.encode("utf-8")
-                elif item["kind"] == "cycle_schema":
-                    body = (json.dumps({"version": 2, "cycle_stem": item["cycle_stem"],
-                                        "document_language": item["document_language"],
-                                        "declared_at": time.strftime("%Y-%m-%dT%H:%M:%SZ",
-                                                                     time.gmtime())},
-                                       ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-                else:
-                    raise InstallDriftError(f"알 수 없는 write kind: {item['kind']}")
-                mode = os.stat(absolute).st_mode & 0o777
-                transaction.declare_file_output(absolute, body, mode)
-                transaction.stage_write(absolute)
-                with open(absolute, "wb") as handle:
-                    handle.write(body)
-                os.chmod(absolute, mode)
-                transaction.record_output(absolute)
-            transaction.verify_outputs()
-            verify_captured({k: v for k, v in captured.items() if k not in set(targets)})
-            transaction.commit()
-            return len(plan["writes"]), "", True
-        except BaseException as exc:
-            try:
-                transaction.rollback()
-            except BaseException as rollback_error:
-                return 0, tr(language, "cli.upgrade.rollback_failed",
-                             error=f"{type(exc).__name__}: {exc}",
-                             rollback=f"{type(rollback_error).__name__}"), False
-            return 0, tr(language, "cli.upgrade.apply_failed",
-                         error=f"{type(exc).__name__}: {exc}"), True
+        for item in plan["writes"]:
+            _write_declaration(root, item)
+            applied += 1
+        for name, run_step in _managed_steps(root, plan, language):
+            code = run_step()
+            if code not in _STEP_OK[name]:
+                raise RuntimeError(f"{name} 단계가 exit {code}")
+            applied += 1
+        reverted = _restore_user_owned(root, snapshot, user_times)
+        for rel in reverted:
+            print(tr(language, "cli.upgrade.user_owned_restored", path=rel))
+        return applied, "", True
+    except BaseException as exc:
+        restored, problems = _restore_tree(root, snapshot)
+        detail = f"{type(exc).__name__}: {exc}"
+        if not restored:
+            return 0, tr(language, "cli.upgrade.rollback_failed",
+                         error=detail, rollback="; ".join(problems[:3])), False
+        return 0, tr(language, "cli.upgrade.apply_failed", error=detail), True
     finally:
         lock.release()
+
+
+def _write_declaration(root, item):
+    """upgrade 가 직접 소유하는 두 선언 값. 나머지 바이트는 위임 단계가 만든다."""
+    absolute = os.path.join(root, item["path"])
+    if item["kind"] == "required_version":
+        with open(absolute, encoding="utf-8") as handle:
+            raw = handle.read()
+        updated = _apply_required_version(raw, item)
+        if updated is None:
+            raise RuntimeError("required_version 위치가 판정 시점과 다름")
+        body = updated.encode("utf-8")
+    elif item["kind"] == "cycle_schema":
+        body = (json.dumps({"version": 2, "cycle_stem": item["cycle_stem"],
+                            "document_language": item["document_language"],
+                            "declared_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+                           ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    else:
+        raise RuntimeError(f"알 수 없는 write kind: {item['kind']}")
+    mode = os.stat(absolute).st_mode & 0o777
+    with open(absolute, "wb") as handle:
+        handle.write(body)
+    os.chmod(absolute, mode)
 
 
 # --- 진입점 -----------------------------------------------------------------

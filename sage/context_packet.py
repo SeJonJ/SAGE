@@ -452,7 +452,7 @@ def _load_packet(root: Path, snapshot_path: str | os.PathLike[str], limit: int) 
     packet = _expect_mapping(packet, "envelope", {
         "schema_version", "created_at", "snapshot_id", "payload", "integrity_sha256",
     })
-    if packet["schema_version"] != SCHEMA_VERSION:
+    if packet["schema_version"] not in (1, SCHEMA_VERSION):
         raise ContextError(f"unsupported context packet schema_version: {packet['schema_version']!r}")
     core = {key: packet[key] for key in ("schema_version", "created_at", "payload")}
     digest = _digest(_canonical(core))
@@ -462,8 +462,13 @@ def _load_packet(root: Path, snapshot_path: str | os.PathLike[str], limit: int) 
     payload = _expect_mapping(packet["payload"], "payload", {
         "project", "cycle", "runtime", "profile", "manifest", "phase_docs", "compaction",
     })
-    cycle = _expect_mapping(payload["cycle"], "cycle",
-                            {"stem", "completed_phase", "next_phase", "document_language"})
+    cycle_keys = ({"stem", "completed_phase", "next_phase"}
+                  if packet["schema_version"] == 1
+                  else {"stem", "completed_phase", "next_phase", "document_language"})
+    cycle = _expect_mapping(payload["cycle"], "cycle", cycle_keys)
+    if packet["schema_version"] == 1:
+        # v1에는 문서 언어가 없다. legacy를 한국어 선택으로 위조하지 않고 미선언으로 읽는다.
+        cycle["document_language"] = None
     if cycle["document_language"] is not None and cycle["document_language"] not in DOCUMENT_LANGUAGES:
         raise ContextError("malformed context packet cycle")
     binding = _cycle_binding()

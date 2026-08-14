@@ -67,8 +67,8 @@ def _section_kind(header_low, eff):
 def _step_label(text):
     """절차 step 텍스트 → 안정 식별 라벨(앞 토큰 기반, 결정론). 서술 전체 대신 핵심구만."""
     # "**변경 파일 감지**: ..." → "변경 파일 감지" (마크다운 ** ` 제거, — 뒤 설명 제거)
-    head = re.split(r"[:：]", text, 1)[0].strip()
-    head = re.split(r"\s+[—–-]\s+", head, 1)[0].strip()   # "path — 설명" → "path" 제거 방향이나 라벨은 앞부분
+    head = re.split(r"[:：]", text, maxsplit=1)[0].strip()
+    head = re.split(r"\s+[—–-]\s+", head, maxsplit=1)[0].strip()   # "path — 설명" → "path" 제거 방향이나 라벨은 앞부분
     head = head.replace("**", "")
     head = re.sub(r"`[^`]*`", "", head).strip()
     return head[:40]

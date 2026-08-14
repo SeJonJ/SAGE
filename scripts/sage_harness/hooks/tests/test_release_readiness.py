@@ -75,12 +75,24 @@ class TestPreflightBlocksWhatItClaims(unittest.TestCase):
         finally:
             module._engine_version = real
 
-    def test_upgrade_evidence_requires_runner_registration(self):
-        """파일 존재가 아니라 실행 등록을 본다 — 안 도는 테스트는 계약의 근거가 못 된다."""
+    def test_upgrade_evidence_rejects_scalar_only_apply(self):
+        """등록만 보지 않는다 — 실제 구 설치본에 신규 managed 자산이 생겨야 완료다."""
         module = _load_preflight()
-        self.assertEqual(module.check_upgrade_evidence(), [])
+        findings = module._managed_upgrade_findings(0, False, None)
+        self.assertTrue(findings, "신규 managed CORE 자산을 배포하지 않는 upgrade가 통과했다")
+        self.assertIn("language-policy", str(findings[0]))
         runner = REPO / "scripts" / "sage_harness" / "hooks" / "tests" / "run-all.sh"
         self.assertIn("test_upgrade.py", runner.read_text(encoding="utf-8"))
+
+    def test_unmigrated_user_messages_block_release(self):
+        """최신 목록도 key 없는 항목이 있으면 완료가 아니다."""
+        module = _load_preflight()
+        findings = module._inventory_completion_findings([
+            {"key": "cli.ready", "hook_reachable": False},
+            {"key": None, "hook_reachable": True},
+        ])
+        self.assertTrue(findings, "catalog key 없는 사용자 표시 literal이 있는데 release가 허용됐다")
+        self.assertIn("미이관", str(findings[0]))
 
     def test_preflight_never_mutates_the_repository(self):
         """검사 도구가 version 을 올리면 승인 경계가 사라진다."""
@@ -134,6 +146,14 @@ class TestPlatformSmokeContract(unittest.TestCase):
         self.assertIn("publish_preflight.py", publish)
         ci = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         self.assertIn("publish_preflight.py", ci)
+
+    def test_preflight_jobs_fetch_the_supported_floor_tag(self):
+        """v0.9.84 fixture를 읽는 검사가 shallow checkout에서 이유 없이 실패하면 안 된다."""
+        ci = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        release_job = ci.split("  release_evidence:", 1)[1]
+        self.assertIn("fetch-depth: 0", release_job)
+        publish = (REPO / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+        self.assertIn("fetch-depth: 0", publish)
 
 
 class TestReadinessDocument(unittest.TestCase):

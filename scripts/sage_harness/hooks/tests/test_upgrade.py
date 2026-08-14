@@ -36,14 +36,24 @@ components:
 """
 
 
+# 비교에서 빼는 것. `__pycache__` 는 재생성 캐시라 내용이 실행마다 달라지고,
+# `.sage/upgrades` 는 **실패 기록이 롤백에서 살아남아야** 하므로 의도적으로 남는다 —
+# 무엇이 왜 실패했는지 사용자가 읽을 수 있어야 한다.
+_TREE_SKIP_DIRS = {"__pycache__", ".git", ".venv"}
+_TREE_SKIP_PREFIX = (os.path.join(".sage", "upgrades") + os.sep,)
+
+
 def _tree(root):
     out = {}
-    for base, _dirs, files in os.walk(root):
+    for base, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in _TREE_SKIP_DIRS]
         for name in files:
             path = os.path.join(base, name)
+            rel = os.path.relpath(path, root)
+            if any(rel.startswith(prefix) for prefix in _TREE_SKIP_PREFIX):
+                continue
             stat = os.stat(path)
-            out[os.path.relpath(path, root)] = (
-                Path(path).read_bytes(), stat.st_mode & 0o777, stat.st_mtime_ns)
+            out[rel] = (Path(path).read_bytes(), stat.st_mode & 0o777, stat.st_mtime_ns)
     return out
 
 
@@ -55,14 +65,32 @@ class Args:
         self.force = kw.get("force", False)
 
 
-def _install(root, profile=PROFILE, manifest=None):
-    os.makedirs(os.path.join(root, "docs", "sage_harness"), exist_ok=True)
-    os.makedirs(os.path.join(root, "sage"), exist_ok=True)
-    Path(root, "docs", "sage_harness", ".manifest.json").write_text(
-        json.dumps(manifest if manifest is not None else
-                   {"sage_version": __version__, "generator_version": __version__,
-                    "host_runtime": "claude", "assets": {}}),
-        encoding="utf-8")
+def _install(root, profile=PROFILE, manifest=None, real=True):
+    """실제 설치본을 만든다.
+
+    손으로 만든 manifest 는 upgrade 가 선언 값만 고치던 시절의 fixture 였다. upgrade 가 이제
+    CORE 배포·hook 재생성·overlay 재적용까지 하므로, **가짜 트리에서는 그 단계들이 검증되지
+    않는다** — 정작 사용자가 겪는 경로가 미검증으로 남는다.
+
+    `real=False` 는 판정 단계(blocker)만 보는 테스트용이다. 그 경우 위임 단계까지 가지 않는다.
+    """
+    if real:
+        done = subprocess.run(
+            [sys.executable, "-m", "sage", "install", "--host", "claude",
+             "--prefix", "smoke", "--dest", str(root)],
+            cwd=str(REPO), env=dict(os.environ, PYTHONPATH=str(REPO)),
+            capture_output=True, text=True)
+        assert done.returncode == 0, f"fixture install 실패:\n{done.stdout}\n{done.stderr}"
+    else:
+        os.makedirs(os.path.join(root, "docs", "sage_harness"), exist_ok=True)
+        os.makedirs(os.path.join(root, "sage"), exist_ok=True)
+    if manifest is not None:
+        Path(root, "docs", "sage_harness", ".manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8")
+    elif not real:
+        Path(root, "docs", "sage_harness", ".manifest.json").write_text(
+            json.dumps({"sage_version": __version__, "generator_version": __version__,
+                        "host_runtime": "claude", "assets": {}}), encoding="utf-8")
     if profile is not None:
         Path(root, "sage", "project-profile.yaml").write_text(profile, encoding="utf-8")
     return root
@@ -141,7 +169,8 @@ class TestApplyIsSurgical(unittest.TestCase):
         root = _install(tempfile.mkdtemp())
         owned = {
             os.path.join("sage", "project-profile.local.yaml"): "interface:\n  language: en\n",
-            os.path.join("sage", "asset_overrides", "agents", "qa.md"): "overlay\n",
+            os.path.join("sage", "asset_overrides", "agents", "implementer-a.md"):
+                "<!-- overlay -->\nproject rule\n",
             os.path.join("plan_docs", "00-base_plan", "demo.md"): "Cycle-Stem: `demo`\n",
             os.path.join(".sage", "override.jsonl"): '{"kind":"grant"}\n',
             os.path.join("scripts", "verify-changes.sh"): "#!/bin/sh\nexit 0\n",
@@ -159,7 +188,7 @@ class TestApplyIsSurgical(unittest.TestCase):
 
     def test_ambiguous_required_version_blocks_before_mutation(self):
         """고칠 자리가 하나로 특정되지 않으면 추측하지 않는다."""
-        root = _install(tempfile.mkdtemp(), profile=(
+        root = _install(tempfile.mkdtemp(), real=False, profile=(
             'project:\n  name: "c"\nsage:\n  required_version: "0.0.1"\n'
             '  required_version: "0.0.2"\n'))
         before = _tree(root)
@@ -168,7 +197,7 @@ class TestApplyIsSurgical(unittest.TestCase):
         self.assertEqual(_tree(root)[profile], before[profile])
 
     def test_a_damaged_manifest_blocks_before_mutation(self):
-        root = _install(tempfile.mkdtemp())
+        root = _install(tempfile.mkdtemp(), real=False)
         Path(root, "docs", "sage_harness", ".manifest.json").write_text("{ broken", encoding="utf-8")
         before = _tree(root)
         self.assertEqual(_run(root, apply=True), up.EXIT_BLOCKED)
@@ -194,7 +223,7 @@ class TestApplyIsSurgical(unittest.TestCase):
 
 class TestOwnershipBoundary(unittest.TestCase):
     def test_unowned_drift_blocks_a_normal_apply(self):
-        root = _install(tempfile.mkdtemp(), manifest={
+        root = _install(tempfile.mkdtemp(), real=False, manifest={
             "sage_version": "0.0.1", "generator_version": __version__,
             "host_runtime": "claude", "assets": {}})
         before = _tree(root)
@@ -202,29 +231,143 @@ class TestOwnershipBoundary(unittest.TestCase):
         profile = os.path.join("sage", "project-profile.yaml")
         self.assertEqual(_tree(root)[profile], before[profile])
 
-    def test_force_proceeds_with_its_own_write_set_only(self):
-        """--force 는 '남의 파일을 덮어라'가 아니라 '내 write set 은 진행하라'다."""
-        root = _install(tempfile.mkdtemp(), manifest={
-            "sage_version": "0.0.1", "generator_version": __version__,
-            "host_runtime": "claude", "assets": {}})
-        manifest_rel = os.path.join("docs", "sage_harness", ".manifest.json")
-        before = _tree(root)[manifest_rel]
+    def test_force_proceeds_past_drift_it_does_not_own(self):
+        """--force 는 "덮는 범위를 넓혀라"가 아니라 "소유하지 않은 drift 가 있어도 진행하라"다.
+
+        manifest 는 이제 갱신된다 — upgrade 가 CORE 배포를 위임하므로 그 단계의 주인인
+        `install` 이 receipt 를 다시 쓴다. 바뀌는 것 자체가 계약이고 **누가 썼는가**가 경계다.
+        """
+        root = _install(tempfile.mkdtemp())
+        Path(root, "sage", "project-profile.yaml").write_text(PROFILE, encoding="utf-8")
+        manifest_path = Path(root, "docs", "sage_harness", ".manifest.json")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["sage_version"] = "0.0.1"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        self.assertEqual(_run(root, apply=True), up.EXIT_BLOCKED,
+                         "소유하지 않은 drift 가 정상 apply 를 막지 못했다")
         self.assertEqual(_run(root, apply=True, force=True), up.EXIT_OK)
         self.assertIn(f'required_version: "{__version__}"',
                       Path(root, "sage", "project-profile.yaml").read_text(encoding="utf-8"))
-        self.assertEqual(_tree(root)[manifest_rel], before,
-                         "--force 가 upgrade 소유가 아닌 manifest 를 덮었다")
+        refreshed = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(refreshed["sage_version"], __version__,
+                         "위임한 install 단계가 receipt 를 갱신하지 않았다")
+
+
+class TestManagedAssetDelivery(unittest.TestCase):
+    """**신규 managed CORE 파일이 실제로 배포되는가.**
+
+    이 사이클이 `language-policy.md` 를 새 CORE 자산으로 추가했다. 선언 값만 고치는 upgrade 는
+    사용자에게 "업그레이드했다"고 말하면서 그 파일을 주지 않는다 — 그러면 정책 문서를 참조하는
+    모든 안내가 없는 파일을 가리킨다. 조용히 통과하면 안 되는 자리라 직접 확인한다.
+    """
+
+    POLICY_REL = os.path.join("docs", "agent", "language-policy.md")
+
+    def _aged_install(self):
+        """설치 후 신규 CORE 자산과 receipt 를 지워 구버전 소비자를 만든다."""
+        root = _install(tempfile.mkdtemp())
+        Path(root, "sage", "project-profile.yaml").write_text(PROFILE, encoding="utf-8")
+        policy = Path(root, self.POLICY_REL)
+        if policy.is_file():
+            policy.unlink()
+        manifest_path = Path(root, "docs", "sage_harness", ".manifest.json")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["sage_version"] = "0.9.84"
+        renders = manifest.get("core_renders")
+        if isinstance(renders, dict):
+            for key in [k for k in renders if "language-policy" in k]:
+                renders.pop(key)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        return root, manifest_path
+
+    def test_a_new_core_asset_and_its_receipt_arrive_together(self):
+        root, manifest_path = self._aged_install()
+        self.assertFalse(Path(root, self.POLICY_REL).is_file(), "전제: 신규 자산이 없는 상태")
+
+        self.assertEqual(_run(root, apply=True, force=True), up.EXIT_OK)
+
+        self.assertTrue(Path(root, self.POLICY_REL).is_file(),
+                        "upgrade 후에도 신규 CORE 자산이 배포되지 않았다")
+        renders = json.loads(manifest_path.read_text(encoding="utf-8")).get("core_renders") or {}
+        self.assertTrue(any("language-policy" in key for key in renders),
+                        f"자산은 배포됐으나 receipt 가 없다: {sorted(renders)[:5]}")
+
+    def test_hooks_are_regenerated_so_validate_is_not_stale(self):
+        """선언만 고치면 hook 산출물이 낡은 채 남아 validate 가 STALE 로 끝난다."""
+        root, _ = self._aged_install()
+        self.assertEqual(_run(root, apply=True, force=True), up.EXIT_OK)
+        done = subprocess.run(
+            [sys.executable, "-m", "sage", "validate", "--check"],
+            cwd=root, env=dict(os.environ, PYTHONPATH=str(REPO)),
+            capture_output=True, text=True)
+        self.assertNotEqual(done.returncode, 3,
+                            f"upgrade 뒤에도 STALE 이다 — hook 재생성이 제 일을 못 했다\n{done.stdout}")
+
+    def test_the_whole_operation_rolls_back_when_a_later_step_fails(self):
+        """단계 사이 실패는 앞 단계가 이미 커밋된 상태다 — 전체를 되돌려야 한다."""
+        root, _ = self._aged_install()
+        before = _tree(root)
+        real = up._managed_steps
+
+        def failing(root_, plan, language):
+            steps = list(real(root_, plan, language))
+            def explode():
+                raise OSError("injected failure after earlier steps committed")
+            return steps[:1] + [("validate", explode)]
+
+        up._managed_steps = failing
+        try:
+            self.assertEqual(_run(root, apply=True, force=True), up.EXIT_BLOCKED)
+        finally:
+            up._managed_steps = real
+        after = _tree(root)
+        self.assertEqual(set(after) - set(before), set(),
+                         "실패 후에도 새 파일이 남았다")
+        for rel, value in before.items():
+            self.assertEqual(after.get(rel)[:2] if after.get(rel) else None, value[:2],
+                             f"{rel} 이 복원되지 않았다")
+
+    def test_a_second_apply_changes_nothing(self):
+        """전체 upgrade 의 멱등 — 좁은 scalar 만이 아니라 배포·재생성까지 포함해서."""
+        root, _ = self._aged_install()
+        self.assertEqual(_run(root, apply=True, force=True), up.EXIT_OK)
+        first = {rel: value[:2] for rel, value in _tree(root).items()}
+        self.assertEqual(_run(root, apply=True, force=True), up.EXIT_OK)
+        second = {rel: value[:2] for rel, value in _tree(root).items()}
+        self.assertEqual(first, second, "두 번째 apply 가 트리를 바꿨다")
 
 
 class TestRunsWhenOtherCommandsWouldNot(unittest.TestCase):
-    def test_an_unbootstrapped_profile_does_not_block_upgrade(self):
-        """generate 를 막는 부트스트랩 게이트가 upgrade 를 막으면 탈출 통로가 사라진다."""
-        root = _install(tempfile.mkdtemp(), profile='sage:\n  required_version: "0.0.1"\n')
-        self.assertEqual(_run(root, check=True), up.EXIT_OK)
-        self.assertEqual(_run(root, apply=True), up.EXIT_OK)
+    def test_an_unbootstrapped_profile_runs_but_does_not_report_success(self):
+        """FR-U03 은 "호출 가능" 이지 "성공" 이 아니다.
+
+        부트스트랩 미완이면 CORE 를 배포할 수 없다. 그 상태로 exit 0 을 내면 사용자는 업그레이드가
+        됐다고 믿는데 새 자산이 없다 — 이 명령에서 가장 위험한 실패다. 그래서 명령은 **돌되**
+        blocker 로 끝나고, 무엇이 왜 안 됐는지 말한다.
+
+        중요한 것은 부트스트랩 게이트가 실행 자체를 거부하지 않는다는 점이다. 거부하면 버전
+        불일치의 탈출 통로가 사라진다.
+        """
+        root = _install(tempfile.mkdtemp(), real=False,
+                        profile='sage:\n  required_version: "0.0.1"\n')
+        self.assertEqual(_run(root, check=True), up.EXIT_BLOCKED)
+        self.assertEqual(_run(root, apply=True), up.EXIT_BLOCKED)
+        reports = list(Path(root, ".sage", "upgrades").glob("*.json"))
+        self.assertTrue(reports, "실행되지 않아 보고서조차 없다")
+        payload = json.loads(sorted(reports)[-1].read_text(encoding="utf-8"))
+        self.assertTrue(payload["blockers"], "차단 사유를 기록하지 않았다")
+
+    def test_an_unbootstrapped_profile_is_not_mutated(self):
+        """배포하지 못할 상태에서 선언 값만 고쳐 놓으면 절반만 옮겨간 트리가 남는다."""
+        root = _install(tempfile.mkdtemp(), real=False,
+                        profile='sage:\n  required_version: "0.0.1"\n')
+        before = _tree(root)[os.path.join("sage", "project-profile.yaml")]
+        _run(root, apply=True)
+        self.assertEqual(_tree(root)[os.path.join("sage", "project-profile.yaml")], before)
 
     def test_a_missing_profile_reports_instead_of_inventing_one(self):
-        root = _install(tempfile.mkdtemp(), profile=None)
+        root = _install(tempfile.mkdtemp(), real=False, profile=None)
         self.assertEqual(_run(root, check=True), up.EXIT_OK)
         self.assertFalse(os.path.exists(os.path.join(root, "sage", "project-profile.yaml")),
                          "upgrade 가 profile 을 만들어냈다")
@@ -301,8 +444,16 @@ class TestRealReleaseFixture(unittest.TestCase):
             tar.extractall(cls._tmp, filter="data")
         os.makedirs(os.path.join(cls.root, "sage"), exist_ok=True)
         os.makedirs(os.path.join(cls.root, "docs", "sage_harness"), exist_ok=True)
-        shutil.copyfile(os.path.join(cls._tmp, "templates", "project-profile.yaml"),
-                        os.path.join(cls.root, "sage", "project-profile.yaml"))
+        # v0.9.84 **소비자**는 `/sage-init` 를 마친 상태다. 템플릿 원본은 부트스트랩 이전이라
+        # 그대로 쓰면 CORE 배포 경로를 타지 않고 skip 으로 끝난다 — 조용한 skip 은 통과로
+        # 세어져 실제 upgrade 경로가 미검증인 채 남는다.
+        template = Path(cls._tmp, "templates", "project-profile.yaml").read_text(encoding="utf-8")
+        Path(cls.root, "sage", "project-profile.yaml").write_text(
+            template
+            + '\nproject:\n  name: "aged-consumer"\n  prefix: "aged"\n'
+              'components:\n  - { id: core, paths: ["src/**"] }\n'
+              'risk:\n  l2_path_globs: ["src/**"]\n',
+            encoding="utf-8")
         shutil.copyfile(os.path.join(cls._tmp, "docs", "sage_harness", ".manifest.json"),
                         os.path.join(cls.root, "docs", "sage_harness", ".manifest.json"))
 
@@ -319,10 +470,8 @@ class TestRealReleaseFixture(unittest.TestCase):
 
     def test_apply_then_reapply_reaches_a_stable_point(self):
         """실제 트리에서도 두 번째 apply 가 파일을 다시 쓰지 않는다."""
-        first = _run(self.root, apply=True, force=True)
-        self.assertIn(first, (up.EXIT_OK, up.EXIT_BLOCKED))
-        if first != up.EXIT_OK:
-            self.skipTest("실제 트리에 blocker 가 있어 멱등을 관찰할 수 없다")
+        # skip 하지 않는다 — 실제 트리에서 도는지가 이 테스트의 존재 이유다.
+        self.assertEqual(_run(self.root, apply=True, force=True), up.EXIT_OK)
         profile = os.path.join("sage", "project-profile.yaml")
         after_first = _tree(self.root)[profile]
         self.assertEqual(_run(self.root, apply=True, force=True), up.EXIT_OK)

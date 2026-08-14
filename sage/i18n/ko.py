@@ -694,4 +694,10 @@ MESSAGES = {
     "cli.upgrade.lock_failed": "⛔ upgrade lock 실패: {error}",
     "cli.upgrade.apply_failed": "⛔ 적용 실패 — 전부 되돌렸습니다: {error}",
     "cli.upgrade.rollback_failed": "⛔ 적용 실패({error}) 후 rollback 도 실패했습니다({rollback}) — 파일 상태가 불완전합니다. 보고서의 backup 으로 복구하세요.",
+    "cli.upgrade.blocker_no_scope_receipt": "⛔ codex CORE skill scope receipt 가 없거나 손상됐습니다 — 어디에 설치할지 추측하지 않습니다. `sage install --host codex --skill-scope <global|project-local> --force` 로 먼저 정하세요.",
+    "cli.upgrade.step": "   · {name} 단계 완료",
+    "cli.upgrade.steps_header": "위임 단계 {count}건 (각 바이트의 주인이 만든다):",
+    "cli.upgrade.user_owned_restored": "   ↩ 사용자 소유 경로 복원: {path} (위임 단계가 건드렸으나 upgrade 의 write target 이 아니다)",
+    "cli.upgrade.declaration_only": "   ℹ️  profile 이 부트스트랩되지 않아 CORE 배포·hook 재생성을 건너뜁니다 — 선언 값만 맞춥니다. `/sage-init` 후 다시 실행하세요.",
+    "cli.upgrade.blocker_unbootstrapped": "⛔ profile 이 부트스트랩되지 않아 CORE 를 배포할 수 없습니다 — 이 상태로 끝내면 업그레이드된 것처럼 보이지만 새 자산이 없습니다. `/sage-init` 로 profile 을 채운 뒤 다시 실행하세요.",
 }
