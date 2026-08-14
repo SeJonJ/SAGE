@@ -223,7 +223,7 @@ class TestCodexSkillScopeMaterializeValidation(unittest.TestCase):
                     rc = V.run(_VArgs(root))
 
             self.assertEqual(rc, 1, out.getvalue())
-            self.assertIn("CORE 렌더 없음", out.getvalue())
+            self.assertIn("CORE 렌더가 없습니다", out.getvalue())
             self.assertIn(f"codex/skills/{missing_skill}", out.getvalue())
 
 

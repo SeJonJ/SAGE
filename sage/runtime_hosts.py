@@ -151,10 +151,12 @@ def profile_issues(profile: dict[str, Any] | None) -> list[tuple[str, str]]:
     legacy = runtime.get("host")
     active = runtime.get("active_host")
     allowed = {"host": HOSTS, "active_host": HOSTS + (AUTO,)}
-    for key, value in (("host", legacy), ("active_host", active)):
-        if value is not None and value not in allowed[key]:
-            issues.append(("FAIL", Diagnostic("runtime.invalid_value", key=key,
-                                              value=repr(value), allowed=list(allowed[key]))))
+    for field, value in (("host", legacy), ("active_host", active)):
+        if value is not None and value not in allowed[field]:
+            # 인자명 `key` 는 render() 파이프라인의 translate(key, **arguments) 위치 인자와
+            # 충돌한다 — Diagnostic 인자에 절대 `key` 를 쓰지 않는다(전역 예약어).
+            issues.append(("FAIL", Diagnostic("runtime.invalid_value", field=field,
+                                              value=repr(value), allowed=list(allowed[field]))))
     if legacy in HOSTS and active in HOSTS and legacy != active:
         issues.append(("FAIL", Diagnostic("runtime.alias_conflicts_with_active")))
 

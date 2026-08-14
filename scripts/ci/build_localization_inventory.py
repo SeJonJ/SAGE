@@ -70,6 +70,10 @@ NOT_TRANSLATED = {
     ("sage/overlay_lint.py", "<module>"): (5,
         "게이트 완화 표현을 잡는 탐지 정규식. 한국어는 화면 문장이 아니라 탐지 대상이라, "
         "번역하면 한국어로 쓰인 완화 지시를 더 이상 잡지 못한다."),
+    ("sage/routing_block.py", "render_routing_body"): (4,
+        "AGENT_GUIDE 에 물리 삽입되는 라우팅 블록 본문. CLI 표시 언어가 아니라 프로젝트 산출물이고, "
+        "base 해시 앵커의 입력이라 표시 언어에 따라 달라지면 같은 프로젝트에서 사용자마다 다른 "
+        "drift 가 잡힌다."),
 }
 
 

@@ -28,6 +28,7 @@ expected_block 을 경유한다 — 분류를 우회하는 합성 경로가 없�
 """
 import os
 
+from sage.diagnostics import Diagnostic
 from sage import overlay_common as _oc
 
 # CORE 자산 정본 roster. install._CORE_AGENTS / _CORE_SKILLS / _CORE_BOOTSTRAP_SKILLS 와
@@ -143,7 +144,7 @@ def overlay_filename_error(kind, id, path):
     actual = os.path.basename(path)
     expected = f"{id}.md"
     if actual != expected:
-        return f"비정규 overlay 파일명: '{actual}' (expected '{expected}')"
+        return Diagnostic("overlay.filename_nonstandard", actual=actual, expected=expected)
     return None
 
 
@@ -206,13 +207,13 @@ def expected_routing_block(kind, id, root, profile=None):
     # 명시적 null(키는 있고 값이 None)은 malformed 이며 silent-strip 경로다(codex R3-2/R4-1). risk 비-dict
     # 도 fail-closed(codex R3-1) — JSON-only profile 은 materialize_profile 타입검증을 우회하기 때문.
     if "risk" in profile and risk is None:
-        return "", "라우팅 입력 오류(risk): null 불가(미설정은 키 생략 또는 {})"
+        return "", Diagnostic("routing_input.field_null", where="risk", empty="{}")
     if risk is not None and not isinstance(risk, dict):
-        return "", "라우팅 입력 오류(risk): 매핑(object)이어야 함"
+        return "", Diagnostic("routing_input.not_mapping_at", where="risk")
     if "governance_docs" in profile and profile.get("governance_docs") is None:
-        return "", "라우팅 입력 오류(governance_docs): null 불가(미설정은 키 생략 또는 [])"
+        return "", Diagnostic("routing_input.field_null", where="governance_docs", empty="[]")
     if isinstance(risk, dict) and "domains" in risk and risk.get("domains") is None:
-        return "", "라우팅 입력 오류(risk.domains): null 불가(미설정은 키 생략 또는 [])"
+        return "", Diagnostic("routing_input.field_null", where="risk.domains", empty="[]")
     domains = risk.get("domains") if isinstance(risk, dict) else None
     governance_docs = profile.get("governance_docs")
 
@@ -223,7 +224,7 @@ def expected_routing_block(kind, id, root, profile=None):
     input_issues = routing_input_issues(domains, governance_docs, root)
     if input_issues:
         where, reason = input_issues[0]
-        return "", f"라우팅 입력 오류({where}): {reason}"
+        return "", Diagnostic("routing_input.field_invalid", where=where, reason=reason)
     body = render_routing_body(domains, governance_docs)
     if not body:
         return "", None

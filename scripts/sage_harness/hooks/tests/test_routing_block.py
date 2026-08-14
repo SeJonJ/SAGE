@@ -182,7 +182,10 @@ class TestMaterializeInjection(unittest.TestCase):
             cr, changed, errors = m.materialize(d, "claude")
             self.assertEqual(cr, {})
             self.assertEqual(changed, [])
-            self.assertTrue(any("framework/AGENT_GUIDE" in str(msg) for _p, msg in errors))
+            self.assertTrue(any(getattr(msg, "code", "").startswith("overlay.unsupported_blocked")
+                                and msg.arguments.get("kind") == "framework"
+                                and msg.arguments.get("id") == "AGENT_GUIDE"
+                                for _p, msg in errors))
             self.assertEqual(cls.classify("framework", "AGENT_GUIDE"), "blocked")
 
 
@@ -204,7 +207,9 @@ class TestRoutingDrift(unittest.TestCase):
             text = text.replace("output contract", "output contract TAMPERED")
             Path(guide).write_text(text, encoding="utf-8")
             findings = m.check(d, "claude", cr)
-            self.assertTrue(any(f[0] == "FAIL" and "라우팅" in f[2] for f in findings))
+            self.assertTrue(any(f[0] == "FAIL"
+                                and getattr(f[2], "code", "").startswith("routing_input.")
+                                for f in findings))
 
     def test_profile_changed_without_rematerialize_is_stale(self):
         with tempfile.TemporaryDirectory() as d:
@@ -216,7 +221,8 @@ class TestRoutingDrift(unittest.TestCase):
                            + "    - id: security\n      risk_level: L3\n"
                            + "      protocol_pointer: sage/critical-domains/security.md\n")
             findings = m.check(d, "claude", cr)
-            self.assertTrue(any(f[0] == "FAIL" and "라우팅 블록 미반영/stale" in f[2] for f in findings))
+            self.assertTrue(any(f[0] == "FAIL" and getattr(f[2], "code", "") == "routing_input.block_stale"
+                                for f in findings))
 
 
 class TestGovernanceDocsValidation(unittest.TestCase):
@@ -280,7 +286,8 @@ class TestCodexHardening(unittest.TestCase):
             cr, changed, errors = m.materialize(d, "claude")
             self.assertEqual(cr, {})
             self.assertEqual(changed, [])
-            self.assertTrue(any("라우팅 입력 오류" in msg for _p, msg in errors))
+            self.assertTrue(any(getattr(msg, "code", "") == "routing_input.field_invalid"
+                                for _p, msg in errors))
             guide = Path(os.path.join(d, "AGENT_GUIDE.md")).read_text(encoding="utf-8")
             self.assertNotIn(oc.ROUTING_MARKER_START, guide)
 
@@ -342,7 +349,8 @@ class TestCodexHardening(unittest.TestCase):
             _write_profile(d, "governance_docs: [42]\n")
             cr, changed, errors = m.materialize(d, "claude")
             self.assertEqual(cr, {})
-            self.assertTrue(any("라우팅 입력 오류" in msg for _p, msg in errors))
+            self.assertTrue(any(getattr(msg, "code", "") == "routing_input.field_invalid"
+                                for _p, msg in errors))
 
     def test_r3_3_pointer_escapes_blocked(self):
         # R3-3: leading-space/URI/~/Windows-abs/traversal 전부 엄격 문법으로 거부(구 R2-3 공백완화 폐기).
@@ -404,7 +412,8 @@ class TestCodexHardening(unittest.TestCase):
     def test_non_string_unknown_key_fails_without_crash(self):
         # YAML 숫자 키 등 비문자열 미지 키는 TypeError 없이 FAIL 을 반환해야 한다.
         iss = routing_input_issues(None, [{42: "v", "doc": "README.md", "label": "guide"}], root=None)
-        self.assertTrue(any("미지 키" in reason for _w, reason in iss), iss)
+        self.assertTrue(any(getattr(reason, "code", "") == "routing_input.unknown_keys"
+                            for _w, reason in iss), iss)
 
     def test_hidden_path_segments_allowed(self):
         # 숨김 경로(.github/.well-known 등 leading dot 세그먼트)를 governance doc/pointer 로 허용.
@@ -433,7 +442,8 @@ class TestCodexHardening(unittest.TestCase):
             Path(d, "README.md").write_text("x", encoding="utf-8")
             entry = {"doc": "README.md", "label": "ok", "labell": "typo"}
             iss = routing_input_issues(None, [entry], root=d)
-            self.assertTrue(any("미지 키" in reason for _w, reason in iss), iss)
+            self.assertTrue(any(getattr(reason, "code", "") == "routing_input.unknown_keys"
+                            for _w, reason in iss), iss)
             block, err = cls.expected_routing_block(
                 "framework", "AGENT_GUIDE", d, {"governance_docs": [entry]})
             self.assertEqual(block, "")

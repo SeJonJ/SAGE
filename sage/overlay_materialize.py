@@ -132,9 +132,9 @@ def _project_path_issue(dest, path, leaf_kind=None):
     target = os.path.abspath(path)
     try:
         if os.path.commonpath((root, target)) != root:
-            return f"project input path가 root 밖임: {target}"
+            return Diagnostic("materialize.path_outside_root", path=target)
     except ValueError:
-        return f"project input path와 root의 filesystem이 다름: {target}"
+        return Diagnostic("materialize.path_filesystem_mismatch", path=target)
 
     cursor = root
     parts = os.path.relpath(target, root)
@@ -147,15 +147,15 @@ def _project_path_issue(dest, path, leaf_kind=None):
         except FileNotFoundError:
             return None
         except OSError as exc:
-            return f"project input path 상태 확인 실패: {cursor} ({exc})"
+            return Diagnostic("materialize.path_stat_failed", path=cursor, evidence=str(exc))
         if stat.S_ISLNK(mode):
-            return f"project input symlink는 허용되지 않음: {cursor}"
+            return Diagnostic("materialize.path_symlink_forbidden", path=cursor)
         if not is_leaf and not stat.S_ISDIR(mode):
-            return f"project input ancestor가 directory가 아님: {cursor}"
+            return Diagnostic("materialize.path_ancestor_not_dir", path=cursor)
         if is_leaf and leaf_kind == "file" and not stat.S_ISREG(mode):
-            return f"project input이 regular file이 아님: {cursor}"
+            return Diagnostic("materialize.path_not_regular_file", path=cursor)
         if is_leaf and leaf_kind == "dir" and not stat.S_ISDIR(mode):
-            return f"project input이 directory가 아님: {cursor}"
+            return Diagnostic("materialize.path_not_dir", path=cursor)
     return None
 
 
@@ -205,12 +205,13 @@ def load_profile(dest):
             if yaml_profile is None:
                 yaml_profile = {}
             if not isinstance(yaml_profile, dict):
-                return {}, f"profile 최상위가 mapping이 아님: {yaml_rel}"
+                return {}, Diagnostic("materialize.profile_not_mapping", path=yaml_rel)
             from sage.profile_compile import ProfileCompileError, materialize_profile
             try:
                 compiled_yaml = materialize_profile(yaml_profile)
             except ProfileCompileError as exc:
-                return {}, f"profile materialize 실패({yaml_rel}): {exc}"
+                return {}, Diagnostic("materialize.profile_compile_failed", path=yaml_rel,
+                                      evidence=str(exc))
         else:
             compiled_yaml = None
 
@@ -221,13 +222,14 @@ def load_profile(dest):
                 return {}, err
             json_profile = json.loads(text)
             if not isinstance(json_profile, dict):
-                return {}, f"profile 최상위가 mapping이 아님: {json_rel}"
+                return {}, Diagnostic("materialize.profile_not_mapping", path=json_rel)
             if compiled_yaml is not None and not _exact_data_equal(json_profile, compiled_yaml):
-                return {}, "project-profile.yaml과 project-profile.json이 다름; sage generate 재실행 필요"
+                return {}, Diagnostic("materialize.profile_yaml_json_mismatch")
             return json_profile, None
         return compiled_yaml, None
     except Exception as exc:
-        return {}, f"profile 로드 실패: {exc}"
+        return {}, Diagnostic("materialize.profile_load_failed", kind=type(exc).__name__,
+                              evidence=str(exc))
 
 
 def _load_profile(dest):
@@ -305,10 +307,10 @@ def preflight_overlays(dest, profile=None):
             errors.append((path, filename_error))
             continue
         if not _cls.is_core(kind, id):
-            errors.append((path, f"미지/오타 CORE 자산 오버레이: '{id}' 는 CORE {kind} 아님"))
+            errors.append((path, Diagnostic("overlay.unknown_core_asset", id=id, kind=kind)))
             continue
         if _cls.classify(kind, id) == "blocked":
-            errors.append((path, f"{kind}/{id} 는 오버레이 미지원(독립 게이트 오라클 미보증 blocked)"))
+            errors.append((path, Diagnostic("overlay.unsupported_blocked", kind=kind, id=id)))
             continue
         text, read_error = _oc.read_text_lf(path)
         if read_error:
@@ -482,7 +484,8 @@ def check(dest, host, core_renders, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
     routing_profile, routing_profile_error = load_profile(dest)
     if routing_profile_error:
         findings.append(("FAIL", f"{host}/framework/AGENT_GUIDE",
-                         f"라우팅 블록 profile 로드 실패: {routing_profile_error}"))
+                         Diagnostic("materialize.routing_profile_load_failed",
+                                   reason=routing_profile_error)))
         routing_profile = {}
     # 오버레이 파일 선스캔 — 오타/미지 CORE id, 읽기 실패를 하드-리포트(R1 #5·#12). render_targets 는
     #   유효 CORE id 만 돌므로 여기서 별도로 실제 파일을 열어 typo 를 잡는다.
@@ -493,7 +496,8 @@ def check(dest, host, core_renders, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
             continue
         if not _cls.is_core(kind, id):
             findings.append(("FAIL", f"{host}/{kind}/{id}",
-                             f"미지/오타 CORE 자산 오버레이: {opath} ('{id}' 는 CORE {kind} 아님)"))
+                             Diagnostic("overlay.unknown_core_asset_at", path=opath, id=id,
+                                       kind=kind)))
             continue
         _, rerr = _oc.read_text_lf(opath)
         if rerr:
@@ -505,13 +509,16 @@ def check(dest, host, core_renders, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
             op = _cls.overlay_path(dest, kind, id)
             if os.path.isfile(op):
                 findings.append(("FAIL", key,
-                                 f"{kind}/{id} 는 오버레이 미지원(독립 게이트 오라클 미보증 blocked): {op} 삭제 필요"))
+                                 Diagnostic("overlay.unsupported_blocked_remove", kind=kind,
+                                           id=id, path=op)))
         if not os.path.isfile(path):
-            findings.append(("FAIL", key, f"CORE 렌더 없음: {path}"))
+            findings.append(("FAIL", key, Diagnostic("materialize.core_render_missing", path=path)))
             continue
         anchor = core_renders.get(key)
         if not isinstance(anchor, dict) or "base_sha256" not in anchor:
-            findings.append(("FAIL", key, f"core_renders 앵커 부재/손상: {key}"))
+            # 인자명 `key` 는 render() 파이프라인의 translate(key, **arguments) 위치 인자와
+            # 충돌한다 — Diagnostic 인자에 절대 `key` 를 쓰지 않는다(전역 예약어).
+            findings.append(("FAIL", key, Diagnostic("materialize.anchor_missing", anchor_key=key)))
             continue
         installed, rerr = _oc.read_text_lf(path)
         if rerr:
@@ -523,26 +530,28 @@ def check(dest, host, core_renders, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
                                                      path=path, reason=berr)))
             continue
         if _sha256(base) != anchor["base_sha256"]:
-            findings.append(("FAIL", key, f"base drift/변조: {path} (앵커 불일치)"))
+            findings.append(("FAIL", key, Diagnostic("materialize.base_drift", path=path)))
             continue
         block, cerr = _cls.expected_block(kind, id, dest)
         if cerr:
-            findings.append(("FAIL", key, f"{path}: {cerr}"))
+            findings.append(("FAIL", key, Diagnostic("overlay.expected_block_failed", path=path,
+                                                      reason=cerr)))
             continue
         actual = _oc.extract_block(installed) or ""
         if actual != block:
-            findings.append(("FAIL", key, f"오버레이 미반영/stale: {path} (`sage sync-overlays` 필요)"))
+            findings.append(("FAIL", key, Diagnostic("overlay.block_stale", path=path)))
             continue
         routing_block, routing_err = _cls.expected_routing_block(kind, id, dest, routing_profile)
         if routing_err:
-            findings.append(("FAIL", key, f"{path}: 라우팅 블록 계산 실패({routing_err})"))
+            findings.append(("FAIL", key, Diagnostic("routing_input.compute_failed", path=path,
+                                                      reason=routing_err)))
             continue
         routing_actual = _oc.extract_routing_block(installed) or ""
         if routing_actual != routing_block:
-            findings.append(("FAIL", key,
-                             f"라우팅 블록 미반영/stale: {path} (`sage sync-overlays` 필요)"))
+            findings.append(("FAIL", key, Diagnostic("routing_input.block_stale", path=path)))
             continue
         if anchor.get("sage_version") != __version__:
             findings.append(("STALE", key,
-                             f"{key} 는 SAGE {anchor.get('sage_version')} 로 설치됨(현재 {__version__}) — `sage install --force` 로 업그레이드"))
+                             Diagnostic("materialize.stale_sage_version", anchor_key=key,
+                                       installed=anchor.get("sage_version"), current=__version__)))
     return findings

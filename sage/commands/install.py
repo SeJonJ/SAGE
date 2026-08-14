@@ -1317,7 +1317,8 @@ def _run_locked(args) -> int:
 
     overlay_preflight_errors = overlay_materialize.preflight_overlays(dest, _profile)
     for path, message in overlay_preflight_errors:
-        print(tr(language_of(args), 'cli.install.msg23', os_path=os.path.relpath(path, dest), message=message), file=sys.stderr)
+        print(tr(language_of(args), 'cli.install.msg23', os_path=os.path.relpath(path, dest),
+                 message=render_issue(language_of(args), message)), file=sys.stderr)
     if overlay_preflight_errors:
         print(tr(language_of(args), 'cli.install.msg24'), file=sys.stderr)
         return 1

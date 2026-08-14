@@ -157,7 +157,8 @@ class TestMaterialize(unittest.TestCase):
             self.assertNotIn("skip the review", render)
             self.assertEqual(cr, {})
             self.assertEqual(changed, [])
-            self.assertTrue(any("blocked" in msg for _, msg in errors))
+            self.assertTrue(any(getattr(msg, "code", "").startswith("overlay.unsupported_blocked")
+                                for _, msg in errors))
 
     def test_preflight_error_keeps_all_renders_unchanged(self):
         with tempfile.TemporaryDirectory() as d:
@@ -227,7 +228,10 @@ class TestMaterialize(unittest.TestCase):
             cr, changed, errors = m.materialize(d, "claude")
             self.assertEqual(cr, {})
             self.assertEqual(changed, [])
-            self.assertTrue(any("framework/AGENT_GUIDE" in message for _path, message in errors))
+            self.assertTrue(any(getattr(message, "code", "").startswith("overlay.unsupported_blocked")
+                                and message.arguments.get("kind") == "framework"
+                                and message.arguments.get("id") == "AGENT_GUIDE"
+                                for _path, message in errors))
             self.assertEqual(Path(guide).read_bytes(), before)
 
     def test_blocked_framework_overlay_strips_pre_fb12_managed_block_before_failing(self):
@@ -261,7 +265,8 @@ class TestMaterialize(unittest.TestCase):
 
             self.assertEqual(cr, {})
             self.assertEqual(changed, [])
-            self.assertTrue(any("비정규 overlay 파일명" in msg for _path, msg in errors))
+            self.assertTrue(any(getattr(msg, "code", "") == "overlay.filename_nonstandard"
+                                for _path, msg in errors))
             render = Path(os.path.join(d, ".claude/agents/implementer-a.md")).read_text(encoding="utf-8")
             self.assertNotIn(oc.MARKER_START, render)
 
@@ -351,7 +356,8 @@ class TestMaterialize(unittest.TestCase):
                 errors = m.preflight_overlays(d, profile={})
 
             scanner.assert_not_called()
-            self.assertTrue(any(path == str(overlay) and "symlink" in message
+            self.assertTrue(any(path == str(overlay)
+                                and getattr(message, "code", "") == "materialize.path_symlink_forbidden"
                                 for path, message in errors))
             self.assertEqual(external.read_text(encoding="utf-8"),
                              "external input must not be read\n")

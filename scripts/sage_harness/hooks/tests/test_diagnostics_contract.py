@@ -180,6 +180,28 @@ class TestEveryEmittedCodeIsRenderable(unittest.TestCase):
         """스캔이 0건이면 위 검사는 아무것도 지키지 않는다 — 빈 통과를 막는다."""
         self.assertGreater(len(self._emitted()), 50)
 
+    def test_no_diagnostic_uses_the_reserved_key_argument_name(self):
+        """`Diagnostic(..., key=...)` 는 렌더 시점에 항상 깨진다 — 정적으로 막는다.
+
+        `render_issue`/hook `translate` 는 모두 `lambda key, **arguments: tr(context, key,
+        **arguments)` 형태다. 진단의 `arguments` 에 `key` 가 들어 있으면 위치 인자 `key`
+        (catalog key 자체)와 이름이 겹쳐 `TypeError: got multiple values for argument 'key'`
+        가 난다. 실제로 두 모듈(`runtime_hosts`·`overlay_materialize`)에서 이 형태로 터졌었다
+        — 코드 리뷰로는 걸러지지 않았고 렌더를 실제로 실행해야만 드러났다. 다음 모듈이 같은
+        이름을 또 쓰지 않도록 여기서 정적으로 막는다.
+        """
+        offenders = []
+        for path in sorted((REPO / "sage").rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                        and node.func.id == "Diagnostic"):
+                    for kw in node.keywords:
+                        if kw.arg == "key":
+                            offenders.append(f"{path.relative_to(REPO)}:{node.lineno}")
+        self.assertEqual(offenders, [],
+                         f"Diagnostic(key=...) 는 렌더 시 항상 TypeError 를 낸다: {offenders}")
+
 
 class TestHookRendersWithoutTheEngineCatalog(unittest.TestCase):
     @classmethod

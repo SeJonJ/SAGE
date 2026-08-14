@@ -308,7 +308,8 @@ def _check_core_render_drift(profile, prof_path, language=None):
                 if ov:
                     print(tr(language, 'cli.doctor.msg25', installed_host=installed_host))
                     for sev, key, msg in ov:
-                        print(f"    {'❌' if sev == 'FAIL' else '🕒'} {sev} [{key}] {msg}")
+                        print(f"    {'❌' if sev == 'FAIL' else '🕒'} {sev} [{key}] "
+                              f"{render_issue(language, msg)}")
         elif isinstance(_mani, dict) and "core_renders" not in _mani:
             print(tr(language, 'cli.doctor.msg26'))
 
