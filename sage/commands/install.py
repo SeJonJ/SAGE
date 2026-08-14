@@ -23,6 +23,7 @@ from pathlib import Path
 from sage import __version__
 
 from sage import _resources   # 번들 리소스 경로 단일 해석(env override + repo fallback — 재배치/설치 대비)
+from sage.diagnostics import Diagnostic
 from sage import overlay_common   # 오버레이 관리 블록 프리미티브(base_of 로 렌더 base 대조)
 from sage import overlay_materialize   # CORE 렌더 오버레이 물리화 + core_renders 앵커
 from sage import install_transaction as _tx
@@ -539,7 +540,7 @@ def core_render_status(src, dst, overrides=None):
             return ("error", rerr)
         got_base, berr = overlay_common.base_of(installed)
         if berr:
-            return ("error", f"{dst} ({berr})")
+            return ("error", Diagnostic("install.render_marker_error", path=dst, reason=berr))
         return ("ok" if got_base == exp_base else "stale", dst)
     except (OSError, UnicodeError) as e:
         return ("error", f"{dst} ({e})")
@@ -917,12 +918,12 @@ def _core_render_expected_base(host, kind, asset_id, profile):
 
     text, read_error = overlay_common.read_text_lf(src)
     if read_error:
-        return None, f"배포 정본 로드 실패: {read_error}"
+        return None, Diagnostic("install.canonical_load_failed", reason=read_error)
     if kind == "agents" and host == "claude":
         text = render_core_agent(text, agent_frontmatter_overrides(profile, asset_id))
     base, marker_error = overlay_common.base_of(text)
     if marker_error:
-        return None, f"배포 정본 marker 오류: {src} ({marker_error})"
+        return None, Diagnostic("install.canonical_marker_error", path=src, reason=marker_error)
     return base, None
 
 
@@ -1013,7 +1014,8 @@ def _core_trust_conflicts(dest, host, profile, existing_manifest, allow_base_rep
         actual_sha = _sha256_text(actual_base if marker_error is None else installed)
         if marker_error:
             conflicts.append({"key": key, "path": path,
-                              "reason": f"기존 CORE render marker 오류: {marker_error}",
+                              "reason": Diagnostic("install.installed_marker_error",
+                                                   reason=marker_error),
                               "expected_sha": expected_sha, "actual_sha": actual_sha})
             continue
 
@@ -1064,7 +1066,7 @@ def _print_core_trust_conflicts(dest, conflicts, language=None):
     print(tr(language, 'cli.install.msg02'), file=sys.stderr)
     for item in sorted(conflicts, key=lambda value: (value["key"], value["path"])):
         print(f"  - [{item['key']}] {os.path.relpath(item['path'], dest)}", file=sys.stderr)
-        print(f"      reason: {item['reason']}", file=sys.stderr)
+        print(f"      reason: {render_issue(language, item['reason'])}", file=sys.stderr)
         print(f"      expected_sha256: {item['expected_sha']}", file=sys.stderr)
         print(f"      actual_sha256:   {item['actual_sha']}", file=sys.stderr)
     print(tr(language, 'cli.install.msg03'), file=sys.stderr)
@@ -1083,7 +1085,8 @@ def _cleanup_blocked_core_renders(dest, host, codex_skill_scope=None, language=N
     for path in sorted(changed):
         print(tr(language, 'cli.install.msg07', os_path=os.path.relpath(path, dest)))
     for path, message in errors:
-        print(tr(language, 'cli.install.msg08', os_path=os.path.relpath(path, dest), message=message), file=sys.stderr)
+        print(tr(language, 'cli.install.msg08', os_path=os.path.relpath(path, dest),
+                 message=render_issue(language, message)), file=sys.stderr)
     if errors:
         print(tr(language, 'cli.install.msg09'),
               file=sys.stderr)
@@ -1497,7 +1500,8 @@ def _run_locked(args) -> int:
     core_renders, materialization_plans, overlay_errors = overlay_materialize.plan_materialize(
         dest, args.host, skill_scope)
     for p, msg in overlay_errors:
-        print(tr(language_of(args), 'cli.install.msg27', os_path=os.path.relpath(p, dest), msg=msg), file=sys.stderr)
+        print(tr(language_of(args), 'cli.install.msg27', os_path=os.path.relpath(p, dest),
+                 msg=render_issue(language_of(args), msg)), file=sys.stderr)
     if overlay_errors:
         print(tr(language_of(args), 'cli.install.msg28'), file=sys.stderr)
         return 1

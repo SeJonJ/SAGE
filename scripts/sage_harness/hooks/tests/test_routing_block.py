@@ -268,7 +268,7 @@ class TestCodexHardening(unittest.TestCase):
         txt = "base\n" + oc.ROUTING_MARKER_END + "\n" + oc.ROUTING_MARKER_START + "\n"
         _base, err = oc.base_of(txt)
         self.assertIsNotNone(err)
-        self.assertIn("순서", err)
+        self.assertEqual(err.code, "routing.marker_unextractable")
 
     def test_f2_gate_relaxation_enforced_at_render_boundary(self):
         # profile_validate 를 거치지 않아도 materialize/check 가 오염 governance_docs 를 차단.
@@ -328,7 +328,7 @@ class TestCodexHardening(unittest.TestCase):
                + oc.MARKER_END + "\n" + oc.ROUTING_MARKER_END + "\n")
         _base, err = oc.base_of(txt)
         self.assertIsNotNone(err)
-        self.assertIn("교차 중첩", err)
+        self.assertEqual(err.code, "overlay.markers_interleaved")
 
     def test_r2_2_malformed_governance_docs_errors(self):
         self.assertTrue(routing_input_issues(None, "not-a-list"))

@@ -4,7 +4,7 @@
     "cli": "sage/i18n",
     "hook": "scripts/sage_harness/hooks/runtime/i18n"
   },
-  "total": 527,
+  "total": 507,
   "entries": [
     {
       "id": "profile_validate:273:validation1",
@@ -7673,12 +7673,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:134:validation1",
+      "id": "overlay_materialize:135:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "_project_path_issue",
-      "source_line": 134,
+      "source_line": 135,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -7693,12 +7693,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:136:validation1",
+      "id": "overlay_materialize:137:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "_project_path_issue",
-      "source_line": 136,
+      "source_line": 137,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -7713,12 +7713,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:151:validation1",
+      "id": "overlay_materialize:152:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "_project_path_issue",
-      "source_line": 151,
+      "source_line": 152,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -7733,12 +7733,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:153:validation1",
+      "id": "overlay_materialize:154:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "_project_path_issue",
-      "source_line": 153,
+      "source_line": 154,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -7753,12 +7753,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:155:validation1",
+      "id": "overlay_materialize:156:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "_project_path_issue",
-      "source_line": 155,
+      "source_line": 156,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -7773,12 +7773,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:157:validation1",
+      "id": "overlay_materialize:158:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "_project_path_issue",
-      "source_line": 157,
+      "source_line": 158,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -7793,12 +7793,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:134:validation2",
+      "id": "overlay_materialize:135:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "_project_path_issue",
-      "source_line": 134,
+      "source_line": 135,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -7813,12 +7813,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:136:validation2",
+      "id": "overlay_materialize:137:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "_project_path_issue",
-      "source_line": 136,
+      "source_line": 137,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -7833,12 +7833,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:149:validation1",
+      "id": "overlay_materialize:150:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "_project_path_issue",
-      "source_line": 149,
+      "source_line": 150,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -7853,12 +7853,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:151:validation2",
+      "id": "overlay_materialize:152:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "_project_path_issue",
-      "source_line": 151,
+      "source_line": 152,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -7873,12 +7873,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:153:validation2",
+      "id": "overlay_materialize:154:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "_project_path_issue",
-      "source_line": 153,
+      "source_line": 154,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -7893,12 +7893,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:155:validation2",
+      "id": "overlay_materialize:156:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "_project_path_issue",
-      "source_line": 155,
+      "source_line": 156,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -7913,12 +7913,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:157:validation2",
+      "id": "overlay_materialize:158:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "_project_path_issue",
-      "source_line": 157,
+      "source_line": 158,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -7933,12 +7933,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:229:validation1",
+      "id": "overlay_materialize:230:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "load_profile",
-      "source_line": 229,
+      "source_line": 230,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -7953,12 +7953,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:484:validation1",
+      "id": "overlay_materialize:485:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 484,
+      "source_line": 485,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -7973,12 +7973,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:149:validation2",
+      "id": "overlay_materialize:150:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "_project_path_issue",
-      "source_line": 149,
+      "source_line": 150,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -7993,12 +7993,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:207:validation1",
+      "id": "overlay_materialize:208:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "load_profile",
-      "source_line": 207,
+      "source_line": 208,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -8013,12 +8013,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:223:validation1",
+      "id": "overlay_materialize:224:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "load_profile",
-      "source_line": 223,
+      "source_line": 224,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -8033,12 +8033,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:225:validation1",
+      "id": "overlay_materialize:226:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "load_profile",
-      "source_line": 225,
+      "source_line": 226,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8053,12 +8053,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:229:validation2",
+      "id": "overlay_materialize:230:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "load_profile",
-      "source_line": 229,
+      "source_line": 230,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8073,12 +8073,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:307:validation1",
+      "id": "overlay_materialize:308:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "preflight_overlays",
-      "source_line": 307,
+      "source_line": 308,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -8093,12 +8093,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:310:validation1",
+      "id": "overlay_materialize:311:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "preflight_overlays",
-      "source_line": 310,
+      "source_line": 311,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -8113,12 +8113,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:484:validation2",
+      "id": "overlay_materialize:485:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 484,
+      "source_line": 485,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8133,12 +8133,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:495:validation1",
+      "id": "overlay_materialize:496:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 495,
+      "source_line": 496,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -8153,12 +8153,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:509:validation1",
+      "id": "overlay_materialize:510:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 509,
+      "source_line": 510,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -8173,12 +8173,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:513:validation1",
+      "id": "overlay_materialize:514:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 513,
+      "source_line": 514,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -8193,12 +8193,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:524:validation1",
+      "id": "overlay_materialize:526:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 524,
+      "source_line": 526,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -8213,12 +8213,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:532:validation1",
+      "id": "overlay_materialize:534:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 532,
+      "source_line": 534,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -8233,12 +8233,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:536:validation1",
+      "id": "overlay_materialize:538:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 536,
+      "source_line": 538,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -8253,12 +8253,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:541:validation1",
+      "id": "overlay_materialize:543:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 541,
+      "source_line": 543,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -8273,12 +8273,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:545:validation1",
+      "id": "overlay_materialize:547:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 545,
+      "source_line": 547,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -8293,12 +8293,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:207:validation2",
+      "id": "overlay_materialize:208:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "load_profile",
-      "source_line": 207,
+      "source_line": 208,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8313,12 +8313,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:212:validation1",
+      "id": "overlay_materialize:213:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "load_profile",
-      "source_line": 212,
+      "source_line": 213,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -8333,12 +8333,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:223:validation2",
+      "id": "overlay_materialize:224:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "load_profile",
-      "source_line": 223,
+      "source_line": 224,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8353,12 +8353,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:307:validation2",
+      "id": "overlay_materialize:308:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "preflight_overlays",
-      "source_line": 307,
+      "source_line": 308,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8373,12 +8373,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:307:validation3",
+      "id": "overlay_materialize:308:validation3",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "preflight_overlays",
-      "source_line": 307,
+      "source_line": 308,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8393,12 +8393,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:307:validation4",
+      "id": "overlay_materialize:308:validation4",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "preflight_overlays",
-      "source_line": 307,
+      "source_line": 308,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8413,12 +8413,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:310:validation2",
+      "id": "overlay_materialize:311:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "preflight_overlays",
-      "source_line": 310,
+      "source_line": 311,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8433,12 +8433,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:495:validation2",
+      "id": "overlay_materialize:496:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 495,
+      "source_line": 496,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8453,12 +8453,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:495:validation3",
+      "id": "overlay_materialize:496:validation3",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 495,
+      "source_line": 496,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8473,12 +8473,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:495:validation4",
+      "id": "overlay_materialize:496:validation4",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 495,
+      "source_line": 496,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8493,12 +8493,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:507:validation1",
+      "id": "overlay_materialize:508:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 507,
+      "source_line": 508,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -8513,12 +8513,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:509:validation2",
+      "id": "overlay_materialize:510:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 509,
+      "source_line": 510,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8533,12 +8533,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:513:validation2",
+      "id": "overlay_materialize:514:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 513,
+      "source_line": 514,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8553,12 +8553,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:524:validation2",
+      "id": "overlay_materialize:526:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 524,
+      "source_line": 526,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8573,12 +8573,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:524:validation3",
+      "id": "overlay_materialize:526:validation3",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 524,
+      "source_line": 526,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8593,12 +8593,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:532:validation2",
+      "id": "overlay_materialize:534:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 532,
+      "source_line": 534,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8613,12 +8613,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:532:validation3",
+      "id": "overlay_materialize:534:validation3",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 532,
+      "source_line": 534,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8633,12 +8633,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:536:validation2",
+      "id": "overlay_materialize:538:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 536,
+      "source_line": 538,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8653,12 +8653,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:541:validation2",
+      "id": "overlay_materialize:543:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 541,
+      "source_line": 543,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8673,12 +8673,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:541:validation3",
+      "id": "overlay_materialize:543:validation3",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 541,
+      "source_line": 543,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8693,12 +8693,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:545:validation2",
+      "id": "overlay_materialize:547:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 545,
+      "source_line": 547,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8713,12 +8713,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:545:validation3",
+      "id": "overlay_materialize:547:validation3",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 545,
+      "source_line": 547,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8733,12 +8733,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:545:validation4",
+      "id": "overlay_materialize:547:validation4",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 545,
+      "source_line": 547,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8753,12 +8753,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:212:validation2",
+      "id": "overlay_materialize:213:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "load_profile",
-      "source_line": 212,
+      "source_line": 213,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8773,12 +8773,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:507:validation2",
+      "id": "overlay_materialize:508:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 507,
+      "source_line": 508,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -8793,12 +8793,12 @@
       ]
     },
     {
-      "id": "overlay_materialize:507:validation3",
+      "id": "overlay_materialize:508:validation3",
       "domain": "cli",
       "key": null,
       "source_file": "sage/overlay_materialize.py",
       "source_symbol": "check",
-      "source_line": 507,
+      "source_line": 508,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -9437,406 +9437,6 @@
       "classification": "validation_message",
       "hook_reachable": false,
       "text": " trigger 재복제 금지: ",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:35:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "<module>",
-      "source_line": 35,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "<!-- >>> SAGE PROJECT ROUTING v1 START (sage/project-profile.yaml 에서 생성, 여기서 수정 금지) -->",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:145:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "compose_block",
-      "source_line": 145,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "f\"## Project-Local Additions (sage/asset_overrides/{kind}/{id}.md)\\n\"\n        \"아래는 이 프로젝트 로컬 추가 지침이며 CORE 기본 지침에 **더한다**.\\n\"\n        \"AGENT_GUIDE·phase·review·verification·안전 경계를 **완화할 수 없다**.\"",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:145:validation2",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "compose_block",
-      "source_line": 145,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": ".md)\n아래는 이 프로젝트 로컬 추가 지침이며 CORE 기본 지침에 **더한다**.\nAGENT_GUIDE·phase·review·verification·안전 경계를 **완화할 수 없다**.",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:162:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "_counts_ok",
-      "source_line": 162,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "f\"{label} 마커 중복(관리 블록이 2개 이상)\"",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:164:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "_counts_ok",
-      "source_line": 164,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "f\"{label} 마커 짝 불일치(malformed)\"",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:166:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "_counts_ok",
-      "source_line": 166,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "f\"{label} 마커 순서/중첩 오류(START..END 추출 불가)\"",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:172:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "_marker_counts_ok",
-      "source_line": 172,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "오버레이",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:177:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "_routing_marker_counts_ok",
-      "source_line": 177,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "라우팅",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:108:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "validate_overlay",
-      "source_line": 108,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "f\"오버레이 본문에 예약 마커 토큰('{tok}')이 있어 합성할 수 없습니다\"",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:120:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "routing_block_token_error",
-      "source_line": 120,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "f\"라우팅 블록 본문에 예약 마커 토큰('{tok}')이 있어 생성할 수 없습니다\"",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:162:validation2",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "_counts_ok",
-      "source_line": 162,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": " 마커 중복(관리 블록이 2개 이상)",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:164:validation2",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "_counts_ok",
-      "source_line": 164,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": " 마커 짝 불일치(malformed)",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:166:validation2",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "_counts_ok",
-      "source_line": 166,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": " 마커 순서/중첩 오류(START..END 추출 불가)",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:200:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "base_of",
-      "source_line": 200,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "오버레이·라우팅 마커 교차 중첩(관리 구간 겹침)",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:59:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "read_text_lf",
-      "source_line": 59,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "f\"오버레이/렌더 읽기 실패: {path} ({e})\"",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:108:validation2",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "validate_overlay",
-      "source_line": 108,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "오버레이 본문에 예약 마커 토큰('",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:108:validation3",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "validate_overlay",
-      "source_line": 108,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "')이 있어 합성할 수 없습니다",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:120:validation2",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "routing_block_token_error",
-      "source_line": 120,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "라우팅 블록 본문에 예약 마커 토큰('",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:120:validation3",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "routing_block_token_error",
-      "source_line": 120,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "')이 있어 생성할 수 없습니다",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_common:59:validation2",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_common.py",
-      "source_symbol": "read_text_lf",
-      "source_line": 59,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "오버레이/렌더 읽기 실패: ",
       "required_tests": [
         "ko_parity",
         "en_snapshot"
@@ -10561,6 +10161,29 @@
         "ko_parity",
         "en_snapshot"
       ]
+    }
+  ],
+  "not_translated": [
+    {
+      "source_file": "sage/overlay_common.py",
+      "source_symbol": "<module>",
+      "source_line": 37,
+      "text": "<!-- >>> SAGE PROJECT ROUTING v1 START (sage/project-profile.yaml 에서 생성, 여기서 수정 금지) -->",
+      "reason": "관리 블록 마커 문자열. 파서가 직접 비교하고 기존 설치본에 그대로 박혀 있어, 번역하면 모든 설치본의 마커 짝이 깨진다."
+    },
+    {
+      "source_file": "sage/overlay_common.py",
+      "source_symbol": "compose_block",
+      "source_line": 147,
+      "text": "f\"## Project-Local Additions (sage/asset_overrides/{kind}/{id}.md)\\n\"\n        \"아래는 이 프로젝트 로컬 추가 지침이며 CORE 기본 지침에 **더한다**.\\n\"\n        \"AGENT_GUIDE·phase·review·verification·안전 경계를 **완화할 수 없다**.\"",
+      "reason": "렌더 산출물에 기록되는 본문. base 해시 앵커의 입력이라 표시 언어에 따라 달라지면 같은 프로젝트에서 사용자마다 다른 drift 가 잡힌다."
+    },
+    {
+      "source_file": "sage/overlay_common.py",
+      "source_symbol": "compose_block",
+      "source_line": 147,
+      "text": ".md)\n아래는 이 프로젝트 로컬 추가 지침이며 CORE 기본 지침에 **더한다**.\nAGENT_GUIDE·phase·review·verification·안전 경계를 **완화할 수 없다**.",
+      "reason": "렌더 산출물에 기록되는 본문. base 해시 앵커의 입력이라 표시 언어에 따라 달라지면 같은 프로젝트에서 사용자마다 다른 drift 가 잡힌다."
     }
   ]
 }

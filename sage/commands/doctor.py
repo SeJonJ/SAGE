@@ -180,7 +180,9 @@ def _emit_core_drift(kind, id_, status, dst, stale, missing, language=None):
     elif status == "source_missing":
         print(tr(language, 'cli.doctor.msg12', kind=kind, id_=id_))
     else:
-        print(tr(language, 'cli.doctor.msg13', kind=kind, id_=id_, dst=dst))
+        # status == "error" 면 dst 자리에는 경로가 아니라 진단이 온다 — 렌더를 거쳐야 문장이 된다.
+        print(tr(language, 'cli.doctor.msg13', kind=kind, id_=id_,
+                 dst=render_issue(language, dst)))
 
 
 def _report_codex_core_skill_scope(root, manifest, language=None):

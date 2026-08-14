@@ -15,6 +15,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from sage import __version__
+from sage.diagnostics import Diagnostic
 from sage import overlay_common as _oc
 from sage.asset_paths import AssetPaths, docs_dir, hook_runtime_files
 from sage.commands._common import contract_version_of
@@ -663,7 +664,7 @@ def _promoted_render(src_text, overlay_text, src_id, new_id, comp, paths=()):
     """
     base, err = _oc.base_of(src_text)
     if err:
-        return None, [], f"원본 렌더의 관리 구간이 손상됨({err})"
+        return None, [], Diagnostic("generate.source_render_span_broken", reason=err)
     text = re.sub(rf"(?<![\w-]){re.escape(src_id)}(?![\w-])", new_id, base.rstrip("\n"))
     # CORE 렌더는 소유 경계를 죽은 필드(`team.core.<id>.owns`)로 가리킨다. 승격 대상은 어떤
     # 컴포넌트인지 이미 확정돼 있으므로 살아있는 출처로 바꿔준다 — 시드가 죽은 지시를 물려주면
@@ -745,7 +746,8 @@ def _seed_from_existing(args, dest, src_id, comp_id, paths):
         body = overlay_text or _overlay_body_from_render(src_text)
         text, residuals, err = _promoted_render(src_text, body, src_id, new_id, comp_id, paths)
         if err:
-            return [], notes, f"{os.path.relpath(src, dest)}: {err}"
+            return [], notes, Diagnostic("generate.seed_render_failed",
+                                         path=os.path.relpath(src, dest), reason=err)
         if args.write:
             os.makedirs(os.path.dirname(out), exist_ok=True)
             _oc.write_text_lf(out, text)
@@ -816,7 +818,8 @@ def _gen_roster(args, root):
             files, notes, err = _seed_from_existing(args, args.dest, source, cid,
                                                     comp.get("paths") or [])
             if err:
-                print(tr(language_of(args), 'cli.generate.msg30', aid=aid, err=err), file=sys.stderr)
+                print(tr(language_of(args), 'cli.generate.msg30', aid=aid,
+                         err=render_issue(language_of(args), err)), file=sys.stderr)
                 return 1
             seeded.extend(files)
             seed_notes.extend(notes)

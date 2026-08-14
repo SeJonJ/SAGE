@@ -18,6 +18,7 @@ import yaml
 
 from sage import __version__
 from sage import overlay_classify as _cls
+from sage.diagnostics import Diagnostic
 from sage import overlay_common as _oc
 
 
@@ -518,7 +519,8 @@ def check(dest, host, core_renders, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
             continue
         base, berr = _oc.base_of(installed)
         if berr:
-            findings.append(("FAIL", key, f"{path}: {berr}"))
+            findings.append(("FAIL", key, Diagnostic("overlay.installed_span_broken",
+                                                     path=path, reason=berr)))
             continue
         if _sha256(base) != anchor["base_sha256"]:
             findings.append(("FAIL", key, f"base drift/변조: {path} (앵커 불일치)"))

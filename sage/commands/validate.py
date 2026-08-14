@@ -1057,7 +1057,8 @@ def run(args):
                     for sev, key, msg in overlay_materialize.check(
                             root, host, cr, skill_scope):
                         mark = {"FAIL": "❌", "STALE": "🕒"}.get(sev, "⚠️ ")
-                        print(f"{mark} {sev}  overlay-materialize-drift [{host}:{key}]: {msg}")
+                        print(f"{mark} {sev}  overlay-materialize-drift [{host}:{key}]: "
+                              f"{render_issue(language_of(args), msg)}")
                         if _SEV_RANK[sev] > _SEV_RANK[overall]:
                             overall = sev
 

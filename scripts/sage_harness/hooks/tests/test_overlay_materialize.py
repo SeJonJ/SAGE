@@ -283,7 +283,9 @@ class TestMaterialize(unittest.TestCase):
 
             self.assertEqual(cr, {})
             self.assertIn(str(qa), changed)
-            self.assertTrue(any("중복" in msg for _path, msg in errors))
+            # 문안이 아니라 code 로 확인한다 — 문장은 catalog 소유다.
+            self.assertTrue(any(getattr(msg, "code", "") == "overlay.marker_duplicated"
+                                for _path, msg in errors))
             self.assertNotIn(oc.MARKER_START, qa.read_text(encoding="utf-8"))
             self.assertIn(oc.MARKER_START, checker.read_text(encoding="utf-8"))
 

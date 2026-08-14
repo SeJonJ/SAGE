@@ -53,6 +53,21 @@ VALIDATION_RELS = (
 # B6 이 세운 "hook 은 엔진 없이 돈다" 가 무너진다.
 HOOK_REACHABLE = frozenset({"hook_entry.py", "feedback.py", "context_packet.py"})
 
+# 번역 대상이 아닌 한국어. **화면 문장이 아니라 형식 계약이거나 산출물 본문**이라 언어에 따라
+# 달라지면 안 되는 것들이다. 세지 않고 넘기면 잔여가 0 으로 보이는 방법이 생기므로, 빼는
+# 대신 이유와 함께 따로 기록해 검토 가능하게 남긴다.
+#
+# (파일, 심볼) → 이유. 심볼 하나가 통째로 제외되므로 그 심볼에 화면 문장을 새로 넣으면
+# 조용히 함께 빠진다 — 선언 하나가 무엇도 걸러내지 않으면 실패하게 해 죽은 선언을 막는다.
+NOT_TRANSLATED = {
+    ("sage/overlay_common.py", "<module>"):
+        "관리 블록 마커 문자열. 파서가 직접 비교하고 기존 설치본에 그대로 박혀 있어, 번역하면 "
+        "모든 설치본의 마커 짝이 깨진다.",
+    ("sage/overlay_common.py", "compose_block"):
+        "렌더 산출물에 기록되는 본문. base 해시 앵커의 입력이라 표시 언어에 따라 달라지면 같은 "
+        "프로젝트에서 사용자마다 다른 drift 가 잡힌다.",
+}
+
 
 def _placeholders(text: str) -> list[str]:
     try:
@@ -170,13 +185,15 @@ def collect(repo_root: str) -> list[dict]:
                             "text": text,
                             "required_tests": ["ko_parity", "en_snapshot", "no_leakage"],
                         })
-    entries.extend(_collect_validation(repo_root))
-    return entries
+    validation, exclusions = _collect_validation(repo_root)
+    entries.extend(validation)
+    return entries, exclusions
 
 
-def _collect_validation(repo_root: str) -> list[dict]:
+def _collect_validation(repo_root: str) -> tuple[list[dict], list[dict]]:
     """검증·계약 계층의 한국어 문자열. 세는 것이 목적이고 이관 판정은 모듈별이다."""
     entries: list[dict] = []
+    exclusions: list[dict] = []
     for rel_parts in VALIDATION_RELS:
         path = os.path.join(repo_root, *rel_parts)
         if not os.path.isfile(path):
@@ -199,6 +216,13 @@ def _collect_validation(repo_root: str) -> list[dict]:
             if not isinstance(node, (ast.Constant, ast.JoinedStr)):
                 continue
             for text, interpolated in _korean_literals(node, source):
+                symbol = owner.get(id(node), "<module>")
+                reason = NOT_TRANSLATED.get((rel.replace(os.sep, "/"), symbol))
+                if reason:
+                    exclusions.append({"source_file": rel, "source_symbol": symbol,
+                                       "source_line": node.lineno, "text": text,
+                                       "reason": reason})
+                    continue
                 seen_lines[node.lineno] = seen_lines.get(node.lineno, 0) + 1
                 ordinal = seen_lines[node.lineno]
                 entries.append({
@@ -206,7 +230,7 @@ def _collect_validation(repo_root: str) -> list[dict]:
                     "domain": "cli",
                     "key": None,
                     "source_file": rel,
-                    "source_symbol": owner.get(id(node), "<module>"),
+                    "source_symbol": symbol,
                     "source_line": node.lineno,
                     "channel": "stdout",
                     "exit_contract": "unchanged",
@@ -218,7 +242,7 @@ def _collect_validation(repo_root: str) -> list[dict]:
                     "text": text,
                     "required_tests": ["ko_parity", "en_snapshot"],
                 })
-    return entries
+    return entries, exclusions
 
 
 def main() -> int:
@@ -230,12 +254,21 @@ def main() -> int:
                         help="파일을 쓰지 않고 현재 파일과 일치하는지만 검사")
     args = parser.parse_args()
 
-    entries = collect(args.root)
+    entries, exclusions = collect(args.root)
+    declared = {(rel, symbol) for rel, symbol in NOT_TRANSLATED}
+    matched = {(item["source_file"].replace(os.sep, "/"), item["source_symbol"])
+               for item in exclusions}
+    if declared - matched:
+        # 아무것도 걸러내지 않는 제외 선언은 다음 사람에게 "여긴 검토됐다"고 잘못 말한다.
+        print(f"[inventory] 아무 문자열도 제외하지 못한 선언: {sorted(declared - matched)}",
+              file=sys.stderr)
+        return 1
     document = {
         "schema_version": 1,
         "domain_owner": {"cli": "sage/i18n", "hook": "scripts/sage_harness/hooks/runtime/i18n"},
         "total": len(entries),
         "entries": entries,
+        "not_translated": exclusions,
     }
     rendered = json.dumps(document, ensure_ascii=False, indent=2, sort_keys=False) + "\n"
     out_path = os.path.join(args.root, args.out)

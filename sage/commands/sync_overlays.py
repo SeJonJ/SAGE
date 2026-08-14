@@ -17,7 +17,7 @@ from sage.build_identity import source_core_content_hash
 from sage import overlay_classify as _cls
 from sage import overlay_common as _oc
 from sage import overlay_materialize as _mat
-from sage.i18n import language_of, tr
+from sage.i18n import language_of, render_issue, tr
 
 
 def register(sub, context):
@@ -87,7 +87,9 @@ def run(args):
         host_cleanup, cleanup_errors = _mat.plan_blocked_cleanup(
             root, host, codex_skill_scope=skill_scopes[host])
         for p, msg in cleanup_errors:
-            print(tr(language_of(args), "cli.sync_overlays.msg06", host=host, os_path=os.path.relpath(p, root), msg=msg), file=sys.stderr)
+            print(tr(language_of(args), "cli.sync_overlays.msg06", host=host,
+                     os_path=os.path.relpath(p, root),
+                     msg=render_issue(language_of(args), msg)), file=sys.stderr)
             hard_fail = True
         cleanup_plans.extend(host_cleanup)
     deduped_cleanup = {plan[0]: plan for plan in cleanup_plans}
@@ -142,7 +144,9 @@ def run(args):
         host_renders, host_plans, errors = _mat.plan_materialize(
             root, host, skill_scopes[host])
         for p, msg in errors:
-            print(tr(language_of(args), "cli.sync_overlays.msg12", host=host, os_path=os.path.relpath(p, root), msg=msg), file=sys.stderr)
+            print(tr(language_of(args), "cli.sync_overlays.msg12", host=host,
+                     os_path=os.path.relpath(p, root),
+                     msg=render_issue(language_of(args), msg)), file=sys.stderr)
             hard_fail = True
         if errors:
             continue

@@ -1473,6 +1473,32 @@ def _snapshot_changed_06(root, profile, log_dir, session_id):
     return "ok", {key for key, h in _hash_06_glob(root, profile).items() if base.get(key) != h}
 
 
+def _overlay_say(root, diagnostic):
+    """엔진 판정이 낸 진단을 **hook 도메인** 문장으로. 렌더가 실패해도 줄은 서야 한다.
+
+    이 편의 레이어는 엔진이 import 될 때만 돈다. 그래도 문장은 hook catalog 가 소유한다 —
+    같은 code 를 두 도메인이 각자 렌더하는 것이 이 사이클이 세운 계약이고, 여기서 엔진
+    catalog 를 끌어오면 hook 이 엔진 문안에 묶인다.
+    """
+    try:
+        from sage.diagnostics import render
+        import i18n as hook_i18n
+        language = hook_i18n.context.resolve(root)[0]
+
+        def translate(key, **arguments):
+            text = hook_i18n.frag(language, key)
+            if not text:
+                return f"[SAGE] message_key={key}"
+            try:
+                return text.format(**arguments)
+            except (KeyError, IndexError, ValueError):
+                return f"[SAGE] message_key={key}"
+
+        return render(diagnostic, translate, "hook")
+    except Exception:
+        return str(diagnostic)
+
+
 def _session_start_overlay_l1(io, root):
     """SessionStart — CORE 렌더의 오버레이 관리 블록을 재수렴한다.
 
@@ -1510,7 +1536,8 @@ def _session_start_overlay_l1(io, root):
         return 0
     if errors:
         for path, message in errors:
-            print(f"[session-start-overlay] BLOCK: {path}: {message}", file=sys.stderr)
+            print(f"[session-start-overlay] BLOCK: {path}: {_overlay_say(root, message)}",
+                  file=sys.stderr)
         if changed:
             print("[session-start-overlay] 안전하게 식별된 blocked managed block은 제거됐습니다. "
                   "남은 오류를 고치고 새 세션을 시작하세요.", file=sys.stderr)

@@ -32,6 +32,15 @@ class Diagnostic:
         return (f"Diagnostic(code={self.code!r}, arguments={self.arguments!r}, "
                 f"evidence={self.evidence!r})")
 
+    def __str__(self):
+        """렌더를 거치지 않고 문자열에 섞여도 code 는 남는다 — 바닥값이지 정상 경로가 아니다.
+
+        이행 중에는 진단이 아직 이관되지 않은 f-string 안으로 들어갈 수 있다. 그때 `repr` 이
+        화면에 나가면 사용자는 무엇이 잘못됐는지 읽을 수 없다. 최소한 code 는 남겨서, 화면이
+        덜 친절해질지언정 원인이 사라지지는 않게 한다.
+        """
+        return f"{self.code}: {self.evidence}" if self.evidence else self.code
+
     def __eq__(self, other):
         return (isinstance(other, Diagnostic) and other.code == self.code
                 and other.arguments == self.arguments and other.evidence == self.evidence)
@@ -51,7 +60,12 @@ def render(diagnostic, translate, prefix):
     """
     if not isinstance(diagnostic, Diagnostic):
         return str(diagnostic)          # 이행 중 남은 문자열도 화면에서 사라지지 않게 한다
-    text = translate(f"{prefix}.{diagnostic.code}", **diagnostic.arguments)
+    # 하부 판정이 낸 진단을 상위 판정이 인자로 실어 올릴 수 있다(`이유: <하부 진단>`). 중첩된
+    # 진단을 여기서 함께 렌더하지 않으면 상위 문장만 번역되고 안쪽은 code 로 남는다 — 한 줄에
+    # 두 언어가 섞인다. 조립은 판정이 아니라 렌더의 일이다.
+    arguments = {name: render(value, translate, prefix) if isinstance(value, Diagnostic) else value
+                 for name, value in diagnostic.arguments.items()}
+    text = translate(f"{prefix}.{diagnostic.code}", **arguments)
     return f"{text}: {diagnostic.evidence}" if diagnostic.evidence else text
 
 

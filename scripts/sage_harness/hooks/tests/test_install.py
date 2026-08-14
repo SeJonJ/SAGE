@@ -1580,7 +1580,7 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(rc, 1)
             self.assertEqual(Path(leader).read_bytes(), b"\xff\xfeUNTRUSTED")
             self.assertEqual(Path(manifest_path).read_bytes(), manifest_before)
-            self.assertIn("오버레이/렌더 읽기 실패", err.getvalue())
+            self.assertIn("오버레이/렌더를 읽지 못했습니다", err.getvalue())
 
     def test_malformed_marker_core_render_is_rejected_and_preserved(self):
         from sage import overlay_common
@@ -1600,7 +1600,7 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(Path(guide).read_text(encoding="utf-8"), malformed)
             self.assertEqual(Path(manifest_path).read_bytes(), manifest_before)
             self.assertIn("blocked block 정리 실패", err.getvalue())
-            self.assertIn("오버레이 마커 짝 불일치", err.getvalue())
+            self.assertIn("오버레이 마커 짝이 맞지 않습니다", err.getvalue())
 
     def test_non_force_install_cleans_blocked_block_before_overlay_failure(self):
         from sage import overlay_common
