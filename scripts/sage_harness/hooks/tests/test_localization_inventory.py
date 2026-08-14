@@ -194,17 +194,23 @@ class TestInventoryCountsWhatTheScreenShows(unittest.TestCase):
         배치로 미룬다(plan_docs/04-analyze §4). 그래도 조용히 더 늘면 안 되므로 상한을 고정한다
         — 늘면 이 테스트가 잡고, 줄면(이관 진행) 이 숫자를 낮춰서 갱신한다.
 
-        539 인 이유: 540 중 1건(`generate.py::_promoted_render`)은 실제 누출이 아니라 스캐너
-        오탐이었다 — 괄호로 이어진 f-string 조각 사이의 **코드 주석**이 `ast.get_source_segment`
-        슬라이스에 끼어든 것(실행 시 값에는 전혀 안 들어감). `_joinedstr_text()` 로 조각 단위
-        재구성해 고쳤다.
+        540 → 539: 1건(`generate.py::_promoted_render`)은 실제 누출이 아니라 스캐너 오탐이었다
+        — 괄호로 이어진 f-string 조각 사이의 **코드 주석**이 `ast.get_source_segment` 슬라이스에
+        끼어든 것(실행 시 값에는 전혀 안 들어감). `_joinedstr_text()` 로 조각 단위 재구성해 고쳤다.
+
+        539 → 530: 4갈래 분류(plan_docs/04-analyze §4c) 중 (d) 파서/명령어 literal 9건을
+        `NOT_TRANSLATED` 로 등록했다 — `change.py::_ABSORB_KW`(8, 한국어 자연어 입력 키워드
+        매처) + `generate.py::_OVERLAY_HEADER_PREFIXES`(1, CORE 렌더 헤더 prefix 매처). 남은
+        (d) 3건(`retro.py`·`absorb.py` 의 노트 heading 정규식·placeholder)은 (b) vault 노트
+        언어 정책이 먼저 확정돼야 한다 — 지금 등록하면 그 정규식이 이미 permanent 라고 잘못
+        선언하는 것이다.
         """
         entries = _document()["entries"]
         remaining = [e for e in entries
                      if e["source_file"].replace("\\", "/").startswith("sage/commands/")
                      and e["source_file"] != "sage/commands/sync_overlays.py"]
-        self.assertLessEqual(len(remaining), 539,
-                             f"sage/commands 잔여 한국어가 알려진 상한(539)을 넘었다: "
+        self.assertLessEqual(len(remaining), 530,
+                             f"sage/commands 잔여 한국어가 알려진 상한(530)을 넘었다: "
                              f"{len(remaining)}건")
 
 if __name__ == "__main__":

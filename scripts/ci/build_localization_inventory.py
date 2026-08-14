@@ -74,6 +74,15 @@ NOT_TRANSLATED = {
         "AGENT_GUIDE 에 물리 삽입되는 라우팅 블록 본문. CLI 표시 언어가 아니라 프로젝트 산출물이고, "
         "base 해시 앵커의 입력이라 표시 언어에 따라 달라지면 같은 프로젝트에서 사용자마다 다른 "
         "drift 가 잡힌다."),
+    ("sage/commands/change.py", "<module>"): (8,
+        "_ABSORB_KW — `sage change \"자연어 의도\"` 라우터가 사용자의 한국어 자연어 입력에서 "
+        "매칭하는 키워드 리스트. 화면 출력이 아니라 입력 파서 literal 이라 번역하면 매칭 자체가 "
+        "깨진다. 영어 자연어 입력 지원은 이 키워드를 '번역'하는 문제가 아니라 별도 영어 키워드 "
+        "세트를 병행 등록할지를 정하는 기능 결정이다 — 이번 배치 범위 밖."),
+    ("sage/commands/generate.py", "<module>"): (1,
+        "_OVERLAY_HEADER_PREFIXES — 렌더 본문에서 compose_block 고지 헤더를 걷어내는 prefix 매처. "
+        "CORE 렌더 헤더는 overlay_common.compose_block 과 동일하게 표시 언어에 매이지 않는 산출물 "
+        "본문(해시 앵커 입력)이라 번역 대상이 아니다."),
 }
 
 
