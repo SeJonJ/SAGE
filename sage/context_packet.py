@@ -17,6 +17,7 @@ import yaml
 
 from sage import _resources
 from sage.runtime_hosts import active_host, configured_hosts, profile_issues as runtime_profile_issues
+from sage.diagnostics import Diagnostic
 
 
 # v2: cycle 에 document_language 를 실는다. 복원된 세션이 이어서 쓸 언어를 packet 이 나르지
@@ -47,41 +48,45 @@ def profile_issues(profile: dict[str, Any] | None) -> list[tuple[str, str]]:
     if context is None:
         return []
     if not isinstance(context, dict):
-        return [("FAIL", "context_management 는 매핑(object)이어야 함")]
+        return [("FAIL", Diagnostic("context.not_mapping", section="context_management"))]
     issues = []
     unknown = sorted(set(context) - {"compaction"}, key=str)
     if unknown:
-        issues.append(("FAIL", f"context_management 에 미지 키 {unknown}"))
+        issues.append(("FAIL", Diagnostic("context.unknown_keys",
+                                          section="context_management", keys=unknown)))
     compaction = context.get("compaction")
     if compaction is None:
         return issues
     if not isinstance(compaction, dict):
-        return issues + [("FAIL", "context_management.compaction 은 매핑(object)이어야 함")]
+        return issues + [("FAIL", Diagnostic("context.not_mapping",
+                                             section="context_management.compaction"))]
     unknown = sorted(set(compaction) - {"enabled", "preserve", "max_snapshot_bytes"}, key=str)
     if unknown:
-        issues.append(("FAIL", f"context_management.compaction 에 미지 키 {unknown}"))
+        issues.append(("FAIL", Diagnostic("context.unknown_keys",
+                                          section="context_management.compaction", keys=unknown)))
 
     enabled = compaction.get("enabled")
     if not isinstance(enabled, bool):
-        issues.append(("FAIL", "context_management.compaction.enabled 는 bool(true/false)이어야 함"))
+        issues.append(("FAIL", Diagnostic("context.enabled_not_bool")))
 
     preserve = compaction.get("preserve")
     if not isinstance(preserve, list):
-        issues.append(("FAIL", "context_management.compaction.preserve 는 리스트여야 함"))
+        issues.append(("FAIL", Diagnostic("context.preserve_not_list")))
     else:
         if enabled is True and not preserve:
-            issues.append(("FAIL", "compaction.enabled=true 이면 preserve 는 비어 있을 수 없음"))
+            issues.append(("FAIL", Diagnostic("context.preserve_empty")))
         if any(not isinstance(item, str) or item not in PRESERVE_SOURCES for item in preserve):
-            issues.append(("FAIL", "context_management.compaction.preserve 에 지원하지 않는 항목이 있음 — "
-                                   f"허용: {sorted(PRESERVE_SOURCES)}"))
+            issues.append(("FAIL", Diagnostic("context.preserve_unsupported",
+                                              allowed=sorted(PRESERVE_SOURCES))))
         if len(preserve) != len(set(item for item in preserve if isinstance(item, str))):
-            issues.append(("FAIL", "context_management.compaction.preserve 는 중복을 허용하지 않음"))
+            issues.append(("FAIL", Diagnostic("context.preserve_duplicated")))
 
     limit = compaction.get("max_snapshot_bytes", DEFAULT_MAX_SNAPSHOT_BYTES)
     if (isinstance(limit, bool) or not isinstance(limit, int)
             or limit < MIN_MAX_SNAPSHOT_BYTES or limit > MAX_MAX_SNAPSHOT_BYTES):
-        issues.append(("FAIL", "context_management.compaction.max_snapshot_bytes 는 "
-                               f"{MIN_MAX_SNAPSHOT_BYTES}..{MAX_MAX_SNAPSHOT_BYTES} 정수여야 함"))
+        issues.append(("FAIL", Diagnostic("context.snapshot_bytes_range",
+                                          minimum=MIN_MAX_SNAPSHOT_BYTES,
+                                          maximum=MAX_MAX_SNAPSHOT_BYTES)))
     return issues
 
 

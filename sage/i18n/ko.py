@@ -700,4 +700,19 @@ MESSAGES = {
     "cli.upgrade.user_owned_restored": "   ↩ 사용자 소유 경로 복원: {path} (위임 단계가 건드렸으나 upgrade 의 write target 이 아니다)",
     "cli.upgrade.declaration_only": "   ℹ️  profile 이 부트스트랩되지 않아 CORE 배포·hook 재생성을 건너뜁니다 — 선언 값만 맞춥니다. `/sage-init` 후 다시 실행하세요.",
     "cli.upgrade.blocker_unbootstrapped": "⛔ profile 이 부트스트랩되지 않아 CORE 를 배포할 수 없습니다 — 이 상태로 끝내면 업그레이드된 것처럼 보이지만 새 자산이 없습니다. `/sage-init` 로 profile 을 채운 뒤 다시 실행하세요.",
+
+    # 언어 중립 판정 code 의 CLI 렌더. 같은 code 가 hook 에서는 `hook.<code>` 로
+    # 렌더된다 — 공통 code 는 판정 계약이고 catalog key 는 출력 도메인의 소유다.
+    "cli.context.not_mapping": "{section} 은 매핑(object)이어야 합니다.",
+    "cli.context.unknown_keys": "{section} 에 알 수 없는 키가 있습니다: {keys}",
+    "cli.context.enabled_not_bool": "context_management.compaction.enabled 는 bool(true/false)이어야 합니다.",
+    "cli.context.preserve_not_list": "context_management.compaction.preserve 는 리스트여야 합니다.",
+    "cli.context.preserve_empty": "compaction.enabled=true 이면 preserve 는 비어 있을 수 없습니다.",
+    "cli.context.preserve_unsupported": "context_management.compaction.preserve 에 지원하지 않는 항목이 있습니다 — 허용: {allowed}",
+    "cli.context.preserve_duplicated": "context_management.compaction.preserve 는 중복을 허용하지 않습니다.",
+    "cli.context.snapshot_bytes_range": "context_management.compaction.max_snapshot_bytes 는 {minimum}..{maximum} 정수여야 합니다.",
+    "cli.feedback.git_timeout": "git ls-files 가 시간 안에 끝나지 않았습니다 ({root})",
+    "cli.feedback.git_failed": "git ls-files 를 실행하지 못했습니다 ({root})",
+    "cli.feedback.git_exit": "git ls-files 가 exit {code} 로 끝났습니다",
+    "cli.feedback.unreadable_file": "추적 파일을 읽지 못했습니다 ({path}) — 마커 없음이 아니라 알 수 없음입니다",
 }

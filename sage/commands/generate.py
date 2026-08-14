@@ -28,7 +28,7 @@ from sage.install_transaction import (
     capture_paths,
 )
 from sage.manifest_io import atomic_write_json
-from sage.i18n import language_of, tr
+from sage.i18n import language_of, render_issue, tr
 
 
 def register(sub, context):
@@ -431,7 +431,8 @@ def _gen_hook_locked(args, root):
             issues = validate_profile(profile_data, root)
             for sev, msg in issues:
                 mark = {"FAIL": "❌", "WARN": "⚠️ ", "INFO": "ℹ️ "}.get(sev, "")
-                print(f"   {mark} profile {sev}: {msg}", file=sys.stderr if sev == "FAIL" else sys.stdout)
+                print(f"   {mark} profile {sev}: {render_issue(language_of(args), msg)}",
+                      file=sys.stderr if sev == "FAIL" else sys.stdout)
             if severity_of(issues) == "FAIL":
                 print(tr(language_of(args), 'cli.generate.msg15'), file=sys.stderr)
                 return 1

@@ -694,4 +694,19 @@ MESSAGES = {
     "cli.upgrade.user_owned_restored": "   ↩ restored user-owned path: {path} (a delegated step touched it, but it is not an upgrade write target)",
     "cli.upgrade.declaration_only": "   ℹ️  the profile is not bootstrapped, so CORE deployment and hook regeneration are skipped — only the declared values are aligned. Run `/sage-init`, then try again.",
     "cli.upgrade.blocker_unbootstrapped": "⛔ the profile is not bootstrapped, so CORE cannot be deployed — finishing here would look like an upgrade while the new assets are absent. Fill in the profile with `/sage-init` and run again.",
+
+    # 언어 중립 판정 code 의 CLI 렌더. 같은 code 가 hook 에서는 `hook.<code>` 로
+    # 렌더된다 — 공통 code 는 판정 계약이고 catalog key 는 출력 도메인의 소유다.
+    "cli.context.not_mapping": "{section} must be a mapping (object).",
+    "cli.context.unknown_keys": "{section} contains unknown keys: {keys}",
+    "cli.context.enabled_not_bool": "context_management.compaction.enabled must be a bool (true/false).",
+    "cli.context.preserve_not_list": "context_management.compaction.preserve must be a list.",
+    "cli.context.preserve_empty": "preserve cannot be empty when compaction.enabled=true.",
+    "cli.context.preserve_unsupported": "context_management.compaction.preserve contains unsupported items — allowed: {allowed}",
+    "cli.context.preserve_duplicated": "context_management.compaction.preserve does not allow duplicates.",
+    "cli.context.snapshot_bytes_range": "context_management.compaction.max_snapshot_bytes must be an integer in {minimum}..{maximum}.",
+    "cli.feedback.git_timeout": "git ls-files did not finish in time ({root})",
+    "cli.feedback.git_failed": "git ls-files could not be run ({root})",
+    "cli.feedback.git_exit": "git ls-files exited with {code}",
+    "cli.feedback.unreadable_file": "a tracked file could not be read ({path}) — this is unknown, not marker-free",
 }

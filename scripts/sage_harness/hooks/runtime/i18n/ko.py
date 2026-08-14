@@ -111,4 +111,38 @@ FRAGMENTS = {
     "origin.declared": "선언",
     "origin.branch_leaf": "브랜치 leaf 추론",
     "origin.phase_doc": "phase 문서",
+
+    # 판정 code 의 hook 렌더. CLI 와 **같은 key 를 중복 등록하지 않는다** —
+    # 접두가 도메인을 가르고, 두 도메인이 같은 문장의 소유자가 되지 않는다.
+    "hook.context.not_mapping": "{section} 은 매핑(object)이어야 합니다.",
+    "hook.context.unknown_keys": "{section} 에 알 수 없는 키가 있습니다: {keys}",
+    "hook.context.enabled_not_bool": "context_management.compaction.enabled 는 bool(true/false)이어야 합니다.",
+    "hook.context.preserve_not_list": "context_management.compaction.preserve 는 리스트여야 합니다.",
+    "hook.context.preserve_empty": "compaction.enabled=true 이면 preserve 는 비어 있을 수 없습니다.",
+    "hook.context.preserve_unsupported": "context_management.compaction.preserve 에 지원하지 않는 항목이 있습니다 — 허용: {allowed}",
+    "hook.context.preserve_duplicated": "context_management.compaction.preserve 는 중복을 허용하지 않습니다.",
+    "hook.context.snapshot_bytes_range": "context_management.compaction.max_snapshot_bytes 는 {minimum}..{maximum} 정수여야 합니다.",
+    "hook.feedback.git_timeout": "git ls-files 가 시간 안에 끝나지 않았습니다 ({root})",
+    "hook.feedback.git_failed": "git ls-files 를 실행하지 못했습니다 ({root})",
+    "hook.feedback.git_exit": "git ls-files 가 exit {code} 로 끝났습니다",
+    "hook.feedback.unreadable_file": "추적 파일을 읽지 못했습니다 ({path}) — 마커 없음이 아니라 알 수 없음입니다",
+
+    # sage-hook 진입점의 판정 code. hook_entry 는 `sage.i18n` 을 import 하지 않고
+    # core_dir 에서 이 catalog 를 찾는다 — 출력 도메인이 hook 이므로 catalog 도 hook 것이다.
+    "hook.entry.blocked": "[sage-hook] {hook} 차단: {detail}",
+    "hook.entry.profile_missing_damaged": "설치 흔적(manifest)은 있으나 프로필이 없습니다 — 설치가 손상됐습니다. `sage install --force` 로 복구한 뒤 `sage doctor` 로 확인하세요.",
+    "hook.entry.not_an_install_target": "설치 흔적(manifest)도 없습니다 — 이 디렉터리는 SAGE 설치 대상이 아닐 수 있습니다. 의도한 설치라면 `sage install` 을, 아니라면 {settings} 의 sage-hook 등록을 제거하세요 (설치 대상이 아닌 곳에 hook 만 남으면 모든 편집이 이렇게 차단됩니다).",
+    "hook.entry.profile_yaml_unreadable": "프로필 YAML 을 읽지 못했습니다 ({path})",
+    "hook.entry.compiled_profile_unreadable": "컴파일된 프로필을 읽지 못했습니다 ({path})",
+    "hook.entry.profile_not_mapping": "프로필 최상위는 객체(mapping)여야 합니다.",
+    "hook.entry.raw_risk_type": "프로필의 raw risk 필드 타입이 잘못됐습니다",
+    "hook.entry.profile_pair_mismatch": "project-profile.yaml 과 project-profile.json 이 다릅니다. `sage generate` 를 다시 실행하세요.",
+    "hook.entry.stop_retry_pass": "[sage-hook] {hook} 재시도(stop_hook_active) — 프로필 문제로 차단하지 않고 통과: {detail}",
+    "hook.entry.core_load_failed": "⛔ [sage-hook] hook 코어를 로드하지 못했습니다 ({path})",
+    "hook.entry.dispatch_failed": "⛔ [sage-hook] hook dispatch 에 실패했습니다 ({hook})",
+    "hook.entry.remediation": "; 조치: {actions}",
+    "hook.entry.usage_description": "SAGE hook 실행(크로스플랫폼, bash 비의존)",
+    "hook.entry.usage_root": "프로젝트 루트(기본: env/git/cwd 자동 해석)",
+    "hook.entry.usage_core_dir": "hook 코어 경로(기본: 프로젝트 로컬→번들)",
+    "hook.entry.usage_path": "write-guard 직접호출 호환 경로(stdin JSON보다 우선)",
 }

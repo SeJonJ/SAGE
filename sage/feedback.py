@@ -18,6 +18,8 @@ import time
 
 from sage import _resources
 
+from sage.diagnostics import Diagnostic
+
 
 def _markers_module():
     runtime = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks", "runtime")
@@ -68,12 +70,22 @@ class Marker:
         return f"<Marker {self.path}:{self.line} {bang}sage-feedback :: {self.text[:40]!r}>"
 
 
-class ScanError(RuntimeError):
-    """스캔 대상 목록을 확정하지 못했다 — "마커 0건" 과 구분해야 하는 상태.
 
-    둘을 같은 빈 리스트로 뭉개면 git 부재·timeout·손상 저장소에서 게이트가 조용히 통과한다
-    (마커를 못 본 것이지 없는 것이 아니다). 호출자가 fail-closed 로 다룰 수 있게 예외로 올린다.
+class ScanError(RuntimeError):
+    """스캔 실패. **완성 문장이 아니라 언어 중립 진단을 실어 나른다.**
+
+    이 모듈은 설치된 hook 이 닿는 경로에 있어 `sage.i18n` 을 import 할 수 없다. 그래서 무엇이
+    잘못됐는지(`diagnostic`)만 들고 올라가고, 어느 언어의 어떤 문장으로 보일지는 호출부가 정한다.
+
+    `str(exc)` 는 code 와 evidence 를 그대로 낸다 — 사람이 읽는 문장은 아니지만, 이행 중 이
+    예외를 문자열로 찍던 경로에서도 정보가 사라지지 않는다.
     """
+
+    def __init__(self, diagnostic):
+        self.diagnostic = diagnostic
+        detail = getattr(diagnostic, "evidence", "")
+        code = getattr(diagnostic, "code", str(diagnostic))
+        super().__init__(f"{code}: {detail}" if detail else code)
 
 
 # git 이 "저장소가 아니다" 라고 답하는 경우만 정상적인 빈 결과다. 그 외 실패는 스캔 불능이다.
@@ -86,14 +98,17 @@ def tracked_files(root):
         proc = subprocess.run(["git", "-C", root, "ls-files", "-z"],
                               capture_output=True, timeout=30)
     except subprocess.TimeoutExpired as exc:
-        raise ScanError(f"git ls-files timeout({root})") from exc
+        raise ScanError(Diagnostic("feedback.git_timeout", root=root)) from exc
     except (OSError, subprocess.SubprocessError) as exc:
-        raise ScanError(f"git ls-files 실행 실패({root}): {type(exc).__name__}: {exc}") from exc
+        raise ScanError(Diagnostic("feedback.git_failed", root=root,
+                                   evidence=f"{type(exc).__name__}: {exc}")) from exc
     if proc.returncode != 0:
         stderr = proc.stderr.decode("utf-8", "replace").strip()
         if any(token in stderr.lower() for token in _NOT_A_REPO):
             return []                     # git 저장소가 아님 = 스캔 대상 없음(정상)
-        raise ScanError(f"git ls-files 실패(exit {proc.returncode}): {stderr or '(stderr 없음)'}")
+        # stderr 는 git 이 돌려준 원문이다 — 번역하면 사용자가 검색할 수 있는 문자열이 사라진다.
+        raise ScanError(Diagnostic("feedback.git_exit", code=proc.returncode,
+                                   evidence=stderr))
     out = proc.stdout.decode("utf-8", "surrogateescape")
     return [p for p in out.split("\0") if p]
 
@@ -144,7 +159,8 @@ def scan(root, profile=None):
         except OSError as exc:
             # 존재하는데 못 읽는 파일은 "마커 없음" 이 아니라 **모름** 이다. 조용히 넘기면
             # 권한 하나로 게이트가 통과하므로 스캔 실패로 올린다.
-            raise ScanError(f"추적 파일 읽기 실패({rel}): {type(exc).__name__}: {exc}") from exc
+            raise ScanError(Diagnostic("feedback.unreadable_file", path=rel,
+                                       evidence=f"{type(exc).__name__}: {exc}")) from exc
         markers.extend(scan_text(text, rel))
     markers.sort(key=lambda m: (m.path, m.line))
     return markers

@@ -102,15 +102,28 @@ class TestInventoryCountsWhatTheScreenShows(unittest.TestCase):
         self.assertIn("profile_validate.py", modules)
         self.assertIn("model_routing.py", modules)
 
-    def test_hook_reachable_modules_are_marked(self):
-        """hook 경로 모듈에 `sage.i18n` 을 넣으면 hook 이 엔진 의존이 된다 — 표시가 그 경계다."""
+    def test_the_hook_reachable_boundary_stays_visible_and_empty(self):
+        """hook 경로에 `sage.i18n` 이 들어오면 hook 이 엔진 의존이 된다 — 그 경계가 데이터로 보여야 한다.
+
+        이관이 끝나 표시 대상이 0건인 것과, 경계를 **세지 않아서** 0건인 것은 다르다. 그래서
+        필드의 존재와 0 을 함께 확인한다 — 필드가 사라지면 다음 회귀가 조용히 들어온다.
+        """
         entries = _document()["entries"]
         validation = [e for e in entries if e["classification"] == "validation_message"]
-        if not validation:
-            self.skipTest("검증 계층 이관 완료 — 표시할 항목이 없다")
-        self.assertTrue(all("hook_reachable" in e for e in validation))
-        marked = {e["source_file"] for e in validation if e["hook_reachable"]}
-        self.assertTrue(marked, "hook 경로 모듈이 하나도 표시되지 않았다")
+        self.assertTrue(all("hook_reachable" in e for e in validation),
+                        "hook_reachable 표시가 빠진 항목이 있다")
+        remaining = [e for e in validation if e["hook_reachable"]]
+        self.assertEqual(remaining, [],
+                         f"hook 경로에 미이관 literal 이 남았다: "
+                         f"{[(e['source_file'], e['source_line']) for e in remaining[:3]]}")
+
+        # 경계를 세는 목록 자체는 살아 있어야 한다 — 비면 다음에 추가되는 hook 경로 모듈이
+        # 아무 표시 없이 들어온다.
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("_inv", GENERATOR)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertTrue(module.HOOK_REACHABLE, "hook 경로 모듈 목록이 비었다")
 
     def test_commands_layer_has_no_remaining_korean(self):
         """이관이 끝난 계층이 다시 늘어나면 즉시 잡는다."""

@@ -21,7 +21,7 @@ from pathlib import Path
 from sage.asset_paths import AssetPaths
 from sage.commands._common import contract_version_of
 from sage.hook_runtime_hash import calculate_hook_runtime_hash
-from sage.i18n import language_of, tr
+from sage.i18n import language_of, render_issue, tr
 
 # severity rank (exit code 매핑은 _exit_code)
 _SEV_RANK = {"PASS": 0, "WARN": 1, "STALE": 2, "FAIL": 3}
@@ -889,7 +889,7 @@ def run(args):
                 psev = "PASS"
                 for sev, msg in validate_profile(prof, root):
                     mk = {"FAIL": "❌", "WARN": "⚠️ ", "INFO": "ℹ️ "}.get(sev, "")
-                    print(f"  {mk} profile {sev}: {msg}")
+                    print(f"  {mk} profile {sev}: {render_issue(language_of(args), msg)}")
                     if _SEV_RANK[_map[sev]] > _SEV_RANK[psev]:
                         psev = _map[sev]
                 pmark = {"PASS": "✅", "WARN": "⚠️ ", "FAIL": "❌"}[psev]

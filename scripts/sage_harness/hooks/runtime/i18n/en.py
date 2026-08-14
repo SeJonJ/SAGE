@@ -108,4 +108,38 @@ FRAGMENTS = {
     "origin.declared": "declaration",
     "origin.branch_leaf": "branch-leaf inference",
     "origin.phase_doc": "phase document",
+
+    # 판정 code 의 hook 렌더. CLI 와 **같은 key 를 중복 등록하지 않는다** —
+    # 접두가 도메인을 가르고, 두 도메인이 같은 문장의 소유자가 되지 않는다.
+    "hook.context.not_mapping": "{section} must be a mapping (object).",
+    "hook.context.unknown_keys": "{section} contains unknown keys: {keys}",
+    "hook.context.enabled_not_bool": "context_management.compaction.enabled must be a bool (true/false).",
+    "hook.context.preserve_not_list": "context_management.compaction.preserve must be a list.",
+    "hook.context.preserve_empty": "preserve cannot be empty when compaction.enabled=true.",
+    "hook.context.preserve_unsupported": "context_management.compaction.preserve contains unsupported items — allowed: {allowed}",
+    "hook.context.preserve_duplicated": "context_management.compaction.preserve does not allow duplicates.",
+    "hook.context.snapshot_bytes_range": "context_management.compaction.max_snapshot_bytes must be an integer in {minimum}..{maximum}.",
+    "hook.feedback.git_timeout": "git ls-files did not finish in time ({root})",
+    "hook.feedback.git_failed": "git ls-files could not be run ({root})",
+    "hook.feedback.git_exit": "git ls-files exited with {code}",
+    "hook.feedback.unreadable_file": "a tracked file could not be read ({path}) — this is unknown, not marker-free",
+
+    # sage-hook 진입점의 판정 code. hook_entry 는 `sage.i18n` 을 import 하지 않고
+    # core_dir 에서 이 catalog 를 찾는다 — 출력 도메인이 hook 이므로 catalog 도 hook 것이다.
+    "hook.entry.blocked": "[sage-hook] {hook} blocked: {detail}",
+    "hook.entry.profile_missing_damaged": "There is an installation record (manifest) but no profile — the installation is damaged. Repair it with `sage install --force`, then confirm with `sage doctor`.",
+    "hook.entry.not_an_install_target": "There is no installation record (manifest) either — this directory may not be a SAGE install target. If the install was intended, run `sage install`; otherwise remove the sage-hook registration from {settings} (a hook left behind where nothing is installed blocks every edit like this).",
+    "hook.entry.profile_yaml_unreadable": "The profile YAML could not be read ({path})",
+    "hook.entry.compiled_profile_unreadable": "The compiled profile could not be read ({path})",
+    "hook.entry.profile_not_mapping": "The profile root must be an object (mapping).",
+    "hook.entry.raw_risk_type": "A raw risk field in the profile has the wrong type",
+    "hook.entry.profile_pair_mismatch": "project-profile.yaml and project-profile.json disagree. Run `sage generate` again.",
+    "hook.entry.stop_retry_pass": "[sage-hook] {hook} retry (stop_hook_active) — passing instead of blocking on a profile problem: {detail}",
+    "hook.entry.core_load_failed": "⛔ [sage-hook] the hook core could not be loaded ({path})",
+    "hook.entry.dispatch_failed": "⛔ [sage-hook] hook dispatch failed ({hook})",
+    "hook.entry.remediation": "; remediation: {actions}",
+    "hook.entry.usage_description": "Run a SAGE hook (cross-platform, no bash dependency)",
+    "hook.entry.usage_root": "Project root (default: resolved from env/git/cwd)",
+    "hook.entry.usage_core_dir": "Hook core path (default: project-local, then bundled)",
+    "hook.entry.usage_path": "Compatibility path for calling the write guard directly (takes precedence over stdin JSON)",
 }

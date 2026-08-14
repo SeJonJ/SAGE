@@ -14,7 +14,7 @@ import sys
 
 from sage import feedback as fb
 from sage.profile_layers import load_profile_layers
-from sage.i18n import language_of, tr
+from sage.i18n import language_of, render_issue, tr
 
 
 def register(sub, context):
@@ -79,7 +79,8 @@ def run(args):
         # 스캔 불능은 "마커 없음" 이 아니다. 판정을 요구한 호출(--exit-code·--release-gate)에는
         # 통과를 줄 수 없으므로 fail-closed 로 막고, 단순 조회에는 오류만 알린다.
         enforcing = args.exit_code or args.release_gate
-        print(tr(language_of(args), "cli.feedback.msg02", exc=exc), file=sys.stderr)
+        print(tr(language_of(args), "cli.feedback.msg02",
+                 exc=render_issue(language_of(args), exc.diagnostic)), file=sys.stderr)
         if args.output == "json":
             print(json.dumps({"enabled": True, "error": str(exc), "markers": []},
                              ensure_ascii=False, indent=2))

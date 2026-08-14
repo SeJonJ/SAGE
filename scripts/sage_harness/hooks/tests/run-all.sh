@@ -341,5 +341,9 @@ echo "### 64. 릴리스 증거 게이트 (플랫폼 smoke 계약 · publish pref
 python3 "$HERE/test_release_readiness.py" || rc=1
 
 echo ""
+echo "### 65. 언어 중립 판정 계약 (hook 경로 code/key · 도메인별 렌더)"
+python3 "$HERE/test_diagnostics_contract.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

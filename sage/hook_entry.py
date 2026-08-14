@@ -15,6 +15,7 @@ import subprocess
 import sys
 
 import yaml
+from sage.diagnostics import Diagnostic
 
 # 셸 어댑터와 동일: --root 없으면 host 별 env → git 루트 → cwd 순으로 프로젝트 루트 해석.
 _ROOT_ENV = {"claude": "CLAUDE_PROJECT_DIR", "codex": "CODEX_PROJECT_ROOT"}
@@ -111,14 +112,52 @@ def _missing_profile_hint(root, runtime):
     """
     manifest = os.path.join(root, "docs", "sage_harness", ".manifest.json")
     if os.path.exists(manifest):
-        return ("설치 흔적(manifest)은 있으나 프로필이 없다 — 설치가 손상됐다. "
-                "`sage install --force` 로 복구한 뒤 `sage doctor` 로 확인하라.")
+        return Diagnostic("entry.profile_missing_damaged")
     # codex 의 hook 등록은 `.codex/hooks.json` 이다(`config.toml` 은 MCP managed-block 소유).
     # 안내가 엉뚱한 파일을 가리키면 사용자가 지워도 차단이 안 풀린다.
-    settings = {"claude": ".claude/settings.json", "codex": ".codex/hooks.json"}.get(runtime, "hook 설정")
-    return (f"설치 흔적(manifest)도 없다 — 이 디렉터리는 SAGE 설치 대상이 아닐 수 있다. "
-            f"의도한 설치라면 `sage install` 을, 아니라면 {settings} 의 sage-hook 등록을 제거하라 "
-            f"(설치 대상이 아닌 곳에 hook 만 남으면 모든 편집이 이렇게 차단된다).")
+    settings = {"claude": ".claude/settings.json", "codex": ".codex/hooks.json"}.get(runtime)
+    return Diagnostic("entry.not_an_install_target", settings=settings or "")
+
+
+
+# --- 표시 언어 -------------------------------------------------------------
+#
+# `sage.i18n` 을 import 하지 않는다. 이 파일은 설치된 hook 의 진입점이고, 엔진 catalog 를
+# 끌어오면 hook 이 엔진 없이는 못 도는 물건이 된다. 대신 `run_hook` 을 찾는 것과 같은 방식으로
+# **core_dir 의 hook catalog** 를 찾는다 — 출력 도메인이 hook 이므로 catalog 도 hook 것이다.
+
+def _hook_locale(core_dir, root):
+    """(translate, language). catalog 를 못 찾아도 hook 은 서야 하므로 절대 예외를 올리지 않는다."""
+    def fallback(key, **arguments):
+        return f"[SAGE] message_key={key}"
+
+    try:
+        runtime_dir = os.path.join(core_dir, "runtime")
+        for candidate in (runtime_dir, core_dir):
+            if candidate not in sys.path:
+                sys.path.insert(0, candidate)
+        import i18n as hook_i18n
+        language = hook_i18n.context.resolve(root)[0]
+
+        def translate(key, **arguments):
+            text = hook_i18n.frag(language, key)
+            if not text:
+                return f"[SAGE] message_key={key}"
+            try:
+                return text.format(**arguments)
+            except (KeyError, IndexError, ValueError):
+                return f"[SAGE] message_key={key}"
+
+        return translate, language
+    except Exception:
+        return fallback, "ko"
+
+
+def _say(core_dir, root, diagnostic):
+    """진단 하나를 사람이 읽는 한 줄로. 문자열이 오면 그대로 통과시킨다(이행 중 경로)."""
+    from sage.diagnostics import render
+    translate, _ = _hook_locale(core_dir, root)
+    return render(diagnostic, translate, "hook")
 
 
 def _prepare_gate_profile(root, hook, runtime=None, project_hook=False):
@@ -137,28 +176,30 @@ def _prepare_gate_profile(root, hook, runtime=None, project_hook=False):
         with open(yaml_path, encoding="utf-8") as fh:
             yaml_profile = yaml.safe_load(fh) or {}
     except Exception as e:
-        message = f"프로필 YAML 로드 실패({yaml_path}): {type(e).__name__}: {e}"
+        message = Diagnostic("entry.profile_yaml_unreadable", path=yaml_path,
+                             evidence=f"{type(e).__name__}: {e}")
         if isinstance(e, FileNotFoundError):
-            message = f"{message}\n  → {_missing_profile_hint(root, runtime)}"
+            message = (message, _missing_profile_hint(root, runtime))
         return message if required else None
     try:
         with open(json_path, encoding="utf-8") as fh:
             json_profile = json.load(fh)
     except Exception as e:
-        message = f"컴파일 프로필 로드 실패({json_path}): {type(e).__name__}: {e}"
+        message = Diagnostic("entry.compiled_profile_unreadable", path=json_path,
+                             evidence=f"{type(e).__name__}: {e}")
         return message if required else None
 
     if not isinstance(yaml_profile, dict) or not isinstance(json_profile, dict):
-        message = "프로필 루트는 객체(mapping)여야 합니다."
+        message = Diagnostic("entry.profile_not_mapping")
         return message if required else None
     from sage.profile_compile import ProfileCompileError, materialize_profile
     try:
         expected_profile = materialize_profile(yaml_profile)
     except ProfileCompileError as e:
-        message = f"프로필 raw risk 필드 타입 오류: {e}"
+        message = Diagnostic("entry.raw_risk_type", evidence=str(e))
         return message if required else None
     if expected_profile != json_profile:
-        message = "project-profile.yaml과 project-profile.json이 다릅니다. sage generate를 다시 실행하세요."
+        message = Diagnostic("entry.profile_pair_mismatch")
         return message if required else None
 
     os.environ["SAGE_PROFILE"] = json_path
@@ -190,8 +231,13 @@ def _is_stop_retry(hook, raw_text):
     return isinstance(value, str) and value.strip().lower() == "true"
 
 
-def _render_bootstrap_block(runtime, hook, message):
-    text = f"[sage-hook] {hook} 차단: {message}"
+def _render_bootstrap_block(runtime, hook, message, core_dir=None, root=None):
+    detail = message
+    if isinstance(message, tuple):
+        detail = " ".join(_say(core_dir, root, part) for part in message)
+    else:
+        detail = _say(core_dir, root, message)
+    text = _say(core_dir, root, Diagnostic("entry.blocked", hook=hook, detail=detail))
     if runtime == "codex" and hook == "stop-compliance-report":
         print(json.dumps({"decision": "block", "reason": text}, ensure_ascii=False))
         return 0
@@ -199,7 +245,7 @@ def _render_bootstrap_block(runtime, hook, message):
     return 2
 
 
-def _notify_version_contract(root, hook):
+def _notify_version_contract(root, hook, core_dir=None):
     if hook != "session-start-snapshot":
         return
     yaml_path = os.path.join(root, "sage", "project-profile.yaml")
@@ -232,7 +278,9 @@ def _notify_version_contract(root, hook):
         return
     axes = version_axes(profile, manifest, __version__)
     remediations = list(dict.fromkeys(issue.remediation for issue in issues if issue.remediation))
-    suffix = f"; 조치: {'; '.join(remediations)}" if remediations else ""
+    suffix = (_say(core_dir, root, Diagnostic("entry.remediation",
+                                              actions="; ".join(remediations)))
+              if remediations else "")
     print("[sage-version] WARN "
           f"required={axes.required} installed={axes.installed} "
           f"generated={axes.generated} runtime={axes.runtime}{suffix}", file=sys.stderr)
@@ -240,20 +288,22 @@ def _notify_version_contract(root, hook):
 
 def main():
     _harden_io_encoding()
+    # 도움말은 인자를 읽기 전에 만들어야 하므로 root/core-dir 을 아직 모른다. cwd 기준으로
+    # 해석한다 — 표시 언어는 실행 하나의 성질이고, 이 화면이 가리키는 프로젝트도 cwd 다.
+    help_say, _ = _hook_locale(_resolve_core_dir(os.getcwd(), None), os.getcwd())
     ap = argparse.ArgumentParser(prog="sage-hook",
-                                 description="SAGE hook 실행(크로스플랫폼, bash 비의존)")
+                                 description=help_say("hook.entry.usage_description"))
     ap.add_argument("--runtime", required=True, choices=["claude", "codex"])
     ap.add_argument("--hook", required=True)
-    ap.add_argument("--root", default=None, help="프로젝트 루트(기본: env/git/cwd 자동 해석)")
-    ap.add_argument("--core-dir", default=None, help="hook 코어 경로(기본: 프로젝트 로컬→번들)")
-    ap.add_argument("--path", default=None,
-                    help="write-guard 직접호출 호환 경로(stdin JSON보다 우선)")
+    ap.add_argument("--root", default=None, help=help_say("hook.entry.usage_root"))
+    ap.add_argument("--core-dir", default=None, help=help_say("hook.entry.usage_core_dir"))
+    ap.add_argument("--path", default=None, help=help_say("hook.entry.usage_path"))
     a = ap.parse_args()
     root = _resolve_root(a.runtime, a.root)
     os.environ.setdefault(_PROJECT_ROOT_ENV, root)
     core_dir = _resolve_core_dir(root, a.core_dir)
     raw_text = sys.stdin.read() if not sys.stdin.isatty() else ""
-    _notify_version_contract(root, a.hook)
+    _notify_version_contract(root, a.hook, core_dir)
     project_state = (_project_hook_state(root, a.hook)
                      if a.hook not in _FAIL_CLOSED_HOOKS else "unknown")
     fail_closed = a.hook in _FAIL_CLOSED_HOOKS or project_state in ("project", "damaged")
@@ -261,15 +311,21 @@ def main():
         root, a.hook, a.runtime, project_hook=project_state == "project")
     if profile_error:
         if _is_stop_retry(a.hook, raw_text):
-            print(f"[sage-hook] {a.hook} 재시도(stop_hook_active) — 프로필 문제로 차단하지 않고 통과: "
-                  f"{profile_error}", file=sys.stderr)
+            detail = (" ".join(_say(core_dir, root, part) for part in profile_error)
+                      if isinstance(profile_error, tuple)
+                      else _say(core_dir, root, profile_error))
+            print(_say(core_dir, root, Diagnostic("entry.stop_retry_pass",
+                                                  hook=a.hook, detail=detail)),
+                  file=sys.stderr)
             return 0
-        return _render_bootstrap_block(a.runtime, a.hook, profile_error)
+        return _render_bootstrap_block(a.runtime, a.hook, profile_error, core_dir, root)
     try:
         run_hook = _load_run_hook(core_dir)
     except Exception as e:
         # 코어 로드 실패 = hook 무력화 → 조용히 통과 말고 surface(gate-disable 은 시끄럽게).
-        print(f"⛔ [sage-hook] hook 코어 로드 실패({core_dir}) → {type(e).__name__}: {e}", file=sys.stderr)
+        print(_say(core_dir, root, Diagnostic("entry.core_load_failed", path=core_dir,
+                                              evidence=f"{type(e).__name__}: {e}")),
+              file=sys.stderr)
         return 2 if fail_closed else 0
     try:
         if a.path is None:
@@ -277,8 +333,9 @@ def main():
         return run_hook.dispatch(
             a.runtime, a.hook, root, core_dir, raw_text, direct_path=a.path)
     except Exception as e:
-        print(f"⛔ [sage-hook] hook dispatch 실패({a.hook}) → "
-              f"{type(e).__name__}: {e}", file=sys.stderr)
+        print(_say(core_dir, root, Diagnostic("entry.dispatch_failed", hook=a.hook,
+                                              evidence=f"{type(e).__name__}: {e}")),
+              file=sys.stderr)
         return 2 if fail_closed else 0
 
 

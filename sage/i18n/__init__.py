@@ -10,8 +10,8 @@ from sage.i18n.context import (DEFAULT_LANGUAGE, LanguageContext, resolve, suppo
 
 CATALOGS = {"ko": _ko.MESSAGES, "en": _en.MESSAGES}
 
-__all__ = ["CATALOGS", "DEFAULT_LANGUAGE", "LanguageContext", "language_of", "resolve",
-           "supported", "tr"]
+__all__ = ["CATALOGS", "DEFAULT_LANGUAGE", "LanguageContext", "language_of", "render_issue",
+           "resolve", "supported", "tr"]
 
 
 def tr(context: LanguageContext | str | None, key: str, **arguments) -> str:
@@ -42,3 +42,15 @@ def language_of(args) -> LanguageContext:
     죽으면 명령 자체가 언어 기능에 묶인다. 표시 계층이 실행 계층을 무너뜨리면 안 된다.
     """
     return getattr(args, "_language_context", None) or LanguageContext()
+
+
+def render_issue(context, issue) -> str:
+    """판정이 돌려준 진단을 CLI 문장으로. 문자열이 오면 그대로 통과시킨다.
+
+    판정 계층은 언어 중립 `Diagnostic` 을 돌려주고 문장은 여기서 만든다. 아직 문자열을 돌려주는
+    경로가 남아 있으므로 통과시키되, **번역하지 않고 지나간 한국어를 영어 화면에 그대로 싣는
+    것은 허용되지 않는다** — 그 상태는 인벤토리가 미이관으로 세어 preflight 가 막는다.
+    """
+    from sage.diagnostics import render
+    return render(issue, lambda key, **arguments: tr(context, key, **arguments), "cli")
+
