@@ -729,6 +729,11 @@ MESSAGES = {
     "cli.upgrade.user_owned_restored": "   ↩ restored user-owned path: {path} (a delegated step touched it, but it is not an upgrade write target)",
     "cli.upgrade.declaration_only": "   ℹ️  the profile is not bootstrapped, so CORE deployment and hook regeneration are skipped — only the declared values are aligned. Run `/sage-init`, then try again.",
     "cli.upgrade.blocker_unbootstrapped": "⛔ the profile is not bootstrapped, so CORE cannot be deployed — finishing here would look like an upgrade while the new assets are absent. Fill in the profile with `/sage-init` and run again.",
+    "cli.upgrade.required_version_position_changed": "required_version location changed since it was decided",
+    "cli.upgrade.unknown_write_kind": "unknown write kind: {kind}",
+    "cli.upgrade.delete_failed": "delete failed {rel}: {exc_type}",
+    "cli.upgrade.restore_failed": "restore failed {rel}: {exc_type}",
+    "cli.upgrade.step_exit_nonzero": "step {name} exited {code}",
 
     # 언어 중립 판정 code 의 CLI 렌더. 같은 code 가 hook 에서는 `hook.<code>` 로
     # 렌더된다 — 공통 code 는 판정 계약이고 catalog key 는 출력 도메인의 소유다.

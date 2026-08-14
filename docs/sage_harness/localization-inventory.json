@@ -4,7 +4,7 @@
     "cli": "sage/i18n",
     "hook": "scripts/sage_harness/hooks/runtime/i18n"
   },
-  "total": 278,
+  "total": 273,
   "entries": [
     {
       "id": "absorb:191:cmd1",
@@ -4284,106 +4284,6 @@
       "machine_consumer": null,
       "classification": "command_output_indirect",
       "text": "DRY 인데 마지막 {dry} 라운드에 found>0(신규 있음) 또는 라운드 부족",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot",
-        "no_leakage"
-      ]
-    },
-    {
-      "id": "upgrade:547:cmd1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/commands/upgrade.py",
-      "source_symbol": "_write_declaration",
-      "source_line": 547,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "command_output_indirect",
-      "text": "required_version 위치가 판정 시점과 다름",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot",
-        "no_leakage"
-      ]
-    },
-    {
-      "id": "upgrade:555:cmd1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/commands/upgrade.py",
-      "source_symbol": "_write_declaration",
-      "source_line": 555,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "command_output_indirect",
-      "text": "알 수 없는 write kind: {item['kind']}",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot",
-        "no_leakage"
-      ]
-    },
-    {
-      "id": "upgrade:336:cmd1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/commands/upgrade.py",
-      "source_symbol": "_restore_tree",
-      "source_line": 336,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "command_output_indirect",
-      "text": "삭제 실패 {rel}: {type(exc).__name__}",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot",
-        "no_leakage"
-      ]
-    },
-    {
-      "id": "upgrade:347:cmd1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/commands/upgrade.py",
-      "source_symbol": "_restore_tree",
-      "source_line": 347,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "command_output_indirect",
-      "text": "복원 실패 {rel}: {type(exc).__name__}",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot",
-        "no_leakage"
-      ]
-    },
-    {
-      "id": "upgrade:522:cmd1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/commands/upgrade.py",
-      "source_symbol": "_apply",
-      "source_line": 522,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "command_output_indirect",
-      "text": "{name} 단계가 exit {code}",
       "required_tests": [
         "ko_parity",
         "en_snapshot",

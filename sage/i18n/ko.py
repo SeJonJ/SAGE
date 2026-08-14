@@ -735,6 +735,11 @@ MESSAGES = {
     "cli.upgrade.user_owned_restored": "   ↩ 사용자 소유 경로 복원: {path} (위임 단계가 건드렸으나 upgrade 의 write target 이 아니다)",
     "cli.upgrade.declaration_only": "   ℹ️  profile 이 부트스트랩되지 않아 CORE 배포·hook 재생성을 건너뜁니다 — 선언 값만 맞춥니다. `/sage-init` 후 다시 실행하세요.",
     "cli.upgrade.blocker_unbootstrapped": "⛔ profile 이 부트스트랩되지 않아 CORE 를 배포할 수 없습니다 — 이 상태로 끝내면 업그레이드된 것처럼 보이지만 새 자산이 없습니다. `/sage-init` 로 profile 을 채운 뒤 다시 실행하세요.",
+    "cli.upgrade.required_version_position_changed": "required_version 위치가 판정 시점과 다름",
+    "cli.upgrade.unknown_write_kind": "알 수 없는 write kind: {kind}",
+    "cli.upgrade.delete_failed": "삭제 실패 {rel}: {exc_type}",
+    "cli.upgrade.restore_failed": "복원 실패 {rel}: {exc_type}",
+    "cli.upgrade.step_exit_nonzero": "{name} 단계가 exit {code}",
 
     # 언어 중립 판정 code 의 CLI 렌더. 같은 code 가 hook 에서는 `hook.<code>` 로
     # 렌더된다 — 공통 code 는 판정 계약이고 catalog key 는 출력 도메인의 소유다.

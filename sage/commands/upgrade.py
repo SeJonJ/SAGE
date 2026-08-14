@@ -325,7 +325,7 @@ def _snapshot_tree(root):
     return captured
 
 
-def _restore_tree(root, captured):
+def _restore_tree(root, captured, language=None):
     """스냅샷 상태로 되돌린다. (복원 성공 여부, 남은 문제)."""
     problems = []
     current = _snapshot_tree(root)
@@ -333,7 +333,8 @@ def _restore_tree(root, captured):
         try:
             os.unlink(os.path.join(root, rel))
         except OSError as exc:
-            problems.append(f"삭제 실패 {rel}: {type(exc).__name__}")
+            problems.append(tr(language, "cli.upgrade.delete_failed",
+                               rel=rel, exc_type=type(exc).__name__))
     for rel, (mode, body) in sorted(captured.items()):
         if current.get(rel) == (mode, body):
             continue
@@ -344,7 +345,8 @@ def _restore_tree(root, captured):
                 handle.write(body)
             os.chmod(path, mode)
         except OSError as exc:
-            problems.append(f"복원 실패 {rel}: {type(exc).__name__}")
+            problems.append(tr(language, "cli.upgrade.restore_failed",
+                               rel=rel, exc_type=type(exc).__name__))
     return (not problems), problems
 
 
@@ -514,19 +516,19 @@ def _apply(root, plan, language):
     applied = 0
     try:
         for item in plan["writes"]:
-            _write_declaration(root, item)
+            _write_declaration(root, item, language)
             applied += 1
         for name, run_step in _managed_steps(root, plan, language):
             code = run_step()
             if code not in _STEP_OK[name]:
-                raise RuntimeError(f"{name} 단계가 exit {code}")
+                raise RuntimeError(tr(language, "cli.upgrade.step_exit_nonzero", name=name, code=code))
             applied += 1
         reverted = _restore_user_owned(root, snapshot, user_times)
         for rel in reverted:
             print(tr(language, "cli.upgrade.user_owned_restored", path=rel))
         return applied, "", True
     except BaseException as exc:
-        restored, problems = _restore_tree(root, snapshot)
+        restored, problems = _restore_tree(root, snapshot, language)
         detail = f"{type(exc).__name__}: {exc}"
         if not restored:
             return 0, tr(language, "cli.upgrade.rollback_failed",
@@ -536,7 +538,7 @@ def _apply(root, plan, language):
         lock.release()
 
 
-def _write_declaration(root, item):
+def _write_declaration(root, item, language=None):
     """upgrade 가 직접 소유하는 두 선언 값. 나머지 바이트는 위임 단계가 만든다."""
     absolute = os.path.join(root, item["path"])
     if item["kind"] == "required_version":
@@ -544,7 +546,7 @@ def _write_declaration(root, item):
             raw = handle.read()
         updated = _apply_required_version(raw, item)
         if updated is None:
-            raise RuntimeError("required_version 위치가 판정 시점과 다름")
+            raise RuntimeError(tr(language, "cli.upgrade.required_version_position_changed"))
         body = updated.encode("utf-8")
     elif item["kind"] == "cycle_schema":
         body = (json.dumps({"version": 2, "cycle_stem": item["cycle_stem"],
@@ -552,7 +554,7 @@ def _write_declaration(root, item):
                             "declared_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
                            ensure_ascii=False, indent=2) + "\n").encode("utf-8")
     else:
-        raise RuntimeError(f"알 수 없는 write kind: {item['kind']}")
+        raise RuntimeError(tr(language, "cli.upgrade.unknown_write_kind", kind=item["kind"]))
     mode = os.stat(absolute).st_mode & 0o777
     with open(absolute, "wb") as handle:
         handle.write(body)

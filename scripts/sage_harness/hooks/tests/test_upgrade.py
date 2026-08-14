@@ -479,6 +479,33 @@ class TestRealReleaseFixture(unittest.TestCase):
                          "실제 트리에서 두 번째 apply 가 파일을 다시 썼다")
 
 
+class TestFailureMessagesFollowLanguage(unittest.TestCase):
+    """실패 경로(rollback·미지 write kind·단계 exit)의 문구도 language_of() 를 따른다.
+
+    조직 전체 upgrade 를 실패시켜 이 경로들을 자연히 밟게 하기는 어려워(멱등·잠금·단계 순서가
+    실제 설치본을 요구) 관련 함수를 직접 호출해 --lang en 렌더를 고정한다.
+    """
+
+    def test_restore_tree_reports_failures_in_english(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "x.txt")
+            Path(path).write_text("x", encoding="utf-8")
+            with mock.patch("sage.commands.upgrade.os.unlink",
+                            side_effect=OSError("permission denied")):
+                restored, problems = up._restore_tree(root, {}, language="en")
+            self.assertFalse(restored)
+            self.assertTrue(any("delete failed" in p for p in problems), problems)
+            self.assertFalse(any("삭제 실패" in p for p in problems), problems)
+
+    def test_write_declaration_unknown_kind_raises_in_english(self):
+        with tempfile.TemporaryDirectory() as root:
+            with self.assertRaises(RuntimeError) as ctx:
+                up._write_declaration(root, {"kind": "bogus", "path": "irrelevant"}, language="en")
+        self.assertIn("unknown write kind: bogus", str(ctx.exception))
+        self.assertNotIn("알 수 없는", str(ctx.exception))
+
+
 class TestRunAllRegistration(unittest.TestCase):
     def test_this_suite_is_wired(self):
         body = (HERE / "run-all.sh").read_text(encoding="utf-8")
