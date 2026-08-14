@@ -172,23 +172,23 @@ def _overlay_hint(p):
     return f"sage/asset_overrides/{subdir}/{safe}.md"
 
 
-def _overlay_resolution(p):
+def _overlay_resolution(p, language=None):
     """retro proposal의 CORE overlay eligibility와 안내 문구를 단일 분류기로 판정한다."""
     from sage.overlay_classify import classify, is_core
 
     target = p.get("target") if isinstance(p, dict) else None
     raw = p.get("asset_id") or p.get("id") or p.get("asset")
     if not raw:
-        return f"대상 확인 필요: {_overlay_hint(p)} (asset_id 지정 후 COMPOSE_ALLOWED 검증)"
+        return tr(language, "cli.absorb.overlay_target_needs_id", hint=_overlay_hint(p))
 
     hint = _overlay_hint(p)
     kind = "agents" if target == "agent" else "skills"
     asset_id = os.path.basename(hint)[:-3]
     if is_core(kind, asset_id) and classify(kind, asset_id) == "compose":
-        return f"eligible overlay 후보: {hint}"
+        return tr(language, "cli.absorb.overlay_eligible_candidate", hint=hint)
     if is_core(kind, asset_id):
-        return f"overlay 미지원: {kind}/{asset_id} (gate-bearing 또는 독립 oracle 미보증)"
-    return f"CORE 대상 아님: {kind}/{asset_id} (새 프로젝트 자산은 /sage-asset)"
+        return tr(language, "cli.absorb.overlay_unsupported", kind=kind, asset_id=asset_id)
+    return tr(language, "cli.absorb.overlay_not_core_target", kind=kind, asset_id=asset_id)
 
 
 def frontmatter_value(text, key):
@@ -277,7 +277,7 @@ def _is_proposal_candidate(lang, content):
     return lang == "json" or content.lstrip().startswith("[")
 
 
-def _extract_proposals(text):
+def _extract_proposals(text, language=None):
     """`## 제안` 섹션의 첫 제안 후보 블록 → (list, None). 없음/실패 → (None, 사유).
 
     마스킹 금지: 후보 블록이 파싱에 실패하면 뒤 블록으로 구제하지 않고 즉시 실패한다. 그러지 않으면
@@ -285,9 +285,9 @@ def _extract_proposals(text):
     """
     blocks = _fenced_blocks_in_proposal_section(text)
     if blocks is None:
-        return None, "## 제안 섹션을 찾지 못함"
+        return None, tr(language, "cli.absorb.proposals_section_not_found")
     if not blocks:
-        return None, "## 제안 섹션에 코드블록이 없음"
+        return None, tr(language, "cli.absorb.proposals_section_no_codeblock")
     for lang, content in blocks:
         raw = content.strip()
         if not raw or not _is_proposal_candidate(lang, raw):
@@ -295,11 +295,11 @@ def _extract_proposals(text):
         try:
             data = json.loads(raw)
         except Exception as e:
-            return None, f"제안 JSON 파싱 실패: {e}"
+            return None, tr(language, "cli.absorb.proposals_json_parse_failed", e=e)
         if not isinstance(data, list):
-            return None, "제안 블록이 JSON 배열이 아님"
+            return None, tr(language, "cli.absorb.proposals_not_json_array")
         return data, None
-    return None, "유효한 JSON 배열 블록 없음"
+    return None, tr(language, "cli.absorb.proposals_no_valid_json_block")
 
 
 def _absorb_from_retro(args) -> int:
@@ -313,7 +313,7 @@ def _absorb_from_retro(args) -> int:
     if approved is not True:
         print(tr(language_of(args), "cli.absorb.msg17", approved=approved), file=sys.stderr)
         return 2
-    proposals, err = _extract_proposals(text)
+    proposals, err = _extract_proposals(text, language_of(args))
     if err:
         print(f"[sage absorb] {err}", file=sys.stderr)
         return 2
@@ -354,7 +354,7 @@ def _absorb_from_retro(args) -> int:
         print(tr(language_of(args), "cli.absorb.msg26"))
         for p in sem:
             _show(p)
-            print(f"      {_overlay_resolution(p)}")
+            print(f"      {_overlay_resolution(p, language_of(args))}")
         print(tr(language_of(args), "cli.absorb.msg27"))
         print(tr(language_of(args), "cli.absorb.msg28"))
         print(tr(language_of(args), "cli.absorb.msg29"))

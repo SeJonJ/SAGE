@@ -218,7 +218,7 @@ def _check_note(path, root, run_id=None, language=None):
         if not prose:
             problems.append("`## 요약` 이 비었거나 템플릿 placeholder 그대로 — 사이클 회고가 작성되지 않음")
 
-    proposals, err = _extract_proposals(text)
+    proposals, err = _extract_proposals(text, language)
     if err:
         problems.append(f"`## 제안` 파싱 불가: {err}")
     else:
