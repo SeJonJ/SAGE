@@ -58,6 +58,14 @@ def render(diagnostic, translate, prefix):
     evidence 는 문장 뒤에 원문 그대로 붙인다 — 번역 대상이 아니고, 사용자가 그대로 검색할 수
     있어야 한다.
     """
+    # 설치된 hook runtime 은 이 모듈을 import 할 수 없다 — 소비 프로젝트에서 엔진 없이 단독으로
+    # 돌아야 하므로. 그래서 그 계층은 `{"code", "arguments", "evidence"}` 매핑으로 진단을 올리고,
+    # 여기서 받는다. 이 통로가 없으면 하부 감사 모듈은 완성 문장을 돌려주는 수밖에 없고, 그
+    # 문장의 언어는 호출부가 고를 수 없다.
+    if isinstance(diagnostic, dict) and isinstance(diagnostic.get("code"), str):
+        diagnostic = Diagnostic(diagnostic["code"],
+                                evidence=diagnostic.get("evidence") or "",
+                                **(diagnostic.get("arguments") or {}))
     if not isinstance(diagnostic, Diagnostic):
         return str(diagnostic)          # 이행 중 남은 문자열도 화면에서 사라지지 않게 한다
     # 하부 판정이 낸 진단을 상위 판정이 인자로 실어 올릴 수 있다(`이유: <하부 진단>`). 중첩된

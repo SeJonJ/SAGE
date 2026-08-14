@@ -325,7 +325,9 @@ def _run_review(args):
         loop_issues = loop.integrity_issues(root)
         loop_state = loop.audit_summary(root)["runs"].get(args.loop_run_id)
         if loop_issues or not loop_state:
-            raise ValueError("Loop Audit invalid or run missing: " + "; ".join(loop_issues[:3]))
+            # 이 표면은 표시 언어와 무관하게 영어다 — 틀이 영어면 하부 진단도 영어로 맞춘다.
+            raise ValueError("Loop Audit invalid or run missing: "
+                             + "; ".join(english_text(item) for item in loop_issues[:3]))
         if not (loop_state.get("clean") and loop_state.get("closed")
                 and loop_state.get("result") == "APPROVED"
                 and loop_state.get("seq_ok") is True

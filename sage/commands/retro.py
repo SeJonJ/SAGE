@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 from sage.profile_layers import load_profile_layers
-from sage.i18n import language_of, tr
+from sage.i18n import language_of, render_issue, tr
 
 
 def register(sub, context):
@@ -292,7 +292,10 @@ def run(args):
         out.append(f"  (없음 — {os.path.relpath(pattern, root)} 매치 0. 05 리뷰 문서가 있어야 패턴 분류 가능)")
     out += ["", "【 distiller 프롬프트 (host AI 가 위 증거로 실행) 】", _DISTILLER_PROMPT, _APPLY_PATH]
     if integ:
-        out += ["", "⚠️  loop_audit 무결성 경고(증거 신뢰성 점검):"] + [f"   - {i}" for i in integ]
+        # 문구 자체의 이관은 retro 배치에서 하고, 여기서는 하부 감사 진단만 렌더한다 —
+        # 진단을 문자열로 두면 이 줄이 어느 언어로 나갈지 호출부가 고를 수 없다.
+        out += ["", "⚠️  loop_audit 무결성 경고(증거 신뢰성 점검):"]
+        out += [f"   - {render_issue(language_of(args), i)}" for i in integ]
 
     print("\n".join(out))
 

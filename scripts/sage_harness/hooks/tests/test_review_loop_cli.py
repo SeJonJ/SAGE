@@ -573,6 +573,43 @@ class TestReviewLoopDisplayLanguage(unittest.TestCase):
         self.assertIn(open_rid, en.stdout)
         self.assertIn("APPROVED/CONVERGED", en.stdout)           # 어휘는 감사 계약 — 번역 안 함
 
+    def test_audit_integrity_warnings_are_english_on_screen_and_in_the_dashboard(self):
+        """무결성 경고는 하부 감사 모듈이 만든다 — 그 문장까지 영어여야 한다.
+
+        `review_loop.py` 자체에 한국어 literal 이 0건이어도, 호출한 `loop_audit` 이 한국어를
+        돌려주면 `--lang en` 화면과 영어 대시보드에 그대로 실린다. 인벤토리는 파일 단위로
+        스캔하므로 이 간접 누출을 세지 못한다.
+        """
+        vault = tempfile.mkdtemp()
+        self._profile("project:\n  name: demoapp\n"
+                      "pdca:\n  review_loop: { enabled: true }\n"
+                      f"knowledge_capture:\n  vault_path: \"{vault}\"\n"
+                      "  note_convention: { folder: wiki }\n")
+        rid = self._open()
+        self._round(rid, survived=1)
+        path = os.path.join(self.tmp, ".sage", "loop_audit.jsonl")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("{ corrupt line\n")                      # 손상 줄 → 무결성 경고
+        sage("round", "--run-id", "rl-ghost", "--iteration", "1", "--found", "1",
+             "--survived", "0", "--accepted", "0", root=self.tmp)   # CLI 는 orphan 을 거부하므로
+        with open(path, "a", encoding="utf-8") as f:                # 직접 append 로 orphan 을 만든다
+            f.write(json.dumps({"event": "round", "run_id": "rl-ghost", "iteration": 1,
+                                "found": 1, "survived": 0, "accepted": 0}) + "\n")
+
+        ko = sage("show", root=self.tmp)
+        en = sage("show", "--vault", root=self.tmp, lang="en")
+
+        self.assertEqual(1, ko.returncode)                   # 무결성 경고 = exit 1
+        self.assertEqual(ko.returncode, en.returncode)       # 판정 불변
+        self.assertIn("무결성 경고", ko.stdout)
+        self.assertIn("orphan", ko.stdout)
+        self._assertNoKorean(en.stdout, "show --lang en stdout (integrity)")
+        self.assertIn("malformed JSON", en.stdout)           # 원문 증거는 번역하지 않는다
+        self.assertIn("rl-ghost", en.stdout)
+        dashboard = Path(vault, "wiki", "TECH - demoapp loop audit.md").read_text(encoding="utf-8")
+        leaked = [line for line in dashboard.splitlines() if KOREAN.search(line)]
+        self.assertEqual([], leaked, f"en 대시보드 무결성 섹션에 한국어가 남았다: {leaked}")
+
     def test_argparse_count_rejection_is_english(self):
         rid = self._open()
         common = ("round", "--run-id", rid, "--iteration", "1", "--survived", "0", "--accepted", "0")

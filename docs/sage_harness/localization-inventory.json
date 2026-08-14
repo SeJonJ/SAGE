@@ -2291,12 +2291,12 @@
       ]
     },
     {
-      "id": "retro:380:cmd1",
+      "id": "retro:383:cmd1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/retro.py",
       "source_symbol": "_write_vault_note",
-      "source_line": 380,
+      "source_line": 383,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -2411,12 +2411,32 @@
       ]
     },
     {
-      "id": "retro:381:cmd1",
+      "id": "retro:297:cmd1",
+      "domain": "cli",
+      "key": null,
+      "source_file": "sage/commands/retro.py",
+      "source_symbol": "run",
+      "source_line": 297,
+      "channel": "stdout",
+      "exit_contract": "unchanged",
+      "format": "static",
+      "placeholders": [],
+      "machine_consumer": null,
+      "classification": "command_output_indirect",
+      "text": "⚠️  loop_audit 무결성 경고(증거 신뢰성 점검):",
+      "required_tests": [
+        "ko_parity",
+        "en_snapshot",
+        "no_leakage"
+      ]
+    },
+    {
+      "id": "retro:384:cmd1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/commands/retro.py",
       "source_symbol": "_write_vault_note",
-      "source_line": 381,
+      "source_line": 384,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -2524,26 +2544,6 @@
       "machine_consumer": null,
       "classification": "command_output_indirect",
       "text": "`## 요약` 이 비었거나 템플릿 placeholder 그대로 — 사이클 회고가 작성되지 않음",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot",
-        "no_leakage"
-      ]
-    },
-    {
-      "id": "retro:295:cmd1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/commands/retro.py",
-      "source_symbol": "run",
-      "source_line": 295,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "command_output_indirect",
-      "text": "⚠️  loop_audit 무결성 경고(증거 신뢰성 점검):",
       "required_tests": [
         "ko_parity",
         "en_snapshot",

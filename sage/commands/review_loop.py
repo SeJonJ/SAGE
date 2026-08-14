@@ -518,7 +518,7 @@ def _run_show(args):
     if integ:
         print(tr(language_of(args), "cli.review_loop.msg23"))
         for i in integ:
-            print(f"   - {i}")
+            print(f"   - {render_issue(language_of(args), i)}")
 
     if args.vault is not None:
         _write_vault_dashboard(la, root, args.vault or None, language_of(args))
@@ -699,7 +699,7 @@ def _dashboard_md(la, root, retro_links=None, language=None):
     integ = la.integrity_issues(root)
     if integ:
         body += ["", f"## ⚠️ {tr(language, 'cli.review_loop.dashboard_integrity_heading')}", ""]
-        body += [f"- {i}" for i in integ]
+        body += [f"- {render_issue(language, i)}" for i in integ]
     return "\n".join(body) + "\n"
 
 

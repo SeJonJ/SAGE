@@ -249,6 +249,89 @@ class TestHookRendersWithoutTheEngineCatalog(unittest.TestCase):
                       "진단을 화면으로 옮기는 호출이 없다")
 
 
+class TestRuntimeJudgementReachesTheCliCatalog(unittest.TestCase):
+    """설치 runtime 이 CLI 로 올려보내는 판정도 언어 중립이어야 한다.
+
+    인벤토리는 `sage/` 를 파일 단위로 스캔한다. 그래서 CLI 모듈에 한국어 literal 이 0건이어도,
+    그 모듈이 부른 runtime 함수가 완성된 한국어 문장을 돌려주면 `--lang en` 화면에 그대로
+    실린다 — 인벤토리 0 이 "영어 화면에 한국어가 없다"를 뜻하지 못하는 구멍이다.
+
+    runtime 은 `sage.i18n` 을 import 할 수 없으므로(엔진 없이 단독 실행) 진단을
+    `{"code", "arguments", "evidence"}` 매핑으로 올리고 문장은 부른 쪽 catalog 가 만든다.
+    """
+
+    # CLI 가 판정 결과를 화면에 싣는 runtime 모듈.
+    CLI_CONSUMED = ("loop_audit", "fast_cycle_audit", "cycle_state", "retro_audit",
+                    "override_audit", "document_language", "checklist_contract")
+
+    # 아직 완성 한국어 문장을 돌려주는 함수. **건수가 아니라 정확한 집합**이다 — 건수만 세면
+    # 한 곳을 고치면서 다른 곳이 새로 생겨도 총계가 같아 통과한다. 해당 명령 배치에서 비운다.
+    KOREAN_JUDGEMENT_DEBT = frozenset({
+        "cycle_state.read_declaration",            # sage cycle / fast-cycle 화면
+        "cycle_state.read_declaration_record",
+        "cycle_state.write_declaration",
+        "override_audit.state_home",               # sage override 화면
+        "override_audit._probe_gitdir",
+        "override_audit._gitdir",
+        "override_audit._repo_id",
+        "override_audit.grants_path",
+        "override_audit.grant",
+        "document_language.consistency_issues",     # hook·CLI 양쪽
+        "checklist_contract.unsafe_glob",           # hook 게이트
+        "checklist_contract.checklist_target_issues",
+    })
+
+    def _korean_returning_functions(self):
+        found = set()
+        for name in self.CLI_CONSUMED:
+            tree = ast.parse((RUNTIME / f"{name}.py").read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                docstring = (node.body[0].value
+                             if node.body and isinstance(node.body[0], ast.Expr)
+                             and isinstance(node.body[0].value, ast.Constant) else None)
+                if any(isinstance(inner, ast.Constant) and isinstance(inner.value, str)
+                       and HANGUL.search(inner.value) and inner is not docstring
+                       for inner in ast.walk(node)):
+                    found.add(f"{name}.{node.name}")
+        return found
+
+    def test_korean_returning_runtime_functions_are_an_exact_declared_set(self):
+        self.assertEqual(self.KOREAN_JUDGEMENT_DEBT, self._korean_returning_functions())
+
+    def test_the_scan_actually_reads_the_runtime(self):
+        """스캔이 빈 통과로 떨어지면 위 검사는 아무것도 지키지 않는다."""
+        self.assertTrue(all((RUNTIME / f"{name}.py").is_file() for name in self.CLI_CONSUMED))
+        self.assertGreater(len(self._korean_returning_functions()), 5)
+
+    def test_loop_audit_is_migrated_and_its_codes_render_in_both_languages(self):
+        from sage.i18n import CATALOGS
+        tree = ast.parse((RUNTIME / "loop_audit.py").read_text(encoding="utf-8"))
+        codes = {node.args[0].value for node in ast.walk(tree)
+                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                 and node.func.id == "_diagnostic" and node.args
+                 and isinstance(node.args[0], ast.Constant)}
+
+        self.assertGreaterEqual(len(codes), 7)
+        for code in sorted(codes):
+            for language in ("ko", "en"):
+                self.assertIn(f"cli.{code}", CATALOGS[language])
+
+    def test_a_runtime_diagnostic_mapping_renders_like_a_diagnostic(self):
+        """runtime 은 Diagnostic 을 만들 수 없다 — 매핑을 같은 계약으로 받아야 한다."""
+        from sage.i18n import LanguageContext, render_issue
+        mapping = {"code": "loop_audit.orphan_event", "evidence": "line 3: malformed JSON",
+                   "arguments": {"event": "round", "run_id": "'rl-ghost'"}}
+
+        english = render_issue(LanguageContext(language="en"), mapping)
+
+        self.assertIn("rl-ghost", english)
+        self.assertIn("line 3: malformed JSON", english)     # evidence 는 원문 그대로
+        self.assertNotRegex(english, r"[가-힣]")
+        self.assertNotEqual(english, render_issue(LanguageContext(language="ko"), mapping))
+
+
 class TestNoHookReachableLiteralsRemain(unittest.TestCase):
     def test_the_inventory_reports_zero_hook_reachable_entries(self):
         entries = json.loads(
