@@ -237,15 +237,15 @@ class TestInventoryCountsWhatTheScreenShows(unittest.TestCase):
         540 → 539 스캐너 오탐 1건 제거 → 530 (d) 9건 NOT_TRANSLATED 등록 →
         300 f-string 조각 중복 카운트 버그 수정 →
         286 배치 B-1(knowledge·fast_cycle·feedback) → 278 배치 A(_common.py, 8건) →
-        273 배치 A(upgrade.py, 5건). 모듈 하나를 이관할 때마다 이 상한을 그 모듈의
-        실측 감소량만큼 낮춘다.
+        273 배치 A(upgrade.py, 5건) → 270 배치 A(asset_check.py, 3건). 모듈 하나를
+        이관할 때마다 이 상한을 그 모듈의 실측 감소량만큼 낮춘다.
         """
         entries = _document()["entries"]
         remaining = [e for e in entries
                      if e["source_file"].replace("\\", "/").startswith("sage/commands/")
                      and e["source_file"] != "sage/commands/sync_overlays.py"]
-        self.assertLessEqual(len(remaining), 273,
-                             f"sage/commands 잔여 한국어가 알려진 상한(273)을 넘었다: "
+        self.assertLessEqual(len(remaining), 270,
+                             f"sage/commands 잔여 한국어가 알려진 상한(270)을 넘었다: "
                              f"{len(remaining)}건")
 
 if __name__ == "__main__":

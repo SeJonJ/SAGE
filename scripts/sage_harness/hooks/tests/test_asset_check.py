@@ -64,7 +64,19 @@ class TestDecision(unittest.TestCase):
         # agent: render_hash 한쪽만 → render 미최신 → review
         d = auto_approve_decision("agents/x", "PASS", agent_entry(render_hash={"claude": "x"}))
         self.assertEqual(d["decision"], "review")
-        self.assertTrue(any("render" in r for r in d["reasons"]))
+
+    def test_reasons_follow_language(self):
+        """이유 문구도 language_of() 를 따른다."""
+        d = auto_approve_decision(
+            "hooks/x", "PASS",
+            hook_entry(unresolved=["drift"], risk=["r"]), language="en")
+        self.assertTrue(any("unresolved 1" in r for r in d["reasons"]), d["reasons"])
+        self.assertTrue(any("risk 1" in r for r in d["reasons"]), d["reasons"])
+        self.assertFalse(any("건" in r for r in d["reasons"]), d["reasons"])
+
+        d_render = auto_approve_decision("agents/x", "PASS",
+                                         agent_entry(render_hash={"claude": "x"}), language="en")
+        self.assertIn("render not current (stamp missing)", d_render["reasons"])
 
     def test_agent_auto(self):
         self.assertEqual(auto_approve_decision("agents/x", "PASS", agent_entry())["decision"], "auto")

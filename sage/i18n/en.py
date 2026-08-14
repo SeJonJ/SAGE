@@ -244,6 +244,9 @@ MESSAGES = {
     "cli.asset_check.msg04": "✅ auto-approved: {count} (no human check needed)",
     "cli.asset_check.msg05": "⚠️  needs review: {count} (human review exceptions)",
     "cli.asset_check.msg06": "---- GATE: review bucket is non-empty → exit 1 ----",
+    "cli.asset_check.reason_unresolved": "unresolved {count}",
+    "cli.asset_check.reason_risk": "risk {count}",
+    "cli.asset_check.reason_render_stale": "render not current (stamp missing)",
 
     "cli.fast_cycle.msg01": "This work is classified L3, but it uses the L2 Fast review procedure.",
     "cli.fast_cycle.msg02": "Using the Fast Cycle instead of the standard {actual_risk} PDCA.",

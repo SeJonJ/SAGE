@@ -250,6 +250,9 @@ MESSAGES = {
     "cli.asset_check.msg04": "✅ auto-approved: {count}건 (사람 확인 불필요)",
     "cli.asset_check.msg05": "⚠️  review 필요: {count}건 (사람 검토 예외)",
     "cli.asset_check.msg06": "---- GATE: review 버킷 존재 → exit 1 ----",
+    "cli.asset_check.reason_unresolved": "unresolved {count}건",
+    "cli.asset_check.reason_risk": "risk {count}건",
+    "cli.asset_check.reason_render_stale": "render 미최신(stamp 누락)",
 
     "cli.fast_cycle.msg01": "이 작업은 L3 위험도로 분류됐지만 L2 Fast 리뷰 절차를 사용합니다.",
     "cli.fast_cycle.msg02": "표준 {actual_risk} PDCA 대신 Fast Cycle을 사용합니다.",

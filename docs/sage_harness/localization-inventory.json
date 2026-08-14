@@ -4,7 +4,7 @@
     "cli": "sage/i18n",
     "hook": "scripts/sage_harness/hooks/runtime/i18n"
   },
-  "total": 273,
+  "total": 270,
   "entries": [
     {
       "id": "absorb:191:cmd1",
@@ -200,66 +200,6 @@
       "machine_consumer": null,
       "classification": "command_output_indirect",
       "text": "제안 JSON 파싱 실패: {e}",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot",
-        "no_leakage"
-      ]
-    },
-    {
-      "id": "asset_check:54:cmd1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/commands/asset_check.py",
-      "source_symbol": "auto_approve_decision",
-      "source_line": 54,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "command_output_indirect",
-      "text": "unresolved {len(entry['unresolved'])}건",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot",
-        "no_leakage"
-      ]
-    },
-    {
-      "id": "asset_check:58:cmd1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/commands/asset_check.py",
-      "source_symbol": "auto_approve_decision",
-      "source_line": 58,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "command_output_indirect",
-      "text": "risk {len(entry['risk'])}건",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot",
-        "no_leakage"
-      ]
-    },
-    {
-      "id": "asset_check:60:cmd1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/commands/asset_check.py",
-      "source_symbol": "auto_approve_decision",
-      "source_line": 60,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "command_output_indirect",
-      "text": "render 미최신(stamp 누락)",
       "required_tests": [
         "ko_parity",
         "en_snapshot",

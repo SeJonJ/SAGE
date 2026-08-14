@@ -45,19 +45,19 @@ def _render_current(entry):
     return "claude" in rh or "codex" in rh
 
 
-def auto_approve_decision(asset_id, validate_sev, entry):
+def auto_approve_decision(asset_id, validate_sev, entry, language=None):
     """auto|review 결정 + 사유. validate_sev 가 PASS 가 아니면 그 자체가 review 사유."""
     reasons = []
     if validate_sev != "PASS":
         reasons.append(f"validate={validate_sev}")
     if entry.get("unresolved"):
-        reasons.append(f"unresolved {len(entry['unresolved'])}건")
+        reasons.append(tr(language, "cli.asset_check.reason_unresolved", count=len(entry["unresolved"])))
     if entry.get("safety_degraded"):
         reasons.append("safety_degraded")
     if entry.get("risk"):
-        reasons.append(f"risk {len(entry['risk'])}건")
+        reasons.append(tr(language, "cli.asset_check.reason_risk", count=len(entry["risk"])))
     if not _render_current(entry):
-        reasons.append("render 미최신(stamp 누락)")
+        reasons.append(tr(language, "cli.asset_check.reason_render_stale"))
     return {"decision": "auto" if not reasons else "review", "reasons": reasons}
 
 
@@ -106,7 +106,7 @@ def run(args):
                 sev = "FAIL"
         else:
             sev, _ = V._validate_interpretive(root, aid, entry, run_regression=False)
-        d = auto_approve_decision(aid, sev, entry)
+        d = auto_approve_decision(aid, sev, entry, language_of(args))
         (auto if d["decision"] == "auto" else review).append((aid, d["reasons"]))
 
     print(f"== sage asset-check ({args.kind}) — auto_approve_safe_default ==")
