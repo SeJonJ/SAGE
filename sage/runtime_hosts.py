@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from sage.diagnostics import Diagnostic
+
 HOSTS = ("claude", "codex")
 RUNTIME_KEYS = frozenset({"host", "installed_hosts", "active_host",
                           "external_reviewer", "asset_ssot"})
@@ -140,37 +142,38 @@ def profile_issues(profile: dict[str, Any] | None) -> list[tuple[str, str]]:
     if runtime in (None, ""):
         return []
     if not isinstance(runtime, dict):
-        return [("FAIL", f"runtime 은 매핑이어야 함 (받음: {type(runtime).__name__})")]
+        return [("FAIL", Diagnostic("runtime.not_mapping", received=type(runtime).__name__))]
     issues = []
     unknown = sorted((key for key in runtime if key not in RUNTIME_KEYS), key=str)
     if unknown:
-        issues.append(("FAIL", f"runtime 의 알 수 없는 키: {unknown} (허용: {sorted(RUNTIME_KEYS)})"))
+        issues.append(("FAIL", Diagnostic("runtime.unknown_keys", keys=unknown,
+                                          allowed=sorted(RUNTIME_KEYS))))
     legacy = runtime.get("host")
     active = runtime.get("active_host")
     allowed = {"host": HOSTS, "active_host": HOSTS + (AUTO,)}
     for key, value in (("host", legacy), ("active_host", active)):
         if value is not None and value not in allowed[key]:
-            issues.append(("FAIL", f"runtime.{key}={value!r} — {list(allowed[key])} 중 하나여야 함"))
+            issues.append(("FAIL", Diagnostic("runtime.invalid_value", key=key,
+                                              value=repr(value), allowed=list(allowed[key]))))
     if legacy in HOSTS and active in HOSTS and legacy != active:
-        issues.append(("FAIL", "runtime.host legacy alias와 runtime.active_host가 다름 — active host 정본이 모호함"))
+        issues.append(("FAIL", Diagnostic("runtime.alias_conflicts_with_active")))
 
     hosts = runtime.get("installed_hosts")
     if hosts is not None:
         if (not isinstance(hosts, list) or not hosts
                 or any(host not in HOSTS for host in hosts)
                 or len(set(hosts)) != len(hosts)):
-            issues.append(("FAIL", "runtime.installed_hosts는 non-empty unique [claude|codex] 배열이어야 함"))
+            issues.append(("FAIL", Diagnostic("runtime.installed_hosts_shape")))
         else:
             # 선언된 값만 검사한다. auto 는 실행 시점에 정해지므로 정적으로 소속을 따질 대상이 없고,
             # 여기서 실측을 끌어들이면 같은 프로필이 도는 host 에 따라 통과/실패가 갈린다.
             resolved = declared_active_host(profile)
             if resolved is not None and resolved not in hosts:
-                issues.append(("FAIL", f"runtime.active_host={resolved!r}가 installed_hosts에 없음"))
+                issues.append(("FAIL", Diagnostic("runtime.active_host_not_installed", value=repr(resolved))))
             options = profile.get("options")
             cross = options.get("cross_model") if isinstance(options, dict) else False
             if len(hosts) > 1 and cross is not True:
-                issues.append(("WARN", "double-host 구성인데 options.cross_model=true가 아님 — "
-                                       "반대 runtime 독립 리뷰를 강하게 권장"))
+                issues.append(("WARN", Diagnostic("runtime.double_host_without_cross_model")))
     return issues
 
 
@@ -193,7 +196,8 @@ def receipt_issues(profile: dict[str, Any] | None,
     actual = receipt_hosts(manifest, active)
     issues = []
     if set(actual) != set(desired):
-        issues.append(("WARN", f"profile desired_hosts={desired}와 install receipt={actual} 불일치"))
+        issues.append(("WARN", Diagnostic("runtime.desired_hosts_mismatch",
+                                          desired=desired, actual=actual)))
     if active not in actual:
-        issues.append(("WARN", f"active_host={active}의 discovery surface가 install receipt에 없음"))
+        issues.append(("WARN", Diagnostic("runtime.active_host_surface_absent", value=active)))
     return issues

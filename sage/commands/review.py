@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 from sage.commands import doctor as _doctor
-from sage.i18n import language_of, tr
+from sage.i18n import language_of, render_issue, tr
 
 _DEFAULT_TIMEOUT = 540   # codex/claude 비대화 1턴 상한(초). gstack /codex 의 330~600 대역과 정합.
 
@@ -430,20 +430,23 @@ def run_review(args):
     layer_failures = _blocking_layer_issues(layers)
     if layer_failures:
         for message in layer_failures:
-            print(f"[sage review] TOOL ERROR: {message}", file=sys.stderr)
+            print(f"[sage review] TOOL ERROR: "
+                  f"{render_issue(language_of(args), message)}", file=sys.stderr)
         print("REVIEWER_STATUS: BLOCKED")
         return 2
     from sage.runtime_hosts import profile_issues as runtime_profile_issues
     runtime_failures = [message for severity, message in runtime_profile_issues(profile) if severity == "FAIL"]
     if runtime_failures:
         for message in runtime_failures:
-            print(f"[sage review] TOOL ERROR: {message}", file=sys.stderr)
+            print(f"[sage review] TOOL ERROR: "
+                  f"{render_issue(language_of(args), message)}", file=sys.stderr)
         print("REVIEWER_STATUS: BLOCKED")
         return 2
     cross_failures = [message for severity, message in cross_model_issues(profile) if severity == "FAIL"]
     if cross_failures:
         for message in cross_failures:
-            print(f"[sage review] TOOL ERROR: {message}", file=sys.stderr)
+            print(f"[sage review] TOOL ERROR: "
+                  f"{render_issue(language_of(args), message)}", file=sys.stderr)
         print("REVIEWER_STATUS: BLOCKED")
         return 2
     host = getattr(args, "host", None)
@@ -492,14 +495,16 @@ def run_cross_check(args):
     layer_failures = _blocking_layer_issues(layers)
     if layer_failures:
         for message in layer_failures:
-            print(f"[sage cross-check] TOOL ERROR: {message}", file=sys.stderr)
+            print(f"[sage cross-check] TOOL ERROR: "
+                  f"{render_issue(language_of(args), message)}", file=sys.stderr)
         print("REVIEWER_STATUS: BLOCKED")
         return 2
     from sage.runtime_hosts import profile_issues as runtime_profile_issues
     runtime_failures = [message for severity, message in runtime_profile_issues(profile) if severity == "FAIL"]
     if runtime_failures:
         for message in runtime_failures:
-            print(f"[sage cross-check] TOOL ERROR: {message}", file=sys.stderr)
+            print(f"[sage cross-check] TOOL ERROR: "
+                  f"{render_issue(language_of(args), message)}", file=sys.stderr)
         print("REVIEWER_STATUS: BLOCKED")
         return 2
 

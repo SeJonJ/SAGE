@@ -519,7 +519,8 @@ def run(args):
         print(f"  ⚠️  WARN {note}")
     for severity, message in profile_issues(profile):
         if severity in ("FAIL", "WARN"):
-            print(f"  {'❌' if severity == 'FAIL' else '⚠️ '} {severity} {message}")
+            print(f"  {'❌' if severity == 'FAIL' else '⚠️ '} {severity} "
+                  f"{render_issue(language_of(args), message)}")
     from sage.commands.review import effort_issue, resolve_effort   # review→doctor import 순환 회피(함수 지역)
     _eff, _set = resolve_effort(profile)   # `or` 로 판정하면 effort: false/0 을 "기본값" 이라 거짓 보고한다
     _issue = effort_issue(peer, _eff) if _set is not None else None

@@ -120,7 +120,10 @@ class TestAutoResolution(unittest.TestCase):
 
     def test_invalid_active_host_still_fails(self):
         failures = [m for sev, m in profile_issues(_profile(active="gpt")) if sev == "FAIL"]
-        self.assertTrue(any("active_host" in m for m in failures))
+        # 판정은 언어 중립 code 다. 문구는 catalog 소유라 여기서 고정하지 않는다.
+        codes = {getattr(m, "code", m) for m in failures}
+        self.assertTrue(any("active_host" in code or "invalid_value" in code for code in codes),
+                        f"active_host 판정이 없다: {codes}")
 
     def test_declared_installed_hosts_separates_claim_from_fallback(self):
         self.assertEqual(["claude", "codex"], declared_installed_hosts(_profile()))
