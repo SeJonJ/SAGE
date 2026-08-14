@@ -935,7 +935,7 @@ def run(args):
         for relpath, hits in ov:
             print(tr(language_of(args), "cli.validate.msg13", relpath=relpath))
             for pattern_id, desc in hits:
-                print(f"        - [{pattern_id}] {desc}")
+                print(f"        - [{pattern_id}] {render_issue(language_of(args), desc)}")
         print(tr(language_of(args), "cli.validate.msg14"))
         strict_hits.append("overlay-gate-relaxation")
 
@@ -1011,7 +1011,8 @@ def run(args):
         strict_hits.append("profile-yaml-json-stale")
 
     for check_id, relpath, message in scan_domain_contract(root, profile_for_overlay):
-        print(f"⚠️  WARN  {check_id}: {relpath}: {message}")
+        print(f"⚠️  WARN  {check_id}: {relpath}: "
+              f"{render_issue(language_of(args), message)}")
         if overall == "PASS":
             overall = "WARN"
         strict_hits.append(check_id)

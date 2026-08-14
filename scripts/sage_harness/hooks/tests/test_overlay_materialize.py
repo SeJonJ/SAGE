@@ -300,7 +300,9 @@ class TestMaterialize(unittest.TestCase):
 
             self.assertEqual(cr, {})
             self.assertEqual(changed, [])
-            self.assertTrue(any("overlay-gate-relaxation" in message and "skip-gate" in message
+            # 문안이 아니라 code·인자로 확인한다. 히트마다 진단 하나가 올라온다.
+            self.assertTrue(any(getattr(message, "code", "") == "overlay.gate_relaxation"
+                                and message.arguments.get("pattern") == "skip-gate"
                                 for _path, message in errors))
             self.assertEqual(Path(render).read_bytes(), before)
 
@@ -315,7 +317,9 @@ class TestMaterialize(unittest.TestCase):
 
             self.assertEqual(cr, {})
             self.assertEqual(changed, [])
-            self.assertTrue(any("overlay-gate-relaxation" in message and "skip-gate" in message
+            # 문안이 아니라 code·인자로 확인한다. 히트마다 진단 하나가 올라온다.
+            self.assertTrue(any(getattr(message, "code", "") == "overlay.gate_relaxation"
+                                and message.arguments.get("pattern") == "skip-gate"
                                 for _path, message in errors))
             self.assertEqual(Path(render).read_bytes(), before)
 

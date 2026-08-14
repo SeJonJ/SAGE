@@ -319,10 +319,10 @@ def preflight_overlays(dest, profile=None):
             errors.append((path, validation_error))
             continue
         relax_hits = scan_text(text)
-        if relax_hits:
-            details = "; ".join(f"{pattern_id}: {description}"
-                                for pattern_id, description in relax_hits)
-            errors.append((path, f"overlay-gate-relaxation: {details}"))
+        # 히트마다 진단 하나. 여기서 문장으로 합치면 안쪽 설명이 번역되지 않은 채 굳는다.
+        for pattern_id, description in relax_hits:
+            errors.append((path, Diagnostic("overlay.gate_relaxation",
+                                            pattern=pattern_id, reason=description)))
     return errors
 
 

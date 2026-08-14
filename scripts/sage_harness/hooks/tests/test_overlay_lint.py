@@ -113,19 +113,22 @@ class TestOverlayLint(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             self._framework(root, "---\ndomain_refs: [payments]\n---\n# Rules\n")
             findings = overlay_lint.scan_domain_contract(root, self._profile())
-            self.assertTrue(any("미등록" in msg for _, _, msg in findings))
+            self.assertTrue(any(getattr(msg, "code", "") == "lint.domain_refs_unregistered"
+                            for _, _, msg in findings))
 
     def test_domain_contract_rejects_trigger_duplication(self):
         with tempfile.TemporaryDirectory() as root:
             self._framework(root, "---\ndomain_refs: [webrtc]\n---\nWatch **/kurento/** and `RTCPeerConnection`.\n")
             findings = overlay_lint.scan_domain_contract(root, self._profile())
-            self.assertGreaterEqual(len([x for x in findings if "재복제" in x[2]]), 2)
+            self.assertGreaterEqual(
+            len([x for x in findings if getattr(x[2], "code", "") == "lint.trigger_duplicated"]), 2)
 
     def test_domain_contract_rejects_extra_frontmatter_key(self):
         with tempfile.TemporaryDirectory() as root:
             self._framework(root, "---\ndomain_refs: [webrtc]\nrisk_level: L0\n---\n# Rules\n")
             findings = overlay_lint.scan_domain_contract(root, self._profile())
-            self.assertTrue(any("미허용 키" in msg for _, _, msg in findings))
+            self.assertTrue(any(getattr(msg, "code", "") == "lint.frontmatter_unknown_keys"
+                            for _, _, msg in findings))
 
 
 if __name__ == "__main__":

@@ -182,7 +182,7 @@ class TestMaterializeInjection(unittest.TestCase):
             cr, changed, errors = m.materialize(d, "claude")
             self.assertEqual(cr, {})
             self.assertEqual(changed, [])
-            self.assertTrue(any("framework/AGENT_GUIDE" in msg for _p, msg in errors))
+            self.assertTrue(any("framework/AGENT_GUIDE" in str(msg) for _p, msg in errors))
             self.assertEqual(cls.classify("framework", "AGENT_GUIDE"), "blocked")
 
 

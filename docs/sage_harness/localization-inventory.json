@@ -4,7 +4,7 @@
     "cli": "sage/i18n",
     "hook": "scripts/sage_harness/hooks/runtime/i18n"
   },
-  "total": 507,
+  "total": 476,
   "entries": [
     {
       "id": "profile_validate:273:validation1",
@@ -8813,636 +8813,6 @@
       ]
     },
     {
-      "id": "overlay_lint:25:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 25,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "phase/review/verification/gate 스킵 지시로 읽힘",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:27:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 27,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "게이트/가드 우회 지시로 읽힘",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:29:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 29,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "게이트/가드/hook 비활성 지시로 읽힘",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:30:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 30,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [
-        "0,24"
-      ],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "\\bignore\\b[^.\\n]{0,24}AGENT_GUIDE|AGENT_GUIDE[^.\\n]{0,24}\\b(ignore|무시|무력화)\\b",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:31:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 31,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "AGENT_GUIDE 무시 지시로 읽힘",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:32:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 32,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [
-        "0,16"
-      ],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "\\bphase\\s*0?[0-6]\\b[^.\\n]{0,16}(skip|건너|생략)|(skip|건너뛰|건너|생략)[^.\\n]{0,16}\\bphase\\s*0?[0-6]\\b",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:33:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 33,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "특정 phase(00~06) 스킵 지시로 읽힘",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:34:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 34,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [
-        "0,8"
-      ],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "게이트[^.\\n]{0,8}(우회|무력화|생략|비활성|끄|해제)|(우회|무력화|비활성)[^.\\n]{0,8}게이트",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:35:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 35,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "게이트 우회/무력화 표현",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:36:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 36,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [
-        "0,20"
-      ],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "(리뷰|검증|승인|리뷰\\s*루프|review\\s*loop)(을|를|이|가)?[^.\\n]{0,20}(생략|건너|스킵|끄|하지\\s*않|요구되지|받지\\s*않아도|수행할\\s*필요가\\s*없|필요가\\s*없)",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:37:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 37,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "리뷰/검증/승인 생략 표현",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:39:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 39,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "phase/review/verification/gate/approval 선택 또는 불필요 지시로 읽힘",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:41:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 41,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "승인/리뷰/검증 없이 진행 지시로 읽힘",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:42:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 42,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [
-        "0,16"
-      ],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "(단계|리뷰|검증|게이트|승인)[^.\\n]{0,16}(선택|필수\\s*아님|필요\\s*없|필요가\\s*없|없어도)",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:43:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 43,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "단계/리뷰/검증/게이트/승인 선택 또는 불필요 지시로 읽힘",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:45:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "<module>",
-      "source_line": 45,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "phase/review/verification/gate/approval 생략 지시로 읽힘",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:94:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "_split_frontmatter",
-      "source_line": 94,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "YAML frontmatter(---) 누락",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:97:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "_split_frontmatter",
-      "source_line": 97,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "YAML frontmatter 종료(---) 누락",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:103:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "_split_frontmatter",
-      "source_line": 103,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "YAML frontmatter 는 매핑(object)이어야 함",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:101:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "_split_frontmatter",
-      "source_line": 101,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "f\"YAML frontmatter 파싱 실패: {e}\"",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:101:validation2",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "_split_frontmatter",
-      "source_line": 101,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "YAML frontmatter 파싱 실패: ",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:142:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "scan_domain_contract",
-      "source_line": 142,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "f\"framework override frontmatter 미허용 키 {unknown_keys}; domain_refs 만 허용\"",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:145:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "scan_domain_contract",
-      "source_line": 145,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "domain_refs 는 비어있지 않은 문자열 리스트여야 함",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:149:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "scan_domain_contract",
-      "source_line": 149,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "f\"미등록 domain_refs {unknown}\"",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:133:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "scan_domain_contract",
-      "source_line": 133,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "f\"override 읽기 실패: {e}\"",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:142:validation2",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "scan_domain_contract",
-      "source_line": 142,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "framework override frontmatter 미허용 키 ",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:142:validation3",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "scan_domain_contract",
-      "source_line": 142,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "; domain_refs 만 허용",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:149:validation2",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "scan_domain_contract",
-      "source_line": 149,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "미등록 domain_refs ",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:133:validation2",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "scan_domain_contract",
-      "source_line": 133,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "override 읽기 실패: ",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:158:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "scan_domain_contract",
-      "source_line": 158,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "interpolated",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "f\"domain '{ref}' {field} trigger 재복제 금지: {trigger!r}\"",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
-      "id": "overlay_lint:158:validation2",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/overlay_lint.py",
-      "source_symbol": "scan_domain_contract",
-      "source_line": 158,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": " trigger 재복제 금지: ",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
       "id": "overlay_classify:146:validation1",
       "domain": "cli",
       "key": null,
@@ -9603,26 +8973,6 @@
       ]
     },
     {
-      "id": "routing_block:48:validation1",
-      "domain": "cli",
-      "key": null,
-      "source_file": "sage/routing_block.py",
-      "source_symbol": "_path_issue",
-      "source_line": 48,
-      "channel": "stdout",
-      "exit_contract": "unchanged",
-      "format": "static",
-      "placeholders": [],
-      "machine_consumer": null,
-      "classification": "validation_message",
-      "hook_reachable": false,
-      "text": "비어있지 않은 문자열이어야 함",
-      "required_tests": [
-        "ko_parity",
-        "en_snapshot"
-      ]
-    },
-    {
       "id": "routing_block:50:validation1",
       "domain": "cli",
       "key": null,
@@ -9636,7 +8986,7 @@
       "machine_consumer": null,
       "classification": "validation_message",
       "hook_reachable": false,
-      "text": "개행/제어문자 불가(단일 라인)",
+      "text": "비어있지 않은 문자열이어야 함",
       "required_tests": [
         "ko_parity",
         "en_snapshot"
@@ -9656,7 +9006,7 @@
       "machine_consumer": null,
       "classification": "validation_message",
       "hook_reachable": false,
-      "text": "안전 상대경로 세그먼트만 허용(세그먼트당 leading dot 후 영숫자; 절대경로·백틱·공백·마크다운·백슬래시 불가)",
+      "text": "개행/제어문자 불가(단일 라인)",
       "required_tests": [
         "ko_parity",
         "en_snapshot"
@@ -9676,19 +9026,19 @@
       "machine_consumer": null,
       "classification": "validation_message",
       "hook_reachable": false,
-      "text": "상위 경로(..) 세그먼트 불가",
+      "text": "안전 상대경로 세그먼트만 허용(세그먼트당 leading dot 후 영숫자; 절대경로·백틱·공백·마크다운·백슬래시 불가)",
       "required_tests": [
         "ko_parity",
         "en_snapshot"
       ]
     },
     {
-      "id": "routing_block:66:validation1",
+      "id": "routing_block:56:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
-      "source_symbol": "_code_value_issue",
-      "source_line": 66,
+      "source_symbol": "_path_issue",
+      "source_line": 56,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -9696,7 +9046,7 @@
       "machine_consumer": null,
       "classification": "validation_message",
       "hook_reachable": false,
-      "text": "비어있지 않은 문자열이어야 함",
+      "text": "상위 경로(..) 세그먼트 불가",
       "required_tests": [
         "ko_parity",
         "en_snapshot"
@@ -9716,7 +9066,7 @@
       "machine_consumer": null,
       "classification": "validation_message",
       "hook_reachable": false,
-      "text": "개행/제어문자 불가(단일 라인)",
+      "text": "비어있지 않은 문자열이어야 함",
       "required_tests": [
         "ko_parity",
         "en_snapshot"
@@ -9736,19 +9086,19 @@
       "machine_consumer": null,
       "classification": "validation_message",
       "hook_reachable": false,
-      "text": "백틱 불가(코드스팬 breakout 차단)",
+      "text": "개행/제어문자 불가(단일 라인)",
       "required_tests": [
         "ko_parity",
         "en_snapshot"
       ]
     },
     {
-      "id": "routing_block:77:validation1",
+      "id": "routing_block:72:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
-      "source_symbol": "_label_issue",
-      "source_line": 77,
+      "source_symbol": "_code_value_issue",
+      "source_line": 72,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -9756,7 +9106,7 @@
       "machine_consumer": null,
       "classification": "validation_message",
       "hook_reachable": false,
-      "text": "비어있지 않은 문자열이어야 함",
+      "text": "백틱 불가(코드스팬 breakout 차단)",
       "required_tests": [
         "ko_parity",
         "en_snapshot"
@@ -9776,7 +9126,7 @@
       "machine_consumer": null,
       "classification": "validation_message",
       "hook_reachable": false,
-      "text": "개행/제어문자 불가(단일 라인)",
+      "text": "비어있지 않은 문자열이어야 함",
       "required_tests": [
         "ko_parity",
         "en_snapshot"
@@ -9791,12 +9141,12 @@
       "source_line": 81,
       "channel": "stdout",
       "exit_contract": "unchanged",
-      "format": "interpolated",
+      "format": "static",
       "placeholders": [],
       "machine_consumer": null,
       "classification": "validation_message",
       "hook_reachable": false,
-      "text": "f\"라벨은 {_MAX_LABEL_LEN}자 이하여야 함(짧은 라우팅 라벨)\"",
+      "text": "개행/제어문자 불가(단일 라인)",
       "required_tests": [
         "ko_parity",
         "en_snapshot"
@@ -9811,12 +9161,12 @@
       "source_line": 83,
       "channel": "stdout",
       "exit_contract": "unchanged",
-      "format": "static",
+      "format": "interpolated",
       "placeholders": [],
       "machine_consumer": null,
       "classification": "validation_message",
       "hook_reachable": false,
-      "text": "마크다운 활성 문자(` * _ [ ] < > # | \\ ~) 불가 — 지시/마크다운 주입 차단",
+      "text": "f\"라벨은 {_MAX_LABEL_LEN}자 이하여야 함(짧은 라우팅 라벨)\"",
       "required_tests": [
         "ko_parity",
         "en_snapshot"
@@ -9836,6 +9186,26 @@
       "machine_consumer": null,
       "classification": "validation_message",
       "hook_reachable": false,
+      "text": "마크다운 활성 문자(` * _ [ ] < > # | \\ ~) 불가 — 지시/마크다운 주입 차단",
+      "required_tests": [
+        "ko_parity",
+        "en_snapshot"
+      ]
+    },
+    {
+      "id": "routing_block:87:validation1",
+      "domain": "cli",
+      "key": null,
+      "source_file": "sage/routing_block.py",
+      "source_symbol": "_label_issue",
+      "source_line": 87,
+      "channel": "stdout",
+      "exit_contract": "unchanged",
+      "format": "static",
+      "placeholders": [],
+      "machine_consumer": null,
+      "classification": "validation_message",
+      "hook_reachable": false,
       "text": "URL 스킴(://) 불가 — GFM autolink 주입 차단",
       "required_tests": [
         "ko_parity",
@@ -9843,12 +9213,12 @@
       ]
     },
     {
-      "id": "routing_block:103:validation1",
+      "id": "routing_block:105:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "_containment_issue",
-      "source_line": 103,
+      "source_line": 105,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -9863,12 +9233,12 @@
       ]
     },
     {
-      "id": "routing_block:258:validation1",
+      "id": "routing_block:261:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "render_routing_body",
-      "source_line": 258,
+      "source_line": 261,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -9883,12 +9253,12 @@
       ]
     },
     {
-      "id": "routing_block:259:validation1",
+      "id": "routing_block:262:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "render_routing_body",
-      "source_line": 259,
+      "source_line": 262,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -9903,12 +9273,12 @@
       ]
     },
     {
-      "id": "routing_block:81:validation2",
+      "id": "routing_block:83:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "_label_issue",
-      "source_line": 81,
+      "source_line": 83,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -9923,12 +9293,12 @@
       ]
     },
     {
-      "id": "routing_block:81:validation3",
+      "id": "routing_block:83:validation3",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "_label_issue",
-      "source_line": 81,
+      "source_line": 83,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -9943,12 +9313,12 @@
       ]
     },
     {
-      "id": "routing_block:103:validation2",
+      "id": "routing_block:105:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "_containment_issue",
-      "source_line": 103,
+      "source_line": 105,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -9963,12 +9333,12 @@
       ]
     },
     {
-      "id": "routing_block:156:validation1",
+      "id": "routing_block:159:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "routing_input_issues",
-      "source_line": 156,
+      "source_line": 159,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -9983,12 +9353,12 @@
       ]
     },
     {
-      "id": "routing_block:187:validation1",
+      "id": "routing_block:190:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "routing_input_issues",
-      "source_line": 187,
+      "source_line": 190,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -10003,12 +9373,12 @@
       ]
     },
     {
-      "id": "routing_block:263:validation1",
+      "id": "routing_block:266:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "render_routing_body",
-      "source_line": 263,
+      "source_line": 266,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -10023,12 +9393,12 @@
       ]
     },
     {
-      "id": "routing_block:265:validation1",
+      "id": "routing_block:268:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "render_routing_body",
-      "source_line": 265,
+      "source_line": 268,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -10043,12 +9413,12 @@
       ]
     },
     {
-      "id": "routing_block:160:validation1",
+      "id": "routing_block:163:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "routing_input_issues",
-      "source_line": 160,
+      "source_line": 163,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -10063,12 +9433,12 @@
       ]
     },
     {
-      "id": "routing_block:170:validation1",
+      "id": "routing_block:173:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "routing_input_issues",
-      "source_line": 170,
+      "source_line": 173,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "interpolated",
@@ -10083,12 +9453,12 @@
       ]
     },
     {
-      "id": "routing_block:191:validation1",
+      "id": "routing_block:194:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "routing_input_issues",
-      "source_line": 191,
+      "source_line": 194,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -10103,12 +9473,12 @@
       ]
     },
     {
-      "id": "routing_block:201:validation1",
+      "id": "routing_block:204:validation1",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "routing_input_issues",
-      "source_line": 201,
+      "source_line": 204,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -10123,12 +9493,12 @@
       ]
     },
     {
-      "id": "routing_block:170:validation2",
+      "id": "routing_block:173:validation2",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "routing_input_issues",
-      "source_line": 170,
+      "source_line": 173,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -10143,12 +9513,12 @@
       ]
     },
     {
-      "id": "routing_block:170:validation3",
+      "id": "routing_block:173:validation3",
       "domain": "cli",
       "key": null,
       "source_file": "sage/routing_block.py",
       "source_symbol": "routing_input_issues",
-      "source_line": 170,
+      "source_line": 173,
       "channel": "stdout",
       "exit_contract": "unchanged",
       "format": "static",
@@ -10164,6 +9534,41 @@
     }
   ],
   "not_translated": [
+    {
+      "source_file": "sage/overlay_lint.py",
+      "source_symbol": "<module>",
+      "source_line": 31,
+      "text": "\\bignore\\b[^.\\n]{0,24}AGENT_GUIDE|AGENT_GUIDE[^.\\n]{0,24}\\b(ignore|무시|무력화)\\b",
+      "reason": "게이트 완화 표현을 잡는 탐지 정규식. 한국어는 화면 문장이 아니라 탐지 대상이라, 번역하면 한국어로 쓰인 완화 지시를 더 이상 잡지 못한다."
+    },
+    {
+      "source_file": "sage/overlay_lint.py",
+      "source_symbol": "<module>",
+      "source_line": 32,
+      "text": "\\bphase\\s*0?[0-6]\\b[^.\\n]{0,16}(skip|건너|생략)|(skip|건너뛰|건너|생략)[^.\\n]{0,16}\\bphase\\s*0?[0-6]\\b",
+      "reason": "게이트 완화 표현을 잡는 탐지 정규식. 한국어는 화면 문장이 아니라 탐지 대상이라, 번역하면 한국어로 쓰인 완화 지시를 더 이상 잡지 못한다."
+    },
+    {
+      "source_file": "sage/overlay_lint.py",
+      "source_symbol": "<module>",
+      "source_line": 33,
+      "text": "게이트[^.\\n]{0,8}(우회|무력화|생략|비활성|끄|해제)|(우회|무력화|비활성)[^.\\n]{0,8}게이트",
+      "reason": "게이트 완화 표현을 잡는 탐지 정규식. 한국어는 화면 문장이 아니라 탐지 대상이라, 번역하면 한국어로 쓰인 완화 지시를 더 이상 잡지 못한다."
+    },
+    {
+      "source_file": "sage/overlay_lint.py",
+      "source_symbol": "<module>",
+      "source_line": 34,
+      "text": "(리뷰|검증|승인|리뷰\\s*루프|review\\s*loop)(을|를|이|가)?[^.\\n]{0,20}(생략|건너|스킵|끄|하지\\s*않|요구되지|받지\\s*않아도|수행할\\s*필요가\\s*없|필요가\\s*없)",
+      "reason": "게이트 완화 표현을 잡는 탐지 정규식. 한국어는 화면 문장이 아니라 탐지 대상이라, 번역하면 한국어로 쓰인 완화 지시를 더 이상 잡지 못한다."
+    },
+    {
+      "source_file": "sage/overlay_lint.py",
+      "source_symbol": "<module>",
+      "source_line": 37,
+      "text": "(단계|리뷰|검증|게이트|승인)[^.\\n]{0,16}(선택|필수\\s*아님|필요\\s*없|필요가\\s*없|없어도)",
+      "reason": "게이트 완화 표현을 잡는 탐지 정규식. 한국어는 화면 문장이 아니라 탐지 대상이라, 번역하면 한국어로 쓰인 완화 지시를 더 이상 잡지 못한다."
+    },
     {
       "source_file": "sage/overlay_common.py",
       "source_symbol": "<module>",

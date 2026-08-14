@@ -18,6 +18,8 @@ authoring(profile_validate)이 같은 함수를 공유**해 검증이 optional a
 import os
 import re
 
+from sage.diagnostics import Diagnostic
+
 _VALID_RISK = ("L1", "L2", "L3")
 _MAX_LABEL_LEN = 80
 # 렌더될 경로: 안전 상대경로 문자만. 백틱/공백/마크다운/백슬래시/제어 배제(코드스팬 breakout 차단).
@@ -139,7 +141,8 @@ def routing_input_issues(domains, governance_docs, root=None):
         if not isinstance(value, str):
             return
         for pattern_id, description in scan_text(value):
-            issues.append((where, f"gate-relaxation({pattern_id}): {description}"))
+            issues.append((where, Diagnostic("routing.gate_relaxation",
+                                             pattern=pattern_id, reason=description)))
 
     def _scan_marker(where, value):
         # id 는 _code_value_issue 가 lenient(<>공백 허용) 라 마커 토큰이 들어올 수 있어 검사한다.

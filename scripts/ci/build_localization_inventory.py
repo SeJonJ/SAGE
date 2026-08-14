@@ -57,15 +57,19 @@ HOOK_REACHABLE = frozenset({"hook_entry.py", "feedback.py", "context_packet.py"}
 # 달라지면 안 되는 것들이다. 세지 않고 넘기면 잔여가 0 으로 보이는 방법이 생기므로, 빼는
 # 대신 이유와 함께 따로 기록해 검토 가능하게 남긴다.
 #
-# (파일, 심볼) → 이유. 심볼 하나가 통째로 제외되므로 그 심볼에 화면 문장을 새로 넣으면
-# 조용히 함께 빠진다 — 선언 하나가 무엇도 걸러내지 않으면 실패하게 해 죽은 선언을 막는다.
+# (파일, 심볼) → (건수, 이유). 심볼 하나가 통째로 제외되므로 그 심볼에 화면 문장을 새로 넣으면
+# 조용히 함께 빠진다. **건수를 함께 못 박아** 하나라도 늘거나 줄면 빌드가 선다 — 제외가
+# 미이관을 숨기는 통로가 되지 않게 하는 유일한 장치다. 걸러내는 게 없는 선언도 실패다.
 NOT_TRANSLATED = {
-    ("sage/overlay_common.py", "<module>"):
+    ("sage/overlay_common.py", "<module>"): (1,
         "관리 블록 마커 문자열. 파서가 직접 비교하고 기존 설치본에 그대로 박혀 있어, 번역하면 "
-        "모든 설치본의 마커 짝이 깨진다.",
-    ("sage/overlay_common.py", "compose_block"):
+        "모든 설치본의 마커 짝이 깨진다."),
+    ("sage/overlay_common.py", "compose_block"): (2,
         "렌더 산출물에 기록되는 본문. base 해시 앵커의 입력이라 표시 언어에 따라 달라지면 같은 "
-        "프로젝트에서 사용자마다 다른 drift 가 잡힌다.",
+        "프로젝트에서 사용자마다 다른 drift 가 잡힌다."),
+    ("sage/overlay_lint.py", "<module>"): (5,
+        "게이트 완화 표현을 잡는 탐지 정규식. 한국어는 화면 문장이 아니라 탐지 대상이라, "
+        "번역하면 한국어로 쓰인 완화 지시를 더 이상 잡지 못한다."),
 }
 
 
@@ -217,8 +221,9 @@ def _collect_validation(repo_root: str) -> tuple[list[dict], list[dict]]:
                 continue
             for text, interpolated in _korean_literals(node, source):
                 symbol = owner.get(id(node), "<module>")
-                reason = NOT_TRANSLATED.get((rel.replace(os.sep, "/"), symbol))
-                if reason:
+                declared = NOT_TRANSLATED.get((rel.replace(os.sep, "/"), symbol))
+                if declared:
+                    reason = declared[1]
                     exclusions.append({"source_file": rel, "source_symbol": symbol,
                                        "source_line": node.lineno, "text": text,
                                        "reason": reason})
@@ -255,12 +260,16 @@ def main() -> int:
     args = parser.parse_args()
 
     entries, exclusions = collect(args.root)
-    declared = {(rel, symbol) for rel, symbol in NOT_TRANSLATED}
-    matched = {(item["source_file"].replace(os.sep, "/"), item["source_symbol"])
-               for item in exclusions}
-    if declared - matched:
-        # 아무것도 걸러내지 않는 제외 선언은 다음 사람에게 "여긴 검토됐다"고 잘못 말한다.
-        print(f"[inventory] 아무 문자열도 제외하지 못한 선언: {sorted(declared - matched)}",
+    counted: dict[tuple[str, str], int] = {}
+    for item in exclusions:
+        key = (item["source_file"].replace(os.sep, "/"), item["source_symbol"])
+        counted[key] = counted.get(key, 0) + 1
+    # 선언한 건수와 실제 제외 건수가 다르면 세운다. 0 건(죽은 선언)도 여기서 걸린다.
+    drifted = {key: (expected, counted.get(key, 0))
+               for key, (expected, _reason) in NOT_TRANSLATED.items()
+               if counted.get(key, 0) != expected}
+    if drifted:
+        print(f"[inventory] 제외 선언과 실제 건수가 다릅니다 (선언, 실제): {drifted}",
               file=sys.stderr)
         return 1
     document = {
