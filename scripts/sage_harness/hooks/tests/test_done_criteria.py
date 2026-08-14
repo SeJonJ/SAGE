@@ -177,21 +177,25 @@ class DoneCriteriaProfileTests(unittest.TestCase):
             with mock.patch.object(profile_validate, "_schema_issues", return_value=[]):
                 issues = profile_validate.validate_profile(
                     {"pdca": {"base_plan": {"done_criteria_gate": mode}}}, REPO)
-            self.assertFalse(any(severity == "FAIL" and "base_plan" in message
+            self.assertFalse(any(severity == "FAIL"
+                                 and getattr(message, "code", "").startswith("validate.base_plan")
                                  for severity, message in issues))
         for value in (True, "warn", "", 1, {"mode": "enforce"}):
             with self.subTest(value=value), mock.patch.object(
                     profile_validate, "_schema_issues", return_value=[]):
                 issues = profile_validate.validate_profile(
                     {"pdca": {"base_plan": {"done_criteria_gate": value}}}, REPO)
-            self.assertTrue(any(severity == "FAIL" and "done_criteria_gate" in message
+            self.assertTrue(any(severity == "FAIL"
+                                and getattr(message, "code", "") == "validate.done_criteria_gate_invalid"
                                 for severity, message in issues))
 
     def test_unknown_base_plan_key_fails_without_schema(self):
         with mock.patch.object(profile_validate, "_schema_issues", return_value=[]):
             issues = profile_validate.validate_profile(
                 {"pdca": {"base_plan": {"done_criteria_gte": "enforce"}}}, REPO)
-        self.assertTrue(any(severity == "FAIL" and "done_criteria_gte" in message
+        self.assertTrue(any(severity == "FAIL"
+                            and getattr(message, "code", "") == "validate.base_plan_unknown_keys"
+                            and "done_criteria_gte" in message.arguments.get("keys", [])
                             for severity, message in issues))
 
     def test_project_profile_template_uses_advisory_for_new_projects(self):

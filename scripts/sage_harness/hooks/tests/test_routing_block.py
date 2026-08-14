@@ -237,7 +237,8 @@ class TestGovernanceDocsValidation(unittest.TestCase):
 
     def _gov_fails(self, docs_value):
         issues = validate_profile({"governance_docs": docs_value}, self.root)
-        return any(sev == "FAIL" and "governance_docs" in msg for sev, msg in issues)
+        return any(sev == "FAIL" and getattr(msg, "code", "").startswith("validate.governance_docs")
+                   for sev, msg in issues)
 
     def test_non_list_fails(self):
         self.assertTrue(self._gov_fails("nope"))

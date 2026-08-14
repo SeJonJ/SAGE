@@ -245,7 +245,8 @@ class ProfileLayerSchemaTests(unittest.TestCase):
                 self.assertFalse(any(severity == "FAIL" for severity, _ in issues), issues)
 
         issues = validate_profile({"cross_model": {"policy": "optional"}}, str(REPO))
-        self.assertTrue(any(severity == "FAIL" and "cross_model.policy" in message
+        self.assertTrue(any(severity == "FAIL" and isinstance(message, str)
+                            and "cross_model.policy" in message
                             for severity, message in issues), issues)
 
     def test_local_schema_is_closed_and_matches_manual_contract(self):

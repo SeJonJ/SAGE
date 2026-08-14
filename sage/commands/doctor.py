@@ -25,7 +25,8 @@ def register(sub, context):
     p.set_defaults(func=run)
 
 
-def reviewer_resolution(profile: dict, caps: dict, current: str | None = None) -> dict:
+def reviewer_resolution(profile: dict, caps: dict, current: str | None = None,
+                        language=None) -> dict:
     """Phase 05 reviewer 해석 (순수). caps={'codex':bool,'claude':bool} 는 doctor 가 주입(peer CLI 가용성).
 
     7차 배치2: gstack 의존 폐기. cross-model 리뷰는 SAGE 가 반대 런타임 CLI 를 직접 호출하므로
@@ -51,15 +52,16 @@ def reviewer_resolution(profile: dict, caps: dict, current: str | None = None) -
 
     if not cross:
         return res("clean_context_same_runtime", host, False, False, None,
-                   "cross_model off — 의도적 same-runtime (degraded 아님)")
+                   tr(language, "cli.doctor.notice_same_runtime_intentional"))
     from sage.model_routing import reviewer_selection
     peer, _ = reviewer_selection(profile, current)
     if caps.get(peer):
         invoker = "codex exec" if peer == "codex" else "claude -p"
         return res("opposite_runtime", peer, False, False, None,
-                   f"{host}-host → {peer} via `{invoker}` (SAGE 직접 호출, gstack 불요)")
+                   tr(language, "cli.doctor.notice_opposite_runtime", host=host, peer=peer,
+                      invoker=invoker))
     return res("blocked", peer, False, True, f"{peer}_cli_unavailable",
-               f"cross_model on 이나 {peer} CLI 미가용 → Phase 05 BLOCKED")
+               tr(language, "cli.doctor.notice_peer_cli_unavailable", peer=peer))
 
 
 _DEFAULT_PROFILE = {"runtime": {"host": "claude"}, "options": {"cross_model": False}}
@@ -529,7 +531,8 @@ def run(args):
     from sage.commands.review import effort_issue, resolve_effort   # review→doctor import 순환 회피(함수 지역)
     _eff, _set = resolve_effort(profile)   # `or` 로 판정하면 effort: false/0 을 "기본값" 이라 거짓 보고한다
     _issue = effort_issue(peer, _eff) if _set is not None else None
-    _note = " — 기본값" if _set is None else (f" — ❌ {_issue}" if _issue else "")
+    _note = f" — {tr(language, 'cli.doctor.note_default')}" if _set is None \
+        else (f" — ❌ {_issue}" if _issue else "")
     print(f"  cross_model : {opts.get('cross_model', False)} (peer={peer}, effort={_eff!r}{_note})")
     _invoker = "codex exec" if peer == "codex" else "claude -p"
     print(tr(language_of(args), 'cli.doctor.msg45', peer=peer, arg='available' if peer_avail else 'unavailable', peer2=peer, peer3=peer, invoker=_invoker))
@@ -556,7 +559,8 @@ def run(args):
     _check_codex_skill_deployment(prof_path, profile, language)
 
     # reviewer resolution — 위에서 판별한 같은 값을 쓴다(감지 중복·기준 분기 방지).
-    rr = reviewer_resolution(profile, {"codex": codex_avail, "claude": claude_avail}, detected)
+    rr = reviewer_resolution(profile, {"codex": codex_avail, "claude": claude_avail}, detected,
+                             language)
     print("## Phase 05 reviewer")
     print(f"  detected: {detected or tr(language_of(args), 'cli.doctor.msg48')}")
     print(f"  mode    : {rr['reviewer_mode']} (runtime={rr['reviewer_runtime']})")
@@ -621,7 +625,8 @@ def _report_review_loop(profile, language=None):
         from sage.profile_validate import _review_loop_issues
         for sev, msg in _review_loop_issues(profile):
             if sev in ("FAIL", "WARN"):
-                print(f"  {'❌' if sev == 'FAIL' else '⚠️ '} {sev} {msg}")
+                print(f"  {'❌' if sev == 'FAIL' else '⚠️ '} {sev} "
+                      f"{render_issue(language, msg)}")
     except Exception:
         pass
 
@@ -635,8 +640,8 @@ def _report_acceptance_policy(profile, root, language=None):
     by_risk = acceptance.get("report_gate_by_risk")
     legacy = acceptance.get("report_gate_enforce")
     if legacy is not None:
-        behavior = "전 위험도 enforce 유지" if legacy == "enforce" else "L2 advisory/L3 enforce로 안전 승격"
-        print(f"  ⚠️  legacy report_gate_enforce={legacy} — {behavior}")
+        behavior_key = 'cli.doctor.msg57' if legacy == "enforce" else 'cli.doctor.msg58'
+        print(f"  ⚠️  legacy report_gate_enforce={legacy} — {tr(language, behavior_key)}")
         print("      migration: report_gate_by_risk: { L2: advisory, L3: enforce }")
     elif isinstance(by_risk, dict):
         print(f"  policy  : L2={by_risk.get('L2')} L3={by_risk.get('L3')} "

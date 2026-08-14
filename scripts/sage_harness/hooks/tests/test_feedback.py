@@ -155,11 +155,14 @@ class TestProfileGate(unittest.TestCase):
 
     def test_validator_rejects_unknown_key(self):
         issues = _feedback_issues({"feedback": {"enabled": True, "blockRelease": True}})
-        self.assertTrue(any(sev == "FAIL" and "미지 키" in msg for sev, msg in issues), issues)
+        self.assertTrue(any(sev == "FAIL" and getattr(msg, "code", "") == "validate.feedback_unknown_keys"
+                            for sev, msg in issues), issues)
 
     def test_validator_warns_when_block_release_has_no_scanner(self):
         issues = _feedback_issues({"feedback": {"block_release": True}})
-        self.assertTrue(any(sev == "WARN" and "무동작" in msg for sev, msg in issues), issues)
+        self.assertTrue(any(sev == "WARN"
+                            and getattr(msg, "code", "") == "validate.feedback_block_release_ineffective"
+                            for sev, msg in issues), issues)
 
     def test_valid_section_is_clean(self):
         self.assertEqual(_feedback_issues({"feedback": {

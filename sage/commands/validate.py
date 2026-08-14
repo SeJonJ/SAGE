@@ -297,7 +297,7 @@ def _regression_runner(test_path, platform_name=None, environ=None):
     return [bash, test_path], ""
 
 
-def _validate_hook(root, asset_id, entry, run_regression):
+def _validate_hook(root, asset_id, entry, run_regression, language=None):
     """단일 hook asset → (severity, [messages])."""
     msgs = []
     sev = "PASS"
@@ -326,7 +326,7 @@ def _validate_hook(root, asset_id, entry, run_regression):
     #    (pre-generate 등록만 된 hook 이 PASS 로 보여 위험을 가리는 것 방지 — Codex P2-6)
     stamped = entry.get("spec_hash") and (entry.get("render_hash") or entry.get("canonical_hash"))
     if not stamped and os.path.exists(p["spec"]):
-        bump("STALE"); msgs.append("  STALE 미스탬프 — sage generate --write 로 hash 등록 필요")
+        bump("STALE"); msgs.append(f"  STALE {tr(language, 'cli.validate.stale_unstamped_generic')}")
 
     # 1. spec hash
     if not os.path.exists(p["spec"]):
@@ -399,7 +399,7 @@ def _validate_hook(root, asset_id, entry, run_regression):
     return sev, msgs
 
 
-def _validate_hook_runtime_hash(root, manifest):
+def _validate_hook_runtime_hash(root, manifest, language=None):
     """Top-level hook runtime drift check.
 
     run_hook.py/hook_runtime.py/io_claude.py/io_codex.py are shared by all hooks, so their hashes
@@ -408,7 +408,7 @@ def _validate_hook_runtime_hash(root, manifest):
     msgs = []
     stamped = manifest.get("hook_runtime_hash")
     if not stamped:
-        return "STALE", ["  STALE hook_runtime_hash 미스탬프 — sage generate --kind hook --write 필요"]
+        return "STALE", [f"  STALE hook_runtime_hash {tr(language, 'cli.validate.stale_unstamped_hook')}"]
     if not isinstance(stamped, dict):
         return "FAIL", ["  FAIL hook_runtime_hash 구조 오류 — object 여야 함"]
     current, missing = calculate_hook_runtime_hash(root)
@@ -500,7 +500,7 @@ def _interpretive_contract_version(subdir):
     return manifest_util._derived_contract_version(module_name)
 
 
-def _validate_interpretive(root, asset_id, entry, run_regression=True):
+def _validate_interpretive(root, asset_id, entry, run_regression=True, language=None):
     """interpretive 자산(agent/skill) → hash/계약 staleness + conformance(P1-4) + (선택)regression.
 
     asset_id 'agents/<id>' 또는 'skills/<id>' — prefix 에서 디렉토리 결정(독립: 하드코딩 아님)."""
@@ -519,7 +519,7 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True):
     #   STALE(generate 필요). hash 부재를 PASS 로 보면 레거시·부분스탬프 manifest 가 --force 로 보존될 때
     #   spec/claims 변경이 검출되지 않아 drift 를 가린다(interpretive 만 이 감지가 빠져 있었음).
     if os.path.exists(spec) and os.path.exists(claims) and not (entry.get("spec_hash") and entry.get("claims_hash")):
-        bump("STALE"); msgs.append("  STALE 미스탬프 — sage generate --kind agent|skill --write 필요")
+        bump("STALE"); msgs.append(f"  STALE {tr(language, 'cli.validate.stale_unstamped_interpretive')}")
 
     if not os.path.exists(spec):
         bump("FAIL"); msgs.append(f"  FAIL missing spec: {spec}")
@@ -607,7 +607,7 @@ def _validate_mcp(root, asset_id, entry, language=None):
         return sev, msgs
     # 미스탬프 감지
     if not (entry.get("spec_hash") and entry.get("render_hash")):
-        bump("STALE"); msgs.append("  STALE 미스탬프 — sage generate --kind mcp --write 필요")
+        bump("STALE"); msgs.append(f"  STALE {tr(language, 'cli.validate.stale_unstamped_mcp')}")
     # 계약버전 (N-R2/P1-3): MCP 직렬화 계약(M.CONTRACT_VERSION)과 manifest 스탬프 대조.
     #   다른 kind(hook 3b)와 대칭 — 죽은 계약버전 클래스가 새 표면에서 부활하지 않도록 박제.
     have_cv = entry.get("adapter_contract_version")
@@ -794,7 +794,7 @@ def run(args):
             overall = "WARN"
     print(f"== sage validate ({args.kind}{', --check' if args.check else ''}) — {len(target_ids)} assets ==")
     if args.kind in ("hook", "all"):
-        rsev, rmsgs = _validate_hook_runtime_hash(root, manifest)
+        rsev, rmsgs = _validate_hook_runtime_hash(root, manifest, language_of(args))
         if _SEV_RANK[rsev] > _SEV_RANK[overall]:
             overall = rsev
         mark = {"PASS": "✅", "WARN": "⚠️ ", "STALE": "🔶", "FAIL": "❌"}[rsev]
@@ -813,11 +813,13 @@ def run(args):
         if entry.get("safety_degraded"):
             strict_hits.append("safety-degraded")
         if aid.startswith("hooks/"):
-            sev, msgs = _validate_hook(root, aid, entry, run_regression=not args.check)
+            sev, msgs = _validate_hook(root, aid, entry, run_regression=not args.check,
+                                       language=language_of(args))
         elif aid.startswith("mcps/"):
             sev, msgs = _validate_mcp(root, aid, entry, language_of(args))
         else:  # agents/ or skills/ — interpretive
-            sev, msgs = _validate_interpretive(root, aid, entry, run_regression=not args.check)
+            sev, msgs = _validate_interpretive(root, aid, entry, run_regression=not args.check,
+                                                language=language_of(args))
         if _SEV_RANK[sev] > _SEV_RANK[overall]:
             overall = sev
         mark = {"PASS": "✅", "WARN": "⚠️ ", "STALE": "🔶", "FAIL": "❌"}[sev]
