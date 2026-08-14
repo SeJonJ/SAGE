@@ -144,6 +144,16 @@ FRAGMENTS = {
     "hook.checklist_contract.target_label_invalid": "{where}.label must be a single-line string of 1..80 characters",
     "hook.checklist_contract.target_glob_invalid": "{where}.glob: {reason}",
     "hook.checklist_contract.target_is_impl_not_bool": "{where}.is_impl must be a bool",
+
+    "hook.override_audit.state_home_not_absolute": "Cannot determine the permission-cache location (not an absolute path: {candidate}). This looks like an environment with HOME unset — set {env_var} to an absolute path",
+    "hook.override_audit.git_neither_file_nor_dir": "`.git` is neither a file nor a directory: {git}",
+    "hook.override_audit.git_pointer_unreadable": "cannot read the `.git` pointer ({git}): {error_type}: {exc}",
+    "hook.override_audit.git_pointer_bad_format": "`.git` pointer is not in the expected format ({git})",
+    "hook.override_audit.git_pointer_target_missing": "the gitdir the `.git` pointer refers to does not exist ({target})",
+    "hook.override_audit.repo_boundary_unresolved": "cannot determine the repository boundary — {reason}. Issuing a grant without a resolved identity risks mixing it with another repository's permissions",
+    "hook.override_audit.identity_marker_create_failed": "cannot create the repository identity marker ({marker}): {error_type}: {exc}. Issuing without an identity means a different repository later created at the same path would inherit this permission",
+    "hook.override_audit.identity_marker_unreadable": "cannot read the repository identity marker ({marker})",
+    "hook.override_audit.state_home_inside_repo": "the permission-cache location is inside the repository ({home} ⊂ {root}). If committed, the bypass would activate in other clones — set {env_var} outside the repository",
     "hook.feedback.git_exit": "git ls-files exited with {code}",
     "hook.feedback.unreadable_file": "a tracked file could not be read ({path}) — this is unknown, not marker-free",
 

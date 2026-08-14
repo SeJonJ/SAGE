@@ -362,6 +362,18 @@ MESSAGES = {
     "cli.override.msg14": "   사유: {arg} | 감사: {ov_audit_path}",
     "cli.override.msg15": "   (만료 시 자동 회수. 우회가 BLOCK 을 통과시킬 때마다 bypass 가 append 됨)",
 
+    # override_audit 판정(code+arguments) 렌더. hook(scripts/sage_harness/hooks/runtime/i18n)의
+    # FRAGMENTS 도 같은 code 를 `hook.<code>` 로 별도 등록한다 — 두 catalog 가 각자 렌더한다.
+    "cli.override_audit.state_home_not_absolute": "권한 캐시 위치를 정할 수 없습니다(절대경로 아님: {candidate}). HOME 미설정 환경으로 보입니다 — {env_var} 를 절대경로로 지정하세요",
+    "cli.override_audit.git_neither_file_nor_dir": "`.git` 이 파일도 디렉터리도 아님: {git}",
+    "cli.override_audit.git_pointer_unreadable": "`.git` 포인터를 읽을 수 없음({git}): {error_type}: {exc}",
+    "cli.override_audit.git_pointer_bad_format": "`.git` 포인터 형식이 아님({git})",
+    "cli.override_audit.git_pointer_target_missing": "`.git` 이 가리키는 gitdir 가 없음({target})",
+    "cli.override_audit.repo_boundary_unresolved": "저장소 경계를 확정할 수 없습니다 — {reason}. 정체성을 확정하지 못한 채 발급하면 다른 저장소의 권한과 뒤섞일 수 있습니다",
+    "cli.override_audit.identity_marker_create_failed": "저장소 정체성 마커를 만들 수 없습니다({marker}): {error_type}: {exc}. 정체성 없이 발급하면 같은 경로에 만들어진 다른 저장소가 이 권한을 물려받습니다",
+    "cli.override_audit.identity_marker_unreadable": "저장소 정체성 마커를 읽을 수 없습니다({marker})",
+    "cli.override_audit.state_home_inside_repo": "권한 캐시 위치가 저장소 안입니다({home} ⊂ {root}). 커밋되면 다른 clone 에서 우회가 활성화됩니다 — {env_var} 를 저장소 밖으로 지정하세요",
+
 
     "cli.retro.msg01": "[sage retro --check] 노트 파일 없음: {path}",
     "cli.retro.msg02": "[sage retro --check] 노트 읽기 실패: {arg}: {e}",

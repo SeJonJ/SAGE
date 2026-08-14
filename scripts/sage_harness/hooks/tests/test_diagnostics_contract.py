@@ -18,6 +18,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[3]
@@ -206,6 +207,27 @@ class TestEveryEmittedCodeIsRenderable(unittest.TestCase):
         self.assertEqual(offenders, [],
                          f"Diagnostic(key=...) 는 렌더 시 항상 TypeError 를 낸다: {offenders}")
 
+    def test_no_tr_call_uses_the_reserved_key_argument_name(self):
+        """`tr(context, key, **arguments)` 호출에 `key=...` 를 또 주면 렌더 시 항상 TypeError 다.
+
+        `Diagnostic(key=...)` 와 같은 계열의 사고이지만 다른 지점에서 난다 — `tr()` 을 직접
+        호출하며 catalog placeholder 이름으로 우연히 `key` 를 고르는 경우다. `_validate_hook_
+        runtime_hash`(validate.py)·`_asset_entry_issue`/`_manifest_structure_issue`(install.py)
+        에서 실제로 이 형태로 터졌다(다음엔 `field` 등 다른 이름을 쓰게 막는다) — 위
+        `Diagnostic(key=...)` oracle 은 `tr()` 직접 호출은 못 본다."""
+        offenders = []
+        targets = list((REPO / "sage").rglob("*.py")) + list(RUNTIME.glob("*.py"))
+        for path in sorted(targets):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                        and node.func.id == "tr"):
+                    for kw in node.keywords:
+                        if kw.arg == "key":
+                            offenders.append(f"{path.relative_to(REPO)}:{node.lineno}")
+        self.assertEqual(offenders, [],
+                         f"tr(key=...) 는 렌더 시 항상 TypeError 를 낸다: {offenders}")
+
 
 class TestHookRendersWithoutTheEngineCatalog(unittest.TestCase):
     @classmethod
@@ -272,11 +294,30 @@ class TestRuntimeJudgementReachesTheCliCatalog(unittest.TestCase):
         self.assertEqual([], runtime_judgement_issues(str(REPO)))
 
     def test_the_scan_actually_reads_the_runtime(self):
-        """스캔이 빈 통과로 떨어지면 위 검사는 아무것도 지키지 않는다."""
+        """스캔이 빈 통과로 떨어지면 위 검사는 아무것도 지키지 않는다.
+
+        실제 저장소의 KOREAN_JUDGEMENT_DEBT 는 이관이 끝나면 정당하게 빈 집합이 된다(6배치
+        완료 시점 실제로 그렇다) — 그래서 "실제 부채가 5건보다 많다"로 스캐너를 증명할 수
+        없다. 대신 통제된 fixture(한국어를 완성 문장으로 돌려주는 함수 1개를 심은 가짜
+        runtime 트리)로 스캐너가 진짜로 찾아내는지 직접 확인한다."""
         found, errors = korean_returning_runtime_functions(str(REPO))
         self.assertEqual([], errors)
         self.assertEqual(KOREAN_JUDGEMENT_DEBT, found)
-        self.assertGreater(len(found), 5)
+
+        with tempfile.TemporaryDirectory() as fake_root:
+            runtime_dir = os.path.join(fake_root, "scripts", "sage_harness", "hooks", "runtime")
+            os.makedirs(runtime_dir)
+            for module in CLI_CONSUMED_RUNTIME_MODULES:
+                path = os.path.join(runtime_dir, f"{module}.py")
+                if module == "loop_audit":
+                    Path(path).write_text(
+                        "def planted(x):\n    return '이 문장은 완성된 한국어다'\n",
+                        encoding="utf-8")
+                else:
+                    Path(path).write_text("# empty fixture module\n", encoding="utf-8")
+            fixture_found, fixture_errors = korean_returning_runtime_functions(fake_root)
+        self.assertEqual([], fixture_errors)
+        self.assertEqual({"loop_audit.planted"}, fixture_found)
 
     def test_a_missing_runtime_module_is_an_error_not_a_pass(self):
         """파일을 못 읽었는데 빈 집합이 통과로 떨어지면 게이트가 사라진다."""
@@ -286,12 +327,25 @@ class TestRuntimeJudgementReachesTheCliCatalog(unittest.TestCase):
             self.assertEqual(len(CLI_CONSUMED_RUNTIME_MODULES), len(errors), errors)
 
     def test_remaining_debt_blocks_the_release_even_while_tracking_passes(self):
-        """추적은 통과해도 publish 는 남은 부채 자체를 실패로 봐야 한다."""
-        self.assertEqual([], runtime_judgement_issues(str(REPO)))     # 추적: 통과
-        blocking = release_debt_issues(str(REPO))                      # 릴리스: 차단
-        self.assertTrue(blocking)
-        for name in sorted(KOREAN_JUDGEMENT_DEBT):
-            self.assertTrue(any(name in issue for issue in blocking), name)
+        """추적은 통과해도 publish 는 남은 부채 자체를 실패로 봐야 한다.
+
+        실제 저장소는 6배치 완료 시점에 KOREAN_JUDGEMENT_DEBT 가 정당하게 비어 있어(모든
+        runtime 판정이 이관됨) 추적·릴리스 둘 다 자연히 통과한다 — 그 상태로는 "추적은
+        통과해도 릴리스는 막는다"는 이 게이트의 핵심 성질을 증명할 수 없다. 그래서 스캐너가
+        부채 1건을 찾아냈고 그게 **선언된 목록과 정확히 일치**하는(=추적은 통과하는) 상태를
+        mock 으로 재현해, 그래도 release_debt_issues 는 선언 여부와 무관하게 실제 잔존을
+        그대로 차단한다는 것을 확인한다."""
+        self.assertEqual([], runtime_judgement_issues(str(REPO)))     # 실제 저장소: 추적 통과(부채 0)
+        self.assertEqual([], release_debt_issues(str(REPO)))          # 실제 저장소: 릴리스도 통과(부채 0)
+
+        import sage.i18n.validation as validation_module
+        with mock.patch.object(validation_module, "korean_returning_runtime_functions",
+                               return_value=({"loop_audit.planted"}, [])), \
+             mock.patch.object(validation_module, "KOREAN_JUDGEMENT_DEBT", frozenset({"loop_audit.planted"})):
+            self.assertEqual([], validation_module.runtime_judgement_issues(str(REPO)),
+                             "선언과 정확히 일치하면 추적은 통과해야 한다")
+            blocking = validation_module.release_debt_issues(str(REPO))
+        self.assertTrue(any("loop_audit.planted" in issue for issue in blocking), blocking)
         for key in sorted(KOREAN_IN_ENGLISH_DEBT):
             self.assertTrue(any(key in issue for issue in blocking), key)
 

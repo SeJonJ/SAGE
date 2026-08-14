@@ -15,7 +15,7 @@ import sys
 import time
 
 from sage import _resources
-from sage.i18n import language_of, tr
+from sage.i18n import exception_text, language_of, tr
 
 _GATES = ["pre-implementation-gate", "pre-phase4-checklist-gate", "all"]
 
@@ -46,7 +46,7 @@ def run(args):
         return _run(args, root, ov)
     except ov.StateHomeError as exc:
         # 권한 캐시 위치를 안전하게 정할 수 없음 = 우회를 만들 수 없음. traceback 대신 안내한다.
-        print(f"⛔ [sage override] {exc}", file=sys.stderr)
+        print(f"⛔ [sage override] {exception_text(language_of(args), exc)}", file=sys.stderr)
         return 2
 
 

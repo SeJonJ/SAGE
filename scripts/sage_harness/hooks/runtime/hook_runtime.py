@@ -330,8 +330,12 @@ def _maybe_override(hook_id, root, decision, changes):
     try:
         grants = ov.active_grants(root, gate=hook_id)
     except Exception as exc:
-        print(f"⚠️  [{hook_id}] override 조회 실패 → 우회 없이 원래 판정을 유지합니다: "
-              f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        # override_audit 은 sage.i18n 을 import 할 수 없어(엔진 없이 단독 실행) 진단을 code+arguments
+        # dict 로 올린다(StateHomeError.diagnostic) — 있으면 hook catalog 로 렌더, 없으면(범용
+        # 예외) 원문 그대로. 감싸는 문장 자체는 이 파일의 다른 fail-safe 안내와 같이 고정 한국어다.
+        detail = _overlay_say(root, exc.diagnostic) if hasattr(exc, "diagnostic") else f"{type(exc).__name__}: {exc}"
+        print(f"⚠️  [{hook_id}] override 조회 실패 → 우회 없이 원래 판정을 유지합니다: {detail}",
+              file=sys.stderr)
         return False
     if not grants:
         return False

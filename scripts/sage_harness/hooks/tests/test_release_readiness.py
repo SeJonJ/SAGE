@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -141,17 +142,24 @@ class TestPreflightBlocksWhatItClaims(unittest.TestCase):
 
         목록에 적어뒀다는 사실이 출하 근거가 될 수 없다 — 그렇지 않으면 인벤토리 0 에
         도달하는 순간 영어 화면에 한국어가 남은 채로 릴리스가 열린다.
-        """
-        module = _load_preflight()
-        from sage.i18n.validation import (KOREAN_IN_ENGLISH_DEBT, KOREAN_JUDGEMENT_DEBT,
-                                          catalog_issues)
 
-        self.assertEqual([], catalog_issues(str(REPO)))        # 추적: 통과
-        findings = module.check_localization_debt()            # 릴리스: 차단
+        6배치 완료 시점에는 실제 저장소의 KOREAN_IN_ENGLISH_DEBT·KOREAN_JUDGEMENT_DEBT 가
+        정당하게 비어 있어(모든 표시 언어 부채가 이관됨) 실제 데이터로는 "부채가 남아 있는"
+        상태를 재현할 수 없다. release_debt_issues 자체를 mock 으로 대체해 이 preflight 검사가
+        그 반환값을 그대로 Finding 으로 실어 나른다는 배선만 확인한다(부채 판정 로직 자체는
+        test_diagnostics_contract.py 가 별도로 검증)."""
+        module = _load_preflight()
+        from sage.i18n.validation import catalog_issues
+
+        self.assertEqual([], catalog_issues(str(REPO)))        # 추적: 통과(실제 부채 0)
+
+        import sage.i18n.validation as validation_module
+        with mock.patch.object(validation_module, "release_debt_issues",
+                               return_value=["runtime/fake.leak: 판정이 한국어 문장을 돌려준다"]):
+            findings = module.check_localization_debt()        # 릴리스: mock 된 잔존 부채를 그대로 전달
         self.assertTrue(findings, "부채가 남았는데 publish 가 열렸다")
         rendered = " ".join(str(f) for f in findings)
-        for name in sorted(KOREAN_IN_ENGLISH_DEBT | KOREAN_JUDGEMENT_DEBT):
-            self.assertIn(name, rendered)
+        self.assertIn("fake.leak", rendered)
 
     def test_a_new_leak_blocks_publish_even_if_it_is_not_declared_debt(self):
         module = _load_preflight()

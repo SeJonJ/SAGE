@@ -352,6 +352,16 @@ MESSAGES = {
     "cli.override.msg14": "   Reason: {arg} | audit: {ov_audit_path}",
     "cli.override.msg15": "   (Revoked automatically on expiry. Every time the override lets a BLOCK through, a bypass record is appended.)",
 
+    "cli.override_audit.state_home_not_absolute": "Cannot determine the permission-cache location (not an absolute path: {candidate}). This looks like an environment with HOME unset — set {env_var} to an absolute path",
+    "cli.override_audit.git_neither_file_nor_dir": "`.git` is neither a file nor a directory: {git}",
+    "cli.override_audit.git_pointer_unreadable": "cannot read the `.git` pointer ({git}): {error_type}: {exc}",
+    "cli.override_audit.git_pointer_bad_format": "`.git` pointer is not in the expected format ({git})",
+    "cli.override_audit.git_pointer_target_missing": "the gitdir the `.git` pointer refers to does not exist ({target})",
+    "cli.override_audit.repo_boundary_unresolved": "cannot determine the repository boundary — {reason}. Issuing a grant without a resolved identity risks mixing it with another repository's permissions",
+    "cli.override_audit.identity_marker_create_failed": "cannot create the repository identity marker ({marker}): {error_type}: {exc}. Issuing without an identity means a different repository later created at the same path would inherit this permission",
+    "cli.override_audit.identity_marker_unreadable": "cannot read the repository identity marker ({marker})",
+    "cli.override_audit.state_home_inside_repo": "the permission-cache location is inside the repository ({home} ⊂ {root}). If committed, the bypass would activate in other clones — set {env_var} outside the repository",
+
 
     "cli.retro.msg01": "[sage retro --check] note file not found: {path}",
     "cli.retro.msg02": "[sage retro --check] failed to read the note: {arg}: {e}",
