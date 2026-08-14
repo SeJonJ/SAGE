@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from sage.diagnostics import Diagnostic
+
 from sage.runtime_hosts import (HOSTS, active_host, configured_hosts, declared_active_host,
                                 declared_installed_hosts, opposite_host)
 
@@ -86,52 +88,58 @@ def component_issues(profile: dict[str, Any] | None) -> list[tuple[str, str]]:
     if components is None:
         return []
     if not isinstance(components, list):
-        return [("FAIL", f"components 는 배열이어야 함 (받음: {type(components).__name__})")]
+        return [("FAIL", Diagnostic("routing.components_not_list",
+                                    actual=type(components).__name__))]
     issues = []
     active = active_host(profile)
     installed = set(configured_hosts(profile))
     seen_ids = set()
     for index, component in enumerate(components):
         if not isinstance(component, dict):
-            issues.append(("FAIL", f"components[{index}]는 매핑이어야 함"))
+            issues.append(("FAIL", Diagnostic("routing.component_not_mapping", index=index)))
             continue
         unknown_keys = sorted((key for key in component if key not in _COMPONENT_KEYS), key=str)
         if unknown_keys:
-            issues.append(("FAIL", f"components[{index}]의 알 수 없는 키: {unknown_keys} "
-                                   f"(허용: {sorted(_COMPONENT_KEYS)})"))
+            issues.append(("FAIL", Diagnostic("routing.component_unknown_keys", index=index,
+                                              keys=unknown_keys,
+                                              allowed=sorted(_COMPONENT_KEYS))))
         cid = component.get("id")
         label = cid if isinstance(cid, str) and cid.strip() else f"index {index}"
         if not isinstance(cid, str) or not _COMPONENT_ID_RE.fullmatch(cid):
-            issues.append(("FAIL", f"components[{index}].id={cid!r} — 경로 안전 토큰 "
-                                   "[A-Za-z0-9][A-Za-z0-9_-]{0,79} 필요"))
+            issues.append(("FAIL", Diagnostic("routing.component_id_unsafe", index=index,
+                                              value=repr(cid))))
         elif cid in seen_ids:
-            issues.append(("FAIL", f"component id 중복: {cid!r}"))
+            issues.append(("FAIL", Diagnostic("routing.component_id_duplicated", value=repr(cid))))
         else:
             seen_ids.add(cid)
         paths = component.get("paths")
         if paths is not None and (not isinstance(paths, list)
                                   or any(not _valid_component_path(path) for path in paths)):
-            issues.append(("FAIL", f"component {label} paths는 제어문자/절대경로/부모경로가 없는 "
-                                   "512자 이하 repository-relative glob 배열이어야 함"))
+            issues.append(("FAIL", Diagnostic("routing.component_paths_unsafe", label=label)))
         tier = component.get("model")
         if tier is not None and not _valid_model(tier):
-            issues.append(("FAIL", f"component {label} model={tier!r} — 안전한 work-intensity/model 토큰 필요"))
+            issues.append(("FAIL", Diagnostic("routing.component_model_unsafe", label=label,
+                                              value=repr(tier))))
         models = component.get("runtime_models")
         if models is None:
             continue
         if not isinstance(models, dict) or not models:
-            issues.append(("FAIL", f"component {label} runtime_models는 non-empty host:model 매핑이어야 함"))
+            issues.append(("FAIL", Diagnostic("routing.runtime_models_shape", label=label)))
             continue
         unknown = sorted((host for host in models if host not in HOSTS), key=str)
         if unknown:
-            issues.append(("FAIL", f"component {label} runtime_models의 알 수 없는 host: {unknown}"))
+            issues.append(("FAIL", Diagnostic("routing.runtime_models_unknown_host", label=label,
+                                              hosts=unknown)))
         for host, model in models.items():
             if host in HOSTS and not _valid_model(model):
-                issues.append(("FAIL", f"component {label} runtime_models.{host}={model!r} — 유효한 model id 필요"))
+                issues.append(("FAIL", Diagnostic("routing.runtime_models_model_invalid",
+                                                  label=label, host=host, value=repr(model))))
             if host in HOSTS and host not in installed:
-                issues.append(("WARN", f"component {label} runtime_models.{host}는 installed_hosts에 없는 host 설정"))
+                issues.append(("WARN", Diagnostic("routing.runtime_models_host_not_installed",
+                                                  label=label, host=host)))
         if active not in models:
-            issues.append(("WARN", f"component {label} runtime_models에 active_host={active} 선택 없음 — host 기본 모델 사용"))
+            issues.append(("WARN", Diagnostic("routing.runtime_models_no_active_choice",
+                                              label=label, active=active)))
     return issues
 
 
@@ -142,27 +150,26 @@ def reviewer_issues(profile: dict[str, Any] | None) -> list[tuple[str, str]]:
     enabled = options.get("cross_model") if isinstance(options, dict) else False
     cross = profile.get("cross_model")
     if cross is None:
-        return ([('WARN', "options.cross_model=true 이지만 cross_model.reviewer host/model 미선택 "
-                          "→ opposite runtime의 CLI 기본 모델 사용(인터뷰에서 명시 선택 권장)")]
+        return ([("WARN", Diagnostic("routing.reviewer_unselected"))]
                 if enabled is True else [])
     if not isinstance(cross, dict):
         return []
     reviewer = cross.get("reviewer")
     if reviewer is None:
-        return ([('WARN', "options.cross_model=true 이지만 cross_model.reviewer host/model 미선택 "
-                          "→ opposite runtime의 CLI 기본 모델 사용(인터뷰에서 명시 선택 권장)")]
+        return ([("WARN", Diagnostic("routing.reviewer_unselected"))]
                 if enabled is True else [])
     if not isinstance(reviewer, dict):
-        return [("FAIL", f"cross_model.reviewer는 매핑이어야 함 (받음: {type(reviewer).__name__})")]
+        return [("FAIL", Diagnostic("routing.reviewer_not_mapping",
+                                    actual=type(reviewer).__name__))]
     issues = []
     unknown = sorted((key for key in reviewer if key not in _REVIEWER_KEYS), key=str)
     if unknown:
-        issues.append(("FAIL", f"cross_model.reviewer의 알 수 없는 키: {unknown}"))
+        issues.append(("FAIL", Diagnostic("routing.reviewer_unknown_keys", keys=unknown)))
     # host 는 중복이 아니다 — model id 가 런타임 종속이라(`gpt-5.6-terra`=codex, `opus`=claude)
     # 어느 peer 를 위한 선택인지 알아야 한다. 실제 peer 가 다르면 그 model 은 적용하지 않는다.
     # (다만 "active_host 의 반대여야 한다" 는 옛 검사는 auto 에서 정적 판정이 불가능해 폐기했다.)
     if set(reviewer) & _REVIEWER_KEYS != _REVIEWER_KEYS:
-        issues.append(("FAIL", "cross_model.reviewer는 host와 model을 모두 명시해야 함"))
+        issues.append(("FAIL", Diagnostic("routing.reviewer_incomplete")))
         return issues
     host = reviewer.get("host")
     model = reviewer.get("model")
@@ -170,21 +177,22 @@ def reviewer_issues(profile: dict[str, Any] | None) -> list[tuple[str, str]]:
         declared = declared_active_host(profile)
         installed = declared_installed_hosts(profile)
         if host not in HOSTS:
-            issues.append(("FAIL", f"cross_model.reviewer.host={host!r} — {list(HOSTS)} 중 하나여야 함"))
+            issues.append(("FAIL", Diagnostic("routing.reviewer_host_unknown", value=repr(host),
+                                              allowed=list(HOSTS))))
         elif installed is not None and host not in installed:
             # installed_hosts 미선언 프로필은 무엇이 깔렸는지 주장한 적이 없으므로 판정하지 않는다.
             # (선언이 없을 때 configured_hosts 는 active_host 하나로 폴백해서, 그걸 근거로 삼으면
             #  legacy 프로필의 정상적인 cross-model 설정이 전부 FAIL 이 된다.)
-            issues.append(("FAIL", f"cross_model.reviewer.host={host!r}가 installed_hosts에 없음 — "
-                                   "설치되지 않은 runtime 에는 리뷰를 맡길 수 없음"))
+            issues.append(("FAIL", Diagnostic("routing.reviewer_host_not_installed",
+                                              value=repr(host))))
         elif host == declared:
             # auto(=declared None)면 실행 시점에만 정해지므로 여기서 판정하지 않는다.
-            issues.append(("FAIL", f"cross_model.reviewer.host={host!r}가 active_host와 같음 — "
-                                   "자기 자신은 독립 리뷰어가 될 수 없음"))
+            issues.append(("FAIL", Diagnostic("routing.reviewer_host_is_active",
+                                              value=repr(host))))
     if not _valid_model(model):
-        issues.append(("FAIL", f"cross_model.reviewer.model={model!r} — 유효한 model id 필요"))
+        issues.append(("FAIL", Diagnostic("routing.reviewer_model_invalid", value=repr(model))))
     if enabled is not True:
-        issues.append(("WARN", "cross_model.reviewer가 설정됐지만 options.cross_model=false → reviewer 선택 무동작"))
+        issues.append(("WARN", Diagnostic("routing.reviewer_set_but_disabled")))
     return issues
 
 

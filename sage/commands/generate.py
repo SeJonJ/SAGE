@@ -787,7 +787,7 @@ def _gen_roster(args, root):
     failures = [message for severity, message in component_issues(prof) if severity == "FAIL"]
     if failures:
         for message in failures:
-            print(f"  ❌ {message}", file=sys.stderr)
+            print(f"  ❌ {render_issue(language_of(args), message)}", file=sys.stderr)
         print(tr(language_of(args), 'cli.generate.msg28'), file=sys.stderr)
         return 1
     runtime = active_host(prof)

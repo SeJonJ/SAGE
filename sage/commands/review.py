@@ -513,7 +513,8 @@ def run_cross_check(args):
     fails = [m for sev, m in cross_model_issues(profile) if sev == "FAIL"]
     if fails:
         for m in fails:
-            print(f"[sage cross-check] TOOL ERROR: {m}", file=sys.stderr)
+            print(f"[sage cross-check] TOOL ERROR: "
+                  f"{render_issue(language_of(args), m)}", file=sys.stderr)
         print("REVIEWER_STATUS: BLOCKED")
         return 2
     effort, configured = resolve_effort(profile)
