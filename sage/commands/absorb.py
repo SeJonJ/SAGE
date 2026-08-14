@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from sage.asset_paths import AssetPaths
-from sage.i18n import language_of, tr
+from sage.i18n import CATALOGS, language_of, tr
 
 
 def register(sub, context):
@@ -224,7 +224,11 @@ def _parse_frontmatter_approved(text):
 
 
 _FENCE = re.compile(r"^\s*```+\s*([A-Za-z0-9_+-]*)\s*$")
-_PROPOSAL_HEADING = re.compile(r"^##\s*제안")
+# 헤딩 이름을 catalog(cli.retro.heading_proposals) 에서 가져와 정규식을 구성한다 — retro 가 노트를
+# 생성할 때 쓰는 것과 같은 소스라, 헤딩 문구가 바뀌어도 이 파서가 자동으로 따라간다(§4c/§4d SSOT).
+_PROPOSAL_HEADING_ALTERNATION = "|".join(
+    re.escape(CATALOGS[lang]["cli.retro.heading_proposals"]) for lang in CATALOGS)
+_PROPOSAL_HEADING = re.compile(rf"^##\s*(?:{_PROPOSAL_HEADING_ALTERNATION})")
 # 섹션 경계 — 임의 레벨 헤딩 / 수평선 / <details>. 반드시 **펜스 밖**에서만 판정한다:
 # 코드블록 안의 `---` 나 `### …` 는 마크다운상 본문 텍스트지 경계가 아니다.
 _SECTION_BOUNDARY = re.compile(r"^(?:#{1,6}\s|---+\s*$|<details\b)")

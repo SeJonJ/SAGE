@@ -34,8 +34,6 @@ KOREAN_IN_ENGLISH_ALLOWED = frozenset({"cli.root.switch_hint"})
 # 한 건을 고치면서 다른 한 건이 새로 들어와도 총계가 같아 통과한다. 해소한 key 는 반드시 이
 # 집합에서 지워야 하고(낡은 항목도 실패로 보고한다), 이관이 끝나면 비어야 한다.
 KOREAN_IN_ENGLISH_DEBT = frozenset({
-    "cli.retro.msg04",     # `## 요약`/`## 제안` — retro heading 계약에서 en 이름으로 교체 예정
-    "cli.retro.msg17",     # 같은 heading 이름
     "cli.validate.review_loop_arch_escalation_ineffective",   # en 값이 ko 원문 그대로 복사됨
     "cli.validate.review_loop_cross_model_ineffective",       # 같은 복사
 })

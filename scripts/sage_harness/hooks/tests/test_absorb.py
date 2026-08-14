@@ -358,6 +358,30 @@ class TestAbsorbFromRetro(unittest.TestCase):
             self.assertEqual(rc, 0, out)
             self.assertIn("risk += y", out)
 
+    def test_english_proposals_heading_parsed(self):
+        # heading 계약(§4c/§4d SSOT): 노트가 영어 canonical heading('## Proposals')으로 쓰여도
+        # absorb 가 catalog 에서 조립한 정규식으로 인식해야 한다.
+        note = ('---\napproved: true\n---\n'
+                '## Proposals\n```json\n[{"target":"profile","proposed_change":"english heading"}]\n```\n')
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "n.md")
+            Path(p).write_text(note, encoding="utf-8")
+            rc, out = run_absorb(Args(from_retro=p))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("english heading", out)
+
+    def test_legacy_korean_proposals_heading_still_parsed(self):
+        # 기존(레거시) 한국어 노트 호환 — heading 계약이 catalog 기반으로 바뀐 뒤에도 '## 제안' 을
+        # 계속 인식해야 한다(하위 호환).
+        note = ('---\napproved: true\n---\n'
+                '## 제안\n```json\n[{"target":"hook","proposed_change":"legacy korean heading"}]\n```\n')
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "n.md")
+            Path(p).write_text(note, encoding="utf-8")
+            rc, out = run_absorb(Args(from_retro=p))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("legacy korean heading", out)
+
     def test_no_auto_apply_writes_nothing(self):
         # 자동반영 금지: --from-retro 가 어떤 파일도 생성/수정하지 않음.
         with tempfile.TemporaryDirectory() as d:

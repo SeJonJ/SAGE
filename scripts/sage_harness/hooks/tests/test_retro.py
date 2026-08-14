@@ -12,11 +12,13 @@
   8. 노트 제목 stem: --feature > 유일한 05 문서명 > run_id 폴백(+힌트)
   9. --check: 빈 템플릿/무효 제안 non-zero, 채워진 노트 0
 """
+import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
@@ -30,6 +32,13 @@ def sage_review_loop(*args, root):
 
 def retro(*args, root, cwd=None):
     cmd = [sys.executable, "-m", "sage", "retro", *args]
+    if root:
+        cmd += ["--root", root]
+    return subprocess.run(cmd, cwd=cwd or REPO, capture_output=True, text=True)
+
+
+def retro_lang(lang, *args, root, cwd=None):
+    cmd = [sys.executable, "-m", "sage", "--lang", lang, "retro", *args]
     if root:
         cmd += ["--root", root]
     return subprocess.run(cmd, cwd=cwd or REPO, capture_output=True, text=True)
@@ -523,6 +532,115 @@ class TestRetroCheck(unittest.TestCase):
         r = self._check(note, "--run-id", "rl-aaa")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("retro_audit", r.stderr)
+
+
+class TestRetroLanguageContract(_ProjectFixture, unittest.TestCase):
+    """retro heading/placeholder 계약이 ko/en 양쪽에서 대칭으로 동작해야 한다(§4c/§4d SSOT).
+
+    heading 텍스트는 catalog(cli.retro.heading_summary/heading_proposals) 가 유일한 소스이고,
+    _summary_body/absorb._PROPOSAL_HEADING 은 거기서 정규식을 조립한다 — 노트 판정(placeholder 검출,
+    heading 인식)은 --lang 이 아니라 노트가 실제로 어떤 언어로 쓰였는지에 매인다."""
+
+    def _vault(self):
+        v = os.path.join(self.tmp, "vault")
+        os.makedirs(v, exist_ok=True)
+        return v
+
+    def _note_path(self, vault):
+        hits = [os.path.join(dp, fn) for dp, _, fs in os.walk(vault) for fn in fs
+                if fn.endswith(".md") and " retro " in fn]
+        self.assertEqual(len(hits), 1, f"retro 노트 1건이어야: {hits}")
+        return hits[0]
+
+    def test_ko_note_has_ko_headings_and_placeholder(self):
+        self._run_loop()
+        self._add_05()
+        v = self._vault()
+        r = retro("--vault", v, root=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        text = Path(self._note_path(v)).read_text(encoding="utf-8")
+        self.assertIn("## 요약\n", text)
+        self.assertIn("## 제안", text)
+        self.assertIn("이번 사이클에 체계적으로 놓친 것", text)
+
+    def test_en_note_has_en_headings_and_placeholder(self):
+        self._run_loop()
+        self._add_05()
+        v = self._vault()
+        r = retro_lang("en", "--vault", v, root=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        text = Path(self._note_path(v)).read_text(encoding="utf-8")
+        self.assertIn("## Summary\n", text)
+        self.assertIn("## Proposals", text)
+        self.assertIn("systematically missed", text)
+        # heading·placeholder·안내문 자체는 영어 — distiller 프롬프트([LANGUAGE] 계약, (c) 분류)는
+        # 표시 언어와 무관하게 원문(한국어)을 유지하므로 <details> 블록에는 한국어가 남는다(의도됨).
+        self.assertNotIn("## 요약", text)
+        self.assertNotIn("## 제안", text)
+
+    def test_en_note_passes_check_under_default_ko(self):
+        # 노트가 영어로 작성돼도 --check 는 기본(ko) 표시 언어에서 통과해야 한다 — 노트 구조 판정은
+        # 표시 언어가 아니라 노트가 실제로 쓰인 언어에 매인다.
+        note = os.path.join(self.tmp, "note.md")
+        Path(note).write_text(
+            '---\napproved: false\n---\n\n'
+            '## Summary\nRepeatedly missed a gate-bypass pattern. Promoting to hook.\n\n'
+            '## Proposals\n```json\n'
+            '[{"pattern":"p","target":"hook","proposed_change":"extend pre-gate","confidence":"high"}]\n'
+            '```\n', encoding="utf-8")
+        r = retro("--check", note, root=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_ko_note_passes_check_under_lang_en(self):
+        # 기존(레거시) 한국어 노트가 --lang en 에서도 --check 를 통과해야 한다.
+        note = os.path.join(self.tmp, "note.md")
+        Path(note).write_text(
+            '---\napproved: false\n---\n\n'
+            '## 요약\n게이트 우회 패턴을 반복해 놓쳤다. hook 으로 승격.\n\n'
+            '## 제안 (proposals)\n```json\n'
+            '[{"pattern":"p","target":"hook","proposed_change":"pre-gate 확장","confidence":"high"}]\n'
+            '```\n', encoding="utf-8")
+        r = retro_lang("en", "--check", note, root=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_wrong_language_placeholder_still_fails_default_ko(self):
+        # EN placeholder 가 그대로 남아 있으면(사람이 안 지움) 기본(ko) --check 도 실패해야 한다 —
+        # placeholder 판정은 ko/en 어느 catalog 값이든(--lang 과 무관하게) 검출한다.
+        placeholder_en = ("_A one- or two-line, human-readable note on what this cycle "
+                          "systematically missed and what you're changing (not parsed by absorb)._")
+        note = os.path.join(self.tmp, "note.md")
+        Path(note).write_text(
+            f'---\napproved: false\n---\n\n## 요약\n{placeholder_en}\n\n'
+            '## 제안 (proposals)\n```json\n[]\n```\n', encoding="utf-8")
+        r = retro("--check", note, root=self.tmp)
+        self.assertEqual(r.returncode, 1, r.stdout)
+
+    def test_wrong_language_placeholder_still_fails_lang_en(self):
+        placeholder_ko = ("_이번 사이클에 체계적으로 놓친 것과 바꾸기로 한 것을 사람이 읽을 "
+                          "1~2줄로 (absorb 파싱 대상 아님)._")
+        note = os.path.join(self.tmp, "note.md")
+        Path(note).write_text(
+            f'---\napproved: false\n---\n\n## Summary\n{placeholder_ko}\n\n'
+            '## Proposals\n```json\n[]\n```\n', encoding="utf-8")
+        r = retro_lang("en", "--check", note, root=self.tmp)
+        self.assertEqual(r.returncode, 1, r.stdout)
+
+    def test_judgment_and_run_id_binding_unchanged_under_lang_en(self):
+        # 판정 계층(run_id 결속·감사 기록)이 --lang 과 무관하게 동일해야 한다.
+        rid = self._run_loop()
+        self._add_05()
+        note = os.path.join(self.tmp, "note.md")
+        Path(note).write_text(
+            f'---\napproved: false\nrun_id: {rid}\n---\n\n'
+            '## Summary\nfilled.\n\n'
+            '## Proposals\n```json\n[{"target":"hook","proposed_change":"x"}]\n```\n', encoding="utf-8")
+        r = retro_lang("en", "--check", note, "--run-id", rid, root=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        p = os.path.join(self.tmp, ".sage", "retro_audit.jsonl")
+        with open(p, encoding="utf-8") as f:
+            recs = [json.loads(l) for l in f if l.strip()]
+        self.assertEqual(recs[0]["run_id"], rid)
+        self.assertEqual(recs[0]["event"], "retro_check_ok")
 
 
 if __name__ == "__main__":

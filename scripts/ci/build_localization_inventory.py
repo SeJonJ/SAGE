@@ -83,6 +83,13 @@ NOT_TRANSLATED = {
         "_OVERLAY_HEADER_PREFIXES — 렌더 본문에서 compose_block 고지 헤더를 걷어내는 prefix 매처. "
         "CORE 렌더 헤더는 overlay_common.compose_block 과 동일하게 표시 언어에 매이지 않는 산출물 "
         "본문(해시 앵커 입력)이라 번역 대상이 아니다."),
+    ("sage/commands/retro.py", "<module>"): (2,
+        "_DISTILLER_PROMPT + _APPLY_PATH — host AI 를 대상으로 한 고정 LLM 프롬프트/절차 설명. "
+        "화면에 표시되는 문장이 아니라 host AI 가 읽는 지시문이라 표시 언어와 무관하게 항상 원문을 "
+        "유지한다. 언어 신호는 프롬프트 뒤에 붙는 [LANGUAGE] 부록 한 줄(cli.retro.distiller_"
+        "language_directive, catalog 이관됨)만 담당하고, _APPLY_PATH 는 순수 구조 설명이라 언어 "
+        "지시 자체가 불필요하다. 요약 placeholder(_SUMMARY_PLACEHOLDER)는 반대로 catalog 로 이관됐다 "
+        "— 이건 노트에 실제로 표시되는 문장이라 이 예외에 포함되지 않는다."),
 }
 
 

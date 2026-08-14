@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 from sage.profile_layers import load_profile_layers
-from sage.i18n import language_of, render_issue, tr
+from sage.i18n import CATALOGS, language_of, render_issue, tr
 
 
 def register(sub, context):
@@ -109,27 +109,28 @@ _DISTILLER_PROMPT = """\
 """
 
 
-def _fmt_audit(la, root, run_id):
+def _fmt_audit(la, root, run_id, language=None):
     """감사 요약 + 대상 run_id 반환. run_id 없으면 최신. 기록 없으면 (None, [])."""
     runs = la.runs(root)
     if not runs:
-        return None, ["(loop_audit 기록 없음 — review_loop 루프가 아직 돈 적 없음. 단발 리뷰면 05 문서만 참고)"]
+        return None, [tr(language, "cli.retro.audit_no_history")]
     rid = run_id or runs[-1]
     rounds = la.rounds_of(root, rid)
     close = la.close_of(root, rid)
-    lines = [f"run_id={rid}" + ("" if rid in runs else "  ⚠️ (해당 run_id 의 loop_open 없음)")]
+    lines = [f"run_id={rid}" + ("" if rid in runs else tr(language, "cli.retro.audit_unknown_run_suffix"))]
     tot = {"found": 0, "survived": 0, "accepted": 0, "arch": 0}
     for r in rounds:
         for k in tot:
             tot[k] += int(r.get(k, 0) or 0)
         lines.append(f"  [{r.get('iteration')}] found={r.get('found')} survived={r.get('survived')} "
                      f"accepted={r.get('accepted')} arch={r.get('arch')} tokens={r.get('tokens')}")
-    lines.append(f"  합계: found={tot['found']} survived={tot['survived']} accepted={tot['accepted']} "
-                 f"arch={tot['arch']}  → accepted={tot['accepted']} 가 '리뷰가 채운 체계적 누락'의 양")
+    lines.append(tr(language, "cli.retro.audit_totals", found=tot["found"], survived=tot["survived"],
+                    accepted=tot["accepted"], arch=tot["arch"]))
     if close:
-        lines.append(f"  종료: {close.get('result')}/{close.get('reason')} ({close.get('iterations')}회)")
+        lines.append(tr(language, "cli.retro.audit_closed", result=close.get("result"),
+                        reason=close.get("reason"), iterations=close.get("iterations")))
     else:
-        lines.append("  종료: (미종료 — 진행중이거나 close 누락)")
+        lines.append(tr(language, "cli.retro.audit_not_closed"))
     return rid, lines
 
 
@@ -142,12 +143,16 @@ _APPLY_PATH = (
     "  feed-forward: 다음 feature 의 00 Prior-Knowledge Scan 이 반영분을 읽음."
 )
 
-# 노트 템플릿 ↔ --check 의 단일 소스. 이 문장이 그대로 남아 있으면 host 가 distill 을 돌리지 않은 것.
-_SUMMARY_PLACEHOLDER = "_이번 사이클에 체계적으로 놓친 것과 바꾸기로 한 것을 사람이 읽을 1~2줄로 (absorb 파싱 대상 아님)._"
 _PROPOSAL_TARGETS = ("profile", "hook", "agent", "skill")   # absorb 가 분기하는 target 어휘
 
+# 요약 헤딩 이름을 catalog(cli.retro.heading_summary) 에서 직접 가져와 정규식을 구성한다 —
+# 헤딩 문구가 바뀌면 이 정규식도 자동으로 따라간다(§4c/§4d SSOT, 하드코딩 이중관리 금지).
+_SUMMARY_HEADING_ALTERNATION = "|".join(
+    re.escape(CATALOGS[lang]["cli.retro.heading_summary"]) for lang in CATALOGS)
+_SUMMARY_HEADING_RE = re.compile(rf"(?m)^##[ \t]*(?:{_SUMMARY_HEADING_ALTERNATION})[ \t]*$")
 
-def _derive_stem(feature, docs, rid):
+
+def _derive_stem(feature, docs, rid, language=None):
     """human-gate 노트 파일명 stem → (stem, hint). 우선순위: --feature > 유일한 05 문서명 > run_id.
 
     run_id 폴백은 제목만으로 어떤 사이클인지 알아볼 수 없어(난수형) 마지막 수단이다. 05 문서가
@@ -156,15 +161,14 @@ def _derive_stem(feature, docs, rid):
         return feature, None
     if len(docs) == 1:
         return os.path.splitext(os.path.basename(docs[0]))[0], None
-    reason = f"05 문서 {len(docs)}건 — 사이클 특정 불가" if docs else "05 문서 0건"
-    return (rid or "cycle"), (
-        f"노트 제목에 run_id 를 사용합니다({reason}). 제목만으로 사이클을 알아보려면 "
-        f"`--feature <사이클 stem>` 을 주세요.")
+    reason = (tr(language, "cli.retro.stem_reason_multi", count=len(docs)) if docs
+              else tr(language, "cli.retro.stem_reason_none"))
+    return (rid or "cycle"), tr(language, "cli.retro.stem_hint", reason=reason)
 
 
 def _summary_body(text):
-    """`## 요약` 섹션 본문(다음 `## ` 헤딩 전까지). 헤딩 없음 → None."""
-    m = re.search(r"(?m)^##[ \t]*요약[ \t]*$", text)
+    """`## 요약`/`## Summary` 섹션 본문(다음 `## ` 헤딩 전까지). 헤딩 없음 → None."""
+    m = _SUMMARY_HEADING_RE.search(text)
     if not m:
         return None
     rest = text[m.end():]
@@ -197,6 +201,8 @@ def _check_note(path, root, run_id=None, language=None):
         print(tr(language, "cli.retro.msg02", arg=type(e).__name__, e=e), file=sys.stderr)
         return 2
     problems = []
+    summary_heading = tr(language, "cli.retro.heading_summary")
+    proposals_heading = tr(language, "cli.retro.heading_proposals")
 
     # run 결속: 파일명에 run_id 가 없으므로 같은 stem/날짜의 *이전* run 노트가 재사용될 수 있다.
     # 그 노트는 이미 채워져 있어 검사를 통과 → 이번 run 은 회고 없이 완료 처리된다(게이트 우회).
@@ -204,38 +210,43 @@ def _check_note(path, root, run_id=None, language=None):
     noted = frontmatter_value(text, "run_id")
     if run_id:
         if noted != run_id:
-            problems.append(f"노트 run_id={noted!r} ≠ 대상 run_id={run_id!r} — 다른 사이클의 회고 노트")
+            problems.append(tr(language, "cli.retro.problem_run_id_mismatch", noted=noted, run_id=run_id))
     elif noted:
-        problems.append(f"--run-id 미전달 — 이 노트는 run_id={noted!r} 에 결속돼 있어 대조가 필요합니다 "
-                        f"(`--run-id {noted}`)")
+        problems.append(tr(language, "cli.retro.problem_run_id_missing", noted=noted))
 
     body = _summary_body(text)
     if body is None:
-        problems.append("`## 요약` 헤딩이 없음(노트 구조 손상)")
+        problems.append(tr(language, "cli.retro.problem_summary_heading_missing", summary_heading=summary_heading))
     else:
-        # placeholder 를 지웠든 그 아래에 덧붙였든 통과 — 남은 산문이 있으면 사람이 쓴 것.
-        prose = "\n".join(l for l in body.splitlines() if l.strip() and _SUMMARY_PLACEHOLDER not in l).strip()
+        # placeholder 는 ko/en 어느 catalog 값이든(--lang 과 무관하게) 검출한다 — 노트 구조 판정은
+        # 표시 언어가 아니라 노트가 실제로 어떤 언어로 쓰였는지에 매인다.
+        placeholders = [CATALOGS[lang]["cli.retro.summary_placeholder"] for lang in CATALOGS]
+        prose = "\n".join(l for l in body.splitlines()
+                          if l.strip() and not any(p in l for p in placeholders)).strip()
         if not prose:
-            problems.append("`## 요약` 이 비었거나 템플릿 placeholder 그대로 — 사이클 회고가 작성되지 않음")
+            problems.append(tr(language, "cli.retro.problem_summary_empty", summary_heading=summary_heading))
 
     proposals, err = _extract_proposals(text, language)
     if err:
-        problems.append(f"`## 제안` 파싱 불가: {err}")
+        problems.append(tr(language, "cli.retro.problem_proposals_unparseable",
+                           proposals_heading=proposals_heading, err=err))
     else:
         for i, p in enumerate(proposals):
             if not isinstance(p, dict):
-                problems.append(f"제안[{i}] 이 객체가 아님: {p!r}")
+                problems.append(tr(language, "cli.retro.problem_proposal_not_object", i=i, p=p))
                 continue
             if p.get("target") not in _PROPOSAL_TARGETS:
-                problems.append(f"제안[{i}] target={p.get('target')!r} — {list(_PROPOSAL_TARGETS)} 중 하나여야 absorb 가 분기")
+                problems.append(tr(language, "cli.retro.problem_proposal_bad_target", i=i,
+                                   target=p.get("target"), targets=list(_PROPOSAL_TARGETS)))
             if not str(p.get("proposed_change") or "").strip():
-                problems.append(f"제안[{i}] proposed_change 가 비었음")
+                problems.append(tr(language, "cli.retro.problem_proposal_empty_change", i=i))
 
     if problems:
         print(tr(language, "cli.retro.msg03", os_path=os.path.basename(path)), file=sys.stderr)
         for p in problems:
             print(f"  ✗ {p}", file=sys.stderr)
-        print(tr(language, "cli.retro.msg04"), file=sys.stderr)
+        print(tr(language, "cli.retro.msg04", summary_heading=summary_heading,
+                 proposals_heading=proposals_heading), file=sys.stderr)
         return 1
 
     n = len(proposals)
@@ -266,10 +277,11 @@ def run(args):
     if args.check:
         return _check_note(args.check, root, args.run_id, language_of(args))
 
+    language = language_of(args)
     profile = _load_profile(root)
     la = _load_loop_audit(root)
 
-    rid, audit_lines = _fmt_audit(la, root, args.run_id)
+    rid, audit_lines = _fmt_audit(la, root, args.run_id, language)
 
     # 05 리뷰 문서 수집(finding 텍스트 원천) — approve phase 글롭. --feature 로 경로 필터.
     pattern = os.path.join(root, _approve_glob(profile))
@@ -283,19 +295,22 @@ def run(args):
     integ = la.integrity_issues(root)
 
     # 본문 1회 구성 → stdout + (vault 활성 시) human-gate 노트 공용.
-    out = ["== sage retro (Loop C — process-absorb 제안 / 자동반영 없음) ==", "",
-           "【 감사 요약 — 리뷰가 잡은 host 의 체계적 누락 】", *audit_lines, "",
-           "【 05 리뷰 문서(채택 finding 텍스트 원천 — AI 가 정독) 】"]
+    out = [tr(language, "cli.retro.header"), "",
+           tr(language, "cli.retro.section_audit"), *audit_lines, "",
+           tr(language, "cli.retro.section_docs")]
     if docs:
         out += [f"  · {os.path.relpath(d, root)}" for d in docs]
     else:
-        out.append(f"  (없음 — {os.path.relpath(pattern, root)} 매치 0. 05 리뷰 문서가 있어야 패턴 분류 가능)")
-    out += ["", "【 distiller 프롬프트 (host AI 가 위 증거로 실행) 】", _DISTILLER_PROMPT, _APPLY_PATH]
+        out.append(tr(language, "cli.retro.no_docs_matched", pattern=os.path.relpath(pattern, root)))
+    # _DISTILLER_PROMPT/_APPLY_PATH 는 (c) LLM 프롬프트 — host AI 대상 고정 지시문이라 표시 언어와
+    # 무관하게 항상 원문(한국어)을 유지한다([LANGUAGE] 계약). 언어 신호는 부록 한 줄만 담당한다.
+    out += ["", tr(language, "cli.retro.section_distiller"), _DISTILLER_PROMPT,
+            tr(language, "cli.retro.distiller_language_directive"), _APPLY_PATH]
     if integ:
         # 문구 자체의 이관은 retro 배치에서 하고, 여기서는 하부 감사 진단만 렌더한다 —
         # 진단을 문자열로 두면 이 줄이 어느 언어로 나갈지 호출부가 고를 수 없다.
-        out += ["", "⚠️  loop_audit 무결성 경고(증거 신뢰성 점검):"]
-        out += [f"   - {render_issue(language_of(args), i)}" for i in integ]
+        out += ["", tr(language, "cli.retro.integrity_warning_header")]
+        out += [f"   - {render_issue(language, i)}" for i in integ]
 
     print("\n".join(out))
 
@@ -334,11 +349,10 @@ def run(args):
         if vault_arg is None and kc.get("retro_note") is True:
             vault_arg = ""   # profile vault_path 사용(자동 활성)
     if vault_arg is not None:
-        raw_stem, stem_hint = _derive_stem(args.feature, docs, rid)
+        raw_stem, stem_hint = _derive_stem(args.feature, docs, rid, language)
         if stem_hint:
             print(f"  ℹ️  {stem_hint}", file=sys.stderr)
-        _write_vault_note(profile, root, rid, raw_stem, out, vault_arg or None,
-                          language_of(args))
+        _write_vault_note(profile, root, rid, raw_stem, out, vault_arg or None, language)
     return 0
 
 
@@ -380,18 +394,24 @@ def _write_vault_note(profile, root, rid, raw_stem, out_lines, override, languag
     dash_name = _dashboard_filename(profile)
     fm = {"tags": ["sage", "retro", "loop-c"], "approved": False, "run_id": rid or "",
           "date": today, "status": "pending-review"}
-    check_cmd = f"sage retro --check <이 노트>" + (f" --run-id {rid}" if rid else "")
-    body = ("> **Loop C retro — human gate.** `## 요약` 에 사람용 회고 1~2줄, `## 제안` JSON 에 distill 결과를\n"
-            f"> 채운 뒤(`{check_cmd}` 로 확인) 검토해 frontmatter `approved: true` 로 승인하세요.\n"
-            "> 그 다음 `sage absorb --from-retro <이 노트>` 로 자산 patch 후보를 받습니다.\n"
-            "> 자동 반영되지 않습니다(SSOT 보호).\n\n"
-            f"관련 loop audit: [[{_wiki_stem(dash_name)}]]\n\n"
-            "## 요약\n"
-            f"{_SUMMARY_PLACEHOLDER}\n\n"
-            "## 제안 (proposals) — distill 결과를 JSON 배열로 채우세요. target ∈ {profile,hook,agent,skill}\n"
+    summary_heading = tr(language, "cli.retro.heading_summary")
+    proposals_heading = tr(language, "cli.retro.heading_proposals")
+    note_arg = tr(language, "cli.retro.note_arg_placeholder")
+    check_cmd = f"sage retro --check {note_arg}" + (f" --run-id {rid}" if rid else "")
+    intro = tr(language, "cli.retro.note_intro", summary_heading=summary_heading,
+              proposals_heading=proposals_heading, check_cmd=check_cmd, note_arg=note_arg)
+    related = tr(language, "cli.retro.note_related_audit", wiki_stem=_wiki_stem(dash_name))
+    proposals_line = tr(language, "cli.retro.note_proposals_heading_line", proposals_heading=proposals_heading)
+    evidence_summary = tr(language, "cli.retro.note_evidence_summary", proposals_heading=proposals_heading)
+    placeholder = tr(language, "cli.retro.summary_placeholder")
+    body = (f"{intro}\n\n"
+            f"{related}\n\n"
+            f"## {summary_heading}\n"
+            f"{placeholder}\n\n"
+            f"{proposals_line}\n"
             "```json\n[]\n```\n\n"
             "---\n"
-            "<details>\n<summary>증거 · distiller 프롬프트 (참고 — 채울 때만 사용, absorb 는 위 `## 제안` JSON 만 읽음)</summary>\n\n"
+            f"<details>\n<summary>{evidence_summary}</summary>\n\n"
             "```\n" + "\n".join(out_lines) + "\n```\n\n</details>\n")
     # create-only: 같은 날 재실행이 사람이 검토/승인(approved:true)한 노트를 덮어쓰지 않게(codex S5 P2).
     path = _vault.write_note(vault, folder, fname, fm, body, create_only=True)
@@ -403,7 +423,8 @@ def _write_vault_note(profile, root, rid, raw_stem, out_lines, override, languag
     # 노트는 빈 템플릿으로 나간다 — 채우는 건 host 몫이므로, 검산 명령을 여기서 못박아 전달한다.
     # --run-id 를 포함해 출력한다: 빠뜨리면 run 결속 검사가 꺼져 남의 노트로 통과할 수 있다.
     rid_arg = f' --run-id {rid}' if rid else ""
-    print(tr(language, "cli.retro.msg17", path=path, rid_arg=rid_arg), file=sys.stderr)
+    print(tr(language, "cli.retro.msg17", path=path, rid_arg=rid_arg,
+             summary_heading=summary_heading, proposals_heading=proposals_heading), file=sys.stderr)
     try:
         _write_vault_dashboard(_load_loop_audit(root), root, override)
     except Exception as e:
