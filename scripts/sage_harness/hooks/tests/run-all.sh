@@ -152,6 +152,10 @@ echo "### 25b. project hook lifecycle (10-i 통합 등록·양 host dispatch·�
 python3 "$HERE/test_project_hook_lifecycle.py" || rc=1
 
 echo ""
+echo "### 25c. project hook spec 계약 (판정 code · binding 위반 분리)"
+python3 "$HERE/test_project_hook_contract.py" || rc=1
+
+echo ""
 echo "### 26. profile_validate (R2 profile 스키마+의미검증 — 오타키 FAIL/전략부재 FAIL/미정의phase FAIL, P0-2)"
 python3 "$HERE/test_profile_validate.py" || rc=1
 

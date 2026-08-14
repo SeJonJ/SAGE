@@ -339,7 +339,8 @@ def _gen_hook_locked(args, root):
         metadata, issues = inspect_project_hook(root, args.id)
         if issues:
             for issue in issues:
-                print(f"[sage generate] TOOL ERROR: {issue}", file=sys.stderr)
+                print(f"[sage generate] TOOL ERROR: "
+                      f"{render_issue(language_of(args), issue)}", file=sys.stderr)
             return 2
         assets[f"hooks/{args.id}"] = {
             "origin": "project", "form": "core_adapter", "conformance": "UNKNOWN",
@@ -382,7 +383,8 @@ def _gen_hook_locked(args, root):
         metadata, issues = inspect_project_hook(root, hid)
         if issues:
             for issue in issues:
-                print(f"[sage generate] TOOL ERROR: {issue}", file=sys.stderr)
+                print(f"[sage generate] TOOL ERROR: "
+                      f"{render_issue(language_of(args), issue)}", file=sys.stderr)
             return 2
         entry["origin"] = "project"
         entry["adapter_contract_version"] = metadata["contract_version"]

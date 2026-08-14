@@ -844,7 +844,7 @@ def run(args):
                             overall = "FAIL"
                             print(tr(language_of(args), "cli.validate.msg11", orphan_id=orphan_id))
                             for issue in orphan_issues:
-                                print(f"  {issue}")
+                                print(f"  {render_issue(language_of(args), issue)}")
                         else:
                             if overall == "PASS":
                                 overall = "WARN"

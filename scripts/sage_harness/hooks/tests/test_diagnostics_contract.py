@@ -136,6 +136,51 @@ class TestBothDomainsRenderEveryCode(unittest.TestCase):
         self.assertNotEqual(rendered["ko"], rendered["en"], "문장이 언어에 따라 달라지지 않았다")
 
 
+class TestEveryEmittedCodeIsRenderable(unittest.TestCase):
+    """엔진 전역: `Diagnostic("x")` 를 내면 어느 도메인에서든 문장이 나와야 한다.
+
+    도메인별 oracle(`TestBothDomainsRenderEveryCode`)은 hook 이 닿는 모듈만 본다. 이관이
+    모듈 단위로 진행되므로 CLI 전용 모듈에서 catalog 등록을 빠뜨리면 화면에
+    `[SAGE] message_key=...` 가 뜬다 — 판정은 맞는데 사용자가 원인을 못 읽는 상태다.
+    그건 조용한 결함이라 여기서 전역으로 막는다.
+    """
+
+    def _emitted(self):
+        """`Diagnostic("code", ...)` 의 첫 인자가 상수 문자열인 것만 센다.
+
+        `Diagnostic(f"{prefix}.marker_duplicated")` 처럼 조립된 code 는 여기서 볼 수 없다.
+        그건 상수 목록을 세는 정적 검사의 한계이고, 그런 자리는 모듈 집중 테스트가 실제
+        호출로 확인한다.
+        """
+        found = {}
+        for path in sorted((REPO / "sage").rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                        and node.func.id == "Diagnostic" and node.args
+                        and isinstance(node.args[0], ast.Constant)
+                        and isinstance(node.args[0].value, str)):
+                    found.setdefault(node.args[0].value,
+                                     f"{path.relative_to(REPO)}:{node.lineno}")
+        return found
+
+    def test_every_constant_code_renders_in_both_languages(self):
+        from sage.i18n import CATALOGS
+        sys.path.insert(0, str(RUNTIME))
+        import i18n as hook_i18n
+        missing = []
+        for code, where in sorted(self._emitted().items()):
+            for language in ("ko", "en"):
+                if (f"cli.{code}" not in CATALOGS[language]
+                        and f"hook.{code}" not in hook_i18n.FRAGMENTS[language]):
+                    missing.append(f"{language}:{code} ({where})")
+        self.assertEqual(missing, [], f"어느 catalog 에도 없는 code: {missing}")
+
+    def test_the_oracle_actually_sees_the_engine(self):
+        """스캔이 0건이면 위 검사는 아무것도 지키지 않는다 — 빈 통과를 막는다."""
+        self.assertGreater(len(self._emitted()), 50)
+
+
 class TestHookRendersWithoutTheEngineCatalog(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
