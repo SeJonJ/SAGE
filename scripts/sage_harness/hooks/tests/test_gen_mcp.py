@@ -90,6 +90,29 @@ class TestParse(unittest.TestCase):
             _inst(t); p = _spec(t, "x", "---\nid: x\nkind: mcp\ntransport: http\nruntime_targets: [claude]\nserver_binding: {}\n---\n")
             self.assertRaises(M.MCPSpecError, M.parse_mcp_spec, p)
 
+    def test_parse_error_codes_are_specific(self):
+        """MCPSpecError 마다 code 가 다른지 확인한다 — 이관 전에는 code 자체가 없었다."""
+        with tempfile.TemporaryDirectory() as t:
+            _inst(t)
+            cases = [
+                ("no-frontmatter", "no frontmatter here\n", "mcp.frontmatter_missing"),
+                ("bad-id", "---\nid: has.dot\nkind: mcp\ntransport: stdio\n"
+                          "runtime_targets: [claude]\nserver_binding: {command: x}\n---\n",
+                 "mcp.id_invalid"),
+                ("bad-transport", "---\nid: y\nkind: mcp\ntransport: ws\n"
+                                 "runtime_targets: [claude]\nserver_binding: {command: x}\n---\n",
+                 "mcp.transport_unsupported"),
+                ("no-targets", "---\nid: z\nkind: mcp\ntransport: stdio\n"
+                              "runtime_targets: []\nserver_binding: {command: x}\n---\n",
+                 "mcp.runtime_targets_empty"),
+            ]
+            for name, spec, expected in cases:
+                with self.subTest(name=name):
+                    path = _spec(t, name, spec)
+                    with self.assertRaises(M.MCPSpecError) as ctx:
+                        M.parse_mcp_spec(path)
+                    self.assertEqual(ctx.exception.diagnostic.code, expected)
+
 
 class TestSecrets(unittest.TestCase):
     def _model(self, binding, transport="stdio", targets=("claude",)):

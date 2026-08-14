@@ -893,10 +893,13 @@ def _gen_mcp(args, root):
         try:
             mdl = M.parse_mcp_spec(spec_path)
         except M.MCPSpecError as e:
-            print(tr(language_of(args), 'cli.generate.msg50', sid=sid, e=e), file=sys.stderr); had_fail = True; continue
+            print(tr(language_of(args), 'cli.generate.msg50', sid=sid,
+                     e=exception_text(language_of(args), e)), file=sys.stderr)
+            had_fail = True; continue
         for sev, msg in M.check_secrets(mdl):
             mark = "❌" if sev == "FAIL" else "⚠️ "
-            print(f"  {mark} {sid}: {msg}", file=sys.stderr if sev == "FAIL" else sys.stdout)
+            print(f"  {mark} {sid}: {render_issue(language_of(args), msg)}",
+                  file=sys.stderr if sev == "FAIL" else sys.stdout)
             if sev == "FAIL":
                 had_fail = True
         models.append(mdl)
@@ -922,12 +925,16 @@ def _gen_mcp(args, root):
             return 1
         new_text, err = M.replace_codex_block(existing, block)
         if err:
-            print(tr(language_of(args), 'cli.generate.msg53', err=err), file=sys.stderr); return 1
+            print(tr(language_of(args), 'cli.generate.msg53',
+                     err=render_issue(language_of(args), err)), file=sys.stderr)
+            return 1
         ok, note = M.verify_toml(new_text)
         if not ok:
-            print(tr(language_of(args), 'cli.generate.msg54', note=note), file=sys.stderr); return 1
+            print(tr(language_of(args), 'cli.generate.msg54',
+                     note=render_issue(language_of(args), note)), file=sys.stderr)
+            return 1
         if note:
-            print(f"   ↳ (codex) {note}")
+            print(f"   ↳ (codex) {render_issue(language_of(args), note)}")
         plan.append(("codex", outp, new_text, block))
 
     # 3. 쓰기(전 target 검증 통과 후에만) 또는 dry-run.

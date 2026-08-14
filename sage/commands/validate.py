@@ -22,7 +22,7 @@ from sage.asset_paths import AssetPaths
 from sage.commands._common import contract_version_of
 from sage.diagnostics import Diagnostic
 from sage.hook_runtime_hash import calculate_hook_runtime_hash
-from sage.i18n import language_of, render_issue, tr
+from sage.i18n import exception_text, language_of, render_issue, tr
 
 # severity rank (exit code 매핑은 _exit_code)
 _SEV_RANK = {"PASS": 0, "WARN": 1, "STALE": 2, "FAIL": 3}
@@ -585,7 +585,7 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True):
     return sev, msgs
 
 
-def _validate_mcp(root, asset_id, entry):
+def _validate_mcp(root, asset_id, entry, language=None):
     """MCP(declarative) → 결정론 schema check. spec frontmatter 재파싱 → 시크릿·구조·staleness.
 
     LLM judge 미사용. spec_hash staleness + render_hash(per-target canonical) staleness +
@@ -625,13 +625,14 @@ def _validate_mcp(root, asset_id, entry):
     try:
         mdl = M.parse_mcp_spec(spec_path)
     except M.MCPSpecError as e:
-        bump("FAIL"); msgs.append(f"  FAIL spec 구조 오류: {e}")
+        bump("FAIL")
+        msgs.append(f"  FAIL spec 구조 오류: {exception_text(language, e)}")
         return sev, msgs
     for ssev, smsg in M.check_secrets(mdl):
         if ssev == "FAIL":
-            bump("FAIL"); msgs.append(f"  FAIL {smsg}")
+            bump("FAIL"); msgs.append(f"  FAIL {render_issue(language, smsg)}")
         else:
-            bump("WARN"); msgs.append(f"  WARN {smsg}")
+            bump("WARN"); msgs.append(f"  WARN {render_issue(language, smsg)}")
     # render_hash staleness (spec→manifest 스탬프 대조) — 무관 서버/블록밖 편집에 흔들리지 않음
     rh = entry.get("render_hash")
     rh = rh if isinstance(rh, dict) else {}   # 오염 manifest 의 render_hash:"bad" 등에 .get() 크래시 방지
@@ -814,7 +815,7 @@ def run(args):
         if aid.startswith("hooks/"):
             sev, msgs = _validate_hook(root, aid, entry, run_regression=not args.check)
         elif aid.startswith("mcps/"):
-            sev, msgs = _validate_mcp(root, aid, entry)
+            sev, msgs = _validate_mcp(root, aid, entry, language_of(args))
         else:  # agents/ or skills/ — interpretive
             sev, msgs = _validate_interpretive(root, aid, entry, run_regression=not args.check)
         if _SEV_RANK[sev] > _SEV_RANK[overall]:
