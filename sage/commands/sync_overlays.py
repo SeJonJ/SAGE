@@ -97,8 +97,10 @@ def run(args):
     for p in sorted(cleanup_changed):
         print(tr(language_of(args), "cli.sync_overlays.msg07", os_path=os.path.relpath(p, root)))
     if hard_fail:
-        suffix = "정리 가능한 blocked 관리 블록만 제거됨, manifest 미갱신" if cleanup_changed else "렌더/manifest 미갱신"
-        print(f"---- sync-overlays: FAIL ({suffix}) ----")
+        suffix = (tr(language_of(args), "cli.sync_overlays.suffix_cleanup_only")
+                  if cleanup_changed else
+                  tr(language_of(args), "cli.sync_overlays.suffix_render_manifest_unchanged"))
+        print(tr(language_of(args), "cli.sync_overlays.msg16", suffix=suffix))
         return 1
 
     # cleanup은 업그레이드 source/version skew 자체가 생기는 FB12 migration에서도 먼저 수행해야 한다.
@@ -132,8 +134,10 @@ def run(args):
             hard_fail = True
 
     if hard_fail:
-        suffix = "blocked 관리 블록만 제거됨, 일반 렌더/manifest 미갱신" if cleanup_changed else "렌더/manifest 미갱신"
-        print(f"---- sync-overlays: FAIL ({suffix}) ----")
+        suffix = (tr(language_of(args), "cli.sync_overlays.suffix_blocked_cleanup_only")
+                  if cleanup_changed else
+                  tr(language_of(args), "cli.sync_overlays.suffix_render_manifest_unchanged"))
+        print(tr(language_of(args), "cli.sync_overlays.msg16", suffix=suffix))
         return 1
 
     # 2. 설치된 모든 host를 물리화한다. 한 host만 갱신하면 다른 discovery surface와 앵커가

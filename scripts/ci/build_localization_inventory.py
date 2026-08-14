@@ -131,8 +131,94 @@ def _korean_literals(node: ast.AST, source: str) -> list[tuple[str, bool]]:
     return found
 
 
+def _print_arg_owner(tree: ast.AST) -> dict[int, str]:
+    """print() 호출 인자 서브트리에 속한 모든 노드 id → 그 print 의 channel.
+
+    `print("...")` 처럼 literal 이 직접 인자인 경우만 여기 걸린다. `msg = "..."; print(msg)`
+    처럼 한 다리 건너 조립되는 경우는 걸리지 않는다 — 그건 `_scan_korean_literals` 가 파일
+    전체를 훑어 별도로 잡는다(classification 이 `command_output` 대신 `command_output_indirect`
+    로 갈린다).
+    """
+    owner: dict[int, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "print":
+            channel = _channel(node)
+            for arg in node.args:
+                for sub in ast.walk(arg):
+                    owner[id(sub)] = channel
+    return owner
+
+
+def _scan_korean_literals(path: str, rel: str, *, id_prefix: str, required_tests: list[str],
+                           direct_classification: str | None, indirect_classification: str,
+                           default_channel_owner: dict[int, str] | None = None,
+                           hook_reachable_of: str | None = None,
+                           claimed: set[int] = frozenset()) -> tuple[list[dict], list[dict]]:
+    """파일 전체에서 한국어 literal 을 훑는다 — `print()` 인자뿐 아니라 어디서든.
+
+    좁게(→ `print()` 직접 인자만) 보면 `ast.Assign`/`ast.IfExp` 로 조립된 뒤 몇 프레임 떨어진
+    곳에서 출력되는 형태(예: `_validate_hook()` 이 문자열을 반환하고 `validate.py` 의 `run()`
+    이 나중에 `for m in msgs: print(m)` 로 찍는 형태)를 놓친다. 실측: `sync_overlays.py` 의
+    `suffix = "..." if cond else "..."` → `print(f"...{suffix}...")` 가 정확히 이 형태였고,
+    인벤토리는 0 인데 화면에는 한국어가 남았다. 전체를 훑으면 스코프·호출 깊이에 상관없이
+    잡힌다 — `sage/*.py` 검증 계층(`VALIDATION_RELS`)이 이미 쓰던 방식과 같다.
+    """
+    entries: list[dict] = []
+    exclusions: list[dict] = []
+    source = Path(path).read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=path)
+    owner = _enclosing(tree)
+    module = os.path.basename(path)[:-3]
+    docstrings = {id(n) for n in ast.walk(tree)
+                  if isinstance(n, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                                    ast.AsyncFunctionDef))
+                  and n.body and isinstance(n.body[0], ast.Expr)
+                  for n in [n.body[0].value]}
+    print_owner = default_channel_owner if default_channel_owner is not None else {}
+    seen_lines: dict[int, int] = {}
+    for node in ast.walk(tree):
+        if id(node) in docstrings or id(node) in claimed:
+            continue      # 주석·docstring 은 한국어가 기본 정책이다
+        if not isinstance(node, (ast.Constant, ast.JoinedStr)):
+            continue
+        for text, interpolated in _korean_literals(node, source):
+            symbol = owner.get(id(node), "<module>")
+            declared = NOT_TRANSLATED.get((rel.replace(os.sep, "/"), symbol))
+            if declared:
+                reason = declared[1]
+                exclusions.append({"source_file": rel, "source_symbol": symbol,
+                                   "source_line": node.lineno, "text": text,
+                                   "reason": reason})
+                continue
+            seen_lines[node.lineno] = seen_lines.get(node.lineno, 0) + 1
+            ordinal = seen_lines[node.lineno]
+            direct = id(node) in print_owner
+            entry = {
+                "id": f"{module}:{node.lineno}:{id_prefix}{ordinal}",
+                "domain": "cli",
+                "key": None,
+                "source_file": rel,
+                "source_symbol": symbol,
+                "source_line": node.lineno,
+                "channel": print_owner.get(id(node), "stdout"),
+                "exit_contract": "unchanged",
+                "format": "interpolated" if interpolated else "static",
+                "placeholders": _placeholders(text) if not interpolated else [],
+                "machine_consumer": None,
+                "classification": (direct_classification if direct and direct_classification
+                                   else indirect_classification),
+                "text": text,
+                "required_tests": required_tests,
+            }
+            if hook_reachable_of is not None:
+                entry["hook_reachable"] = hook_reachable_of in HOOK_REACHABLE
+            entries.append(entry)
+    return entries, exclusions
+
+
 def collect(repo_root: str) -> list[dict]:
     entries: list[dict] = []
+    exclusions: list[dict] = []
     commands_dir = os.path.join(repo_root, *COMMANDS_REL)
     for name in sorted(os.listdir(commands_dir)):
         if not name.endswith(".py"):
@@ -144,11 +230,11 @@ def collect(repo_root: str) -> list[dict]:
         module = name[:-3]
         rel = os.path.join(*COMMANDS_REL, name)
 
+        claimed: set[int] = set()
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
             symbol = owner.get(id(node), "<module>")
-
             for kw in node.keywords:
                 if kw.arg not in HELP_KEYWORDS:
                     continue
@@ -156,6 +242,7 @@ def collect(repo_root: str) -> list[dict]:
                         and isinstance(kw.value.value, str)
                         and HANGUL.search(kw.value.value)):
                     continue
+                claimed.add(id(kw.value))
                 entries.append({
                     "id": f"{module}:{node.lineno}:{kw.arg}",
                     "domain": "cli",
@@ -173,28 +260,21 @@ def collect(repo_root: str) -> list[dict]:
                     "required_tests": ["help_tree"],
                 })
 
-            if isinstance(node.func, ast.Name) and node.func.id == "print":
-                channel = _channel(node)
-                for index, argument in enumerate(node.args):
-                    for text, interpolated in _korean_literals(argument, source):
-                        entries.append({
-                            "id": f"{module}:{node.lineno}:print{index}",
-                            "domain": "cli",
-                            "key": None,
-                            "source_file": rel,
-                            "source_symbol": symbol,
-                            "source_line": node.lineno,
-                            "channel": channel,
-                            "exit_contract": "unchanged",
-                            "format": "interpolated" if interpolated else "static",
-                            "placeholders": _placeholders(text) if not interpolated else [],
-                            "machine_consumer": None,
-                            "classification": "command_output",
-                            "text": text,
-                            "required_tests": ["ko_parity", "en_snapshot", "no_leakage"],
-                        })
-    validation, exclusions = _collect_validation(repo_root)
+        command_entries, command_exclusions = _scan_korean_literals(
+            path, rel,
+            id_prefix="cmd",
+            required_tests=["ko_parity", "en_snapshot", "no_leakage"],
+            direct_classification="command_output",
+            indirect_classification="command_output_indirect",
+            default_channel_owner=_print_arg_owner(tree),
+            claimed=claimed,
+        )
+        entries.extend(command_entries)
+        exclusions.extend(command_exclusions)
+
+    validation, validation_exclusions = _collect_validation(repo_root)
     entries.extend(validation)
+    exclusions.extend(validation_exclusions)
     return entries, exclusions
 
 
@@ -206,51 +286,17 @@ def _collect_validation(repo_root: str) -> tuple[list[dict], list[dict]]:
         path = os.path.join(repo_root, *rel_parts)
         if not os.path.isfile(path):
             continue
-        source = Path(path).read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=path)
-        owner = _enclosing(tree)
-        module = rel_parts[-1][:-3]
         rel = os.path.join(*rel_parts)
-        docstrings = {id(n) for n in ast.walk(tree)
-                      if isinstance(n, (ast.Module, ast.ClassDef, ast.FunctionDef,
-                                        ast.AsyncFunctionDef))
-                      and n.body and isinstance(n.body[0], ast.Expr)
-                      for n in [n.body[0].value]}
-        # 한 줄에 문자열이 여러 개면 줄 번호만으로는 id 가 겹친다 — 겹치면 진척 계산이 어긋난다.
-        seen_lines: dict[int, int] = {}
-        for node in ast.walk(tree):
-            if id(node) in docstrings:
-                continue      # 주석·docstring 은 한국어가 기본 정책이다
-            if not isinstance(node, (ast.Constant, ast.JoinedStr)):
-                continue
-            for text, interpolated in _korean_literals(node, source):
-                symbol = owner.get(id(node), "<module>")
-                declared = NOT_TRANSLATED.get((rel.replace(os.sep, "/"), symbol))
-                if declared:
-                    reason = declared[1]
-                    exclusions.append({"source_file": rel, "source_symbol": symbol,
-                                       "source_line": node.lineno, "text": text,
-                                       "reason": reason})
-                    continue
-                seen_lines[node.lineno] = seen_lines.get(node.lineno, 0) + 1
-                ordinal = seen_lines[node.lineno]
-                entries.append({
-                    "id": f"{module}:{node.lineno}:validation{ordinal}",
-                    "domain": "cli",
-                    "key": None,
-                    "source_file": rel,
-                    "source_symbol": symbol,
-                    "source_line": node.lineno,
-                    "channel": "stdout",
-                    "exit_contract": "unchanged",
-                    "format": "interpolated" if interpolated else "static",
-                    "placeholders": _placeholders(text) if not interpolated else [],
-                    "machine_consumer": None,
-                    "classification": "validation_message",
-                    "hook_reachable": rel_parts[-1] in HOOK_REACHABLE,
-                    "text": text,
-                    "required_tests": ["ko_parity", "en_snapshot"],
-                })
+        module_entries, module_exclusions = _scan_korean_literals(
+            path, rel,
+            id_prefix="validation",
+            required_tests=["ko_parity", "en_snapshot"],
+            direct_classification=None,
+            indirect_classification="validation_message",
+            hook_reachable_of=rel_parts[-1],
+        )
+        entries.extend(module_entries)
+        exclusions.extend(module_exclusions)
     return entries, exclusions
 
 

@@ -277,6 +277,10 @@ MESSAGES = {
     "cli.sync_overlays.msg13": "---- sync-overlays: FAIL (렌더/manifest 미갱신) ----",
     "cli.sync_overlays.msg14": "  ~ 물리화: {os_path}",
     "cli.sync_overlays.msg15": "---- sync-overlays: OK ({count}개 갱신, {count2}개 앵커, hosts={hosts}) ----",
+    "cli.sync_overlays.msg16": "---- sync-overlays: FAIL ({suffix}) ----",
+    "cli.sync_overlays.suffix_cleanup_only": "정리 가능한 blocked 관리 블록만 제거됨, manifest 미갱신",
+    "cli.sync_overlays.suffix_render_manifest_unchanged": "렌더/manifest 미갱신",
+    "cli.sync_overlays.suffix_blocked_cleanup_only": "blocked 관리 블록만 제거됨, 일반 렌더/manifest 미갱신",
 
     "cli.override.msg01": "   권한 캐시(머신 로컬, 비커밋): {ov_grants_path}",
     "cli.override.msg02": "활성 override: {count}건",

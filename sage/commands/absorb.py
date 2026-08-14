@@ -363,7 +363,8 @@ def _absorb_from_retro(args) -> int:
         print(tr(language_of(args), "cli.absorb.msg31", count=len(skipped)))
         for p in skipped:
             if isinstance(p, dict):   # 비-dict 항목(예: 숫자)도 크래시 없이 표시(codex B P1)
-                print(f"  · {p.get('proposed_change', tr(language_of(args), "cli.absorb.msg32"))!r} (target={p.get('target')})")
+                fallback = tr(language_of(args), "cli.absorb.msg32")
+                print(f"  · {p.get('proposed_change', fallback)!r} (target={p.get('target')})")
             else:
                 print(tr(language_of(args), "cli.absorb.msg33", arg=repr(p)))
 

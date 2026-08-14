@@ -271,6 +271,10 @@ MESSAGES = {
     "cli.sync_overlays.msg13": "---- sync-overlays: FAIL (renders and manifest were not updated) ----",
     "cli.sync_overlays.msg14": "  ~ materialized: {os_path}",
     "cli.sync_overlays.msg15": "---- sync-overlays: OK ({count} updated, {count2} anchors, hosts={hosts}) ----",
+    "cli.sync_overlays.msg16": "---- sync-overlays: FAIL ({suffix}) ----",
+    "cli.sync_overlays.suffix_cleanup_only": "only the cleanable blocked managed blocks were removed; manifest not updated",
+    "cli.sync_overlays.suffix_render_manifest_unchanged": "renders/manifest not updated",
+    "cli.sync_overlays.suffix_blocked_cleanup_only": "only the blocked managed blocks were removed; normal renders/manifest not updated",
 
     "cli.override.msg01": "   Grant cache (machine-local, not committed): {ov_grants_path}",
     "cli.override.msg02": "Active overrides: {count}",
