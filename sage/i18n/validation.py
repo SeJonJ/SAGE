@@ -10,6 +10,7 @@ build-time 전체 정합성을 동시에 만족시킨다.
 """
 from __future__ import annotations
 
+import ast
 import os
 import re
 import string
@@ -37,6 +38,30 @@ KOREAN_IN_ENGLISH_DEBT = frozenset({
     "cli.retro.msg17",     # 같은 heading 이름
     "cli.validate.review_loop_arch_escalation_ineffective",   # en 값이 ko 원문 그대로 복사됨
     "cli.validate.review_loop_cross_model_ineffective",       # 같은 복사
+})
+
+_RUNTIME_REL = ("scripts", "sage_harness", "hooks", "runtime")
+
+# CLI 가 판정 결과를 화면에 싣는 설치 runtime 모듈. 인벤토리는 `sage/` 를 파일 단위로 스캔하므로
+# 여기서 올라온 완성 문장은 세지 못한다 — CLI 모듈이 0건이어도 영어 화면에 한국어가 실린다.
+CLI_CONSUMED_RUNTIME_MODULES = ("loop_audit", "fast_cycle_audit", "cycle_state", "retro_audit",
+                                "override_audit", "document_language", "checklist_contract")
+
+# 아직 완성 한국어 문장을 돌려주는 runtime 함수. catalog 부채와 같은 규칙 — **정확한 집합**이고
+# 해소하면 반드시 지운다. 해당 명령 배치에서 비운다.
+KOREAN_JUDGEMENT_DEBT = frozenset({
+    "cycle_state.read_declaration",             # sage cycle / fast-cycle 화면
+    "cycle_state.read_declaration_record",
+    "cycle_state.write_declaration",
+    "override_audit.state_home",                # sage override 화면
+    "override_audit._probe_gitdir",
+    "override_audit._gitdir",
+    "override_audit._repo_id",
+    "override_audit.grants_path",
+    "override_audit.grant",
+    "document_language.consistency_issues",     # hook·CLI 양쪽
+    "checklist_contract.unsafe_glob",           # hook 게이트
+    "checklist_contract.checklist_target_issues",
 })
 
 
@@ -122,6 +147,67 @@ def _content_issues(label: str, catalogs: dict[str, dict], *,
     return issues
 
 
+def korean_returning_runtime_functions(repo_root: str) -> tuple[set[str], list[str]]:
+    """runtime 판정 함수 중 완성 한국어 문장을 들고 있는 것 → (집합, 스캔 오류).
+
+    docstring 은 제외한다 — 코드 주석·docstring 의 한국어는 유지 정책이고, 문제는 사용자에게
+    돌려주는 문자열이다. 스캔이 파일을 못 읽으면 빈 집합을 통과로 돌려주지 않고 오류로 남긴다:
+    부재가 통과로 떨어지면 게이트가 아무것도 지키지 않는다.
+    """
+    runtime_dir = os.path.join(repo_root, *_RUNTIME_REL)
+    found: set[str] = set()
+    errors: list[str] = []
+    for module in CLI_CONSUMED_RUNTIME_MODULES:
+        path = os.path.join(runtime_dir, f"{module}.py")
+        try:
+            with open(path, encoding="utf-8") as handle:
+                tree = ast.parse(handle.read(), path)
+        except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+            errors.append(f"runtime/{module}: 스캔하지 못했다 ({type(exc).__name__})")
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            docstring = (node.body[0].value
+                         if node.body and isinstance(node.body[0], ast.Expr)
+                         and isinstance(node.body[0].value, ast.Constant) else None)
+            if any(isinstance(inner, ast.Constant) and isinstance(inner.value, str)
+                   and _KOREAN.search(inner.value) and inner is not docstring
+                   for inner in ast.walk(node)):
+                found.add(f"{module}.{node.name}")
+    return found, errors
+
+
+def runtime_judgement_issues(repo_root: str) -> list[str]:
+    """개발 중 추적 검사 — 선언한 부채 집합과 실제가 정확히 같은가."""
+    found, issues = korean_returning_runtime_functions(repo_root)
+    for name in sorted(found - KOREAN_JUDGEMENT_DEBT):
+        issues.append(f"runtime/{name}: 판정이 완성 한국어 문장을 돌려준다 — "
+                      "code + arguments + evidence 로 올리세요")
+    for name in sorted(KOREAN_JUDGEMENT_DEBT - found):
+        issues.append(f"runtime/{name}: 한국어가 해소됐다 — KOREAN_JUDGEMENT_DEBT 에서 지우세요")
+    return issues
+
+
+def release_debt_issues(repo_root: str) -> list[str]:
+    """release 게이트 — 추적되는 부채라도 남아 있으면 publish 는 실패다.
+
+    개발 중에는 "알려진 부채가 그대로인가"를 통과로 본다. 그건 진행을 막지 않기 위한 것이지
+    출하해도 된다는 뜻이 아니다. 여기서는 선언 목록이 아니라 **실제 남은 누출**을 세므로,
+    목록에 적어두는 것만으로는 게이트를 통과할 수 없다.
+    """
+    issues: list[str] = []
+    leaked = {key for key, text in CATALOGS.get("en", {}).items()
+              if isinstance(text, str) and _KOREAN.search(text)}
+    for key in sorted(leaked - KOREAN_IN_ENGLISH_ALLOWED):
+        issues.append(f"cli/{key}[en]: 영어 catalog 에 한국어가 남아 있다 — 이관 전 publish 차단")
+    found, errors = korean_returning_runtime_functions(repo_root)
+    issues.extend(errors)
+    for name in sorted(found):
+        issues.append(f"runtime/{name}: 판정이 한국어 문장을 돌려준다 — 이관 전 publish 차단")
+    return issues
+
+
 def catalog_issues(repo_root: str | None = None, hook_message_keys: set[str] | None = None) -> list[str]:
     """전체 검사 결과. 빈 리스트가 통과다."""
     issues = _domain_issues("cli", CATALOGS)
@@ -134,6 +220,8 @@ def catalog_issues(repo_root: str | None = None, hook_message_keys: set[str] | N
     hooks = load_hook_catalogs(repo_root) if repo_root else {}
     issues.extend(_domain_issues("hook", hooks))
     issues.extend(_content_issues("hook", hooks))
+    if repo_root:
+        issues.extend(runtime_judgement_issues(repo_root))
 
     if hooks:
         overlap = sorted(set(CATALOGS.get("ko", {})) & set(hooks.get("ko", {})))

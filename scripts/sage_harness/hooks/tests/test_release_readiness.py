@@ -124,8 +124,46 @@ class TestPreflightBlocksWhatItClaims(unittest.TestCase):
     def test_every_check_runs_even_after_one_fails(self):
         """첫 실패에서 멈추면 두 번째 문제를 다음 실행에서야 발견한다."""
         done = _run(PREFLIGHT, "--tag", "v0.0.0-not-the-version")
-        for name in ("catalog", "docs-pair", "inventory", "upgrade"):
+        for name in ("catalog", "localization-debt", "docs-pair", "inventory", "upgrade"):
             self.assertIn(name, done.stdout, f"{name} 검사가 실행되지 않았다")
+
+    def test_every_preflight_check_is_registered(self):
+        """정의만 하고 CHECKS 에 넣지 않으면 그 검사는 영원히 안 돈다."""
+        module = _load_preflight()
+        defined = {name for name in dir(module) if name.startswith("check_")}
+        # CHECKS 는 lambda 로 감싸 등록하므로 이름을 함수 객체가 아니라 선언 블록에서 찾는다.
+        block = PREFLIGHT.read_text(encoding="utf-8").split("CHECKS = (")[1].split("\n)")[0]
+        registered = {name for name in defined if f"{name}(" in block}
+        self.assertEqual(defined, registered, f"등록 안 된 검사: {sorted(defined - registered)}")
+
+    def test_remaining_localization_debt_blocks_publish(self):
+        """추적 검사는 통과해도 publish 는 남은 부채 자체를 실패로 봐야 한다.
+
+        목록에 적어뒀다는 사실이 출하 근거가 될 수 없다 — 그렇지 않으면 인벤토리 0 에
+        도달하는 순간 영어 화면에 한국어가 남은 채로 릴리스가 열린다.
+        """
+        module = _load_preflight()
+        from sage.i18n.validation import (KOREAN_IN_ENGLISH_DEBT, KOREAN_JUDGEMENT_DEBT,
+                                          catalog_issues)
+
+        self.assertEqual([], catalog_issues(str(REPO)))        # 추적: 통과
+        findings = module.check_localization_debt()            # 릴리스: 차단
+        self.assertTrue(findings, "부채가 남았는데 publish 가 열렸다")
+        rendered = " ".join(str(f) for f in findings)
+        for name in sorted(KOREAN_IN_ENGLISH_DEBT | KOREAN_JUDGEMENT_DEBT):
+            self.assertIn(name, rendered)
+
+    def test_a_new_leak_blocks_publish_even_if_it_is_not_declared_debt(self):
+        module = _load_preflight()
+        from sage.i18n import CATALOGS
+        key = "cli.root.help_option"
+        original = CATALOGS["en"][key]
+        CATALOGS["en"][key] = "이 문장은 영어여야 한다"
+        try:
+            rendered = " ".join(str(f) for f in module.check_localization_debt())
+            self.assertIn(key, rendered, "선언되지 않은 신규 누출이 publish 를 막지 않았다")
+        finally:
+            CATALOGS["en"][key] = original
 
 
 class TestPlatformSmokeContract(unittest.TestCase):

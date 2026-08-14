@@ -75,6 +75,26 @@ def check_catalog_parity():
     return [Finding("catalog", issue) for issue in catalog_issues(str(REPO))]
 
 
+def check_localization_debt():
+    """남아 있는 표시 언어 부채 자체를 실패로 본다.
+
+    `catalog` 검사는 "알려진 부채가 목록 그대로인가"만 본다 — 개발 중에는 그게 통과여야
+    작업이 진행된다. 하지만 publish 는 다르다: 목록에 적어뒀다는 사실이 출하 근거가 될 수
+    없다. 여기서는 선언 목록이 아니라 실제 남은 누출을 세므로 부채를 기재하는 것만으로는
+    게이트를 통과할 수 없다.
+
+    인벤토리가 0 이어도 이 검사가 남으면 영어 화면에 한국어가 나간다 — 두 검사는 서로를
+    대신하지 못한다.
+    """
+    sys.path.insert(0, str(REPO))
+    try:
+        from sage.i18n.validation import release_debt_issues
+    except Exception as exc:
+        return [Finding("localization-debt",
+                        f"검사를 import 하지 못했다: {type(exc).__name__}: {exc}")]
+    return [Finding("localization-debt", issue) for issue in release_debt_issues(str(REPO))]
+
+
 def check_document_pairs():
     """한국어 사용자 문서마다 영어 짝이 있는가. 한쪽만 갱신된 채 릴리스되면 두 문서가 갈린다."""
     findings = []
@@ -223,6 +243,7 @@ CHECKS = (
     ("tag-version", lambda tag: check_tag_matches_version(tag)),
     ("version", lambda tag: check_version_is_not_a_placeholder()),
     ("catalog", lambda tag: check_catalog_parity()),
+    ("localization-debt", lambda tag: check_localization_debt()),
     ("docs-pair", lambda tag: check_document_pairs()),
     ("inventory", lambda tag: check_inventory_is_current()),
     ("upgrade", lambda tag: check_upgrade_evidence()),

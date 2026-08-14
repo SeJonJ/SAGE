@@ -25,6 +25,10 @@ sys.path.insert(0, str(REPO))
 RUNTIME = REPO / "scripts/sage_harness/hooks/runtime"
 
 from sage.diagnostics import Diagnostic, render          # noqa: E402
+from sage.i18n.validation import (CLI_CONSUMED_RUNTIME_MODULES,  # noqa: E402
+                                  KOREAN_IN_ENGLISH_DEBT, KOREAN_JUDGEMENT_DEBT,
+                                  korean_returning_runtime_functions, release_debt_issues,
+                                  runtime_judgement_issues)
 
 # `profile_compile` 은 hook 진입점이 직접 import 한다 — 진입점만 깨끗해도 그 아래가 catalog 를
 # 끌어오면 같은 의존이 그대로 따라 들어온다. 계약은 진입점이 아니라 **경로 전체**에 걸린다.
@@ -260,50 +264,36 @@ class TestRuntimeJudgementReachesTheCliCatalog(unittest.TestCase):
     `{"code", "arguments", "evidence"}` 매핑으로 올리고 문장은 부른 쪽 catalog 가 만든다.
     """
 
-    # CLI 가 판정 결과를 화면에 싣는 runtime 모듈.
-    CLI_CONSUMED = ("loop_audit", "fast_cycle_audit", "cycle_state", "retro_audit",
-                    "override_audit", "document_language", "checklist_contract")
-
-    # 아직 완성 한국어 문장을 돌려주는 함수. **건수가 아니라 정확한 집합**이다 — 건수만 세면
-    # 한 곳을 고치면서 다른 곳이 새로 생겨도 총계가 같아 통과한다. 해당 명령 배치에서 비운다.
-    KOREAN_JUDGEMENT_DEBT = frozenset({
-        "cycle_state.read_declaration",            # sage cycle / fast-cycle 화면
-        "cycle_state.read_declaration_record",
-        "cycle_state.write_declaration",
-        "override_audit.state_home",               # sage override 화면
-        "override_audit._probe_gitdir",
-        "override_audit._gitdir",
-        "override_audit._repo_id",
-        "override_audit.grants_path",
-        "override_audit.grant",
-        "document_language.consistency_issues",     # hook·CLI 양쪽
-        "checklist_contract.unsafe_glob",           # hook 게이트
-        "checklist_contract.checklist_target_issues",
-    })
-
-    def _korean_returning_functions(self):
-        found = set()
-        for name in self.CLI_CONSUMED:
-            tree = ast.parse((RUNTIME / f"{name}.py").read_text(encoding="utf-8"))
-            for node in ast.walk(tree):
-                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    continue
-                docstring = (node.body[0].value
-                             if node.body and isinstance(node.body[0], ast.Expr)
-                             and isinstance(node.body[0].value, ast.Constant) else None)
-                if any(isinstance(inner, ast.Constant) and isinstance(inner.value, str)
-                       and HANGUL.search(inner.value) and inner is not docstring
-                       for inner in ast.walk(node)):
-                    found.add(f"{name}.{node.name}")
-        return found
-
     def test_korean_returning_runtime_functions_are_an_exact_declared_set(self):
-        self.assertEqual(self.KOREAN_JUDGEMENT_DEBT, self._korean_returning_functions())
+        """검사 로직과 부채 목록은 build-time oracle 이 소유한다 — 테스트는 그걸 부른다.
+
+        테스트 파일 안에만 있으면 릴리스 게이트가 같은 사실을 판정하지 못한다.
+        """
+        self.assertEqual([], runtime_judgement_issues(str(REPO)))
 
     def test_the_scan_actually_reads_the_runtime(self):
         """스캔이 빈 통과로 떨어지면 위 검사는 아무것도 지키지 않는다."""
-        self.assertTrue(all((RUNTIME / f"{name}.py").is_file() for name in self.CLI_CONSUMED))
-        self.assertGreater(len(self._korean_returning_functions()), 5)
+        found, errors = korean_returning_runtime_functions(str(REPO))
+        self.assertEqual([], errors)
+        self.assertEqual(KOREAN_JUDGEMENT_DEBT, found)
+        self.assertGreater(len(found), 5)
+
+    def test_a_missing_runtime_module_is_an_error_not_a_pass(self):
+        """파일을 못 읽었는데 빈 집합이 통과로 떨어지면 게이트가 사라진다."""
+        with tempfile.TemporaryDirectory() as empty:
+            found, errors = korean_returning_runtime_functions(empty)
+            self.assertEqual(set(), found)
+            self.assertEqual(len(CLI_CONSUMED_RUNTIME_MODULES), len(errors), errors)
+
+    def test_remaining_debt_blocks_the_release_even_while_tracking_passes(self):
+        """추적은 통과해도 publish 는 남은 부채 자체를 실패로 봐야 한다."""
+        self.assertEqual([], runtime_judgement_issues(str(REPO)))     # 추적: 통과
+        blocking = release_debt_issues(str(REPO))                      # 릴리스: 차단
+        self.assertTrue(blocking)
+        for name in sorted(KOREAN_JUDGEMENT_DEBT):
+            self.assertTrue(any(name in issue for issue in blocking), name)
+        for key in sorted(KOREAN_IN_ENGLISH_DEBT):
+            self.assertTrue(any(key in issue for issue in blocking), key)
 
     def test_loop_audit_is_migrated_and_its_codes_render_in_both_languages(self):
         from sage.i18n import CATALOGS
