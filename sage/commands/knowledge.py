@@ -14,7 +14,7 @@ from pathlib import Path
 
 from sage.commands import _vault
 from sage.profile_layers import load_profile_layers
-from sage.i18n import language_of, tr
+from sage.i18n import language_of, render_issue, tr
 
 
 def register(sub, context):
@@ -68,10 +68,11 @@ def _profile_path(args, root):
     return os.path.abspath(args.profile) if getattr(args, "profile", None) else os.path.join(root, "sage", "project-profile.yaml")
 
 
-def _load_profile(path):
+def _load_profile(path, language=None):
     layers = load_profile_layers(path)
     if layers.has_fail:
-        detail = "; ".join(message for severity, message in layers.issues if severity == "FAIL")
+        detail = "; ".join(render_issue(language, message)
+                           for severity, message in layers.issues if severity == "FAIL")
         return {}, f"profile load error: {detail}"
     return layers.effective, None
 
@@ -211,7 +212,7 @@ def _scan_vault(vault, folder, query, limit):
 
 def _run_scan(args):
     root = _root(args)
-    profile, err = _load_profile(_profile_path(args, root))
+    profile, err = _load_profile(_profile_path(args, root), language_of(args))
     query = _text_arg(args.query, args.query_file).strip()
     if err:
         _write_scan_report(root, "error", query, None, [], err)
@@ -496,7 +497,7 @@ def _summary_section(summary):
 
 def _run_write_back(args):
     root = _root(args)
-    profile, err = _load_profile(_profile_path(args, root))
+    profile, err = _load_profile(_profile_path(args, root), language_of(args))
     # 선행 BOM 과 모든 유니코드 공백(NBSP·전각공백 포함)의 반복 조합을 제거한 뒤 후행 공백을 정리한다 —
     # 원래 `.strip()` 이 처리하던 공백 범위를 유지(회귀 방지)하면서 BOM 까지 처리해, BOM·공백이 어떤
     # 순서로 섞여도 첫 마커가 라인 시작에 오게 한다. `.strip()` 단독은 BOM 을 공백으로 보지 않아 그

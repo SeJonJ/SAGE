@@ -15,7 +15,7 @@ import glob
 
 from sage import _resources
 from sage.profile_layers import load_profile_layers
-from sage.i18n import language_of, tr
+from sage.i18n import language_of, render_issue, tr
 
 # result↔reason 의미 짝(설계 §3) — APPROVED 는 수렴/dry 로만, BLOCKED 는 예산초과/아키텍처로만.
 _APPROVED_REASONS = {"CONVERGED", "DRY"}
@@ -141,7 +141,9 @@ def _validated_profile(root, language=None):
     if not failures:
         return layers.effective
     for message in failures:
-        print(tr(language, "cli.review_loop.msg01", message=message, layers_shared_path=layers.shared_path, layers_local_path=layers.local_path), file=sys.stderr)
+        print(tr(language, "cli.review_loop.msg01", message=render_issue(language, message),
+                 layers_shared_path=layers.shared_path, layers_local_path=layers.local_path),
+              file=sys.stderr)
     return None
 
 

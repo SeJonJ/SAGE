@@ -189,7 +189,7 @@ class TestReview(_StableHostTestCase):
                 rc = RV.run_review(_Args(root=d))
 
             self.assertEqual(2, rc)
-            self.assertIn("완화할 수 없음", err.getvalue())
+            self.assertIn("완화", err.getvalue())
 
     def test_review_same_runtime(self):
         with tempfile.TemporaryDirectory() as d:

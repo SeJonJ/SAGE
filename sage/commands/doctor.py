@@ -76,11 +76,12 @@ def _load_profile_context(path):
     except ImportError:
         return None, "missing_pyyaml", None
     layers = load_profile_layers(path)
-    shared_load_error = next((message for severity, message in layers.issues
-                              if severity == "FAIL" and message.startswith("shared profile YAML 파싱 오류")), None)
+    shared_load_error = next(
+        (message for severity, message in layers.issues
+         if severity == "FAIL" and getattr(message, "code", None) == "layers.yaml_parse_error"
+         and message.arguments.get("label") == "shared"), None)
     if shared_load_error:
-        error_name = shared_load_error.split("오류(", 1)[-1].split(")", 1)[0]
-        return None, f"parse_error:{error_name}", layers
+        return None, f"parse_error:{shared_load_error.arguments['kind']}", layers
     if layers.has_fail:
         return layers.effective, "layer_error", layers
     return layers.effective, "ok", layers
@@ -471,7 +472,7 @@ def run(args):
         print(tr(language_of(args), 'cli.doctor.msg39'))
         for severity, message in layers.issues:
             if severity in ("FAIL", "WARN"):
-                print(f"        {severity}: {message}")
+                print(f"        {severity}: {render_issue(language_of(args), message)}")
 
     if layers is not None:
         local_state = "loaded" if layers.local is not None else "missing (legacy/default behavior)"
@@ -479,7 +480,8 @@ def run(args):
         root = _project_root_from_profile(prof_path)
         if root is not None:
             for severity, message in local_profile_git_issues(root, layers.local_path):
-                print(f"  {'⚠️ ' if severity == 'WARN' else 'ℹ️ '} {severity} {message}")
+                print(f"  {'⚠️ ' if severity == 'WARN' else 'ℹ️ '} {severity} "
+                      f"{render_issue(language_of(args), message)}")
 
     # 실행 환경: generate 가 등록한 command와 같은 launcher 후보를 점검한다.
     sage_hook, sage_hook_source = resolve_sage_hook()

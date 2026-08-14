@@ -912,15 +912,15 @@ def run(args):
         print(f"ℹ️  LOCAL PROFILE {local_state}: {layers.local_path}")
         for severity, message in layers.issues:
             if severity == "FAIL":
-                print(f"❌ FAIL  profile-layer: {message}")
+                print(f"❌ FAIL  profile-layer: {render_issue(language_of(args), message)}")
                 overall = "FAIL"
             elif severity == "WARN":
-                print(f"⚠️  WARN  profile-layer: {message}")
+                print(f"⚠️  WARN  profile-layer: {render_issue(language_of(args), message)}")
                 if overall == "PASS":
                     overall = "WARN"
         for severity, message in local_profile_git_issues(root, layers.local_path):
             if severity == "WARN":
-                print(f"⚠️  WARN  profile-layer: {message}")
+                print(f"⚠️  WARN  profile-layer: {render_issue(language_of(args), message)}")
                 if overall == "PASS":
                     overall = "WARN"
             else:

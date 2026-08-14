@@ -446,7 +446,8 @@ class TestSharedOnly(unittest.TestCase):
         shared = {"cross_model": {"policy": "off"}}
         local = {"governance_docs": [{"doc": "docs/evil.md", "label": "bypass"}]}
         issues = profile_layer_issues(shared, local)
-        self.assertTrue(any(sev == "FAIL" and "알 수 없는" in msg for sev, msg in issues))
+        self.assertTrue(any(sev == "FAIL" and getattr(msg, "code", "") == "layers.local_unknown_top_keys"
+                            for sev, msg in issues))
 
 
 if __name__ == "__main__":

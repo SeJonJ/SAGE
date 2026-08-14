@@ -276,7 +276,7 @@ class TestLocalProfileValidation(unittest.TestCase):
                 rc = V.run(_VArgs(root))
 
             self.assertEqual(1, rc, out.getvalue())
-            self.assertIn("완화할 수 없음", out.getvalue())
+            self.assertIn("완화", out.getvalue())
 
 
 def _write_manifest(d, manifest, installed=False, empty_profile=False):

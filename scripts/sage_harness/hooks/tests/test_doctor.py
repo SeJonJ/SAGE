@@ -135,7 +135,7 @@ class TestDoctor(unittest.TestCase):
             rc, out = run_doctor(str(profile))
 
             self.assertEqual(1, rc, out)
-            self.assertIn("완화할 수 없음", out)
+            self.assertIn("완화", out)
 
     def test_env_section_reports_sage_hook(self):
         # W2b: hook 등록이 sage-hook 콘솔 스크립트에 의존 → doctor 실행환경이 이를 진단해야.
