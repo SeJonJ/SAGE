@@ -19,7 +19,7 @@ from sage import _resources
 from sage import ci_authority
 from sage.profile_compile import ProfileCompileError, materialize_profile
 from sage.profile_validate import severity_of, validate_profile
-from sage.i18n import tr
+from sage.i18n import english_text, tr
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 _PHASE_IDS = ("00", "01", "02", "03", "04", "05")
@@ -232,12 +232,13 @@ def _profile(root: str, tree: dict[str, dict[str, str]], revision: str) -> dict[
         raise AuthorityCliError("protected authority requires the SAGE schema dependency") from exc
     issues = validate_profile(profile, _resources.sage_root())
     if severity_of(issues) == "FAIL":
-        failures = [message for severity, message in issues if severity == "FAIL"]
+        failures = [english_text(message) for severity, message in issues if severity == "FAIL"]
         raise AuthorityCliError(f"{revision} profile validation failed: {'; '.join(failures[:4])}")
     try:
         return materialize_profile(profile)
     except ProfileCompileError as exc:
-        raise AuthorityCliError(f"{revision} profile materialization failed: {exc}") from exc
+        raise AuthorityCliError(
+            f"{revision} profile materialization failed: {english_text(exc)}") from exc
 
 
 def _phase_globs(profile: dict[str, Any]) -> dict[str, set[str]]:

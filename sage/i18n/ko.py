@@ -742,5 +742,13 @@ MESSAGES = {
     "cli.runtime.double_host_without_cross_model": "double-host 구성인데 options.cross_model=true 가 아닙니다 — 반대 runtime 의 독립 리뷰를 강하게 권장합니다.",
     "cli.runtime.desired_hosts_mismatch": "profile 의 desired_hosts={desired} 와 install receipt={actual} 가 다릅니다.",
     "cli.runtime.active_host_surface_absent": "active_host={value} 의 discovery surface 가 install receipt 에 없습니다.",
+    "cli.compile.profile_not_mapping": "profile 은 매핑(object)이어야 합니다 (받음: {actual}).",
+    "cli.compile.risk_not_mapping": "risk 섹션은 매핑(object)이어야 합니다 (받음: {actual}).",
+    "cli.compile.domains_not_list": "risk.domains 는 리스트여야 합니다 (받음: {actual}).",
+    "cli.compile.domain_not_mapping": "{path} 는 매핑(object)이어야 합니다 (받음: {actual}).",
+    "cli.compile.risk_level_invalid": "{path}.risk_level 은 L1/L2/L3 중 하나여야 합니다 (받음: {actual}).",
+    "cli.compile.not_string_list": "{path} 는 비어있지 않은 문자열의 리스트여야 합니다 (받음: {actual}).",
+    "cli.compile.bad_string_items": "{path} 에 비문자열이거나 빈 문자열인 item 이 있습니다 (index: {indexes}).",
+    "cli.validate.raw_type_check_failed": "profile raw 타입 검사 자체가 실패했습니다 ({kind}).",
     "cli.context.runtime_contract_failed": "프로젝트 profile 의 runtime 계약이 충족되지 않았습니다",
 }

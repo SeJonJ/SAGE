@@ -20,6 +20,7 @@ from pathlib import Path
 
 from sage.asset_paths import AssetPaths
 from sage.commands._common import contract_version_of
+from sage.diagnostics import Diagnostic
 from sage.hook_runtime_hash import calculate_hook_runtime_hash
 from sage.i18n import language_of, render_issue, tr
 
@@ -962,11 +963,14 @@ def run(args):
         from sage.profile_compile import materialization_issues
         raw_issues = materialization_issues(profile_for_overlay)
     except Exception as e:
-        raw_issues = [f"profile raw 타입 검사 실패({type(e).__name__}: {e})"]
+        raw_issues = [Diagnostic("validate.raw_type_check_failed",
+                                 kind=type(e).__name__, evidence=str(e))]
+    # 중복 억제는 렌더된 문장이 아니라 진단 자체로 한다 — 표시 언어가 바뀌어도 같은 결함이
+    # 두 번 찍히면 안 되고, 문장 기준으로 묶으면 언어에 따라 묶임이 달라진다.
     emitted_raw_issues = set()
     if raw_issues:
         for message in raw_issues:
-            print(f"❌ FAIL  profile-raw-type-invalid: {message}")
+            print(f"❌ FAIL  profile-raw-type-invalid: {render_issue(language_of(args), message)}")
             emitted_raw_issues.add(message)
         overall = "FAIL"
         profile_for_overlay = {}
@@ -985,7 +989,8 @@ def run(args):
             except ProfileCompileError as e:
                 for message in e.issues:
                     if message not in emitted_raw_issues:
-                        print(f"❌ FAIL  profile-raw-type-invalid: {message}")
+                        print("❌ FAIL  profile-raw-type-invalid: "
+                              f"{render_issue(language_of(args), message)}")
                         emitted_raw_issues.add(message)
                 overall = "FAIL"
                 expected_profile = None

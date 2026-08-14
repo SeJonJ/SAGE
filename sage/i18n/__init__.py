@@ -10,8 +10,8 @@ from sage.i18n.context import (DEFAULT_LANGUAGE, LanguageContext, resolve, suppo
 
 CATALOGS = {"ko": _ko.MESSAGES, "en": _en.MESSAGES}
 
-__all__ = ["CATALOGS", "DEFAULT_LANGUAGE", "LanguageContext", "language_of", "render_issue",
-           "resolve", "supported", "tr"]
+__all__ = ["CATALOGS", "DEFAULT_LANGUAGE", "LanguageContext", "english_text",
+           "exception_text", "language_of", "render_issue", "resolve", "supported", "tr"]
 
 
 def tr(context: LanguageContext | str | None, key: str, **arguments) -> str:
@@ -53,4 +53,32 @@ def render_issue(context, issue) -> str:
     """
     from sage.diagnostics import render
     return render(issue, lambda key, **arguments: tr(context, key, **arguments), "cli")
+
+
+def exception_text(context, exc) -> str:
+    """예외를 사람이 읽는 문장으로. 진단을 든 예외는 선택 언어로, 나머지는 원문 그대로.
+
+    하부 계층(`install_transaction`·`profile_compile`)은 어느 도메인의 catalog 도 알 수 없어
+    code 만 들고 올라온다. 문장은 잡은 쪽인 CLI 에서 만든다. 예외가 진단을 하나 들 수도(
+    `diagnostic`), 여럿 들 수도(`issues`) 있어 둘 다 받는다.
+    """
+    diagnostic = getattr(exc, "diagnostic", None)
+    if diagnostic is not None:
+        return render_issue(context, diagnostic)
+    issues = getattr(exc, "issues", None)
+    if issues:
+        return "; ".join(render_issue(context, item) for item in issues)
+    return f"{exc}"
+
+
+def english_text(item) -> str:
+    """영어 고정 표면(`authority`·`fast_cycle`)에서 진단을 렌더한다.
+
+    이 두 명령의 오류 문장은 표시 언어와 무관하게 영어다. 거기에 표시 언어로 렌더한 진단을
+    끼우면 한 줄 안에 두 언어가 섞이고, 실패 기록을 나중에 대조할 때 같은 결함이 언어마다
+    다른 문자열로 남는다. 틀이 영어면 조각도 영어로 맞춘다.
+    """
+    context = LanguageContext(language="en")
+    return (exception_text(context, item) if isinstance(item, BaseException)
+            else render_issue(context, item))
 

@@ -736,5 +736,13 @@ MESSAGES = {
     "cli.runtime.double_host_without_cross_model": "This is a double-host setup but options.cross_model is not true — an independent review by the opposite runtime is strongly recommended.",
     "cli.runtime.desired_hosts_mismatch": "The profile's desired_hosts={desired} disagrees with the install receipt={actual}.",
     "cli.runtime.active_host_surface_absent": "The discovery surface for active_host={value} is absent from the install receipt.",
+    "cli.compile.profile_not_mapping": "The profile must be a mapping (object), but is {actual}.",
+    "cli.compile.risk_not_mapping": "The risk section must be a mapping (object), but is {actual}.",
+    "cli.compile.domains_not_list": "risk.domains must be a list, but is {actual}.",
+    "cli.compile.domain_not_mapping": "{path} must be a mapping (object), but is {actual}.",
+    "cli.compile.risk_level_invalid": "{path}.risk_level must be one of L1/L2/L3, but is {actual}.",
+    "cli.compile.not_string_list": "{path} must be a list of non-empty strings, but is {actual}.",
+    "cli.compile.bad_string_items": "{path} contains items that are not strings or are empty (index: {indexes}).",
+    "cli.validate.raw_type_check_failed": "The profile raw-type check itself failed ({kind}).",
     "cli.context.runtime_contract_failed": "The project profile's runtime contract is not satisfied",
 }

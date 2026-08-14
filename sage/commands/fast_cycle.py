@@ -20,7 +20,7 @@ from sage.fast_cycle_contract import (
 )
 from sage.profile_layers import load_profile_layers
 from sage.profile_validate import validate_profile
-from sage.i18n import language_of, tr
+from sage.i18n import english_text, language_of, tr
 
 
 def _positive(value):
@@ -90,8 +90,9 @@ def _profile(root):
     if not os.path.isfile(path):
         raise ValueError(f"shared profile not found: {path}")
     layers = load_profile_layers(path)
-    failures = [message for severity, message in layers.issues if severity == "FAIL"]
-    failures.extend(message for severity, message in validate_profile(layers.effective, _resources.sage_root())
+    failures = [english_text(message) for severity, message in layers.issues if severity == "FAIL"]
+    failures.extend(english_text(message)
+                    for severity, message in validate_profile(layers.effective, _resources.sage_root())
                     if severity == "FAIL")
     if failures:
         raise ValueError("profile invalid: " + "; ".join(failures[:3]))

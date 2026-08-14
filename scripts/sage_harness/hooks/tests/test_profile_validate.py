@@ -16,7 +16,19 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.d
 sys.path.insert(0, REPO)
 import sage.profile_validate as profile_validate  # noqa: E402
 from sage.checklist_contract import checklist_target_issues  # noqa: E402
+from sage.diagnostics import Diagnostic  # noqa: E402
 from sage.profile_validate import severity_of, validate_profile, _writeback_gate_issues  # noqa: E402
+
+
+def _codes(issues):
+    """판정이 낸 code 집합. 문안은 catalog 소유라 테스트가 고정하지 않는다."""
+    return {message.code for _, message in issues if isinstance(message, Diagnostic)}
+
+
+def _paths(issues):
+    """진단이 지목한 profile 경로 집합 — 언어와 무관한 판정 계약."""
+    return {message.arguments.get("path") for _, message in issues
+            if isinstance(message, Diagnostic)}
 
 try:
     import jsonschema  # noqa: F401
@@ -147,9 +159,10 @@ class TestProfileSemantic(unittest.TestCase):
                                     for _severity, message in issues))
 
     def test_non_mapping_risk_type_has_one_semantic_owner(self):
-        messages = [message for severity, message in sevs({"risk": "bad"})
-                    if severity == "FAIL" and "risk 섹션은 매핑" in message]
-        self.assertEqual(len(messages), 1)
+        owners = [message for severity, message in sevs({"risk": "bad"})
+                  if severity == "FAIL" and isinstance(message, Diagnostic)
+                  and message.code == "compile.risk_not_mapping"]
+        self.assertEqual(len(owners), 1)
 
     def test_scalar_risk_trigger_fails_without_relying_on_jsonschema(self):
         for field in ("l0_pass_globs", "l0_exclude_globs", "l1_path_globs", "l2_path_globs",
@@ -157,7 +170,7 @@ class TestProfileSemantic(unittest.TestCase):
             with self.subTest(field=field):
                 issues = sevs({"risk": {field: "auth"}})
                 self.assertEqual(severity_of(issues), "FAIL")
-                self.assertTrue(any(f"risk.{field}" in m for _, m in issues))
+                self.assertIn(f"risk.{field}", _paths(issues))
 
     def test_l0_exclusion_requires_exact_higher_risk_path_binding(self):
         orphan = {"risk": {"l0_pass_globs": ["**/*.png"],
@@ -177,14 +190,14 @@ class TestProfileSemantic(unittest.TestCase):
             with self.subTest(bad=bad):
                 issues = sevs({"risk": {"l3_filename_globs": bad}})
                 self.assertEqual(severity_of(issues), "FAIL")
-                self.assertTrue(any("risk.l3_filename_globs" in m for _, m in issues))
+                self.assertIn("risk.l3_filename_globs", _paths(issues))
 
     def test_bad_domain_trigger_item_fails_semantically(self):
         domain = {"id": "auth", "risk_level": "L3", "path_globs": ["   "],
                   "protocol_pointer": "sage/auth.md"}
         issues = sevs({"risk": {"domains": [domain]}})
         self.assertEqual(severity_of(issues), "FAIL")
-        self.assertTrue(any("risk.domains[0].path_globs" in m for _, m in issues))
+        self.assertIn("risk.domains[0].path_globs", _paths(issues))
 
     def test_standard_cross_runtime_project_root_env_is_valid(self):
         issues = sevs({"hooks": {"project_root_env": "SAGE_PROJECT_ROOT"}})
@@ -491,7 +504,7 @@ class TestReviewLoop(unittest.TestCase):
     def test_risk_non_dict_fail_not_crash(self):
         issues = validate_profile({"risk": ["not", "a", "map"]}, REPO)
         self.assertEqual(severity_of(issues), "FAIL")
-        self.assertTrue(any("risk" in m and "매핑" in m for _, m in issues))
+        self.assertIn("compile.risk_not_mapping", _codes(issues))
 
     def test_pathological_inputs_never_crash(self):
         # 거버넌스 게이트는 어떤 malformed 입력에도 크래시(미제어) 대신 제어된 결과를 내야 한다(codex).

@@ -8,6 +8,19 @@ sys.path.insert(0, REPO)
 from sage.profile_compile import ProfileCompileError, materialize_profile  # noqa: E402
 
 
+def _paths(exc):
+    """진단이 지목한 profile 경로들. 문장이 아니라 인자를 본다.
+
+    문안은 catalog 소유라 여기서 고정하면 번역 한 줄에 테스트가 깨진다. 판정이 **어디를**
+    문제 삼았는지는 code 와 named argument 에 남고, 그건 언어와 무관한 계약이다.
+    """
+    return {item.arguments.get("path") for item in exc.issues}
+
+
+def _codes(exc):
+    return {item.code for item in exc.issues}
+
+
 class TestProfileCompile(unittest.TestCase):
     def test_domains_materialize_and_highest_risk_wins(self):
         source = {"risk": {
@@ -56,13 +69,15 @@ class TestProfileCompile(unittest.TestCase):
             for bad in ("auth", None, 3, True):
                 with self.subTest(field=field, bad=bad), self.assertRaises(ProfileCompileError) as ctx:
                     materialize_profile({"risk": {field: bad}})
-                self.assertIn(f"risk.{field}", str(ctx.exception))
+                self.assertIn(f"risk.{field}", _paths(ctx.exception))
+                self.assertEqual(_codes(ctx.exception), {"compile.not_string_list"})
 
     def test_trigger_lists_reject_non_string_and_blank_items(self):
         for bad in (["ok", 3], ["ok", True], ["ok", ""], ["ok", "   "]):
             with self.subTest(bad=bad), self.assertRaises(ProfileCompileError) as ctx:
                 materialize_profile({"risk": {"l3_filename_globs": bad}})
-            self.assertIn("risk.l3_filename_globs", str(ctx.exception))
+            self.assertIn("risk.l3_filename_globs", _paths(ctx.exception))
+            self.assertEqual(_codes(ctx.exception), {"compile.bad_string_items"})
 
     def test_domain_trigger_fields_use_same_raw_contract(self):
         base = {"id": "auth", "risk_level": "L3", "path_globs": ["auth/**"],
@@ -73,7 +88,9 @@ class TestProfileCompile(unittest.TestCase):
             domain[field] = bad
             with self.subTest(field=field, bad=bad), self.assertRaises(ProfileCompileError) as ctx:
                 materialize_profile({"risk": {"domains": [domain]}})
-                self.assertIn(f"risk.domains[0].{field}", str(ctx.exception))
+            # 원래 이 단언은 with 블록 안에 있어 예외 뒤로 도달하지 못했다 — 통과하는 게 아니라
+            # 실행되지 않았다. 밖으로 꺼내야 실제로 판정을 확인한다.
+            self.assertIn(f"risk.domains[0].{field}", _paths(ctx.exception))
 
     def test_domain_risk_level_rejects_unknown_or_missing_values(self):
         for bad in ("L0", "l3", "", None, 3):
@@ -83,7 +100,8 @@ class TestProfileCompile(unittest.TestCase):
                     domain["risk_level"] = bad
                 with self.assertRaises(ProfileCompileError) as ctx:
                     materialize_profile({"risk": {"domains": [domain]}})
-                self.assertIn("risk.domains[0].risk_level", str(ctx.exception))
+                self.assertIn("risk.domains[0]", _paths(ctx.exception))
+                self.assertIn("compile.risk_level_invalid", _codes(ctx.exception))
 
     def test_missing_domain_trigger_fields_remain_optional(self):
         domain = {"id": "auth", "risk_level": "L3", "content_keywords": ["token"],

@@ -26,7 +26,7 @@ from sage import _resources   # 번들 리소스 경로 단일 해석(env overri
 from sage import overlay_common   # 오버레이 관리 블록 프리미티브(base_of 로 렌더 base 대조)
 from sage import overlay_materialize   # CORE 렌더 오버레이 물리화 + core_renders 앵커
 from sage import install_transaction as _tx
-from sage.i18n import language_of, render_issue, tr
+from sage.i18n import exception_text, language_of, render_issue, tr
 
 # CORE roster (중립 6인) + CORE hook 7종(form) + CORE skill 13종. 도메인값 아님 = framework 메타.
 # skill 3분할: sage-cycle(00~06 우산) → sage-plan(00~02 기획) → sage-team(03~06 개발).
@@ -70,13 +70,8 @@ _SKIP_DIRS = {"tests", "__pycache__"}
 
 
 def _exception_text(language, exc):
-    """예외를 사람이 읽는 문장으로. 진단을 든 예외는 선택 언어로, 나머지는 원문 그대로.
-
-    하부 계층(`install_transaction`)은 어느 도메인의 catalog 도 알 수 없어 code 만 들고
-    올라온다. 문장은 잡은 쪽인 여기서 만든다.
-    """
-    diagnostic = getattr(exc, "diagnostic", None)
-    return render_issue(language, diagnostic) if diagnostic is not None else f"{exc}"
+    """`sage.i18n.exception_text` 의 이 모듈용 이름. 문장 조립 규칙은 한 곳에만 둔다."""
+    return exception_text(language, exc)
 
 
 def register(sub, context):

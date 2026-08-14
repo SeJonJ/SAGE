@@ -26,7 +26,10 @@ RUNTIME = REPO / "scripts/sage_harness/hooks/runtime"
 
 from sage.diagnostics import Diagnostic, render          # noqa: E402
 
-HOOK_REACHABLE = ("sage/hook_entry.py", "sage/context_packet.py", "sage/feedback.py")
+# `profile_compile` 은 hook 진입점이 직접 import 한다 — 진입점만 깨끗해도 그 아래가 catalog 를
+# 끌어오면 같은 의존이 그대로 따라 들어온다. 계약은 진입점이 아니라 **경로 전체**에 걸린다.
+HOOK_REACHABLE = ("sage/hook_entry.py", "sage/context_packet.py", "sage/feedback.py",
+                  "sage/profile_compile.py")
 HANGUL = re.compile(r"[가-힣]")
 
 
