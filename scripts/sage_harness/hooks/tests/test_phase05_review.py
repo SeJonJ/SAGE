@@ -126,9 +126,11 @@ class TestEffortIssue(unittest.TestCase):
         self.assertIsNotNone(RV.effort_issue("claude", "minimal"))
 
     def test_unknown_value_blocked_because_peer_ignores_it_silently(self):
-        msg = RV.effort_issue("codex", "bogus")
-        self.assertIn("bogus", msg)
-        self.assertIn("조용히 무시", msg)
+        # 판정은 문구가 아니라 code·인자로 확인한다 — "조용히 무시하므로 차단" 근거는 catalog 문안이 담는다.
+        issue = RV.effort_issue("codex", "bogus")
+        self.assertEqual("review.effort_unknown_value", issue.code)
+        self.assertIn("bogus", issue.arguments["effort"])
+        self.assertEqual("codex", issue.arguments["peer"])
 
     def test_unknown_peer(self):
         self.assertIsNotNone(RV.effort_issue("gpt", "high"))

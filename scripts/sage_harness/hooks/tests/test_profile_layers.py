@@ -245,9 +245,9 @@ class ProfileLayerSchemaTests(unittest.TestCase):
                 self.assertFalse(any(severity == "FAIL" for severity, _ in issues), issues)
 
         issues = validate_profile({"cross_model": {"policy": "optional"}}, str(REPO))
-        self.assertTrue(any(severity == "FAIL" and isinstance(message, str)
-                            and "cross_model.policy" in message
-                            for severity, message in issues), issues)
+        # `cross_model_issues` 가 Diagnostic 을 돌려주므로 code 로 확인한다(문안은 catalog 소유).
+        self.assertTrue(_has(issues, "FAIL", "review.cross_model_policy_invalid",
+                            policy="'optional'"), issues)
 
     def test_local_schema_is_closed_and_matches_manual_contract(self):
         schema_path = REPO / "schema" / "profile.local.schema.json"

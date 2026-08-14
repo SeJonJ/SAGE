@@ -218,7 +218,10 @@ class TestPeerSpecificSettings(unittest.TestCase):
         self.assertIsNone(note)
         model, note = _model_for_peer(profile, "claude", "gpt-5.6-terra")
         self.assertIsNone(model)                     # codex 용 모델을 claude 에 넘기지 않는다
-        self.assertIn("codex 용으로 지정", note)
+        # 판정은 문구가 아니라 code·인자로 확인한다 — 문안은 catalog 소유다.
+        self.assertEqual("review.model_for_other_peer", note.code)
+        self.assertEqual("codex", note.arguments["chosen_for"])
+        self.assertEqual("claude", note.arguments["peer"])
 
     def test_possible_peers_widen_under_auto(self):
         self.assertEqual(["codex"], possible_peers(_profile(active="claude")))
@@ -244,9 +247,13 @@ class TestMismatchIsToldNotEnforced(unittest.TestCase):
     def test_stale_pin_produces_a_note_with_the_escape(self):
         notes = host_detection_notes(_profile(active="claude"), "codex")
         self.assertEqual(1, len(notes))
-        self.assertIn("active_host=claude(프로필)", notes[0])
-        self.assertIn("codex", notes[0])
-        self.assertIn("auto 로 두면", notes[0])          # 다음 행동까지 안내
+        self.assertEqual("review.host_declared_mismatch", notes[0].code)
+        self.assertEqual("claude", notes[0].arguments["declared"])
+        self.assertEqual("codex", notes[0].arguments["detected"])
+        # 다음 행동 안내(auto 로 두면 사라진다)는 catalog 문안이 담는다 — 양 언어 모두에 있어야 한다.
+        from sage.i18n import ko as _ko, en as _en
+        self.assertIn("auto", _ko.MESSAGES["cli.review.host_declared_mismatch"])
+        self.assertIn("auto", _en.MESSAGES["cli.review.host_declared_mismatch"])
 
     def test_auto_profile_is_silent(self):
         self.assertEqual([], host_detection_notes(_profile(active=AUTO), "codex"))
@@ -254,7 +261,9 @@ class TestMismatchIsToldNotEnforced(unittest.TestCase):
     def test_detected_host_missing_from_receipt_is_reported(self):
         notes = host_detection_notes(_profile(installed=["claude"], active=AUTO), "codex")
         self.assertEqual(1, len(notes))
-        self.assertIn("installed_hosts", notes[0])
+        self.assertEqual("review.host_not_in_installed", notes[0].code)
+        self.assertEqual("codex", notes[0].arguments["detected"])
+        self.assertEqual(["claude"], notes[0].arguments["installed"])
 
     def test_no_detection_means_nothing_to_say(self):
         self.assertEqual([], host_detection_notes(_profile(active="claude"), None))

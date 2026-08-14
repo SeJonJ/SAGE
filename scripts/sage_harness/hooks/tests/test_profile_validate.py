@@ -745,7 +745,8 @@ class TestCrossModelEffort(unittest.TestCase):
         # host=claude → peer=codex. `max` 는 claude 어휘라 codex 가 조용히 무시 → 정적으로 차단.
         issues = sevs(self._prof(effort="max"))
         self.assertEqual(severity_of(issues), "FAIL")
-        self.assertTrue(any("max" in str(m) for _, m in issues))
+        self.assertTrue(_contains(issues, "FAIL", "review.effort_unknown_value", "effort", "max"),
+                        issues)
         # host 를 뒤집으면 같은 값이 유효해진다(peer=claude).
         prof = self._prof(effort="max"); prof["runtime"]["host"] = "codex"
         self.assertNotIn("FAIL", [s for s, _ in sevs(prof)])

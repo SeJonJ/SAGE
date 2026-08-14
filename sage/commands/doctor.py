@@ -412,7 +412,8 @@ def _report_model_routing(profile, current=None, language=None):
         if model:
             selected.append(("cross-reviewer", host, model))
         elif dropped:
-            print(f"  cross-reviewer : {host}/(peer CLI default) — {dropped}")
+            print(f"  cross-reviewer : {host}/(peer CLI default) — "
+                  f"{render_issue(language, dropped)}")
     if not selected:
         if not dropped:
             print(tr(language, 'cli.doctor.msg34'))
@@ -523,7 +524,7 @@ def run(args):
     print(f"  active_host : {host}" + ("" if detected else tr(language_of(args), 'cli.doctor.msg43')))
     print(tr(language_of(args), 'cli.doctor.msg44', desired_hosts=desired_hosts))
     for note in host_detection_notes(profile, detected):
-        print(f"  ⚠️  WARN {note}")
+        print(f"  ⚠️  WARN {render_issue(language_of(args), note)}")
     for severity, message in profile_issues(profile):
         if severity in ("FAIL", "WARN"):
             print(f"  {'❌' if severity == 'FAIL' else '⚠️ '} {severity} "
@@ -532,7 +533,7 @@ def run(args):
     _eff, _set = resolve_effort(profile)   # `or` 로 판정하면 effort: false/0 을 "기본값" 이라 거짓 보고한다
     _issue = effort_issue(peer, _eff) if _set is not None else None
     _note = f" — {tr(language, 'cli.doctor.note_default')}" if _set is None \
-        else (f" — ❌ {_issue}" if _issue else "")
+        else (f" — ❌ {render_issue(language, _issue)}" if _issue else "")
     print(f"  cross_model : {opts.get('cross_model', False)} (peer={peer}, effort={_eff!r}{_note})")
     _invoker = "codex exec" if peer == "codex" else "claude -p"
     print(tr(language_of(args), 'cli.doctor.msg45', peer=peer, arg='available' if peer_avail else 'unavailable', peer2=peer, peer3=peer, invoker=_invoker))
