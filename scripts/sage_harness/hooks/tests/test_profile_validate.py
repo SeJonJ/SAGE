@@ -812,7 +812,9 @@ class TestTeamAgentModelEffort(unittest.TestCase):
     def test_model_typo_is_fail(self):
         issues = sevs(self._prof(model="opuss"))
         self.assertEqual(severity_of(issues), "FAIL")
-        self.assertTrue(any(isinstance(m, str) and "opuss" in m and "leader" in m for _, m in issues))
+        self.assertTrue(any(m.code == "install.team_runtime_model_invalid"
+                            and "opuss" in m.arguments.get("model", "")
+                            and "leader" in m.arguments.get("scope", "") for _, m in issues))
 
     def test_model_id_with_newline_is_fail(self):
         # frontmatter 로 그대로 주입되므로 개행이 섞인 id 는 키 주입 통로가 된다.
@@ -831,21 +833,22 @@ class TestTeamAgentModelEffort(unittest.TestCase):
     def test_codex_host_warns_inert(self):
         issues = sevs(self._prof(host="codex", model="opus"))
         self.assertNotIn("FAIL", [s for s, _ in issues])
-        self.assertTrue(any(isinstance(m, str) and "무동작" in m for _, m in issues))
+        self.assertTrue(any(m.code == "install.team_runtime_codex_inert" for _, m in issues))
 
     def test_role_typo_is_fail_not_silently_ignored(self):
         # `reviewerr` 를 무시하면 설정이 죽은 필드가 된다 — 렌더에도 doctor 에도 안 잡힘.
         prof = {"runtime": {"host": "claude"}, "team": {"core": {"reviewerr": {"runtime": {"model": "opus"}}}}}
         issues = sevs(prof)
         self.assertEqual(severity_of(issues), "FAIL")
-        self.assertTrue(any(isinstance(m, str) and "reviewerr" in m for _, m in issues))
+        self.assertTrue(any(m.code == "install.team_unknown_role"
+                            and "reviewerr" in m.arguments.get("role", "") for _, m in issues))
 
     def test_legacy_role_level_model_warns_inert(self):
         # 옛 프로필의 죽은 필드. 조용히 승격되지 않고, 조용히 무시되지도 않는다.
         prof = {"runtime": {"host": "claude"}, "team": {"core": {"reviewer": {"model": "sonnet"}}}}
         issues = sevs(prof)
         self.assertNotIn("FAIL", [s for s, _ in issues])
-        self.assertTrue(any(isinstance(m, str) and "무동작" in m and "runtime" in m for _, m in issues))
+        self.assertTrue(any(m.code == "install.team_role_legacy_fields" for _, m in issues))
 
 
 class TestRetroGateEnforce(unittest.TestCase):

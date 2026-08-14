@@ -51,7 +51,7 @@ class RuntimeHostTests(unittest.TestCase):
             "team": {"core": {"reviewer": {"runtime": {"effort": "high"}}}},
         }
         issues = team_runtime_issues(profile)
-        self.assertTrue(any(severity == "WARN" and "codex host" in message
+        self.assertTrue(any(severity == "WARN" and message.code == "install.team_runtime_codex_inert"
                             for severity, message in issues))
 
     def test_legacy_alias_conflict_is_fail_closed(self):

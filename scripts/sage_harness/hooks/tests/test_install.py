@@ -274,7 +274,7 @@ class TestInstall(unittest.TestCase):
                      "/sage/project-profile.local.yaml\n"
                      "# >>> SAGE LOCAL PROFILE\n")
 
-        with self.assertRaisesRegex(install._tx.InstallDriftError, "관리 마커가 손상됨"):
+        with self.assertRaisesRegex(install._tx.InstallDriftError, "install.gitignore_marker_corrupt"):
             install._render_local_profile_gitignore(malformed)
 
     def test_inverted_local_state_gitignore_markers_report_install_drift(self):
@@ -282,7 +282,7 @@ class TestInstall(unittest.TestCase):
                      "/.sage/*\n"
                      "# >>> SAGE LOCAL STATE\n")
 
-        with self.assertRaisesRegex(install._tx.InstallDriftError, "관리 마커가 손상됨"):
+        with self.assertRaisesRegex(install._tx.InstallDriftError, "install.gitignore_marker_corrupt"):
             install._render_local_profile_gitignore(malformed)
 
     def test_blocked_overlay_aborts_without_manifest(self):
@@ -2098,7 +2098,8 @@ class TestAgentRender(unittest.TestCase):
         prof = {"team": {"core": {"leader": {"runtim": {"model": "opus"}}}}}
         fails = [m for s, m in install.team_runtime_issues(prof) if s == "FAIL"]
         self.assertTrue(fails)
-        self.assertIn("runtim", fails[0])
+        self.assertEqual(fails[0].code, "install.team_role_unknown_keys")
+        self.assertIn("runtim", fails[0].arguments.get("keys", ""))
 
     def test_legitimate_role_keys_pass(self):
         prof = {"team": {"core": {"reviewer": {"enabled": True, "owns": ["x"], "runtime": {"effort": "max"},

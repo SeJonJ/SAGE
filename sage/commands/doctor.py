@@ -285,7 +285,7 @@ def _check_core_render_drift(profile, prof_path, language=None):
     # install 이 쓰기 전에 거부하는 것과 **같은 검사**. 여기서 잡히면 렌더 대조는 의미가 없다.
     invalid = [m for sev, m in install.team_runtime_issues(profile) if sev == "FAIL"]
     for msg in invalid:
-        print(f"  ❌ [agent] {msg}")
+        print(f"  ❌ [agent] {render_issue(language, msg)}")
 
     if root is not None and not invalid:
         for installed_host in hosts:

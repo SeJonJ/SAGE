@@ -144,13 +144,13 @@ def _render_gitignore_block(current, start_marker, end_marker, entries, label,
     start_count = text.count(start_marker)
     end_count = text.count(end_marker)
     if start_count != end_count or start_count > 1:
-        raise _tx.InstallDriftError(f".gitignore {label} 관리 마커가 손상됨")
+        raise _tx.InstallDriftError(Diagnostic("install.gitignore_marker_corrupt", label=label))
     block = f"{start_marker}\n" + "\n".join(entries) + f"\n{end_marker}\n"
     if start_count == 1:
         start = text.index(start_marker)
         end_start = text.index(end_marker)
         if end_start < start:
-            raise _tx.InstallDriftError(f".gitignore {label} 관리 마커가 손상됨")
+            raise _tx.InstallDriftError(Diagnostic("install.gitignore_marker_corrupt", label=label))
         end = end_start + len(end_marker)
         text = text[:start] + block + text[end:].lstrip("\n")
     else:
@@ -184,7 +184,7 @@ def _write_local_profile_gitignore(dest, created, skipped, transaction):
     if os.path.lexists(path):
         mode = os.lstat(path).st_mode
         if not stat.S_ISREG(mode):
-            raise _tx.InstallDriftError(f".gitignore가 일반 파일이 아님: {path}")
+            raise _tx.InstallDriftError(Diagnostic("install.gitignore_not_regular_file", path=path))
         current = Path(path).read_text(encoding="utf-8")
     else:
         current = ""
@@ -308,21 +308,20 @@ def _codex_project_skill_path(dest, skill_id):
     return os.path.join(os.path.abspath(dest), ".codex", "skills", skill_id, "SKILL.md")
 
 
-def _resolve_skill_scope(args):
+def _resolve_skill_scope(args, language=None):
     """Return the effective CORE skill scope, or an actionable CLI-contract error."""
     scope = getattr(args, "skill_scope", None)
     disabled = bool(getattr(args, "no_global_skill", False))
     if args.host == "claude":
         if scope is not None:
-            return None, "--skill-scope는 --host codex에서만 사용할 수 있습니다"
+            return None, tr(language, "cli.install.skill_scope_claude_not_allowed")
         return "project-local", None
     if disabled and scope is not None:
-        return None, "--skill-scope와 --no-global-skill은 함께 사용할 수 없습니다"
+        return None, tr(language, "cli.install.skill_scope_conflicts_no_global")
     if disabled:
         return "disabled", None
     if scope not in ("global", "project-local"):
-        return None, ("codex install은 CORE skill scope를 명시해야 합니다: "
-                      "--skill-scope global 또는 --skill-scope project-local")
+        return None, tr(language, "cli.install.skill_scope_codex_required")
     return scope, None
 
 
@@ -384,18 +383,22 @@ def _role_runtime(profile, agent_id):
     return rt if isinstance(rt, dict) else {}
 
 
-def agent_frontmatter_issue(overrides):
+def agent_frontmatter_issue(overrides, scope="team.core.*"):
     """주입 직전 최종 관문 — 잘못된 값이 에이전트 파일에 박히면 그 에이전트가 로드되지 않는다.
-    `sage validate` 를 거치지 않고 `sage install --force` 만 돌린 경우를 위해 install 도 직접 검사한다."""
+    `sage validate` 를 거치지 않고 `sage install --force` 만 돌린 경우를 위해 install 도 직접 검사한다.
+
+    `scope` 는 메시지에 실릴 경로 접두사다 — 호출부가 실제 역할을 알면 넘기고(예: `team.core.reviewer`),
+    모르면 기본값(`team.core.*`)을 그대로 쓴다. 이전에는 반환 문자열을 호출부가 `.replace()` 로
+    후처리했는데, Diagnostic 은 완성 문장이 아니라 인자를 들고 있어 후처리 자체가 성립하지 않는다."""
     model, effort = overrides.get("model"), overrides.get("effort")
     if model is not None and not (isinstance(model, str)
                                   and (model in AGENT_MODEL_ALIASES or _MODEL_ID_RE.match(model))):
-        return (f"team.core.*.runtime.model={model!r} 는 알 수 없는 값 "
-                f"(허용: {', '.join(AGENT_MODEL_ALIASES)} 또는 claude-* 전체 id)")
+        return Diagnostic("install.team_runtime_model_invalid", scope=scope, model=repr(model),
+                          aliases=", ".join(AGENT_MODEL_ALIASES))
     if effort is not None and not (effort in AGENT_EFFORTS
                                    or (isinstance(effort, int) and not isinstance(effort, bool) and effort > 0)):
-        return (f"team.core.*.runtime.effort={effort!r} 는 알 수 없는 값 "
-                f"(허용: {', '.join(AGENT_EFFORTS)} 또는 양의 정수)")
+        return Diagnostic("install.team_runtime_effort_invalid", scope=scope, effort=repr(effort),
+                          efforts=", ".join(AGENT_EFFORTS))
     return None
 
 
@@ -417,51 +420,53 @@ def team_runtime_issues(profile):
     if team in (None, ""):
         return []
     if not isinstance(team, dict):
-        return [("FAIL", f"team 은 매핑이어야 함 (받음: {type(team).__name__})")]
+        return [("FAIL", Diagnostic("install.team_not_mapping", type_name=type(team).__name__))]
     core = team.get("core")
     if core in (None, ""):
         return []
     if not isinstance(core, dict):
-        return [("FAIL", f"team.core 는 매핑이어야 함 (받음: {type(core).__name__})")]
+        return [("FAIL", Diagnostic("install.team_core_not_mapping", type_name=type(core).__name__))]
     from sage.runtime_hosts import active_host
     host = active_host(profile)
     issues = []
     for role, spec in core.items():
         # 키가 비-str 일 수 있다(YAML `1: {...}`) → 어떤 입력에도 크래시 없이 FAIL 로 떨어져야 한다.
         if role not in _CORE_AGENTS:
-            issues.append(("FAIL", f"team.core.{role!s} 는 알 수 없는 역할 — 오타면 조용히 무시된다 "
-                                   f"(CORE 로스터: {', '.join(_CORE_AGENTS)})"))
+            issues.append(("FAIL", Diagnostic("install.team_unknown_role", role=str(role),
+                                              roster=", ".join(_CORE_AGENTS))))
             continue
         if not isinstance(spec, dict):
             # 조용히 넘기면 이 역할의 설정 전체가 무시된 채 기본 렌더가 배포된다.
-            issues.append(("FAIL", f"team.core.{role} 은 매핑이어야 함 (받음: {type(spec).__name__})"))
+            issues.append(("FAIL", Diagnostic("install.team_role_not_mapping", role=role,
+                                              type_name=type(spec).__name__)))
             continue
         stray = [k for k in spec if k not in _ROLE_KEYS]
         if stray:
             # `runtim:` 오타는 아무도 안 읽어 기본 렌더가 나간다 — 설정한 model 이 조용히 사라진다.
-            issues.append(("FAIL", f"team.core.{role} 의 알 수 없는 키: "
-                                   f"{', '.join(sorted(str(k) for k in stray))} "
-                                   f"(허용: {', '.join(sorted(_ROLE_KEYS))})"))
+            issues.append(("FAIL", Diagnostic("install.team_role_unknown_keys", role=role,
+                                              keys=", ".join(sorted(str(k) for k in stray)),
+                                              allowed=", ".join(sorted(_ROLE_KEYS)))))
         legacy = [k for k in ("model", "effort") if spec.get(k) not in (None, "")]
         if legacy:
-            issues.append(("WARN", f"team.core.{role}.{'/'.join(legacy)} 는 무동작 — 실행 바인딩은 "
-                                   f"team.core.{role}.runtime.{{model,effort}} 로 옮기세요"))
+            issues.append(("WARN", Diagnostic("install.team_role_legacy_fields", role=role,
+                                              legacy="/".join(legacy))))
         rt = spec.get(_RUNTIME_KEY)
         if rt in (None, ""):
             continue
         if not isinstance(rt, dict):
-            issues.append(("FAIL", f"team.core.{role}.runtime 은 매핑이어야 함 (받음: {type(rt).__name__})"))
+            issues.append(("FAIL", Diagnostic("install.team_runtime_not_mapping", role=role,
+                                              type_name=type(rt).__name__)))
             continue
         unknown = [k for k in rt if k not in ("model", "effort")]
         if unknown:
-            issues.append(("FAIL", f"team.core.{role}.runtime 의 알 수 없는 키: "
-                                   f"{', '.join(sorted(str(k) for k in unknown))} (허용: model, effort)"))
-        issue = agent_frontmatter_issue({k: rt[k] for k in ("model", "effort") if rt.get(k) not in (None, "")})
+            issues.append(("FAIL", Diagnostic("install.team_runtime_unknown_keys", role=role,
+                                              keys=", ".join(sorted(str(k) for k in unknown)))))
+        issue = agent_frontmatter_issue({k: rt[k] for k in ("model", "effort") if rt.get(k) not in (None, "")},
+                                        scope=f"team.core.{role}")
         if issue:
-            issues.append(("FAIL", issue.replace("team.core.*", f"team.core.{role}")))
+            issues.append(("FAIL", issue))
         if host == "codex" and any(rt.get(k) not in (None, "") for k in ("model", "effort")):
-            issues.append(("WARN", f"team.core.{role}.runtime 의 model/effort 는 codex host 에서 무동작 "
-                                   f"(.codex/agents/*.md 는 해석 기전 없음)"))
+            issues.append(("WARN", Diagnostic("install.team_runtime_codex_inert", role=role)))
     return issues
 
 
@@ -606,7 +611,8 @@ def _install_codex_skill_at(src_skill_md, dst, force, skill_id="sage-init", tran
             try:
                 transaction.restore_path(dst)
             except (OSError, _tx.InstallDriftError) as restore_error:
-                raise RuntimeError(f"CORE skill write와 rollback 모두 실패: {dst} ({restore_error})") from e
+                # 이 함수의 다른 오류 문자열(위 unsafe skill_id 등)도 이미 영어 고정이다 — 같은 표면.
+                raise RuntimeError(f"CORE skill write and rollback both failed: {dst} ({restore_error})") from e
         return ("error", f"{dst} ({e})")
 
 
@@ -627,8 +633,12 @@ def _install_codex_project_skill(dest, src_skill_md, force, skill_id="sage-init"
     return _install_codex_skill_at(src_skill_md, dst, force, skill_id, transaction)
 
 
-def _profile_with_host(host, prefix):
-    """templates/project-profile.yaml 을 읽어 version/host/prefix 만 치환한다."""
+def _profile_with_host(host, prefix, language=None):
+    """templates/project-profile.yaml 을 읽어 version/host/prefix 만 치환한다.
+
+    주석 3줄은 생성 산출물 본문(b-2 정책) — 아직 어느 cycle 에도 안 묶인 최초 스캐폴드라
+    Document-Language 마커가 없다. display 언어(`--lang`)를 폴백으로 쓴다(cycle.py 의
+    `_document_language()` 와 같은 원칙)."""
     src = os.path.join(_resources.templates_dir(), "project-profile.yaml")
     text = Path(src).read_text(encoding="utf-8")
     out = []
@@ -636,16 +646,19 @@ def _profile_with_host(host, prefix):
         s = line.strip()
         if s.startswith("required_version:"):
             indent = line[:len(line) - len(line.lstrip())]
-            out.append(f'{indent}required_version: "{__version__}" # 프로젝트가 요구하는 exact SAGE 버전. local에서 변경 불가')
+            out.append(f'{indent}required_version: "{__version__}" '
+                       f'# {tr(language, "cli.install.profile_comment_required_version")}')
         elif s.startswith("installed_hosts:"):
             indent = line[:len(line) - len(line.lstrip())]
-            out.append(f"{indent}installed_hosts: [{host}]       # 원하는 discovery surface. double-host면 [claude, codex]")
+            out.append(f"{indent}installed_hosts: [{host}]       "
+                       f'# {tr(language, "cli.install.profile_comment_installed_hosts")}')
         elif s.startswith("active_host:"):
             # auto 가 기본이다. 어느 host 로 일하는지는 개발자별·세션별 사실인데 이 파일은 커밋되고
             # local profile 이 이 키를 덮을 수 없어서(profile_layers._SECTION_KEYS), 값을 박아두면
             # host 를 옮길 때마다 공유 파일을 고쳐야 한다 — 이 파일은 게이트 정책 소스라 L2 다.
             indent = line[:len(line) - len(line.lstrip())]
-            out.append(f"{indent}active_host: auto               # auto = 실행 시점 판별. claude|codex 로 고정도 가능")
+            out.append(f"{indent}active_host: auto               "
+                       f'# {tr(language, "cli.install.profile_comment_active_host")}')
         elif s.startswith('prefix:'):
             indent = line[:len(line) - len(line.lstrip())]
             out.append(f'{indent}prefix: "{prefix}"')
@@ -685,22 +698,22 @@ _ASSET_KEYS = {
 _PREFIXED_SHA_RE = re.compile(r"sha256:[0-9a-f]{64}")
 
 
-def _asset_entry_issue(value):
+def _asset_entry_issue(value, language=None):
     """Validate one asset entry against manifest.schema.json without jsonschema."""
     if not isinstance(value, dict):
-        return "mapping이 아님"
+        return tr(language, "cli.install.asset_not_mapping")
     unknown = sorted(set(value) - _ASSET_KEYS)
     if unknown:
-        return f"허용되지 않은 필드가 있음: {', '.join(unknown)}"
+        return tr(language, "cli.install.asset_unknown_fields", fields=", ".join(unknown))
     if value.get("form") not in _ASSET_FORMS:
-        return "form이 유효하지 않음"
+        return tr(language, "cli.install.asset_form_invalid")
     if value.get("conformance") not in _CONFORMANCE_VALUES:
-        return "conformance가 유효하지 않음"
+        return tr(language, "cli.install.asset_conformance_invalid")
 
     for key in ("spec_hash", "claims_hash", "canonical_hash"):
         if key in value and (not isinstance(value[key], str)
                              or _PREFIXED_SHA_RE.fullmatch(value[key]) is None):
-            return f"{key}가 sha256:<64 hex> 형식이 아님"
+            return tr(language, "cli.install.asset_hash_format_invalid", field=key)
 
     for key, allowed in (("adapter_hash", {"claude", "codex"}),
                          ("render_hash", {"claude", "codex", "native"})):
@@ -708,32 +721,33 @@ def _asset_entry_issue(value):
             continue
         hashes = value[key]
         if not isinstance(hashes, dict) or not hashes:
-            return f"{key}가 non-empty mapping이 아님"
+            return tr(language, "cli.install.asset_key_not_nonempty_mapping", field=key)
         unknown_targets = sorted(set(hashes) - allowed)
         if unknown_targets:
-            return f"{key}에 허용되지 않은 target이 있음: {', '.join(unknown_targets)}"
+            return tr(language, "cli.install.asset_key_unknown_targets", field=key,
+                      targets=", ".join(unknown_targets))
         for target, digest in hashes.items():
             if (not isinstance(digest, str)
                     or _PREFIXED_SHA_RE.fullmatch(digest) is None):
-                return f"{key}/{target}가 sha256:<64 hex> 형식이 아님"
+                return tr(language, "cli.install.asset_key_target_hash_invalid", field=key, target=target)
 
     for key in ("adapter_contract_version", "test", "l3_review_strategy"):
         if key in value and not isinstance(value[key], str):
-            return f"{key}가 string이 아님"
+            return tr(language, "cli.install.asset_key_not_string", field=key)
     if "safety_degraded" in value and not isinstance(value["safety_degraded"], bool):
-        return "safety_degraded가 boolean이 아님"
+        return tr(language, "cli.install.asset_safety_degraded_not_bool")
     if "runtime_targets" in value:
         targets = value["runtime_targets"]
         if (not isinstance(targets, list)
                 or any(target not in ("claude", "codex") for target in targets)):
-            return "runtime_targets가 claude/codex array가 아님"
+            return tr(language, "cli.install.asset_runtime_targets_invalid")
     if "origin" in value and value["origin"] != "project":
-        return "origin은 project만 허용됨"
+        return tr(language, "cli.install.asset_origin_invalid")
     for key in ("risk", "unresolved"):
         if key in value:
             items = value[key]
             if not isinstance(items, list) or any(not isinstance(item, str) for item in items):
-                return f"{key}가 string array가 아님"
+                return tr(language, "cli.install.asset_key_not_string_array", field=key)
     return None
 
 
@@ -775,19 +789,19 @@ def _valid_core_skill_receipt(receipt):
             and isinstance(receipt.get("sage_version"), str))
 
 
-def _manifest_structure_issue(manifest):
+def _manifest_structure_issue(manifest, language=None):
     """Return a fail-closed issue for fields install would otherwise normalize or discard."""
     if not isinstance(manifest.get("sage_version"), str):
-        return "sage_version이 string이 아님"
+        return tr(language, "cli.install.manifest_sage_version_not_string")
     if manifest.get("host_runtime") not in ("claude", "codex"):
-        return "host_runtime이 claude/codex가 아님"
+        return tr(language, "cli.install.manifest_host_runtime_invalid")
     assets = manifest.get("assets")
     if not isinstance(assets, dict):
-        return "assets가 mapping이 아님"
+        return tr(language, "cli.install.manifest_assets_not_mapping")
     for key, value in assets.items():
         if not isinstance(key, str):
-            return f"assets entry가 string -> mapping 형식이 아님: {key!r}"
-        issue = _asset_entry_issue(value)
+            return tr(language, "cli.install.manifest_assets_entry_invalid", field=repr(key))
+        issue = _asset_entry_issue(value, language)
         if issue:
             return f"assets/{key}/{issue}"
 
@@ -796,40 +810,42 @@ def _manifest_structure_issue(manifest):
         if (not isinstance(hosts, list) or not hosts
                 or any(host not in ("claude", "codex") for host in hosts)
                 or len(hosts) != len(set(hosts))):
-            return "installed_hosts가 non-empty unique claude/codex array가 아님"
+            return tr(language, "cli.install.manifest_installed_hosts_invalid")
         if manifest["host_runtime"] not in hosts:
-            return "installed_hosts에 primary host_runtime이 포함되지 않음"
+            return tr(language, "cli.install.manifest_installed_hosts_missing_primary")
 
     if "core_renders" in manifest:
         renders = manifest["core_renders"]
         if not isinstance(renders, dict):
-            return "core_renders가 mapping이 아님"
+            return tr(language, "cli.install.manifest_core_renders_not_mapping")
         for key, receipt in renders.items():
             if not isinstance(key, str) or not isinstance(receipt, dict):
-                return f"core_renders entry가 string -> mapping 형식이 아님: {key!r}"
+                return tr(language, "cli.install.manifest_core_renders_entry_invalid", field=repr(key))
             if not _valid_core_receipt(receipt):
                 unknown = sorted(set(receipt) - _CORE_RECEIPT_KEYS - _CORE_RECEIPT_OPTIONAL)
                 if unknown:
-                    return f"core_renders/{key}/허용되지 않은 필드가 있음: {', '.join(unknown)}"
+                    return tr(language, "cli.install.manifest_core_render_unknown_fields",
+                              field=key, fields=", ".join(unknown))
                 partial = _CORE_RECEIPT_OPTIONAL & set(receipt)
                 if partial and partial != _CORE_RECEIPT_OPTIONAL:
                     missing = sorted(_CORE_RECEIPT_OPTIONAL - partial)
-                    return f"core_renders/{key}/semantic_source 쌍이 불완전함: {', '.join(missing)} 누락"
+                    return tr(language, "cli.install.manifest_core_render_semantic_source_incomplete",
+                              field=key, missing=", ".join(missing))
                 base_sha = receipt.get("base_sha256")
                 if isinstance(base_sha, str) and re.fullmatch(r"[0-9a-f]{64}", base_sha):
-                    return f"core_renders/{key}/sage_version이 string이 아님"
-                return f"core_renders/{key}/base_sha256가 SHA-256 형식이 아님"
+                    return tr(language, "cli.install.manifest_core_render_sage_version_invalid", field=key)
+                return tr(language, "cli.install.manifest_core_render_base_sha_invalid", field=key)
     if "core_skill_receipts" in manifest:
         receipts = manifest["core_skill_receipts"]
         if not isinstance(receipts, dict):
-            return "core_skill_receipts가 mapping이 아님"
+            return tr(language, "cli.install.manifest_core_skill_receipts_not_mapping")
         for host, receipt in receipts.items():
             if host not in ("claude", "codex"):
-                return f"core_skill_receipts에 알 수 없는 host가 있음: {host!r}"
+                return tr(language, "cli.install.manifest_core_skill_receipts_unknown_host", host=repr(host))
             if not _valid_core_skill_receipt(receipt):
-                return f"core_skill_receipts/{host}가 유효한 scope/sage_version 영수증이 아님"
+                return tr(language, "cli.install.manifest_core_skill_receipt_invalid", host=host)
             if host == "claude" and receipt["scope"] != "project-local":
-                return "core_skill_receipts/claude scope는 project-local이어야 함"
+                return tr(language, "cli.install.manifest_core_skill_receipt_claude_scope")
     return None
 
 
@@ -914,7 +930,7 @@ def _core_render_expected_base(host, kind, asset_id, profile):
     elif kind == "skills":
         src = _core_skill_source(asset_id)
     else:
-        return None, f"알 수 없는 CORE render kind: {kind}"
+        return None, Diagnostic("install.unknown_core_render_kind", kind=kind)
 
     text, read_error = overlay_common.read_text_lf(src)
     if read_error:
@@ -937,9 +953,11 @@ def _core_render_path_issue(dest, path, allow_leaf_symlink=False):
     target = os.path.abspath(path)
     try:
         if os.path.commonpath((root, target)) != root:
-            return "CORE render 경로가 project root 밖을 가리킴", _sha256_text(f"outside:{target}")
+            return (Diagnostic("install.core_render_path_outside_root"),
+                    _sha256_text(f"outside:{target}"))
     except ValueError:
-        return "CORE render 경로와 project root의 filesystem이 다름", _sha256_text(f"outside:{target}")
+        return (Diagnostic("install.core_render_path_filesystem_mismatch"),
+                _sha256_text(f"outside:{target}"))
 
     rel_parts = Path(os.path.relpath(target, root)).parts
     cursor = root
@@ -951,7 +969,7 @@ def _core_render_path_issue(dest, path, allow_leaf_symlink=False):
         except FileNotFoundError:
             return None
         except OSError as exc:
-            return f"CORE render 경로 상태 확인 실패: {cursor} ({exc})", "unavailable"
+            return Diagnostic("install.core_render_path_stat_failed", cursor=cursor, exc=exc), "unavailable"
 
         rel_cursor = os.path.relpath(cursor, root)
         if stat.S_ISLNK(mode):
@@ -963,13 +981,13 @@ def _core_render_path_issue(dest, path, allow_leaf_symlink=False):
             except OSError:
                 actual_sha = "unavailable"
             location = "leaf" if is_leaf else "ancestor"
-            return (f"{location} symlink CORE render 경로는 project-owned base로 자동 신뢰할 수 없음: "
-                    f"{rel_cursor}", actual_sha)
+            return (Diagnostic("install.core_render_path_symlink_untrusted",
+                               location=location, rel_cursor=rel_cursor), actual_sha)
         if not is_leaf and not stat.S_ISDIR(mode):
-            return (f"CORE render 상위 경로가 directory가 아님: {rel_cursor}",
+            return (Diagnostic("install.core_render_path_ancestor_not_dir", rel_cursor=rel_cursor),
                     _sha256_text(f"ancestor-mode:{rel_cursor}:{stat.S_IFMT(mode):o}"))
         if is_leaf and not stat.S_ISREG(mode):
-            return (f"CORE render가 regular file이 아님: {rel_cursor}",
+            return (Diagnostic("install.core_render_path_not_regular_file", rel_cursor=rel_cursor),
                     _sha256_text(f"leaf-mode:{rel_cursor}:{stat.S_IFMT(mode):o}"))
     return None
 
@@ -1024,13 +1042,13 @@ def _core_trust_conflicts(dest, host, profile, existing_manifest, allow_base_rep
             anchor_sha = anchor.get("base_sha256") if isinstance(anchor, dict) else None
             if not isinstance(anchor_sha, str) or anchor_sha != actual_sha:
                 conflicts.append({"key": key, "path": path,
-                                  "reason": "기존 manifest anchor와 base가 불일치하여 재축복 불가",
+                                  "reason": Diagnostic("install.anchor_base_mismatch"),
                                   "expected_sha": expected_sha, "actual_sha": actual_sha})
                 continue
         if actual_sha != expected_sha:
-            reason = ("기존 anchor는 일치하지만 현재 배포 base와 달라 non-force 업그레이드 불가"
+            reason = (Diagnostic("install.anchor_matches_but_base_changed")
                       if anchor is not None else
-                      "신뢰 anchor가 없는 기존 CORE render가 현재 배포 base와 다름")
+                      Diagnostic("install.untrusted_render_base_mismatch"))
             conflicts.append({"key": key, "path": path, "reason": reason,
                               "expected_sha": expected_sha, "actual_sha": actual_sha})
     return conflicts
@@ -1054,9 +1072,9 @@ def _materialized_anchor_conflicts(dest, host, profile, core_renders, codex_skil
         anchor = anchors.get(key)
         actual_sha = anchor.get("base_sha256") if isinstance(anchor, dict) else "unavailable"
         if actual_sha != expected_sha:
-            reason = ("materialization snapshot에 CORE render anchor가 없음"
+            reason = (Diagnostic("install.materialization_anchor_missing")
                       if actual_sha == "unavailable" else
-                      "materialization snapshot base가 현재 배포 base와 불일치")
+                      Diagnostic("install.materialization_base_mismatch"))
             conflicts.append({"key": key, "path": path, "reason": reason,
                               "expected_sha": expected_sha, "actual_sha": actual_sha})
     return conflicts
@@ -1196,7 +1214,7 @@ def run(args) -> int:
     if _resources.is_engine_source_tree(args.dest):
         print(tr(language_of(args), 'cli.install.msg10'), file=sys.stderr)
         return 2
-    skill_scope, scope_error = _resolve_skill_scope(args)
+    skill_scope, scope_error = _resolve_skill_scope(args, language_of(args))
     if scope_error:
         print(f"[sage install] TOOL ERROR: {scope_error}", file=sys.stderr)
         return 2
@@ -1292,15 +1310,16 @@ def _run_locked(args) -> int:
     _fails = [m for sev, m in team_runtime_issues(_profile) if sev == "FAIL"]
     if _fails:
         for _m in _fails:
-            print(f"❌ {_m}", file=sys.stderr)
+            print(f"❌ {render_issue(language_of(args), _m)}", file=sys.stderr)
         print(tr(language_of(args), 'cli.install.msg19'),
               file=sys.stderr)
         return 1
 
     manifest_path = os.path.join(dest, "docs", "sage_harness", ".manifest.json")
     existing_manifest = _load_manifest(dest)
-    manifest_issue = (_manifest_structure_issue(existing_manifest)
-                      if existing_manifest is not None else "읽을 수 없거나 최상위 mapping이 아님")
+    manifest_issue = (_manifest_structure_issue(existing_manifest, language_of(args))
+                      if existing_manifest is not None
+                      else tr(language_of(args), "cli.install.manifest_unreadable_or_not_mapping"))
     if os.path.lexists(manifest_path) and manifest_issue and not args.force:
         print(tr(language_of(args), 'cli.install.msg20', manifest_path=manifest_path), file=sys.stderr)
         print(f"   reason: {manifest_issue}", file=sys.stderr)
@@ -1337,7 +1356,9 @@ def _run_locked(args) -> int:
             detail = describe_content_drift(preflight_source_files,
                                             source_core_content_snapshot()[1])
         except OSError as exc:   # 인벤토리 재수집 실패까지 원래 오류를 가리지 않게
-            detail = f"(변경 경로 수집 실패: {exc})"
+            # 이 함수의 결과는 항상 영어 고정 raw 문자열(InstallDriftError 의 진단 없는 메시지)로
+            # 들어간다 — 감싸는 문장 자체가 언어 배선이 없어 이 조각만 번역하면 오히려 섞인다.
+            detail = f"(failed to collect changed paths: {exc})"
         return f" — {detail}" if detail else ""
 
     confirmed_profile, confirmed_profile_error = _installed_profile(dest)
@@ -1368,8 +1389,8 @@ def _run_locked(args) -> int:
     if existing_profile_path is not None:
         print(tr(language_of(args), 'cli.install.msg25', os_path=os.path.relpath(existing_profile_path, dest)))
     else:
-        _write(prof_dst, _profile_with_host(args.host, args.prefix), args.force, created, skipped,
-               transaction=transaction)
+        _write(prof_dst, _profile_with_host(args.host, args.prefix, language_of(args)), args.force, created,
+               skipped, transaction=transaction)
     _write_local_profile_gitignore(dest, created, skipped, transaction)
 
     # 2. framework 템플릿(중립): AGENT_GUIDE, {wrapper}, verification-protocol, verify-changes.sh, docs/agent/*
