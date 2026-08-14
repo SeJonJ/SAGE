@@ -33,10 +33,7 @@ KOREAN_IN_ENGLISH_ALLOWED = frozenset({"cli.root.switch_hint"})
 # 아직 이관되지 않은 영어 catalog 부채. **건수가 아니라 정확한 key 집합**이다 — 건수만 세면
 # 한 건을 고치면서 다른 한 건이 새로 들어와도 총계가 같아 통과한다. 해소한 key 는 반드시 이
 # 집합에서 지워야 하고(낡은 항목도 실패로 보고한다), 이관이 끝나면 비어야 한다.
-KOREAN_IN_ENGLISH_DEBT = frozenset({
-    "cli.validate.review_loop_arch_escalation_ineffective",   # en 값이 ko 원문 그대로 복사됨
-    "cli.validate.review_loop_cross_model_ineffective",       # 같은 복사
-})
+KOREAN_IN_ENGLISH_DEBT = frozenset()
 
 _RUNTIME_REL = ("scripts", "sage_harness", "hooks", "runtime")
 
@@ -54,7 +51,6 @@ KOREAN_JUDGEMENT_DEBT = frozenset({
     "override_audit._repo_id",
     "override_audit.grants_path",
     "override_audit.grant",
-    "document_language.consistency_issues",     # hook·CLI 양쪽
     "checklist_contract.unsafe_glob",           # hook 게이트
     "checklist_contract.checklist_target_issues",
 })

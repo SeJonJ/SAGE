@@ -15,6 +15,7 @@ import tempfile
 import re
 import pathlib
 import unittest
+from unittest import mock
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
@@ -213,8 +214,12 @@ class TestCatalogContent(unittest.TestCase):
 
     def test_resolved_debt_must_be_removed_from_the_list(self):
         # 부채를 고치고 목록을 그대로 두면 다음 사람이 남은 건수를 신뢰할 수 없다.
-        debt_key = sorted(KOREAN_IN_ENGLISH_DEBT)[0]
-        issues = self._mutated("en", debt_key, "no Korean here")
+        # KOREAN_IN_ENGLISH_DEBT 가 실제로 비어 있을 수 있으므로(이관 완료 시점), 이미 깨끗한
+        # key 를 임시로 부채 선언에 넣어 "해소된 부채가 목록에 남으면 잡힌다"를 재현한다.
+        import sage.i18n.validation as validation_module
+        debt_key = "cli.root.help_option"
+        with mock.patch.object(validation_module, "KOREAN_IN_ENGLISH_DEBT", frozenset({debt_key})):
+            issues = catalog_issues(str(REPO))
         self.assertTrue(any(debt_key in issue and "KOREAN_IN_ENGLISH_DEBT" in issue
                             for issue in issues), issues)
 

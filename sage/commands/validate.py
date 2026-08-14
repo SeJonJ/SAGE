@@ -93,7 +93,7 @@ def _safe_test_path(root, test):
     return rp if os.path.exists(rp) else None
 
 
-def _schema_check(root, manifest):
+def _schema_check(root, manifest, language=None):
     """manifest 를 schema/manifest.schema.json 으로 구조검증 → (sev, [msgs]).
 
     jsonschema 는 선택의존(미설치 시 WARN skip — 핵심 CLI 는 의존성 경량 유지). schema 파일은
@@ -102,20 +102,20 @@ def _schema_check(root, manifest):
     try:
         import jsonschema
     except ImportError:
-        return "WARN", ["  WARN jsonschema 미설치 — schema 구조검증 skip (pip install 'sage-harness[schema]')"]
+        return "WARN", [tr(language, "cli.validate.manifest_schema_jsonschema_missing")]
     sp = os.path.join(root, "schema", "manifest.schema.json")
     if not os.path.exists(sp):
         from sage import _resources
         sp = os.path.join(_resources.schema_dir(), "manifest.schema.json")
     if not os.path.exists(sp):
-        return "WARN", ["  WARN schema 파일 없음 — 구조검증 skip"]
+        return "WARN", [tr(language, "cli.validate.manifest_schema_file_missing")]
     try:
         schema = json.loads(Path(sp).read_text(encoding="utf-8"))
         jsonschema.validate(manifest, schema)
-        return "PASS", ["  ✅ manifest JSON Schema 구조검증 통과"]
+        return "PASS", [tr(language, "cli.validate.manifest_schema_pass")]
     except jsonschema.ValidationError as e:
         loc = "/".join(str(p) for p in e.absolute_path) or "(root)"
-        return "FAIL", [f"  FAIL schema 위반 @ {loc}: {e.message}"]
+        return "FAIL", [tr(language, "cli.validate.manifest_schema_violation", loc=loc, message=e.message)]
 
 
 def _find_root(start):
@@ -169,27 +169,27 @@ def _report_version_contract(profile, manifest, language=None):
     return severity
 
 
-def _validate_core_skill_receipts(root, manifest):
+def _validate_core_skill_receipts(root, manifest, language=None):
     """Validate repository receipts and diagnose environment-dependent Codex duplicates."""
     from sage import __version__
     from sage.commands import install
 
     receipts = manifest.get("core_skill_receipts") if isinstance(manifest, dict) else None
     if receipts is None:
-        return "WARN", ["CORE skill scope 영수증 없음(legacy) — 명시적 --skill-scope로 sage install 재실행 권장"]
+        return "WARN", [tr(language, "cli.validate.core_skill_receipts_missing")]
     if not isinstance(receipts, dict):
-        return "FAIL", ["core_skill_receipts가 mapping이 아님"]
+        return "FAIL", [tr(language, "cli.validate.core_skill_receipts_not_mapping")]
 
     severity = "PASS"
     messages = []
     for host, receipt in receipts.items():
         if host not in ("claude", "codex") or not install._valid_core_skill_receipt(receipt):
             severity = "FAIL"
-            messages.append(f"손상된 CORE skill 영수증: {host!r}")
+            messages.append(tr(language, "cli.validate.core_skill_receipt_corrupt", host=repr(host)))
             continue
         if host == "claude" and receipt["scope"] != "project-local":
             severity = "FAIL"
-            messages.append("claude CORE skill scope는 project-local이어야 함")
+            messages.append(tr(language, "cli.validate.claude_core_skill_scope_invalid"))
         if receipt["sage_version"] != __version__ and _SEV_RANK["STALE"] > _SEV_RANK[severity]:
             severity = "STALE"
             messages.append(
@@ -198,7 +198,7 @@ def _validate_core_skill_receipts(root, manifest):
     if "codex" in _installed_hosts(manifest) and "codex" not in receipts:
         if _SEV_RANK["WARN"] > _SEV_RANK[severity]:
             severity = "WARN"
-        messages.append("codex installed_host에 scope 영수증이 없음 — 선택 scope를 추정하지 않음")
+        messages.append(tr(language, "cli.validate.codex_receipt_missing"))
 
     codex_receipt = receipts.get("codex")
     if not install._valid_core_skill_receipt(codex_receipt):
@@ -243,7 +243,7 @@ def _hook_paths(root, asset_id):
     }
 
 
-def _write_guard_smoke(root):
+def _write_guard_smoke(root, language=None):
     """Execute the installed Python guard path and require its exact allow/block contract."""
     core_dir = os.path.join(root, "scripts", "sage_harness", "hooks")
     runner = os.path.join(core_dir, "runtime", "run_hook.py")
@@ -264,18 +264,19 @@ def _write_guard_smoke(root):
                 command, input=json.dumps(payload), cwd=root,
                 capture_output=True, text=True, timeout=10)
         except subprocess.TimeoutExpired:
-            return "FAIL", "  FAIL write-guard 실행 스모크 timeout (10s)"
+            return "FAIL", tr(language, "cli.validate.write_guard_timeout")
         except OSError as exc:
-            return "FAIL", f"  FAIL write-guard 실행 스모크 오류: {type(exc).__name__}: {exc}"
+            return "FAIL", tr(language, "cli.validate.write_guard_error",
+                              error_type=type(exc).__name__, exc=exc)
         if result.returncode != expected:
             detail = (result.stderr or result.stdout or "").strip()
             suffix = f" ({detail[:240]})" if detail else ""
-            return "FAIL", (
-                f"  FAIL write-guard 실행 스모크 rc={result.returncode}, expected={expected}{suffix}")
+            return "FAIL", tr(language, "cli.validate.write_guard_rc_mismatch",
+                              rc=result.returncode, expected=expected, suffix=suffix)
     return "PASS", ""
 
 
-def _regression_runner(test_path, platform_name=None, environ=None):
+def _regression_runner(test_path, platform_name=None, environ=None, language=None):
     """Resolve a regression interpreter without accidentally selecting the Windows WSL launcher."""
     if test_path.endswith(".py"):
         return [sys.executable, test_path], ""
@@ -285,15 +286,15 @@ def _regression_runner(test_path, platform_name=None, environ=None):
     if explicit:
         if platform_name == "nt":
             if not ntpath.isabs(explicit):
-                return None, "Windows SAGE_BASH는 절대경로여야 함"
+                return None, tr(language, "cli.validate.regression_bash_needs_abs_path")
             if not os.path.isfile(explicit):
-                return None, "Windows SAGE_BASH 파일을 찾지 못함"
+                return None, tr(language, "cli.validate.regression_bash_not_found")
         return [explicit, test_path], ""
     if platform_name == "nt":
-        return None, "Windows에서 .sh 회귀 테스트는 SAGE_BASH로 Git Bash 경로를 명시해야 함"
+        return None, tr(language, "cli.validate.regression_windows_needs_bash")
     bash = shutil.which("bash")
     if not bash:
-        return None, "bash 실행 파일을 찾지 못함"
+        return None, tr(language, "cli.validate.regression_bash_missing")
     return [bash, test_path], ""
 
 
@@ -317,10 +318,9 @@ def _validate_hook(root, asset_id, entry, run_regression, language=None):
     if project_sources and not project_origin:
         bump("FAIL")
         if form == "core_adapter":
-            msgs.append("  FAIL project hook origin 스탬프 누락/손상 — sage generate --kind hook "
-                        f"--id {hook_id} --write --target both 로 복구")
+            msgs.append(tr(language, "cli.validate.hook_origin_stamp_missing", hook_id=hook_id))
         else:
-            msgs.append("  FAIL project hook form/origin 손상 — core_adapter 정본 form은 자동 변환하지 않음")
+            msgs.append(tr(language, "cli.validate.hook_form_origin_corrupt"))
 
     # 0. 미스탬프 감지(install 후 generate 전): hash 없음 → STALE "generate 필요"
     #    (pre-generate 등록만 된 hook 이 PASS 로 보여 위험을 가리는 것 방지 — Codex P2-6)
@@ -332,14 +332,14 @@ def _validate_hook(root, asset_id, entry, run_regression, language=None):
     if not os.path.exists(p["spec"]):
         bump("FAIL"); msgs.append(f"  FAIL missing spec: {p['spec']}")
     elif entry.get("spec_hash") and _sha(p["spec"]) != entry["spec_hash"]:
-        bump("STALE"); msgs.append("  STALE spec_hash 불일치 (spec 변경 → 재생성 필요)")
+        bump("STALE"); msgs.append(tr(language, "cli.validate.hook_spec_hash_mismatch"))
 
     # 2. canonical hash
     canon = p["native_sh"] if form == "native" else p["core_py"]
     if not os.path.exists(canon):
         bump("FAIL"); msgs.append(f"  FAIL missing canonical: {canon}")
     elif entry.get("canonical_hash") and _sha(canon) != entry["canonical_hash"]:
-        bump("STALE"); msgs.append("  STALE canonical_hash 불일치")
+        bump("STALE"); msgs.append(tr(language, "cli.validate.hook_canonical_hash_mismatch"))
 
     # 3. adapter hash (core_adapter 만)
     if form == "core_adapter":
@@ -350,7 +350,7 @@ def _validate_hook(root, asset_id, entry, run_regression, language=None):
             if not os.path.exists(p[key]):
                 bump("FAIL"); msgs.append(f"  FAIL missing adapter[{rt}]: {p[key]}")
             elif ah and _sha(p[key]) != ah:
-                bump("STALE"); msgs.append(f"  STALE adapter_hash[{rt}] 불일치")
+                bump("STALE"); msgs.append(tr(language, "cli.validate.hook_adapter_hash_mismatch", rt=rt))
 
     # 3b. 계약버전 (R3/P1-3): core.CONTRACT_VERSION 과 manifest 스탬프 대조.
     #     hash(내용) 드리프트와 별개로 core.decide() 인터페이스 변경을 잡는 두 번째 방어선.
@@ -358,13 +358,14 @@ def _validate_hook(root, asset_id, entry, run_regression, language=None):
         want = contract_version_of(p["core_py"])
         have = entry.get("adapter_contract_version")
         if project_origin and not want:
-            bump("FAIL"); msgs.append("  FAIL project hook core CONTRACT_VERSION 누락")
+            bump("FAIL"); msgs.append(tr(language, "cli.validate.hook_contract_version_missing"))
         elif project_origin and (not isinstance(have, str) or not have):
-            bump("FAIL"); msgs.append("  FAIL project hook manifest 계약버전 스탬프 누락")
+            bump("FAIL"); msgs.append(tr(language, "cli.validate.hook_contract_stamp_missing"))
         elif want and have and want != have:
-            bump("STALE"); msgs.append(f"  STALE 계약버전 불일치 ({have}→{want}) — sage generate 재스탬프 필요")
+            bump("STALE"); msgs.append(
+                tr(language, "cli.validate.hook_contract_version_mismatch", have=have, want=want))
     if project_origin and form != "core_adapter":
-        bump("FAIL"); msgs.append("  FAIL project hook form은 core_adapter여야 함")
+        bump("FAIL"); msgs.append(tr(language, "cli.validate.hook_form_must_be_core_adapter"))
 
     # 4. WARN 정보 (exit 영향 없음)
     if entry.get("safety_degraded"):
@@ -382,17 +383,19 @@ def _validate_hook(root, asset_id, entry, run_regression, language=None):
             if tpath is None:
                 bump("FAIL"); msgs.append(f"  FAIL unsafe/missing test path: {test}")
             else:
-                runner, runner_error = _regression_runner(tpath)
+                runner, runner_error = _regression_runner(tpath, language=language)
                 if runner is None:
-                    bump("FAIL"); msgs.append(f"  FAIL regression 실행 불가: {test} ({runner_error})")
+                    bump("FAIL"); msgs.append(
+                        tr(language, "cli.validate.hook_regression_unrunnable",
+                          test=test, runner_error=runner_error))
                 else:
                     r = subprocess.run(runner, cwd=root, capture_output=True, text=True)
                     if r.returncode != 0:
-                        bump("FAIL"); msgs.append(f"  FAIL regression 실패: {test}")
+                        bump("FAIL"); msgs.append(tr(language, "cli.validate.hook_regression_failed", test=test))
     # Built-in enforcement smoke is part of integrity validation, not the optional regression suite.
     # It must also run under --check so a packaged guard cannot be hash-clean but non-functional.
     if asset_id == "hooks/generated-artifact-write-guard" and sev in ("PASS", "WARN"):
-        smoke_sev, smoke_message = _write_guard_smoke(root)
+        smoke_sev, smoke_message = _write_guard_smoke(root, language)
         bump(smoke_sev)
         if smoke_message:
             msgs.append(smoke_message)
@@ -410,7 +413,7 @@ def _validate_hook_runtime_hash(root, manifest, language=None):
     if not stamped:
         return "STALE", [f"  STALE hook_runtime_hash {tr(language, 'cli.validate.stale_unstamped_hook')}"]
     if not isinstance(stamped, dict):
-        return "FAIL", ["  FAIL hook_runtime_hash 구조 오류 — object 여야 함"]
+        return "FAIL", [tr(language, "cli.validate.hook_runtime_hash_bad_structure")]
     current, missing = calculate_hook_runtime_hash(root)
     if missing:
         return "FAIL", [f"  FAIL missing hook runtime: {os.path.relpath(p, root)}" for p in missing]
@@ -419,14 +422,14 @@ def _validate_hook_runtime_hash(root, manifest, language=None):
         have = stamped.get(key)
         if not have:
             sev = "STALE"
-            msgs.append(f"  STALE hook_runtime_hash[{key}] 미스탬프")
+            msgs.append(tr(language, "cli.validate.hook_runtime_hash_unstamped", field=key))
         elif have != current[key]:
             sev = "STALE"
-            msgs.append(f"  STALE hook_runtime_hash[{key}] 불일치")
+            msgs.append(tr(language, "cli.validate.hook_runtime_hash_mismatch", field=key))
     return sev, msgs
 
 
-def _conformance_check(root, asset_id, claims_path):
+def _conformance_check(root, asset_id, claims_path, language=None):
     """render(.md) 산출물을 claims 에 conformance_lint → (bump_sev, [msgs]).
 
     P1-4(폐루프 비대칭 해소): hook 은 hash/contract_version 으로 generate↔validate 폐루프가 강제되나,
@@ -460,29 +463,30 @@ def _conformance_check(root, asset_id, claims_path):
         import conformance as cf
         import reverse_extract_common as rc   # P2-7: claims 단일 canonical 리더(pyyaml 우선+결정론 폴백)
     except Exception as e:
-        return "PASS", [f"  INFO conformance skip — 모듈 로드 실패: {e}"]
+        return "PASS", [tr(language, "cli.validate.conformance_module_load_failed", e=e)]
     try:
         claims = rc.load_claims_yaml(claims_path)
     except Exception as e:
-        return "PASS", [f"  INFO conformance skip — claims 파싱 실패: {e}"]
+        return "PASS", [tr(language, "cli.validate.conformance_claims_parse_failed", e=e)]
 
     bump = "PASS"
     msgs = []
+    none_label = tr(language, "cli.common.none")
     for rt, p in sorted(present.items()):
         try:
             res = cf.conformance_lint(Path(p).read_text(encoding="utf-8"), claims)
         except Exception as e:
-            msgs.append(f"  INFO conformance[{rt}] skip — lint 오류: {e}")
+            msgs.append(tr(language, "cli.validate.conformance_lint_error", rt=rt, e=e))
             continue
         st = res["status"]
         if st == "FAIL":
             bump = "FAIL"
-            mr = "; ".join(f"{m['type']}:{m['value']}" for m in res["missing_required"]) or "없음"
-            ct = "; ".join(m["value"] for m in res["forbidden_policy_contradictions"]) or "없음"
-            msgs.append(f"  FAIL conformance[{rt}] — 누락 required claim: {mr} | 금지위반: {ct}")
+            mr = "; ".join(f"{m['type']}:{m['value']}" for m in res["missing_required"]) or none_label
+            ct = "; ".join(m["value"] for m in res["forbidden_policy_contradictions"]) or none_label
+            msgs.append(tr(language, "cli.validate.conformance_fail", rt=rt, mr=mr, ct=ct))
         elif st == "WARN":
             n_w = len(res["warnings"]); n_mp = len(res["forbidden_policy_missing"])
-            msgs.append(f"  INFO conformance[{rt}] WARN(비게이팅) — 미검출 {n_w}건, 금지주제 미언급 {n_mp}건")
+            msgs.append(tr(language, "cli.validate.conformance_warn", rt=rt, n_w=n_w, n_mp=n_mp))
     return bump, msgs
 
 
@@ -524,26 +528,24 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True, language=
     if not os.path.exists(spec):
         bump("FAIL"); msgs.append(f"  FAIL missing spec: {spec}")
     elif entry.get("spec_hash") and _sha(spec) != entry["spec_hash"]:
-        bump("STALE"); msgs.append("  STALE spec_hash 불일치")
+        bump("STALE"); msgs.append(tr(language, "cli.validate.interpretive_spec_hash_mismatch"))
     if not os.path.exists(claims):
         bump("FAIL"); msgs.append(f"  FAIL missing claims: {claims}")
     elif entry.get("claims_hash") and _sha(claims) != entry["claims_hash"]:
-        bump("STALE"); msgs.append("  STALE claims_hash 불일치")
+        bump("STALE"); msgs.append(tr(language, "cli.validate.interpretive_claims_hash_mismatch"))
 
     # generate 가 스탬프한 역추출 계약버전과 현재 계약을 대조한다. 레거시 엔트리의 부재는 허용하고,
     # 양쪽 값이 모두 있으면서 다른 경우만 STALE 로 판정해 hook 의 mismatch-only 의미론과 맞춘다.
     try:
         want_cv = _interpretive_contract_version(subdir)
     except Exception as e:
-        msgs.append(f"  INFO interpretive 계약버전 검사 skip — 모듈 로드 실패: {e}")
+        msgs.append(tr(language, "cli.validate.interpretive_contract_check_skip", e=e))
     else:
         have_cv = entry.get("adapter_contract_version")
         if want_cv and have_cv and want_cv != have_cv:
             bump("STALE")
-            msgs.append(
-                f"  STALE 계약버전 불일치 ({have_cv}→{want_cv}) — "
-                "sage generate --kind agent|skill --write 재스탬프 필요"
-            )
+            msgs.append(tr(language, "cli.validate.interpretive_contract_version_mismatch",
+                           have_cv=have_cv, want_cv=want_cv))
     unres = entry.get("unresolved")
     if isinstance(unres, list):   # 오염 manifest 의 unresolved:1 등 비-list 는 순회 시 TypeError → 무시
         for u in unres:
@@ -558,10 +560,11 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True, language=
             total_unres = 0
         descriptive = total_unres - (len(unres) if isinstance(unres, list) else 0)
         if descriptive > 0:
-            msgs.append(f"  INFO descriptive unresolved {descriptive}건 (비게이팅 — 절차/서술 의미 누락 주의, {os.path.basename(claims)} 확인)")
+            msgs.append(tr(language, "cli.validate.interpretive_descriptive_unresolved",
+                          descriptive=descriptive, claims_basename=os.path.basename(claims)))
     # conformance lint (P1-4): render(.md) 가 존재하면 claim 부합을 강제 — hook hash/contract 강제와 대칭.
     #   --check(빠른 모드)에서도 실행(정규식·subprocess 없음 → cheap). FAIL=게이팅, WARN=INFO(비게이팅).
-    csev, cmsgs = _conformance_check(root, asset_id, claims)
+    csev, cmsgs = _conformance_check(root, asset_id, claims, language)
     bump(csev)
     msgs.extend(cmsgs)
     # render_hash 는 interpretive/외부 산출물이라 v1 staleness 재계산 제외(정보성)
@@ -570,8 +573,7 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True, language=
         # 과거 generate 가 엔진 자체 회귀 테스트 경로를 프로젝트 manifest 에 박았다. 그 테스트는
         # 합성 입력으로 추출기를 검증하는 엔진 소유물이라 설치되지 않고, 프로젝트 자산의 회귀도
         # 아니다. 없는 경로를 FAIL 로 세우면 프로젝트가 고칠 수 없는 실패가 되므로 안내로 바꾼다.
-        msgs.append(f"  WARN 엔진 소유 테스트 경로가 manifest 에 남아 있음: {test} "
-                    "— `sage generate --kind agent|skill --write` 재실행으로 정리됩니다")
+        msgs.append(tr(language, "cli.validate.interpretive_engine_owned_test_path", test=test))
         bump("WARN")
         test = None
     if run_regression and test and sev in ("PASS", "WARN"):
@@ -581,7 +583,7 @@ def _validate_interpretive(root, asset_id, entry, run_regression=True, language=
         else:
             r = subprocess.run([sys.executable, tpath], cwd=root, capture_output=True, text=True)  # P3-11: sys.executable
             if r.returncode != 0:
-                bump("FAIL"); msgs.append(f"  FAIL regression 실패: {test}")
+                bump("FAIL"); msgs.append(tr(language, "cli.validate.interpretive_regression_failed", test=test))
     return sev, msgs
 
 
@@ -615,18 +617,19 @@ def _validate_mcp(root, asset_id, entry, language=None):
         # legacy 미스탬프(spec/render 는 있으나 계약버전 없음) → 재스탬프 강제. spec/render 자체가
         # 미스탬프인 신규 케이스는 위 블록이 이미 STALE 로 잡으므로 중복을 피해 그때만 보강.
         if entry.get("spec_hash") and entry.get("render_hash"):
-            bump("STALE"); msgs.append("  STALE MCP 계약버전 미스탬프(legacy) — sage generate 재스탬프 필요")
+            bump("STALE"); msgs.append(tr(language, "cli.validate.mcp_contract_version_unstamped"))
     elif have_cv != M.CONTRACT_VERSION:
-        bump("STALE"); msgs.append(f"  STALE MCP 계약버전 불일치 ({have_cv}→{M.CONTRACT_VERSION}) — sage generate 재스탬프 필요")
+        bump("STALE"); msgs.append(tr(language, "cli.validate.mcp_contract_version_mismatch",
+                                      have_cv=have_cv, want_cv=M.CONTRACT_VERSION))
     # spec staleness
     if entry.get("spec_hash") and _sha(spec_path) != entry["spec_hash"]:
-        bump("STALE"); msgs.append("  STALE spec_hash 불일치 (spec 변경 → 재생성 필요)")
+        bump("STALE"); msgs.append(tr(language, "cli.validate.mcp_spec_hash_mismatch"))
     # 파싱 + 시크릿
     try:
         mdl = M.parse_mcp_spec(spec_path)
     except M.MCPSpecError as e:
         bump("FAIL")
-        msgs.append(f"  FAIL spec 구조 오류: {exception_text(language, e)}")
+        msgs.append(tr(language, "cli.validate.mcp_spec_structure_error", detail=exception_text(language, e)))
         return sev, msgs
     for ssev, smsg in M.check_secrets(mdl):
         if ssev == "FAIL":
@@ -640,38 +643,38 @@ def _validate_mcp(root, asset_id, entry, language=None):
         want = "sha256:" + hashlib.sha256(M.canonical_render(mdl, tgt).encode("utf-8")).hexdigest()
         have = rh.get(tgt)
         if have and have != want:
-            bump("STALE"); msgs.append(f"  STALE render_hash[{tgt}] 불일치 (spec 변경 → 재생성 필요)")
+            bump("STALE"); msgs.append(tr(language, "cli.validate.mcp_render_hash_mismatch", tgt=tgt))
         elif not have:
-            bump("STALE"); msgs.append(f"  STALE render_hash[{tgt}] 미스탬프")
+            bump("STALE"); msgs.append(tr(language, "cli.validate.mcp_render_hash_unstamped", tgt=tgt))
     # ★ 실제 산출물 드리프트 (codex R3 P0): manifest 가 아니라 '현재 파일'을 spec 기대값과 대조.
     #   .mcp.json/.codex managed-block 직접편집(command 변조 등)을 잡는다(write-guard 보완·.codex 는 가드 없음).
     if "claude" in mdl["runtime_targets"]:
         mcp_json = os.path.join(root, ".mcp.json")
         if not os.path.exists(mcp_json):
-            bump("STALE"); msgs.append("  STALE .mcp.json 부재 (claude target 인데 미생성 — 재생성 필요)")
+            bump("STALE"); msgs.append(tr(language, "cli.validate.mcp_json_missing"))
         else:
             actual = M.actual_claude_canonical(Path(mcp_json).read_text(encoding="utf-8"), sid)
             if actual is None:
-                bump("STALE"); msgs.append("  STALE .mcp.json 에 서버 엔트리 없음 (재생성 필요)")
+                bump("STALE"); msgs.append(tr(language, "cli.validate.mcp_json_server_entry_missing"))
             elif actual != M.canonical_render(mdl, "claude"):
-                bump("STALE"); msgs.append("  STALE .mcp.json 산출물 드리프트 (직접편집? spec 과 불일치 — 재생성 필요)")
+                bump("STALE"); msgs.append(tr(language, "cli.validate.mcp_json_drift"))
     if "codex" in mdl["runtime_targets"]:
         cfg = os.path.join(root, ".codex", "config.toml")
         if not os.path.exists(cfg):
-            bump("STALE"); msgs.append("  STALE .codex/config.toml 부재 (codex target 인데 미생성 — 재생성 필요)")
+            bump("STALE"); msgs.append(tr(language, "cli.validate.mcp_codex_config_missing"))
         else:
             cfg_text = Path(cfg).read_text(encoding="utf-8")
             # 소유권: managed-block 밖 동명 서버
             if sid in M.codex_servers_outside_block(cfg_text):
-                bump("FAIL"); msgs.append(f"  FAIL config.toml managed-block 밖에 [mcp_servers.{sid}] 중복(소유권 충돌)")
+                bump("FAIL"); msgs.append(tr(language, "cli.validate.mcp_codex_block_duplicate", sid=sid))
             # 산출물 드리프트: managed-block 부재 또는 spec 기대 조각 변조
             block = M.extract_codex_block(cfg_text)
             if block is None or not M.codex_block_has_server(block, mdl):
-                bump("STALE"); msgs.append("  STALE config.toml managed-block 부재/드리프트 (직접편집? spec 과 불일치 — 재생성 필요)")
+                bump("STALE"); msgs.append(tr(language, "cli.validate.mcp_codex_block_drift"))
     return sev, msgs
 
 
-def _mcp_ownership_check(root, mcp_ids, codex_ids):
+def _mcp_ownership_check(root, mcp_ids, codex_ids, language=None):
     """전체 mcp 자산 대상 소유권 검사 → (sev, [msgs]). 자산 루프 밖 1회.
 
     (a) .mcp.json 의 manifest 밖 서버 = WARN(수동/absorb 대상).
@@ -691,9 +694,10 @@ def _mcp_ownership_check(root, mcp_ids, codex_ids):
             doc = json.loads(Path(mcp_json).read_text(encoding="utf-8"))
             extra = sorted(set((doc.get("mcpServers") or {}).keys()) - set(mcp_ids))
             if extra:
-                bump("WARN"); msgs.append(f"⚠️  WARN  .mcp.json 에 manifest 밖 서버 {len(extra)}건: {', '.join(extra)} (absorb 대상 또는 수동 추가)")
+                bump("WARN"); msgs.append(tr(language, "cli.validate.mcp_ownership_extra_servers",
+                                             count=len(extra), extra=", ".join(extra)))
         except Exception as e:
-            bump("FAIL"); msgs.append(f"❌ FAIL  .mcp.json 파싱 실패: {e}")
+            bump("FAIL"); msgs.append(tr(language, "cli.validate.mcp_ownership_json_parse_failed", e=e))
 
     cfg = os.path.join(root, ".codex", "config.toml")
     if os.path.exists(cfg):
@@ -701,8 +705,8 @@ def _mcp_ownership_check(root, mcp_ids, codex_ids):
         inside = M.codex_servers_inside_block(Path(cfg).read_text(encoding="utf-8"))
         extra = sorted(set(inside) - set(codex_ids))
         if extra:
-            bump("FAIL"); msgs.append(f"❌ FAIL  config.toml managed-block 안에 미선언 서버 {len(extra)}건: {', '.join(extra)} "
-                                      "(SAGE 소유 영역 주입/변조 — 제거 후 재생성)")
+            bump("FAIL"); msgs.append(tr(language, "cli.validate.mcp_ownership_undeclared_servers",
+                                         count=len(extra), extra=", ".join(extra)))
     return sev, msgs
 
 
@@ -777,7 +781,7 @@ def run(args):
         print(tr(language_of(args), "cli.validate.msg09"))
         if overall == "PASS":
             overall = "WARN"
-    cssev, csmsgs = _validate_core_skill_receipts(root, manifest)
+    cssev, csmsgs = _validate_core_skill_receipts(root, manifest, language_of(args))
     csmark = {"PASS": "✅", "WARN": "⚠️ ", "STALE": "🔶", "FAIL": "❌"}[cssev]
     print(f"{csmark} {cssev:5} CORE skill scope receipt")
     for message in csmsgs:
@@ -864,7 +868,7 @@ def run(args):
         codex_ids = [k.split("/", 1)[1] for k in assets if k.startswith("mcps/")
                      and isinstance(assets[k], dict) and isinstance(assets[k].get("runtime_targets"), list)
                      and "codex" in assets[k]["runtime_targets"]]
-        osev, omsgs = _mcp_ownership_check(root, mcp_ids, codex_ids)
+        osev, omsgs = _mcp_ownership_check(root, mcp_ids, codex_ids, language_of(args))
         for m in omsgs:
             print(m)
         if _SEV_RANK[osev] > _SEV_RANK[overall]:
@@ -872,7 +876,7 @@ def run(args):
 
     # JSON Schema 구조검증 (--schema, 선택)
     if args.schema:
-        ssev, smsgs = _schema_check(root, manifest)
+        ssev, smsgs = _schema_check(root, manifest, language_of(args))
         mark = {"PASS": "✅", "WARN": "⚠️ ", "FAIL": "❌"}[ssev]
         print(f"{mark} SCHEMA {ssev}")
         for m in smsgs:

@@ -136,7 +136,7 @@ class TestWriteGuardSmoke(unittest.TestCase):
                 ROOT, "hooks/generated-artifact-write-guard", entry, run_regression=False)
         self.assertEqual(severity, "FAIL")
         self.assertIn("  FAIL injected smoke", messages)
-        smoke.assert_called_once_with(ROOT)
+        smoke.assert_called_once_with(ROOT, None)
 
 
 class TestCoreSkillScopeReceipt(unittest.TestCase):
