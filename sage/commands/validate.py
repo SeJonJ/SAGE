@@ -47,14 +47,14 @@ def _sha(path):
         return "sha256:" + hashlib.sha256(f.read()).hexdigest()
 
 
-def _bootstrap_warn(root):
+def _bootstrap_warn(root, language=None):
     """부트스트랩 미수행/미설치/손상 profile 이면 WARN 메시지 반환, 아니면 None.
 
     generate 와 동일한 판정(bootstrap_gate_reason)을 쓰되 validate 는 읽기전용이라 차단 대신 WARN.
     validate 는 --root 만 받으므로 dest=root 로 단일 컨텍스트 판정."""
     from sage.commands._common import bootstrap_gate_reason, bootstrap_warn_text
     reason = bootstrap_gate_reason(root, root)
-    return bootstrap_warn_text(reason) if reason else None
+    return bootstrap_warn_text(reason, language) if reason else None
 
 
 def _legacy_engine_tests():
@@ -786,7 +786,7 @@ def run(args):
         overall = cssev
     # 미부트스트랩 경고: profile 이 배치됐으나 project.name 빈값이면 거버넌스 inert(risk globs 0).
     # validate 는 읽기전용 진단이므로 차단(FAIL)이 아니라 WARN 으로 표면화 — 차단은 generate 게이트가 담당.
-    bw = _bootstrap_warn(root)
+    bw = _bootstrap_warn(root, language_of(args))
     if bw:
         strict_hits.append("bootstrap-invalid")
         print(bw)

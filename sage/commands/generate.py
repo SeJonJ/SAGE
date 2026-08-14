@@ -1231,7 +1231,7 @@ def run(args) -> int:
     from sage.commands._common import bootstrap_block_text, bootstrap_gate_reason
     reason = bootstrap_gate_reason(root, args.dest)
     if reason:
-        print(bootstrap_block_text(reason), file=sys.stderr)
+        print(bootstrap_block_text(reason, language_of(args)), file=sys.stderr)
         return 2
     if args.kind == "hook":
         return _gen_hook(args, root)

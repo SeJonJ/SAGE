@@ -20,6 +20,7 @@ sys.path.insert(0, REPO)
 from sage.commands import generate as gen  # noqa: E402
 from sage.commands import validate as val  # noqa: E402
 from sage.commands._common import is_bootstrapped  # noqa: E402
+from sage.i18n.context import LanguageContext  # noqa: E402
 
 try:
     import yaml  # noqa: F401
@@ -127,6 +128,22 @@ class TestGenerateGateFramework(unittest.TestCase):
             self.assertEqual(rc, 2)
             self.assertFalse(os.path.exists(os.path.join(d, ".claude", "settings.json")))
 
+    def test_empty_name_blocks_in_english_when_lang_en(self):
+        """부트스트랩 BLOCK 문구도 language_of() 를 따른다."""
+        import io
+        from contextlib import redirect_stderr
+        with tempfile.TemporaryDirectory() as d:
+            _root(d)
+            _profile(d, 'project: { name: "" }\n')
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                rc = gen.run(GArgs(d, _language_context=LanguageContext(language="en", source="cli")))
+            self.assertEqual(rc, 2)
+            text = buf.getvalue()
+            self.assertIn("not bootstrapped", text)
+            self.assertIn("Run the interactive bootstrap", text)
+            self.assertNotIn("프로필", text)
+
     def test_name_only_passes_in_framework_ctx(self):
         # 비설치 컨텍스트는 부분 profile 픽스처 보존 — name 만 있어도 통과(폴백).
         with tempfile.TemporaryDirectory() as d:
@@ -196,6 +213,21 @@ class TestValidateWarn(unittest.TestCase):
             _root(d)
             _profile(d, 'project: { name: "" }\n')
             self.assertIn("미부트스트랩", self._warn_text(d))
+
+    def test_empty_name_warns_in_english_when_lang_en(self):
+        """부트스트랩 WARN 문구도 language_of() 를 따른다."""
+        import io
+        from contextlib import redirect_stdout
+        with tempfile.TemporaryDirectory() as d:
+            _root(d)
+            _profile(d, 'project: { name: "" }\n')
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                val.run(VArgs(d, _language_context=LanguageContext(language="en", source="cli")))
+            text = buf.getvalue()
+            self.assertIn("not bootstrapped", text)
+            self.assertIn("Run the interactive bootstrap", text)
+            self.assertNotIn("부트스트랩", text)
 
     def test_installed_missing_profile_warns(self):
         with tempfile.TemporaryDirectory() as d:

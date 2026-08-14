@@ -233,21 +233,18 @@ class TestInventoryCountsWhatTheScreenShows(unittest.TestCase):
         언어 정책이 먼저 확정돼야 한다 — 지금 등록하면 그 정규식이 이미 permanent 라고 잘못
         선언하는 것이다.
 
-        530 → 300: `_scan_korean_literals` 가 f-string 문장을 조각(Constant)마다 또 세는
-        중복 카운트 버그를 발견해 고쳤다(당시 511건 중 210건이 중복이었다 — `review_loop.py` 의
-        `# SAGE Loop A 감사 대시보드{title_suffix}` 에서 실측, 자세한 내막은
-        `test_scan_korean_literals_does_not_double_count_fstring_fragments` 참고). 이 정정으로
-        `overlay_common.py::compose_block` 의 `NOT_TRANSLATED` 선언 건수도 2 → 1로 함께 고쳤다.
-
-        300 → 286: 배치 B-1(vault 노트 언어 배선) 중 `knowledge.py`(1)·`fast_cycle.py`(4)·
-        `feedback.py`(14) 를 `language_of()` 기반 catalog 로 이관했다.
+        진행 기록(요약, plan_docs/04-analyze §4d 에 상세):
+        540 → 539 스캐너 오탐 1건 제거 → 530 (d) 9건 NOT_TRANSLATED 등록 →
+        300 f-string 조각 중복 카운트 버그 수정 →
+        286 배치 B-1(knowledge·fast_cycle·feedback) → 278 배치 A(_common.py, 8건).
+        모듈 하나를 이관할 때마다 이 상한을 그 모듈의 실측 감소량만큼 낮춘다.
         """
         entries = _document()["entries"]
         remaining = [e for e in entries
                      if e["source_file"].replace("\\", "/").startswith("sage/commands/")
                      and e["source_file"] != "sage/commands/sync_overlays.py"]
-        self.assertLessEqual(len(remaining), 286,
-                             f"sage/commands 잔여 한국어가 알려진 상한(286)을 넘었다: "
+        self.assertLessEqual(len(remaining), 278,
+                             f"sage/commands 잔여 한국어가 알려진 상한(278)을 넘었다: "
                              f"{len(remaining)}건")
 
 if __name__ == "__main__":
