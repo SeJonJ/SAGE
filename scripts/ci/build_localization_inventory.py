@@ -64,7 +64,7 @@ NOT_TRANSLATED = {
     ("sage/overlay_common.py", "<module>"): (1,
         "관리 블록 마커 문자열. 파서가 직접 비교하고 기존 설치본에 그대로 박혀 있어, 번역하면 "
         "모든 설치본의 마커 짝이 깨진다."),
-    ("sage/overlay_common.py", "compose_block"): (2,
+    ("sage/overlay_common.py", "compose_block"): (1,
         "렌더 산출물에 기록되는 본문. base 해시 앵커의 입력이라 표시 언어에 따라 달라지면 같은 "
         "프로젝트에서 사용자마다 다른 drift 가 잡힌다."),
     ("sage/overlay_lint.py", "<module>"): (5,
@@ -159,6 +159,26 @@ def _korean_literals(node: ast.AST, source: str) -> list[tuple[str, bool]]:
     return found
 
 
+def _joinedstr_fragment_ids(tree: ast.AST) -> set[int]:
+    """모든 JoinedStr 의 **직접** 리터럴 조각(Constant) id.
+
+    `_scan_korean_literals` 의 바깥 루프는 `ast.walk(tree)` 로 파일의 모든 노드를 훑는다.
+    `_korean_literals` 자체는 JoinedStr 를 만나면 조각을 안 세고 통째로 하나로 반환하지만,
+    `ast.walk` 는 이 노드가 JoinedStr **안**에 있다는 맥락을 모른 채 그 조각(Constant) 도
+    독립 노드로 다시 방문한다 — 결과가 "한 문장(JoinedStr 전체) + 그 조각들"이 각각 별도
+    entry 로 잡혀 같은 문장이 여러 건으로 부풀려진다(실측: 511건 중 210건이 이 중복이었다).
+    직접 조각만 제외한다 — `{expr}` 안쪽(`FormattedValue.value`)의 별도 리터럴(예: 삼항식)은
+    그 자체로 독립적인 한국어일 수 있어 제외하지 않는다.
+    """
+    ids: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.JoinedStr):
+            for value in node.values:
+                if isinstance(value, ast.Constant):
+                    ids.add(id(value))
+    return ids
+
+
 def _print_arg_owner(tree: ast.AST) -> dict[int, str]:
     """print() 호출 인자 서브트리에 속한 모든 노드 id → 그 print 의 channel.
 
@@ -203,10 +223,13 @@ def _scan_korean_literals(path: str, rel: str, *, id_prefix: str, required_tests
                   and n.body and isinstance(n.body[0], ast.Expr)
                   for n in [n.body[0].value]}
     print_owner = default_channel_owner if default_channel_owner is not None else {}
+    fragment_ids = _joinedstr_fragment_ids(tree)
     seen_lines: dict[int, int] = {}
     for node in ast.walk(tree):
         if id(node) in docstrings or id(node) in claimed:
             continue      # 주석·docstring 은 한국어가 기본 정책이다
+        if id(node) in fragment_ids:
+            continue      # 부모 JoinedStr 가 이미 통째로 셌다 — 조각을 또 세면 중복이다
         if not isinstance(node, (ast.Constant, ast.JoinedStr)):
             continue
         for text, interpolated in _korean_literals(node, source):

@@ -142,6 +142,34 @@ class TestInventoryCountsWhatTheScreenShows(unittest.TestCase):
                 indirect_classification="command_output_indirect")
         self.assertEqual(entries, [], f"주석의 한국어를 값으로 오판했다: {entries}")
 
+    def test_scan_korean_literals_does_not_double_count_fstring_fragments(self):
+        """실측 회귀 고정: `_scan_korean_literals`(전체 파일 스캐너)가 한 f-string 문장을
+        조각(Constant) 마다 또 세서 부풀렸다 — 511건 중 210건(41%)이 이 중복이었다.
+
+        `_korean_literals()` 자신은 JoinedStr 를 만나면 조각을 안 세고 통째로 반환하지만,
+        `_scan_korean_literals` 의 바깥 `ast.walk(tree)` 루프는 그 조각(Constant) 을 독립
+        노드로 다시 방문해 "문장 전체 + 조각들"이 각각 별도 entry 로 잡혔다(`review_loop.py`
+        의 `# SAGE Loop A 감사 대시보드{title_suffix}` 에서 실측). `_joinedstr_fragment_ids()`
+        로 조각을 제외해 원천 차단했다 — 되돌아가면 이 테스트가 잡는다.
+        """
+        inv = self._generate()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "probe.py")
+            Path(path).write_text(
+                'def run():\n'
+                '    x = "suffix"\n'
+                '    body = [f"제목{x}", "", "앞부분 " "뒷부분"]\n'
+                '    print("\\n".join(body))\n',
+                encoding="utf-8")
+            entries, _exclusions = inv._scan_korean_literals(
+                path, "probe.py", id_prefix="cmd", required_tests=[],
+                direct_classification="command_output",
+                indirect_classification="command_output_indirect")
+        texts = [e["text"] for e in entries]
+        self.assertEqual(len(entries), 2, f"조각이 중복 카운트됐다: {texts}")
+        self.assertIn("제목{x}", texts)
+        self.assertIn("앞부분 뒷부분", texts)
+
     def test_an_fstring_counts_once_not_per_fragment(self):
         import ast
         inv = self._generate()
@@ -204,13 +232,20 @@ class TestInventoryCountsWhatTheScreenShows(unittest.TestCase):
         (d) 3건(`retro.py`·`absorb.py` 의 노트 heading 정규식·placeholder)은 (b) vault 노트
         언어 정책이 먼저 확정돼야 한다 — 지금 등록하면 그 정규식이 이미 permanent 라고 잘못
         선언하는 것이다.
+
+        530 → 300: `_scan_korean_literals` 가 f-string 문장을 조각(Constant)마다 또 세는
+        중복 카운트 버그를 발견해 고쳤다(당시 511건 중 210건이 중복이었다 — `review_loop.py` 의
+        `# SAGE Loop A 감사 대시보드{title_suffix}` 에서 실측, 자세한 내막은
+        `test_scan_korean_literals_does_not_double_count_fstring_fragments` 참고). 이 정정으로
+        `overlay_common.py::compose_block` 의 `NOT_TRANSLATED` 선언 건수도 2 → 1로 함께 고쳤다.
+        이 커밋은 스캐너 정확도 수정만 담는다(배치 B-1 이관은 별도 커밋).
         """
         entries = _document()["entries"]
         remaining = [e for e in entries
                      if e["source_file"].replace("\\", "/").startswith("sage/commands/")
                      and e["source_file"] != "sage/commands/sync_overlays.py"]
-        self.assertLessEqual(len(remaining), 530,
-                             f"sage/commands 잔여 한국어가 알려진 상한(530)을 넘었다: "
+        self.assertLessEqual(len(remaining), 300,
+                             f"sage/commands 잔여 한국어가 알려진 상한(300)을 넘었다: "
                              f"{len(remaining)}건")
 
 if __name__ == "__main__":
