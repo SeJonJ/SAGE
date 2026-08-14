@@ -132,7 +132,7 @@
   "hook_runtime_hash": {
     "claude": "sha256:b080e7fd24e4ea718655d7ad64d802ffe171567c2e1cc5b2f1a6a67cb6010ed1",
     "codex": "sha256:a44b067700f59fbe83f34b49f9c58de132d98d96a041f401141caeeec8b65a68",
-    "shared": "sha256:d94f24167bfece78595701170d0a11791e1a360e124f1ca724169aaebcdcc421"
+    "shared": "sha256:478342c4d9968794b05c86bac931a74fbd74f9c96afe1cc2451c8868e883f5b7"
   },
   "host_runtime": "claude",
   "sage_version": "0.1.0",
