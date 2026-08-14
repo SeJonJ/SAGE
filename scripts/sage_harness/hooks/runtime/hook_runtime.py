@@ -70,7 +70,7 @@ def load_profile_fail_open(hook_id):
         return None
 
 
-def load_profile_fail_closed(hook_id):
+def load_profile_fail_closed(hook_id, root=None):
     """Load a required compiled profile and preserve absence as the legacy no-op policy."""
     prof_path = os.environ.get("SAGE_PROFILE", "")
     if not prof_path or not os.path.exists(prof_path):
@@ -85,7 +85,7 @@ def load_profile_fail_closed(hook_id):
         raise ProfileLoadError("compiled profile 루트는 mapping이어야 함")
     issues = checklist_contract.checklist_target_issues(profile)
     if issues:
-        raise ProfileLoadError("; ".join(issues))
+        raise ProfileLoadError("; ".join(_overlay_say(root, issue) for issue in issues))
     return profile
 
 
@@ -662,7 +662,7 @@ def run_pre_phase4_checklist_gate(io, root, core_dir, raw_text):
     if io.should_skip(raw):
         return 0
     try:
-        profile = load_profile_fail_closed(hid)
+        profile = load_profile_fail_closed(hid, root)
         if profile is None:
             return 0
 
@@ -762,7 +762,7 @@ def _project_snapshot(core, event, profile, root):
     for pattern in globs:
         issue = checklist_contract.unsafe_glob(pattern)
         if issue:
-            raise ProjectHookError(f"unsafe project plan_reads glob {pattern!r}: {issue}")
+            raise ProjectHookError(f"unsafe project plan_reads glob {pattern!r}: {_overlay_say(root, issue)}")
         matches = []
         for path in glob.glob(os.path.join(root, pattern), recursive=True):
             path_real = os.path.realpath(path)
@@ -819,7 +819,7 @@ def run_project_hook(io, root, core_dir, hook_id, raw_text):
             raise ProjectHookError("hook input must be a JSON object")
         if io.should_skip(raw):
             return 0
-        profile = load_profile_fail_closed(hook_id)
+        profile = load_profile_fail_closed(hook_id, root)
         if profile is None:
             raise ProjectHookError("registered project hook compiled profile is missing")
         rel = make_rel(root)

@@ -70,8 +70,13 @@ def render(diagnostic, translate, prefix):
         return str(diagnostic)          # 이행 중 남은 문자열도 화면에서 사라지지 않게 한다
     # 하부 판정이 낸 진단을 상위 판정이 인자로 실어 올릴 수 있다(`이유: <하부 진단>`). 중첩된
     # 진단을 여기서 함께 렌더하지 않으면 상위 문장만 번역되고 안쪽은 code 로 남는다 — 한 줄에
-    # 두 언어가 섞인다. 조립은 판정이 아니라 렌더의 일이다.
-    arguments = {name: render(value, translate, prefix) if isinstance(value, Diagnostic) else value
+    # 두 언어가 섞인다. 조립은 판정이 아니라 렌더의 일이다. hook runtime 이 올리는 dict 모양
+    # 진단(위의 top-level 변환과 같은 모양)도 같은 이유로 재귀 대상이다 — Diagnostic 만 보면
+    # dict 로 중첩된 하부 진단이 `str(dict)` 로 그대로 새어 나간다.
+    def _nested(value):
+        return (isinstance(value, Diagnostic)
+                or (isinstance(value, dict) and isinstance(value.get("code"), str)))
+    arguments = {name: render(value, translate, prefix) if _nested(value) else value
                  for name, value in diagnostic.arguments.items()}
     text = translate(f"{prefix}.{diagnostic.code}", **arguments)
     return f"{text}: {diagnostic.evidence}" if diagnostic.evidence else text

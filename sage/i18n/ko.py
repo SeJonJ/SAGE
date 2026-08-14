@@ -85,6 +85,21 @@ MESSAGES = {
     "cli.context.restore": "packet/source 결속 검증 후 resume briefing 생성",
     "cli.context.snapshot_2": "managed snapshot JSON 경로",
 
+    # checklist_contract 판정(code+arguments) 렌더. hook(scripts/sage_harness/hooks/runtime/i18n)의
+    # FRAGMENTS 도 같은 code 를 `hook.<code>` 로 별도 등록한다 — 두 catalog 가 각자 렌더한다.
+    "cli.checklist_contract.glob_empty": "glob은 비어있지 않은 문자열이어야 함",
+    "cli.checklist_contract.glob_too_long": "glob은 512자 이하여야 함",
+    "cli.checklist_contract.glob_control_chars": "glob에 제어문자나 줄바꿈을 사용할 수 없음",
+    "cli.checklist_contract.glob_absolute_path": "glob은 POSIX/Windows 절대·rooted·drive-relative 경로일 수 없음",
+    "cli.checklist_contract.glob_dotdot": "glob에 '..' 경로 세그먼트를 사용할 수 없음",
+    "cli.checklist_contract.targets_not_list": "checklist_scan_targets 는 리스트여야 함",
+    "cli.checklist_contract.target_not_mapping": "{where} 는 label/glob 매핑이어야 함",
+    "cli.checklist_contract.target_keys_not_string": "{where} 키는 문자열이어야 함",
+    "cli.checklist_contract.target_unknown_keys": "{where} 에 미지 키 {unknown}; label/glob/is_impl 만 허용",
+    "cli.checklist_contract.target_label_invalid": "{where}.label 은 1..80자의 단일행 문자열이어야 함",
+    "cli.checklist_contract.target_glob_invalid": "{where}.glob: {reason}",
+    "cli.checklist_contract.target_is_impl_not_bool": "{where}.is_impl 은 bool이어야 함",
+
     "cli.cycle.cycle": "지금 작업 중인 사이클을 게이트에 알려줍니다",
     "cli.cycle.stem": "set 할 Cycle-Stem",
     "cli.cycle.create": "Phase 00 뼈대를 만든 뒤 stem 을 선언합니다",

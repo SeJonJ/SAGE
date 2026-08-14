@@ -51,8 +51,6 @@ KOREAN_JUDGEMENT_DEBT = frozenset({
     "override_audit._repo_id",
     "override_audit.grants_path",
     "override_audit.grant",
-    "checklist_contract.unsafe_glob",           # hook 게이트
-    "checklist_contract.checklist_target_issues",
 })
 
 

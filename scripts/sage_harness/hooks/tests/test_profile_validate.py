@@ -181,7 +181,8 @@ class TestProfileSemantic(unittest.TestCase):
                 with mock.patch.object(profile_validate, "_schema_issues", return_value=[]):
                     issues = sevs({"checklist_scan_targets": value})
                 self.assertEqual(severity_of(issues), "FAIL")
-                self.assertTrue(any(isinstance(message, str) and "checklist_scan_targets" in message
+                self.assertTrue(any(isinstance(message, dict)
+                                    and message.get("code", "").startswith("checklist_contract.")
                                     for _severity, message in issues))
 
     def test_non_mapping_risk_type_has_one_semantic_owner(self):

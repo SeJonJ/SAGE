@@ -135,6 +135,21 @@ FRAGMENTS = {
     "hook.context.snapshot_bytes_range": "context_management.compaction.max_snapshot_bytes 는 {minimum}..{maximum} 정수여야 합니다.",
     "hook.feedback.git_timeout": "git ls-files 가 시간 안에 끝나지 않았습니다 ({root})",
     "hook.feedback.git_failed": "git ls-files 를 실행하지 못했습니다 ({root})",
+
+    # checklist_contract 판정(code+arguments) 렌더. hook_runtime._overlay_say 가 이 FRAGMENTS 를
+    # `hook.<code>` 로 조회한다 — CLI(sage/i18n)도 같은 code 를 `cli.<code>` 로 별도 등록한다.
+    "hook.checklist_contract.glob_empty": "glob은 비어있지 않은 문자열이어야 함",
+    "hook.checklist_contract.glob_too_long": "glob은 512자 이하여야 함",
+    "hook.checklist_contract.glob_control_chars": "glob에 제어문자나 줄바꿈을 사용할 수 없음",
+    "hook.checklist_contract.glob_absolute_path": "glob은 POSIX/Windows 절대·rooted·drive-relative 경로일 수 없음",
+    "hook.checklist_contract.glob_dotdot": "glob에 '..' 경로 세그먼트를 사용할 수 없음",
+    "hook.checklist_contract.targets_not_list": "checklist_scan_targets 는 리스트여야 함",
+    "hook.checklist_contract.target_not_mapping": "{where} 는 label/glob 매핑이어야 함",
+    "hook.checklist_contract.target_keys_not_string": "{where} 키는 문자열이어야 함",
+    "hook.checklist_contract.target_unknown_keys": "{where} 에 미지 키 {unknown}; label/glob/is_impl 만 허용",
+    "hook.checklist_contract.target_label_invalid": "{where}.label 은 1..80자의 단일행 문자열이어야 함",
+    "hook.checklist_contract.target_glob_invalid": "{where}.glob: {reason}",
+    "hook.checklist_contract.target_is_impl_not_bool": "{where}.is_impl 은 bool이어야 함",
     "hook.feedback.git_exit": "git ls-files 가 exit {code} 로 끝났습니다",
     "hook.feedback.unreadable_file": "추적 파일을 읽지 못했습니다 ({path}) — 마커 없음이 아니라 알 수 없음입니다",
 
