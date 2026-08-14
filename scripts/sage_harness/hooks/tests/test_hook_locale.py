@@ -41,6 +41,53 @@ def _emitted_keys():
     return keys
 
 
+# 이 모듈들의 `_diagnostic(...)` code 만 hook 자체 catalog(messages.py 의 _i18n.tr)로 렌더된다.
+# loop_audit·fast_cycle_audit 도 같은 `_diagnostic()` 패턴을 쓰지만 그 진단은 CLI(sage.i18n,
+# `cli.<code>`)에서만 소비된다 — hook_runtime.py 가 직접 부르지 않는다(retro/cycle 배치에서
+# 확인). 여기 없는 모듈의 code 를 hook catalog 에 요구하면 안 된다. 새 모듈이 hook 게이트에서
+# 직접 렌더되기 시작하면(예: 이후 배치의 checklist_contract) 이 튜플에 추가한다.
+_HOOK_RENDERED_DIAGNOSTIC_MODULES = ("cycle_state.py",)
+
+
+def _diagnostic_keys():
+    """`_HOOK_RENDERED_DIAGNOSTIC_MODULES` 의 `_diagnostic("literal", ...)` 호출에서 code 를 모은다.
+
+    이 code 들은 게이트 표를 거치지 않고 `_i18n.tr(language, diagnostic["code"],
+    **diagnostic["arguments"])` 로 직접 렌더된다(sage.diagnostics 를 import 할 수 없는 hook
+    runtime 이 code+arguments dict 로 진단을 올리는 공통 패턴, retro 배치의 loop_audit
+    이관에서 시작됐다). `diagnostic["code"]` 는 런타임 값이라 messages.py 만 봐서는 무엇이
+    나가는지 알 수 없고, code 리터럴 자체를 아는 유일한 자리는 이 `_diagnostic(...)` 호출부뿐이다.
+    """
+    keys = set()
+    for name in _HOOK_RENDERED_DIAGNOSTIC_MODULES:
+        tree = ast.parse((RUNTIME / name).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id == "_diagnostic" and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and isinstance(node.args[0].value, str)):
+                keys.add(node.args[0].value)
+    return keys
+
+
+def _direct_tr_keys():
+    """messages.py 가 게이트 표 밖에서 `_i18n.tr(language, "literal", ...)` 로 직접 부르는 key.
+
+    `cycle_declaration_ignored` 같은 진단-래핑 문장이 여기 해당한다 — 진단 자체(code+arguments)는
+    `_diagnostic_keys()` 가 잡고, 그걸 감싸는 고정 문장은 여기서 리터럴로 잡힌다.
+    """
+    tree = ast.parse(MESSAGES.read_text(encoding="utf-8"))
+    keys = set()
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "tr"
+                and isinstance(node.func.value, ast.Name) and node.func.value.id == "_i18n"
+                and len(node.args) >= 2 and isinstance(node.args[1], ast.Constant)
+                and isinstance(node.args[1].value, str)):
+            keys.add(node.args[1].value)
+    return keys
+
+
 class TestRuntimeIndependence(unittest.TestCase):
     def test_locale_imports_without_the_engine_package(self):
         """`sage` import 를 실패하게 만든 상태에서도 locale 이 살아야 한다."""
@@ -107,8 +154,12 @@ class TestCatalogParity(unittest.TestCase):
             missing = sorted(emitted - set(CATALOGS[language]))
             self.assertEqual(missing, [], f"{language} catalog 에 없는 emit key: {missing}")
 
-    def test_exported_key_set_matches_the_gate_table(self):
-        self.assertEqual(set(HOOK_MESSAGE_KEYS), _emitted_keys())
+    def test_exported_key_set_matches_actual_usage(self):
+        """catalog 의 모든 key 는 실제로 나가는 경로(게이트 표 · 진단 code · 직접 tr 호출)
+        중 하나에 있어야 한다 — 아무도 안 부르는 죽은 key 나, 등록 안 된 채 나가는 key 가
+        조용히 남으면 안 된다."""
+        self.assertEqual(set(HOOK_MESSAGE_KEYS),
+                         _emitted_keys() | _diagnostic_keys() | _direct_tr_keys())
 
 
 class TestFallback(unittest.TestCase):
@@ -165,7 +216,7 @@ class TestDecisionIndependence(unittest.TestCase):
 
     def test_only_the_sentence_differs_between_locales(self):
         import messages
-        for key in sorted(HOOK_MESSAGE_KEYS):
+        for key in sorted(_emitted_keys()):
             decision = self._decision(key)
             before = dict(decision)
             rendered = {lang: messages.gate_text(decision, {}, "claude", lang)
@@ -175,7 +226,7 @@ class TestDecisionIndependence(unittest.TestCase):
 
     def test_severity_tag_and_exit_are_locale_invariant(self):
         import messages
-        for key in sorted(HOOK_MESSAGE_KEYS):
+        for key in sorted(_emitted_keys()):
             decision = self._decision(key)
             tags = set()
             for lang in ("ko", "en"):
@@ -215,7 +266,7 @@ class TestEnglishRenderHasNoKoreanLeftovers(unittest.TestCase):
     def test_no_message_key_renders_korean_in_english(self):
         offenders = []
         import messages
-        for key in sorted(HOOK_MESSAGE_KEYS):
+        for key in sorted(_emitted_keys()):
             for runtime in ("claude", "codex"):
                 decision = {"message_key": key, "status": _status_of(key), "risk": "L2",
                             "reason": "", "file_short": "a.src", "missing_phases": ["01"],

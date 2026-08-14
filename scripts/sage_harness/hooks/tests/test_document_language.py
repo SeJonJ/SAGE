@@ -82,7 +82,7 @@ class TestDeclarationRecord(unittest.TestCase):
 
     def test_absent_declaration_is_not_an_error(self):
         record = cs.read_declaration_record(self._root())
-        self.assertEqual((record.stem, record.document_language, record.error), ("", None, ""))
+        self.assertEqual((record.stem, record.document_language, record.error), ("", None, None))
         self.assertFalse(record.legacy)
 
     def test_v2_round_trip_carries_the_language(self):
@@ -109,9 +109,9 @@ class TestDeclarationRecord(unittest.TestCase):
         root = self._root()
         Path(root, ".sage", "cycle.json").write_text(
             json.dumps({"version": 1, "cycle_stem": "demo"}), encoding="utf-8")
-        self.assertEqual(cs.read_declaration(root), ("demo", ""))
+        self.assertEqual(cs.read_declaration(root), ("demo", None))
         cs.write_declaration(root, "demo", document_language="ko")
-        self.assertEqual(cs.read_declaration(root), ("demo", ""))
+        self.assertEqual(cs.read_declaration(root), ("demo", None))
 
     def test_invalid_language_is_an_error_not_a_fallback(self):
         import json

@@ -48,9 +48,6 @@ CLI_CONSUMED_RUNTIME_MODULES = ("loop_audit", "fast_cycle_audit", "cycle_state",
 # 아직 완성 한국어 문장을 돌려주는 runtime 함수. catalog 부채와 같은 규칙 — **정확한 집합**이고
 # 해소하면 반드시 지운다. 해당 명령 배치에서 비운다.
 KOREAN_JUDGEMENT_DEBT = frozenset({
-    "cycle_state.read_declaration",             # sage cycle / fast-cycle 화면
-    "cycle_state.read_declaration_record",
-    "cycle_state.write_declaration",
     "override_audit.state_home",                # sage override 화면
     "override_audit._probe_gitdir",
     "override_audit._gitdir",

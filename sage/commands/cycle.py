@@ -13,7 +13,8 @@ from pathlib import Path
 import yaml
 
 from sage import _resources
-from sage.i18n import language_of, tr
+from sage.diagnostics import Diagnostic
+from sage.i18n import exception_text, language_of, render_issue, tr
 
 _ACTIONS = ("set", "show", "clear")
 _RISKS = ("L1", "L2", "L3")
@@ -21,7 +22,12 @@ _GLOB_MAGIC = re.compile(r"[*?[]")
 
 
 class CycleUsageError(ValueError):
-    """User-facing cycle command contract failure."""
+    """User-facing cycle command contract failure. Carries a language-neutral Diagnostic —
+    rendered at the catch site via exception_text(), never a pre-formatted sentence."""
+
+    def __init__(self, diagnostic):
+        self.diagnostic = diagnostic
+        super().__init__(str(diagnostic))
 
 
 def register(sub, context):
@@ -61,7 +67,7 @@ def _load_fast_cycle_audit():
     return fast_cycle_audit
 
 
-def _active_fast_runs(root):
+def _active_fast_runs(root, language=None):
     """Return active Fast runs; unreadable audit is a blocking integrity error."""
     audit = _load_fast_cycle_audit()
     path = audit.audit_path(root)
@@ -70,7 +76,10 @@ def _active_fast_runs(root):
     summary = audit.audit_summary(root)
     issues = audit.integrity_issues(root)
     if not summary.get("file_ok") or issues:
-        return [], "Fast Cycle audit 무결성 실패: " + "; ".join(issues[:3] or summary.get("file_issues", [])[:3])
+        detail = issues[:3] or [{"code": "fast_cycle_audit.damaged", "arguments": {"detail": item}, "evidence": ""}
+                                for item in summary.get("file_issues", [])[:3]]
+        rendered = "; ".join(render_issue(language, item) for item in detail)
+        return [], tr(language, "cli.cycle.msg30", rendered=rendered)
     return [(run_id, summary["runs"][run_id]) for run_id in summary.get("active", [])], None
 
 
@@ -81,9 +90,7 @@ def _resolve_root(cs, explicit):
     root = cs.find_project_root(os.getcwd())
     if root is None:
         raise cs.DeclarationRootError(
-            f"여기는 SAGE 프로젝트가 아닙니다 — '{cs.MARKER_REL}' 를 가진 상위 디렉터리를 "
-            f"찾지 못했습니다 (cwd: {os.getcwd()}).\n"
-            f"→ SAGE 설치본 안에서 실행하거나 `--root <경로>` 로 지정하세요.")
+            Diagnostic("cycle.not_a_sage_project", marker_rel=cs.MARKER_REL, cwd=os.getcwd()))
     return root
 
 
@@ -105,18 +112,16 @@ def _profile_missing(root):
                    for ext in ("yaml", "json"))
 
 
-def _warnings(root, path):
+def _warnings(root, path, language=None):
     lines = []
     ignored = _ignored_by_git(root, path)
     if ignored is False:
-        lines.append("⚠️  이 파일이 git 에 무시되지 않습니다 — 커밋되면 남의 clone 에서 "
-                     "엉뚱한 사이클에 결속됩니다.")
-        lines.append("    → `sage install --force` 로 .gitignore 관리 블록을 복구하세요.")
+        lines.append(tr(language, "cli.cycle.warn_not_gitignored"))
+        lines.append(tr(language, "cli.cycle.warn_not_gitignored_fix"))
     elif ignored is None:
-        lines.append("ℹ️  git 무시 여부를 확인하지 못했습니다 (저장소가 아니거나 git 부재).")
+        lines.append(tr(language, "cli.cycle.warn_git_unknown"))
     if _profile_missing(root):
-        lines.append("⚠️  sage/project-profile.{yaml,json} 이 없습니다 — 설치는 있으나 게이트가 "
-                     "아직 이 선언을 읽지 않습니다.")
+        lines.append(tr(language, "cli.cycle.warn_profile_missing"))
     return lines
 
 
@@ -124,59 +129,57 @@ def _env_stem():
     return (os.environ.get("SAGE_CYCLE_STEM") or "").strip()
 
 
-def _location(root, path):
-    return [f"   프로젝트 루트: {root}", f"   선언 파일:     {path}"]
+def _location(root, path, language=None):
+    return [tr(language, "cli.cycle.location_root", root=root),
+            tr(language, "cli.cycle.location_declaration", path=path)]
 
 
-def _syntax_issue(args):
+def _syntax_issue(args, language=None):
     action = args.action
     if action == "use":
-        return ("`use` 는 `set` 으로 이름이 바뀌었습니다.\n"
-                f"   → sage cycle set {args.stem or '<stem>'}")
+        return tr(language, "cli.cycle.syntax_use_renamed", stem=args.stem or "<stem>")
     if action not in _ACTIONS:
-        return (f"알 수 없는 동작입니다: {action!r}\n"
-                "   → sage cycle set <stem> | sage cycle show | sage cycle clear")
+        return tr(language, "cli.cycle.syntax_unknown_action", action=repr(action))
     if action == "set":
         if not args.stem:
-            return "set 에는 stem 이 필요합니다.\n   → sage cycle set <stem>"
+            return tr(language, "cli.cycle.syntax_set_needs_stem")
         if args.extra:
-            return (f"set 은 stem 을 하나만 받습니다: {args.extra!r}\n"
-                    f"   → sage cycle set {args.stem}")
+            return tr(language, "cli.cycle.syntax_set_one_stem",
+                      extra=repr(args.extra), stem=args.stem)
         if args.risk is not None and args.risk not in _RISKS:
-            return ("--risk 는 L1|L2|L3 중 하나여야 합니다.\n"
-                    f"   → sage cycle set {args.stem} --create --risk L1|L2|L3")
+            return tr(language, "cli.cycle.syntax_bad_risk", stem=args.stem)
         if not args.create and args.risk is not None:
-            return ("--risk 는 --create 로 만들 Phase 00에 쓰는 값입니다.\n"
-                    f"   → sage cycle set {args.stem} --create --risk {args.risk}")
+            return tr(language, "cli.cycle.syntax_risk_needs_create",
+                      stem=args.stem, risk=args.risk)
         if not args.create and args.path is not None:
-            return ("--path 는 --create 와 함께만 사용할 수 있습니다.\n"
-                    f"   → sage cycle set {args.stem} --create --risk L1|L2|L3 "
-                    f"--path {args.path}")
+            return tr(language, "cli.cycle.syntax_path_needs_create",
+                      stem=args.stem, path=args.path)
         if args.create and args.risk is None:
-            return ("--create 에는 --risk 가 필요합니다.\n"
-                    f"   → sage cycle set {args.stem} --create --risk L1|L2|L3")
+            return tr(language, "cli.cycle.syntax_create_needs_risk", stem=args.stem)
         return None
     if args.stem or args.extra or args.create or args.risk is not None or args.path is not None:
-        return f"{action} 는 stem·--create·--risk·--path 를 받지 않습니다.\n   → sage cycle {action}"
+        return tr(language, "cli.cycle.syntax_extra_args_not_allowed", action=action)
     return None
 
 
 def run(args):
-    issue = _syntax_issue(args)
+    issue = _syntax_issue(args, language_of(args))
     if issue:
         print(f"⛔ [sage cycle] {issue}", file=sys.stderr)
         return 2
     cs = _load_cycle_state()
+    language = language_of(args)
     try:
         root = _resolve_root(cs, args.root)
     except cs.DeclarationRootError as exc:
-        print(f"⛔ [sage cycle] {exc}", file=sys.stderr)
+        print(f"⛔ [sage cycle] {exception_text(language, exc)}", file=sys.stderr)
         return 2
     path = cs.declaration_path(root)
     try:
-        active_fast, fast_error = _active_fast_runs(root)
+        active_fast, fast_error = _active_fast_runs(root, language)
     except Exception as exc:
-        active_fast, fast_error = [], f"Fast Cycle audit 읽기 실패({type(exc).__name__}: {exc})"
+        active_fast, fast_error = [], tr(language, "cli.cycle.msg31",
+                                         error_type=type(exc).__name__, exc=exc)
     if fast_error:
         print(f"⛔ [sage cycle] {fast_error}", file=sys.stderr)
         return 2
@@ -201,16 +204,13 @@ def run(args):
 def _normalized_stem(cs, value):
     normalized = cs.cycle_binding.normalize_stem(value)
     if normalized is None:
-        raise CycleUsageError(
-            f"cycle stem 형식 오류: {value!r} — 경로 구분자·제어문자 없이 160자 이하여야 합니다")
+        raise CycleUsageError(Diagnostic("cycle.stem_bad_chars", value=repr(value)))
     try:
         normalized.encode("utf-8")
     except UnicodeEncodeError:
-        raise CycleUsageError(
-            f"cycle stem 형식 오류: {value!r} — UTF-8로 기록할 수 있는 문자만 허용됩니다")
+        raise CycleUsageError(Diagnostic("cycle.stem_bad_encoding", value=repr(value)))
     if any(ch in normalized for ch in ("\u0085", "\u2028", "\u2029")):
-        raise CycleUsageError(
-            f"cycle stem 형식 오류: {value!r} — 줄 구분 문자는 사용할 수 없습니다")
+        raise CycleUsageError(Diagnostic("cycle.stem_bad_line_sep", value=repr(value)))
     return normalized
 
 
@@ -219,11 +219,12 @@ def _read_yaml_profile(root):
     try:
         value = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     except FileNotFoundError:
-        raise CycleUsageError(f"YAML profile 이 없습니다: {path}")
+        raise CycleUsageError(Diagnostic("cycle.yaml_profile_missing", path=path))
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-        raise CycleUsageError(f"YAML profile 을 읽지 못했습니다: {path} ({type(exc).__name__})")
+        raise CycleUsageError(Diagnostic("cycle.yaml_profile_read_failed",
+                                         path=path, error_type=type(exc).__name__))
     if not isinstance(value, dict):
-        raise CycleUsageError(f"YAML profile 최상위는 mapping 이어야 합니다: {path}")
+        raise CycleUsageError(Diagnostic("cycle.yaml_profile_not_mapping", path=path))
     return value, path
 
 
@@ -231,16 +232,14 @@ def _phase_globs(profile):
     pdca = profile.get("pdca")
     phases = pdca.get("phases") if isinstance(pdca, dict) else None
     if not isinstance(phases, list):
-        raise CycleUsageError("profile pdca.phases 는 list 여야 합니다")
+        raise CycleUsageError(Diagnostic("cycle.phases_not_list"))
     phase00_entries = [item for item in phases
                        if isinstance(item, dict) and item.get("id") == "00"]
     if len(phase00_entries) != 1:
-        raise CycleUsageError(
-            f"profile pdca.phases 에 id '00' 항목이 정확히 하나여야 합니다 "
-            f"(found {len(phase00_entries)})")
+        raise CycleUsageError(Diagnostic("cycle.phase00_count", count=len(phase00_entries)))
     phase00 = phase00_entries[0].get("glob")
     if not isinstance(phase00, str) or not phase00.strip():
-        raise CycleUsageError("profile pdca.phases id '00'의 glob 은 비어 있지 않은 문자열이어야 합니다")
+        raise CycleUsageError(Diagnostic("cycle.phase00_glob_empty"))
 
     items = []
     for item in phases:
@@ -264,28 +263,26 @@ def _load_create_profile(root):
     try:
         compiled = json.loads(Path(json_path).read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, ValueError) as exc:
-        raise CycleUsageError(
-            f"compiled profile 을 읽지 못했습니다: {json_path} ({type(exc).__name__})")
+        raise CycleUsageError(Diagnostic("cycle.compiled_profile_read_failed",
+                                         json_path=json_path, error_type=type(exc).__name__))
     if not isinstance(compiled, dict):
-        raise CycleUsageError(f"compiled profile 최상위는 mapping 이어야 합니다: {json_path}")
+        raise CycleUsageError(Diagnostic("cycle.compiled_profile_not_mapping", json_path=json_path))
     compiled00, _ = _phase_globs(compiled)
     if compiled00 != phase00:
-        raise CycleUsageError(
-            "YAML 과 compiled JSON 의 phase 00 glob 이 다릅니다.\n"
-            "   → sage generate --kind hook --write")
+        raise CycleUsageError(Diagnostic("cycle.glob_mismatch_yaml_json"))
     return phase00, all_globs, yaml_path, json_path, False
 
 
 def _canonical_rel(value):
     if not isinstance(value, str) or not value.strip():
-        raise CycleUsageError("--path 는 비어 있지 않은 프로젝트 root 상대 디렉터리여야 합니다")
+        raise CycleUsageError(Diagnostic("cycle.path_empty"))
     raw = value.strip().replace("\\", "/")
     drive, _ = ntpath.splitdrive(raw)
     if drive or os.path.isabs(raw) or ntpath.isabs(raw):
-        raise CycleUsageError(f"--path 는 프로젝트 root 상대경로여야 합니다: {value!r}")
+        raise CycleUsageError(Diagnostic("cycle.path_not_relative", value=repr(value)))
     parts = [part for part in raw.split("/") if part not in ("", ".")]
     if not parts or any(part == ".." for part in parts):
-        raise CycleUsageError(f"--path 에 '..' 또는 빈 경로를 사용할 수 없습니다: {value!r}")
+        raise CycleUsageError(Diagnostic("cycle.path_dotdot", value=repr(value)))
     return "/".join(parts)
 
 
@@ -307,9 +304,7 @@ def _derive_directory(pattern):
     else:
         literal = parts[:first_magic]
     if not literal:
-        raise CycleUsageError(
-            f"phase 00 glob 에서 생성 디렉터리를 유도할 수 없습니다: {pattern!r}\n"
-            "   → --path <프로젝트-root-상대-디렉터리> 를 지정하세요")
+        raise CycleUsageError(Diagnostic("cycle.dir_not_derivable", pattern=repr(pattern)))
     return "/".join(literal)
 
 
@@ -317,13 +312,11 @@ def _target_for(root, directory, stem, pattern, cs):
     rel_dir = _canonical_rel(directory)
     target_dir = os.path.join(root, *rel_dir.split("/"))
     if not _contained(root, target_dir):
-        raise CycleUsageError(
-            f"--path 가 symlink 를 통해 프로젝트 root 밖으로 나갑니다: {directory!r}")
+        raise CycleUsageError(Diagnostic("cycle.path_escapes_root", directory=repr(directory)))
     rel_target = f"{rel_dir}/{stem}.md"
     if not cs.cycle_binding.matches_glob(rel_target, pattern):
-        raise CycleUsageError(
-            f"생성 대상이 phase 00 glob 에 매치하지 않습니다: {rel_target!r} vs {pattern!r}\n"
-            "   → --path 에 phase 00 glob 안의 디렉터리를 지정하세요")
+        raise CycleUsageError(Diagnostic("cycle.target_glob_mismatch",
+                                         rel_target=repr(rel_target), pattern=repr(pattern)))
     return target_dir, os.path.join(target_dir, f"{stem}.md"), rel_target
 
 
@@ -484,7 +477,7 @@ def _set(cs, args, root, declaration_path):
     try:
         stem = _normalized_stem(cs, args.stem)
     except CycleUsageError as exc:
-        print(f"⛔ [sage cycle] {exc}", file=sys.stderr)
+        print(f"⛔ [sage cycle] {exception_text(language_of(args), exc)}", file=sys.stderr)
         return 2
     if args.create:
         return _create_and_set(cs, args, root, declaration_path, stem)
@@ -501,7 +494,7 @@ def _set(cs, args, root, declaration_path):
             print(tr(language_of(args), "cli.cycle.msg05"))
         print(f"   profile:       {profile_path}")
     except CycleUsageError as exc:
-        print(tr(language_of(args), "cli.cycle.msg06", exc=exc))
+        print(tr(language_of(args), "cli.cycle.msg06", exc=exception_text(language_of(args), exc)))
         print(tr(language_of(args), "cli.cycle.msg07"))
 
     try:
@@ -518,7 +511,7 @@ def _create_and_set(cs, args, root, declaration_path, stem):
         directory = args.path if args.path is not None else _derive_directory(phase00)
         target_dir, target, rel_target = _target_for(root, directory, stem, phase00, cs)
     except CycleUsageError as exc:
-        print(f"⛔ [sage cycle] {exc}", file=sys.stderr)
+        print(f"⛔ [sage cycle] {exception_text(language_of(args), exc)}", file=sys.stderr)
         return 2
 
     collisions = _same_basename_candidates(root, phase00, stem, target)
@@ -541,7 +534,7 @@ def _create_and_set(cs, args, root, declaration_path, stem):
     try:
         os.makedirs(target_dir, exist_ok=True)
         if not _contained(root, target_dir):
-            raise CycleUsageError("생성 디렉터리가 프로젝트 root 밖으로 바뀌었습니다")
+            raise CycleUsageError(Diagnostic("cycle.dir_escapes_root"))
         _write_phase00_exclusive(
             target,
             _phase00_skeleton(stem, args.risk, _document_language(cs, args)).encode("utf-8"))
@@ -574,11 +567,11 @@ def _create_and_set(cs, args, root, declaration_path, stem):
 def _report_set(cs, root, path, stem, language=None):
     effective, origin, _error = cs.resolve_stem(root)
     print(tr(language, "cli.cycle.msg20", stem=stem))
-    for line in _location(root, path):
+    for line in _location(root, path, language):
         print(line)
     if origin == "env":
         print(tr(language, "cli.cycle.msg21", effective=effective))
-    for line in _warnings(root, path):
+    for line in _warnings(root, path, language):
         print(line)
     print(tr(language, "cli.cycle.msg22"))
     return 0
@@ -602,10 +595,10 @@ def _clear(cs, root, path, language=None):
 def _show(cs, root, path, language=None):
     stem, origin, error = cs.resolve_stem(root)
     print("== sage cycle show ==")
-    for line in _location(root, path):
+    for line in _location(root, path, language):
         print(line)
     if error:
-        print(tr(language, "cli.cycle.msg25", error=error))
+        print(tr(language, "cli.cycle.msg25", error=render_issue(language, error)))
         print(tr(language, "cli.cycle.msg26"))
     if not stem:
         print(tr(language, "cli.cycle.msg27"))
@@ -615,6 +608,6 @@ def _show(cs, root, path, language=None):
         file_stem, _ = cs.read_declaration(root)
         if origin == "env" and file_stem:
             print(tr(language, "cli.cycle.msg29", file_stem=file_stem))
-    for line in _warnings(root, path):
+    for line in _warnings(root, path, language):
         print(line)
     return 0

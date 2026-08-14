@@ -119,17 +119,20 @@ def _cycle_origin_label(decision, language=DEFAULT_LANGUAGE):
     return _i18n.frag(language, key)
 
 
-def _declaration_notice(decision, runtime):
+def _declaration_notice(decision, runtime, language=DEFAULT_LANGUAGE):
     """선언 파일이 있는데 읽지 못한 사실을 알린다 — degrade 는 하되 조용하지는 않게.
 
-    부재·손상·스키마 위반이 전부 `""` 로 뭉개지면 파일을 1바이트만 잘라도 완결 사이클 차단이
+    부재·손상·스키마 위반이 전부 빈 값으로 뭉개지면 파일을 1바이트만 잘라도 완결 사이클 차단이
     사라지고 아무도 모른다. 이 프로젝트가 반복해서 반증한 "부재는 안전 방향" 의 자리다.
+
+    `cycle_state` 는 sage.i18n 을 import 할 수 없어(엔진 없이 단독 실행) code+arguments 진단을
+    dict 로 올린다 — 여기서 이 모듈의 catalog(`_i18n.tr`)로 렌더한다.
     """
-    error = decision.get("cycle_declaration_error")
-    if not error:
+    diagnostic = decision.get("cycle_declaration_error")
+    if not diagnostic:
         return ""
-    core = (f"[사이클 선언 무시됨] {error} — 선언 없음으로 진행합니다. "
-            f"`sage cycle set <stem>` 으로 다시 쓰거나 `sage cycle clear` 로 지우세요.")
+    detail = _i18n.tr(language, diagnostic["code"], **diagnostic["arguments"])
+    core = _i18n.tr(language, "cycle_declaration_ignored", detail=detail)
     return core if runtime == "codex" else f"⚠️  {core}"
 
 
@@ -252,7 +255,7 @@ def gate_text(decision, profile, runtime, language=DEFAULT_LANGUAGE):
     rec = _gate_record(decision, profile, language)
     # 선언 손상 알림은 판정과 독립이다 — 기본 설정의 L1/L0 통과는 message_key 가 없어 줄 자체가
     # 안 생기는데, 거기가 바로 깨진 선언이 조용히 무시되는 자리다. 판정 줄이 없으면 이 알림만 내보낸다.
-    notice = _declaration_notice(decision, runtime)
+    notice = _declaration_notice(decision, runtime, language)
     if not rec:
         return notice
     sev, scope, show_reason, hint = rec

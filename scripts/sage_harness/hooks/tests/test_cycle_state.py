@@ -113,26 +113,26 @@ class TestReadWriteClear(unittest.TestCase):
 
     def test_round_trip(self):
         cs.write_declaration(self.root, STEM, document_language="ko")
-        self.assertEqual(cs.read_declaration(self.root), (STEM, ""))
+        self.assertEqual(cs.read_declaration(self.root), (STEM, None))
 
     def test_absent_declaration_is_not_an_error(self):
-        self.assertEqual(cs.read_declaration(self.root), ("", ""))
+        self.assertEqual(cs.read_declaration(self.root), ("", None))
 
     def test_clear_reports_whether_it_existed(self):
         cs.write_declaration(self.root, STEM, document_language="ko")
         self.assertTrue(cs.clear_declaration(self.root))
         self.assertFalse(cs.clear_declaration(self.root))
-        self.assertEqual(cs.read_declaration(self.root), ("", ""))
+        self.assertEqual(cs.read_declaration(self.root), ("", None))
 
     def test_malformed_stems_are_refused_at_write_time(self):
         # 게이트가 문서 부재로 걸러주긴 하지만, 경로 구분자·제어문자는 형식 자체가 틀렸다.
         for bad in ("", "   ", "a/b", "a\\b", "..", ".", "x\ty", "z" * 161):
             with self.assertRaises(ValueError, msg=bad):
                 cs.write_declaration(self.root, bad, document_language="ko")
-        self.assertEqual(cs.read_declaration(self.root), ("", ""))
+        self.assertEqual(cs.read_declaration(self.root), ("", None))
 
     def test_corruption_is_reported_not_silently_absent(self):
-        """부재와 손상이 똑같이 `""` 로 뭉개지면 파일을 1바이트만 잘라도 선언이 조용히 사라진다.
+        """부재와 손상이 똑같이 `None` 으로 뭉개지면 파일을 1바이트만 잘라도 선언이 조용히 사라진다.
 
         선언이 차단 근거로 승격됐으므로(완결 사이클) 그 침묵이 곧 우회 레버다.
         """
@@ -146,7 +146,7 @@ class TestReadWriteClear(unittest.TestCase):
             stem, error = cs.read_declaration(self.root)
             self.assertEqual(stem, "", label)
             self.assertTrue(error, label)
-            self.assertIn(path, error, label)
+            self.assertEqual(error["arguments"].get("path"), path, label)
 
     def test_interrupted_write_keeps_the_previous_declaration(self):
         """원자적 쓰기 — 직접 `open(w)` 으로 되돌리면 이 갈래에서 선언이 사라진다.
@@ -158,7 +158,7 @@ class TestReadWriteClear(unittest.TestCase):
         with mock.patch.object(os, "replace", side_effect=OSError("boom")):
             with self.assertRaises(OSError):
                 cs.write_declaration(self.root, "other-cycle", document_language="ko")
-        self.assertEqual(cs.read_declaration(self.root), (STEM, ""))
+        self.assertEqual(cs.read_declaration(self.root), (STEM, None))
         leftovers = [n for n in os.listdir(os.path.join(self.root, ".sage")) if n != "cycle.json"]
         self.assertEqual(leftovers, [])          # 실패한 임시 파일이 남으면 다음 진단을 흐린다
 
@@ -166,7 +166,7 @@ class TestReadWriteClear(unittest.TestCase):
         # 고정 tmp 이름으로 되돌리면 크래시가 남긴 잔해가 이후 모든 선언을 영구히 막는다.
         os.makedirs(os.path.join(self.root, ".sage", "cycle.json.tmp"))
         cs.write_declaration(self.root, STEM, document_language="ko")
-        self.assertEqual(cs.read_declaration(self.root), (STEM, ""))
+        self.assertEqual(cs.read_declaration(self.root), (STEM, None))
 
 
 class TestPrecedenceAndIsolation(unittest.TestCase):
@@ -178,14 +178,14 @@ class TestPrecedenceAndIsolation(unittest.TestCase):
         self.root = _mark_project(os.path.realpath(self.tmp.name))
 
     def test_env_beats_file_beats_nothing(self):
-        self.assertEqual(cs.resolve_stem(self.root, environ={}), ("", "", ""))
+        self.assertEqual(cs.resolve_stem(self.root, environ={}), ("", "", None))
         cs.write_declaration(self.root, STEM, document_language="ko")
-        self.assertEqual(cs.resolve_stem(self.root, environ={}), (STEM, "cli", ""))
+        self.assertEqual(cs.resolve_stem(self.root, environ={}), (STEM, "cli", None))
         self.assertEqual(cs.resolve_stem(self.root, environ={"SAGE_CYCLE_STEM": "from-env"}),
-                         ("from-env", "env", ""))
+                         ("from-env", "env", None))
         cs.clear_declaration(self.root)
         self.assertEqual(cs.resolve_stem(self.root, environ={"SAGE_CYCLE_STEM": "from-env"}),
-                         ("from-env", "env", ""))
+                         ("from-env", "env", None))
 
     def test_env_winning_still_reports_a_corrupt_file(self):
         # 지금 판정에 안 쓰였을 뿐 깨진 파일은 남아 있고, env 가 사라지는 순간 조용히 발화한다.
@@ -209,7 +209,7 @@ class TestPrecedenceAndIsolation(unittest.TestCase):
     def test_one_projects_declaration_does_not_reach_another(self):
         other = _mark_project(os.path.realpath(tempfile.mkdtemp()))
         cs.write_declaration(self.root, STEM, document_language="ko")
-        self.assertEqual(cs.resolve_stem(other, environ={}), ("", "", ""))
+        self.assertEqual(cs.resolve_stem(other, environ={}), ("", "", None))
 
 
 class TestDeclarationFileIsGuarded(unittest.TestCase):
@@ -303,7 +303,9 @@ class TestCorruptionIsSurfaced(unittest.TestCase):
     """T8 양방향 — degrade 하되(BLOCK 아님) 조용하지는 않게."""
 
     def _decision(self, **kw):
-        return {"status": "ok", "exit_code": 0, "cycle_declaration_error": "/p/.sage/cycle.json: 손상",
+        return {"status": "ok", "exit_code": 0,
+                "cycle_declaration_error": {"code": "cycle_state.json_invalid",
+                                            "arguments": {"path": "/p/.sage/cycle.json"}, "evidence": ""},
                 "file_short": "a.java", **kw}
 
     def test_a_pass_with_no_gate_line_still_carries_the_notice(self):

@@ -34,7 +34,22 @@ LEGACY_DOCUMENT_LANGUAGE = "ko"
 
 
 class DeclarationRootError(RuntimeError):
-    """SAGE 표식이 없는 곳에서 선언을 요구했다 — 조용히 다른 자리에 쓰지 않는다."""
+    """SAGE 표식이 없는 곳에서 선언을 요구했다 — 조용히 다른 자리에 쓰지 않는다.
+
+    CLI(sage/commands/cycle.py)에서만 생성된다. `sage.diagnostics.Diagnostic` 을 담아 두면
+    호출부가 exception_text() 로 원하는 언어로 렌더할 수 있다 — 이 클래스 자체는 그 타입을
+    몰라도(hook runtime 은 sage.diagnostics 를 import 할 수 없음) 문제없다."""
+
+    def __init__(self, diagnostic):
+        self.diagnostic = diagnostic
+        super().__init__(str(diagnostic))
+
+
+def _diagnostic(code, **arguments):
+    """언어 중립 진단(code+arguments). hook runtime 은 sage.diagnostics 를 import 할 수 없어
+    (엔진 없이 소비 프로젝트에서 단독 실행되어야 하므로) 같은 모양의 plain dict 로 올린다 —
+    CLI 는 sage.diagnostics.render() 로, hook 은 자체 i18n.tr() 로 각자 렌더한다."""
+    return {"code": code, "arguments": arguments, "evidence": ""}
 
 
 def find_project_root(start=None):
@@ -60,13 +75,13 @@ def declaration_path(root):
 
 
 def read_declaration(root):
-    """선언 stem 을 읽어 (stem, error) 로 돌려준다.
+    """선언 stem 을 읽어 (stem, diagnostic) 로 돌려준다.
 
-    - 부재: `("", "")` — 선언한 적이 없는 정상 상태다
-    - 손상·스키마 위반: `("", "<사유>")` — **부재와 갈라서 돌려준다**
+    - 부재: `("", None)` — 선언한 적이 없는 정상 상태다
+    - 손상·스키마 위반: `("", <진단>)` — **부재와 갈라서 돌려준다** (code+arguments, 언어 중립)
 
-    호출부는 error 를 degrade 로 처리하되(파일 하나 깨진 것으로 모든 편집을 멈추지 않는다)
-    반드시 표면화해야 한다. 부재·손상·스키마 위반이 전부 `""` 로 뭉개지면 파일을 1바이트만
+    호출부는 진단을 degrade 로 처리하되(파일 하나 깨진 것으로 모든 편집을 멈추지 않는다)
+    반드시 표면화해야 한다. 부재·손상·스키마 위반이 전부 `None` 으로 뭉개지면 파일을 1바이트만
     잘라도 선언이 조용히 사라지고, 그게 곧 우회 레버가 된다.
     """
     path = declaration_path(root)
@@ -74,19 +89,19 @@ def read_declaration(root):
         with open(path, encoding="utf-8") as handle:
             raw = handle.read()
     except FileNotFoundError:
-        return "", ""
+        return "", None
     except (OSError, UnicodeDecodeError) as exc:
-        return "", f"{path}: 읽기 실패 ({type(exc).__name__})"
+        return "", _diagnostic("cycle_state.read_failed", path=path, error_type=type(exc).__name__)
     try:
         data = json.loads(raw)
     except ValueError:
-        return "", f"{path}: JSON 파싱 실패 — 손상됐거나 직접 편집됨"
+        return "", _diagnostic("cycle_state.json_invalid", path=path)
     if not isinstance(data, dict):
-        return "", f"{path}: 최상위가 객체가 아님"
+        return "", _diagnostic("cycle_state.not_object", path=path)
     stem = cycle_binding.normalize_stem(data.get("cycle_stem"))
     if stem is None:
-        return "", f"{path}: cycle_stem 값이 없거나 유효하지 않음"
-    return stem, ""
+        return "", _diagnostic("cycle_state.stem_invalid", path=path)
+    return stem, None
 
 
 class CycleDeclarationRead:
@@ -100,7 +115,7 @@ class CycleDeclarationRead:
     __slots__ = ("stem", "document_language", "schema_version", "legacy", "error")
 
     def __init__(self, stem="", document_language=None, schema_version=None,
-                 legacy=False, error=""):
+                 legacy=False, error=None):
         self.stem = stem
         self.document_language = document_language
         self.schema_version = schema_version
@@ -130,7 +145,8 @@ def read_declaration_record(root):
         with open(path, encoding="utf-8") as handle:
             data = json.loads(handle.read())
     except (OSError, UnicodeDecodeError, ValueError) as exc:
-        return CycleDeclarationRead(error=f"{path}: 재읽기 실패 ({type(exc).__name__})")
+        return CycleDeclarationRead(
+            error=_diagnostic("cycle_state.reread_failed", path=path, error_type=type(exc).__name__))
     version = data.get("version")
     language = data.get("document_language")
     if version != SCHEMA_VERSION or language is None:
@@ -138,7 +154,7 @@ def read_declaration_record(root):
     if language not in DOCUMENT_LANGUAGES:
         return CycleDeclarationRead(
             stem=stem, schema_version=version,
-            error=f"{path}: document_language 값이 유효하지 않음 ({language!r})")
+            error=_diagnostic("cycle_state.language_invalid", path=path, language=language))
     return CycleDeclarationRead(stem=stem, document_language=language,
                                 schema_version=version)
 
@@ -149,13 +165,17 @@ def write_declaration(root, stem, now=None, *, document_language):
     `mkstemp` + `os.replace`: 같은 디렉터리에 온전한 파일을 만든 뒤 한 번에 갈아끼운다.
     직접 `open(w)` 로 쓰면 쓰는 도중 중단된 순간 게이트가 읽는 자리에 잘린 파일이 남는다.
     """
+    # 두 ValueError 는 방어적 재검증이다 — CLI 호출부(sage cycle set/create)는 stem 을
+    # cycle_binding.normalize_stem 으로, document_language 를 DOCUMENT_LANGUAGES 로 이미
+    # 검증한 뒤에만 여기 도달한다. 화면 문구가 아니라 잘못된 프로그램 호출을 잡는 내부 계약
+    # 위반이라 영어로 직접 고정한다(언어 배선 불필요, hook shim 주석과 같은 처리).
     normalized = cycle_binding.normalize_stem(stem)
     if normalized is None:
-        raise ValueError(f"cycle stem 형식 오류: {stem!r}")
+        raise ValueError(f"invalid cycle stem format: {stem!r}")
     target = declaration_path(root)
     os.makedirs(os.path.dirname(target), exist_ok=True)
     if document_language not in DOCUMENT_LANGUAGES:
-        raise ValueError(f"document_language 형식 오류: {document_language!r}")
+        raise ValueError(f"invalid document_language format: {document_language!r}")
     payload = json.dumps({"version": SCHEMA_VERSION, "cycle_stem": normalized,
                           "document_language": document_language,
                           "declared_at": time.strftime(

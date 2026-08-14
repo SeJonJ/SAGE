@@ -222,14 +222,21 @@ def audit_summary(root):
     }
 
 
+def _diagnostic(code, **arguments):
+    """언어 중립 진단(code+arguments). 이 모듈은 sage.diagnostics 를 import 할 수 없어
+    (엔진 없이 소비 프로젝트에서 단독 실행되어야 하므로) 같은 모양의 plain dict 로 올린다 —
+    CLI 호출부(cycle.py/fast_cycle.py)가 각자 필요한 언어로 렌더한다."""
+    return {"code": code, "arguments": arguments, "evidence": ""}
+
+
 def integrity_issues(root):
     summary = audit_summary(root)
-    issues = [f"fast cycle audit damaged: {item}" for item in summary["file_issues"]]
+    issues = [_diagnostic("fast_cycle_audit.damaged", detail=item) for item in summary["file_issues"]]
     for rid, state in summary["runs"].items():
         if not state["clean"]:
-            issues.append(f"run {rid}: duplicate or orphan state transition")
+            issues.append(_diagnostic("fast_cycle_audit.duplicate_or_orphan", run_id=rid))
         if state["seq_ok"] is False:
-            issues.append(f"run {rid}: seq is not continuous")
+            issues.append(_diagnostic("fast_cycle_audit.seq_broken", run_id=rid))
         if state["chain_ok"] is False:
-            issues.append(f"run {rid}: strict hash-chain is invalid")
+            issues.append(_diagnostic("fast_cycle_audit.chain_invalid", run_id=rid))
     return issues

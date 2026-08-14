@@ -20,7 +20,7 @@ from sage.fast_cycle_contract import (
 )
 from sage.profile_layers import load_profile_layers
 from sage.profile_validate import validate_profile
-from sage.i18n import english_text, language_of, tr
+from sage.i18n import english_text, language_of, render_issue, tr
 
 
 def _positive(value):
@@ -208,7 +208,8 @@ def _run_open(args):
         cycle_state = _runtime("cycle_state")
         stem, _origin, state_error = cycle_state.resolve_stem(root)
         if state_error or stem != args.stem:
-            raise ValueError(f"active cycle stem must be {args.stem!r}; active={stem!r}, error={state_error}")
+            error_text = english_text(state_error) if state_error else None
+            raise ValueError(f"active cycle stem must be {args.stem!r}; active={stem!r}, error={error_text}")
         path = _stem_doc(root, profile, "00", args.stem)
         audit = _runtime("fast_cycle_audit")
         profile_hash = _profile_hash(profile)
@@ -300,7 +301,9 @@ def _run_review(args):
         audit_issues = audit.integrity_issues(root)
         state = audit.audit_summary(root)["runs"].get(args.run_id)
         if audit_issues or not state or state.get("terminal"):
-            raise ValueError("active clean Fast run required: " + "; ".join(audit_issues[:3]))
+            # 이 표면은 표시 언어와 무관하게 영어다 — 틀이 영어면 하부 진단도 영어로 맞춘다.
+            raise ValueError("active clean Fast run required: "
+                             + "; ".join(english_text(item) for item in audit_issues[:3]))
         stem = state.get("cycle_stem")
         plan_path = _stem_doc(root, profile, "00", stem)
         content = Path(plan_path).read_text(encoding="utf-8")
@@ -502,7 +505,7 @@ def _dashboard_body(root, language=None):
     issues = audit.integrity_issues(root)
     if issues:
         body.extend(["", tr(language, "cli.fast_cycle.dashboard_integrity_heading"),
-                    *[f"- {_table(issue)}" for issue in issues]])
+                    *[f"- {_table(render_issue(language, issue))}" for issue in issues]])
     return "\n".join(body) + "\n"
 
 

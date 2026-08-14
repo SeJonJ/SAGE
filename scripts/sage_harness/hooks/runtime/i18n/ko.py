@@ -51,6 +51,17 @@ MESSAGES = {
     "ok_l2": "plan 확인",
     "ok_l1": "결속 확인",
     "ok_l0": "결속 확인",
+
+    # cycle_state 판정(code+arguments) 렌더. CLI(sage/i18n)도 같은 code 를 `cli.<code>` 로
+    # 별도 등록한다 — 두 catalog 가 같은 code 를 각자 렌더(진단 계약은 code, 문장은 도메인 소유).
+    "cycle_state.read_failed": "{path}: 읽기 실패 ({error_type})",
+    "cycle_state.json_invalid": "{path}: JSON 파싱 실패 — 손상됐거나 직접 편집됨",
+    "cycle_state.not_object": "{path}: 최상위가 객체가 아님",
+    "cycle_state.stem_invalid": "{path}: cycle_stem 값이 없거나 유효하지 않음",
+    "cycle_state.reread_failed": "{path}: 재읽기 실패 ({error_type})",
+    "cycle_state.language_invalid": "{path}: document_language 값이 유효하지 않음 ({language!r})",
+    "cycle_declaration_ignored": "[사이클 선언 무시됨] {detail} — 선언 없음으로 진행합니다. "
+        "`sage cycle set <stem>` 으로 다시 쓰거나 `sage cycle clear` 로 지우세요.",
 }
 
 # 판정 문장이 아니라 그 문장을 **감싸는 조각**이다. message_key 와 섞으면 build-time oracle

@@ -48,6 +48,16 @@ MESSAGES = {
     "ok_l2": "plan confirmed",
     "ok_l1": "binding confirmed",
     "ok_l0": "binding confirmed",
+
+    "cycle_state.read_failed": "{path}: failed to read ({error_type})",
+    "cycle_state.json_invalid": "{path}: JSON parse failed — corrupted or hand-edited",
+    "cycle_state.not_object": "{path}: top level is not an object",
+    "cycle_state.stem_invalid": "{path}: cycle_stem is missing or invalid",
+    "cycle_state.reread_failed": "{path}: re-read failed ({error_type})",
+    "cycle_state.language_invalid": "{path}: document_language is invalid ({language!r})",
+    "cycle_declaration_ignored": "[cycle declaration ignored] {detail} — proceeding as if "
+        "nothing was declared. Rewrite it with `sage cycle set <stem>` or clear it with "
+        "`sage cycle clear`.",
 }
 
 # 판정 문장이 아니라 그 문장을 **감싸는 조각**이다. message_key 와 섞으면 build-time oracle

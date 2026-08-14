@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -82,6 +83,13 @@ class CycleCliCase(unittest.TestCase):
 
     def cli(self, *args, cwd=None, env=None):
         command = [sys.executable, "-m", "sage", "cycle", *args]
+        child_env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT), "SAGE_CYCLE_STEM": ""}
+        child_env.update(env or {})
+        return subprocess.run(command, cwd=cwd or self.root, capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL, env=child_env)
+
+    def cli_lang(self, lang, *args, cwd=None, env=None):
+        command = [sys.executable, "-m", "sage", "--lang", lang, "cycle", *args]
         child_env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT), "SAGE_CYCLE_STEM": ""}
         child_env.update(env or {})
         return subprocess.run(command, cwd=cwd or self.root, capture_output=True, text=True,
@@ -485,6 +493,58 @@ class TestSkillsAndDocumentation(unittest.TestCase):
                  if "test_cycle_usability.py" in line and not line.lstrip().startswith("#")]
         self.assertEqual(len(lines), 1)
         self.assertIn("|| rc=1", lines[0])
+
+
+_HANGUL = re.compile(r"[가-힣]")
+
+
+class TestCycleLanguageContract(CycleCliCase):
+    """cycle_state 판정(read_declaration/read_declaration_record)과 cycle.py 자체 오류가
+    --lang en 화면에서 한국어를 남기지 않아야 한다(§ 배치 2 — 언어 중립 진단 이관)."""
+
+    def test_bad_stem_error_has_no_korean_under_lang_en(self):
+        proc = self.cli_lang("en", "set", "bad/stem")
+        self.assertEqual(proc.returncode, 2)
+        self.assertNotRegex(proc.stderr, _HANGUL)
+        self.assertIn("invalid cycle stem format", proc.stderr)
+
+    def test_bad_stem_error_stays_korean_under_default(self):
+        proc = self.cli("set", "bad/stem")
+        self.assertEqual(proc.returncode, 2)
+        self.assertRegex(proc.stderr, _HANGUL)
+        self.assertIn("cycle stem 형식 오류", proc.stderr)
+
+    def test_corrupt_declaration_notice_has_no_korean_under_lang_en(self):
+        path = Path(cs.declaration_path(self.root))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{"cycle_stem": "x"', encoding="utf-8")   # truncated JSON
+        proc = self.cli_lang("en", "show")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotRegex(proc.stdout, _HANGUL)
+        self.assertIn("JSON parse failed", proc.stdout)
+
+    def test_corrupt_declaration_notice_stays_korean_under_default(self):
+        path = Path(cs.declaration_path(self.root))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{"cycle_stem": "x"', encoding="utf-8")
+        proc = self.cli("show")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("JSON 파싱 실패", proc.stdout)
+
+    def test_gate_declaration_notice_renders_in_both_languages(self):
+        """hook_runtime → messages.py 경로(사람이 읽는 게이트 안내)도 언어별로 갈라져야 한다."""
+        sys.path.insert(0, str(RUNTIME))
+        import messages
+        decision = {"status": "ok", "exit_code": 0,
+                    "cycle_declaration_error": {"code": "cycle_state.json_invalid",
+                                                "arguments": {"path": "/p/.sage/cycle.json"},
+                                                "evidence": ""},
+                    "file_short": "a.java"}
+        ko = messages.gate_text(decision, {}, "claude", "ko")
+        en = messages.gate_text(decision, {}, "claude", "en")
+        self.assertRegex(ko, _HANGUL)
+        self.assertNotRegex(en, _HANGUL)
+        self.assertIn("JSON parse failed", en)
 
 
 if __name__ == "__main__":
