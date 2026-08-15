@@ -1039,6 +1039,8 @@ MESSAGES = {
     "cli.upgrade.delete_failed": "delete failed {rel}: {exc_type}",
     "cli.upgrade.restore_failed": "restore failed {rel}: {exc_type}",
     "cli.upgrade.step_exit_nonzero": "step {name} exited {code}",
+    "cli.upgrade.profile_json_refresh_failed": "⛔ recompiling project-profile.json after the required_version change failed (status={status}) — everything was rolled back.",
+    "cli.upgrade.profile_json_unexpected_path": "⛔ recompiling project-profile.json produced an unexpected path: {path}",
 
     # 언어 중립 판정 code 의 CLI 렌더. 같은 code 가 hook 에서는 `hook.<code>` 로
     # 렌더된다 — 공통 code 는 판정 계약이고 catalog key 는 출력 도메인의 소유다.

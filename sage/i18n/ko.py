@@ -1056,6 +1056,8 @@ MESSAGES = {
     "cli.upgrade.delete_failed": "삭제 실패 {rel}: {exc_type}",
     "cli.upgrade.restore_failed": "복원 실패 {rel}: {exc_type}",
     "cli.upgrade.step_exit_nonzero": "{name} 단계가 exit {code}",
+    "cli.upgrade.profile_json_refresh_failed": "⛔ required_version 갱신 후 project-profile.json 재컴파일 실패(status={status}) — 전부 되돌립니다.",
+    "cli.upgrade.profile_json_unexpected_path": "⛔ project-profile.json 재컴파일 결과 경로가 예상과 다릅니다: {path}",
 
     # 언어 중립 판정 code 의 CLI 렌더. 같은 code 가 hook 에서는 `hook.<code>` 로
     # 렌더된다 — 공통 code 는 판정 계약이고 catalog key 는 출력 도메인의 소유다.

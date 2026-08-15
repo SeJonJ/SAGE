@@ -515,9 +515,21 @@ def _apply(root, plan, language):
     user_times = _capture_times(root, snapshot)
     applied = 0
     try:
+        # required_version 을 쓰면 뒤이은 core-assets 단계가 project-profile.json 도 같은
+        # 값으로 요구한다. 이미 어긋난 pair 를 upgrade 가 조용히 덮어 고치면 사용자가 만든(또는
+        # 다른 도구가 남긴) drift 가 사라진다 — 그건 upgrade 의 write target 이 아니므로, 쓰기
+        # 시작 전에 기존 pair 부터 fail-closed 로 검증한다.
+        needs_profile_refresh = any(item["kind"] == "required_version" for item in plan["writes"])
+        if needs_profile_refresh:
+            from sage import overlay_materialize
+            _existing_profile, profile_issue = overlay_materialize.load_profile(root)
+            if profile_issue is not None:
+                raise RuntimeError(render_issue(language, profile_issue))
         for item in plan["writes"]:
             _write_declaration(root, item, language)
             applied += 1
+        if needs_profile_refresh:
+            _refresh_compiled_profile_json(root, language)
         for name, run_step in _managed_steps(root, plan, language):
             code = run_step()
             if code not in _STEP_OK[name]:
@@ -536,6 +548,31 @@ def _apply(root, plan, language):
         return 0, tr(language, "cli.upgrade.apply_failed", error=detail), True
     finally:
         lock.release()
+
+
+def _refresh_compiled_profile_json(root, language):
+    """required_version write 직후 compiled `project-profile.json` 을 같은 값으로 재동기화한다.
+
+    yaml 의 required_version 만 바뀐 순간 json 은 아직 이전 값이다 — 그 갭에서 위임 단계
+    `core-assets`(`install --force`)가 내부에서 부르는 `overlay_materialize.load_profile` 의
+    yaml/json 일치 검사가 막힌다. json 본문은 `generate` 가 소유하므로, 여기서는 그 컴파일
+    규칙(`generate._compile_profile`)을 그대로 불러 다시 만들 뿐 직렬화를 복제하지 않는다.
+    """
+    json_path = os.path.join(root, "sage", "project-profile.json")
+    if not os.path.isfile(json_path):
+        # generate 가 아직 만든 적 없는 profile 이면 upgrade 가 새로 만들지 않는다 — install
+        # 은 yaml 단독으로도 읽을 수 있고, 뒤이은 hooks 단계(generate)가 json 을 만든다.
+        return
+    from sage.commands.generate import _compile_profile
+    status, _data, body, output_path = _compile_profile(root, root, language)
+    if status != "ok":
+        raise RuntimeError(tr(language, "cli.upgrade.profile_json_refresh_failed", status=status))
+    if os.path.abspath(output_path) != os.path.abspath(json_path):
+        raise RuntimeError(tr(language, "cli.upgrade.profile_json_unexpected_path", path=output_path))
+    mode = os.stat(json_path).st_mode & 0o777
+    with open(json_path, "wb") as handle:
+        handle.write(body.encode("utf-8"))
+    os.chmod(json_path, mode)
 
 
 def _write_declaration(root, item, language=None):

@@ -338,6 +338,169 @@ class TestManagedAssetDelivery(unittest.TestCase):
         self.assertEqual(first, second, "두 번째 apply 가 트리를 바꿨다")
 
 
+class TestProfileJsonSyncOnRequiredVersionChange(unittest.TestCase):
+    """required_version 을 바꾸는 upgrade 는 core-assets 위임 전에 compiled json 도 맞춘다.
+
+    이 짝은 upgrade 가 생기기 전까지 실제로 어긋나 본 적이 없다 — 기존 모든 upgrade 테스트는
+    설치버전=엔진버전이라 required_version 자체가 바뀌지 않는다. 실제 버전이 바뀌는 순간에만
+    core-assets 단계 내부의 `overlay_materialize.load_profile` 일치 검사가 갈라진다
+    (`materialize.profile_yaml_json_mismatch`).
+    """
+
+    def _bootstrapped_pair(self, root, old_version):
+        """실제 install 로 부트스트랩된 소비자 + old_version 으로 짝이 맞는 yaml/json."""
+        _install(root)
+        text = PROFILE.replace('required_version: "0.0.1"', f'required_version: "{old_version}"')
+        Path(root, "sage", "project-profile.yaml").write_text(text, encoding="utf-8")
+        import yaml
+        from sage.profile_compile import materialize_profile
+        compiled = materialize_profile(yaml.safe_load(text))
+        Path(root, "sage", "project-profile.json").write_text(
+            json.dumps(compiled, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return root
+
+    def test_required_version_refreshes_compiled_profile_before_managed_steps(self):
+        import sage
+        from unittest import mock
+        root = self._bootstrapped_pair(tempfile.mkdtemp(), "0.0.1")
+        seen = {}
+        real_steps = up._managed_steps
+
+        def spying(root_, plan, language):
+            steps = list(real_steps(root_, plan, language))
+            self.assertTrue(steps, "부트스트랩된 fixture 인데 managed steps 가 비었다")
+
+            def first_step_check():
+                import yaml as _yaml
+                seen["yaml"] = _yaml.safe_load(
+                    Path(root_, "sage", "project-profile.yaml").read_text(encoding="utf-8")
+                )["sage"]["required_version"]
+                seen["json"] = json.loads(
+                    Path(root_, "sage", "project-profile.json").read_text(encoding="utf-8")
+                )["sage"]["required_version"]
+                return 0
+
+            return [(steps[0][0], first_step_check)]
+
+        up._managed_steps = spying
+        try:
+            with mock.patch.object(sage, "__version__", "9.9.9"):
+                result = _run(root, apply=True, force=True)
+        finally:
+            up._managed_steps = real_steps
+
+        self.assertEqual(result, up.EXIT_OK)
+        self.assertEqual(seen.get("yaml"), "9.9.9")
+        self.assertEqual(seen.get("json"), "9.9.9",
+                         "core-assets 진입 시점에 json 이 아직 old version 이었다")
+        body = Path(root, "sage", "project-profile.yaml").read_text(encoding="utf-8")
+        self.assertIn("# 주석은 보존돼야 한다", body, "yaml 재직렬화로 주석이 사라졌다")
+        self.assertIn('name: "consumer"', body)
+
+    def test_preexisting_yaml_json_mismatch_blocks_without_mutation(self):
+        """upgrade 이전부터 어긋나 있던 pair 를 upgrade 가 조용히 덮어 고치지 않는다."""
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+        root = tempfile.mkdtemp()
+        _install(root)
+        Path(root, "sage", "project-profile.yaml").write_text(PROFILE, encoding="utf-8")
+        # 실제 컴파일 결과와 무관한 최소 json — upgrade 가 시작하기 전부터 이미 어긋나 있다.
+        Path(root, "sage", "project-profile.json").write_text(
+            json.dumps({"sage": {"required_version": "0.0.9"}}, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
+        before = _tree(root)
+
+        called = {"managed": False}
+        real_steps = up._managed_steps
+
+        def spying(*a, **kw):
+            called["managed"] = True
+            return real_steps(*a, **kw)
+
+        up._managed_steps = spying
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with redirect_stdout(out), redirect_stderr(err):
+                result = _run(root, apply=True, force=True)
+        finally:
+            up._managed_steps = real_steps
+
+        self.assertNotEqual(result, up.EXIT_OK)
+        self.assertFalse(called["managed"], "사전 pair 불일치인데도 managed steps 가 호출됐다")
+        after = _tree(root)
+        self.assertEqual(after, before, "사전 불일치가 있는데도 트리가 바뀌었다")
+        combined = out.getvalue() + err.getvalue()
+        self.assertIn("project-profile.yaml", combined, combined)
+        self.assertIn("다릅니다", combined, combined)
+
+    def test_later_step_failure_restores_refreshed_yaml_and_json(self):
+        """required_version + json 동기화가 끝난 뒤 실패해도 둘 다 원래 bytes·mode 로 되돌린다."""
+        import sage
+        from unittest import mock
+        root = self._bootstrapped_pair(tempfile.mkdtemp(), "0.0.1")
+        yaml_path = Path(root, "sage", "project-profile.yaml")
+        json_path = Path(root, "sage", "project-profile.json")
+        before_yaml = (yaml_path.read_bytes(), os.stat(yaml_path).st_mode & 0o777)
+        before_json = (json_path.read_bytes(), os.stat(json_path).st_mode & 0o777)
+
+        real_steps = up._managed_steps
+
+        def failing(root_, plan, language):
+            def explode():
+                raise OSError("injected failure after required_version + json refresh committed")
+            return [("core-assets", explode)]
+
+        up._managed_steps = failing
+        try:
+            with mock.patch.object(sage, "__version__", "9.9.9"):
+                result = _run(root, apply=True, force=True)
+        finally:
+            up._managed_steps = real_steps
+
+        self.assertEqual(result, up.EXIT_BLOCKED)
+        self.assertEqual((yaml_path.read_bytes(), os.stat(yaml_path).st_mode & 0o777), before_yaml,
+                         "rollback 이 yaml 을 원래대로 되돌리지 않았다")
+        self.assertEqual((json_path.read_bytes(), os.stat(json_path).st_mode & 0o777), before_json,
+                         "rollback 이 json 을 원래대로 되돌리지 않았다")
+
+    def test_profile_pair_refresh_is_version_agnostic(self):
+        """0.9.84→1.0.0 전용 분기가 아니다 — 임의의 OLD→NEW 에서 같은 코드가 동작한다."""
+        import sage
+        from unittest import mock
+        import yaml as _yaml
+        root = self._bootstrapped_pair(tempfile.mkdtemp(), "1.0.0")
+        real_steps = up._managed_steps
+
+        def noop_steps(root_, plan, language):
+            return [(name, (lambda: 0)) for name, _ in real_steps(root_, plan, language)]
+
+        def apply_once():
+            up._managed_steps = noop_steps
+            try:
+                with mock.patch.object(sage, "__version__", "1.1.0"):
+                    return _run(root, apply=True, force=True)
+            finally:
+                up._managed_steps = real_steps
+
+        self.assertEqual(apply_once(), up.EXIT_OK)
+        yaml_version = _yaml.safe_load(
+            Path(root, "sage", "project-profile.yaml").read_text(encoding="utf-8"))["sage"]["required_version"]
+        json_version = json.loads(
+            Path(root, "sage", "project-profile.json").read_text(encoding="utf-8"))["sage"]["required_version"]
+        self.assertEqual(yaml_version, "1.1.0")
+        self.assertEqual(json_version, "1.1.0")
+
+        profile_rel = os.path.join("sage", "project-profile.yaml")
+        json_rel = os.path.join("sage", "project-profile.json")
+        after_first = _tree(root)
+        self.assertEqual(apply_once(), up.EXIT_OK, "두 번째 apply(멱등) 가 실패했다")
+        after_second = _tree(root)
+        self.assertEqual(after_second[profile_rel][:2], after_first[profile_rel][:2],
+                         "두 번째 apply 가 yaml 을 다시 썼다")
+        self.assertEqual(after_second[json_rel][:2], after_first[json_rel][:2],
+                         "두 번째 apply 가 json 을 다시 썼다")
+
+
 class TestRunsWhenOtherCommandsWouldNot(unittest.TestCase):
     def test_an_unbootstrapped_profile_runs_but_does_not_report_success(self):
         """FR-U03 은 "호출 가능" 이지 "성공" 이 아니다.
