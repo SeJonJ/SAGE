@@ -353,5 +353,9 @@ echo "### 66. 소비 프로젝트 scope e2e (Codex global/project-local/dual 실
 python3 "$HERE/test_clean_consumer_scope_matrix.py" || rc=1
 
 echo ""
+echo "### 67. 소비 프로젝트 문서 본문 언어 e2e (실제 설치 shim, AC20·24·25 Claude-host 축)"
+python3 "$HERE/test_document_prose_consumer_e2e.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

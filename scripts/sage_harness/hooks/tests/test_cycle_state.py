@@ -476,18 +476,22 @@ class TestDocumentLanguageCrossHostParity(unittest.TestCase):
             rc = fn()
         return rc, out.getvalue() + err.getvalue()
 
-    def _run_claude(self):
+    def _run_claude(self, path=None, content=None):
         import hook_runtime as hr
         import io_claude
+        target = path or os.path.join(self.root, "backend", "App.java")
+        body = "class App {}" if content is None else content
         raw = json.dumps({"session_id": "s-1", "tool_name": "Write",
-                          "tool_input": {"file_path": os.path.join(self.root, "backend", "App.java"),
-                                         "content": "class App {}"}})
+                          "tool_input": {"file_path": target, "content": body}})
         return self._capture(lambda: hr.run_pre_implementation_gate(io_claude, self.root, HOOKS_DIR, raw))
 
-    def _run_codex(self):
+    def _run_codex(self, path=None, content=None):
         import hook_runtime as hr
         import io_codex
-        cmd = "*** Begin Patch\n*** Add File: backend/App.java\n+class App {}\n*** End Patch"
+        rel = os.path.relpath(path, self.root) if path else "backend/App.java"
+        body = "class App {}" if content is None else content
+        added = "\n".join(f"+{line}" for line in body.splitlines())
+        cmd = f"*** Begin Patch\n*** Add File: {rel}\n{added}\n*** End Patch"
         raw = json.dumps({"session_id": "s-1", "tool_name": "apply_patch",
                           "tool_input": {"command": cmd}})
         return self._capture(lambda: hr.run_pre_implementation_gate(io_codex, self.root, HOOKS_DIR, raw))
@@ -509,6 +513,17 @@ class TestDocumentLanguageCrossHostParity(unittest.TestCase):
         rc_codex, text_codex = self._run_codex()
         self.assertEqual(rc_claude, 0, text_claude)
         self.assertEqual(rc_codex, 0, text_codex)
+
+    def test_korean_prose_in_a_declared_english_cycle_blocks_on_both_hosts(self):
+        """AC25 — marker 는 맞아도 새로 쓰는 본문이 선언 언어를 어기면 두 host 모두 쓰기 전에 막는가."""
+        self._write_docs({"00": "en", "01": "en"})
+        cs.write_declaration(self.root, STEM, document_language="en")
+        phase01 = os.path.join(self.root, "plan_docs", "01-x", f"{STEM}.md")
+        body = (f"Cycle-Stem: `{STEM}`\nDocument-Language: en\n\n이것은 한글 문장입니다.\n")
+        rc_claude, text_claude = self._run_claude(phase01, body)
+        rc_codex, text_codex = self._run_codex(phase01, body)
+        self.assertEqual(rc_claude, 2, text_claude)
+        self.assertEqual(rc_codex, 2, text_codex)
 
 
 class TestCliSurfacesWhatItChecked(unittest.TestCase):
