@@ -253,6 +253,11 @@ loop adds the audited find→refute→rework rounds in front of it.
 
 ## Record the outcome
 
+Read the cycle's document language from Phase 00's `Document-Language:` line (the composite
+Phase 00 for a Fast run) before writing. The `## Phase-05 Review` section carries that same
+line and is written in that language; a cycle with no marker predates it — follow the
+language the existing documents already use. See `docs/agent/language-policy.md`.
+
 Add a `## Phase-05 Review` section to the plan doc. For Loop A, include the iteration table:
 ```markdown
 ## Phase-05 Review

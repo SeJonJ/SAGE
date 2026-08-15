@@ -496,6 +496,73 @@ class TestSkillsAndDocumentation(unittest.TestCase):
 
 
 _HANGUL = re.compile(r"[가-힣]")
+_DOCUMENT_LANGUAGE_RE = re.compile(r"^Document-Language:\s*(\S+)\s*$", re.MULTILINE)
+
+
+class TestDocumentLanguageResolutionMatrix(CycleCliCase):
+    """AC24 — `sage cycle set --create` 의 문서 언어 결정: explicit > context(--lang/local
+    profile) > 기본값(ko). 표준 사이클의 explicit/local/default 조합을 실제 CLI 호출로 검증한다.
+    Fast Cycle 도 같은 함수(`cycle._document_language`)를 거치므로 별도 코드 경로는 없다 —
+    Fast 쪽 잔여는 CORE skill 지시문(`sage-plan-fast`) 정적 존재 확인으로 다룬다."""
+
+    def _local_profile(self, language):
+        (self.root / "sage" / "project-profile.local.yaml").write_text(
+            yaml.safe_dump({"interface": {"language": language}}), encoding="utf-8")
+
+    def _created_language(self, *extra_args, lang=None):
+        args = ["set", STEM, "--create", "--risk", "L2", *extra_args]
+        proc = self.cli_lang(lang, *args) if lang else self.cli(*args)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        text = self.phase00().read_text(encoding="utf-8")
+        match = _DOCUMENT_LANGUAGE_RE.search(text)
+        self.assertIsNotNone(match, text)
+        return match.group(1)
+
+    def test_no_explicit_no_context_defaults_to_ko(self):
+        self.assertEqual(self._created_language(), "ko")
+
+    def test_local_profile_language_becomes_the_default_without_an_explicit_flag(self):
+        self._local_profile("en")
+        self.assertEqual(self._created_language(), "en")
+
+    def test_cli_lang_flag_becomes_the_default_without_an_explicit_flag(self):
+        self.assertEqual(self._created_language(lang="en"), "en")
+
+    def test_explicit_flag_wins_over_local_profile(self):
+        self._local_profile("en")
+        self.assertEqual(self._created_language("--document-language", "ko"), "ko")
+
+    def test_explicit_flag_wins_over_cli_lang(self):
+        self.assertEqual(
+            self._created_language("--document-language", "ko", lang="en"), "ko")
+
+
+class TestCoreSkillDocumentLanguageDirective(unittest.TestCase):
+    """AC24/AC25 — Fast Cycle·리뷰 CORE skill 이 표준 skill 과 같은 언어 지시문을 갖는가.
+
+    `_document_language()` 결정 함수는 표준/Fast 가 공유하지만(코드 경로는 위 matrix 로 이미
+    검증됨), Fast·리뷰 skill 이 그 결과를 실제로 사용하려면 프롬프트 자체가 사용자에게 언어를
+    묻고 `--document-language` 를 명시하도록 지시해야 한다. 이 확인은 LLM 이 실제로 지시를
+    따르는지(host 실행 결과)는 증명하지 못한다 — 그건 AC20/34 사람 검토의 몫이다."""
+
+    ROOT = PROJECT_ROOT
+    FRAMEWORK_SKILLS = ROOT / "templates" / "core" / "framework" / ".claude" / "skills"
+
+    def _read(self, skill_id):
+        return (self.FRAMEWORK_SKILLS / skill_id / "SKILL.md").read_text(encoding="utf-8")
+
+    def test_plan_fast_settles_and_declares_document_language(self):
+        text = self._read("sage-plan-fast")
+        self.assertIn("Document-Language", text)
+        self.assertIn("--document-language", text)
+
+    def test_team_fast_reads_document_language_before_writing(self):
+        text = self._read("sage-team-fast")
+        self.assertIn("Document-Language", text)
+
+    def test_review_reads_document_language_before_writing(self):
+        text = self._read("sage-review")
+        self.assertIn("Document-Language", text)
 
 
 class TestCycleLanguageContract(CycleCliCase):

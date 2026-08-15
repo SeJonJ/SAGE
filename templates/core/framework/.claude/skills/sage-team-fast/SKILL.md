@@ -15,6 +15,10 @@ not manifest-tracked. Do not edit an installed copy directly.
 1. Resolve the exact stem, composite 00, `Fast-Audit-Run`, open snapshot, actual
    risk, Fast level, minimum rounds, and selected lenses. Stop on ambiguity,
    malformed audit, mismatch, or terminal run.
+   Read the cycle's document language from the composite Phase 00's `Document-Language:`
+   line before writing anything. Every phase document you author (05, 06) carries that same
+   line and is written in that language; a run with no marker predates it — keep writing in
+   the language the composite document already uses. See `docs/agent/language-policy.md`.
 2. Implement only within recorded ownership. Keep Phase 03 current with changed
    files and real build/test/lint results required by the actual risk.
 3. Replace the Phase 04 pending marker with design-gap, coverage, acceptance

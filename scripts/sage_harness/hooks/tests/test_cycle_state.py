@@ -427,6 +427,90 @@ class TestFullWiring(unittest.TestCase):
         self.assertIn("사이클 선언 무시됨", text)
 
 
+class TestDocumentLanguageCrossHostParity(unittest.TestCase):
+    """AC25 — 같은 사이클의 문서 언어 충돌이 Claude/Codex 두 host 에서 동일하게 막히는가.
+
+    `_document_language_gate` 자체는 host 를 모른다. 하지만 그걸 부르는
+    `run_pre_implementation_gate`가 `io_claude`/`io_codex` 어댑터별로 다른 이벤트를 조립하므로,
+    잎 함수 단위 테스트(`test_document_language.py::TestGateWiring`)만으로는 이 배선이 한쪽
+    host 에서만 끊겨도 통과한다. 실제 두 어댑터를 태워 판정이 갈라지지 않는지 확인한다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = _mark_project(os.path.realpath(self.tmp.name))
+        os.makedirs(os.path.join(self.root, "sage"), exist_ok=True)
+        Path(os.path.join(self.root, "sage", "project-profile.yaml")).write_text(
+            "project: t\n", encoding="utf-8")
+        self.profile = {
+            "risk": {"l0_pass_globs": ["*plan_docs/*"], "l2_path_globs": ["*backend/*"]},
+            "pdca": {"enabled": True,
+                     "phases": [{"id": p, "glob": f"plan_docs/{p}-x/**/*.md"}
+                                for p in ("00", "01")],
+                     "report_phase": "06", "approve_phase": "05"},
+        }
+        profile_path = os.path.join(self.root, "profile.json")
+        Path(profile_path).write_text(json.dumps(self.profile), encoding="utf-8")
+        for key, value in {"SAGE_PROFILE": profile_path, "SAGE_GATE_BRANCH": BRANCH}.items():
+            old = os.environ.get(key)
+            os.environ[key] = value
+            self.addCleanup(lambda k=key, o=old: os.environ.__setitem__(k, o) if o is not None
+                            else os.environ.pop(k, None))
+        os.environ.pop("SAGE_CYCLE_STEM", None)
+
+    def _write_docs(self, languages):
+        for phase, language in languages.items():
+            doc = os.path.join(self.root, "plan_docs", f"{phase}-x", f"{STEM}.md")
+            os.makedirs(os.path.dirname(doc), exist_ok=True)
+            risk = "Risk Level: L2\n" if phase == "00" else ""
+            Path(doc).write_text(
+                f"Cycle-Stem: `{STEM}`\n{risk}Document-Language: {language}\n", encoding="utf-8")
+
+    @staticmethod
+    def _capture(fn):
+        from contextlib import redirect_stdout, redirect_stderr
+        import io as _io
+        out, err = _io.StringIO(), _io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = fn()
+        return rc, out.getvalue() + err.getvalue()
+
+    def _run_claude(self):
+        import hook_runtime as hr
+        import io_claude
+        raw = json.dumps({"session_id": "s-1", "tool_name": "Write",
+                          "tool_input": {"file_path": os.path.join(self.root, "backend", "App.java"),
+                                         "content": "class App {}"}})
+        return self._capture(lambda: hr.run_pre_implementation_gate(io_claude, self.root, HOOKS_DIR, raw))
+
+    def _run_codex(self):
+        import hook_runtime as hr
+        import io_codex
+        cmd = "*** Begin Patch\n*** Add File: backend/App.java\n+class App {}\n*** End Patch"
+        raw = json.dumps({"session_id": "s-1", "tool_name": "apply_patch",
+                          "tool_input": {"command": cmd}})
+        return self._capture(lambda: hr.run_pre_implementation_gate(io_codex, self.root, HOOKS_DIR, raw))
+
+    def test_conflicting_document_language_blocks_on_both_hosts(self):
+        self._write_docs({"00": "en", "01": "ko"})
+        cs.write_declaration(self.root, STEM, document_language="en")
+        rc_claude, text_claude = self._run_claude()
+        rc_codex, text_codex = self._run_codex()
+        self.assertEqual(rc_claude, 2, text_claude)
+        self.assertEqual(rc_codex, 2, text_codex)
+        self.assertIn("문서 언어", text_claude)
+        self.assertIn("문서 언어", text_codex)
+
+    def test_agreeing_document_language_passes_on_both_hosts(self):
+        self._write_docs({"00": "en", "01": "en"})
+        cs.write_declaration(self.root, STEM, document_language="en")
+        rc_claude, text_claude = self._run_claude()
+        rc_codex, text_codex = self._run_codex()
+        self.assertEqual(rc_claude, 0, text_claude)
+        self.assertEqual(rc_codex, 0, text_codex)
+
+
 class TestCliSurfacesWhatItChecked(unittest.TestCase):
     """T3·T14 — 어긋난 구성에서 사람이 볼 수 있는 유일한 단서."""
 
