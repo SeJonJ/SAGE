@@ -596,6 +596,35 @@ stdin이 닫힌다), EH-16의 "재료는 이미 있다"는 L0에만 맞고 pdca 
 
 ---
 
+## EH-20 — CORE skill spec 정본 위치 정리 (SSOT 경로 3분화)
+
+- **배경**: SLR-AC24 작업(2026-08-15, 배치 7) 중 CORE skill 소스가 이 저장소 안에서 세 경로로 갈라져
+  있음을 발견했다. (1) 설계문서(`docs/superpowers/specs/2026-08-12-...design.md` §10.2)는
+  `templates/core/skills/<id>.md`를 "One CORE skill procedure"의 정본으로 명시한다. (2) 실제 배포
+  렌더(`templates/core/framework/.claude/skills/<id>/SKILL.md`, `sage/commands/install.py`가
+  소비자에게 실제로 복사하는 경로)는 파일 자신이 "Its reference spec lives at
+  `docs/sage_harness/skills/<id>.md`"라고 스스로 다른 경로를 authoritative spec으로 지목한다.
+  (3) 이 엔진 저장소의 `docs/sage_harness/skills/`는 `.gitkeep`뿐인 빈 디렉터리다 — 사용자 확인 결과
+  이건 결손이 아니라 **소비자 설치 산출물**(설치 후 소비자 프로젝트에 채워지는 경로) 성격이라, 엔진
+  저장소 자체에는 원래 비어 있는 게 맞다.
+- **판정(2026-08-15, 사용자 확인)**: `templates/core/skills/*.md` = semantic reference spec,
+  `templates/core/framework/.claude/skills/*/SKILL.md` = 현재 배포 render, 소비자
+  `docs/sage_harness/skills/*.md` = 설치 산출물. 3분화 자체는 구조 문제가 아니라 역할이 다른
+  세 계층이라는 것으로 일단 정리됐다 — 다만 (1)↔(2) 두 소스가 **내용까지 동기화되어야 하는지**,
+  동기화된다면 hash-stamp 같은 자동 staleness 추적이 있어야 하는지는 아직 미정이다(설계문서
+  §10.4가 "canonical source and normalized source hash... restamped"를 언급하지만 이 hash 계약이
+  실제 코드로 구현된 흔적은 없다 — `spec_hash`/`render_hash`는 project-authored 자산 전용이고 CORE
+  skill은 명시적으로 그 트랙 밖이다).
+- **이번에 한 일**: SLR-AC24 배치는 (1)·(2) 둘 다에 Document-Language 지시문을 반영했다(수동
+  동기화, hash 계약 없음). 구조 자체는 바꾸지 않았다.
+- **규모/위험**: 구조 결정(수동 동기화 유지 vs hash-stamp 자동 추적 신설 vs 한쪽 폐기)이라 설계
+  판단이 필요하다. 잘못 고르면 렌더가 spec 없이 조용히 stale해지거나, 존재하지 않는 자동화를
+  전제로 한 프로세스 문서가 남는다.
+- **트리거**: 다음에 CORE skill 프롬프트를 수정할 일이 생기거나, AC38(독립 Phase 05) 준비 시.
+- **상태**: 🕗 보류 — 미착수, 판단만 기록.
+
+---
+
 ## (참고) 보류 — 자산 사이클 내 기록
 - F5(클린 업그레이드)는 하드닝에서 해소(profile create-only). F1/F3/F7/malformed 동일.
 - 진행 로그: vault `TECH - SAGE 구현 진행 로그.md`

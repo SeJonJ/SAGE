@@ -349,5 +349,9 @@ echo "### 65. 언어 중립 판정 계약 (hook 경로 code/key · 도메인별 
 python3 "$HERE/test_diagnostics_contract.py" || rc=1
 
 echo ""
+echo "### 66. 소비 프로젝트 scope e2e (Codex global/project-local/dual 실제 doctor 판독)"
+python3 "$HERE/test_clean_consumer_scope_matrix.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"
