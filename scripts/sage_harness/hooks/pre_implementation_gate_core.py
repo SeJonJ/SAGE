@@ -510,6 +510,65 @@ def _document_language_gate(event, profile, snapshot, stem):
     return {"status": "block", "reason": f"문서 언어 선언 충돌 {len(hard)}건 — {detail}"}
 
 
+def _resolved_document_language(event, snapshot, stem):
+    """이 stem 의 판정된 문서 언어. 마커가 없거나 손상됐으면 None(무엇에 맞춰 볼지 미정의).
+
+    declared 미러가 유효하면 그것을 쓴다. 없으면 이 stem 의 Phase 00 자기 marker 를 읽는다 —
+    Phase 00 이 정본이라는 계약(§7.6)과 같은 우선순위를 여기서도 지킨다. 위쪽 `_document_language_gate`
+    가 이미 hard conflict 를 차단했으므로, 여기 도달했다면 두 값이 있어도 서로 다르지 않다.
+    """
+    declared = event.get("cycle_document_language")
+    if declared in ("ko", "en"):
+        return declared
+    try:
+        import document_language
+    except Exception:
+        return None
+    for doc in (snapshot.get("phase_docs") or {}).get("00") or []:
+        path = (doc or {}).get("path") or ""
+        if path and cycle_binding.path_stem(path) == stem:
+            language, problem = document_language.scan(doc.get("content") or "")
+            if not problem:
+                return language
+    return None
+
+
+def _document_prose_gate(event, snapshot, stem):
+    """이번 write 로 새로 생기거나 바뀌는 이 stem 의 본문이 선언 언어를 어겼는가.
+
+    검사 대상은 **이번 이벤트가 쓰는 내용**뿐이다(`event["changes"]`) — 이미 디스크에 있는 다른
+    phase 문서까지 소급 검사하면 legacy 문서 하나가 이후 모든 편집을 막는 과차단이 된다(§7.7).
+    full content 를 담지 않은 변경(부분 diff 뿐인 경로)은 판정하지 않는다 — 못 본 내용을 있다고
+    가정하지 않는다.
+
+    반환: None(해당없음/통과) | {"reason": str}
+    """
+    language = _resolved_document_language(event, snapshot, stem)
+    if language not in ("ko", "en"):
+        return None
+    try:
+        import prose_language
+    except Exception:
+        return None
+    for change in (event.get("changes") or []):
+        path = (change or {}).get("path") or ""
+        if not path or cycle_binding.path_stem(path) != stem:
+            continue
+        content = change.get("content")
+        if content is None:
+            continue
+        bad = prose_language.violations(content, language)
+        if not bad:
+            continue
+        if bad == [(0, "")]:
+            return {"reason": f"{path}: Document-Language={language} 인데 번역 대상 prose 에 "
+                              f"한국어가 전혀 없음(구조 이상)"}
+        line_no, snippet = bad[0]
+        return {"reason": f"{path}:{line_no}: Document-Language={language} 문서의 새/변경 prose 에서 "
+                          f"허용 범위 밖 한국어 발견 — {snippet.strip()[:80]!r}"}
+    return None
+
+
 def _report_gate(event: dict, profile: dict, snapshot: dict):
     """report phase 문서를 쓰는 변경이면 approve phase 의 승인 마커 존재 여부 판정.
 
@@ -1320,6 +1379,15 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
             language_warning = {"status": "warn", "exit_code": 0, "risk": "PDCA",
                                 "message_key": "warn_document_language_missing",
                                 "reason": language["reason"], "file_short": c["file_short"]}
+
+        # marker 는 선언 자체(한 줄)만 본다 — 그 아래 본문이 실제로 그 언어인지는 별개 판정이다.
+        # 여기서 보는 것은 **이번에 새로 쓰거나 바뀌는 내용**뿐이다(§7.7): 이미 디스크에 있는
+        # 다른 phase 문서까지 소급 검사하면 legacy 문서 하나가 이후 모든 편집을 막는다.
+        prose = _document_prose_gate(event, snapshot, binding["stem"])
+        if prose is not None:
+            return {"status": "block", "exit_code": 2, "risk": "PDCA",
+                    "message_key": "block_document_prose_language",
+                    "reason": prose["reason"], "file_short": c["file_short"]}
 
         changed_phases = _changed_phase_ids(event, cfg)
         report_phase = str(cfg.get("report_phase") or "")

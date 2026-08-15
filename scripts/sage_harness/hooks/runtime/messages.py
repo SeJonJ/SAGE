@@ -214,6 +214,8 @@ def _gate_record(decision, profile, language=DEFAULT_LANGUAGE):
         # 정본은 Phase 00 이고, 미러를 맞추는 명령을 함께 적어야 탈출 경로가 닫히지 않는다.
         "block_document_language_conflict": ("BLOCK", "PDCA", True, None),
         "warn_document_language_missing": ("WARN", "PDCA", True, None),
+        # 본문(prose) 언어 위반 — marker 는 일치하지만 그 아래 실제 글이 선언 언어를 어긴 경우.
+        "block_document_prose_language": ("BLOCK", "PDCA", True, None),
         "block_cycle_closed": ("BLOCK", "PDCA", True,
                              _i18n.frag(language, "hint.cycle_closed").format(
                                  clear=_i18n.frag(language, "hint.clear_cycle"))),
