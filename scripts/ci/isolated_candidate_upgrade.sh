@@ -2,12 +2,15 @@
 # AC32 — 격리 1.0 후보 빌드 + 실제 v0.9.84 소비자 upgrade E2E.
 #
 # FR-R03: "임시 source copy만 `1.0.0`으로 stamp해 후보를 만들 수 있으며 저장소 전후 상태는
-# 같아야 한다." 이 저장소(HEAD)는 절대 건드리지 않는다 — `git archive HEAD` 로 임시 디렉터리에
-# 뽑은 복사본에서만 버전을 바꾸고, 그 복사본에서 wheel 을 빌드한다. 실제 저장소의 버전·태그·git
+# 같아야 한다." 이 저장소($HERE)에서는 어떤 wheel 도 직접 빌드하지 않는다 — OLD·NEW 모두
+# `git archive`로 임시 디렉터리에 뽑은 격리 복사본에서만 빌드한다. 실제 저장소의 버전·태그·git
 # 상태는 스크립트 시작과 끝이 완전히 같아야 한다(마지막에 diff 로 확인한다).
 #
 # 두 wheel:
-#   OLD = 이 저장소 HEAD 그대로 빌드(현재 실제 버전, 지금은 0.9.84) — "이미 설치된 소비자" 를 만드는 데 쓴다.
+#   OLD = 실제 배포된 v<현재 버전> 태그(예: v0.9.84)에서 `git archive`로 뽑은 격리 복사본
+#         ($WORK/old-src)에서 빌드 — "이미 설치된 소비자" 를 만드는 데 쓴다. 태그가 아니라 HEAD
+#         에서 빌드하면 이번 다국어·안정화 변경이 이미 섞인 코드를 "구버전 소비자"로 흉내 내게
+#         되어, 실제 배포본이 아니라 현재 main 을 검증하는 것이 된다.
 #   NEW = 격리 복사본에서 1.0.0 으로 stamp 후 빌드 — "1.0 후보" 이며, 이 wheel 의 `sage upgrade` 로
 #         OLD 소비자를 실제로 승격시킨다.
 set -euo pipefail
@@ -22,12 +25,19 @@ BEFORE_STATUS="$(git -C "$HERE" status --porcelain)"
 BEFORE_VERSION="$(python3 -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('$HERE/sage/__init__.py').read()).group(1))")"
 echo "   HEAD version = $BEFORE_VERSION, working tree $( [ -z "$BEFORE_STATUS" ] && echo clean || echo DIRTY )"
 
-echo "== [2/9] OLD wheel 빌드 (이 저장소 HEAD 그대로, 버전 $BEFORE_VERSION) =="
+OLD_TAG="v$BEFORE_VERSION"
+echo "== [2/9] 실제 $OLD_TAG 태그에서 OLD wheel 빌드 (저장소 밖 격리 복사본, \$HERE 는 안 건드림) =="
+if ! git -C "$HERE" rev-parse --verify "${OLD_TAG}^{commit}" >/dev/null 2>&1; then
+  echo "❌ $OLD_TAG 태그를 찾지 못했다 — 실제 배포 태그가 있어야 OLD wheel 을 만들 수 있다(현재 HEAD 를 흉내 내지 않는다). 얕은 clone 이면 태그를 fetch 하세요."
+  exit 1
+fi
+mkdir -p "$WORK/old-src"
+( cd "$HERE" && git archive "$OLD_TAG" | tar -x -C "$WORK/old-src" )
 python3 -m venv "$WORK/buildenv"
 "$WORK/buildenv/bin/pip" install --quiet build >/dev/null
-( cd "$HERE" && rm -rf dist build && "$WORK/buildenv/bin/python" -m build --wheel --outdir "$WORK/old-dist" >/dev/null )
+( cd "$WORK/old-src" && "$WORK/buildenv/bin/python" -m build --wheel --outdir "$WORK/old-dist" >/dev/null )
 OLD_WHL="$(ls "$WORK"/old-dist/*.whl | head -1)"
-echo "   old wheel: $(basename "$OLD_WHL")"
+echo "   old wheel ($OLD_TAG): $(basename "$OLD_WHL")"
 
 echo "== [3/9] 격리 source copy 생성 + 1.0.0 stamp (저장소 밖, HEAD 는 안 건드림) =="
 mkdir -p "$WORK/candidate-src"
@@ -120,9 +130,17 @@ AFTER_VERSION="$(python3 -c "import yaml; print(yaml.safe_load(open('$PROJ/sage/
 test "$AFTER_VERSION" = "$CANDIDATE_VERSION" || { echo "❌ apply 후 required_version=$AFTER_VERSION, 기대값 $CANDIDATE_VERSION"; exit 1; }
 echo "   apply OK: profile required_version -> $AFTER_VERSION"
 
-BEFORE_TREE="$(find "$PROJ" -type f -not -path '*/.sage/upgrades/*' | sort | xargs -I{} sha256sum {} | sha256sum)"
+# `__pycache__` 만 뺀다(확장자 `.pyc` 전체가 아니다) — 그 디렉터리는 Python 이 소스를 import 할
+# 때마다 자동으로 재생성하는 비소유 캐시이고, upgrade 가 managed 파일을 동일 내용으로 다시 써
+# mtime 만 바뀌어도 그 안의 invalidation 스탬프가 함께 바뀐다(코드 바이트는 동일). upgrade 의
+# 관리 대상도 아니고 사용자 소유도 아니라 멱등성 판정에 넣을 이유가 없다 — 기존 단위 테스트
+# (test_upgrade.py 의 `_TREE_SKIP_DIRS`)와 upgrade 자신의 rollback 스냅샷(`_SNAPSHOT_SKIP`)도
+# 이미 같은 디렉터리를 제외한다. `.py`·`.json`·`.yaml`·hook·manifest·사용자 파일은 계속 비교한다.
+BEFORE_TREE="$(find "$PROJ" -type f -not -path '*/.sage/upgrades/*' -not -path '*/__pycache__/*' \
+              | sort | xargs -I{} sha256sum {} | sha256sum)"
 env -u SAGE_RESOURCE_ROOT "$NEW_SAGE" upgrade --apply --force --root "$PROJ" >/dev/null
-AFTER_TREE="$(find "$PROJ" -type f -not -path '*/.sage/upgrades/*' | sort | xargs -I{} sha256sum {} | sha256sum)"
+AFTER_TREE="$(find "$PROJ" -type f -not -path '*/.sage/upgrades/*' -not -path '*/__pycache__/*' \
+             | sort | xargs -I{} sha256sum {} | sha256sum)"
 test "$BEFORE_TREE" = "$AFTER_TREE" || { echo "❌ 두 번째 apply 가 파일을 다시 썼다(비멱등)"; exit 1; }
 echo "   reapply OK: 멱등(두 번째 apply 로 트리 변경 없음)"
 
@@ -141,8 +159,7 @@ AFTER_STATUS="$(git -C "$HERE" status --porcelain)"
 AFTER_VERSION_REPO="$(python3 -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('$HERE/sage/__init__.py').read()).group(1))")"
 test "$BEFORE_STATUS" = "$AFTER_STATUS" || { echo "❌ 저장소 working tree 가 스크립트 실행 중 바뀌었다"; exit 1; }
 test "$BEFORE_VERSION" = "$AFTER_VERSION_REPO" || { echo "❌ 저장소 __version__ 이 $BEFORE_VERSION -> $AFTER_VERSION_REPO 로 바뀌었다"; exit 1; }
-rm -rf "$HERE/dist" "$HERE/build"
 echo "   저장소 불변 확인: version=$AFTER_VERSION_REPO, working tree $( [ -z "$AFTER_STATUS" ] && echo clean || echo DIRTY )"
 
 echo ""
-echo "✅ AC32 격리 1.0 후보 빌드 + v$BEFORE_VERSION→$CANDIDATE_VERSION 실제 upgrade E2E PASS"
+echo "✅ AC32 격리 1.0 후보 빌드 + v${BEFORE_VERSION}→${CANDIDATE_VERSION} 실제 upgrade E2E PASS"
