@@ -182,30 +182,48 @@ CLI key는 `sage/i18n`, hook key는 독립 hook runtime에만 둔다. `sage/i18n
 
 ## 5. Done Criteria
 
-- [ ] 모든 테스트 파일이 runner에서 실행되거나 구체적 사유가 있는 제외 목록에 있다.
-- [ ] 누락된 두 테스트와 runner-inventory 회귀 테스트가 공식 suite에 연결된다.
-- [ ] 공식 suite와 집중 테스트에서 저장소 소유 `ResourceWarning`이 없다.
-- [ ] 삭제 후보마다 위험에 비례한 정적·동적/package·외부 계약 증거가 있다.
-- [ ] 활성 코드·shell·YAML 주석과 내부 docstring이 한국어 기본 정책을 따르며, 죽은·낡은 주석과 주석 처리 코드는 언어와 무관하게 정리된다.
-- [ ] framework, hook, CORE skill/agent 의미 정본이 영어이고 미분류 한국어가 없다.
-- [ ] CORE skill 13개, agent 6개, hook spec 7개의 canonical 소유 관계가 완전하다.
-- [ ] managed language policy가 고정 경로에서 설치·receipt·drift·bundle·upgrade 검증된다.
+- [x] 모든 테스트 파일이 runner에서 실행되거나 구체적 사유가 있는 제외 목록에 있다.
+- [x] 누락된 두 테스트와 runner-inventory 회귀 테스트가 공식 suite에 연결된다.
+- [x] 공식 suite와 집중 테스트에서 저장소 소유 `ResourceWarning`이 없다.
+- [x] 삭제 후보마다 위험에 비례한 정적·동적/package·외부 계약 증거가 있다.
+- [x] 활성 코드·shell·YAML 주석과 내부 docstring이 한국어 기본 정책을 따르며, 죽은·낡은 주석과 주석 처리 코드는 언어와 무관하게 정리된다.
+- [x] framework, hook, CORE skill/agent 의미 정본이 영어이고 미분류 한국어가 없다.
+- [x] CORE skill 13개, agent 6개, hook spec 7개의 canonical 소유 관계가 완전하다.
+- [x] managed language policy가 고정 경로에서 설치·receipt·drift·bundle·upgrade 검증된다.
 - [ ] 한국어 기본값과 `--lang en`, local `interface.language: en` 우선순위가 동작한다.
-- [ ] 새 사이클은 정확히 하나의 `Document-Language`를 결정하고 같은 stem의 00~06에 유지한다.
+- [x] 새 사이클은 정확히 하나의 `Document-Language`를 결정하고 같은 stem의 00~06에 유지한다.
 - [ ] local 설정 변경, 충돌 `--lang`, cycle state·Phase 00·snapshot 불일치가 쓰기 전에 차단된다.
-- [ ] marker 없는 legacy cycle은 역사 증거를 바꾸지 않고 한국어로 안전하게 재개된다.
+- [x] marker 없는 legacy cycle은 역사 증거를 바꾸지 않고 한국어로 안전하게 재개된다.
 - [ ] bare/help/미지원 언어/malformed local의 channel·exit 계약이 정확하다.
-- [ ] CLI/hook catalog의 한영 key·placeholder, 도메인 충돌, 참조 완전성 gate가 통과한다.
-- [ ] 한영 CLI/hook 실행의 판정·status·exit·JSON·파일·audit·hash가 같다.
-- [ ] EH-13 경로 진단과 EH-15/16 가시성 동작이 양 언어에서 같다.
-- [ ] CORE skill과 Phase 작성 skill은 선택 언어를 쓰되 기계 marker를 번역하지 않는다.
-- [ ] Claude, Codex project-local/global, dual-host clean install이 양 언어에서 통과한다.
-- [ ] 실제 `v0.9.84` fixture가 격리된 1.0 후보로 upgrade·멱등 재실행·보존·rollback을 통과한다.
-- [ ] wheel, sdist, clean pipx형, Python 3.10~3.12, Linux/macOS/Windows 필수 검증이 통과한다.
-- [ ] 사용자 문서·migration·제약·복구 안내가 한영으로 동기화된다.
+- [x] CLI/hook catalog의 한영 key·placeholder, 도메인 충돌, 참조 완전성 gate가 통과한다.
+- [x] 한영 CLI/hook 실행의 판정·status·exit·JSON·파일·audit·hash가 같다.
+- [x] EH-13 경로 진단과 EH-15/16 가시성 동작이 양 언어에서 같다.
+- [x] CORE skill과 Phase 작성 skill은 선택 언어를 쓰되 기계 marker를 번역하지 않는다.
+- [x] Claude, Codex project-local/global, dual-host clean install이 양 언어에서 통과한다.
+- [x] 실제 `v0.9.84` fixture가 격리된 1.0 후보로 upgrade·멱등 재실행·보존·rollback을 통과한다.
+- [x] wheel, sdist, clean pipx형, Python 3.10~3.12, Linux/macOS/Windows 필수 검증이 통과한다.
+- [x] 사용자 문서·migration·제약·복구 안내가 한영으로 동기화된다.
 - [ ] 독립 Phase 05가 필수 acceptance를 모두 해결하고 미해결 P0/P1이 없다.
 - [ ] 저장소 version source, Git tag, remote, PyPI, GitHub Release가 이 사이클 동안 바뀌지 않는다.
 - [ ] 최종 상태가 정확히 `NOT READY` 또는 `READY_FOR_USER_RELEASE_DECISION`이다.
+
+### 미해결 6건의 근거 (2026-08-17)
+
+체크 상태는 Phase 04 acceptance 와 실제 테스트·CI 증거에 매핑해 정리했다. 요구사항 문구와
+`Done-Criteria-Revision` 은 바꾸지 않았다 — 계획을 다시 쓴 것이 아니라 이미 있는 증거를 반영한
+것이라 revision 사건이 아니다.
+
+| 미해결 | 무엇에 걸려 있나 |
+|---|---|
+| ko 기본·`--lang en`·local 우선순위 | AC09 FAIL. `--profile` 경로 해석과 손상 local 진단은 배치 21 에서 고쳤으나 재판정 전이다 |
+| 설정 변경·충돌·state 불일치 차단 | AC26 FAIL. upgrade 의 손상 v2 state 는 배치 21 에서 blocker 로 바꿨으나 재판정 전이다 |
+| bare/help/미지원/malformed local 계약 | AC13·AC09 FAIL. argparse usage 오류 현지화는 배치 21 에서 넣었으나 재판정 전이다 |
+| 독립 Phase 05 해결 | AC38 FAIL. 새 HEAD 재검수 결과에 달렸다 |
+| version·tag·remote·PyPI·Release 불변 | AC36 근거가 "push 미수행" 인데, 원격 CI 증거 수집을 위해 feature branch push 와 PR 을 했다. tag·PyPI·Release·version 과 main 은 불변이지만 이 문구에 `remote` 가 있어 충족이라 말할 수 없다 — 근거 갱신과 판정은 Phase 05 몫이다 |
+| 최종 상태 | 사이클 종료 시점의 값이라 Phase 05 승인 전에는 확정되지 않는다 |
+
+배치 21 에서 고친 세 건(AC09·AC13·AC26)을 수정했다는 이유로 여기서 올리지 않는다. FAIL 을 낸
+것은 독립 검수자이고, 되돌리는 것도 그쪽이다.
 
 ## 6. Done Criteria Revision Log
 
