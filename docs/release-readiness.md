@@ -2,7 +2,7 @@
 
 이 문서는 SAGE 를 릴리스할 수 있는 상태인지 **무엇으로 판단하는가**를 적는다. 판단 결과는 여기 적지 않는다 — 결과는 사이클마다 바뀌고, 바뀌는 값을 문서에 박아 두면 문서가 곧 거짓이 된다. 현재 상태는 `python scripts/ci/publish_preflight.py` 가 말한다.
 
-영어 정본은 [release-readiness.en.md](release-readiness.en.md) 다.
+이 문서가 한국어 authoring source 이고, [release-readiness.en.md](release-readiness.en.md) 는 그것을 옮긴 영어 mirror 다. 먼저 이 문서를 고치고 mirror 를 맞춘다 — mirror 첫 줄의 `sage-doc-source` hash 가 그 방향을 강제한다.
 
 ## 준비 상태는 두 값뿐이다
 
@@ -22,6 +22,7 @@
 | `tag-version` | tag 와 `__version__` 이 다르면 사용자가 설치한 것과 tag 가 가리키는 것이 다르다 |
 | `version` | `0.0.0` 류 자리표시자로 올리면 되돌릴 수 없다 |
 | `catalog` | 한쪽에만 있는 key 는 런타임 fallback 으로 조용히 넘어가고, 사용자가 빈틈을 대신 발견한다 |
+| `localization-debt` | 인벤토리가 0 이어도 남은 누출은 따로 센다. 부채를 목록에 적어 뒀다는 사실은 출하 근거가 아니다 |
 | `docs-pair` | 한쪽 언어만 갱신된 채 릴리스되면 두 문서가 갈린다 |
 | `inventory` | 인벤토리가 코드와 일치하고 catalog 미이관 사용자 표시 literal이 0건이어야 한다. 최신 목록은 완료를 뜻하지 않는다 |
 | `upgrade` | 실제 v0.9.84 소비자에 신규 managed CORE 파일과 receipt를 함께 배포해야 한다. 명령·테스트 등록만으로는 충분하지 않다 |

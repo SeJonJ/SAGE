@@ -7,6 +7,12 @@ Collect all mandatory Fast inputs, author the composite 00 through 04 plan, and 
 ## when_to_use
 - When an enabled Fast Cycle needs its mandatory inputs and composite Phase 00 before implementation.
 ## procedure
+0. Resolve the conversation language once: an explicit `--lang ko|en` on this skill's
+   invocation, then `interface.language` in `sage/project-profile.local.yaml`, then `ko`.
+   Every question, proposal, progress note, warning and summary uses it; machine values
+   and Phase 00–06 `Document-Language:` prose do not. Document prose includes section headings
+   and list labels, except `## 5. Done Criteria` and `## 6. Done Criteria Revision Log`, which a
+   parser reads by their exact string. See `docs/agent/language-policy.md`.
 1. Collect Fast level, lens count, and one-line reason before any write; classify actual L2/L3 risk separately.
 2. Author one composite Phase 00 with `Done-Criteria-Revision: 1`, a concrete
    `### Done Criteria` list of `[ ]` outcomes, exact embedded Phase 00 through 04

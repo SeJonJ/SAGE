@@ -1,3 +1,4 @@
+<!-- sage-doc-source: README.md sha256:3ea88b593f2c396664856e38a9abc6bfde92bbfd39aa23e5e686745bcf90a8e9 -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)

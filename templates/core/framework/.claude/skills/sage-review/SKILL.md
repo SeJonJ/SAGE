@@ -8,6 +8,26 @@ description: "Run SAGE Phase-05 independent review. Single-pass clean-context/cr
 Do not edit this CORE render directly (the write-guard blocks it and `sage install --force` overwrites it).
 - overlay: optional `sage/asset_overrides/skills/sage-review.md` has project-local priority over this CORE render and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates (they stay floored by independent oracles). Put broad project review policy in profile/conventions and create genuinely new project assets with `/sage-asset`.
 
+## Conversation language (mandatory)
+
+Resolve it once, before the first turn, in this order:
+
+1. an explicit `--lang ko|en` on this skill's invocation,
+2. `interface.language` in `sage/project-profile.local.yaml`,
+3. `ko`.
+
+Conduct **every** question, proposal, progress note, warning and summary in that language.
+
+Only the conversation takes it. Machine values are never translated — paths, globs, command
+strings, component ids, strategy enums, statuses and the fixed schema keys. Phase 00–06 document
+prose follows the cycle's `Document-Language:` marker, which is a **separate** decision and may
+differ from the conversation. That document prose includes the **human-facing structure** — section
+headings, list labels, table headers and checklist text — not just paragraphs; a Korean document
+under English headings is the mixed state the marker exists to prevent. The two headings a parser
+reads by their exact string, `## 5. Done Criteria` and `## 6. Done Criteria Revision Log`, stay
+English in every language. Only `/sage-init` and `/sage-init-local` may persist a language
+preference. Full rules: `docs/agent/language-policy.md`.
+
 ## Read these first (mandatory, in order)
 
 1. `docs/sage_harness/skills/sage-review.md` — authoritative spec: procedure, drift_checks

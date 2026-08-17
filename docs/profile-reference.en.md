@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:435e0693bf6f148ef610b825ed0bbfb85c1bd1b4a0c8d0bc674c78c01b275ce8 -->
+<!-- sage-doc-source: profile-reference.md sha256:3953b0f2f8166620de4a566db5b704fe7d5d8edd0f2a706777898f640e5f6598 -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -16,6 +16,20 @@ Generate converges the compiled profile to mode `0600`. A `0644` file produced b
 becomes owner-only on the next generation. In CI or containers where hooks run under another UID,
 run them under the same UID or arrange an explicit profile handoff; widening the file mode for
 cross-user sharing is not part of the supported contract.
+
+The local profile also owns the interface language.
+
+```yaml
+interface:
+  language: en      # absent means ko; only ko | en are accepted
+```
+
+It never reaches the shared profile, the compiled `project-profile.json`, a manifest, or the
+profile hash — a language preference behaves like a machine capability and stays local. For a
+single run, put the global `--lang` before the subcommand (`sage --lang en validate`).
+Resolution order is `--lang` → local profile → `ko`; hooks take no `--lang` and follow the
+local profile and the default only. An invalid value falls back to `ko` and `sage validate`
+reports it as a configuration failure, but no gate verdict or exit code changes.
 
 ## Minimal workflow
 

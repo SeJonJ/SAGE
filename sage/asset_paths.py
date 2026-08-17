@@ -76,6 +76,10 @@ def hook_runtime_files(root: str) -> dict[str, list[str]]:
             # 돌려주게 바꾸면 언어 충돌 차단이 통째로 사라지고 아무 표시도 남지 않는다.
             # cycle_state 와 같은 근거다 — 게이트가 읽는 해석 정본은 전부 추적한다.
             os.path.join(runtime, "document_language.py"),
+            # prose_language.py: marker 아래 **본문**이 선언 언어를 지키는가의 판정 정본.
+            # document_language 와 같은 근거이고, 게이트가 import 실패를 fail-closed 로 받는
+            # 것과 짝을 이룬다 — 차단은 되지만 그 상태가 왜 생겼는지는 validate 가 짚어줘야 한다.
+            os.path.join(runtime, "prose_language.py"),
         ] + strategy_files,
         "claude": [os.path.join(runtime, "io_claude.py")],
         "codex": [os.path.join(runtime, "io_codex.py")],

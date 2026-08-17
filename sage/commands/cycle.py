@@ -387,29 +387,66 @@ def _available_stems(root, patterns, stem, cs):
     return result
 
 
+def _phase00_prose(document_language):
+    """초안의 사람용 문구. **CLI 표시 언어가 아니라 문서 선언 언어**를 따른다.
+
+    이 문자열들은 화면에 찍히지 않고 Phase 00 파일 안으로 들어간다. 그래서 `sage/i18n` 카탈로그
+    (`--lang` 이 고르는 표시 언어)로 보내면 안 된다 — 표시가 ko 인 사용자가 `Document-Language: en`
+    사이클을 열면 영어 문서에 한국어 heading 이 박힌다. 막으려는 혼용을 도구가 직접 만드는 셈이다.
+
+    marker 만 ko 로 박고 heading 을 영어로 두면 사용자는 한국어 문서를 열자마자 영어 제목을 보고
+    그 위에 한국어를 쓴다 — 혼용의 출발점이 초안 자신이 된다.
+
+    `## 5. Done Criteria` 와 `## 6. Done Criteria Revision Log` 만은 **번역하지 않는다**.
+    `done_criteria_contract` 가 이 문자열을 그대로 찾는 파서 가시 marker 라, 번역하면 파서에게는
+    heading 이 사라진 것으로 읽힌다. 선언 줄과 `DRAFT`·`TODO` 도 기계 어휘다.
+    """
+    return {
+        "en": {
+            "note": "fill the plan before governed source edits",
+            "title": "Base Plan",
+            "sections": (
+                ("## 1. Context", "TODO: describe the problem and constraints."),
+                ("## 2. Goal", "TODO: define the intended outcome."),
+                ("## 3. Acceptance Criteria", "TODO: define requirement-level acceptance evidence."),
+                ("## 4. Final Conclusion & UX Guide", "TODO: summarize the selected direction."),
+            ),
+            "criterion": "TODO: replace with a concrete completion criterion",
+            "revision": "Initial revision 1. No replanning record.",
+        },
+        "ko": {
+            "note": "관리 대상 소스를 고치기 전에 계획을 채우세요",
+            "title": "기본 계획",
+            "sections": (
+                ("## 1. 배경", "TODO: 문제와 제약 조건을 적으세요."),
+                ("## 2. 목표", "TODO: 달성하려는 결과를 정의하세요."),
+                ("## 3. 인수 기준", "TODO: 요구사항 수준의 인수 증거를 정의하세요."),
+                ("## 4. 최종 결론 및 UX 가이드", "TODO: 선택한 방향을 요약하세요."),
+            ),
+            "criterion": "TODO: 구체적인 완료 기준으로 바꾸세요",
+            "revision": "초기 revision 1. 재계획 기록 없음.",
+        },
+    }[document_language if document_language in ("ko", "en") else "ko"]
+
+
 def _phase00_skeleton(stem, risk, document_language):
     # 마커를 여기서 함께 박는 것이 계약이다. 선언 미러만 쓰고 Phase 00 을 비워두면 `--create` 가
     # 자기 게이트가 경고할 상태(미러는 선언, 문서는 미선언)를 스스로 만든다.
+    prose = _phase00_prose(document_language)
+    body = "".join(f"{heading}\n\n{todo}\n\n" for heading, todo in prose["sections"])
     return (
-        "<!-- SAGE Phase 00 skeleton: fill the plan before governed source edits. -->\n"
-        f"# [Base Plan] {stem}\n\n"
+        f"<!-- SAGE Phase 00 skeleton: {prose['note']}. -->\n"
+        f"# [{prose['title']}] {stem}\n\n"
         f"Document-Language: {document_language}\n"
         f"Cycle-Stem: `{stem}`\n"
         f"Risk Level: {risk}\n"
         "Status: DRAFT\n"
         "Done-Criteria-Revision: 1\n\n"
-        "## 1. Context\n\n"
-        "TODO: describe the problem and constraints.\n\n"
-        "## 2. Goal\n\n"
-        "TODO: define the intended outcome.\n\n"
-        "## 3. Acceptance Criteria\n\n"
-        "TODO: define requirement-level acceptance evidence.\n\n"
-        "## 4. Final Conclusion & UX Guide\n\n"
-        "TODO: summarize the selected direction.\n\n"
+        f"{body}"
         "## 5. Done Criteria\n\n"
-        "- [ ] TODO: replace with a concrete completion criterion\n\n"
+        f"- [ ] {prose['criterion']}\n\n"
         "## 6. Done Criteria Revision Log\n\n"
-        "Initial revision 1. No replanning record.\n"
+        f"{prose['revision']}\n"
     )
 
 

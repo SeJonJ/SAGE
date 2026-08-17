@@ -1,3 +1,4 @@
+<!-- sage-doc-source: release-readiness.md sha256:474a97e8228ad27fb0d618b6889163daca4465019115018dd0f9cce7eb874ac7 -->
 # Release readiness
 
 This document records **how readiness is decided**, not what it currently is. The current answer changes every cycle, and a value written into a document becomes false the moment it changes. Ask `python scripts/ci/publish_preflight.py` for the present state.
@@ -22,6 +23,7 @@ Every check in `publish_preflight.py` is independent and all of them run. Stoppi
 | `tag-version` | If the tag and `__version__` disagree, what the user installs is not what the tag points at |
 | `version` | Publishing a placeholder such as `0.0.0` cannot be undone |
 | `catalog` | A key present on only one side falls through to a runtime fallback, so users discover the gap instead of the build |
+| `localization-debt` | Even at inventory zero, remaining leaks are counted separately. Having recorded the debt on a list is not grounds to ship |
 | `docs-pair` | Releasing with only one language updated lets the two documents drift apart |
 | `inventory` | The inventory must match the code and contain zero user-visible literals pending catalog migration. A current list is not completion |
 | `upgrade` | A real v0.9.84 consumer must receive each new managed CORE file and its receipt together. Command and test registration alone are insufficient |

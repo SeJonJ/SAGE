@@ -525,6 +525,42 @@ class TestDocumentLanguageCrossHostParity(unittest.TestCase):
         self.assertEqual(rc_claude, 2, text_claude)
         self.assertEqual(rc_codex, 2, text_codex)
 
+    def _run_claude_edit(self, path, old, new):
+        import hook_runtime as hr
+        import io_claude
+        raw = json.dumps({"session_id": "s-1", "tool_name": "Edit",
+                          "tool_input": {"file_path": path, "old_string": old,
+                                         "new_string": new}})
+        return self._capture(
+            lambda: hr.run_pre_implementation_gate(io_claude, self.root, HOOKS_DIR, raw))
+
+    def test_an_edit_that_leaves_no_korean_in_a_korean_document_blocks(self):
+        """부분 diff 라도 **변경 후 전체 본문**을 되짚을 수 있으면 판정한다 — 되짚지 않으면
+        한국어를 걷어내는 편집이 조용히 통과한다."""
+        self._write_docs({"00": "ko", "01": "ko"})
+        cs.write_declaration(self.root, STEM, document_language="ko")
+        phase01 = os.path.join(self.root, "plan_docs", "01-x", f"{STEM}.md")
+        korean = "이 문서는 한국어로 작성된 정상 계획 문서이며 표본을 넘길 만큼 충분히 깁니다.\n"
+        english = ("This paragraph replaced the Korean narrative wholesale, leaving the "
+                   "document without any Korean prose at all.\n")
+        Path(phase01).write_text(
+            f"Cycle-Stem: `{STEM}`\nDocument-Language: ko\n\n{korean}", encoding="utf-8")
+        rc, text = self._run_claude_edit(phase01, korean, english)
+        self.assertEqual(rc, 2, text)
+
+    def test_adding_an_english_paragraph_to_a_korean_document_does_not_block(self):
+        """반대 방향 — 조각을 문서 전체로 오해하면 이 정상 편집이 곧바로 막힌다."""
+        self._write_docs({"00": "ko", "01": "ko"})
+        cs.write_declaration(self.root, STEM, document_language="ko")
+        phase01 = os.path.join(self.root, "plan_docs", "01-x", f"{STEM}.md")
+        korean = "이 문서는 한국어로 작성된 정상 계획 문서이며 표본을 넘길 만큼 충분히 깁니다.\n"
+        Path(phase01).write_text(
+            f"Cycle-Stem: `{STEM}`\nDocument-Language: ko\n\n{korean}", encoding="utf-8")
+        added = ("The upstream release note is quoted here verbatim because translating "
+                 "it would change the evidence being cited.\n")
+        rc, text = self._run_claude_edit(phase01, korean, korean + "\n" + added)
+        self.assertEqual(rc, 0, text)
+
 
 class TestCliSurfacesWhatItChecked(unittest.TestCase):
     """T3·T14 — 어긋난 구성에서 사람이 볼 수 있는 유일한 단서."""

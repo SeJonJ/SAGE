@@ -67,6 +67,16 @@ Only `sage-init` and `sage-init-local` may persist a language preference, only t
 profile, and only after explicit user approval. Every other skill applies `--lang` to that one
 invocation.
 
+**An AI runtime resolves this before its first user-visible line.** A skill's resolver runs when
+the skill starts, which is already too late for the greeting, the "reading the profile" note and
+the progress line a session prints on the way there — those land in the default language while the
+setting says otherwise, and the user reads a Korean session that was configured as English.
+So the session entrypoints (`CLAUDE.md`, `AGENTS.md`) read the local profile silently before any
+output, and emit nothing until they have. Switching mid-session does not repair a first line
+already sent in the wrong language. Once resolved, the language holds for every question, progress
+note, warning, error and closing summary in that session, including turns after a tool failure, a
+resume or a compaction.
+
 An unsupported explicit language is a bilingual error on stderr with exit 2. An invalid value in
 the local profile falls back to `ko` with a bilingual diagnostic; `sage validate` reports it as a
 configuration failure, but a hook's verdict and exit code do not change.
@@ -83,6 +93,12 @@ the cycle-opening skill, then the local profile, then `ko`.
   repaired automatically.
 - Every Phase 01–06 document of the same `Cycle-Stem` carries the identical marker and its prose
   in that language.
+- **Prose includes the human-facing structure**, not just paragraphs: section headings, list
+  labels, table headers and checklist text. A Korean document under English headings is the
+  mixed state this rule exists to prevent, and the gate's prose sampling does not catch it.
+  The exceptions are the marker lines above and the two headings a parser reads by their exact
+  string — `## 5. Done Criteria` and `## 6. Done Criteria Revision Log`. Translating either one
+  reads to `done_criteria_contract` as a missing heading, so both stay English in every language.
 - Changing the local preference mid-cycle, or passing a conflicting `--lang`, does not change an
   active cycle. The conflict is reported and the declared language continues to apply.
 - A mismatch between Phase 00, the cycle state, the context packet, or two documents of the same

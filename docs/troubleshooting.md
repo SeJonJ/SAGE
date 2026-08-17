@@ -231,3 +231,27 @@ pipx install --force "sage-harness[schema]"
 ```
 
 `jsonschema`가 없으면 hash와 내장 의미 검사는 계속되지만 JSON Schema 검사는 WARN으로 건너뜁니다.
+
+## `--lang en`을 붙였는데 출력이 그대로 한국어
+
+전역 `--lang`은 **하위 명령 앞**에만 옵니다. `sage doctor --lang en`은 지원하는 형태가 아닙니다.
+
+```bash
+sage --lang en doctor        # 이 자리가 맞습니다
+```
+
+Hook 출력은 `--lang`을 아예 받지 않습니다. Hook이 영어로 나와야 한다면 대상 프로젝트의
+`sage/project-profile.local.yaml`에 설정합니다.
+
+```yaml
+interface:
+  language: en
+```
+
+그래도 한국어가 나온다면 확인할 것이 셋입니다. local profile이 **hook이 검사하는 그 프로젝트
+루트**에 있는지, 값이 `ko`나 `en`인지(다른 값은 `ko`로 되돌아가며 `sage validate`가 설정 실패로
+보고합니다), 그리고 남은 한국어가 **인용된 원문**인지 — 파일에서 읽어 근거로 되돌려주는 조각은
+번역하지 않습니다. 그건 결함이 아니라 증거입니다.
+
+Phase 00~06 문서가 한국어로 쓰이는 것은 이 설정과 무관합니다. 문서 언어는 사이클마다
+`Document-Language:`로 따로 고정하며, 진행 중인 사이클은 `--lang`으로 바뀌지 않습니다.

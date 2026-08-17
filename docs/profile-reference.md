@@ -15,6 +15,20 @@ generate는 compiled profile을 `0600`으로 수렴시킵니다. 이전 버전�
 소유자 전용으로 강화됩니다. hook 프로세스가 다른 UID로 실행되는 CI/컨테이너에서는 같은 UID로 실행하거나
 명시적인 파일 전달 방식을 구성해야 하며, 권한을 넓혀 공유하는 방식은 지원 계약이 아닙니다.
 
+로컬 profile은 표시 언어도 소유합니다.
+
+```yaml
+interface:
+  language: en      # 없으면 ko. ko | en 두 값만 허용
+```
+
+이 값은 공유 profile·compiled `project-profile.json`·manifest·profile hash 어디에도 들어가지
+않습니다. 언어는 머신 capability와 같은 성격이라 로컬에만 남습니다. 한 번만 다르게 실행하려면
+하위 명령 앞에 전역 `--lang`을 붙입니다(`sage --lang en validate`). 우선순위는 `--lang` →
+local profile → `ko`이며, hook은 `--lang`을 받지 않아 local profile과 기본값만 따릅니다.
+잘못된 값은 `ko`로 되돌리고 `sage validate`가 설정 실패로 보고하지만, 게이트 판정과 종료코드는
+바뀌지 않습니다.
+
 ## 최소 흐름
 
 최초 작성은 `sage-init`, 이미 설정된 프로젝트에 합류할 때는 `sage-init-local`을 사용합니다.

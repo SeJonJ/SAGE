@@ -83,6 +83,11 @@ NOT_TRANSLATED = {
         "_OVERLAY_HEADER_PREFIXES — 렌더 본문에서 compose_block 고지 헤더를 걷어내는 prefix 매처. "
         "CORE 렌더 헤더는 overlay_common.compose_block 과 동일하게 표시 언어에 매이지 않는 산출물 "
         "본문(해시 앵커 입력)이라 번역 대상이 아니다."),
+    ("sage/commands/cycle.py", "_phase00_prose"): (12,
+        "`--create` 가 만드는 Phase 00 초안의 사람용 heading·TODO. 화면에 찍히지 않고 문서 파일 "
+        "안으로 들어가며, 언어를 고르는 것은 `--lang` 표시 언어가 아니라 그 사이클의 "
+        "`Document-Language:` 선언이다. 표시 카탈로그로 보내면 표시가 ko 인 사용자가 en 사이클을 "
+        "열 때 영어 문서에 한국어 heading 이 박힌다 — 막으려는 혼용을 도구가 직접 만든다."),
     ("sage/commands/retro.py", "<module>"): (2,
         "_DISTILLER_PROMPT + _APPLY_PATH — host AI 를 대상으로 한 고정 LLM 프롬프트/절차 설명. "
         "화면에 표시되는 문장이 아니라 host AI 가 읽는 지시문이라 표시 언어와 무관하게 항상 원문을 "

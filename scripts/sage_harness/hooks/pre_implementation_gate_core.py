@@ -458,6 +458,49 @@ def _bound_phase00_risk(event, profile, snapshot):
             "detail": "", "cycle_stem": binding["stem"]}
 
 
+def _leaves_the_path(change):
+    """이 변경 뒤 그 경로가 비는가 — 삭제이거나, 다른 경로로 옮겨 나가는 원본이거나.
+
+    move 는 source(`Update File`) + destination(`Move to`) 두 변경으로 표현된다. source 를
+    일반 수정으로 두면 사라질 문서의 선언과 본문이 최종 문서처럼 검사돼, 잘못 선언된 문서를
+    사이클 밖으로 빼내는 정리 작업이 영구히 막힌다 — phase 문서 집합 관점에서 move-out 은
+    그냥 삭제다. 목적지가 여전히 사이클 문서면 그쪽이 같은 stem 으로 잡히므로 검사는
+    목적지에서 계속된다.
+
+    **경로가 아니라 변경 단위로 묻는다.** 같은 패치가 비운 경로에 새 문서를 다시 만들 수 있고
+    (`Move to` 뒤의 `Add File`), 경로로 기억한 배제는 그 새 문서까지 검사에서 빼버린다.
+    변경 순서대로 적용하면 나중 변경이 최종 상태를 이긴다.
+    """
+    return (change or {}).get("op") == "delete" or bool((change or {}).get("move_destination"))
+
+
+def _overlay_changed_documents(event, cfg, stem, documents):
+    """디스크 문서 집합 위에 **이번 변경 후**의 문서를 덮어쓴다(제자리 수정).
+
+    snapshot 은 쓰기 **전** 상태다. 그것만 비교하면 이번 쓰기가 바꾸는 선언 자체가 검사에서
+    빠져, en 사이클의 문서를 ko 로 되돌리는 쓰기가 통과한다 — 막으려는 바로 그 상태다.
+    삭제는 집합에서 뺀다. 지워지는 문서의 선언으로 남은 문서를 막으면 잘못 선언된 문서를
+    치우는 일이 영구히 불가능해진다.
+
+    재구성 실패(post_image_error)는 여기서 조각을 문서로 오해하지 말고 그냥 둔다 — 그 실패는
+    본문 게이트가 fail-closed 로 잡는다. 여기서 조각을 읽으면 정상 부분 편집이 전부 marker
+    미선언으로 떨어진다.
+    """
+    globs = [item.get("glob") or "" for item in ((cfg or {}).get("phases") or [])]
+    for change in (event.get("changes") or []):
+        path = (change or {}).get("path") or ""
+        if not path or cycle_binding.path_stem(path) != stem:
+            continue
+        if not any(cycle_binding.matches_glob(path, glob) for glob in globs if glob):
+            continue
+        if _leaves_the_path(change):
+            documents.pop(path, None)
+            continue
+        image, error = _post_image(change)
+        if error is None and image is not None:
+            documents[path] = image
+
+
 def _document_language_gate(event, profile, snapshot, stem):
     """같은 사이클 문서들의 `Document-Language` 일관성 판정.
 
@@ -487,6 +530,7 @@ def _document_language_gate(event, profile, snapshot, stem):
             path = (doc or {}).get("path") or ""
             if path and cycle_binding.path_stem(path) == stem:
                 documents.setdefault(path, doc.get("content") or "")
+    _overlay_changed_documents(event, _pdca_cfg(profile), stem, documents)
     if not documents:
         return None
 
@@ -533,39 +577,78 @@ def _resolved_document_language(event, snapshot, stem):
     return None
 
 
+def _post_image(change):
+    """이 변경 후의 **전체 본문**. (image, error) — 둘 중 하나만 채워진다.
+
+    Write / apply_patch Add File 은 content 가 곧 전체 본문이고(`full_content`), 부분 diff
+    (Claude Edit/MultiEdit, apply_patch Update File)는 오케스트레이터가 디스크 원본에 적용해
+    되짚어 싣는다. 되짚기가 실패했으면 `post_image_error` 가 실려 오고, 그건 조용히 넘길 일이
+    아니다 — 최종 문서를 모르는 채 통과시키면 그 경로가 곧 검사 우회로가 된다.
+    """
+    if change.get("full_content"):
+        return change.get("content"), None
+    return change.get("post_image"), change.get("post_image_error")
+
+
+def _prose_diagnostic(key, path, line=0, evidence=""):
+    """언어 중립 진단. 문장이 아니라 위치와 원문 조각뿐이다 — 사람이 읽는 설명은 표시 계층
+    catalog 가 소유한다. 여기서 한국어 문장을 만들면 표시 언어가 en 인 화면에 그대로 실려 나간다."""
+    return {"key": key, "path": path, "line": line, "evidence": evidence}
+
+
 def _document_prose_gate(event, snapshot, stem):
     """이번 write 로 새로 생기거나 바뀌는 이 stem 의 본문이 선언 언어를 어겼는가.
 
-    검사 대상은 **이번 이벤트가 쓰는 내용**뿐이다(`event["changes"]`) — 이미 디스크에 있는 다른
-    phase 문서까지 소급 검사하면 legacy 문서 하나가 이후 모든 편집을 막는 과차단이 된다(§7.7).
-    full content 를 담지 않은 변경(부분 diff 뿐인 경로)은 판정하지 않는다 — 못 본 내용을 있다고
-    가정하지 않는다.
+    두 질문의 전제가 다르므로 입력도 갈라 쓴다.
+    - en 문서에 **새로 들어오는** 한국어: 이번에 추가되는 내용만 보면 된다. 디스크의 legacy
+      문서까지 소급하면 문서 하나가 이후 모든 편집을 막는 과차단이 된다(§7.7).
+    - ko 문서에 한국어가 **아예 없다**: 변경 후 전체 본문이 있어야만 물을 수 있다. 부분 diff 에
+      물으면 정상 문서에 영어 조각을 더하는 편집이 곧바로 차단된다.
 
-    반환: None(해당없음/통과) | {"reason": str}
+    Markdown 문서(.md)만 본다. 이 모듈의 규칙은 전부 Markdown 구조(fence·inline code·blockquote)
+    이고, 같은 stem 의 소스 파일에 적용하면 주석 한 줄로 차단되거나 되짚기 실패로 막힌다.
+
+    반환: None(해당없음/통과) | 언어 중립 진단 dict
     """
     language = _resolved_document_language(event, snapshot, stem)
     if language not in ("ko", "en"):
         return None
     try:
         import prose_language
-    except Exception:
-        return None
+    except Exception as exc:
+        # 판정 정본이 사라졌는데 통과시키면, 파일 하나를 지우는 것이 이 게이트를 끄는 스위치가 된다.
+        # 설명 문장은 catalog 가 소유한다 — 여기서는 원문 예외를 evidence 로만 넘긴다.
+        return _prose_diagnostic("block_prose_scanner_unavailable", "",
+                                 evidence=f"{type(exc).__name__}: {exc}")
     for change in (event.get("changes") or []):
         path = (change or {}).get("path") or ""
-        if not path or cycle_binding.path_stem(path) != stem:
+        if not path or not path.endswith(".md") or cycle_binding.path_stem(path) != stem:
             continue
-        content = change.get("content")
-        if content is None:
+        if _leaves_the_path(change):
+            continue           # 최종 상태에 남지 않는다 — 판정은 목적지·후속 변경에서 이어진다
+        image, error = _post_image(change)
+        if error:
+            return _prose_diagnostic("block_document_post_image", path, evidence=error)
+        if image is None:
+            # 쓰기는 하는데 변경 후 문서를 알 수 없다 — 모르는 채 통과시키면 그 도구가 우회로다.
+            if change.get("content"):
+                return _prose_diagnostic("block_document_post_image", path,
+                                         evidence="no post-image contract")
             continue
-        bad = prose_language.violations(content, language)
-        if not bad:
-            continue
-        if bad == [(0, "")]:
-            return {"reason": f"{path}: Document-Language={language} 인데 번역 대상 prose 에 "
-                              f"한국어가 전혀 없음(구조 이상)"}
-        line_no, snippet = bad[0]
-        return {"reason": f"{path}:{line_no}: Document-Language={language} 문서의 새/변경 prose 에서 "
-                          f"허용 범위 밖 한국어 발견 — {snippet.strip()[:80]!r}"}
+        # 변경 전·후 **전체 문서**를 Markdown 문맥째로 판정하고, 그 차이(이번 변경이 늘린
+        # 부채)만 차단한다. 새로 추가된 줄만 보면 fence 한 줄을 지워 안에 있던 한국어가 prose 로
+        # 드러나는 경우를 놓치고, 변경 후만 보면 legacy 문서 하나가 이후 모든 편집을 막는다.
+        before = change.get("pre_image") or ""
+        found = prose_language.new_foreign_prose(before, image, language)
+        if found:
+            line_no, snippet = found[0]
+            return _prose_diagnostic("block_document_prose_language", path,
+                                     line=line_no, evidence=snippet[:80])
+        unclosed = prose_language.new_unclosed_fence(before, image)
+        if unclosed:
+            return _prose_diagnostic("block_document_unclosed_fence", path, line=unclosed)
+        if prose_language.newly_lacks_native_prose(before, image, language):
+            return _prose_diagnostic("block_document_prose_structure", path)
     return None
 
 
@@ -1385,9 +1468,14 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
         # 다른 phase 문서까지 소급 검사하면 legacy 문서 하나가 이후 모든 편집을 막는다.
         prose = _document_prose_gate(event, snapshot, binding["stem"])
         if prose is not None:
+            where = prose["path"] + (f":{prose['line']}" if prose["line"] else "")
             return {"status": "block", "exit_code": 2, "risk": "PDCA",
-                    "message_key": "block_document_prose_language",
-                    "reason": prose["reason"], "file_short": c["file_short"]}
+                    "message_key": prose["key"],
+                    # reason 은 두 언어에서 글자까지 같아야 한다 — 위치와 원문 조각뿐이고
+                    # 설명 문장은 catalog 가 소유한다.
+                    "reason": f"{where} {prose['evidence']!r}".strip() if prose["evidence"]
+                              else where,
+                    "file_short": prose["path"] or c["file_short"]}
 
         changed_phases = _changed_phase_ids(event, cfg)
         report_phase = str(cfg.get("report_phase") or "")

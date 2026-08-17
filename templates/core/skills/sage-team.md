@@ -17,6 +17,12 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
   "팀 오케스트레이션", "run the team", or asks to drive the team through implementation→review
 
 ## procedure
+0. Resolve the conversation language once: an explicit `--lang ko|en` on this skill's
+   invocation, then `interface.language` in `sage/project-profile.local.yaml`, then `ko`.
+   Every question, proposal, progress note, warning and summary uses it; machine values
+   and Phase 00–06 `Document-Language:` prose do not. Document prose includes section headings
+   and list labels, except `## 5. Done Criteria` and `## 6. Done Criteria Revision Log`, which a
+   parser reads by their exact string. See `docs/agent/language-policy.md`.
 1. Read `sage/project-profile.yaml` — confirm bootstrapped; confirm a plan doc (Phases
    00–02) for this cycle exists. If not bootstrapped → direct to `/sage-init`; if no plan
    → direct to `/sage-plan` (do not author the plan here).

@@ -215,7 +215,15 @@ def _gate_record(decision, profile, language=DEFAULT_LANGUAGE):
         "block_document_language_conflict": ("BLOCK", "PDCA", True, None),
         "warn_document_language_missing": ("WARN", "PDCA", True, None),
         # 본문(prose) 언어 위반 — marker 는 일치하지만 그 아래 실제 글이 선언 언어를 어긴 경우.
+        # 셋 다 reason 을 노출하는데, 그 reason 은 판정이 만든 **언어 중립 evidence**(경로·줄번호·
+        # 원문 조각)뿐이다. 설명 문장은 여기 catalog 가 소유해야 영어 화면에 한국어가 안 섞인다.
         "block_document_prose_language": ("BLOCK", "PDCA", True, None),
+        "block_document_prose_structure": ("BLOCK", "PDCA", True, None),
+        "block_document_unclosed_fence": ("BLOCK", "PDCA", True, None),
+        # 변경 후 전체 본문을 되짚지 못한 경우와 판정 정본 부재. 둘 다 "무엇인지 모른다" 라서
+        # 통과가 아니라 차단이다 — 모르는 채 통과시키면 그 경로가 곧 검사 우회로가 된다.
+        "block_document_post_image": ("BLOCK", "PDCA", True, None),
+        "block_prose_scanner_unavailable": ("BLOCK", "PDCA", True, None),
         "block_cycle_closed": ("BLOCK", "PDCA", True,
                              _i18n.frag(language, "hint.cycle_closed").format(
                                  clear=_i18n.frag(language, "hint.clear_cycle"))),

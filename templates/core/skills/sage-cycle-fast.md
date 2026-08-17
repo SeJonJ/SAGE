@@ -7,6 +7,12 @@ Delegate a complete explicitly enabled Fast Cycle to sage-plan-fast and sage-tea
 ## when_to_use
 - When the user explicitly requests the profile-enabled Fast Cycle for an L2/L3 change.
 ## procedure
+0. Resolve the conversation language once: an explicit `--lang ko|en` on this skill's
+   invocation, then `interface.language` in `sage/project-profile.local.yaml`, then `ko`.
+   Every question, proposal, progress note, warning and summary uses it; machine values
+   and Phase 00–06 `Document-Language:` prose do not. Document prose includes section headings
+   and list labels, except `## 5. Done Criteria` and `## 6. Done Criteria Revision Log`, which a
+   parser reads by their exact string. See `docs/agent/language-policy.md`.
 1. Confirm shared policy enables Fast Cycle and resolve the current cycle state.
 2. Delegate composite planning and audit open to `sage-plan-fast`.
 3. Delegate implementation, review, completion evidence, audit close, and cycle clear to `sage-team-fast`.

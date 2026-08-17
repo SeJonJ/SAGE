@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -95,8 +96,39 @@ def check_localization_debt():
     return [Finding("localization-debt", issue) for issue in release_debt_issues(str(REPO))]
 
 
+_SOURCE_MARKER = re.compile(
+    r"^<!-- sage-doc-source: (?P<source>[^ ]+) sha256:(?P<digest>[0-9a-f]{64}) -->$")
+
+
+def _source_digest(path):
+    """호스트마다 다른 줄바꿈을 LF 로 정규화한 뒤 해시한다."""
+    text = path.read_bytes().decode("utf-8")
+    return hashlib.sha256(
+        text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")).hexdigest()
+
+
+def _mirror_stale_issues(korean, english):
+    """mirror 첫 줄의 source hash 가 현재 한국어 원본과 일치하는가.
+
+    짝의 **존재**만 보면 한국어만 고친 릴리스가 그대로 통과한다 — 두 문서가 갈리는 건
+    한쪽이 없을 때가 아니라 한쪽만 낡았을 때다. 방향은 한국어가 authoring source 이고
+    영어가 mirror 다(`docs/release-readiness.md`).
+    """
+    digest = _source_digest(korean)
+    expected = f"<!-- sage-doc-source: {korean.name} sha256:{digest} -->"
+    text = english.read_text(encoding="utf-8")
+    first = text.splitlines()[0] if text else ""
+    marker = _SOURCE_MARKER.fullmatch(first)
+    rel = english.relative_to(REPO)
+    if text.count("<!-- sage-doc-source:") != 1 or marker is None:
+        return [f"source marker 가 1행에 정확히 하나 있어야 한다: {rel} — {expected}"]
+    if marker.group("source") != korean.name or marker.group("digest") != digest:
+        return [f"mirror 가 낡았다: {rel} — marker 를 {expected} 로 교체하라"]
+    return []
+
+
 def check_document_pairs():
-    """한국어 사용자 문서마다 영어 짝이 있는가. 한쪽만 갱신된 채 릴리스되면 두 문서가 갈린다."""
+    """한국어 사용자 문서마다 영어 짝이 있고, 그 짝이 낡지 않았는가."""
     findings = []
     for korean in sorted((REPO / "docs").glob("*.md")) + [REPO / "README.md"]:
         if korean.name.endswith(".en.md") or not korean.is_file():
@@ -104,6 +136,9 @@ def check_document_pairs():
         english = korean.parent / (korean.stem + ".en.md")
         if not english.is_file():
             findings.append(Finding("docs-pair", f"영어 짝 없음: {english.relative_to(REPO)}"))
+            continue
+        findings.extend(Finding("docs-pair", issue)
+                        for issue in _mirror_stale_issues(korean, english))
     return findings
 
 

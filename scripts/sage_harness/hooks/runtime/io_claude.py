@@ -27,9 +27,20 @@ def extract_changes(raw, rel):
     tool_name = raw.get("tool_name") or ""
     blob = (ti.get("content") or "") or (ti.get("new_string") or "")
     removed = ti.get("old_string") or ""
+    # edits: 치환쌍을 순서대로 따로 싣는다. blob/removed 는 "\n" 으로 이어붙인 집계라
+    # 그것만으로는 변경 후 전체 본문을 되짚을 수 없다 — 문서 전체를 전제로 하는 판정
+    # (본문 언어 구조 smoke)이 부분 조각을 전체로 오해하지 않으려면 순서쌍이 필요하다.
+    # `all` 은 host 가 실제로 하는 동작이다(replace_all). 빠뜨리면 되짚은 문서가 실제 결과와
+    # 달라져, 모든 한국어를 걷어내는 편집이 "아직 남아 있다" 로 읽힌다.
+    edits = []
+    if tool_name != "Write" and (ti.get("old_string") or ti.get("new_string")):
+        edits.append({"old": ti.get("old_string") or "", "new": ti.get("new_string") or "",
+                      "all": bool(ti.get("replace_all"))})
     for e in (ti.get("edits") or []):
         blob += "\n" + (e.get("new_string") or "")
         removed += "\n" + (e.get("old_string") or "")
+        edits.append({"old": e.get("old_string") or "", "new": e.get("new_string") or "",
+                      "all": bool(e.get("replace_all"))})
     if not fp:
         return []
     change = {"path": rel(fp), "op": "write" if tool_name == "Write" else "update",
@@ -38,6 +49,8 @@ def extract_changes(raw, rel):
         change["full_content"] = True
     if removed:
         change["removed_content"] = removed
+    if edits:
+        change["edits"] = edits
     return [change]
 
 

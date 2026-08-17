@@ -216,5 +216,99 @@ class TestConsumerLocaleE2E(unittest.TestCase):
             self._set_language(None)
 
 
+class TestInstalledLanguageContract(unittest.TestCase):
+    """AC20/AC24 — 언어 계약이 **설치된 트리**에 실제로 들어갔는가.
+
+    레포의 `templates/` 를 읽는 가드는 "정본에 적혀 있다"까지만 증명한다. 소비 프로젝트가 읽는
+    것은 그 파일이 아니라 `sage install` 이 깔아놓은 사본이고, 두 host 는 서로 다른 진입 파일을
+    받는다 — claude 는 `CLAUDE.md`, codex 는 `AGENTS.md`. 한쪽만 고친 상태는 정본 가드에 걸리지
+    않는다. 그래서 실제로 설치하고, 설치본을 읽는다.
+
+    진입 파일에 거는 이유는 실측된 실패 지점이 거기이기 때문이다. skill 안의 resolver 는 skill 이
+    시작할 때 돌아서, 그 전에 나가는 첫 진행 문구를 이미 놓친다. 그래서 계약은 skill 이 아니라
+    세션 진입 파일의 **첫 섹션**에 있어야 하고, 여기서는 위치까지 본다.
+
+    host 가 그 지시를 실제로 따르는지는 이 테스트가 증명하지 못한다. 그건 사람 검토의 몫이다."""
+
+    ENTRYPOINTS = (("claude", "CLAUDE.md", ".claude"), ("codex", "AGENTS.md", ".codex"))
+    POLICY = "docs/agent/language-policy.md"
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.mkdtemp()
+        cls.roots, cls.installs = {}, {}
+        for host, _, _ in cls.ENTRYPOINTS:
+            root = os.path.join(cls._tmp, host)
+            args = ["install", "--host", host, "--prefix", "consumer", "--dest", root]
+            if host == "codex":
+                args += ["--skill-scope", "project-local"]
+            cls.installs[host] = _sage(args, cwd=REPO)
+            cls.roots[host] = root
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls._tmp, ignore_errors=True)
+
+    def _read(self, host, *parts):
+        with open(os.path.join(self.roots[host], *parts), encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_both_hosts_install(self):
+        for host, done in self.installs.items():
+            self.assertEqual(done.returncode, 0, f"{host}: {done.stderr}")
+
+    def test_session_entrypoint_resolves_the_language_before_any_output(self):
+        for host, entrypoint, _ in self.ENTRYPOINTS:
+            text = self._read(host, entrypoint)
+            with self.subTest(host=host):
+                self.assertIn("interface.language", text)
+                self.assertIn("sage/project-profile.local.yaml", text)
+                self.assertIn(self.POLICY, text)
+                headings = [line for line in text.splitlines() if line.startswith("## ")]
+                self.assertTrue(headings, f"{entrypoint} 에 섹션이 없다")
+                # 첫 섹션이어야 한다. 뒤에 있으면 그 앞 지시를 수행하는 동안 출력이 나간다.
+                self.assertEqual(headings[0],
+                                 "## Resolve the conversation language before the first message")
+
+    def test_every_installed_skill_resolves_the_conversation_language(self):
+        for host, _, skill_dir in self.ENTRYPOINTS:
+            skills = sorted(entry for entry in os.listdir(os.path.join(self.roots[host], skill_dir, "skills")))
+            with self.subTest(host=host):
+                self.assertEqual(len(skills), 13, f"{host}: 설치된 skill 수가 바뀌었다 — {skills}")
+            for skill in skills:
+                text = self._read(host, skill_dir, "skills", skill, "SKILL.md")
+                with self.subTest(host=host, skill=skill):
+                    self.assertIn("--lang", text)
+                    self.assertIn("interface.language", text)
+                    self.assertIn(self.POLICY, text)
+                    self.assertNotIn("default to Korean", text)
+
+    def test_installed_policy_states_the_pre_message_rule(self):
+        for host, _, _ in self.ENTRYPOINTS:
+            text = self._read(host, "docs", "agent", "language-policy.md")
+            with self.subTest(host=host):
+                self.assertIn("before its first user-visible line", text)
+                # 문서 언어 쪽 계약: 산문에 heading·표 머리글이 포함된다.
+                self.assertIn("Prose includes the human-facing structure", text)
+
+    def test_installed_templates_carry_the_korean_heading_contract(self):
+        """AC24 의 원인은 이 파일이었다 — 영문 literal 만 있고 ko 대응이 없었다."""
+        for host, _, _ in self.ENTRYPOINTS:
+            text = self._read(host, "docs", "agent", "pdca-templates.md")
+            with self.subTest(host=host):
+                self.assertIn("## Template language", text)
+                self.assertIn("## 4. 인수 매트릭스", text)
+                self.assertIn("## 4. 인수 증거 검토", text)
+                # 번역하면 게이트가 표를 못 찾는 키워드를 명시하는가.
+                self.assertIn("수용", text)
+                self.assertIn("`required`/`필수`", text)
+                # 번역 금지 목록이 파서 가시 문자열을 담고 있는가.
+                for literal in ("## 5. Done Criteria", "## 6. Done Criteria Revision Log",
+                                "Status: PENDING — implementation not started"):
+                    self.assertIn(literal, text)
+                # 템플릿 fence 마다 포인터가 붙어야 한다 — fence 만 읽고 복사하는 경로를 막는다.
+                self.assertEqual(text.count("see **Template language** above"), 7)
+
+
 if __name__ == "__main__":
     unittest.main()

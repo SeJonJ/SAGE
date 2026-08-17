@@ -19,6 +19,12 @@ L2/L3 code is written. Hands back an ownership map; `/sage-team` drives 03–06.
 - Invoked by `/sage-cycle` as the 00–02 half of the full-cycle umbrella
 
 ## procedure
+0. Resolve the conversation language once: an explicit `--lang ko|en` on this skill's
+   invocation, then `interface.language` in `sage/project-profile.local.yaml`, then `ko`.
+   Every question, proposal, progress note, warning and summary uses it; machine values
+   and Phase 00–06 `Document-Language:` prose do not. Document prose includes section headings
+   and list labels, except `## 5. Done Criteria` and `## 6. Done Criteria Revision Log`, which a
+   parser reads by their exact string. See `docs/agent/language-policy.md`.
 1. Read `sage/project-profile.yaml` — confirm the project is bootstrapped
    (`project.name` non-empty, `risk` and `components` set). If not, block and
    direct to `/sage-init`.

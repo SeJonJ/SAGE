@@ -64,6 +64,90 @@
       "reason": "_ABSORB_KW — `sage change \"자연어 의도\"` 라우터가 사용자의 한국어 자연어 입력에서 매칭하는 키워드 리스트. 화면 출력이 아니라 입력 파서 literal 이라 번역하면 매칭 자체가 깨진다. 영어 자연어 입력 지원은 이 키워드를 '번역'하는 문제가 아니라 별도 영어 키워드 세트를 병행 등록할지를 정하는 기능 결정이다 — 이번 배치 범위 밖."
     },
     {
+      "source_file": "sage/commands/cycle.py",
+      "source_symbol": "_phase00_prose",
+      "source_line": 418,
+      "text": "관리 대상 소스를 고치기 전에 계획을 채우세요",
+      "reason": "`--create` 가 만드는 Phase 00 초안의 사람용 heading·TODO. 화면에 찍히지 않고 문서 파일 안으로 들어가며, 언어를 고르는 것은 `--lang` 표시 언어가 아니라 그 사이클의 `Document-Language:` 선언이다. 표시 카탈로그로 보내면 표시가 ko 인 사용자가 en 사이클을 열 때 영어 문서에 한국어 heading 이 박힌다 — 막으려는 혼용을 도구가 직접 만든다."
+    },
+    {
+      "source_file": "sage/commands/cycle.py",
+      "source_symbol": "_phase00_prose",
+      "source_line": 419,
+      "text": "기본 계획",
+      "reason": "`--create` 가 만드는 Phase 00 초안의 사람용 heading·TODO. 화면에 찍히지 않고 문서 파일 안으로 들어가며, 언어를 고르는 것은 `--lang` 표시 언어가 아니라 그 사이클의 `Document-Language:` 선언이다. 표시 카탈로그로 보내면 표시가 ko 인 사용자가 en 사이클을 열 때 영어 문서에 한국어 heading 이 박힌다 — 막으려는 혼용을 도구가 직접 만든다."
+    },
+    {
+      "source_file": "sage/commands/cycle.py",
+      "source_symbol": "_phase00_prose",
+      "source_line": 426,
+      "text": "TODO: 구체적인 완료 기준으로 바꾸세요",
+      "reason": "`--create` 가 만드는 Phase 00 초안의 사람용 heading·TODO. 화면에 찍히지 않고 문서 파일 안으로 들어가며, 언어를 고르는 것은 `--lang` 표시 언어가 아니라 그 사이클의 `Document-Language:` 선언이다. 표시 카탈로그로 보내면 표시가 ko 인 사용자가 en 사이클을 열 때 영어 문서에 한국어 heading 이 박힌다 — 막으려는 혼용을 도구가 직접 만든다."
+    },
+    {
+      "source_file": "sage/commands/cycle.py",
+      "source_symbol": "_phase00_prose",
+      "source_line": 427,
+      "text": "초기 revision 1. 재계획 기록 없음.",
+      "reason": "`--create` 가 만드는 Phase 00 초안의 사람용 heading·TODO. 화면에 찍히지 않고 문서 파일 안으로 들어가며, 언어를 고르는 것은 `--lang` 표시 언어가 아니라 그 사이클의 `Document-Language:` 선언이다. 표시 카탈로그로 보내면 표시가 ko 인 사용자가 en 사이클을 열 때 영어 문서에 한국어 heading 이 박힌다 — 막으려는 혼용을 도구가 직접 만든다."
+    },
+    {
+      "source_file": "sage/commands/cycle.py",
+      "source_symbol": "_phase00_prose",
+      "source_line": 421,
+      "text": "## 1. 배경",
+      "reason": "`--create` 가 만드는 Phase 00 초안의 사람용 heading·TODO. 화면에 찍히지 않고 문서 파일 안으로 들어가며, 언어를 고르는 것은 `--lang` 표시 언어가 아니라 그 사이클의 `Document-Language:` 선언이다. 표시 카탈로그로 보내면 표시가 ko 인 사용자가 en 사이클을 열 때 영어 문서에 한국어 heading 이 박힌다 — 막으려는 혼용을 도구가 직접 만든다."
+    },
+    {
+      "source_file": "sage/commands/cycle.py",
+      "source_symbol": "_phase00_prose",
+      "source_line": 421,
+      "text": "TODO: 문제와 제약 조건을 적으세요.",
+      "reason": "`--create` 가 만드는 Phase 00 초안의 사람용 heading·TODO. 화면에 찍히지 않고 문서 파일 안으로 들어가며, 언어를 고르는 것은 `--lang` 표시 언어가 아니라 그 사이클의 `Document-Language:` 선언이다. 표시 카탈로그로 보내면 표시가 ko 인 사용자가 en 사이클을 열 때 영어 문서에 한국어 heading 이 박힌다 — 막으려는 혼용을 도구가 직접 만든다."
+    },
+    {
+      "source_file": "sage/commands/cycle.py",
+      "source_symbol": "_phase00_prose",
+      "source_line": 422,
+      "text": "## 2. 목표",
+      "reason": "`--create` 가 만드는 Phase 00 초안의 사람용 heading·TODO. 화면에 찍히지 않고 문서 파일 안으로 들어가며, 언어를 고르는 것은 `--lang` 표시 언어가 아니라 그 사이클의 `Document-Language:` 선언이다. 표시 카탈로그로 보내면 표시가 ko 인 사용자가 en 사이클을 열 때 영어 문서에 한국어 heading 이 박힌다 — 막으려는 혼용을 도구가 직접 만든다."
+    },
+    {
+      "source_file": "sage/commands/cycle.py",
+      "source_symbol": "_phase00_prose",
+      "source_line": 422,
+      "text": "TODO: 달성하려는 결과를 정의하세요.",
+      "reason": "`--create` 가 만드는 Phase 00 초안의 사람용 heading·TODO. 화면에 찍히지 않고 문서 파일 안으로 들어가며, 언어를 고르는 것은 `--lang` 표시 언어가 아니라 그 사이클의 `Document-Language:` 선언이다. 표시 카탈로그로 보내면 표시가 ko 인 사용자가 en 사이클을 열 때 영어 문서에 한국어 heading 이 박힌다 — 막으려는 혼용을 도구가 직접 만든다."
+    },
+    {
+      "source_file": "sage/commands/cycle.py",
+      "source_symbol": "_phase00_prose",
+      "source_line": 423,
+      "text": "## 3. 인수 기준",
+      "reason": "`--create` 가 만드는 Phase 00 초안의 사람용 heading·TODO. 화면에 찍히지 않고 문서 파일 안으로 들어가며, 언어를 고르는 것은 `--lang` 표시 언어가 아니라 그 사이클의 `Document-Language:` 선언이다. 표시 카탈로그로 보내면 표시가 ko 인 사용자가 en 사이클을 열 때 영어 문서에 한국어 heading 이 박힌다 — 막으려는 혼용을 도구가 직접 만든다."
+    },
+    {
+      "source_file": "sage/commands/cycle.py",
+      "source_symbol": "_phase00_prose",
+      "source_line": 423,
+      "text": "TODO: 요구사항 수준의 인수 증거를 정의하세요.",
+      "reason": "`--create` 가 만드는 Phase 00 초안의 사람용 heading·TODO. 화면에 찍히지 않고 문서 파일 안으로 들어가며, 언어를 고르는 것은 `--lang` 표시 언어가 아니라 그 사이클의 `Document-Language:` 선언이다. 표시 카탈로그로 보내면 표시가 ko 인 사용자가 en 사이클을 열 때 영어 문서에 한국어 heading 이 박힌다 — 막으려는 혼용을 도구가 직접 만든다."
+    },
+    {
+      "source_file": "sage/commands/cycle.py",
+      "source_symbol": "_phase00_prose",
+      "source_line": 424,
+      "text": "## 4. 최종 결론 및 UX 가이드",
+      "reason": "`--create` 가 만드는 Phase 00 초안의 사람용 heading·TODO. 화면에 찍히지 않고 문서 파일 안으로 들어가며, 언어를 고르는 것은 `--lang` 표시 언어가 아니라 그 사이클의 `Document-Language:` 선언이다. 표시 카탈로그로 보내면 표시가 ko 인 사용자가 en 사이클을 열 때 영어 문서에 한국어 heading 이 박힌다 — 막으려는 혼용을 도구가 직접 만든다."
+    },
+    {
+      "source_file": "sage/commands/cycle.py",
+      "source_symbol": "_phase00_prose",
+      "source_line": 424,
+      "text": "TODO: 선택한 방향을 요약하세요.",
+      "reason": "`--create` 가 만드는 Phase 00 초안의 사람용 heading·TODO. 화면에 찍히지 않고 문서 파일 안으로 들어가며, 언어를 고르는 것은 `--lang` 표시 언어가 아니라 그 사이클의 `Document-Language:` 선언이다. 표시 카탈로그로 보내면 표시가 ko 인 사용자가 en 사이클을 열 때 영어 문서에 한국어 heading 이 박힌다 — 막으려는 혼용을 도구가 직접 만든다."
+    },
+    {
       "source_file": "sage/commands/generate.py",
       "source_symbol": "<module>",
       "source_line": 609,

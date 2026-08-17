@@ -60,7 +60,7 @@ def make_root(d, with_adapter=True):
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "bbb-hook.md")).write_text(SPEC_B)
     for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py",
                "acceptance_waiver.py", "override_audit.py", "messages.py", "cycle_state.py",
-               "document_language.py",
+               "document_language.py", "prose_language.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
     shutil.copyfile(

@@ -544,7 +544,7 @@ def _runtime_root(d):
     os.makedirs(strategies, exist_ok=True)
     for fn in ("run_hook.py", "hook_runtime.py", "checklist_contract.py", "loop_audit.py", "retro_audit.py",
                "acceptance_waiver.py", "override_audit.py", "messages.py", "cycle_state.py",
-               "document_language.py",
+               "document_language.py", "prose_language.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(runtime, fn)).write_text(f"# {fn}\n", encoding="utf-8")
     Path(os.path.join(hooks, "cycle_binding.py")).write_text("# cycle_binding.py\n", encoding="utf-8")
@@ -614,6 +614,23 @@ class TestHookRuntimeHash(unittest.TestCase):
             sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
             self.assertEqual(sev, "FAIL")
             self.assertTrue(any("cycle_state.py" in m for m in msgs))
+
+    def test_prose_language_drift_and_missing_are_detected(self):
+        # 본문 언어 판정 정본. 미추적이면 이 파일만 지워도 게이트가 조용히 꺼진다 —
+        # gate 쪽 import 실패 fail-closed 와 짝으로만 "삭제해도 안전"이 성립한다.
+        with tempfile.TemporaryDirectory() as d:
+            _runtime_root(d)
+            hashes, missing = calculate_hook_runtime_hash(d)
+            self.assertEqual(missing, [])
+            path = os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", "prose_language.py")
+            Path(path).write_text("def violations(text, language):\n    return []\n", encoding="utf-8")
+            sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
+            self.assertEqual(sev, "STALE")
+            self.assertTrue(any("shared" in m for m in msgs))
+            os.remove(path)
+            sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
+            self.assertEqual(sev, "FAIL")
+            self.assertTrue(any("prose_language.py" in m for m in msgs))
 
     def test_strategy_drift_and_removal_are_detected(self):
         with tempfile.TemporaryDirectory() as d:

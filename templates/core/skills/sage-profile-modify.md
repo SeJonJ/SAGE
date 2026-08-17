@@ -21,6 +21,12 @@ then re-validate. The profile-editing counterpart to /sage-init (first authoring
   "리뷰 루프 수정", "risk 글롭 수정", "profile 수정"
 
 ## procedure
+0. Resolve the conversation language once: an explicit `--lang ko|en` on this skill's
+   invocation, then `interface.language` in `sage/project-profile.local.yaml`, then `ko`.
+   Every question, proposal, progress note, warning and summary uses it; machine values
+   and Phase 00–06 `Document-Language:` prose do not. Document prose includes section headings
+   and list labels, except `## 5. Done Criteria` and `## 6. Done Criteria Revision Log`, which a
+   parser reads by their exact string. See `docs/agent/language-policy.md`.
 1. Read context: profile (if not bootstrapped — project.name empty OR risk globs and
    components both unset, the same predicate sage generate enforces → route to /sage-init,
    do not bootstrap here), AGENT_GUIDE, bootstrap-authoring (incl. shared Review loop +

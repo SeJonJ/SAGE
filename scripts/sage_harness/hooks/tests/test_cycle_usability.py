@@ -157,7 +157,8 @@ class TestCreateProfileAndPath(CycleCliCase):
         self.assertEqual(text.count("Risk Level: L2"), 1)
         self.assertEqual(text.count("Done-Criteria-Revision: 1"), 1)
         self.assertEqual(text.count("## 5. Done Criteria"), 1)
-        self.assertIn("- [ ] TODO: replace with a concrete completion criterion", text)
+        # 기본 문서 언어는 ko 이고, 초안의 사람용 문구는 그 언어를 따른다.
+        self.assertIn("- [ ] TODO: 구체적인 완료 기준으로 바꾸세요", text)
         self.assertNotIn("<L1|L2|L3>", text)
         self.assertEqual(cs.read_declaration(self.root)[0], STEM)
 
@@ -537,6 +538,91 @@ class TestDocumentLanguageResolutionMatrix(CycleCliCase):
             self._created_language("--document-language", "ko", lang="en"), "ko")
 
 
+class TestPhase00SkeletonLanguage(unittest.TestCase):
+    """AC24 — `--create` 가 만드는 Phase 00 초안의 **사람용** 문구가 선언 언어를 따르는가.
+
+    marker 만 ko 로 박고 heading·TODO 를 영어로 두면, 사용자는 한국어 문서를 열자마자 영어
+    제목을 마주하고 그 위에 한국어를 쓴다 — 실측된 혼용의 출발점이 이 초안이었다.
+
+    **두 heading 은 번역하지 않는다**: `## 5. Done Criteria` 와 `## 6. Done Criteria Revision Log`
+    는 `done_criteria_contract` 가 문자열로 직접 찾는 파서 가시 marker 다(language-policy.md 의
+    "Parser-visible section markers"). 번역하면 파서에게는 heading 이 사라진 것으로 읽힌다."""
+
+    PARSED = ("## 5. Done Criteria", "## 6. Done Criteria Revision Log")
+    MARKERS = ("Cycle-Stem:", "Risk Level:", "Status: DRAFT", "Done-Criteria-Revision: 1")
+
+    def test_korean_skeleton_has_korean_headings(self):
+        text = cycle._phase00_skeleton(STEM, "L2", "ko")
+        self.assertIn("Document-Language: ko", text)
+        for english in ("## 1. Context", "## 2. Goal", "## 3. Acceptance Criteria",
+                        "## 4. Final Conclusion & UX Guide", "[Base Plan]"):
+            self.assertNotIn(english, text)
+        self.assertRegex(text, _HANGUL)
+
+    def test_english_skeleton_has_no_korean(self):
+        text = cycle._phase00_skeleton(STEM, "L2", "en")
+        self.assertIn("Document-Language: en", text)
+        self.assertIn("## 1. Context", text)
+        self.assertNotRegex(text, _HANGUL)
+
+    def test_parser_visible_headings_are_never_translated(self):
+        for language in ("ko", "en"):
+            text = cycle._phase00_skeleton(STEM, "L2", language)
+            for heading in self.PARSED:
+                self.assertIn(heading, text, language)
+
+    def test_machine_markers_survive_both_languages(self):
+        for language in ("ko", "en"):
+            text = cycle._phase00_skeleton(STEM, "L2", language)
+            for marker in self.MARKERS:
+                self.assertIn(marker, text, language)
+
+    def test_the_korean_skeleton_still_parses_as_a_done_criteria_document(self):
+        """번역이 파서를 깨지 않았는지 계약 자체에 물어본다."""
+        from sage import done_criteria_contract as dcc
+        result = dcc.parse_done_criteria(cycle._phase00_skeleton(STEM, "L2", "ko"),
+                                         mode="standard")
+        self.assertEqual(result.status, "valid", result.issues)
+
+
+class TestCoreSkillConversationLanguageDirective(unittest.TestCase):
+    """AC20 — 13개 CORE skill 이 **배포 렌더에서** 대화 언어 resolver 를 갖는가.
+
+    문서 언어(`Document-Language:`)와 대화 언어는 별개 결정이다. 문서 언어만 지시하면 실제
+    host 실행에서 문서 본문은 영어로 쓰면서 질문·진행 설명·요약은 한국어로 내는 상태가 되고,
+    그게 AC20 사람 검토에서 실측된 결함이다. 설계 SSOT(`templates/core/skills/*.md`)에만
+    적어두면 **배포되는 것은 그 파일이 아니라서** 아무 효과가 없다 — 그래서 렌더를 본다.
+
+    이 확인은 LLM 이 실제로 지시를 따르는지는 증명하지 못한다. 그건 사람 검토의 몫이다."""
+
+    FRAMEWORK_SKILLS = PROJECT_ROOT / "templates" / "core" / "framework" / ".claude" / "skills"
+    POLICY = "docs/agent/language-policy.md"
+
+    def _skills(self):
+        return sorted(p for p in self.FRAMEWORK_SKILLS.iterdir() if (p / "SKILL.md").is_file())
+
+    def test_every_shipped_skill_is_covered(self):
+        """개수를 고정한다 — skill 이 늘 때 지시문 없이 조용히 배포되는 것을 막는다."""
+        self.assertEqual(len(self._skills()), 13)
+
+    def test_every_skill_resolves_the_conversation_language(self):
+        for skill in self._skills():
+            text = (skill / "SKILL.md").read_text(encoding="utf-8")
+            with self.subTest(skill=skill.name):
+                self.assertIn("--lang", text)
+                self.assertIn("interface.language", text)
+                self.assertIn(self.POLICY, text)
+
+    def test_no_skill_hardcodes_the_conversation_language(self):
+        """`en` 을 골라도 한국어로 대화하라고 적혀 있으면 resolver 가 있어도 무의미하다."""
+        for skill in self._skills():
+            text = (skill / "SKILL.md").read_text(encoding="utf-8")
+            with self.subTest(skill=skill.name):
+                self.assertNotIn("in Korean**", text)
+                self.assertNotIn("default to Korean", text)
+                self.assertNotIn("not yet active", text)
+
+
 class TestCoreSkillDocumentLanguageDirective(unittest.TestCase):
     """AC24/AC25 — Fast Cycle·리뷰 CORE skill 이 표준 skill 과 같은 언어 지시문을 갖는가.
 
@@ -563,6 +649,22 @@ class TestCoreSkillDocumentLanguageDirective(unittest.TestCase):
     def test_review_reads_document_language_before_writing(self):
         text = self._read("sage-review")
         self.assertIn("Document-Language", text)
+
+    AUTHORING = ("sage-plan", "sage-plan-fast", "sage-team", "sage-team-fast", "sage-review")
+
+    def test_authoring_skills_say_headings_follow_the_document_language(self):
+        """AC24 — '본문을 그 언어로' 만 적으면 host 가 heading 은 영어로 남긴다(실측).
+        사람용 제목도 prose 라는 것을 문서 작성 skill 이 직접 말해야 한다."""
+        for skill in self.AUTHORING:
+            with self.subTest(skill=skill):
+                self.assertIn("heading", self._read(skill))
+
+    def test_the_language_policy_states_the_heading_rule_and_its_exceptions(self):
+        policy = (PROJECT_ROOT / "templates" / "core" / "framework" / "docs" / "agent"
+                  / "language-policy.md").read_text(encoding="utf-8")
+        self.assertIn("section headings", policy)
+        self.assertIn("## 5. Done Criteria", policy)
+        self.assertIn("## 6. Done Criteria Revision Log", policy)
 
 
 class TestCycleLanguageContract(CycleCliCase):

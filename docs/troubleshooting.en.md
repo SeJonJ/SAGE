@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:c68da16eb98ddfbaf7baeed1c994ffba2f06d907ed4d8eadfd62cbd87607f862 -->
+<!-- sage-doc-source: troubleshooting.md sha256:b4ec420111b9defd8067d06bd7383ac8bf3d05b171c9153a67f64d8dc564ed2c -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -250,3 +250,29 @@ pipx install --force "sage-harness[schema]"
 
 Without `jsonschema`, hash checks and built-in semantic checks continue, but JSON Schema validation
 is skipped with a warning.
+
+## Output stays Korean even with `--lang en`
+
+The global `--lang` only works **before the subcommand**. `sage doctor --lang en` is not a
+supported form.
+
+```bash
+sage --lang en doctor        # this is the right position
+```
+
+Hook output takes no `--lang` at all. To get English hook messages, configure the target
+project's `sage/project-profile.local.yaml`.
+
+```yaml
+interface:
+  language: en
+```
+
+If it is still Korean, check three things: that the local profile sits in **the project root the
+hook is inspecting**, that the value is `ko` or `en` (anything else falls back to `ko` and
+`sage validate` reports it as a configuration failure), and whether the remaining Korean is
+**quoted source text** — a fragment read from a file and handed back as evidence is never
+translated. That is evidence, not a defect.
+
+Phase 00–06 documents being written in Korean is unrelated to this setting. Document language is
+fixed per cycle with `Document-Language:`, and an active cycle does not change with `--lang`.
