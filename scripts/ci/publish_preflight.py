@@ -286,9 +286,28 @@ CHECKS = (
 )
 
 
+# tag 가 없으면 대조할 대상이 없다. 그 상태를 `OK` 로 찍으면 **검사한 것과 구별되지 않는다** —
+# 이 job 의 존재 이유가 "릴리스 당일에 처음 도는 검사를 만들지 않는다" 인데, 무엇을 아직 안 봤는지
+# 화면에 남지 않으면 그 목적이 반만 달성된다.
+_SKIPPED_WITHOUT_TAG = ("tag-version",)
+
+
+def _tag_from_environment():
+    """CI 가 준 ref 가 **tag 일 때만** tag 다.
+
+    `GITHUB_REF_NAME` 은 PR 에서 `6/merge`, 브랜치 push 에서 `main` 이 된다. 그걸 tag 로 읽으면
+    릴리스가 아닌 실행이 전부 tag 불일치로 떨어진다 — 릴리스 전에 증거를 미리 맞춰 보려고 PR 에서
+    함께 돌리는 job 이 정작 그 이유 하나로 항상 빨간불이 되고, 그러면 나머지 7건의 신호도 같이
+    죽는다. 릴리스 경로(`publish.yml`)는 `--tag` 를 명시로 넘기므로 영향받지 않는다.
+    """
+    if os.environ.get("GITHUB_REF_TYPE") != "tag":
+        return None
+    return os.environ.get("GITHUB_REF_NAME") or None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--tag", default=os.environ.get("GITHUB_REF_NAME") or None,
+    parser.add_argument("--tag", default=_tag_from_environment(),
                         help="검증할 release tag (없으면 tag 대조를 생략한다)")
     parser.add_argument("--skip", action="append", default=[],
                         help="이 실행에서 제외할 검사 이름 (사유는 호출부가 남긴다)")
@@ -301,6 +320,9 @@ def main() -> int:
     for name, run in CHECKS:
         if name in args.skip:
             print(f"   SKIP {name} (명시적 제외)")
+            continue
+        if args.tag is None and name in _SKIPPED_WITHOUT_TAG:
+            print(f"   SKIP {name} (tag 없음 — 릴리스 실행에서만 대조한다)")
             continue
         result = run(args.tag)
         findings.extend(result)

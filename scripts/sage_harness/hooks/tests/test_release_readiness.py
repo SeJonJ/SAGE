@@ -40,6 +40,33 @@ class TestPreflightBlocksWhatItClaims(unittest.TestCase):
         done = _run(PREFLIGHT, "--tag", f"v{__version__}")
         self.assertNotIn("tag-version", done.stderr)
 
+    def test_a_pull_request_ref_is_not_read_as_a_tag(self):
+        """`GITHUB_REF_NAME` 은 PR 에서 `6/merge`, 브랜치 push 에서 `main` 이다.
+
+        그걸 tag 로 읽으면 릴리스가 아닌 실행이 전부 tag 불일치로 떨어진다 — 릴리스 전에 증거를
+        미리 맞춰 보려고 PR 에서 돌리는 job 이 정작 그 이유 하나로 항상 빨간불이 되고, 나머지
+        7건의 신호도 같이 죽는다. 원격에서 실제로 그렇게 났다."""
+        for ref_type, ref_name in (("branch", "6/merge"), ("branch", "main"), (None, "main")):
+            environment = dict(os.environ, GITHUB_REF_NAME=ref_name)
+            environment.pop("GITHUB_REF_TYPE", None)
+            if ref_type:
+                environment["GITHUB_REF_TYPE"] = ref_type
+            done = subprocess.run([sys.executable, str(PREFLIGHT)], cwd=str(REPO),
+                                  capture_output=True, text=True, env=environment)
+            with self.subTest(ref_type=ref_type, ref_name=ref_name):
+                self.assertNotIn("FAIL tag-version", done.stdout)
+                # 건너뛴 것을 `OK` 로 찍으면 검사한 것과 구별되지 않는다.
+                self.assertIn("SKIP tag-version", done.stdout)
+
+    def test_a_real_tag_ref_is_still_compared(self):
+        """건너뛰기가 tag 가 있는 실행까지 조용히 끄면 릴리스 게이트가 사라진다."""
+        environment = dict(os.environ, GITHUB_REF_TYPE="tag",
+                           GITHUB_REF_NAME="v0.0.0-not-the-version")
+        done = subprocess.run([sys.executable, str(PREFLIGHT)], cwd=str(REPO),
+                              capture_output=True, text=True, env=environment)
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertIn("FAIL tag-version", done.stdout)
+
     def test_a_catalog_gap_blocks(self):
         """한쪽에만 있는 key 는 런타임 fallback 으로 조용히 넘어간다 — build 에서 잡아야 한다."""
         module = _load_preflight()
@@ -210,6 +237,25 @@ class TestPlatformSmokeContract(unittest.TestCase):
         self.assertIn("publish_preflight.py", publish)
         ci = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         self.assertIn("publish_preflight.py", ci)
+
+    def test_the_smoke_survives_a_non_utf8_console(self):
+        """Windows 기본 stdout 은 cp1252 다. 거기서 요약 한 줄이 죽으면 플랫폼 전체가 빨간불이다.
+
+        원격에서 실제로 그렇게 났다 — 검사 7건이 모두 `OK` 를 찍은 **뒤** 마지막 한국어 요약에서
+        UnicodeEncodeError 로 끝났다. `encoding` 검사는 설치본의 출력만 보기 때문에 스크립트
+        자신의 출력 경로는 아무도 보지 않았다. 여기서는 cp1252 콘솔을 흉내내 그 경로를 건다."""
+        done = subprocess.run(
+            [sys.executable, str(SMOKE), "--help"], cwd=str(REPO), capture_output=True,
+            env=dict(os.environ, PYTHONIOENCODING="cp1252"))
+        self.assertEqual(done.returncode, 0, done.stderr.decode("utf-8", "replace"))
+        probe = subprocess.run(
+            [sys.executable, "-c",
+             f"import sys; sys.path.insert(0, {str(SMOKE.parent)!r}); import platform_smoke; "
+             "print('통과 0 / 실패 0')"],
+            capture_output=True, env=dict(os.environ, PYTHONIOENCODING="cp1252"))
+        self.assertEqual(probe.returncode, 0,
+                         "cp1252 콘솔에서 한국어 출력이 죽는다\n"
+                         + probe.stderr.decode("utf-8", "replace"))
 
     def test_preflight_jobs_fetch_the_supported_floor_tag(self):
         """v0.9.84 fixture를 읽는 검사가 shallow checkout에서 이유 없이 실패하면 안 된다."""

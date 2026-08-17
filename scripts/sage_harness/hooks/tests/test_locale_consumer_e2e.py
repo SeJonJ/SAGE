@@ -75,6 +75,24 @@ def _sage(args, cwd):
                           capture_output=True, text=True)
 
 
+def _engine_absent_path():
+    """`sage` import 가 반드시 실패하는 PYTHONPATH 항목. 없으면 만든다.
+
+    PYTHONPATH 를 지우는 것만으로는 엔진이 사라지지 않는다. CI 는 `pip install -e .` 로 엔진을
+    깔기 때문에 site-packages 에서 그대로 import 된다 — 로컬에서만 참인 전제라, 이 테스트는
+    개발자 머신에 엔진이 안 깔려 있다는 사실에 기대고 있었다. 그래서 원격에서만 빨간불이 났다.
+
+    대신 `sage` 를 가리는 stub 을 PYTHONPATH 앞에 둔다. import 하는 쪽에서 보면 그것이 부재이고,
+    설치 여부와 무관하게 어느 기계에서나 같은 상태가 된다.
+    """
+    stub = os.path.join(tempfile.gettempdir(), "sage-engine-absent-stub")
+    package = os.path.join(stub, "sage")
+    os.makedirs(package, exist_ok=True)
+    with open(os.path.join(package, "__init__.py"), "w", encoding="utf-8") as handle:
+        handle.write("raise ModuleNotFoundError(\"No module named 'sage'\")\n")
+    return stub
+
+
 def _consumer_env(root, host, *, engine):
     """소비 프로젝트의 실행 환경. `engine` 이 엔진 import 가능 여부를 가른다.
 
@@ -83,8 +101,7 @@ def _consumer_env(root, host, *, engine):
     엔진 유무를 가르는 것이 이 파일의 축이라 명시적으로 지우고 명시적으로 넣는다.
     """
     env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
-    if engine:
-        env["PYTHONPATH"] = REPO          # pip 로 엔진이 깔린 정상 소비 프로젝트를 흉내낸다
+    env["PYTHONPATH"] = REPO if engine else _engine_absent_path()
     env["SAGE_GATE_BRANCH"] = "main"
     # 두 host 는 root 를 서로 다른 변수로 받는다. 틀린 이름을 주면 shim 이 cwd 로 떨어져
     # "변경 0건"으로 조용히 통과한다 — 게이트가 꺼진 것과 구별되지 않는다.
@@ -182,6 +199,26 @@ class TestConsumerLocaleE2E(unittest.TestCase):
     # 그래도 박제하는 이유는 둘이다. 첫째, locale package 가 자체 포함이라는 사실이
     # "hook 이 엔진 없이 돈다" 로 읽히면 안 된다 — 부품 하나가 독립인 것과 조립품이 독립인 것은
     # 다르고, 지금 조립품은 독립이 아니다. 둘째, 이 상태의 exit code 가 바뀌면 즉시 알아야 한다.
+    #
+    # 부재는 `_engine_absent_path()` 로 **만든다**. PYTHONPATH 를 지우는 것만으로는 엔진이
+    # 사라지지 않는다 — 원격 CI 는 editable 로 엔진을 깔기 때문에 그대로 import 되고, 그러면
+    # 이 테스트가 검사한다고 주장하는 상태가 애초에 성립하지 않는다.
+
+    def test_the_absent_engine_is_absent_even_where_it_is_installed(self):
+        """부재를 만들지 않고 '지웠다'고 믿으면, 엔진이 깔린 기계에서 이 축이 통째로 사라진다.
+
+        PYTHONPATH 를 비우는 것만으로는 editable 로 깔린 엔진이 사라지지 않는다. 그 상태에서
+        아래 테스트는 부재를 검사한다고 주장하면서 실제로는 존재를 검사한다 — 로컬에서는
+        초록, 원격에서만 빨간불이 났다. 그래서 **엔진이 import 가능한 경로를 함께 얹어** 두고도
+        여전히 부재인지를 확인한다."""
+        probe = subprocess.run(
+            # cwd 는 레포 밖이어야 한다 — `-c` 는 현재 디렉터리를 sys.path 맨 앞에 넣으므로
+            # 레포에서 돌리면 PYTHONPATH 를 보기도 전에 레포의 `sage/` 가 이긴다.
+            [sys.executable, "-c", "import sage"], capture_output=True, text=True,
+            cwd=tempfile.gettempdir(),
+            env=dict(os.environ, PYTHONPATH=os.pathsep.join((_engine_absent_path(), REPO))))
+        self.assertNotEqual(probe.returncode, 0, "엔진이 깔린 환경에서 부재가 성립하지 않는다")
+        self.assertIn("ModuleNotFoundError", probe.stderr)
 
     def test_the_gate_does_not_run_and_does_not_pass_silently(self):
         for host in self.hosts:

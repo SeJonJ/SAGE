@@ -25,6 +25,27 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
+
+def _harden_own_output():
+    """이 스크립트 자신의 출력 경로를 UTF-8 로 고정한다.
+
+    Windows 러너의 기본 stdout 은 cp1252 라, 검사 7건이 전부 `OK` 를 찍은 **뒤** 마지막 한국어
+    요약 줄에서 UnicodeEncodeError 로 죽었다. 검사는 모두 통과했는데 결과 보고가 실패해서
+    플랫폼 전체가 빨간불이 되는 상태다.
+
+    `encoding` 검사가 있는데도 이걸 놓친 이유는 그 검사가 **설치본의 출력**만 보기 때문이다 —
+    검사 도구 자신의 출력 경로는 아무도 보지 않았다. 여기서 실패하면 실패 원인조차 못 찍으므로
+    조용히 넘어가되(except), 정상 경로에서는 인코딩을 먼저 세운다.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+_harden_own_output()
+
 PROFILE = """project:
   name: "smoke"
   prefix: "smoke"
