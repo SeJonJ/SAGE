@@ -266,6 +266,26 @@ class TestPlatformSmokeContract(unittest.TestCase):
         self.assertIn("fetch-depth: 0", publish)
 
 
+class TestTheEngineIsNotStaleAgainstItself(unittest.TestCase):
+    """레포 자신의 manifest 가 자기 소스와 맞는가.
+
+    hook runtime 이나 게이트 core 를 고치면 `hook_runtime_hash`·`canonical_hash` 가 낡는다.
+    CI 는 그걸 `sage validate --check --schema` 로 잡지만 로컬 하네스는 보지 않았고, 그래서 이
+    브랜치에서만 재스탬프 커밋이 7번 나왔다 — 매번 push 한 뒤 원격에서 처음 알았다는 뜻이다.
+
+    이 검사는 CI 와 **같은 명령**을 돌린다. 하네스가 초록인데 CI 가 빨간 구간을 없애는 것이
+    목적이라, 여기서만 통과하는 완화된 판정을 따로 만들지 않는다."""
+
+    def test_self_validate_is_clean(self):
+        done = subprocess.run([sys.executable, "-m", "sage", "validate", "--check", "--schema"],
+                              cwd=str(REPO), capture_output=True, text=True,
+                              env=dict(os.environ, PYTHONPATH=str(REPO)))
+        self.assertEqual(done.returncode, 0,
+                         "레포가 자기 manifest 와 어긋난다 — 재계산한 해시를 "
+                         "docs/sage_harness/.manifest.json 에 반영하세요.\n"
+                         + done.stdout[-2000:] + done.stderr[-2000:])
+
+
 class TestReadinessDocument(unittest.TestCase):
     def test_both_languages_exist_and_link_to_each_other(self):
         korean = REPO / "docs" / "release-readiness.md"

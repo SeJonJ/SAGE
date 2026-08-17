@@ -60,7 +60,7 @@
         "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
         "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
       },
-      "canonical_hash": "sha256:0cbb55e05dbc49af7a735e680ee810354a641f3096eb701be626c290213bc7f8",
+      "canonical_hash": "sha256:9bb62d4caf9f6253c719014ef97f296a8ab3ac3c844b82ee48baf79747862791",
       "conformance": "PASS",
       "form": "core_adapter",
       "l3_review_strategy": "codex_feature_signal",
@@ -130,9 +130,9 @@
   },
   "generator_version": "0.9.84",
   "hook_runtime_hash": {
-    "claude": "sha256:b080e7fd24e4ea718655d7ad64d802ffe171567c2e1cc5b2f1a6a67cb6010ed1",
-    "codex": "sha256:a44b067700f59fbe83f34b49f9c58de132d98d96a041f401141caeeec8b65a68",
-    "shared": "sha256:478342c4d9968794b05c86bac931a74fbd74f9c96afe1cc2451c8868e883f5b7"
+    "claude": "sha256:2d0318a75804defae4ac5b53e3ea9e4fe5766c21a937c1c091f45bb780be8254",
+    "codex": "sha256:3519535630dd81a83cbe191b51fa3668d09ed3a9c46842e5948145a3737c941c",
+    "shared": "sha256:4a115d98255641e5763be4a573f5b38905e9ae4cf9983e6829992edfe62eb122"
   },
   "host_runtime": "claude",
   "sage_version": "0.1.0",
