@@ -81,6 +81,25 @@ class TestResolutionOrder(unittest.TestCase):
             self.assertEqual(context_for(["--root", root, "doctor"]).language, "en")
             self.assertEqual(context_for(["--dest", root, "install"]).language, "en")
 
+    def test_profile_hint_is_a_file_path_not_a_root(self):
+        """`--profile` 은 루트가 아니라 그 **안의 파일**을 가리킨다.
+
+        같은 자리에 넣으면 그 파일 경로 아래에서 local profile 을 찾다가 못 찾고 `ko` 로
+        떨어진다 — 사용자가 설정해 둔 `en` 이 옵션 하나 때문에 조용히 무시된다."""
+        with tempfile.TemporaryDirectory() as root:
+            _project(root, "en")
+            profile = os.path.join(root, "sage", "project-profile.yaml")
+            Path(profile).write_text("project:\n  name: x\n", encoding="utf-8")
+            self.assertEqual(context_for(["doctor", "--profile", profile]).language, "en")
+            self.assertEqual(context_for(["knowledge", "scan", "--profile", profile]).language, "en")
+
+    def test_a_profile_path_outside_a_sage_directory_makes_no_hint(self):
+        """모양이 다르면 추측하지 않는다 — 엉뚱한 디렉터리의 local profile 을 읽는 것보다 낫다."""
+        with tempfile.TemporaryDirectory() as root:
+            elsewhere = os.path.join(root, "loose.yaml")
+            Path(elsewhere).write_text("project:\n  name: x\n", encoding="utf-8")
+            self.assertIsNone(scan(["doctor", "--profile", elsewhere])[1])
+
 
 class TestBootstrapScan(unittest.TestCase):
     def test_both_flag_spellings(self):
@@ -152,6 +171,80 @@ class TestChannelContract(unittest.TestCase):
 
     def test_version_is_language_neutral(self):
         self.assertEqual(_run(["--version"]).stdout, _run(["--lang", "en", "--version"]).stdout)
+
+    def test_a_damaged_local_setting_warns_bilingually_without_changing_the_verdict(self):
+        """조용한 fallback 은 설정이 사라진 것을 아무도 모르게 만든다.
+
+        `fallback_used` 는 이미 세워져 있었지만 아무도 읽지 않았다 — 부품은 있는데 배선이
+        없는 상태다. 어느 언어를 고르려 했는지 모르므로 `--lang` 실패와 같은 이유로 한영을
+        함께 낸다. 경고일 뿐이라 명령은 그대로 돌아야 한다."""
+        with tempfile.TemporaryDirectory() as root:
+            _project(root, raw="interface:\n  language: klingon\n")
+            damaged = _run(["doctor"], cwd=root)
+            self.assertIn("interface.language", damaged.stderr)
+            self.assertIn("판정과 exit code", damaged.stderr)
+            self.assertIn("Verdicts and exit codes", damaged.stderr)
+
+            _project(root, "en")
+            sound = _run(["doctor"], cwd=root)
+            self.assertNotIn("interface.language", sound.stderr,
+                             "정상 설정에도 경고가 나오면 경고가 신호가 아니다")
+            self.assertEqual(damaged.returncode, sound.returncode,
+                             "표시 설정 하나가 판정을 바꿨다")
+
+    def test_absent_local_setting_stays_silent(self):
+        """부재는 정상이다 — 한국어가 계약이고, 아무것도 추가하지 않은 프로젝트는 조용해야 한다."""
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "sage"), exist_ok=True)
+            self.assertNotIn("interface.language", _run(["doctor"], cwd=root).stderr)
+
+
+class TestUsageErrorsFollowTheSelectedLanguage(unittest.TestCase):
+    """argparse 오류는 사용자가 가장 자주 보는 CLI 출력이다.
+
+    argparse 는 자기 문장을 자기 gettext catalog 로 만들기 때문에, `--lang ko` 를 골라도
+    `unrecognized arguments` 가 영어로 나갔다. catalog 를 다 옮기고 help 를 다 번역해도 오타
+    한 번이면 영어 화면이 나오는 상태였다.
+
+    `usage:` 줄은 일부러 그대로 둔다 — 그 줄이 보여주는 것은 문장이 아니라 명령 문법이고,
+    명령·옵션은 어느 언어에서도 번역하지 않는다.
+    """
+
+    def test_unrecognized_argument_follows_the_language(self):
+        korean = _run(["--lang", "ko", "doctor", "--nope"])
+        english = _run(["--lang", "en", "doctor", "--nope"])
+        self.assertEqual((korean.returncode, english.returncode), (2, 2))
+        self.assertIn("알 수 없는 인자: --nope", korean.stderr)
+        self.assertIn("unrecognized arguments: --nope", english.stderr)
+        self.assertNotIn("unrecognized arguments", korean.stderr)
+
+    def test_the_error_label_follows_the_language(self):
+        self.assertIn("sage: 오류:", _run(["--lang", "ko", "doctor", "--nope"]).stderr)
+        self.assertIn("sage: error:", _run(["--lang", "en", "doctor", "--nope"]).stderr)
+
+    def test_subcommand_parsers_are_localized_too(self):
+        """subparser 는 `type(self)` 로 만들어지고 생성 인자를 물려받지 않는다 — 여기가 새기 쉽다."""
+        korean = _run(["--lang", "ko", "doctor", "--profile"])
+        self.assertIn("값 1개가 필요합니다", korean.stderr)
+        self.assertNotIn("expected one argument", korean.stderr)
+
+    def test_invalid_subcommand_choice_follows_the_language(self):
+        korean = _run(["--lang", "ko", "nosuchcmd"])
+        self.assertIn("값이 잘못됐습니다", korean.stderr)
+        self.assertIn("nosuchcmd", korean.stderr, "무엇이 틀렸는지는 남아야 한다")
+
+    def test_the_local_profile_selects_the_error_language_too(self):
+        """`--lang` 없이 설정만으로 고른 언어도 오류 화면에 적용돼야 한다."""
+        with tempfile.TemporaryDirectory() as root:
+            _project(root, "en")
+            result = _run(["doctor", "--nope"], cwd=root)
+            self.assertIn("unrecognized arguments: --nope", result.stderr)
+
+    def test_an_unknown_argparse_sentence_is_not_swallowed(self):
+        """모르는 문장을 번역하려다 잃으면 오류가 통째로 사라진다 — 영어로 남는 편이 낫다."""
+        from sage.cli import localize_argparse_message
+        self.assertEqual(localize_argparse_message("ko", "argparse said something new"),
+                         "argparse said something new")
 
 
 class TestCatalog(unittest.TestCase):

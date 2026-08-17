@@ -35,6 +35,16 @@ MESSAGES = {
     "cli.lang.unsupported": "지원하지 않는 언어입니다: {value}. 사용 가능: {supported}",
     "cli.lang.missing_value": "--lang 에 값이 필요합니다. 사용 가능: {supported}",
     "cli.lang.duplicated": "--lang 은 한 번만 지정할 수 있습니다",
+    "cli.lang.local_damaged": "⚠️ sage/project-profile.local.yaml 의 interface.language 를 읽지 못해 한국어로 표시합니다 — 설정한 언어가 적용되지 않았습니다. 값은 ko 또는 en 이어야 하며, `sage doctor` 가 자세한 원인을 알려줍니다. 판정과 exit code 는 영향받지 않습니다.",
+    "cli.argparse.error_label": "오류",
+    "cli.argparse.unrecognized": "알 수 없는 인자: {value}",
+    "cli.argparse.required": "다음 인자가 필요합니다: {value}",
+    "cli.argparse.expected_one": "{name} 에는 값 1개가 필요합니다",
+    "cli.argparse.expected_at_least_one": "{name} 에는 값이 1개 이상 필요합니다",
+    "cli.argparse.invalid_choice": "{name} 값이 잘못됐습니다: {value} (사용 가능: {choices})",
+    "cli.argparse.ignored_explicit": "{name} 에 붙여 쓴 값 {value} 는 무시됩니다",
+    "cli.argparse.not_allowed_with": "{name} 은 {value} 와 함께 쓸 수 없습니다",
+    "cli.argparse.invalid_value": "{name} 의 {kind} 값이 잘못됐습니다: {value}",
     "cli.lang.local_invalid": (
         "local profile 의 interface.language 를 읽을 수 없어 한국어로 표시합니다 — "
         "{path} 를 확인하세요"
@@ -1050,6 +1060,7 @@ MESSAGES = {
     "cli.upgrade.steps_header": "위임 단계 {count}건 (각 바이트의 주인이 만든다):",
     "cli.upgrade.user_owned_restored": "   ↩ 사용자 소유 경로 복원: {path} (위임 단계가 건드렸으나 upgrade 의 write target 이 아니다)",
     "cli.upgrade.declaration_only": "   ℹ️  profile 이 부트스트랩되지 않아 CORE 배포·hook 재생성을 건너뜁니다 — 선언 값만 맞춥니다. `/sage-init` 후 다시 실행하세요.",
+    "cli.upgrade.blocker_cycle_language": "⛔ .sage/cycle.json 의 document_language 가 {value} 입니다 — ko|en 이 아닌 값을 기본값으로 덮으면 사이클의 언어 계약을 도구가 조용히 바꿉니다. 값을 직접 고친 뒤 다시 실행하세요.",
     "cli.upgrade.blocker_unbootstrapped": "⛔ profile 이 부트스트랩되지 않아 CORE 를 배포할 수 없습니다 — 이 상태로 끝내면 업그레이드된 것처럼 보이지만 새 자산이 없습니다. `/sage-init` 로 profile 을 채운 뒤 다시 실행하세요.",
     "cli.upgrade.required_version_position_changed": "required_version 위치가 판정 시점과 다름",
     "cli.upgrade.unknown_write_kind": "알 수 없는 write kind: {kind}",

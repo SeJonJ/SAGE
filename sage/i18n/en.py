@@ -29,6 +29,16 @@ MESSAGES = {
     "cli.lang.unsupported": "Unsupported language: {value}. Available: {supported}",
     "cli.lang.missing_value": "--lang needs a value. Available: {supported}",
     "cli.lang.duplicated": "--lang may be given only once",
+    "cli.lang.local_damaged": "⚠️ interface.language in sage/project-profile.local.yaml could not be read, so output falls back to Korean — the language you configured is not in effect. The value must be ko or en; `sage doctor` reports the exact cause. Verdicts and exit codes are unaffected.",
+    "cli.argparse.error_label": "error",
+    "cli.argparse.unrecognized": "unrecognized arguments: {value}",
+    "cli.argparse.required": "the following arguments are required: {value}",
+    "cli.argparse.expected_one": "{name}: expected one argument",
+    "cli.argparse.expected_at_least_one": "{name}: expected at least one argument",
+    "cli.argparse.invalid_choice": "{name}: invalid choice: {value} (choose from {choices})",
+    "cli.argparse.ignored_explicit": "{name}: ignored explicit argument {value}",
+    "cli.argparse.not_allowed_with": "{name}: not allowed with argument {value}",
+    "cli.argparse.invalid_value": "{name}: invalid {kind} value: {value}",
     "cli.lang.local_invalid": (
         "The local profile's interface.language could not be read, so output stays in Korean — "
         "check {path}"
@@ -1033,6 +1043,7 @@ MESSAGES = {
     "cli.upgrade.steps_header": "{count} delegated steps (each owner writes its own bytes):",
     "cli.upgrade.user_owned_restored": "   ↩ restored user-owned path: {path} (a delegated step touched it, but it is not an upgrade write target)",
     "cli.upgrade.declaration_only": "   ℹ️  the profile is not bootstrapped, so CORE deployment and hook regeneration are skipped — only the declared values are aligned. Run `/sage-init`, then try again.",
+    "cli.upgrade.blocker_cycle_language": "⛔ document_language in .sage/cycle.json is {value} — replacing a value that is neither ko nor en with the default would silently change the cycle's language contract. Fix the value, then run again.",
     "cli.upgrade.blocker_unbootstrapped": "⛔ the profile is not bootstrapped, so CORE cannot be deployed — finishing here would look like an upgrade while the new assets are absent. Fill in the profile with `/sage-init` and run again.",
     "cli.upgrade.required_version_position_changed": "required_version location changed since it was decided",
     "cli.upgrade.unknown_write_kind": "unknown write kind: {kind}",

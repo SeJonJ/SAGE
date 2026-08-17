@@ -558,6 +558,37 @@ class TestCycleSchemaMigration(unittest.TestCase):
         data = json.loads(Path(root, ".sage", "cycle.json").read_text(encoding="utf-8"))
         self.assertEqual(data["document_language"], "en", "이미 이행된 선언을 되돌렸다")
 
+    def test_a_damaged_declared_language_blocks_instead_of_being_overwritten(self):
+        """선언된 값이 ko|en 이 아니면 이행이 아니라 손상이다.
+
+        기본값으로 덮으면 사이클의 언어 계약이 도구 손에 조용히 바뀌고, 원래 무엇이 적혀
+        있었는지도 함께 사라진다. 게이트가 그 사이클 문서를 어느 언어로 읽을지가 달라지므로
+        표시 문제가 아니라 판정 문제다."""
+        for declared in ("fr", "", "EN", 3, None):
+            root = _install(tempfile.mkdtemp())
+            os.makedirs(os.path.join(root, ".sage"), exist_ok=True)
+            state = {"version": 2, "cycle_stem": "demo", "document_language": declared}
+            Path(root, ".sage", "cycle.json").write_text(json.dumps(state), encoding="utf-8")
+            with self.subTest(declared=declared):
+                self.assertNotEqual(_run(root, apply=True), up.EXIT_OK,
+                                    "손상된 선언 언어가 통과했다")
+                data = json.loads(Path(root, ".sage", "cycle.json").read_text(encoding="utf-8"))
+                self.assertEqual(data["document_language"], declared,
+                                 "손상된 값을 기본값으로 덮어썼다")
+
+    def test_the_blocker_names_the_offending_value_in_both_languages(self):
+        for language in ("ko", "en"):
+            root = _install(tempfile.mkdtemp())
+            os.makedirs(os.path.join(root, ".sage"), exist_ok=True)
+            Path(root, ".sage", "cycle.json").write_text(
+                json.dumps({"version": 2, "cycle_stem": "demo", "document_language": "fr"}),
+                encoding="utf-8")
+            _, blockers = up._plan(root, language)
+            with self.subTest(language=language):
+                joined = " ".join(blockers)
+                self.assertIn("fr", joined)
+                self.assertNotIn("message_key=", joined)
+
 
 class TestBothLocalesRender(unittest.TestCase):
     def test_every_upgrade_key_exists_in_both_catalogs(self):

@@ -161,9 +161,12 @@ def _plan(root, language):
                                "from": current, "to": __version__})
 
     # cycle 선언 schema 1 → 2. 미러가 낡으면 문서 언어 게이트가 legacy 로만 읽는다.
-    migration = _cycle_migration(root)
+    migration, damaged_language = _cycle_migration(root)
     if migration is not None:
         writes.append(migration)
+    if damaged_language is not None:
+        blockers.append(tr(language, "cli.upgrade.blocker_cycle_language",
+                           value=damaged_language))
 
     # upgrade 가 소유하지 않는 drift. 정상 apply 를 막고, --force 는 "그래도 내 write set 은
     # 진행하라"는 뜻이지 이걸 덮으라는 뜻이 아니다.
@@ -220,21 +223,31 @@ def _required_version_sites(raw):
 
 
 def _cycle_migration(root):
-    """schema 1 선언이 있으면 v2 이행을 write set 에 넣는다. 없거나 이미 v2 면 None."""
+    """(이행 write | None, 손상된 선언 언어의 repr | None). 없거나 이미 v2 면 둘 다 None.
+
+    두 번째 값을 원본이 아니라 `repr` 로 돌리는 이유는 `null` 때문이다. 원본을 그대로 돌리면
+    `document_language: null` 이 "손상 없음"과 같은 값(None)이 되어 조용히 통과한다 — 부재가
+    안전 방향으로 떨어지는 바로 그 형태다.
+    """
     path = os.path.join(root, ".sage", "cycle.json")
     data, error = _read_json(path)
     if error or not isinstance(data, dict):
-        return None
+        return None, None
     if data.get("version") == 2 and data.get("document_language") in ("ko", "en"):
-        return None
+        return None, None
+    # 선언된 값이 있는데 ko/en 이 아니면 그건 **이행 대상이 아니라 손상**이다. 여기서 `ko` 로
+    # 덮으면 사이클의 언어 계약을 도구가 조용히 바꿔 놓는 셈이고, 원래 무엇이 적혀 있었는지도
+    # 함께 사라진다. 부재(미선언)만 호환 기본값으로 채우고, 잘못 적힌 값은 사람이 고치게 한다.
+    if "document_language" in data and data["document_language"] not in ("ko", "en"):
+        return None, repr(data["document_language"])
     stem = data.get("cycle_stem")
     if not isinstance(stem, str) or not stem:
-        return None
+        return None, None
     # 언어를 지어내지 않는다. marker 이전 사이클은 한국어로 시작했고(호환 기본값), 그걸
     # 명시로 적어 두는 것이 이행이다 — 비워 두면 다음 upgrade 가 같은 일을 다시 한다.
     return {"kind": "cycle_schema", "path": os.path.join(".sage", "cycle.json"),
             "from": str(data.get("version")), "to": "2", "document_language": "ko",
-            "cycle_stem": stem}
+            "cycle_stem": stem}, None
 
 
 def _unowned_drift(axes, runtime, language):

@@ -7,6 +7,8 @@ scan 이 없으면 잘못된 `--lang` 이 한국어 parser 를 다 만든 뒤에
 """
 from __future__ import annotations
 
+import os
+
 from sage.i18n import tr
 from sage.i18n.context import INTERFACE_LANGUAGES, LanguageContext, resolve, supported
 
@@ -15,7 +17,25 @@ _LANG_PREFIX = f"{LANG_FLAG}="
 
 # `--lang` 뒤에 subcommand 가 오는 전역 옵션이다. subcommand 뒤의 `--lang` 은 그 subcommand 의
 # 옵션이라 여기서 보지 않는다 — 두 자리를 모두 받으면 어느 쪽이 이기는지가 명령마다 갈린다.
-_TARGET_HINTS = ("--root", "--dest", "--profile")
+#
+# 두 종류를 갈라 둔다. `--root`/`--dest` 는 프로젝트 루트고, `--profile` 은 그 **안의 파일**
+# 경로다. 같은 자리에 넣으면 `--profile sage/project-profile.yaml` 이 루트로 읽혀 그 아래에서
+# local profile 을 찾다가 못 찾고 `ko` 로 떨어진다 — 사용자가 설정한 `en` 이 조용히 무시된다.
+_ROOT_HINTS = ("--root", "--dest")
+_PROFILE_HINTS = ("--profile",)
+
+
+def _root_of_profile(path: str) -> str | None:
+    """`<root>/sage/<name>.yaml` → `<root>`. 그 모양이 아니면 힌트를 만들지 않는다.
+
+    임의 경로의 상위 두 단계를 루트라고 부르면 엉뚱한 디렉터리의 local profile 을 읽게 된다.
+    부모가 `sage` 일 때만 인정하고, 아니면 `None` 을 돌려 cwd 로 떨어뜨린다 — 모르는 것을
+    추측하는 것보다 기존 동작으로 남는 편이 낫다.
+    """
+    parent = os.path.dirname(os.path.abspath(path))
+    if os.path.basename(parent) != "sage":
+        return None
+    return os.path.dirname(parent)
 
 
 class LanguageArgumentError(Exception):
@@ -48,8 +68,11 @@ def scan(argv: list[str]) -> tuple[str | None, str | None]:
             index += 1
         elif token.startswith(_LANG_PREFIX):
             value = token[len(_LANG_PREFIX):]
-        elif token in _TARGET_HINTS and index + 1 < len(argv):
+        elif token in _ROOT_HINTS and index + 1 < len(argv):
             root = argv[index + 1]
+            index += 1
+        elif token in _PROFILE_HINTS and index + 1 < len(argv):
+            root = _root_of_profile(argv[index + 1]) or root
             index += 1
         if value is not None:
             if explicit is not None:
@@ -65,5 +88,4 @@ def scan(argv: list[str]) -> tuple[str | None, str | None]:
 def context_for(argv: list[str], cwd: str | None = None) -> LanguageContext:
     """argv 를 훑어 이 실행의 표시 언어를 확정한다."""
     explicit, root_hint = scan(argv)
-    import os
     return resolve(explicit, root_hint or cwd or os.getcwd())
