@@ -1043,6 +1043,7 @@ MESSAGES = {
     "cli.upgrade.steps_header": "{count} delegated steps (each owner writes its own bytes):",
     "cli.upgrade.user_owned_restored": "   ↩ restored user-owned path: {path} (a delegated step touched it, but it is not an upgrade write target)",
     "cli.upgrade.declaration_only": "   ℹ️  the profile is not bootstrapped, so CORE deployment and hook regeneration are skipped — only the declared values are aligned. Run `/sage-init`, then try again.",
+    "cli.upgrade.blocker_cycle_state": "⛔ .sage/cycle.json is not in a migratable state ({detail}) — only a v1 legacy declaration migrates automatically. Overwriting it with the default would silently change the cycle's language contract. Fix the file, then run again.",
     "cli.upgrade.blocker_cycle_language": "⛔ document_language in .sage/cycle.json is {value} — replacing a value that is neither ko nor en with the default would silently change the cycle's language contract. Fix the value, then run again.",
     "cli.upgrade.blocker_unbootstrapped": "⛔ the profile is not bootstrapped, so CORE cannot be deployed — finishing here would look like an upgrade while the new assets are absent. Fill in the profile with `/sage-init` and run again.",
     "cli.upgrade.required_version_position_changed": "required_version location changed since it was decided",

@@ -38,6 +38,22 @@ def _root_of_profile(path: str) -> str | None:
     return os.path.dirname(parent)
 
 
+def _option_value(token, names, argv, index):
+    """`--opt VALUE` 와 `--opt=VALUE` 를 같게 읽는다. (값, 추가로 소비한 토큰 수) 또는 None.
+
+    argparse 는 두 표기를 같은 것으로 받는다. 여기서 공백형만 보면 등호로 쓴 사용자만 root 힌트를
+    잃고 조용히 `ko` 로 떨어진다 — 같은 명령이 표기 하나 때문에 다른 언어를 낸다. 표기별로 갈리는
+    것은 사용자가 재현하기도 어렵다.
+    """
+    for name in names:
+        if token == name:
+            return (argv[index + 1], 1) if index + 1 < len(argv) else None
+        prefix = f"{name}="
+        if token.startswith(prefix):
+            return token[len(prefix):], 0
+    return None
+
+
 class LanguageArgumentError(Exception):
     """언어 선택 자체가 실패. 판정 이전이라 부작용 없이 exit 2 로 끝난다."""
 
@@ -68,12 +84,12 @@ def scan(argv: list[str]) -> tuple[str | None, str | None]:
             index += 1
         elif token.startswith(_LANG_PREFIX):
             value = token[len(_LANG_PREFIX):]
-        elif token in _ROOT_HINTS and index + 1 < len(argv):
-            root = argv[index + 1]
-            index += 1
-        elif token in _PROFILE_HINTS and index + 1 < len(argv):
-            root = _root_of_profile(argv[index + 1]) or root
-            index += 1
+        elif (hint := _option_value(token, _ROOT_HINTS, argv, index)) is not None:
+            root = hint[0]
+            index += hint[1]
+        elif (hint := _option_value(token, _PROFILE_HINTS, argv, index)) is not None:
+            root = _root_of_profile(hint[0]) or root
+            index += hint[1]
         if value is not None:
             if explicit is not None:
                 raise LanguageArgumentError("cli.lang.duplicated")

@@ -161,12 +161,11 @@ def _plan(root, language):
                                "from": current, "to": __version__})
 
     # cycle 선언 schema 1 → 2. 미러가 낡으면 문서 언어 게이트가 legacy 로만 읽는다.
-    migration, damaged_language = _cycle_migration(root)
+    migration, cycle_blocker = _cycle_migration(root)
     if migration is not None:
         writes.append(migration)
-    if damaged_language is not None:
-        blockers.append(tr(language, "cli.upgrade.blocker_cycle_language",
-                           value=damaged_language))
+    if cycle_blocker is not None:
+        blockers.append(tr(language, cycle_blocker[0], **cycle_blocker[1]))
 
     # upgrade 가 소유하지 않는 drift. 정상 apply 를 막고, --force 는 "그래도 내 write set 은
     # 진행하라"는 뜻이지 이걸 덮으라는 뜻이 아니다.
@@ -222,31 +221,50 @@ def _required_version_sites(raw):
             for m in _REQUIRED_VERSION_RE.finditer(block)]
 
 
-def _cycle_migration(root):
-    """(이행 write | None, 손상된 선언 언어의 repr | None). 없거나 이미 v2 면 둘 다 None.
+def _cycle_state_detail(data):
+    """blocker 문장에 실을 상태 요약. 무엇이 어긋났는지는 사람이 파일을 열기 전에 보여야 한다.
 
-    두 번째 값을 원본이 아니라 `repr` 로 돌리는 이유는 `null` 때문이다. 원본을 그대로 돌리면
-    `document_language: null` 이 "손상 없음"과 같은 값(None)이 되어 조용히 통과한다 — 부재가
-    안전 방향으로 떨어지는 바로 그 형태다.
+    부재는 `<missing>` 이라는 기계 토큰으로 적는다. `repr(None)` 으로 뭉개면 키가 없는 것과
+    `document_language: null` 이 화면에서 같아져, 사용자가 고쳐야 할 곳을 못 찾는다. 산문이
+    아니라 토큰인 이유는 이 조각이 문장 안에 끼워지기 때문이다 — 번역 조각을 이어 붙이면
+    어느 언어로도 맞지 않는 문장이 된다.
+    """
+    declared = "<missing>" if "document_language" not in data else repr(data.get("document_language"))
+    return (f"version={data.get('version')!r}, document_language={declared}, "
+            f"cycle_stem={data.get('cycle_stem')!r}")
+
+
+def _cycle_migration(root):
+    """(이행 write | None, blocker `(key, 인자)` | None). 파일이 없거나 이미 v2 면 둘 다 None.
+
+    **genuine v1 만 이행한다.** 이행은 언어를 지어내는 동작이다 — marker 이전 사이클은 한국어로
+    시작했다는 호환 기본값을 명시로 적어 두는 것이라, 그 전제가 서는 상태에서만 해야 한다.
+    전제가 안 서는 상태를 같은 기본값으로 덮으면 사이클의 언어 계약을 도구가 조용히 바꿔 놓고,
+    원래 무엇이 적혀 있었는지도 함께 사라진다. 그건 표시가 아니라 판정에 영향을 준다.
+
+    전제가 서지 않는 경우는 넷이다. 선언 언어가 `ko|en` 이 아닌 경우, v2 인데 선언이 없는 경우,
+    v1/v2 가 아닌 version, 그리고 선언이 이미 있는 v1 — 마지막은 값이 유효해도 이행 대상이
+    아니다. 유효한 선언을 기본값으로 덮는 것이 정확히 막으려는 동작이기 때문이다. 넷 다
+    mutation 전에 blocker 로 남기고 사람이 고치게 한다.
     """
     path = os.path.join(root, ".sage", "cycle.json")
     data, error = _read_json(path)
     if error or not isinstance(data, dict):
         return None, None
-    if data.get("version") == 2 and data.get("document_language") in ("ko", "en"):
+    version = data.get("version")
+    declared = data.get("document_language")
+    if version == 2 and declared in ("ko", "en"):
         return None, None
-    # 선언된 값이 있는데 ko/en 이 아니면 그건 **이행 대상이 아니라 손상**이다. 여기서 `ko` 로
-    # 덮으면 사이클의 언어 계약을 도구가 조용히 바꿔 놓는 셈이고, 원래 무엇이 적혀 있었는지도
-    # 함께 사라진다. 부재(미선언)만 호환 기본값으로 채우고, 잘못 적힌 값은 사람이 고치게 한다.
-    if "document_language" in data and data["document_language"] not in ("ko", "en"):
-        return None, repr(data["document_language"])
+    if "document_language" in data and declared not in ("ko", "en"):
+        # `repr` 로 싣는 이유는 `null` 때문이다 — 원본을 그대로 쓰면 "손상 없음"과 같은 값이 된다.
+        return None, ("cli.upgrade.blocker_cycle_language", {"value": repr(declared)})
+    if version != 1 or "document_language" in data:
+        return None, ("cli.upgrade.blocker_cycle_state", {"detail": _cycle_state_detail(data)})
     stem = data.get("cycle_stem")
     if not isinstance(stem, str) or not stem:
-        return None, None
-    # 언어를 지어내지 않는다. marker 이전 사이클은 한국어로 시작했고(호환 기본값), 그걸
-    # 명시로 적어 두는 것이 이행이다 — 비워 두면 다음 upgrade 가 같은 일을 다시 한다.
+        return None, ("cli.upgrade.blocker_cycle_state", {"detail": _cycle_state_detail(data)})
     return {"kind": "cycle_schema", "path": os.path.join(".sage", "cycle.json"),
-            "from": str(data.get("version")), "to": "2", "document_language": "ko",
+            "from": str(version), "to": "2", "document_language": "ko",
             "cycle_stem": stem}, None
 
 

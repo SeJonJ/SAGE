@@ -1060,6 +1060,7 @@ MESSAGES = {
     "cli.upgrade.steps_header": "위임 단계 {count}건 (각 바이트의 주인이 만든다):",
     "cli.upgrade.user_owned_restored": "   ↩ 사용자 소유 경로 복원: {path} (위임 단계가 건드렸으나 upgrade 의 write target 이 아니다)",
     "cli.upgrade.declaration_only": "   ℹ️  profile 이 부트스트랩되지 않아 CORE 배포·hook 재생성을 건너뜁니다 — 선언 값만 맞춥니다. `/sage-init` 후 다시 실행하세요.",
+    "cli.upgrade.blocker_cycle_state": "⛔ .sage/cycle.json 이 이행할 수 있는 상태가 아닙니다 ({detail}) — v1 legacy 선언만 자동 이행합니다. 기본값으로 덮으면 사이클의 언어 계약이 조용히 바뀝니다. 파일을 직접 고친 뒤 다시 실행하세요.",
     "cli.upgrade.blocker_cycle_language": "⛔ .sage/cycle.json 의 document_language 가 {value} 입니다 — ko|en 이 아닌 값을 기본값으로 덮으면 사이클의 언어 계약을 도구가 조용히 바꿉니다. 값을 직접 고친 뒤 다시 실행하세요.",
     "cli.upgrade.blocker_unbootstrapped": "⛔ profile 이 부트스트랩되지 않아 CORE 를 배포할 수 없습니다 — 이 상태로 끝내면 업그레이드된 것처럼 보이지만 새 자산이 없습니다. `/sage-init` 로 profile 을 채운 뒤 다시 실행하세요.",
     "cli.upgrade.required_version_position_changed": "required_version 위치가 판정 시점과 다름",

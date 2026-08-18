@@ -576,6 +576,43 @@ class TestCycleSchemaMigration(unittest.TestCase):
                 self.assertEqual(data["document_language"], declared,
                                  "손상된 값을 기본값으로 덮어썼다")
 
+    def test_only_a_genuine_v1_declaration_migrates(self):
+        """이행은 언어를 **지어내는** 동작이라, 전제가 서는 상태에서만 해야 한다.
+
+        marker 이전 사이클이 한국어로 시작했다는 호환 기본값을 명시로 적는 것이 이행이다.
+        v2 인데 선언이 없거나, version 이 1·2 가 아니거나, v1 인데 이미 선언이 있는 상태는
+        그 전제가 서지 않는다. 같은 기본값으로 덮으면 사이클의 언어 계약을 도구가 조용히
+        바꾸고 원래 값도 함께 사라진다 — 표시가 아니라 판정에 영향을 준다.
+
+        앞선 수정은 `document_language: fr` 만 막아서 나머지 변형이 그대로 남아 있었다."""
+        for state in ({"version": 2, "cycle_stem": "demo"},
+                      {"version": 3, "cycle_stem": "demo"},
+                      {"version": 1, "cycle_stem": "demo", "document_language": "en"},
+                      {"version": 1},
+                      {"cycle_stem": "demo"}):
+            root = _install(tempfile.mkdtemp())
+            os.makedirs(os.path.join(root, ".sage"), exist_ok=True)
+            Path(root, ".sage", "cycle.json").write_text(json.dumps(state), encoding="utf-8")
+            with self.subTest(state=state):
+                self.assertNotEqual(_run(root, apply=True), up.EXIT_OK,
+                                    "이행 전제가 없는 상태가 통과했다")
+                after = json.loads(Path(root, ".sage", "cycle.json").read_text(encoding="utf-8"))
+                self.assertEqual(after, state, "이행 대상이 아닌 state 를 도구가 고쳐 썼다")
+
+    def test_the_state_blocker_names_what_is_wrong(self):
+        """무엇이 어긋났는지 없이 막으면 사용자는 파일을 열어 추측해야 한다."""
+        root = _install(tempfile.mkdtemp())
+        os.makedirs(os.path.join(root, ".sage"), exist_ok=True)
+        Path(root, ".sage", "cycle.json").write_text(
+            json.dumps({"version": 3, "cycle_stem": "demo"}), encoding="utf-8")
+        for language in ("ko", "en"):
+            _, blockers = up._plan(root, language)
+            with self.subTest(language=language):
+                joined = " ".join(blockers)
+                self.assertIn("version=3", joined)
+                self.assertIn("cycle.json", joined)
+                self.assertNotIn("message_key=", joined)
+
     def test_the_blocker_names_the_offending_value_in_both_languages(self):
         for language in ("ko", "en"):
             root = _install(tempfile.mkdtemp())

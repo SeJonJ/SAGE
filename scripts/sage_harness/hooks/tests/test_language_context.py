@@ -93,6 +93,28 @@ class TestResolutionOrder(unittest.TestCase):
             self.assertEqual(context_for(["doctor", "--profile", profile]).language, "en")
             self.assertEqual(context_for(["knowledge", "scan", "--profile", profile]).language, "en")
 
+    def test_both_option_spellings_carry_the_hint(self):
+        """`--opt VALUE` 와 `--opt=VALUE` 는 argparse 에서 같은 것이다.
+
+        공백형만 읽으면 등호로 쓴 사용자만 root 힌트를 잃고 조용히 `ko` 로 떨어진다 — 같은
+        명령이 표기 하나 때문에 다른 언어를 내고, 사용자는 재현 조건조차 짚기 어렵다.
+        신규 회귀가 공백형만 검사해서 이 변형이 그대로 남아 있었다."""
+        with tempfile.TemporaryDirectory() as root:
+            _project(root, "en")
+            profile = os.path.join(root, "sage", "project-profile.yaml")
+            Path(profile).write_text("project:\n  name: x\n", encoding="utf-8")
+            for argv in ([f"--root={root}", "doctor"], ["--root", root, "doctor"],
+                         [f"--dest={root}", "install"], ["--dest", root, "install"],
+                         ["doctor", f"--profile={profile}"], ["doctor", "--profile", profile]):
+                with self.subTest(argv=argv):
+                    self.assertEqual(context_for(argv).language, "en")
+
+    def test_a_dangling_option_at_the_end_is_not_a_crash(self):
+        """값 없는 마지막 토큰은 argparse 가 usage 오류로 낼 몫이다 — scan 이 먼저 죽으면 안 된다."""
+        for argv in (["doctor", "--profile"], ["doctor", "--root"], ["install", "--dest"]):
+            with self.subTest(argv=argv):
+                self.assertIsNone(scan(argv)[1])
+
     def test_a_profile_path_outside_a_sage_directory_makes_no_hint(self):
         """모양이 다르면 추측하지 않는다 — 엉뚱한 디렉터리의 local profile 을 읽는 것보다 낫다."""
         with tempfile.TemporaryDirectory() as root:
