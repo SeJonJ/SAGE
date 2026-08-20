@@ -91,6 +91,8 @@ class TestProjectHookRegistration(unittest.TestCase):
                             dirs_exist_ok=True)
             shutil.copyfile(Path(REPO, "scripts", "sage_harness", "hooks", "cycle_binding.py"),
                             Path(root, "scripts", "sage_harness", "hooks", "cycle_binding.py"))
+            shutil.copyfile(Path(REPO, "scripts", "sage_harness", "hooks", "risk_declaration.py"),
+                            Path(root, "scripts", "sage_harness", "hooks", "risk_declaration.py"))
             for runtime in ("claude", "codex"):
                 with self.subTest(runtime=runtime):
                     self.assertTrue(Path(root, "scripts", "sage_harness", "hooks", "adapters",
@@ -369,6 +371,8 @@ class TestProjectHookRuntime(unittest.TestCase):
         shutil.copytree(RUNTIME, Path(root, "scripts", "sage_harness", "hooks", "runtime"))
         shutil.copyfile(Path(REPO, "scripts", "sage_harness", "hooks", "cycle_binding.py"),
                         Path(root, "scripts", "sage_harness", "hooks", "cycle_binding.py"))
+        shutil.copyfile(Path(REPO, "scripts", "sage_harness", "hooks", "risk_declaration.py"),
+                        Path(root, "scripts", "sage_harness", "hooks", "risk_declaration.py"))
         Path(root, "docs", "sage_harness", ".manifest.json").write_text(json.dumps({
             "assets": {"hooks/demo-project-gate": {
                 "origin": "project", "form": "core_adapter", "conformance": "PASS",

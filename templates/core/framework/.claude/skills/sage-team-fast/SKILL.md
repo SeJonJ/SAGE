@@ -32,9 +32,18 @@ preference. Full rules: `docs/agent/language-policy.md`.
 
 ## Procedure
 
-1. Resolve the exact stem, composite 00, `Fast-Audit-Run`, open snapshot, actual
-   risk, Fast level, minimum rounds, and selected lenses. Stop on ambiguity,
-   malformed audit, mismatch, or terminal run.
+1. Resolve the exact stem, entry mode, open snapshot, actual risk, Fast level, minimum
+   rounds, and selected lenses. Stop on ambiguity, malformed audit, mismatch, or terminal run.
+   **Read the entry mode first** — `sage fast-cycle show --run-id <fc-id>` prints
+   `entry=FAST` or `entry=FAST-CONVERTED`, and the two are not interchangeable:
+   - `FAST` — a fresh run. Resolve the composite Phase 00 and its `Fast-Audit-Run` line as
+     below; a missing or `pending` line there is a defect to fix before continuing.
+   - `FAST-CONVERTED` — a Standard Cycle converted in place. There is **no composite Phase 00
+     and no `Fast-Audit-Run` line**, and there must not be: the conversion writes no document.
+     The cycle keeps its ordinary Phase 00–04 documents. Never add a `Fast-Audit-Run` line,
+     Fast metadata, or a composite section to them — the run binds by stem and its single
+     active converted run, and the engine reads risk and Done Criteria from the standard
+     documents.
    Read the cycle's document language from the composite Phase 00's `Document-Language:`
    line before writing anything. Every phase document you author (05, 06) carries that same
    line and is written in that language; a run with no marker predates it — keep writing in
@@ -54,14 +63,20 @@ sage review-loop round ... --lens-receipts <comma-list>
 sage review-loop close ...
 ```
 
-Update the composite `### Done Criteria` after virtual Phase 03 and Phase 04 evidence.
+Update the Done Criteria after Phase 03 and Phase 04 evidence — the composite
+`### Done Criteria` on a `FAST` run, and the standard Phase 00 `## 5. Done Criteria` on a
+`FAST-CONVERTED` run (its phases are real documents, not virtual sections).
 Only demonstrated items become `[x]`; exclusions require `[~] ... (N/A: reason)`. If an
 item or its scope changes, increment `Done-Criteria-Revision`, record the reason and affected
-virtual phases, and rerun those phases. Review and close require zero unresolved items.
+phases, and rerun those phases. Review and close require zero unresolved items.
 
    Continue until APPROVED or BLOCKED. Minimum rounds are a floor, not automatic
    approval. Every selected lens must run in every counted round.
-5. Write 05 with exact `Fast-Run`, `Loop-Run`, and `Final Status: APPROVED`, then:
+5. Write 05 with exact `Fast-Run`, `Loop-Run`, and `Final Status: APPROVED`. If the Loop
+   Audit closed with `USER_AUTHORIZED_EARLY`, the same 05 also carries the four
+   reduced-assurance markers (`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`,
+   `Residual-Findings`) with values matching the audit record — all four or none; see
+   `sage-review`. Then:
 
 ```text
 sage fast-cycle review --run-id <fc-id> --loop-run-id <loop-id>

@@ -702,6 +702,57 @@ class TestReportAuditGate(unittest.TestCase):
         self.assertEqual(d["status"], "ok")
         self.assertNotIn(d["message_key"], ("block_report_without_audit", "warn_report_without_audit"))
 
+    _EARLY_RUN = {"closed": True, "result": "APPROVED", "seq_ok": True, "chain_ok": True,
+                  "close_reason": "USER_AUTHORIZED_EARLY", "completed_rounds": 2,
+                  "configured_max_iterations": 3,
+                  "survived_by_severity": {"P0": 0, "P1": 0, "P2": 2, "P3": 0}}
+    _EARLY_MARKERS = ("Review-Assurance: REDUCED_BY_USER_AUTHORIZATION\n"
+                      "Review-Close-Reason: USER_AUTHORIZED_EARLY\n"
+                      "Review-Rounds: 2 (configured max: 3)\n"
+                      "Residual-Findings: P0=0, P1=0, P2=2, P3=0\n")
+
+    def _early_05(self):
+        return self._doc("Final Status: APPROVED\nLoop-Run: run-x1\n" + self._EARLY_MARKERS)
+
+    def test_the_report_of_an_early_closed_run_must_disclose_it(self):
+        """05 만 강제하면 최종 산출물인 06 은 축약된 리뷰를 말하지 않는다.
+
+        리포트만 읽는 사람에게는 조기 승인이 표준 승인과 똑같이 보인다.
+        """
+        d = core.decide(ev("plan_docs/06-report/feature.md", "Cycle-Stem: `feature`\n"),
+                        _audit_profile(mode="enforce"),
+                        snap_audit([self._early_05()], runs={"run-x1": self._EARLY_RUN}), None)
+        self.assertEqual(d["message_key"], "block_report_without_audit")
+        self.assertEqual(d["exit_code"], 2)
+
+    def test_a_report_that_discloses_the_early_close_passes(self):
+        d = core.decide(ev("plan_docs/06-report/feature.md",
+                           "Cycle-Stem: `feature`\n" + self._EARLY_MARKERS),
+                        _audit_profile(mode="enforce"),
+                        snap_audit([self._early_05()], runs={"run-x1": self._EARLY_RUN}), None)
+        self.assertEqual(d["status"], "ok", d.get("reason"))
+
+    def test_a_report_may_not_claim_an_early_close_that_did_not_happen(self):
+        d = core.decide(ev("plan_docs/06-report/feature.md",
+                           "Cycle-Stem: `feature`\n" + self._EARLY_MARKERS),
+                        _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": True, "result": "APPROVED",
+                                                    "seq_ok": True, "chain_ok": True,
+                                                    "close_reason": "CONVERGED"}}), None)
+        self.assertEqual(d["message_key"], "block_report_without_audit")
+        self.assertEqual(d["exit_code"], 2)
+
+    def test_a_normal_report_needs_no_assurance_markers(self):
+        d = core.decide(ev("plan_docs/06-report/feature.md",
+                           "Cycle-Stem: `feature`\nReview-Rounds: 3\n"),
+                        _audit_profile(mode="enforce"),
+                        snap_audit([self._doc("Final Status: APPROVED\nLoop-Run: run-x1")],
+                                   runs={"run-x1": {"closed": True, "result": "APPROVED",
+                                                    "seq_ok": True, "chain_ok": True,
+                                                    "close_reason": "CONVERGED"}}), None)
+        self.assertEqual(d["status"], "ok", d.get("reason"))
+
     # --- 7차 배치3-5: report_gate_enforce 키 부재 → 기본 advisory ---
     def test_default_advisory_when_key_absent(self):
         import copy
@@ -1169,6 +1220,17 @@ class TestReportAcceptanceGate(unittest.TestCase):
         self.assertEqual(core._cycle_risk(_REPORT_EV, _acceptance_profile(), snap,
                                           _acceptance_profile()["pdca"]), "unknown")
 
+    def test_a_declared_l0_does_not_silently_disable_the_gate(self):
+        """L0 은 이 층이 아는 사이클 tier 가 아니다 — 건너뛰면 옆의 낮은 선언이 채택돼
+        acceptance gate 가 통째로 사라진다(L1 은 required_risks 에 없어 게이트 미실행)."""
+        snap = self._snap("## Acceptance Evidence\n| ID | Status |\n|---|---|\n| A1 | FAIL |")
+        snap["phase_docs"]["00"] = [{
+            "path": "feature.md", "content": "Cycle-Stem: `feature`\nRisk Level: L1\n"}]
+        snap["phase_docs"]["02"] = [{
+            "path": "feature.md", "content": "Cycle-Stem: `feature`\nRisk Level: L0\n"}]
+        self.assertEqual(core._cycle_risk(_REPORT_EV, _acceptance_profile(), snap,
+                                          _acceptance_profile()["pdca"]), "unknown")
+
     def test_acceptance_enforce_precedes_audit_advisory(self):
         # acceptance enforce 가 audit advisory warning 에 가려지면 핵심 요구사항 실패가 report 로 통과한다.
         p = _acceptance_profile(mode="enforce")
@@ -1528,6 +1590,111 @@ class TestAdapters(unittest.TestCase):
                 if p.stdout.strip():                       # 메시지가 있으면 봉투여야 한다
                     doc = json.loads(p.stdout)
                     self.assertEqual(doc["hookSpecificOutput"]["hookEventName"], "PreToolUse")
+
+
+BOOTSTRAP_STEM = "fastcycle-bootstrap"
+BOOTSTRAP_PROFILE = {
+    "risk": {"l0_pass_globs": ["*plan_docs/*", "*.md"], "l2_path_globs": ["*backend/*.java"]},
+    "pdca": {
+        "enabled": True,
+        "phases": [{"id": pid, "glob": f"plan_docs/{pid}-x/**/*.md"}
+                   for pid in ("00", "01", "02", "03")],
+        "pre_implementation_required": {"L3": ["00", "01", "02", "03"]},
+    },
+}
+
+
+def _bootstrap_doc(stem, risk=""):
+    risk_line = f"Risk Level: {risk}\n" if risk else ""
+    return {"path": f"{stem}.md", "content": f"Cycle-Stem: `{stem}`\n{risk_line}", "recent": True}
+
+
+def _bootstrap_snapshot(stem=BOOTSTRAP_STEM):
+    """00 만 있고 01~03 이 아직 없는 상태 — 계획을 이제 쓰려는 시점."""
+    return {"plan_files": [_bootstrap_doc(stem)], "review_candidates": [],
+            "phase_docs": {"00": [_bootstrap_doc(stem, risk="L3")]}}
+
+
+def _bootstrap_event(changes, stem=BOOTSTRAP_STEM):
+    return {"hook_id": "pre-implementation-gate", "runtime": "test", "branch": "main",
+            "session_id": "sess-bootstrap", "cycle_stem": stem, "cycle_stem_origin": "env",
+            "declared_max": "L3", "changes": changes}
+
+
+def _phase_change(phase, stem=BOOTSTRAP_STEM):
+    return {"path": f"plan_docs/{phase}-x/{stem}.md", "op": "write",
+            "content": f"Cycle-Stem: `{stem}`\n# {phase}\n"}
+
+
+# L3 는 리뷰 전략 선택을 따로 요구한다(`block_l3_strategy_unresolved`). 그건 이 교착과 무관한
+# 정상 게이트이므로, 실제 어댑터처럼 선택된 전략 결과를 넘겨 변수를 phase 요구로 좁힌다.
+_STRATEGY = {"found": True, "path": "docs/review.md"}
+
+
+class TestPhaseDocumentBootstrap(unittest.TestCase):
+    """L3 선언 뒤 계획 문서를 못 쓰는 교착 — 게이트가 요구하는 문서를 게이트가 막는다.
+
+    면제는 "선언된 stem 의 phase 문서만 건드리는 변경" 하나뿐이다. 소스가 한 줄이라도 섞이면
+    면제가 없다 — `all()` 의미론이라 섞이는 순간 거짓이 된다.
+    """
+
+    def test_writing_a_missing_phase_document_is_not_blocked_by_the_missing_phases(self):
+        for phase in ("00", "01", "02", "03"):
+            with self.subTest(phase=phase):
+                d = core.decide(_bootstrap_event([_phase_change(phase)]),
+                                BOOTSTRAP_PROFILE, _bootstrap_snapshot(), _STRATEGY)
+                self.assertNotEqual(d.get("message_key"), "block_phase_incomplete")
+                self.assertEqual(d["exit_code"], 0, d.get("reason"))
+
+    def test_source_edit_stays_blocked_while_phases_are_missing(self):
+        d = core.decide(_bootstrap_event([{"path": "backend/App.java", "op": "write",
+                                           "content": "class App {}"}]),
+                        BOOTSTRAP_PROFILE, _bootstrap_snapshot(), _STRATEGY)
+        self.assertEqual(d["message_key"], "block_phase_incomplete")
+        self.assertEqual(d["exit_code"], 2)
+
+    def test_mixing_one_source_file_into_the_document_change_removes_the_exemption(self):
+        d = core.decide(_bootstrap_event([_phase_change("01"),
+                                          {"path": "backend/App.java", "op": "write",
+                                           "content": "class App {}"}]),
+                        BOOTSTRAP_PROFILE, _bootstrap_snapshot(), _STRATEGY)
+        self.assertEqual(d["message_key"], "block_phase_incomplete")
+        self.assertEqual(d["exit_code"], 2)
+
+    def test_a_document_of_another_stem_is_not_exempt(self):
+        """면제는 경로 glob 만 본다 — stem 을 지키는 것은 결속이다.
+
+        `message_key` 까지 고정하는 이유: 차단 주체를 적어두지 않으면 나중에 결속이 느슨해져도
+        exit 2 만 보고 "면제가 막았다" 고 오해한다. 차단 근거가 옮겨가면 이 테스트가 알린다.
+        """
+        for label, content in (("declares the other stem", "Cycle-Stem: `other-cycle`\n"),
+                               ("declares nothing", "# 01\n")):
+            with self.subTest(label=label):
+                other = {"path": "plan_docs/01-x/other-cycle.md", "op": "write",
+                         "content": content}
+                d = core.decide(_bootstrap_event([other]), BOOTSTRAP_PROFILE,
+                                _bootstrap_snapshot(), _STRATEGY)
+                self.assertEqual(d["exit_code"], 2)
+                self.assertEqual(d.get("message_key"), "block_cycle_binding", d.get("reason"))
+
+    def test_a_phase_outside_the_requirement_is_not_exempt(self):
+        """면제의 근거는 교착이다 — 04~06 은 자기 자신을 요구하지 않으므로 교착이 없다.
+
+        이걸 면제하면 01·02·03 이 하나도 없는 상태에서 승인 문서를 먼저 쓸 수 있다.
+        """
+        profile = json.loads(json.dumps(BOOTSTRAP_PROFILE))
+        profile["pdca"]["phases"] = [{"id": pid, "glob": f"plan_docs/{pid}-x/**/*.md"}
+                                     for pid in ("00", "01", "02", "03", "04", "05", "06")]
+        for phase in ("04", "05", "06"):
+            with self.subTest(phase=phase):
+                d = core.decide(_bootstrap_event([_phase_change(phase)]),
+                                profile, _bootstrap_snapshot(), _STRATEGY)
+                self.assertEqual(d["exit_code"], 2, d.get("reason"))
+
+    def test_zero_changes_is_not_an_exemption(self):
+        d = core.decide(_bootstrap_event([]), BOOTSTRAP_PROFILE,
+                        _bootstrap_snapshot(), _STRATEGY)
+        self.assertNotEqual(d.get("status"), "ok")
 
 
 if __name__ == "__main__":

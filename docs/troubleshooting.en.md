@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:b4ec420111b9defd8067d06bd7383ac8bf3d05b171c9153a67f64d8dc564ed2c -->
+<!-- sage-doc-source: troubleshooting.md sha256:f5dac01969372934ec52b083cb9b316467039c9fc2ea644590934f7862ecdfed -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -174,6 +174,63 @@ sage fast-cycle open --stem <stem> --level L2 --lens-count 2 --reason "short rea
 
 `reason_required` cannot be relaxed from the profile, so filling in a valid value and retrying is
 the only path — there is no bypass.
+
+## `sage fast-cycle convert` is rejected
+
+```
+⛔ [sage fast-cycle] convert failed: pdca.fast_cycle.standard_transition.enabled=true is required
+⛔ [sage fast-cycle] convert failed: --confirm must be exactly FAST-CONVERTED
+⛔ [sage fast-cycle] convert failed: Fast audit integrity failed: ...
+```
+
+Conversion opens only when both opt-ins are on (`fast_cycle.enabled` and
+`fast_cycle.standard_transition.enabled`). If the confirmation token, the reason, or the approver is
+missing, the command exits **without writing anything** — neither audit nor document changes. An
+integrity error means existing records in `.sage/fast_cycle.jsonl` are damaged; a new run is never
+stacked on a damaged audit.
+
+```bash
+sage fast-cycle convert --stem <stem> --current-phase 04 --level L2 \
+  --lens-count 2 --reason "short reason" --confirmed-by <approver> --confirm FAST-CONVERTED
+```
+
+If source edits are still blocked with `block_phase_incomplete` after converting, the phases that
+existed at conversion time do not cover `pre_implementation_required` for that risk. A conversion
+waives **only what it can show**, so converting at Phase 00 still requires 01–03 to be authored. A
+converted run legitimately carries no `Fast-Audit-Run` line in its document; do not add one by hand.
+
+## Early completion (`USER_AUTHORIZED_EARLY`) is rejected
+
+```
+[sage review-loop] early completion refused: pdca.review_loop.early_completion.enabled=true is required
+[sage review-loop] --survived-by-severity invalid: severity total 2 does not equal survived 3
+```
+
+Early completion requires `pdca.review_loop.early_completion.enabled: true` and is meaningful only
+while `sage review-loop next` still recommends `CONTINUE`; once it reports `STOP` or `CONVERGED`,
+close normally. A receipt-total error means `--survived-by-severity` does not sum to that round's
+`--survived` — the check exists to stop a `P0=0`-only receipt from hiding a blocking finding, so
+there is no way around it.
+
+Some things an authorization never carries past the gate: zero rounds, unresolved findings at a
+`severity_block` severity, architecture escalation, failed verification, unresolved Done Criteria,
+acceptance `FAIL`, and audit damage. If one of those is blocking, it has to be genuinely resolved.
+
+## Phase 05 is blocked over reduced-assurance markers
+
+```
+조기 완료로 닫히지 않은 run 인데 보증 저하를 자칭함: [...]
+Review-Assurance 선언은 fence 밖에 정확히 1개여야 함(found 0)
+```
+
+The four markers (`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`, `Residual-Findings`)
+must be **all four or none**. If the loop closed early, record all four with values matching the
+audit record. If it converged normally, do not write the values that claim reduced assurance
+(`REDUCED_BY_USER_AUTHORIZATION`, `USER_AUTHORIZED_EARLY`). A neutral line such as
+`Review-Rounds: 3` on a converged run is not blocked.
+
+If the markers are written correctly but still report `found 0`, check whether they ended up inside
+a fenced code block — lines inside a fence are not counted.
 
 ## `sage cycle clear` is blocked by an active Fast run
 

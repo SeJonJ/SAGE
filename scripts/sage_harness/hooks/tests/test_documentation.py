@@ -259,5 +259,128 @@ class TestDocumentationStructure(unittest.TestCase):
                     self.assertTrue((document.parent / clean).resolve().exists())
 
 
+CLI_ERROR_LINE = re.compile(r"^(?:⛔ )?(\[sage [a-z-]+\] )(.+)$")
+
+
+# 문서에 적힌 문장이 production 문자열에서 나올 수 있다고 인정하려면, 그 문장의 이만큼이
+# 리터럴로 덮여야 한다. 이 하한이 없으면 f-string 의 치환부가 `.*?` 로 열려 `"{a}: {b}"` 같은
+# 흔한 형태 하나가 콜론 있는 아무 문장이나 통과시킨다(7R 실측: 창작 문장도 초록).
+_LITERAL_COVERAGE_FLOOR = 0.6
+
+
+def _message_shapes(root):
+    """production 이 실제로 낼 수 있는 메시지 모양 — (정규식, 리터럴 길이) 쌍.
+
+    리터럴 길이를 함께 돌려주는 것이 핵심이다. 치환부를 와일드카드로 열어 둔 패턴은 문장을
+    "설명" 하지 않으므로, 얼마나 설명했는지를 재는 축이 없으면 오라클이 무동작이 된다.
+    """
+    import ast  # noqa: PLC0415
+
+    shapes = []
+    for base in (root / "sage", root / "scripts" / "sage_harness" / "hooks"):
+        for path in base.rglob("*.py"):
+            if "tests" in path.parts:
+                continue
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except (SyntaxError, UnicodeError):
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    shapes.append((re.escape(node.value), len(node.value)))
+                elif isinstance(node, ast.JoinedStr):
+                    parts, literal = [], 0
+                    for piece in node.values:
+                        if isinstance(piece, ast.Constant) and isinstance(piece.value, str):
+                            parts.append(re.escape(piece.value))
+                            literal += len(piece.value)
+                        else:
+                            parts.append(".*?")
+                    shapes.append(("".join(parts), literal))
+    return [(re.compile(pattern, re.DOTALL), literal) for pattern, literal in shapes]
+
+
+class TestDocumentedCliErrorsExist(unittest.TestCase):
+    """troubleshooting 의 오류 예시는 실제 출력과 같은 문자열이어야 한다.
+
+    사용자는 자기 화면의 문자열로 문서를 찾는다. 예시가 실물과 다르면 해당 절은 조용히 도달
+    불가능해진다 — 실패가 아니라 검색 실패라 아무도 신고하지 않는다.
+    """
+
+    def _documented_lines(self, name):
+        text = (ROOT / "docs" / name).read_text(encoding="utf-8")
+        inside = False
+        for line in text.split("\n"):
+            if line.startswith("```"):
+                inside = not inside
+                continue
+            match = CLI_ERROR_LINE.match(line) if inside else None
+            if match:
+                yield line, match.group(1), match.group(2)
+
+    def _explained_by_production(self, shapes, sources, tail):
+        """문서 한 줄이 production 문자열로 설명되는가.
+
+        거부 한 줄은 보통 두 조각의 합이다 — 바깥 틀(`open rejected: {exc}`)과 안쪽 원인
+        (`pdca.fast_cycle.enabled=true is required`). 통째로 한 패턴에 맞추려 하면 틀의 치환부가
+        원인 전체를 삼켜 아무 문장이나 통과한다. 그래서 첫 `: ` 에서 갈라 틀은 리터럴로,
+        원인은 피복률 하한과 함께 확인한다.
+        """
+        if self._covered(shapes, tail):
+            return True
+        action, separator, cause = tail.partition(": ")
+        if not separator or f"{action}: " not in sources:
+            return False
+        return self._covered(shapes, cause)
+
+    def _covered(self, shapes, text):
+        floor = _LITERAL_COVERAGE_FLOOR * len(text)
+        return any(literal >= floor and pattern.fullmatch(text)
+                   for pattern, literal in shapes)
+
+    def test_troubleshooting_error_examples_match_production_strings(self):
+        sources = "".join(
+            path.read_text(encoding="utf-8")
+            for base in (ROOT / "sage", ROOT / "scripts" / "sage_harness" / "hooks")
+            for path in base.rglob("*.py"))
+        shapes = _message_shapes(ROOT)
+        for name in ("troubleshooting.md", "troubleshooting.en.md"):
+            for line, prefix, tail in self._documented_lines(name):
+                with self.subTest(document=name, line=line):
+                    self.assertTrue(prefix in sources, f"unknown command banner: {prefix!r}")
+                    if "..." in tail:
+                        continue
+                    self.assertTrue(self._explained_by_production(shapes, sources, tail),
+                                    f"no production string can produce: {tail!r}")
+
+    def test_the_oracle_rejects_a_message_that_does_not_exist(self):
+        """오라클 자신에게 이빨이 있는가 — 없으면 위 테스트는 초록을 파는 장식이다.
+
+        f-string 의 치환부를 와일드카드로 열면 `"{a}: {b}"` 하나가 콜론 있는 아무 문장이나
+        통과시킨다. 그래서 리터럴 피복률 하한을 둔다. 이 테스트는 그 하한이 살아 있는지 본다.
+        """
+        shapes = _message_shapes(ROOT)
+        sources = "".join(
+            path.read_text(encoding="utf-8")
+            for base in (ROOT / "sage", ROOT / "scripts" / "sage_harness" / "hooks")
+            for path in base.rglob("*.py"))
+        invented = (
+            "--confirm must be exactly PLEASE-DO-THE-THING",
+            "totally invented message: nothing like this exists anywhere",
+            "no colon here so it should fail",
+            "이 문자열은 프로덕션에 존재하지 않습니다: 아무것도",
+        )
+        for tail in invented:
+            with self.subTest(tail=tail):
+                self.assertFalse(self._explained_by_production(shapes, sources, tail))
+        # 실물은 통과해야 한다 — 하한이 너무 높으면 정상 예시가 막힌다.
+        for tail in ("--confirm must be exactly FAST-CONVERTED",
+                     "pdca.fast_cycle.enabled=true is required",
+                     "lens-count must be at least 2 for L2"):
+            with self.subTest(tail=tail):
+                self.assertTrue(self._explained_by_production(shapes, sources, tail))
+
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

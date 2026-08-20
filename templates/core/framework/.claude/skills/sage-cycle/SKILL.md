@@ -75,6 +75,10 @@ set). If not → stop: "Profile is not bootstrapped. Run `/sage-init` first."
 
 ## Step 1 — Identify the cycle
 
+If the user asks mid-cycle to "go faster" or to drop documents, the only entrance is
+`/sage-cycle-fast`, which requires the `pdca.fast_cycle` opt-ins and an explicit user
+confirmation. Do not improvise a shortcut, and do not propose editing the profile to open one.
+
 Establish the single cycle this run is about, the same way the sub-skills do — by
 its plan-doc stem (the feature name) under `paths.plan_docs`. If the user has not
 named the task, ask for a one-sentence description and derive/confirm the stem.

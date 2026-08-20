@@ -24,6 +24,9 @@ MAX_ATTESTATION_TTL = 3600
 MAX_TOKEN_BYTES = 16384
 _RISKS = ("none", "L0", "L1", "L2", "L3", "DESKTOP_BLOCK")
 _RANK = {risk: rank for rank, risk in enumerate(_RISKS)}
+# 사이클 선언으로 인정하는 tier. `_RANK` 는 분류 결과(none/L0/DESKTOP_BLOCK 포함)까지 담는 넓은
+# 집합이라 선언 검증에 그대로 쓰면 `Risk Level: L0` 이 정상 선언으로 통과한다.
+_CYCLE_TIERS = ("L1", "L2", "L3")
 _SHA_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -171,7 +174,9 @@ def _trusted_gate_modules():
     for path in (hooks, runtime):
         if path not in sys.path:
             sys.path.insert(0, path)
-    return importlib.import_module("pre_implementation_gate_core"), importlib.import_module("cycle_binding")
+    return (importlib.import_module("pre_implementation_gate_core"),
+            importlib.import_module("cycle_binding"),
+            importlib.import_module("risk_declaration"))
 
 
 def diff_digest(changes: list[dict[str, Any]]) -> str:
@@ -242,7 +247,7 @@ def _classification_changes(changes: list[dict[str, Any]]) -> list[dict[str, str
 def _classify(profile: dict[str, Any], changes: list[dict[str, Any]], classifier: Callable | None):
     if not isinstance(profile, dict):
         raise AuthorityError("base/head profile must be an object")
-    core, _ = _trusted_gate_modules()
+    core, _binding, _risk = _trusted_gate_modules()
     fn = classifier or core.classify_risk
     try:
         result = fn({"changes": _classification_changes(changes), "declared_max": None}, profile)
@@ -294,6 +299,38 @@ def _expand_fast_phase_docs(phase_docs: dict[str, Any]):
     return expanded, issues
 
 
+CONVERTED_ENTRY_MODE = "FAST-CONVERTED"
+
+
+def _converted_fast_run(fast_records, cycle_stem):
+    """이 stem 의 살아있는 전환 run id 와, 정할 수 없을 때의 사유. `(run_id, issue)`.
+
+    전환 run 은 문서에 `Fast-Audit-Run` 을 남기지 않으므로(설계상 문서를 건드리지 않는다) 결속
+    수단이 stem 하나뿐이다. 그래서 두 경우를 갈라야 한다:
+
+    - **중단된 전환**은 후보에서 뺀다. abort 는 전환을 취소하는 정규 수단이고, 취소된 뒤 그 사이클은
+      Standard 로 완주한다. 남겨두면 정상 취소가 영구 차단이 되고, 유일한 해소책이 다시 전환하는
+      것(= 후보 둘)이 된다.
+    - **후보가 둘 이상**이면 어느 쪽 증거인지 정할 수 없다. 이때 조용히 결속을 포기하면 검증이
+      통째로 꺼지므로, 사유를 돌려 호출부가 fail-closed 하게 한다. run 단위로 도는 감사 무결성
+      검사는 서로 다른 run 이 같은 stem 을 쓰는 상태를 보지 못한다.
+
+    entry_mode 는 레코드 필드가 아니라 event 이름에서 파생하므로 위조할 자리가 없다.
+    """
+    aborted = {record.get("run_id") for record in fast_records
+               if record.get("event") == "fast_abort"}
+    candidates = {record.get("run_id") for record in fast_records
+                  if record.get("event") == "fast_convert"
+                  and record.get("cycle_stem") == cycle_stem
+                  and isinstance(record.get("run_id"), str)} - aborted
+    if not candidates:
+        return None, None
+    if len(candidates) > 1:
+        return None, (f"cycle stem {cycle_stem!r} has {len(candidates)} live converted Fast runs; "
+                      "the authority cannot tell which one the evidence belongs to")
+    return candidates.pop(), None
+
+
 def _fast_evidence_reasons(request, selected, cycle_stem):
     """Verify committed Fast and Loop audit evidence against the selected plan/review."""
     plan_doc = selected.get("00") if isinstance(selected, dict) else None
@@ -302,30 +339,53 @@ def _fast_evidence_reasons(request, selected, cycle_stem):
         return ["Fast authority requires selected Phase 00"]
     from sage.fast_cycle_contract import evidence_marker_issues, parse_fast_plan
     plan, plan_issues = parse_fast_plan(plan_doc.get("content") or "")
-    if plan is None or plan.metadata.get("Cycle-Mode") != "FAST":
-        return []
-    reasons = [f"Fast composite: {issue}" for issue in plan_issues]
-    if not review_doc:
-        reasons.append("Fast authority requires selected Phase 05")
-        return reasons
+    composite = plan is not None and plan.metadata.get("Cycle-Mode") == "FAST"
     _trusted_gate_modules()  # inserts the trusted runtime directory
     import loop_audit
     try:
         fast_raw = request.get("fast_cycle_audit")
         loop_raw = request.get("loop_audit")
-        if not isinstance(fast_raw, str) or not isinstance(loop_raw, str):
-            return reasons + ["committed Fast and Loop audit text is required"]
-        fast_records, fast_file_issues = loop_audit._parse_bytes(fast_raw.encode("utf-8"))
-        loop_records, loop_file_issues = loop_audit._parse_bytes(loop_raw.encode("utf-8"))
+        raw_present = isinstance(fast_raw, str) and isinstance(loop_raw, str)
+        fast_records, fast_file_issues = (
+            loop_audit._parse_bytes(fast_raw.encode("utf-8")) if raw_present else ([], []))
+        loop_records, loop_file_issues = (
+            loop_audit._parse_bytes(loop_raw.encode("utf-8")) if raw_present else ([], []))
     except Exception as exc:
-        return reasons + [f"audit parse failed closed: {type(exc).__name__}: {exc}"]
+        return [f"audit parse failed closed: {type(exc).__name__}: {exc}"]
+
+    # 전환 run 은 Phase 00 이 Standard 문서라 `Cycle-Mode: FAST` 가 없다. 여기서 composite 여부만
+    # 보고 빠져나가면 전환 run 은 Fast 증거가 **하나도** 검증되지 않은 채 표준 경로로 통과한다 —
+    # 실제로 수행된 리뷰는 축약된 Fast 인데, 그 깊이를 확인하는 층이 사라진다.
+    converted_run, converted_issue = (
+        (None, None) if composite else _converted_fast_run(fast_records, cycle_stem))
+    if not composite and converted_run is None:
+        # 전환 run 의 Fast 성은 문서가 아니라 감사에만 있다. 감사를 커밋하지 않으면(`.gitignore`
+        # 한 줄이면 된다) 여기서 평범한 Standard 로 통과한다. 그래서 커밋 트리에 남는 다른 신호를
+        # 본다 — `fast-cycle review` 가 Phase 05 에 강제한 `Fast-Run:` 표기다. 그 표기가 있는데
+        # 감사가 뒷받침하지 못하면 증거 부재이지 Standard 사이클이 아니다.
+        core = _trusted_gate_modules()[0]
+        declared = (core._marker_values(review_doc.get("content") or "", "Fast-Run")
+                    if isinstance(review_doc, dict) else [])
+        if converted_issue:
+            return [f"Fast authority: {converted_issue}"]
+        if declared:
+            return ["Phase 05 declares a Fast run but no committed Fast audit corroborates it: "
+                    f"{declared}"]
+        return []
+    reasons = [f"Fast composite: {issue}" for issue in plan_issues] if composite else []
+    if not review_doc:
+        reasons.append("Fast authority requires selected Phase 05")
+        return reasons
+    if not raw_present:
+        return reasons + ["committed Fast and Loop audit text is required"]
     reasons.extend(f"Fast audit: {issue}" for issue in fast_file_issues)
     reasons.extend(f"Loop audit: {issue}" for issue in loop_file_issues)
 
-    fast_run = plan.metadata.get("Fast-Audit-Run")
+    fast_run = plan.metadata.get("Fast-Audit-Run") if composite else converted_run
     fast = [record for record in fast_records if record.get("run_id") == fast_run]
     fast_events = [record.get("event") for record in fast]
-    if (fast_events.count("fast_open") != 1 or fast_events.count("fast_close") != 1
+    opener_event = "fast_open" if composite else "fast_convert"
+    if (fast_events.count(opener_event) != 1 or fast_events.count("fast_close") != 1
             or fast_events.count("fast_abort") != 0 or fast_events.count("fast_review") < 1
             or fast_events[-1:] != ["fast_close"]):
         reasons.append(f"Fast run {fast_run!r} is not clean terminal APPROVED evidence")
@@ -334,13 +394,19 @@ def _fast_evidence_reasons(request, selected, cycle_stem):
         reasons.append(f"Fast run {fast_run!r} strict hash-chain is invalid or legacy")
     if loop_audit._seq_ok([record.get("seq") for record in fast]) is not True:
         reasons.append(f"Fast run {fast_run!r} seq is not strict and continuous")
-    opened = next(record for record in fast if record.get("event") == "fast_open")
+    opened = next(record for record in fast if record.get("event") == opener_event)
     reviewed = [record for record in fast if record.get("event") == "fast_review"][-1]
     closed = fast[-1]
     plan_hash = hashlib.sha256((plan_doc.get("content") or "").encode("utf-8")).hexdigest()
-    if opened.get("cycle_stem") != cycle_stem or plan.metadata.get("Cycle-Stem") != cycle_stem:
+    # composite 은 문서가 stem 을 따로 선언하므로 대조 대상이 둘이다. 전환 run 은 문서에 선언이
+    # 없고 opener 자체를 stem 으로 뽑았으므로, 여기서 다시 비교할 독립 축이 없다.
+    if opened.get("cycle_stem") != cycle_stem or (
+            composite and plan.metadata.get("Cycle-Stem") != cycle_stem):
         reasons.append("Fast run/plan cycle stem does not match authority stem")
-    if opened.get("actual_risk_open") != plan.metadata.get("Risk Level"):
+    # 전환 run 의 위험도 정본은 Standard Phase 00 의 선언이다 — 공용 파서 하나만 읽는다.
+    declared_risk = (plan.metadata.get("Risk Level") if composite
+                     else _declared_risk({"00": plan_doc}, _trusted_gate_modules()[2]))
+    if opened.get("actual_risk_open") != declared_risk:
         reasons.append("Fast open actual risk does not match Phase 00")
     if (reviewed.get("result") != "APPROVED" or closed.get("result") != "APPROVED"
             or reviewed.get("plan_hash_before_review") != plan_hash
@@ -431,7 +497,7 @@ def _done_criteria_evidence(request, selected, cycle_stem, profile):
 
             review_doc = selected.get("05")
             review_text = (review_doc or {}).get("content") or ""
-            core, _cycle_binding = _trusted_gate_modules()
+            core, _cycle_binding, _risk = _trusted_gate_modules()
             final_status, status_error = core._final_status(review_text)
             marker = str(pdca.get("approve_marker") or "APPROVED").upper()
             if status_error or final_status != marker:
@@ -491,17 +557,63 @@ def _done_criteria_evidence(request, selected, cycle_stem, profile):
     return (diagnostics, []) if mode == "enforce" else ([], diagnostics)
 
 
-def _declared_risk(selected: dict[str, dict[str, Any]], cycle_binding, core):
+def _declared_risk(selected: dict[str, dict[str, Any]], risk_declaration):
+    """선택된 phase 문서들의 선언 최대 tier. 하나라도 깨졌으면 unknown.
+
+    선언은 헤더 metadata 영역에만 있다 — 본문 산문의 `Risk Level` 언급까지 세면 실제 L1 사이클이
+    L3 로 읽혀 CI 가 과차단된다. 여러 문서의 최대를 취하는 보수성과, 문법을 벗어난 줄에서 unknown
+    으로 떨어지는 fail-closed 는 그대로 둔다 — 여기서 낮게 읽는 것이 위험한 방향이다.
+    """
     found = []
     for doc in selected.values():
-        for line in cycle_binding.non_fenced_lines(doc.get("content") or ""):
-            parsed = core._parse_risk_declaration(line)
-            if parsed is None:
-                continue
-            if parsed == "unknown":
+        declarations, error = risk_declaration.scan(doc.get("content") or "")
+        if error is not None:
+            return "unknown"
+        for _line, tier in declarations:
+            # 이 층이 아는 사이클 tier 는 L1~L3 다. `L0` 는 조용히 버리지 않고 unknown 으로
+            # 떨어뜨린다 — 버리면 옆의 낮은 선언이 채택돼 실제보다 헐거운 판정이 된다.
+            if tier not in _CYCLE_TIERS:
                 return "unknown"
-            found.append(parsed)
+            found.append(tier)
     return max(found, key=_RANK.get) if found else None
+
+
+def _review_assurance(selected: dict[str, dict[str, Any]], core) -> tuple[str, list[str]]:
+    """Phase 05 가 선언한 리뷰 보증 수준과, 그 선언 자체의 정합성 문제.
+
+    조기 완료 승인은 일반 승인과 같은 `APPROVED` 토큰을 쓴다. 서버 권위가 둘을 구분하지 못하면
+    보증이 낮은 승인이 표준 승인과 같은 무게로 통과한다. 네 표기는 함께 있거나 함께 없어야 하고,
+    일부만 있으면 어느 쪽으로도 해석할 수 없으므로 fail-closed 한다.
+    """
+    document = selected.get("05")
+    content = document.get("content") or "" if isinstance(document, dict) else ""
+    if not content.strip():
+        # 05 를 읽지 못한 상태(선택 실패·phase 결핍)는 "표준 보증" 이 아니다. 미확인을 STANDARD 로
+        # 적으면 조기 종료 승인이 서버 권위에서 일반 승인과 같은 무게로 남는다. 05 를 요구하지 않는
+        # 위험도가 있으므로 이유는 만들지 않는다 — 값만 정직해지고 차단 폭은 그대로다.
+        return "UNKNOWN", []
+    found = {label: core._marker_values(content, label)
+             for label in core._REDUCED_ASSURANCE_MARKERS}
+    # `Review-Rounds`·`Residual-Findings` 는 일반 리뷰 문서에도 자연스럽게 적히는 중립 표기다.
+    # 존재를 트리거로 쓰면 그 한 줄을 적은 평범한 05 가 게이트는 통과하고 권위에서만 막힌다 —
+    # 같은 문서에 두 층이 다른 답을 내는 상태다. 게이트와 같은 기준으로 **자칭**만 본다.
+    claimed = any(value.strip().upper() == token
+                  for label, token in (("Review-Assurance", core.REVIEW_ASSURANCE_REDUCED),
+                                       ("Review-Close-Reason", core.EARLY_CLOSE_REASON))
+                  for value in found[label])
+    if not claimed:
+        return "STANDARD", []
+    duplicated = [label for label, values in found.items() if len(values) > 1]
+    if duplicated:
+        return "UNKNOWN", [f"Phase 05 declares {duplicated} more than once"]
+    missing = [label for label, values in found.items() if not values]
+    if missing:
+        return "UNKNOWN", [f"Phase 05 reduced-assurance markers are incomplete: missing {missing}"]
+    if found["Review-Assurance"][0].upper() != core.REVIEW_ASSURANCE_REDUCED:
+        return "UNKNOWN", [f"Phase 05 Review-Assurance must be {core.REVIEW_ASSURANCE_REDUCED}"]
+    if found["Review-Close-Reason"][0].upper() != core.EARLY_CLOSE_REASON:
+        return "UNKNOWN", [f"Phase 05 Review-Close-Reason must be {core.EARLY_CLOSE_REASON}"]
+    return core.REVIEW_ASSURANCE_REDUCED, []
 
 
 def _acceptance_evidence(selected: dict[str, dict[str, Any]], core):
@@ -556,7 +668,10 @@ def analyze(request: dict[str, Any], classifier: Callable | None = None) -> dict
     selected = {}
     if risk == "DESKTOP_BLOCK":
         reasons.append("desktop/generated protected path changed")
-    core, cycle_binding = _trusted_gate_modules()
+    core, cycle_binding, risk_declaration = _trusted_gate_modules()
+    # 05 를 읽지 못한 경로(선택 실패·phase 결핍)에서도 결과 모양이 같아야 한다. 미확인은 STANDARD
+    # 가 아니라 UNKNOWN 이다 — 확인 못 한 것을 표준 승인으로 적으면 그게 곧 조용한 통과다.
+    review_assurance = "UNKNOWN"
     cycle_stem = cycle_binding.normalize_stem(request.get("cycle_stem"))
     if cycle_stem is None:
         reasons.append("explicit safe cycle_stem is required")
@@ -565,7 +680,7 @@ def analyze(request: dict[str, Any], classifier: Callable | None = None) -> dict
         reasons.extend(fast_phase_issues)
         selected, phase_errors = _selected_phases(phase_docs, cycle_stem, cycle_binding)
         try:
-            declared = _declared_risk(selected, cycle_binding, core)
+            declared = _declared_risk(selected, risk_declaration)
             if declared == "unknown":
                 risk = "L3"
             elif declared and _RANK[declared] > _RANK[risk]:
@@ -589,10 +704,13 @@ def analyze(request: dict[str, Any], classifier: Callable | None = None) -> dict
                 if error or status != marker:
                     reasons.append(f"Phase 05 is not exactly {marker}: {error or status}")
                 reasons.extend(_acceptance_evidence(selected, core))
+        review_assurance, assurance_reasons = _review_assurance(selected, core)
+        reasons.extend(assurance_reasons)
     return {
         "status": "BLOCK" if reasons else "PASS",
         "exit_code": 2 if reasons else 0,
         "risk": risk,
+        "review_assurance": review_assurance,
         "base_risk": base_result["risk"],
         "head_risk": head_result["risk"],
         "diff_sha256": digest,

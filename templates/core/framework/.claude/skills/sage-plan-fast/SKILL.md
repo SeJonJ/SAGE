@@ -77,3 +77,41 @@ sage fast-cycle open --stem <stem> --level <L2|L3> --lens-count <N> --reason <re
 Always repeat the Fast warning at open. Actual L3 with L2 Fast must explicitly say
 that verification assurance is lower than standard L3; do not ask for another
 confirmation solely because of the warning.
+
+## Converting a Standard Cycle already in progress
+
+A cycle that is already past Phase 00 has no composite plan, and authoring one now would
+rewrite documents the cycle already produced. Use the conversion instead — but only when
+`pdca.fast_cycle.standard_transition.enabled: true`. If that key is absent or false, the
+conversion is unavailable: say so and continue as a Standard Cycle. Never propose editing the
+profile mid-cycle to unlock it.
+
+```text
+sage fast-cycle convert --stem <stem> --current-phase <00|01|02|03|04> \
+  --level <L2|L3> --lens-count <N> --reason <reason> \
+  --confirmed-by <approver> --confirm FAST-CONVERTED
+```
+
+**The confirmation is the user's, not yours.** `--confirm FAST-CONVERTED`, `--reason` and
+`--confirmed-by` must come from the user in this turn. Do not infer them from context, reuse
+them from an earlier run, or supply the token because the intent seems obvious. Without all
+three the command writes nothing.
+
+`--confirmed-by` is the name the user states in that turn — not `git config`, the profile, or
+the host account, which record who is typing rather than who approved the transition.
+`--reason` carries the user's own words; do not summarise or improve them.
+
+What the conversion does and does not do:
+
+- It writes no document. Existing Phases 00–04 are not deleted, moved, merged, or rewritten,
+  and no conversion metadata is inserted into them.
+- The audit record in `.sage/fast_cycle.jsonl` is the only evidence of the transition. It
+  records the phases that already existed at conversion time.
+- The converted run waives only the pre-implementation phases that snapshot can show. Convert
+  at Phase 00 and the plan documents are still required before source edits.
+- Actual `Risk Level` still comes from the existing Phase 00 and is unchanged by the
+  conversion; only the review contract changes.
+
+After a successful convert, hand off to `sage-team-fast` exactly as with a fresh open. The
+converted run has no `Fast-Audit-Run` line to check — it binds by stem and its single active
+run, so do not add one to the document.

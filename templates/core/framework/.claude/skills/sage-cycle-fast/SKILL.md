@@ -41,6 +41,14 @@ preference. Full rules: `docs/agent/language-policy.md`.
 2. Resolve the current Cycle-Stem and inspect its exact 00 document and Fast audit.
 3. If no composite Fast Plan and active Fast run exist, delegate to
    `sage-plan-fast`. Do not duplicate its interview or planning steps here.
+   A Fast run has two entry modes and `sage-plan-fast` owns both: a fresh open from a
+   composite Phase 00, and — for a cycle already past Phase 00, only when
+   `pdca.fast_cycle.standard_transition.enabled` is true — an explicitly confirmed
+   `sage fast-cycle convert`. Read the entry mode before judging a document:
+   `sage fast-cycle show --run-id <fc-id>` prints `entry=FAST` or `entry=FAST-CONVERTED`.
+   **Only on `entry=FAST-CONVERTED`** is a missing `Fast-Audit-Run` line normal — that run
+   binds by stem instead. On `entry=FAST` the same missing or `pending` line is a defect to
+   fix, so never treat it as normal without checking which mode you are in.
 4. After planning/open succeeds, delegate to `sage-team-fast`. Do not duplicate
    its implementation, review, close, or clear steps here.
 5. Report the actual risk, Fast review level, selected lenses, reason, Fast run,

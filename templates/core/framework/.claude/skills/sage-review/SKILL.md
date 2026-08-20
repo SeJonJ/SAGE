@@ -206,6 +206,68 @@ sage review-loop round --run-id $RUN_ID --iteration <n> \
   --found <N> --survived <N> --accepted <N> --arch <N> --tokens <cumulative>
 ```
 
+When `pdca.review_loop.early_completion.enabled` is true, also pass the per-severity residual
+receipt so the surviving findings are counted by severity, not just totalled:
+```
+  --survived-by-severity P0=0,P1=0,P2=2,P3=1
+```
+The receipt must name every severity and its total must equal `--survived` exactly. Writing
+`P0=0` alone while findings survive is the failure this exists to prevent, and the command
+rejects a receipt whose sum disagrees.
+
+### Early completion by user authorization
+Available only when `pdca.review_loop.early_completion.enabled` is true, and only while
+`sage review-loop next` still recommends `CONTINUE` — a loop that already reached `STOP` or
+`CONVERGED` closes normally instead.
+
+If that key is absent or false, early completion is unavailable: say so, keep running the loop
+to convergence or its configured maximum, and **never propose editing the profile mid-loop to
+unlock it**. Enabling the feature is a policy decision for `/sage-profile-modify` outside a
+running loop, and it is not the authorization for this close.
+
+Inside a Fast run the effective floor is higher than this feature's own: `sage fast-cycle
+review` requires at least `pdca.fast_cycle.minimum_rounds[<level>]` rounds, so the usable floor
+is `max(minimum_completed_rounds, fast_cycle.minimum_rounds[<level>])`. Closing the loop below
+that spends the user's authorization on a run the Fast gate will then refuse.
+
+```
+sage review-loop close --run-id $RUN_ID --result APPROVED --reason USER_AUTHORIZED_EARLY \
+  --iterations <n> --reviewer-actual $ACTUAL \
+  --authorization-reason <why the residual risk is accepted> \
+  --confirmed-by <approver> --confirm USER_AUTHORIZED_EARLY
+```
+
+**The authorization is the user's, not yours.** The reason, the approver and the confirmation
+token come from the user in that turn. Never supply them from context, from an earlier run, or
+from your own judgement that the remaining findings look harmless. Missing any one of them and
+the command exits before appending anything.
+
+`--confirmed-by` is the name the user states in that turn. Do not read it from `git config`,
+the profile, the host account, or any other metadata — those record who is typing, not who
+accepted the residual risk. `--authorization-reason` carries the user's own words; do not
+summarise, translate, or improve them into a reason they did not give.
+
+What an authorization can never waive — each of these still blocks the close:
+zero completed rounds (or fewer than `minimum_completed_rounds`), unresolved findings at a
+`severity_block` severity, architecture escalation or `BLOCKED_ARCH`, failed build/test/lint,
+unresolved Done Criteria or a revision rerun that has not happened, acceptance `FAIL`, a
+required `NOT TESTED` without an active waiver, audit damage or chain/sequence failure, and a
+binding mismatch.
+
+The verdict token stays `APPROVED` for compatibility, so the Phase-05 document must say how it
+was reached. Record all four markers outside fenced code blocks, exactly once each, matching
+the audit record:
+```
+Review-Assurance: REDUCED_BY_USER_AUTHORIZATION
+Review-Close-Reason: USER_AUTHORIZED_EARLY
+Review-Rounds: <completed> (configured max: <max>)
+Residual-Findings: P0=0, P1=0, P2=2, P3=1
+```
+All four together or none at all — a document carrying some of them is rejected either way, and
+a normally converged run may not claim `REDUCED_BY_USER_AUTHORIZATION` or
+`USER_AUTHORIZED_EARLY`. Neutral lines such as a plain `Review-Rounds:` count on a converged
+run are fine; what is refused is claiming a reduced assurance the audit does not show.
+
 ### After close — Obsidian dashboard (optional)
 If `knowledge_capture.loop_audit_dashboard` is true and `knowledge_capture.vault_path` is set,
 `sage review-loop close` automatically refreshes the per-project vault dashboard

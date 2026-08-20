@@ -40,6 +40,16 @@ def _has(issues, code, **arguments):
     return False
 
 
+def _append_out_of_band(root, record):
+    """라이브러리 계약을 우회해 들어온 기록을 흉내 낸다.
+
+    `close_loop` 은 lock 안에서 "run 당 terminal 한 번" 을 강제하므로 중복 close 를 만들지 않는다.
+    그래도 사후 탐지층은 있어야 한다 — 수기 편집이나 옛 클라이언트가 남긴 두 번째 close 는 여전히
+    파일에 있을 수 있고, 그걸 잡는 게 `clean`/`integrity_issues` 의 일이다.
+    """
+    return la._append(la.audit_path(root), record)
+
+
 class TestLoopAudit(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -93,24 +103,36 @@ class TestLoopAudit(unittest.TestCase):
         self.assertTrue(s["has_any_records"])
         self.assertEqual(s["runs"]["run-a"], {"closed": True, "result": "APPROVED", "clean": True,
                                               "seq_ok": True, "chain_ok": True, "reviewer_requested": None,
-                                              "reviewer_actual": None, "degraded": False})
+                                              "reviewer_actual": None, "degraded": False,
+                                              "close_reason": "CONVERGED", "review_assurance": None,
+                                              "completed_rounds": None,
+                                              "configured_max_iterations": None,
+                                              "survived_by_severity": None})
         self.assertEqual(s["runs"]["run-b"], {"closed": False, "result": None, "clean": True,
                                               "seq_ok": True, "chain_ok": True, "reviewer_requested": None,
-                                              "reviewer_actual": None, "degraded": False})
+                                              "reviewer_actual": None, "degraded": False,
+                                              "close_reason": None, "review_assurance": None,
+                                              "completed_rounds": None,
+                                              "configured_max_iterations": None,
+                                              "survived_by_severity": None})
 
     def test_audit_summary_blocked_result(self):
         r = la.open_loop(self.tmp, "L3", run_id="run-x", now=0)
         la.close_loop(self.tmp, r, result="BLOCKED", reason="BUDGET_ITER", iterations=3, now=1)
         self.assertEqual(la.audit_summary(self.tmp)["runs"]["run-x"],
                          {"closed": True, "result": "BLOCKED", "clean": True, "seq_ok": True, "chain_ok": True,
-                          "reviewer_requested": None, "reviewer_actual": None, "degraded": False})
+                          "reviewer_requested": None, "reviewer_actual": None, "degraded": False,
+                          "close_reason": "BUDGET_ITER", "review_assurance": None,
+                          "completed_rounds": None, "configured_max_iterations": None,
+                          "survived_by_severity": None})
 
     def test_audit_summary_reused_run_id_not_clean(self):
         # 재사용 run_id(중복 open+close) → clean=False (게이트가 stale 증거로 통과되는 것 차단).
         la.open_loop(self.tmp, "L3", run_id="dup", now=0)
         la.close_loop(self.tmp, "dup", result="BLOCKED", reason="BUDGET_ITER", iterations=1, now=1)
         la.open_loop(self.tmp, "L3", run_id="dup", now=2)
-        la.close_loop(self.tmp, "dup", result="APPROVED", reason="CONVERGED", iterations=1, now=3)
+        _append_out_of_band(self.tmp, {"event": "loop_close", "run_id": "dup", "ts": "t", "epoch": 3,
+                                       "result": "APPROVED", "reason": "CONVERGED", "iterations": 1})
         run = la.audit_summary(self.tmp)["runs"]["dup"]
         self.assertFalse(run["clean"])
         self.assertEqual(run["result"], "APPROVED")   # 마지막 결과는 남되 clean=False 로 신뢰 불가 표시
@@ -203,10 +225,22 @@ class TestLoopAudit(unittest.TestCase):
     def test_integrity_duplicate_close(self):
         rid = la.open_loop(self.tmp, "L3", now=0)
         la.close_loop(self.tmp, rid, "APPROVED", "CONVERGED", 1, now=1)
-        la.close_loop(self.tmp, rid, "BLOCKED", "BUDGET_ITER", 2, now=2)   # 중복 close
+        _append_out_of_band(self.tmp, {"event": "loop_close", "run_id": rid, "ts": "t", "epoch": 2,
+                                       "result": "BLOCKED", "reason": "BUDGET_ITER",
+                                       "iterations": 2})   # 우회 경로로 들어온 중복 close
         issues = la.integrity_issues(self.tmp)
         self.assertTrue(_has(issues, "loop_audit.duplicate_close", run_id=repr(rid), count=2),
                         issues)
+
+    def test_close_loop_refuses_a_second_terminal_inside_the_lock(self):
+        """탐지층이 있다고 해서 라이브러리가 중복을 써도 되는 것은 아니다."""
+        rid = la.open_loop(self.tmp, "L3", now=0)
+        la.close_loop(self.tmp, rid, "APPROVED", "CONVERGED", 1, now=1)
+        with self.assertRaises(la.AuditWriteError):
+            la.close_loop(self.tmp, rid, "BLOCKED", "BUDGET_ITER", 2, now=2)
+        closes = [r for r in la.read_records(self.tmp)
+                  if r.get("event") == "loop_close" and r.get("run_id") == rid]
+        self.assertEqual(len(closes), 1)
 
     def test_integrity_activity_after_close(self):
         rid = la.open_loop(self.tmp, "L3", now=0)

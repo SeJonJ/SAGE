@@ -23,6 +23,11 @@ Collect all mandatory Fast inputs, author the composite 00 through 04 plan, and 
    The composite document carries that one line outside any code fence and is written in
    that language, fixed for the whole Fast run — see `docs/agent/language-policy.md`.
 3. Declare the verified stem and run `sage fast-cycle open`; hand off only after its audit run is bound.
+4. A cycle already past Phase 00 converts instead of re-authoring: `sage fast-cycle convert`,
+   available only when `pdca.fast_cycle.standard_transition.enabled` is true. The confirmation
+   token, reason and approver come from the user in that turn and are never inferred. The
+   conversion writes no document; the audit record is the only evidence of the transition, and
+   the run waives only the pre-implementation phases its snapshot can show.
 ## advisory_scope
 - self_overlay: unsupported; Fast state transitions are gate-bearing and have no independent overlay oracle.
 ## runtime_bindings

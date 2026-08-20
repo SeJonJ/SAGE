@@ -82,6 +82,7 @@ class TestAssetPathsKinds(unittest.TestCase):
             [os.path.relpath(p, ROOT) for p in groups["shared"]],
             [
                 os.path.join("scripts", "sage_harness", "hooks", "cycle_binding.py"),
+                os.path.join("scripts", "sage_harness", "hooks", "risk_declaration.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "run_hook.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "hook_runtime.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "checklist_contract.py"),

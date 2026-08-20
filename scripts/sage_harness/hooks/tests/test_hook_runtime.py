@@ -407,7 +407,10 @@ class TestBuildSnapshot(unittest.TestCase):
             self.assertEqual(snap["loop_audit"]["runs"]["run-z"],
                              {"closed": True, "result": "APPROVED", "clean": True, "seq_ok": True,
                               "chain_ok": True, "reviewer_requested": None,
-                              "reviewer_actual": None, "degraded": False})
+                              "reviewer_actual": None, "degraded": False,
+                              "close_reason": "CONVERGED", "review_assurance": None,
+                              "completed_rounds": None, "configured_max_iterations": None,
+                              "survived_by_severity": None})
 
     def test_loop_audit_fail_open_no_sage_dir(self):
         # .sage 부재 → fail-open 빈 요약(snapshot 빌드는 안 깨짐).

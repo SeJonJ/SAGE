@@ -73,6 +73,7 @@ project core의 `decide(event, profile, snapshot)`에서 `event`는 `hook_id`, `
 | `sage cycle show` | 현재 선언과 그 출처(env / `.sage/cycle.json`) 조회 |
 | `sage cycle clear` | 파일 선언 해제 — 정상 완료 뒤 실행; env 선언은 별도 `unset` 필요 |
 | `sage fast-cycle open --stem S --level L2\|L3 --lens-count N --reason R` | composite 00 검증 후 Fast 감사 run 시작 |
+| `sage fast-cycle convert --stem S --current-phase 00\|01\|02\|03\|04 --level L2\|L3 --lens-count N --reason R --confirmed-by W --confirm FAST-CONVERTED` | 진행 중인 Standard Cycle을 Fast 계약으로 전환 (문서 미변경) |
 | `sage fast-cycle review --run-id F --loop-run-id L` | APPROVED Loop Audit의 stem·라운드·렌즈 영수증을 Fast run에 결속 |
 | `sage fast-cycle close --run-id F` | 최신 00 hash와 05/06 결속을 검증하고 정상 종료 |
 | `sage fast-cycle abort --run-id F --reason R` | 사유를 남기고 활성 Fast run 중단 |
@@ -88,6 +89,15 @@ A의 판정이 복원됩니다. `--create`는 Phase 00만 만들므로 profile�
 작성해야 합니다. 긴급하게 면제 가능한 phase 결핍을 열 때는 `sage override --reason R --ttl 1h`처럼
 짧은 TTL을 사용하세요. Phase 00의 risk 선언·정합 차단은 override로 면제되지 않습니다.
 
+`convert`는 `pdca.fast_cycle.standard_transition.enabled: true`가 추가로 필요합니다. Phase 00을
+이미 지난 사이클이 composite 계획을 새로 쓰지 않고 Fast 계약으로 넘어가는 경로입니다. 전환은
+**문서를 한 바이트도 쓰지 않습니다** — 기존 00~04를 지우거나 옮기거나 합치거나 고쳐 쓰지 않고,
+전환 metadata를 문서에 넣지도 않습니다. 정본은 `.sage/fast_cycle.jsonl`의 `fast_convert` 레코드
+하나이고, 거기에 전환 시점까지 존재하던 phase 목록이 남습니다. 전환된 run은 **그 목록이 담고 있는
+pre-implementation phase만** 면제받습니다 — Phase 00에서 전환하면 01~03은 여전히 소스 편집 전에
+필요합니다. `--confirm FAST-CONVERTED`·`--reason`·`--confirmed-by` 셋 중 하나라도 없으면 아무것도
+기록하지 않고 종료합니다. 전환된 run은 문서에 `Fast-Audit-Run` 줄을 갖지 않고 stem으로 결속합니다.
+
 Fast 명령은 `pdca.fast_cycle.enabled: true`인 L2/L3에만 열립니다. 실제 Risk Level은 별도로 유지되고,
 `--level`은 적용할 Fast 리뷰 계약입니다. `open`은 필수 입력 셋을 모두 검증한 뒤에만 00과 감사를 쓰며,
 활성 Fast run이 있으면 `sage cycle clear`와 다른 stem 전환을 막습니다. 정상 순서는
@@ -100,11 +110,25 @@ Fast 명령은 `pdca.fast_cycle.enabled: true`인 L2/L3에만 열립니다. 실�
 | `sage review` | 새 same-runtime headless reviewer 실행 |
 | `sage cross-check --packet-file FILE` | 반대 runtime의 cross-model reviewer 실행 |
 | `sage review-loop open [--cycle-stem S --lenses CSV]` | review loop 시작; Fast는 stem·렌즈를 exact 결속 |
-| `sage review-loop round [... --lens-receipts CSV]` | finding, 반박, 수정 결과와 Fast 렌즈 수행 영수증 기록 |
+| `sage review-loop round [... --lens-receipts CSV] [--survived-by-severity P0=N,P1=N,P2=N,P3=N]` | finding, 반박, 수정 결과와 Fast 렌즈 수행 영수증, 심각도별 잔여 영수증 기록 |
 | `sage review-loop next` | 결정론적 계속/종료 권고 |
 | `sage review-loop close` | `--result APPROVED|BLOCKED`로 loop 종료 |
+| `sage review-loop close --reason USER_AUTHORIZED_EARLY --authorization-reason R --confirmed-by W --confirm USER_AUTHORIZED_EARLY` | 사용자 승인으로 수렴 전 종료 (보증 저하 표기 필수) |
 | `sage retro --feature STEM` | 완료 사이클 회고 노트와 distillation 입력 생성 |
 | `sage retro --check NOTE` | 회고 노트가 빈 템플릿이 아닌지 검사 |
+
+조기 종료는 `pdca.review_loop.early_completion.enabled: true`가 필요하고, `sage review-loop next`가
+아직 `CONTINUE`를 권고하는 상태에서만 의미가 있습니다. 반복 횟수 면제가 아니라 **잔여 비차단 위험을
+사용자가 명시적으로 인수**하는 것이라, 다음은 승인으로도 통과하지 않습니다 — 라운드 0건 또는
+`minimum_completed_rounds` 미만, `severity_block` 심각도의 미해결 finding, architecture escalation과
+`BLOCKED_ARCH`, build/test/lint 실패, Done Criteria 미해결과 revision 재실행 누락, acceptance `FAIL`,
+waiver 없는 필수 `NOT TESTED`, 감사 손상과 chain/seq 실패, 결속 불일치.
+
+판정 토큰은 호환을 위해 `APPROVED`를 유지하므로, Phase 05 문서가 어떻게 도달했는지를 적습니다.
+네 표기(`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`, `Residual-Findings`)는 fence 밖에
+정확히 하나씩, **넷 다 있거나 넷 다 없어야** 합니다. 정상 종료한 run이 보증 저하를 자칭하면 차단되고,
+반대로 조기 종료한 run이 표기를 빠뜨려도 차단됩니다. `--survived-by-severity`의 합계는 `--survived`와
+정확히 같아야 합니다 — `P0=0`만 적어 차단 finding을 숨기는 것을 막습니다.
 
 ## 지식과 컨텍스트
 

@@ -60,7 +60,7 @@
         "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
         "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
       },
-      "canonical_hash": "sha256:9bb62d4caf9f6253c719014ef97f296a8ab3ac3c844b82ee48baf79747862791",
+      "canonical_hash": "sha256:267362f0048469bee6dda51f98f04500df1be0964b372b427b2c8619b7b8ae47",
       "conformance": "PASS",
       "form": "core_adapter",
       "l3_review_strategy": "codex_feature_signal",
@@ -132,7 +132,7 @@
   "hook_runtime_hash": {
     "claude": "sha256:2d0318a75804defae4ac5b53e3ea9e4fe5766c21a937c1c091f45bb780be8254",
     "codex": "sha256:3519535630dd81a83cbe191b51fa3668d09ed3a9c46842e5948145a3737c941c",
-    "shared": "sha256:f3a9a29b46b7f08092a4223be1427df649b3dea5a51f12167ba38e8b98a42b5d"
+    "shared": "sha256:30012cde4b5e61cd710fc8b5fca705395e0c7166e4da7a55910812aa2be9dd62"
   },
   "host_runtime": "claude",
   "sage_version": "0.1.0",

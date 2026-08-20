@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:b44c8067da8fb4c87d53f7bcb3824e45a464815023f648f3e764ae5017632367 -->
+<!-- sage-doc-source: cli-reference.md sha256:c00534a311c9bc286e4e37b3283fcbd0bc421851da6b3132ba0a165660512d9d -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -75,6 +75,7 @@ symlink leaf matches, and other non-regular paths are contract failures.
 | `sage cycle show` | Show the current declaration and where it was read (env or `.sage/cycle.json`) |
 | `sage cycle clear` | Release the file declaration after completion; an env declaration needs `unset` |
 | `sage fast-cycle open --stem S --level L2\|L3 --lens-count N --reason R` | Validate composite Phase 00 and open a Fast audit run |
+| `sage fast-cycle convert --stem S --current-phase 00\|01\|02\|03\|04 --level L2\|L3 --lens-count N --reason R --confirmed-by W --confirm FAST-CONVERTED` | Convert a Standard Cycle already in progress to the Fast contract (writes no document) |
 | `sage fast-cycle review --run-id F --loop-run-id L` | Bind a clean APPROVED Loop Audit with matching stem, rounds, and lens receipts |
 | `sage fast-cycle close --run-id F` | Verify the latest plan hash and Phase 05/06 bindings, then close |
 | `sage fast-cycle abort --run-id F --reason R` | Abort an active Fast run with an audited reason |
@@ -92,6 +93,16 @@ so write any required Phases 01-03 before governed source edits. For an urgent,
 waivable phase gap, use a short TTL such as `sage override --reason R --ttl 1h`.
 Phase 00 risk declaration and reconciliation blocks are never waivable by override.
 
+`convert` additionally requires `pdca.fast_cycle.standard_transition.enabled: true`. It is the
+path for a cycle already past Phase 00 to adopt the Fast contract without authoring a composite
+plan. The conversion **writes no document**: existing Phases 00–04 are not deleted, moved, merged,
+or rewritten, and no conversion metadata is inserted into them. The record of authority is the
+single `fast_convert` entry in `.sage/fast_cycle.jsonl`, which lists the phases that existed at
+conversion time. A converted run waives **only the pre-implementation phases that list can show** —
+convert at Phase 00 and 01–03 are still required before source edits. Without all of `--confirm
+FAST-CONVERTED`, `--reason`, and `--confirmed-by`, the command exits without writing anything. A
+converted run carries no `Fast-Audit-Run` line in its document and binds by stem instead.
+
 Fast commands are available only for L2/L3 when `pdca.fast_cycle.enabled: true`. Actual risk remains
 separate from `--level`, which selects the Fast review contract. `open` validates the complete input
 set before writing either the plan or audit. An active Fast run blocks `sage cycle clear` and stem
@@ -105,11 +116,28 @@ switching. Close normally with `fast-cycle close` before `cycle clear`; abandon 
 | `sage review` | Start a fresh same-runtime headless reviewer |
 | `sage cross-check --packet-file FILE` | Start a cross-model reviewer in the opposite runtime |
 | `sage review-loop open [--cycle-stem S --lenses CSV]` | Start a review loop; Fast binds exact stem and lenses |
-| `sage review-loop round [... --lens-receipts CSV]` | Record findings, rebuttals, fixes, and Fast lens receipts |
+| `sage review-loop round [... --lens-receipts CSV] [--survived-by-severity P0=N,P1=N,P2=N,P3=N]` | Record findings, rebuttals, fixes, Fast lens receipts, and the per-severity residual receipt |
 | `sage review-loop next` | Produce a deterministic continue-or-stop recommendation |
 | `sage review-loop close` | Close the loop with `--result APPROVED|BLOCKED` |
+| `sage review-loop close --reason USER_AUTHORIZED_EARLY --authorization-reason R --confirmed-by W --confirm USER_AUTHORIZED_EARLY` | Close before convergence on an explicit user authorization (reduced-assurance markers required) |
 | `sage retro --feature STEM` | Generate a completed-cycle retrospective note and distillation input |
 | `sage retro --check NOTE` | Verify that a retrospective note is not an untouched template |
+
+Early completion requires `pdca.review_loop.early_completion.enabled: true` and is meaningful only
+while `sage review-loop next` still recommends `CONTINUE`. It is not an iteration waiver but an
+explicit user acceptance of residual non-blocking risk, so an authorization does not carry any of
+these past the gate: zero completed rounds or fewer than `minimum_completed_rounds`, unresolved
+findings at a `severity_block` severity, architecture escalation or `BLOCKED_ARCH`, failing
+build/test/lint, unresolved Done Criteria or a missing revision rerun, acceptance `FAIL`, a required
+`NOT TESTED` without an active waiver, audit damage or chain/sequence failure, and a binding
+mismatch.
+
+The verdict token stays `APPROVED` for compatibility, so the Phase 05 document records how it was
+reached. The four markers (`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`,
+`Residual-Findings`) appear exactly once each outside fenced code blocks, **all four or none**. A
+normally closed run that claims reduced assurance is blocked, and so is an early-closed run that
+omits the markers. The `--survived-by-severity` total must equal `--survived` exactly — that is what
+stops a `P0=0`-only receipt from hiding a blocking finding.
 
 ## Knowledge and context
 

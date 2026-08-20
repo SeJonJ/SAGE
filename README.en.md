@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:3ea88b593f2c396664856e38a9abc6bfde92bbfd39aa23e5e686745bcf90a8e9 -->
+<!-- sage-doc-source: README.md sha256:fbb65d0b227a3acf926bce9d0df1c0c78befa8137b5e02c3d699772476a44a53 -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)
@@ -122,7 +122,12 @@ documents below as you need them.
   report.
 - **Profile** — separates shared team policy from settings that apply only to your machine.
 - **Fast Cycle** — a compressed procedure with fewer documents for urgent work (only when
-  explicitly enabled).
+  explicitly enabled). A cycle already in progress can also move to it after an explicit
+  confirmation; the conversion edits no existing document, and how the run entered Fast is recorded
+  in the audit trail.
+- **Early completion** — a path for the user to explicitly accept the remaining risk and close the
+  review loop before it converges (only when enabled). What was left open is recorded in both the
+  approval document and the audit, so a later reader can tell it apart from a normal approval.
 
 ## Documentation
 

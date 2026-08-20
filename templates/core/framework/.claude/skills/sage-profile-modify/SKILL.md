@@ -84,7 +84,7 @@ From the user's stated intent, or by asking, pin the **section**:
   on L1/L0 gate passes) ·
   **`pdca.review_loop`** (the Phase-05 loop — use the shared interview set) ·
   **`pdca.fast_cycle`** (`enabled`, `reason_required`, `minimum_rounds`,
-  `minimum_lenses`, ordered L2/L3 lenses) ·
+  `minimum_lenses`, ordered L2/L3 lenses, `standard_transition`) ·
   `options.*` · **`knowledge_capture`** (vault_path + `loop_audit_dashboard` / `retro_note`) ·
   `file_type_map` · `compliance` / `output_contract` · `conventions` ·
   **`governance_docs`** (session-start read-pointers rendered into the AGENT_GUIDE routing block) ·
@@ -120,11 +120,26 @@ For **`pdca.review_loop`** and the **vault outputs**, drive the *same* questions
 set) — single source, so init and modify never diverge. (Vault turn applies only when
 the loop is on AND `knowledge_capture.vault_path` is set.)
 
+`pdca.review_loop.early_completion` belongs to that same set and is asked only when the loop
+is on; default off. Turning it **on** loosens the gate — the loop may close before convergence
+on an explicit user authorization — so state that consequence and get approval like any other
+loosening. The approval stays `APPROVED` but carries
+`Review-Assurance: REDUCED_BY_USER_AUTHORIZATION`. Turning it **off** is a tightening and
+does not invalidate approvals already recorded. Never infer the close-time authorization from
+this profile value: enabling the feature is not the authorization.
+
 For **`pdca.fast_cycle`**, drive the same Fast Cycle question set as `/sage-init`:
 default off; when enabled, confirm L2/L3 `minimum_rounds`, `minimum_lenses`, and
 ordered lens candidates while keeping engine floors 1 round and 2 lenses and
 `reason_required: true`. State that lowering this policy reduces review breadth
 but does not lower actual risk, deterministic verification, acceptance, or 05/06.
+`pdca.fast_cycle.standard_transition` is asked only when Fast is on; default off. Turning
+it **on** loosens the gate — a cycle already past Phase 00 may switch to the Fast contract
+through `sage fast-cycle convert`, so the audit record rather than a composite document
+becomes the evidence of how the run entered Fast. Turning it **off** does not invalidate runs
+already converted. Never infer the conversion confirmation from this profile value: enabling
+the feature is not the confirmation.
+
 When a vault is available, include `knowledge_capture.fast_cycle_dashboard` in
    the same output turn.
 
@@ -154,6 +169,9 @@ or infer N/A reasons as part of a profile change.
 | lower `review_loop.max_iterations[L3]` | fewer rework rounds before BLOCKED (e.g. 1 ≈ single-pass) |
 | lower `review_loop.budget_tokens` | the loop may BLOCK earlier on budget |
 | narrow `review_loop.severity_block` | lower-severity findings no longer block APPROVED |
+| `review_loop.early_completion.enabled` → true | the loop may close before convergence on a user authorization; the verdict stays `APPROVED` but carries `Review-Assurance: REDUCED_BY_USER_AUTHORIZATION` (loosened) |
+| raise/lower `early_completion.minimum_completed_rounds` | changes how few rounds an authorized early close may stand on (engine floor 1) |
+| `fast_cycle.standard_transition.enabled` → true | a cycle already past Phase 00 may adopt the Fast contract without a composite plan; the audit record, not a document, becomes the evidence of how it entered Fast (loosened) |
 | empty `knowledge_capture.vault_path` | all vault features OFF |
 | remove a `governance_docs` entry | agents no longer discover that doc at session start (not a gate change) |
 

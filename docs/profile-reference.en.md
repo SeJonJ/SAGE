@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:3953b0f2f8166620de4a566db5b704fe7d5d8edd0f2a706777898f640e5f6598 -->
+<!-- sage-doc-source: profile-reference.md sha256:cffb34613b7616cbfbb74f27555b8a5f09c2fed76d227e83b16ba00d530787ce -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -139,6 +139,9 @@ pdca:
     severity_block: ["P0", "P1"]
     termination_enforce: advisory
     report_gate_enforce: advisory
+    early_completion:
+      enabled: false
+      minimum_completed_rounds: 1
 ```
 
 The Phase 05 find→refute→triage→rework adversarial loop. Disabled by default. `lenses` are the
@@ -148,6 +151,15 @@ findings count as convergence. `termination_enforce`/`report_gate_enforce` are
 `off | advisory | enforce`; `enforce` actually blocks writing Phase 06. This is the standard
 cycle's full procedure — the compressed variant for explicitly allowed L2/L3 work is Fast Cycle,
 below.
+
+`early_completion` is the opt-in that lets an explicit user authorization close the loop before
+convergence; it is off by default, and an absent block reads as off. `minimum_completed_rounds` has
+an engine floor of 1 that a project may only raise — allowing 0 would open "approved after zero
+review rounds" through a single configuration line. This opt-in **loosens** the gate, so while the
+verdict token stays `APPROVED`, Phase 05 also carries
+`Review-Assurance: REDUCED_BY_USER_AUTHORIZATION` so a later reader and the CI authority can tell it
+apart from a converged approval. **Enabling the setting is not the authorization for any individual
+run** — the reason, approver, and confirmation token come from the user at close time.
 
 ### Fast Cycle
 
@@ -161,6 +173,8 @@ pdca:
     lenses:
       L2: [correctness, error_handling, convention]
       L3: [correctness, security, data_integrity, concurrency]
+    standard_transition:
+      enabled: false
 ```
 
 Fast Cycle is a separate compressed L2/L3 protocol, not a generic override. `enabled` is shared
@@ -169,6 +183,14 @@ one, minimum lenses at least two, and each candidate list must satisfy its floor
 Fast level, lens count, and a one-line reason through `sage-cycle-fast`. Actual Risk Level remains in
 the composite Phase 00 and cannot be lowered by Fast level. `sage-init` and `sage-profile-modify`
 collect this shared policy conversationally.
+
+`standard_transition` is a separate opt-in that lets a Standard Cycle already in progress move to
+the Fast contract through `sage fast-cycle convert`; it is off by default, and an absent block reads
+as off. With it on, a run can reach the Fast review minimums without a composite plan, so the audit
+record rather than a document becomes the only evidence of how that run entered Fast. The conversion
+writes no document, and a converted run waives only the pre-implementation phases the recorded phase
+list can show. **Enabling the setting is not the confirmation for any individual conversion** —
+`--confirm FAST-CONVERTED`, the reason, and the approver come from the user at conversion time.
 
 ### Components
 

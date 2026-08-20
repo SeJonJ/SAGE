@@ -106,6 +106,143 @@ def _claims(result, now=None):
 
 
 class PureAuthorityTests(unittest.TestCase):
+    def test_a_converted_run_is_not_invisible_to_the_authority(self):
+        """전환 run 의 Phase 00 은 Standard 문서라 `Cycle-Mode: FAST` 가 없다.
+
+        composite 여부만 보고 빠져나가면, 축약된 Fast 리뷰로 닫은 run 이 서버 권위에서 Fast 증거
+        검증을 **하나도** 받지 않고 표준 경로로 통과한다. 감사에 전환 opener 가 있으면 결속한다.
+        """
+        import tempfile  # noqa: PLC0415
+        from pathlib import Path as _Path  # noqa: PLC0415
+
+        ci_authority._trusted_gate_modules()
+        import fast_cycle_audit as fca  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as root:
+            _Path(root, ".sage").mkdir()
+            sources = {"00": {"path": "plan_docs/00-base_plan/x.md",
+                              "sha256": "sha256:" + "0" * 64, "size": 1}}
+            fca.convert_fast(root, cycle_stem=STEM, current_phase="04", actual_risk="L3",
+                             fast_review_level="L2", reason="긴급", confirmed_by="sejon",
+                             minimum_rounds=1, lenses=["correctness", "error_handling"],
+                             source_phases=sources)
+            fast_text = _Path(root, ".sage", "fast_cycle.jsonl").read_text(encoding="utf-8")
+
+        request = _request()
+        request["fast_cycle_audit"] = fast_text
+        request["loop_audit"] = ""
+        core, _binding, _risk = ci_authority._trusted_gate_modules()
+        reasons = ci_authority._fast_evidence_reasons(
+            request, {"00": request["phase_docs"]["00"][0],
+                      "05": request["phase_docs"]["05"][0]}, STEM)
+        self.assertNotEqual(reasons, [], "전환 run 이 검증 없이 통과했다")
+        self.assertTrue(any("not clean terminal APPROVED evidence" in reason
+                            for reason in reasons), reasons)
+
+    def _converted_audit(self, aborts=0, converts=1, stem=None):
+        import tempfile  # noqa: PLC0415
+        from pathlib import Path as _Path  # noqa: PLC0415
+
+        ci_authority._trusted_gate_modules()
+        import fast_cycle_audit as fca  # noqa: PLC0415
+
+        stem = stem or STEM
+        sources = {"00": {"path": "plan_docs/00-base_plan/x.md",
+                          "sha256": "sha256:" + "0" * 64, "size": 1}}
+        with tempfile.TemporaryDirectory() as root:
+            _Path(root, ".sage").mkdir()
+            for index in range(converts):
+                rid = fca.convert_fast(root, cycle_stem=stem, current_phase="04",
+                                       actual_risk="L3", fast_review_level="L2", reason="긴급",
+                                       confirmed_by="sejon", minimum_rounds=1,
+                                       lenses=["correctness", "error_handling"],
+                                       source_phases=sources)
+                if index < aborts:
+                    fca.abort_fast(root, rid, reason="취소", stage="manual", actual_risk="L3")
+            return _Path(root, ".sage", "fast_cycle.jsonl").read_text(encoding="utf-8")
+
+    def _fast_reasons(self, fast_text, phase05=None):
+        request = _request()
+        request["fast_cycle_audit"] = fast_text
+        request["loop_audit"] = ""
+        review = dict(request["phase_docs"]["05"][0])
+        if phase05 is not None:
+            review["content"] = phase05
+        return ci_authority._fast_evidence_reasons(
+            request, {"00": request["phase_docs"]["00"][0], "05": review}, STEM)
+
+    def test_an_uncommitted_audit_cannot_hide_a_fast_run(self):
+        """전환 run 의 Fast 성은 감사에만 있다 — `.gitignore` 한 줄로 CI 검증을 끌 수 있었다.
+
+        커밋 트리에 남는 신호는 Phase 05 의 `Fast-Run:` 표기다(`fast-cycle review` 가 강제한다).
+        """
+        reasons = self._fast_reasons("", phase05="Fast-Run: fc-deadbeef0001\nFinal Status: APPROVED\n")
+        self.assertNotEqual(reasons, [])
+        self.assertTrue(any("no committed Fast audit" in reason for reason in reasons), reasons)
+
+    def test_two_live_converted_runs_on_one_stem_fail_closed(self):
+        """어느 쪽 증거인지 정할 수 없는 상태에서 조용히 결속을 포기하면 검증이 통째로 꺼진다.
+
+        엔진은 같은 stem 에 active run 을 둘 만들지 못하므로, 이 상태는 손으로 고친 감사에서만
+        나온다. run 단위로 도는 무결성 검사는 서로 다른 run 이 같은 stem 을 쓰는 것을 보지 못한다.
+        """
+        tampered = self._converted_audit(converts=2, aborts=1).replace("fast_abort", "fast_noop")
+        reasons = self._fast_reasons(tampered)
+        self.assertNotEqual(reasons, [])
+        self.assertTrue(any("cannot tell which one" in reason for reason in reasons), reasons)
+
+    def test_an_aborted_conversion_returns_the_cycle_to_the_standard_path(self):
+        """abort 는 전환을 취소하는 정규 수단이다. 잔재가 남아 영구 차단되면 출구가 없다."""
+        self.assertEqual(self._fast_reasons(self._converted_audit(converts=1, aborts=1)), [])
+
+    def test_a_plain_standard_cycle_stays_out_of_the_fast_path(self):
+        """전환 opener 가 없으면 Standard 사이클이다 — 없던 Fast 요구를 새로 만들지 않는다."""
+        request = _request()
+        request["fast_cycle_audit"] = ""
+        request["loop_audit"] = ""
+        reasons = ci_authority._fast_evidence_reasons(
+            request, {"00": request["phase_docs"]["00"][0],
+                      "05": request["phase_docs"]["05"][0]}, STEM)
+        self.assertEqual(reasons, [])
+
+    def test_unread_phase_05_is_unknown_not_standard(self):
+        """05 를 못 읽은 상태는 "표준 보증" 이 아니다. 미확인을 STANDARD 로 적으면 조기 종료
+        승인이 서버 권위에서 일반 승인과 같은 무게로 남는다.
+
+        05 를 요구하지 않는 위험도가 있으므로 이유(reason)는 만들지 않는다 — 값만 정직해진다.
+        """
+        core, _binding, _risk = ci_authority._trusted_gate_modules()
+        for selected in ({}, {"05": {}}, {"05": {"content": "   \n"}}):
+            with self.subTest(selected=selected):
+                self.assertEqual(ci_authority._review_assurance(selected, core), ("UNKNOWN", []))
+
+    def test_the_two_assurance_levels_are_told_apart(self):
+        """조기 완료 승인과 일반 승인은 같은 `APPROVED` 토큰을 쓴다.
+
+        권위가 둘을 구분하지 못하면 보증이 낮은 승인이 표준 승인과 같은 무게로 통과한다.
+        표기가 하나도 없으면 STANDARD, 넷이 올바르게 있으면 REDUCED 다.
+        """
+        core, _binding, _risk = ci_authority._trusted_gate_modules()
+        for neutral in ("", "Review-Rounds: 3\n",
+                        "Residual-Findings: P0=0, P1=0, P2=0, P3=0\n",
+                        "Review-Assurance: STANDARD\nReview-Close-Reason: CONVERGED\n"):
+            with self.subTest(neutral=neutral):
+                normal = {"05": {"content": f"Final Status: APPROVED\n{neutral}"}}
+                self.assertEqual(ci_authority._review_assurance(normal, core), ("STANDARD", []))
+        early = {"05": {"content": (
+            "Final Status: APPROVED\n"
+            "Review-Assurance: REDUCED_BY_USER_AUTHORIZATION\n"
+            "Review-Close-Reason: USER_AUTHORIZED_EARLY\n"
+            "Review-Rounds: 2 (configured max: 3)\n"
+            "Residual-Findings: P0=0, P1=0, P2=2, P3=0\n")}}
+        self.assertEqual(ci_authority._review_assurance(early, core),
+                         (core.REVIEW_ASSURANCE_REDUCED, []))
+        partial = {"05": {"content": ("Final Status: APPROVED\n"
+                                      "Review-Assurance: REDUCED_BY_USER_AUTHORIZATION\n")}}
+        level, reasons = ci_authority._review_assurance(partial, core)
+        self.assertEqual(level, "UNKNOWN")
+        self.assertNotEqual(reasons, [])
+
     def _done_request(self, mode="enforce", unresolved=False, revision=1,
                       phase05_revision=None, approve_marker="APPROVED"):
         request = _request()
