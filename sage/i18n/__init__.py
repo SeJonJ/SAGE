@@ -81,4 +81,3 @@ def english_text(item) -> str:
     context = LanguageContext(language="en")
     return (exception_text(context, item) if isinstance(item, BaseException)
             else render_issue(context, item))
-

@@ -8,6 +8,7 @@
 두 번째 축은 소유 경계다. upgrade 가 남의 파일을 대신 덮으면 어느 명령이 그 바이트를 만들었는지
 알 수 없게 되고, 그 뒤로는 drift 의 원인을 아무도 역추적할 수 없다.
 """
+import hashlib
 import json
 import os
 import shutil
@@ -536,6 +537,103 @@ class TestRunsWhenOtherCommandsWouldNot(unittest.TestCase):
                          "upgrade 가 profile 을 만들어냈다")
 
 
+class TestNonRegularProfileObject(unittest.TestCase):
+    """profile 경로의 **객체 종류**도 상태다. 부재만 부재로 통과한다.
+
+    upgrade 는 `sage/project-profile.yaml` 에 선언 값을 직접 쓴다. 그래서 이 경로가 링크나
+    디렉터리인 것은 "profile 이 없다"와 전혀 다른 상태인데, `isfile` 하나로 물으면 둘이 같아진다.
+    같아진 결과는 조용하다 — `--check` 가 no-op 이나 "변경 예정" 을 보고하고, 사용자는 막힐
+    것을 성공할 것으로 읽는다.
+    """
+
+    def _external_copy(self, root):
+        outside = Path(tempfile.mkdtemp(), "outside-profile.yaml")
+        outside.write_text(
+            Path(root, "sage", "project-profile.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8")
+        return outside
+
+    def test_a_non_regular_profile_blocks_from_check_not_from_a_later_failure(self):
+        """차단은 판정 단계에서 나야 한다. mutation 중에 넘어지면 --check 가 이미 거짓말을 했다."""
+        root = _install(tempfile.mkdtemp())
+        profile = os.path.join(root, "sage", "project-profile.yaml")
+        outside = self._external_copy(root)
+        before = outside.read_bytes()
+        os.unlink(profile)
+        os.symlink(str(outside), profile)
+
+        self.assertEqual(_run(root, check=True), up.EXIT_BLOCKED,
+                         "--check 가 링크된 profile 을 통과시켰다")
+        _plan, blockers = up._plan(root, "ko")
+        self.assertFalse(_plan["writes"], "쓸 수 없는 대상에 변경 예정을 세웠다")
+        self.assertIn("symlink", " ".join(blockers))
+
+        self.assertEqual(_run(root, apply=True), up.EXIT_BLOCKED)
+        self.assertEqual(outside.read_bytes(), before, "저장소 밖 profile 이 바뀌었다")
+        self.assertTrue(os.path.islink(profile), "사용자 링크가 파일로 교체됐다")
+
+    def test_a_directory_and_a_broken_link_are_not_absence(self):
+        for label, build in (
+                ("디렉터리", os.makedirs),
+                ("끊어진 symlink", lambda path: os.symlink(path + ".nope", path))):
+            root = _install(tempfile.mkdtemp())
+            profile = os.path.join(root, "sage", "project-profile.yaml")
+            os.unlink(profile)
+            build(profile)
+            with self.subTest(label=label):
+                self.assertEqual(_run(root, check=True), up.EXIT_BLOCKED,
+                                 f"{label} 을 profile 부재로 통과시켰다")
+                self.assertEqual(_run(root, apply=True), up.EXIT_BLOCKED)
+                _plan, blockers = up._plan(root, "en")
+                self.assertIn("project-profile.yaml", " ".join(blockers))
+
+    def test_a_genuinely_absent_profile_keeps_its_existing_behaviour(self):
+        """과차단 방향. 부재까지 막으면 부트스트랩 이전 프로젝트에서 이 명령을 못 쓴다."""
+        root = _install(tempfile.mkdtemp(), real=False, profile=None)
+        self.assertEqual(_run(root, check=True), up.EXIT_OK)
+        self.assertEqual(_run(root, apply=True), up.EXIT_OK)
+        self.assertFalse(os.path.exists(os.path.join(root, "sage", "project-profile.yaml")),
+                         "upgrade 가 profile 을 만들어냈다")
+
+    def test_the_compiled_profile_refresh_does_not_follow_a_link_either(self):
+        """같은 파일에 `open(..., "wb")` 가 하나 더 있었다. 링크를 따라가는 쓰기는 한 종류다.
+
+        compiled json 은 yaml 과 함께 갱신되므로, 이 경로만 링크로 바꿔 두면 선언 갱신이 저장소
+        밖 파일을 쓴다. 판정에서 걸러도 계획 이후 교체 창은 남으므로 쓰기 자체가 막아야 한다.
+        """
+        root = _install(tempfile.mkdtemp())
+        self.assertEqual(_run(root, apply=True), up.EXIT_OK)      # json 을 먼저 만들어 둔다
+        json_path = os.path.join(root, "sage", "project-profile.json")
+        self.assertTrue(os.path.isfile(json_path))
+
+        outside = Path(tempfile.mkdtemp(), "outside.json")
+        outside.write_text("untouched\n", encoding="utf-8")
+        os.unlink(json_path)
+        os.symlink(str(outside), json_path)
+        up._refresh_compiled_profile_json(root, "ko")
+
+        self.assertEqual(outside.read_text(encoding="utf-8"), "untouched\n",
+                         "링크를 따라가 저장소 밖 json 을 썼다")
+        self.assertFalse(os.path.islink(json_path), "링크가 남아 다음 쓰기도 새어 나간다")
+
+    def test_a_kind_blocker_does_not_leak_the_link_target(self):
+        """차단 문장은 보고서에 그대로 실린다 — 보고서에 절대 경로를 담지 않는 것이 계약이다."""
+        root = _install(tempfile.mkdtemp())
+        outside = self._external_copy(root)
+        profile = os.path.join(root, "sage", "project-profile.yaml")
+        os.unlink(profile)
+        os.symlink(str(outside), profile)
+        self.assertEqual(_run(root, check=True), up.EXIT_BLOCKED)
+
+        body = "\n".join(path.read_text(encoding="utf-8")
+                         for path in Path(root, ".sage", "upgrades").glob("*.json"))
+        self.assertIn("symlink", body, "종류조차 남기지 않으면 사용자가 고칠 곳을 모른다")
+        self.assertNotIn(str(outside), body, "링크 대상 절대 경로가 보고서에 남았다")
+        self.assertNotIn(str(outside.parent), body)
+        self.assertNotIn(root, body)
+        self.assertNotIn(str(Path.home()), body)
+
+
 class TestCycleSchemaMigration(unittest.TestCase):
     def test_version_one_declaration_migrates_to_two(self):
         root = _install(tempfile.mkdtemp())
@@ -612,6 +710,139 @@ class TestCycleSchemaMigration(unittest.TestCase):
                 self.assertIn("version=3", joined)
                 self.assertIn("cycle.json", joined)
                 self.assertNotIn("message_key=", joined)
+
+    def test_an_unreadable_or_non_object_state_blocks_but_absence_does_not(self):
+        """부재만 no-op 이다. 판독 실패와 비객체는 부재가 아니라 고장난 상태다.
+
+        셋을 같이 넘기면 손상된 사이클을 그대로 둔 채 upgrade 가 관리 자산을 적용하고 성공을
+        보고한다 — 사용자는 성공한 upgrade 뒤에 별도 고장을 만난다. `_read_json` 이 손상과
+        부재를 갈라 돌려주는 이유도 바로 그 다음 줄에서 사라졌었다."""
+        for label, text in (("손상 JSON", "{not json"),
+                            ("비객체 배열", '["not", "a", "mapping"]'),
+                            ("비객체 null", "null")):
+            root = _install(tempfile.mkdtemp())
+            os.makedirs(os.path.join(root, ".sage"), exist_ok=True)
+            state = Path(root, ".sage", "cycle.json")
+            state.write_text(text, encoding="utf-8")
+            with self.subTest(label=label):
+                self.assertNotEqual(_run(root, apply=True), up.EXIT_OK,
+                                    "고장난 cycle state 를 둔 채 upgrade 가 성공했다")
+                self.assertEqual(state.read_text(encoding="utf-8"), text,
+                                 "차단됐는데 도구가 파일을 고쳐 썼다")
+
+        # 과차단 방향 — 파일이 아예 없는 프로젝트는 막지 않는다. 사이클을 시작한 적 없는
+        # 저장소까지 upgrade 가 서면 이 명령이 쓸 수 없어진다.
+        root = _install(tempfile.mkdtemp())
+        self.assertEqual(_run(root, apply=True), up.EXIT_OK,
+                         "cycle state 가 없는 프로젝트를 막았다")
+
+    def test_a_non_regular_cycle_state_blocks_and_never_writes_outside_the_project(self):
+        """파일시스템 객체의 **종류**도 상태다.
+
+        `isfile` 은 symlink 를 파일로 인정하고 뒤이은 쓰기가 링크를 따라간다. 그래서 프로젝트 밖을
+        가리키는 링크 하나가 저장소 밖 파일을 덮어쓰는 통로가 됐다 — 표시 결함이 아니라 루트 밖
+        쓰기다. 디렉터리와 끊어진 링크도 부재가 아니다."""
+        external_root = tempfile.mkdtemp()
+        external = Path(external_root, "outside.json")
+        external.write_text(json.dumps({"version": 1, "cycle_stem": "victim"}), encoding="utf-8")
+        external_before = external.read_bytes()
+
+        root = _install(tempfile.mkdtemp())
+        os.makedirs(os.path.join(root, ".sage"), exist_ok=True)
+        os.symlink(str(external), os.path.join(root, ".sage", "cycle.json"))
+        self.assertNotEqual(_run(root, apply=True), up.EXIT_OK,
+                            "프로젝트 밖을 가리키는 링크가 통과했다")
+        self.assertEqual(external.read_bytes(), external_before,
+                         "저장소 밖 파일이 덮어써졌다")
+        # 차단 문장은 보고서에 그대로 실린다 — 종류는 남기되 대상 경로는 남기지 않는다.
+        body = "\n".join(path.read_text(encoding="utf-8")
+                         for path in Path(root, ".sage", "upgrades").glob("*.json"))
+        self.assertIn("symlink", body)
+        self.assertNotIn(str(external), body, "링크 대상 절대 경로가 보고서에 남았다")
+        self.assertNotIn(external_root, body)
+        self.assertNotIn(root, body)
+
+        for label, build in (
+                ("디렉터리", lambda base: os.makedirs(os.path.join(base, ".sage", "cycle.json"))),
+                ("끊어진 symlink", lambda base: os.symlink(
+                    os.path.join(base, "nope.json"), os.path.join(base, ".sage", "cycle.json")))):
+            base = _install(tempfile.mkdtemp())
+            os.makedirs(os.path.join(base, ".sage"), exist_ok=True)
+            build(base)
+            with self.subTest(label=label):
+                self.assertNotEqual(_run(base, apply=True), up.EXIT_OK,
+                                    f"{label} 을 부재로 통과시켰다")
+
+        # 과차단 방향 — 진짜 부재는 그대로 통과한다.
+        bare = _install(tempfile.mkdtemp())
+        self.assertEqual(_run(bare, apply=True), up.EXIT_OK,
+                         "cycle state 가 없는 프로젝트를 막았다")
+
+    def test_a_link_swapped_in_after_planning_does_not_escape_the_project(self):
+        """판정 시점 검사만으로는 계획 이후 교체 창이 닫히지 않는다.
+
+        쓰기가 `os.replace` 로 디렉터리 엔트리를 갈아끼우므로 링크가 끼어들어도 링크 자신이
+        대체될 뿐 대상은 건드리지 않는다."""
+        external_root = tempfile.mkdtemp()
+        external = Path(external_root, "outside.json")
+        external.write_text("untouched\n", encoding="utf-8")
+
+        root = _install(tempfile.mkdtemp())
+        os.makedirs(os.path.join(root, ".sage"), exist_ok=True)
+        target = os.path.join(root, ".sage", "cycle.json")
+        Path(target).write_text(json.dumps({"version": 1, "cycle_stem": "demo"}), encoding="utf-8")
+
+        item = {"kind": "cycle_schema", "path": os.path.join(".sage", "cycle.json"),
+                "from": "1", "to": "2", "document_language": "ko", "cycle_stem": "demo"}
+        os.unlink(target)
+        os.symlink(str(external), target)          # 계획 이후 교체
+        up._write_declaration(root, item, "ko")
+
+        self.assertEqual(external.read_text(encoding="utf-8"), "untouched\n",
+                         "교체된 링크를 따라가 저장소 밖 파일을 썼다")
+        self.assertFalse(os.path.islink(target), "링크가 그대로 남아 다음 쓰기도 새어 나간다")
+        self.assertEqual(json.loads(Path(target).read_text(encoding="utf-8"))["version"], 2)
+
+    def test_the_unreadable_state_blocker_names_the_cause(self):
+        """원인 없이 막으면 사용자는 무엇을 고쳐야 하는지 모른다. --check 도 같은 문장을 낸다."""
+        for label, text, needle in (("손상 JSON", "{not json", "unreadable"),
+                                    ("비객체 배열", '["x"]', "not an object")):
+            for language in ("ko", "en"):
+                root = _install(tempfile.mkdtemp())
+                os.makedirs(os.path.join(root, ".sage"), exist_ok=True)
+                Path(root, ".sage", "cycle.json").write_text(text, encoding="utf-8")
+                _, blockers = up._plan(root, language)
+                with self.subTest(label=label, language=language):
+                    joined = " ".join(blockers)
+                    self.assertIn("cycle.json", joined)
+                    self.assertIn(needle, joined)
+                    self.assertNotIn("message_key=", joined)
+
+    def test_a_blocked_state_leaves_the_tree_byte_identical(self):
+        """차단은 mutation 이전이어야 한다. 보고서 외 바이트가 하나라도 바뀌면 실패다."""
+        root = _install(tempfile.mkdtemp())
+        os.makedirs(os.path.join(root, ".sage"), exist_ok=True)
+        Path(root, ".sage", "cycle.json").write_text("{not json", encoding="utf-8")
+
+        def digest():
+            out = {}
+            for dirpath, _, names in os.walk(root):
+                if "__pycache__" in dirpath:
+                    continue
+                for name in names:
+                    path = os.path.join(dirpath, name)
+                    rel = os.path.relpath(path, root)
+                    if rel.startswith(os.path.join(".sage", "upgrades")):
+                        continue
+                    try:
+                        out[rel] = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+                    except OSError:
+                        pass
+            return out
+
+        before = digest()
+        self.assertNotEqual(_run(root, apply=True), up.EXIT_OK)
+        self.assertEqual(before, digest(), "차단됐는데 트리 바이트가 바뀌었다")
 
     def test_the_blocker_names_the_offending_value_in_both_languages(self):
         for language in ("ko", "en"):

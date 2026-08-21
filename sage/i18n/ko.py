@@ -411,6 +411,10 @@ MESSAGES = {
     # 노트 템플릿 ↔ --check 의 단일 소스. 이 문장이 그대로 남아 있으면 host 가 distill 을 돌리지 않은 것.
     "cli.retro.summary_placeholder": "_이번 사이클에 체계적으로 놓친 것과 바꾸기로 한 것을 사람이 읽을 1~2줄로 (absorb 파싱 대상 아님)._",
     "cli.retro.distiller_language_directive": "[LANGUAGE] 이 사이클의 문서 언어는 한국어입니다. 노트에 채울 산문(## 요약 등)은 한국어로 쓰세요.",
+    "cli.retro.distiller_language_undeclared": "[LANGUAGE] 이 사이클은 문서 언어를 선언하지 않았습니다(Phase 00 에 `Document-Language:` 없음). 같은 사이클 문서가 실제로 쓰인 언어를 그대로 따르고, 임의로 고르지 마세요.",
+    "cli.retro.blocker_document_language": "⛔ [sage retro] 이 사이클의 문서 언어 선언이 어긋납니다 — {detail}. 회고를 어느 언어로 쓸지 정할 수 없어 노트를 쓰지 않았습니다. Phase 00 의 `Document-Language:` 를 정본으로 맞춘 뒤 다시 실행하세요.",
+    "cli.retro.blocker_document_language_unreadable": "⛔ [sage retro] 이 사이클의 문서 언어 선언을 확인하지 못했습니다 — {detail}. 확인 없이 고르면 선언하지 않은 언어로 증거가 굳으므로 노트를 쓰지 않았습니다. 위 파일을 읽을 수 있게 고친 뒤 다시 실행하세요.",
+    "cli.retro.blocker_profile_unreadable": "⛔ [sage retro] profile 을 읽지 못했습니다 — {detail} (shared={shared}, local={local}). 설정을 못 읽은 채로 쓰면 사이클이 선언한 언어도 vault 경로도 모르는 상태로 노트가 굳으므로 아무것도 쓰지 않았습니다. `sage doctor` 로 원인을 확인해 고친 뒤 다시 실행하세요.",
     "cli.retro.audit_no_history": "(loop_audit 기록 없음 — review_loop 루프가 아직 돈 적 없음. 단발 리뷰면 05 문서만 참고)",
     "cli.retro.audit_unknown_run_suffix": "  ⚠️ (해당 run_id 의 loop_open 없음)",
     "cli.retro.audit_totals": "  합계: found={found} survived={survived} accepted={accepted} arch={arch}  → accepted={accepted} 가 '리뷰가 채운 체계적 누락'의 양",
@@ -1048,6 +1052,7 @@ MESSAGES = {
     "cli.upgrade.blocker_no_manifest": "⛔ docs/sage_harness/.manifest.json 이 없습니다 — 설치본이 아닙니다.",
     "cli.upgrade.blocker_no_yaml": "⛔ pyyaml 이 없어 profile 을 판정할 수 없습니다 — `pip install pyyaml` 후 재실행하세요.",
     "cli.upgrade.blocker_profile": "⛔ profile 을 읽지 못했습니다 ({error}) — YAML 을 고친 뒤 재실행하세요.",
+    "cli.upgrade.blocker_profile_state": "⛔ sage/project-profile.yaml 이 정규 파일이 아닙니다 ({detail}) — upgrade 는 이 경로에 선언 값을 직접 씁니다. 링크나 디렉터리를 그대로 둔 채 진행하면 판정과 쓰기의 대상이 달라집니다. 경로를 직접 고친 뒤 다시 실행하세요.",
     "cli.upgrade.blocker_required_version_sites": "⛔ `sage:` 아래 required_version 이 {count}곳입니다 — 정확히 1곳일 때만 고칩니다.",
     "cli.upgrade.note_no_required_version": "   ℹ️  required_version 선언이 없습니다 — upgrade 가 만들지 않습니다(install/init 소유).",
     "cli.upgrade.drift_installed": "설치된 CORE 가 현재 엔진과 다릅니다.",

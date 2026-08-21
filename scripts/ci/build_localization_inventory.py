@@ -92,7 +92,8 @@ NOT_TRANSLATED = {
         "_DISTILLER_PROMPT + _APPLY_PATH — host AI 를 대상으로 한 고정 LLM 프롬프트/절차 설명. "
         "화면에 표시되는 문장이 아니라 host AI 가 읽는 지시문이라 표시 언어와 무관하게 항상 원문을 "
         "유지한다. 언어 신호는 프롬프트 뒤에 붙는 [LANGUAGE] 부록 한 줄(cli.retro.distiller_"
-        "language_directive, catalog 이관됨)만 담당하고, _APPLY_PATH 는 순수 구조 설명이라 언어 "
+        "language_directive / cli.retro.distiller_language_undeclared, catalog 이관됨)만 "
+        "담당한다 — 그 한 줄은 표시 언어가 아니라 사이클의 선언 언어로 렌더한다. _APPLY_PATH 는 순수 구조 설명이라 언어 "
         "지시 자체가 불필요하다. 요약 placeholder(_SUMMARY_PLACEHOLDER)는 반대로 catalog 로 이관됐다 "
         "— 이건 노트에 실제로 표시되는 문장이라 이 예외에 포함되지 않는다."),
 }

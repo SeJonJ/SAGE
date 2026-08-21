@@ -11,12 +11,13 @@ retro 는 그 증거(loop_audit 라운드 집계 + 05 리뷰 문서)를 결정�
 - 05 plan 문서: finding 텍스트(패턴 분류의 원천) — retro 는 경로를 가리키고 AI 가 정독한다.
 """
 import glob
+import importlib
 import os
 import re
 import sys
 from pathlib import Path
 
-from sage.profile_layers import load_profile_layers
+from sage.profile_layers import LOCAL_PROFILE_NAME, load_profile_layers
 from sage.i18n import CATALOGS, language_of, render_issue, tr
 
 
@@ -55,6 +56,140 @@ def _load_loop_audit(root):
     return la
 
 
+def _load_runtime_module(name):
+    """hook runtime 모듈 동적 import — `_load_loop_audit` 과 같은 경로 규칙.
+
+    문서 언어 판정은 hook 런타임이 정본이다. 같은 마커를 CLI 가 따로 파싱하면 두 파서가 갈리는
+    순간 게이트와 회고 노트가 서로 다른 언어를 정답이라고 말한다.
+    """
+    from sage import _resources
+    hooks = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks")
+    for path in (os.path.join(hooks, "runtime"), hooks):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+    return importlib.import_module(name)
+
+
+def _candidate_stems(la, root, feature, rid, docs=None):
+    """문서 언어를 물어볼 사이클 stem 후보 — `--feature`, loop_open 의 cycle_stem, 고른 05 문서명.
+
+    셋째가 있어야 하는 이유는 이 명령의 다른 축이 이미 그것을 사이클 식별자로 쓰고 있기 때문이다.
+    `_derive_stem` 은 05 문서가 하나면 그 파일명을 노트 제목 stem 으로 승격한다. 언어 판정만 그것을
+    못 보면, loop run 도 `--feature` 도 없이 05 문서 하나로만 식별되는 사이클에서 같은 실행이
+    제목은 그 사이클이라고 하면서 언어는 "선언한 적 없다"고 말한다.
+
+    `--feature` 는 부분 토큰이어도 되는 지원 계약이다(`--feature loop` 가 `loop-engineering` 을
+    고른다). 그런데 Phase 00 결속은 exact stem 비교라, 부분 토큰 문자열 자체는 어떤 Phase 00 과도
+    매치하지 않는다. 필터가 실제로 고른 문서의 stem 을 함께 들고 가는 것이 부분 필터를 깨지 않고
+    정확한 stem 을 얻는 유일한 길이다.
+
+    후보를 하나로 좁히지 않는다. 좁히려면 어느 쪽이 맞는지 골라야 하고, 그 선택이 틀리면 남의
+    사이클 선언을 이 사이클의 정답으로 쓴다. 후보들이 같은 답을 내면 고를 필요가 없고, 다른 답을
+    내면 그건 고를 문제가 아니라 막을 문제다 — `consistency_issues` 가 막는다.
+
+    05 문서가 여럿이면 문서에서 stem 을 얻지 않는다. 어느 것이 이 사이클인지 모르는 상태이고,
+    아무거나 고르면 다른 사이클의 선언 언어로 회고가 쓰인다.
+    """
+    from sage.commands.review_loop import _open_record
+    recorded = (_open_record(la, root, rid) or {}).get("cycle_stem") if rid else None
+    selected = None
+    if docs and len(docs) == 1:
+        selected = _load_runtime_module("cycle_binding").path_stem(docs[0])
+    stems = []
+    for value in (feature, recorded, selected):
+        if isinstance(value, str) and value.strip() and value not in stems:
+            stems.append(value)
+    return stems
+
+
+def _phase00_documents(root, profile, stems):
+    """(이 stem 의 Phase 00 문서 | None, 판독 실패 사유 | None).
+
+    **부재와 판독 실패를 가른다.** phase 00 계약이 아예 없는 프로젝트는 부재라 통과시키고,
+    계약이 있는데 읽지 못한 상태(루트를 벗어나는 경로·권한·인코딩 손상)는 통과시키지 않는다.
+    둘을 같은 값으로 뭉개면 "선언이 없다"와 "선언을 확인하지 못했다"가 구분되지 않고, 그러면
+    파일 하나를 깨뜨리는 것이 언어 판정을 건너뛰는 레버가 된다.
+    """
+    pdca = profile.get("pdca") if isinstance(profile.get("pdca"), dict) else {}
+    entry = next((item for item in (pdca.get("phases") or [])
+                  if isinstance(item, dict) and str(item.get("id") or "") == "00"), None)
+    pattern = (entry or {}).get("glob")
+    if not pattern:
+        return {}, None
+    try:
+        from sage.commands.review_loop import _phase_docs
+        docs = _phase_docs(root, profile, "00")
+    except (ValueError, TypeError, OSError, UnicodeDecodeError) as exc:
+        return None, f"{pattern!r}: unreadable ({type(exc).__name__})"
+    binding = _load_runtime_module("cycle_binding")
+    return {doc["path"]: doc.get("content") or "" for doc in docs
+            if binding.path_stem(doc.get("path") or "") in stems}, None
+
+
+def _mirror_language(root, stems):
+    """(미러 언어 | None, 진단 | None) — `.sage/cycle.json` 이 이 사이클에 대해 적어 둔 값.
+
+    부재·legacy(v1)·남의 stem 은 (None, None) 이다. 어느 쪽도 선언이 아니고, 없다고 해서 판정이
+    틀리지는 않는다. 손상은 갈라서 돌려준다 — 이 파일은 Phase 00 정본을 교차검증하는 유일한
+    상대라, 읽지 못한 상태를 부재로 뭉개면 교차검증이 조용히 사라진다.
+
+    손상일 때는 stem 을 알 수 없으므로 남의 사이클 파일일 가능성이 있어도 그대로 올린다.
+    누구 것인지 모르는 것이 곧 이 사이클 것이 아니라는 증거는 아니다.
+    """
+    record = _load_runtime_module("cycle_state").read_declaration_record(root)
+    if record.error:
+        return None, record.error
+    if record.stem not in stems:
+        return None, None
+    return record.document_language, None
+
+
+def _cycle_document_language(root, profile, la, feature, rid, language=None, docs=None):
+    """(문서 언어 | None, 차단 사유 | None) — 이 사이클이 어느 언어로 쓰이기로 선언됐는가.
+
+    표시 언어(`--lang`)와 별개 축이다. 표시 언어는 실행 하나의 성질이고 문서 언어는 사이클 전체의
+    성질이라, 화면을 지나 노트 *안으로* 들어가는 문자열은 후자를 따라야 한다. 둘을 섞으면 표시가
+    ko 인 사용자가 `Document-Language: en` 사이클을 회고할 때 영어 사이클의 증거에 한국어 산문이
+    남는다 — 역사 증거는 나중에 재번역하지 않으므로 그대로 굳는다.
+
+    Phase 00 의 마커가 정본이고 `.sage/cycle.json` 은 재개용 미러다. **미러는 교차검증 상대일 뿐
+    답의 출처가 아니다** — 정본이 말하지 않은 것을 미러가 대신 말하게 하면, 마커 없는 사이클이
+    미러 한 줄로 특정 언어를 선언한 사이클이 된다. 둘이 다르면 어느 쪽도 고르지 않고 막는다.
+    고르는 순간 사용자가 선언하지 않은 언어로 회고가 쓰인다.
+
+    **미선언은 막지 않는다.** 마커 이전에 시작한 사이클의 회고가 전부 막히는 과차단이 되고, 그건
+    이 판정이 만든 결함이다. 대신 언어를 지어내지 않고 None 을 돌려준다 — 호출부가 "선언 없음"을
+    그대로 말한다.
+
+    **판독 실패는 부재가 아니다.** 선언이 없는 것과 선언을 확인하지 못한 것은 다른 상태고, 뒤쪽을
+    통과시키면 확인하지 못한 채로 언어가 정해진다. 원인을 실어 막는다.
+    """
+    stems = _candidate_stems(la, root, feature, rid, docs)
+    if not stems:
+        return None, None
+    documents, unreadable = _phase00_documents(root, profile, stems)
+    if unreadable:
+        return None, tr(language, "cli.retro.blocker_document_language_unreadable",
+                        detail=unreadable)
+    if not documents:
+        return None, None
+
+    mirror, mirror_error = _mirror_language(root, stems)
+    if mirror_error:
+        return None, tr(language, "cli.retro.blocker_document_language_unreadable",
+                        detail=render_issue(language, mirror_error))
+    dl = _load_runtime_module("document_language")
+    # MISSING 은 부재라 위 원칙대로 통과시키고, 중복·미지원 값·불일치만 막는다.
+    conflicts = [(path, reason) for path, reason in dl.consistency_issues(documents, mirror)
+                 if reason != dl.MISSING]
+    if conflicts:
+        detail = "; ".join(f"{path}: {reason}" for path, reason in conflicts[:3])
+        return None, tr(language, "cli.retro.blocker_document_language", detail=detail)
+    declared = {value for value, problem in (dl.scan(text) for text in documents.values())
+                if not problem}
+    return (declared.pop() if declared else None), None
+
+
 def _find_project_root(start):
     """프로젝트 루트 = sage/project-profile.yaml 보유 디렉토리(plan_docs·.sage 가 여기 있음). 폴백 cwd.
     review_loop CLI 와 동일 마커 — 서브디렉토리에서 실행해도 같은 .sage/plan_docs 를 본다."""
@@ -68,11 +203,37 @@ def _find_project_root(start):
         cur = parent
 
 
+# 표시 언어만 무효로 만드는 진단. 이 값이 틀려도 phase 글롭·vault 경로·pdca 계약은 그대로
+# 읽히고, `effective_profile` 은 `interface` 를 복사조차 하지 않는다. 그래서 이것 하나만으로는
+# retro 를 멈추지 않는다 — 표시 언어는 한국어로 폴백하고 경고만 낸다. catalog 의 경고문과
+# 상세 설계가 "판정과 exit code 는 영향받지 않는다" 로 이미 계약돼 있고, 개인 설정 오타가
+# 회고를 통째로 막는 것은 그 계약을 깨는 과차단이다.
+_DISPLAY_ONLY_PROFILE_FAILURES = frozenset({"layers.interface_language_invalid"})
+
+
 def _load_profile(root):
-    """공유·로컬 profile의 유효 설정. 없음/실패 → {}."""
+    """(유효 설정 | None, 판독에 실패한 계층 | None).
+
+    **부재와 판독 실패를 가른다.** profile 이 설치되지 않은 저장소에서 단발로 도는 retro 는
+    기존 계약대로 통과시키고, 파일이 있는데 읽지 못한 상태는 통과시키지 않는다. 둘을 같은 `{}`
+    로 뭉개면 손상된 profile 이 phase 00 글롭째 지워, 언어를 선언한 사이클이 미선언으로 보이고
+    그 오판이 노트에 그대로 굳는다 — 설정 파일 한 줄을 깨뜨리는 것이 언어 판정을 건너뛰는
+    레버가 된다.
+
+    부재는 shared 와 local 이 **둘 다** 없을 때만이다. local 만 남고 shared 가 사라진 것은
+    무설치가 아니라 계층이 깨진 상태이고, 그것을 부재로 받으면 파일 하나를 지우는 것이 다시
+    같은 레버가 된다. 끊어진 symlink 도 없는 것이 아니라 고장난 것이므로 `lexists` 로 본다.
+    """
     ppath = os.path.join(root, "sage", "project-profile.yaml")
+    lpath = os.path.join(root, "sage", LOCAL_PROFILE_NAME)
+    if not os.path.lexists(ppath) and not os.path.lexists(lpath):
+        return {}, None
     layers = load_profile_layers(ppath)
-    return {} if layers.has_fail else layers.effective
+    failures = [message for severity, message in layers.issues if severity == "FAIL"]
+    if failures and any(getattr(message, "code", None) not in _DISPLAY_ONLY_PROFILE_FAILURES
+                        for message in failures):
+        return None, layers
+    return layers.effective, None
 
 
 def _approve_glob(profile):
@@ -278,7 +439,15 @@ def run(args):
         return _check_note(args.check, root, args.run_id, language_of(args))
 
     language = language_of(args)
-    profile = _load_profile(root)
+    profile, broken_layers = _load_profile(root)
+    if broken_layers is not None:
+        # 쓰기 전에 멈춘다. 읽지 못한 설정으로 고른 언어와 경로는 노트 안에 그대로 굳고,
+        # 증거는 나중에 고쳐 쓰지 않는다.
+        detail = "; ".join(render_issue(language, message)
+                          for severity, message in broken_layers.issues if severity == "FAIL")
+        print(tr(language, "cli.retro.blocker_profile_unreadable", detail=detail,
+                 shared=broken_layers.shared_path, local=broken_layers.local_path), file=sys.stderr)
+        return 2
     la = _load_loop_audit(root)
 
     rid, audit_lines = _fmt_audit(la, root, args.run_id, language)
@@ -294,6 +463,16 @@ def run(args):
 
     integ = la.integrity_issues(root)
 
+    doc_language, blocker = _cycle_document_language(root, profile, la, args.feature, rid, language,
+                                                     docs)
+    if blocker:
+        # 쓰기 전에 멈춘다. 노트를 남기고 나서 알려주면 이미 한 언어를 골라 쓴 뒤다.
+        print(blocker, file=sys.stderr)
+        return 2
+    # 노트 안으로 들어가는 문자열은 선언 언어를 따른다. 미선언이면 표시 언어로 쓰되 언어를
+    # 단언하지는 않는다 — 그 차이는 아래 [LANGUAGE] 한 줄이 말한다.
+    note_language = doc_language or language
+
     # 본문 1회 구성 → stdout + (vault 활성 시) human-gate 노트 공용.
     out = [tr(language, "cli.retro.header"), "",
            tr(language, "cli.retro.section_audit"), *audit_lines, "",
@@ -303,9 +482,13 @@ def run(args):
     else:
         out.append(tr(language, "cli.retro.no_docs_matched", pattern=os.path.relpath(pattern, root)))
     # _DISTILLER_PROMPT/_APPLY_PATH 는 (c) LLM 프롬프트 — host AI 대상 고정 지시문이라 표시 언어와
-    # 무관하게 항상 원문(한국어)을 유지한다([LANGUAGE] 계약). 언어 신호는 부록 한 줄만 담당한다.
+    # 무관하게 항상 원문(한국어)을 유지한다([LANGUAGE] 계약). 언어 신호는 부록 한 줄만 담당하고,
+    # 그 한 줄은 표시 언어가 아니라 **선언 언어**를 말한다 — distiller 가 노트에 채울 산문의
+    # 언어를 정하는 지시문이라, 표시 언어로 렌더하면 문장이 사실과 반대가 된다.
     out += ["", tr(language, "cli.retro.section_distiller"), _DISTILLER_PROMPT,
-            tr(language, "cli.retro.distiller_language_directive"), _APPLY_PATH]
+            (tr(doc_language, "cli.retro.distiller_language_directive") if doc_language
+             else tr(language, "cli.retro.distiller_language_undeclared")),
+            _APPLY_PATH]
     if integ:
         # 문구 자체의 이관은 retro 배치에서 하고, 여기서는 하부 감사 진단만 렌더한다 —
         # 진단을 문자열로 두면 이 줄이 어느 언어로 나갈지 호출부가 고를 수 없다.
@@ -352,12 +535,20 @@ def run(args):
         raw_stem, stem_hint = _derive_stem(args.feature, docs, rid, language)
         if stem_hint:
             print(f"  ℹ️  {stem_hint}", file=sys.stderr)
-        _write_vault_note(profile, root, rid, raw_stem, out, vault_arg or None, language)
+        _write_vault_note(profile, root, rid, raw_stem, out, vault_arg or None, language,
+                          note_language)
     return 0
 
 
-def _write_vault_note(profile, root, rid, raw_stem, out_lines, override, language=None):
-    """retro 패킷을 vault 에 human-gate 노트(approved:false)로 작성. 사람이 Obsidian 에서 검토·승인."""
+def _write_vault_note(profile, root, rid, raw_stem, out_lines, override, language=None,
+                      note_language=None):
+    """retro 패킷을 vault 에 human-gate 노트(approved:false)로 작성. 사람이 Obsidian 에서 검토·승인.
+
+    두 언어를 받는다. `language` 는 이 실행의 화면(stderr 안내·경고)이고 `note_language` 는 노트
+    파일 안에 남는 문자열(헤딩·안내문·placeholder)이다. 헤딩 이름이 화면 안내에 인용될 때는
+    화면 문장 안에 노트의 실제 헤딩이 들어간다 — 그래야 사용자가 그 이름으로 찾을 수 있다.
+    """
+    note_language = note_language or language
     from sage.commands import _vault
     vault, folder = _vault.vault_target(profile, override, root)
     if not vault:
@@ -394,16 +585,16 @@ def _write_vault_note(profile, root, rid, raw_stem, out_lines, override, languag
     dash_name = _dashboard_filename(profile)
     fm = {"tags": ["sage", "retro", "loop-c"], "approved": False, "run_id": rid or "",
           "date": today, "status": "pending-review"}
-    summary_heading = tr(language, "cli.retro.heading_summary")
-    proposals_heading = tr(language, "cli.retro.heading_proposals")
-    note_arg = tr(language, "cli.retro.note_arg_placeholder")
+    summary_heading = tr(note_language, "cli.retro.heading_summary")
+    proposals_heading = tr(note_language, "cli.retro.heading_proposals")
+    note_arg = tr(note_language, "cli.retro.note_arg_placeholder")
     check_cmd = f"sage retro --check {note_arg}" + (f" --run-id {rid}" if rid else "")
-    intro = tr(language, "cli.retro.note_intro", summary_heading=summary_heading,
+    intro = tr(note_language, "cli.retro.note_intro", summary_heading=summary_heading,
               proposals_heading=proposals_heading, check_cmd=check_cmd, note_arg=note_arg)
-    related = tr(language, "cli.retro.note_related_audit", wiki_stem=_wiki_stem(dash_name))
-    proposals_line = tr(language, "cli.retro.note_proposals_heading_line", proposals_heading=proposals_heading)
-    evidence_summary = tr(language, "cli.retro.note_evidence_summary", proposals_heading=proposals_heading)
-    placeholder = tr(language, "cli.retro.summary_placeholder")
+    related = tr(note_language, "cli.retro.note_related_audit", wiki_stem=_wiki_stem(dash_name))
+    proposals_line = tr(note_language, "cli.retro.note_proposals_heading_line", proposals_heading=proposals_heading)
+    evidence_summary = tr(note_language, "cli.retro.note_evidence_summary", proposals_heading=proposals_heading)
+    placeholder = tr(note_language, "cli.retro.summary_placeholder")
     body = (f"{intro}\n\n"
             f"{related}\n\n"
             f"## {summary_heading}\n"

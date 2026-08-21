@@ -103,8 +103,29 @@ the cycle-opening skill, then the local profile, then `ko`.
   active cycle. The conflict is reported and the declared language continues to apply.
 - A mismatch between Phase 00, the cycle state, the context packet, or two documents of the same
   stem fails closed before any write, review or completion.
-- A cycle with no marker is read as `ko`. Its historical documents are never rewritten; the
-  marker and Korean prose start from the first document written after the resume.
+- A cycle with no marker is **undeclared**, not `ko`. Nothing fills the gap with a guess: the
+  cycle state reads back `document_language=None`, `sage retro` reports the language as
+  undeclared instead of naming one, and a skill resuming the cycle follows the language the
+  existing documents already use. Filling it in would turn "never declared" and "declared
+  Korean" into the same value, and an English legacy cycle would be told it chose Korean. Its
+  historical documents are never rewritten; the marker starts from the first document written
+  after the resume, in the language those documents already use.
+- **The Loop C retro note follows this declaration, not the display language.** Its headings,
+  guidance text and placeholder are written in the cycle's document language, and the `[LANGUAGE]`
+  line `sage retro` hands the distiller names that language rather than the one on screen. A note
+  is cycle evidence, and evidence is never retranslated, so a note written in the wrong language
+  stays wrong. The same run still prints its progress notes and warnings in the display language —
+  the two axes deliberately differ within one command. When the cycle declares nothing, the note
+  keeps the display language and the `[LANGUAGE]` line says the language is undeclared instead of
+  naming one — a `.sage/cycle.json` entry on its own is a mirror, not a declaration, and never
+  supplies a language Phase 00 does not state. `sage retro` fails closed before writing when
+  Phase 00 and the mirror disagree, and equally when either one cannot be read — or when the
+  profile that locates them cannot be read: an unverifiable declaration is not an absent one, and
+  treating it as absent would make damaging one file the way to skip the check. A project with
+  neither profile layer is still the absent case and still runs; a local layer left behind without
+  its shared layer is a broken layering, not an absence. An invalid `interface.language` is none of
+  these — it is a display preference, so it falls back to Korean with a diagnostic and the run keeps
+  its verdict and exit code, as stated above.
 
 ## Never translated
 
@@ -124,8 +145,10 @@ Three further cases are Korean by necessity and must survive untouched:
 - **Skill trigger phrases** — the literal strings a Korean user types to invoke a skill. Translate
   one and the skill stops responding to the phrase its users know.
 - **Parser-visible section markers** — the vault note headings checked by
-  `note_convention.required_structure`, and `## 요약` and `## 제안`, which `sage retro --check`
-  parses directly. A translated heading reads to the parser as a missing heading.
+  `note_convention.required_structure`. A translated heading reads to the parser as a missing
+  heading. The retro note's own `## 요약` and `## 제안` are *not* in this group: `sage retro
+  --check` builds its heading pattern from both catalogs, so it accepts either language and the
+  heading follows the cycle's document language.
 - **Korean matched by a regex or emitted verbatim** — the risk-declaration clear phrase, the
   sentence-final endings the capture filter inspects, and the declaration-origin labels a hook
   prints. A spec quoting these quotes them exactly.

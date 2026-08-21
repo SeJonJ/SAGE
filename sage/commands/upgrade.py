@@ -38,6 +38,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 import uuid
 
@@ -53,6 +54,10 @@ _REQUIRED_VERSION_RE = re.compile(
 _SAGE_SECTION_RE = re.compile(r"^sage[ \t]*:[ \t]*(?:#.*)?$", re.M)
 
 REPORT_REL = os.path.join(".sage", "upgrades")
+
+# 판독 실패가 아니라 **객체 종류가 다르다**는 뜻의 error 접두. 두 원인을 같은 문장으로 내면
+# "YAML 을 고쳐라" 를 디렉터리에게 하게 된다.
+_KIND_ERROR = "kind:"
 
 EXIT_OK = 0
 EXIT_BLOCKED = 1        # blocker 가 있거나, apply 가 실패했지만 rollback 은 완료됨
@@ -102,10 +107,18 @@ def _read_json(path):
 
 
 def _read_profile(root):
-    """(profile, raw_text, error). pyyaml 이 없어도 upgrade 는 서야 한다."""
+    """(profile, raw_text, error). pyyaml 이 없어도 upgrade 는 서야 한다.
+
+    **부재만 빈 결과다.** 종류가 다른 객체는 부재가 아니다. upgrade 는 이 경로에 선언 값을 직접
+    쓰므로, symlink·디렉터리·끊어진 링크를 부재로 넘기면 판정이 조용히 지나가고 mutation 단계에
+    가서야 다른 이유로 넘어진다 — 그때는 `--check` 가 이미 "변경 예정" 을 보고한 뒤라, 사용자는
+    막힐 것을 성공할 것으로 읽고 apply 를 부른다.
+    """
     path = os.path.join(root, "sage", "project-profile.yaml")
-    if not os.path.isfile(path):
+    if not os.path.lexists(path):
         return None, "", ""
+    if os.path.islink(path) or not os.path.isfile(path):
+        return None, "", _KIND_ERROR + _path_kind(path)
     try:
         with open(path, encoding="utf-8") as handle:
             raw = handle.read()
@@ -141,6 +154,10 @@ def _plan(root, language):
         blockers.append(tr(language, "cli.upgrade.blocker_no_manifest"))
     if profile_error == "no_yaml":
         blockers.append(tr(language, "cli.upgrade.blocker_no_yaml"))
+    elif profile_error.startswith(_KIND_ERROR):
+        # 판독 실패와 문장을 나눈다. "YAML 을 고쳐라" 는 디렉터리에게 할 말이 아니다.
+        blockers.append(tr(language, "cli.upgrade.blocker_profile_state",
+                           detail=profile_error[len(_KIND_ERROR):]))
     elif profile_error:
         blockers.append(tr(language, "cli.upgrade.blocker_profile", error=profile_error))
 
@@ -234,6 +251,21 @@ def _cycle_state_detail(data):
             f"cycle_stem={data.get('cycle_stem')!r}")
 
 
+def _path_kind(path):
+    """차단 사유에 실을 객체 **종류**. 링크 대상은 싣지 않는다.
+
+    무엇이 있는지 말해 주지 않으면 사용자가 파일을 열어 추측한다. 그렇다고 대상을 풀어 적으면
+    저장소 밖 절대 경로가 화면과 보고서에 남는다 — 보고서는 사용자가 붙여 넣어 공유하는
+    물건이고, 그 안에 절대 경로를 담지 않는 것이 이 명령의 계약이다. 종류만으로 무엇을 고칠지는
+    정해지고, 어디를 가리키는지는 자기 파일에서 읽으면 된다.
+    """
+    if os.path.islink(path):
+        return "broken symlink" if not os.path.exists(path) else "symlink"
+    if os.path.isdir(path):
+        return "directory"
+    return "special file"
+
+
 def _cycle_migration(root):
     """(이행 write | None, blocker `(key, 인자)` | None). 파일이 없거나 이미 v2 면 둘 다 None.
 
@@ -246,11 +278,27 @@ def _cycle_migration(root):
     v1/v2 가 아닌 version, 그리고 선언이 이미 있는 v1 — 마지막은 값이 유효해도 이행 대상이
     아니다. 유효한 선언을 기본값으로 덮는 것이 정확히 막으려는 동작이기 때문이다. 넷 다
     mutation 전에 blocker 로 남기고 사람이 고치게 한다.
+
+    **부재만 no-op 이다.** 판독 실패와 비객체는 부재가 아니라 고장난 상태다. 셋을 같이 넘기면
+    손상된 사이클을 그대로 둔 채 upgrade 가 관리 자산을 적용하고 성공을 보고한다 — 사용자는
+    성공한 upgrade 뒤에 별도 고장을 만나고, `_read_json` 이 손상과 부재를 갈라 돌려준 이유도
+    그때 사라진다.
     """
     path = os.path.join(root, ".sage", "cycle.json")
-    data, error = _read_json(path)
-    if error or not isinstance(data, dict):
+    if not os.path.lexists(path):
         return None, None
+    # 파일시스템 객체의 **종류**를 먼저 본다. `isfile` 은 symlink 를 파일로 인정하고 뒤이은 쓰기가
+    # 링크를 따라가므로, 프로젝트 밖을 가리키는 링크 하나가 저장소 밖 파일을 덮어쓰는 통로가 된다.
+    # 디렉터리와 끊어진 링크도 부재가 아니다 — 없는 것이 아니라 있어야 할 것이 아닌 것이 있다.
+    if os.path.islink(path) or not os.path.isfile(path):
+        return None, ("cli.upgrade.blocker_cycle_state",
+                      {"detail": f"not a regular file ({_path_kind(path)})"})
+    data, error = _read_json(path)
+    if error:
+        return None, ("cli.upgrade.blocker_cycle_state", {"detail": f"unreadable ({error})"})
+    if not isinstance(data, dict):
+        return None, ("cli.upgrade.blocker_cycle_state",
+                      {"detail": f"not an object ({type(data).__name__})"})
     version = data.get("version")
     declared = data.get("document_language")
     if version == 2 and declared in ("ko", "en"):
@@ -601,9 +649,7 @@ def _refresh_compiled_profile_json(root, language):
     if os.path.abspath(output_path) != os.path.abspath(json_path):
         raise RuntimeError(tr(language, "cli.upgrade.profile_json_unexpected_path", path=output_path))
     mode = os.stat(json_path).st_mode & 0o777
-    with open(json_path, "wb") as handle:
-        handle.write(body.encode("utf-8"))
-    os.chmod(json_path, mode)
+    _atomic_write(json_path, body.encode("utf-8"), mode)
 
 
 def _write_declaration(root, item, language=None):
@@ -624,9 +670,30 @@ def _write_declaration(root, item, language=None):
     else:
         raise RuntimeError(tr(language, "cli.upgrade.unknown_write_kind", kind=item["kind"]))
     mode = os.stat(absolute).st_mode & 0o777
-    with open(absolute, "wb") as handle:
-        handle.write(body)
-    os.chmod(absolute, mode)
+    _atomic_write(absolute, body, mode)
+
+
+def _atomic_write(absolute, body, mode):
+    """같은 디렉터리에 쓰고 `os.replace` 로 갈아끼운다 — 링크를 **따라가지 않는다**.
+
+    `open(path, "wb")` 는 symlink 를 따라가므로, 계획 이후 대상이 링크로 바뀌면 저장소 밖 파일이
+    덮어써진다. 판정 시점의 검사만으로는 그 창을 닫을 수 없다. 교체는 디렉터리 엔트리를 바꾸므로
+    링크가 끼어들어도 링크 자신이 대체될 뿐 대상은 건드리지 않는다.
+    """
+    directory = os.path.dirname(absolute) or "."
+    handle, temporary = tempfile.mkstemp(dir=directory,
+                                         prefix=f".{os.path.basename(absolute)}.", suffix=".tmp")
+    try:
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(body)
+        os.chmod(temporary, mode)
+        os.replace(temporary, absolute)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
 
 
 # --- 진입점 -----------------------------------------------------------------

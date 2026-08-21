@@ -51,12 +51,12 @@ def consistency_issues(documents, declared=None):
     `declared` 는 cycle state 의 미러 값이다. 넘기면 Phase 00 정본과의 불일치도 잡는다.
     빈 목록이 통과이며, 여기서 fail-closed 하는 것이 쓰기 전에 막는 유일한 지점이다.
 
-    reason 문자열은 이 모듈의 유일한 소비자(pre_implementation_gate_core.py)가 항상 고정
-    한국어 문장(`"문서 언어 선언 충돌 …건 — {detail}"`)으로 감싸 그대로 내보낸다 — 표시
-    언어에 따라 갈아 끼우는 통로가 없다(그 감싸는 문장 자체가 이번 배치 범위 밖의 더 큰
-    기존 한계: 이 gate core 전체가 reason 을 항상 한국어로 고정한다). 그래서 여기 값은
-    catalog 로 이관하지 않고 영어로 직접 고정한다 — 어차피 언어별로 갈리지 않는 값이고,
-    같은 파일 안에서도 영어 fragment 가 한국어 문장에 섞이는 것은 이미 흔한 패턴이다.
+    reason 문자열은 소비자가 감싸는 문장 안에 그대로 실린다. gate core 는 고정 한국어 문장
+    (`"문서 언어 선언 충돌 …건 — {detail}"`)으로 감싸고 — 그 gate core 전체가 reason 을 항상
+    한국어로 고정하는 것은 이 모듈 범위 밖의 더 큰 기존 한계다 — `sage retro` 는 표시 언어로
+    렌더한 문장 안에 끼운다. 어느 쪽이든 여기 값은 catalog 로 이관하지 않고 영어로 직접
+    고정한다: 언어별로 갈리지 않는 기계 사유값이고, 영어 fragment 가 한국어 문장에 섞이는
+    것은 이미 흔한 패턴이다.
     """
     issues = []
     languages = {}

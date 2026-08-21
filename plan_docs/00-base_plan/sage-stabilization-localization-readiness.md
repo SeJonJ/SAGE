@@ -3,7 +3,7 @@
 Cycle-Stem: `sage-stabilization-localization-readiness`
 Document-Language: ko
 Risk Level: L3
-Done-Criteria-Revision: 3
+Done-Criteria-Revision: 5
 Status: NOT READY — 필수 acceptance 미해소, 새 Phase 05 재검토 전
 
 ## 0. 사전 지식
@@ -159,7 +159,7 @@ CLI key는 `sage/i18n`, hook key는 독립 hook runtime에만 둔다. `sage/i18n
 | 동적 사용 자산을 죽은 코드로 오판 | P0 | D0~D4 분류, package inventory, clean-wheel E2E, 삭제 증거. |
 | locale이 판정이나 hash에 유입 | P0 | resolver 분리, decision 동등성, 공유 산출물 byte 비교. |
 | 00~06 중간에 문서 언어가 바뀜 | P0 | Phase 00 정본, cycle state 미러, same-stem marker gate, 충돌 fail-closed. |
-| legacy 문서를 잘못 재작성 | P1 | marker 없는 기존 사이클은 ko로 해석하되 역사 증거는 수정하지 않는다. |
+| legacy 문서를 잘못 재작성 | P1 | marker 없는 기존 사이클은 미선언으로 두고 한국어로 추측하지 않는다. 재개 시 기존 사이클 문서가 실제로 쓴 언어를 따르고, 역사 증거는 수정하지 않으며, 마커는 정식 재개·개정 절차로만 추가한다. |
 | hook runtime이 main package에 의존 | P0 | 독립 hook catalog와 import 차단 clean consumer 테스트. |
 | argparse 문구가 혼합 언어로 출력 | P1 | 단일 parser bridge와 Python 3.10~3.12 반복 호출 테스트. |
 | catalog 또는 호환 key drift | P1 | aggregate oracle, namespace 충돌, 참조 완전성, CI/package gate. |
@@ -190,11 +190,11 @@ CLI key는 `sage/i18n`, hook key는 독립 hook runtime에만 둔다. `sage/i18n
 - [x] framework, hook, CORE skill/agent 의미 정본이 영어이고 미분류 한국어가 없다.
 - [x] CORE skill 13개, agent 6개, hook spec 7개의 canonical 소유 관계가 완전하다.
 - [x] managed language policy가 고정 경로에서 설치·receipt·drift·bundle·upgrade 검증된다.
-- [ ] 한국어 기본값과 `--lang en`, local `interface.language: en` 우선순위가 동작한다.
+- [x] 한국어 기본값과 `--lang en`, local `interface.language: en` 우선순위가 동작한다.
 - [x] 새 사이클은 정확히 하나의 `Document-Language`를 결정하고 같은 stem의 00~06에 유지한다.
-- [ ] local 설정 변경, 충돌 `--lang`, cycle state·Phase 00·snapshot 불일치가 쓰기 전에 차단된다.
-- [x] marker 없는 legacy cycle은 역사 증거를 바꾸지 않고 한국어로 안전하게 재개된다.
-- [ ] bare/help/미지원 언어/malformed local의 channel·exit 계약이 정확하다.
+- [x] local 설정 변경, 충돌 `--lang`, cycle state·Phase 00·snapshot 불일치가 쓰기 전에 차단된다.
+- [x] marker 없는 legacy cycle은 미선언 상태로 남고, 한국어로 재해석되지 않으며, 역사 증거를 바꾸지 않고 기존 문서의 실제 언어로 안전하게 재개된다.
+- [x] bare/help/미지원 언어/malformed local의 channel·exit 계약이 정확하다.
 - [x] CLI/hook catalog의 한영 key·placeholder, 도메인 충돌, 참조 완전성 gate가 통과한다.
 - [x] 한영 CLI/hook 실행의 판정·status·exit·JSON·파일·audit·hash가 같다.
 - [x] EH-13 경로 진단과 EH-15/16 가시성 동작이 양 언어에서 같다.
@@ -204,7 +204,7 @@ CLI key는 `sage/i18n`, hook key는 독립 hook runtime에만 둔다. `sage/i18n
 - [x] wheel, sdist, clean pipx형, Python 3.10~3.12, Linux/macOS/Windows 필수 검증이 통과한다.
 - [x] 사용자 문서·migration·제약·복구 안내가 한영으로 동기화된다.
 - [ ] 독립 Phase 05가 필수 acceptance를 모두 해결하고 미해결 P0/P1이 없다.
-- [ ] 저장소 version source, Git tag, remote, PyPI, GitHub Release가 이 사이클 동안 바뀌지 않는다.
+- [x] `main`, version source, Git tag, PyPI, GitHub Release는 사용자 승인 전 변경하지 않는다. 검증용 feature branch push와 PR은 허용한다.
 - [ ] 최종 상태가 정확히 `NOT READY` 또는 `READY_FOR_USER_RELEASE_DECISION`이다.
 
 ### 미해결 6건의 근거 (2026-08-17)
@@ -219,11 +219,27 @@ CLI key는 `sage/i18n`, hook key는 독립 hook runtime에만 둔다. `sage/i18n
 | 설정 변경·충돌·state 불일치 차단 | AC26 FAIL. upgrade 의 손상 v2 state 는 배치 21 에서 blocker 로 바꿨으나 재판정 전이다 |
 | bare/help/미지원/malformed local 계약 | AC13·AC09 FAIL. argparse usage 오류 현지화는 배치 21 에서 넣었으나 재판정 전이다 |
 | 독립 Phase 05 해결 | AC38 FAIL. 새 HEAD 재검수 결과에 달렸다 |
-| version·tag·remote·PyPI·Release 불변 | AC36 근거가 "push 미수행" 인데, 원격 CI 증거 수집을 위해 feature branch push 와 PR 을 했다. tag·PyPI·Release·version 과 main 은 불변이지만 이 문구에 `remote` 가 있어 충족이라 말할 수 없다 — 근거 갱신과 판정은 Phase 05 몫이다 |
+| main·version·tag·PyPI·Release 불변 | `Done-Criteria-Revision: 5` 가 `remote` 를 `main` 으로 좁혀 검증용 feature branch push·PR 을 허용으로 명시했다. 그 넷은 모두 불변이고 merge 도 없다 — 남은 것은 판정이며 Phase 05 몫이다 |
 | 최종 상태 | 사이클 종료 시점의 값이라 Phase 05 승인 전에는 확정되지 않는다 |
 
 배치 21 에서 고친 세 건(AC09·AC13·AC26)을 수정했다는 이유로 여기서 올리지 않는다. FAIL 을 낸
 것은 독립 검수자이고, 되돌리는 것도 그쪽이다.
+
+### 미해결 2건의 근거 (2026-08-21)
+
+위 2026-08-17 표는 그 시점의 상태다. 2026-08-21 독립 Phase 05 가 AC09·AC26 을 PASS 로 재판정하고
+AC13 의 PASS 를 유지하면서, 언어 우선순위·쓰기 전 차단·CLI channel/exit 세 항목의 근거가 채워졌다.
+`main`·version source·tag·PyPI·Release 불변도 같은 문서에서 확인됐다. 네 항목을 체크로 올렸다 —
+올린 주체는 독립 검수자이고 여기서는 그 판정을 반영했다.
+
+| 미해결 | 무엇에 걸려 있나 |
+|---|---|
+| 독립 Phase 05 해결 | AC38 FAIL. 2026-08-21 Phase 05 는 `BLOCKED` 이며, 현재 source 에 결속된 원격 CI 가 없어 승인에 도달하지 못했다 |
+| 최종 상태 | 사이클 종료 시점의 값이라 Phase 05 승인 전에는 확정되지 않는다 |
+
+요구사항 문구와 `Done-Criteria-Revision` 은 바꾸지 않았다 — 증거를 반영한 것이지 계획을 다시 쓴
+것이 아니다. 다만 이 갱신으로 Phase 00 텍스트가 바뀌므로 **2026-08-21 Phase 05 의 hash 결속은
+만료된다.** 원격 CI 이후 새 hash 에 다시 결속해 재판정해야 한다.
 
 ## 6. Done Criteria Revision Log
 
@@ -244,6 +260,20 @@ CLI key는 `sage/i18n`, hook key는 독립 hook runtime에만 둔다. `sage/i18n
 - Reason: 사용자가 코드 주석·내부 docstring의 영어화 요구를 철회하고 한국어를 기본 정책으로 확정했다.
 - Affected-Phases: 01, 02
 - Summary: 코드 주석·내부 docstring을 영어 source-language gate에서 제외하고 한국어 기본 정책으로 전환했다. 죽은·낡은 주석 정리, 영어 SSOT Markdown gate, catalog 밖 사용자 출력 하드코딩 금지는 유지한다. Phase 03·04의 해당 증거를 새 계약으로 다시 해석해야 한다.
+
+### Revision 4
+
+- Changed-At: Phase 05
+- Reason: marker 없는 legacy 사이클을 `ko`로 해석하면 영어로 작성된 legacy 사이클에 한국어를 선언한 적 있다고 허위로 단언하게 되고, "선언한 적 없음"과 "한국어로 선언함"이 같은 값이 되어 이행 완료 여부를 셀 수 없다. 독립 Phase 05 재검수가 `sage retro` 에서 이 해석이 실제로 미선언 사이클에 언어를 지어내는 것을 재현했고, 같은 재검수가 미러·Phase 00·profile 판독 실패를 부재로 뭉개 `en` 을 선언한 사이클이 미선언으로 보이는 경로도 재현했다.
+- Affected-Phases: 01, 02, 03, 04, 05
+- Summary: legacy 미선언의 의미를 `ko` 해석에서 미선언(`None`) 유지로 바꿨다. 역사 문서는 재작성하지 않고, 재개 시 기존 사이클 문서의 실제 언어를 따르며, 마커는 정식 재개·개정 절차로만 추가한다. `.sage/cycle.json`은 교차검증 미러일 뿐 Phase 00 대신 언어를 선언하지 않고, Phase 00·cycle state·profile 판독 실패는 부재가 아니라 쓰기 전 차단 사유다. 이 개정은 정본 문구만 바꾼 것이 아니라 `sage retro` 구현과 회귀를 바꿨다 — 이전 코드는 미선언을 미러 언어로 채웠고 세 종류의 판독 실패를 부재로 뭉갰다. 그래서 재실행 범위는 01·02 정본 동기화에 그치지 않는다: 03은 실제 구현 변경을, 04는 새 회귀·재현·전체 검증을 기록하고, 05는 새 Phase 00 hash에 대한 독립 재검수를 다시 받아야 한다. 기존 Phase 05(`Final Status: BLOCKED`, `Phase00-Hash: sha256:b0a79fff…`)는 이전 hash에 결속된 역사로 그대로 두므로 revision 3에 머무르며, 그 stale 상태가 곧 새 재검수가 아직 없다는 사실이다. 승인은 없었고 여기서 새로 만들지 않으며, 새 승인 전까지 Phase 06은 작성하지 않는다.
+
+### Revision 5
+
+- Changed-At: Phase 05
+- Reason: `remote` 를 통째로 금지한 문구가 AC33 의 원격 Linux/Windows CI 증거 요구와 모순된다. 원격 CI 는 feature branch push 없이 얻을 수 없는데 같은 Done Criteria 가 그 push 를 금지하고 있어, 두 항목을 동시에 만족시킬 방법이 없고 이 항목은 영원히 닫히지 않는다. 실제로 금지하려던 것은 되돌릴 수 없는 변경(영구 버전·tag·publish)과 `main` 이며, 검증 통로인 branch push·PR 은 사용자 승인 아래 이미 수행됐고 merge 하지 않았다.
+- Affected-Phases: 01, 02, 04, 05
+- Summary: Done Criteria 의 `remote` 를 `main` 으로 좁히고 검증용 feature branch push·PR 을 허용으로 명시했다. 금지 대상은 `main`·version source·Git tag·PyPI·GitHub Release 다섯이고 모두 사용자 승인 전 변경하지 않는다. 문구 개정이며 구현 변경이 아니므로 Phase 03 재실행은 없고 03 은 Revision 4 에 머문다. 01·02·04 는 이 문구를 인용하거나 판정 근거로 삼고 있어 동기화한다. 이 개정으로 Phase 00 hash 가 `sha256:c696028a…` 에서 바뀌므로, 그 hash 를 대조한 독립 재검수 R2·R3 의 결속은 만료된다 — 그 두 라운드가 확인한 코드 사실은 유효하지만 새 hash 에 대한 Phase 05 는 다시 받아야 한다. 기존 Phase 05(`Final Status: BLOCKED`, `Phase00-Hash: sha256:b0a79fff…`)는 이전 hash 에 결속된 역사로 그대로 두고, 승인은 여기서 만들지 않으며 새 승인 전까지 Phase 06 은 작성하지 않는다.
 
 ## 엔진 저장소 실행 예외
 
