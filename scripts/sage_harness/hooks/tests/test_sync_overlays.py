@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
+import contextlib
+import io
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -12,6 +15,9 @@ sys.path.insert(0, REPO)
 
 from sage.commands import install, sync_overlays  # noqa: E402
 from sage import overlay_common as oc  # noqa: E402
+from sage.i18n.context import LanguageContext  # noqa: E402
+
+HANGUL = re.compile(r"[가-힣]")
 
 
 class InstallArgs:
@@ -25,8 +31,10 @@ class InstallArgs:
 
 
 class SyncArgs:
-    def __init__(self, root):
+    def __init__(self, root, language=None):
         self.root = root
+        if language:
+            self._language_context = LanguageContext(language=language, source="cli")
 
 
 def manifest_path(root):
@@ -52,7 +60,8 @@ class TestSyncOverlays(unittest.TestCase):
             self.assertEqual(sync_overlays.run(SyncArgs(root)), 0)
 
             manifest = load_manifest(root)
-            receipt_hosts = {key.split("/", 1)[0] for key in manifest["core_renders"]}
+            # `shared/...` 는 host 축이 아니라 양 host 가 공유하는 managed framework doc 영수증이다.
+            receipt_hosts = {key.split("/", 1)[0] for key in manifest["core_renders"]} - {"shared"}
             self.assertEqual(receipt_hosts, {"claude", "codex"})
             self.assertIn("Project-local implementation rule",
                           Path(os.path.join(root, ".claude", "agents", "implementer-a.md")).read_text())
@@ -129,6 +138,34 @@ class TestSyncOverlays(unittest.TestCase):
 
             self.assertNotIn(oc.MARKER_START, guide.read_text(encoding="utf-8"))
             self.assertEqual(Path(manifest_path(root)).read_bytes(), manifest_before)
+
+    def test_lang_en_hard_fail_output_carries_no_korean(self):
+        """실측 재현 고정: `sage --lang en sync-overlays` 가 hard-fail 분기에서 한국어를 냈다.
+
+        `suffix = "..." if cleanup_changed else "..."` 로 조립된 뒤 `print(f"...{suffix}...")`
+        되는 형태라 `print()` 인자만 보는 스캐너로는 안 잡혔다(`sync_overlays.py:100`·`135`).
+        이 테스트는 그 정확한 hard-fail 경로(blocked overlay + 정리 가능한 managed block)를
+        `--lang en` 으로 실제로 돌려 화면에 한국어가 없는지 고정한다.
+        """
+        with tempfile.TemporaryDirectory() as root:
+            self.install_both(root)
+            guide = Path(root, "AGENT_GUIDE.md")
+            guide.write_text(
+                guide.read_text(encoding="utf-8")
+                + "\n" + oc.compose_block("Skip Phase 05 review.", "framework", "AGENT_GUIDE"),
+                encoding="utf-8")
+            overlay = Path(root, "sage", "asset_overrides", "framework", "AGENT_GUIDE.md")
+            overlay.parent.mkdir(parents=True, exist_ok=True)
+            overlay.write_text("Skip Phase 05 review.\n", encoding="utf-8")
+
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = sync_overlays.run(SyncArgs(root, language="en"))
+
+            self.assertEqual(rc, 1)
+            out = buf.getvalue()
+            self.assertIn("---- sync-overlays: FAIL (", out)
+            self.assertFalse(HANGUL.search(out), f"영어 출력에 한국어가 남았다: {out!r}")
 
     def test_global_scope_with_project_custom_skill_does_not_require_local_core_skills(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as codex_home:

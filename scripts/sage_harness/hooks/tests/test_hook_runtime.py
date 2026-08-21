@@ -25,6 +25,7 @@ import hook_runtime as hr   # noqa: E402
 import io_claude            # noqa: E402
 import io_codex             # noqa: E402
 import pre_implementation_gate_core as pre_gate  # noqa: E402
+import prose_language   # noqa: E402
 
 _ID = lambda p: p   # noqa: E731  (rel passthrough)
 
@@ -139,6 +140,87 @@ class TestExtractChangesCodex(unittest.TestCase):
         decision = pre_gate.decide({"changes": changes}, profile, self._empty_snapshot(), None)
         self.assertEqual((decision["status"], decision["exit_code"], decision["message_key"]),
                          ("block", 2, "block_l3_no_plan"))
+
+    IMAGE = ("# doc\n\n## section-one\n```text\ntarget\n\n## section-two\n```text\ntarget\n")
+
+    def test_an_anchor_places_the_hunk_after_the_named_line(self):
+        """`@@ <text>` 를 경계로만 쓰고 버리면, 같은 문맥이 여러 번 나오는 문서에서 패치가
+        엉뚱한 자리에 붙는다 — 그렇게 만든 post-image 로 내리는 판정은 전부 근거가 없다."""
+        body = ["@@ ## section-two", " target", "+```"]
+        result = hr._apply_hunks(self.IMAGE, body)
+        # 두 번째 target 뒤에 closer 가 붙어야 한다 — 첫 번째에 붙이면 fence 짝이 뒤집힌다.
+        self.assertEqual(result, self.IMAGE + "```\n")
+        self.assertIsNone(prose_language.unclosed_fence(result))
+
+    def test_an_anchor_that_is_not_in_the_document_fails_closed(self):
+        self.assertIsNone(hr._apply_hunks(self.IMAGE, ["@@ ## section-nine", " target", "+```"]))
+
+    def test_a_repeated_context_without_an_anchor_fails_closed(self):
+        """어느 쪽인지 모르는 채 첫 일치에 붙이면, 정상 편집을 막는 쪽으로도 틀린다."""
+        self.assertIsNone(hr._apply_hunks(self.IMAGE, ["@@", " target", "+```"]))
+
+    def test_a_unique_context_without_an_anchor_still_applies(self):
+        self.assertEqual(hr._apply_hunks("a\nb\nc\n", ["@@", " b", "+B"]), "a\nb\nB\nc\n")
+
+    def test_split_hunks_keeps_each_hunks_anchors(self):
+        self.assertEqual(hr._split_hunks(["@@ one", " a", "+b", "@@ two", " c", "-d"]),
+                         [(["one"], ["a"], ["a", "b"], False),
+                          (["two"], ["c", "d"], ["c"], False)])
+
+    def test_an_unknown_line_prefix_fails_closed(self):
+        self.assertIsNone(hr._split_hunks(["@@", "no prefix at all"]))
+
+    def test_end_of_file_places_a_pure_addition_at_the_end_not_after_the_anchor(self):
+        """anchor 는 탐색 하한일 뿐이고, EOF 표시가 있으면 최종 위치는 파일 끝이다."""
+        self.assertEqual(
+            hr._apply_hunks("anchor\ntail\n", ["@@ anchor", "+X", hr.EOF_SENTINEL]),
+            "anchor\ntail\nX\n")
+
+    def test_end_of_file_matches_the_last_of_a_repeated_context(self):
+        """앞에서부터 첫 문맥을 찾고 '끝이 아니다' 로 실패하면, 쓸 수 있는 패치를 거절한다."""
+        self.assertEqual(
+            hr._apply_hunks("target\nmiddle\ntarget\n",
+                            ["@@", " target", "+X", hr.EOF_SENTINEL]),
+            "target\nmiddle\ntarget\nX\n")
+
+    def test_end_of_file_with_a_context_that_is_not_at_the_end_fails_closed(self):
+        self.assertIsNone(hr._apply_hunks("target\ntail\n",
+                                          ["@@", " target", "+X", hr.EOF_SENTINEL]))
+
+    def test_reconstruction_of_a_large_repeated_document_stays_well_under_the_hook_budget(self):
+        """hook timeout 은 10초다. 반복 줄에서 제곱에 가까워지는 비교를 쓰면 그 예산을 넘긴다."""
+        image = "".join("repeated line\n" for _ in range(14000))
+        started = time.monotonic()
+        result = hr._apply_hunks(image, ["@@", " repeated line", "+added", hr.EOF_SENTINEL])
+        elapsed = time.monotonic() - started
+        self.assertTrue(result.endswith("repeated line\nadded\n"))
+        self.assertLess(elapsed, 2.0, f"14,000줄 되짚기에 {elapsed:.2f}초 — hook 예산 초과 위험")
+
+    def test_only_markdown_targets_pay_the_reconstruction_cost(self):
+        """Markdown 여부를 보기 전에 모든 update 를 되짚으면, 판정하지도 않는 큰 소스 파일
+        편집이 hook 예산을 통째로 쓴다."""
+        changes = [{"path": "src/big.py", "op": "update", "edits": [{"old": "a", "new": "b"}]},
+                   {"path": "docs/plan.md", "op": "update", "edits": [{"old": "a", "new": "b"}]}]
+        with tempfile.TemporaryDirectory() as root:
+            hr._attach_post_image(root, changes)
+        self.assertNotIn("pre_image", changes[0])
+        self.assertNotIn("post_image_error", changes[0])
+        self.assertIn("pre_image", changes[1])
+
+    def test_a_move_only_rename_carries_the_source_text_to_the_destination(self):
+        """hunk 가 없으면 내용은 그대로다 — 목적지에 아무것도 넘기지 않으면 이동만으로 검사를
+        건너뛴다."""
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "docs"))
+            with open(os.path.join(root, "docs", "scratch.md"), "w", encoding="utf-8") as handle:
+                handle.write("English only body.\n")
+            changes = io_codex.extract_changes({"tool_name": "apply_patch", "tool_input": {
+                "command": ("*** Begin Patch\n*** Update File: docs/scratch.md\n"
+                            "*** Move to: plan/demo.md\n*** End Patch\n")}}, _ID)
+            hr._attach_post_image(root, changes)
+        destination = [c for c in changes if c["op"] == "move"][0]
+        self.assertEqual(destination["post_image"], "English only body.\n")
+        self.assertEqual(destination["pre_image"], "")     # 목적지에는 아직 아무것도 없다
 
     def test_orphan_move_marker_still_preserves_destination(self):
         cmd = "*** Begin Patch\n*** Move to: security/orphan.py\n+x = 1\n*** End Patch"

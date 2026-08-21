@@ -14,7 +14,9 @@ import re
 import glob
 
 from sage import _resources
+from sage.diagnostics import Diagnostic
 from sage.profile_layers import load_profile_layers
+from sage.i18n import language_of, render_issue, tr
 
 # result↔reason 의미 짝(설계 §3) — APPROVED 는 수렴/dry 로만, BLOCKED 는 예산초과/아키텍처로만.
 _APPROVED_REASONS = {"CONVERGED", "DRY"}
@@ -37,65 +39,76 @@ def _load_cycle_binding():
     return cycle_binding
 
 
-def _nonneg(v):
-    """argparse type — 음수/비정수 거부(라운드 카운트는 ≥0 정수)."""
+def _nonneg_of(context):
+    """argparse type 콜러블을 만든다 — 음수/비정수 거부(라운드 카운트는 ≥0 정수).
+
+    argparse 는 type 콜러블에 args 를 넘기지 않으므로 `language_of(args)` 를 쓸 수 없다.
+    parser 를 세울 때 이미 결정된 표시 언어를 닫아두면, 파싱 실패 문장도 나머지 화면과 같은
+    언어로 나온다.
+    """
     import argparse
-    try:
-        n = int(v)
-    except (ValueError, TypeError):
-        raise argparse.ArgumentTypeError(f"정수가 아님: {v!r}")
-    if n < 0:
-        raise argparse.ArgumentTypeError(f"음수 불가: {n}")
-    return n
+
+    def _nonneg(v):
+        try:
+            n = int(v)
+        except (ValueError, TypeError):
+            raise argparse.ArgumentTypeError(
+                tr(context, "cli.review_loop.not_an_integer", value=repr(v)))
+        if n < 0:
+            raise argparse.ArgumentTypeError(
+                tr(context, "cli.review_loop.negative_not_allowed", n=n))
+        return n
+    return _nonneg
 
 
-def register(sub):
-    p = sub.add_parser("review-loop", help="Loop A(Phase 05 적대적 리뷰) 라운드 감사를 기록·조회합니다")
+def register(sub, context):
+    _nonneg = _nonneg_of(context)
+    p = sub.add_parser("review-loop", help=tr(context, "cli.review_loop.review_loop"))
     sp = p.add_subparsers(dest="action", metavar="<action>")
     sp.required = True
 
-    po = sp.add_parser("open", help="루프 시작 기록 → run_id 출력")
-    po.add_argument("--risk", required=True, choices=["L2", "L3"], help="위험 tier(루프는 L2/L3 만)")
-    po.add_argument("--run-id", default=None, help="명시 run_id(기본: 자동 발급)")
+    po = sp.add_parser("open", help=tr(context, "cli.review_loop.open"))
+    po.add_argument("--risk", required=True, choices=["L2", "L3"], help=tr(context, "cli.review_loop.risk"))
+    po.add_argument("--run-id", default=None, help=tr(context, "cli.review_loop.run_id"))
     po.add_argument("--reviewer-requested", default=None,
-                    help="의도한 리뷰어 모드(예: cross_model|same_runtime). close 의 --reviewer-actual 와 비교해 degraded 판정")
-    po.add_argument("--cycle-stem", default=None, help="Fast Cycle 결속용 exact cycle stem")
-    po.add_argument("--lenses", default=None, help="Fast Cycle 결속용 comma-separated 렌즈 목록")
+                    help=tr(context, "cli.review_loop.reviewer_requested"))
+    po.add_argument("--cycle-stem", default=None, help=tr(context, "cli.review_loop.cycle_stem"))
+    po.add_argument("--lenses", default=None, help=tr(context, "cli.review_loop.lenses"))
     po.add_argument("--root", default=None)
     po.set_defaults(func=_run_open)
 
-    pr = sp.add_parser("round", help="라운드 1건 기록(찾기/반박/채택 집계)")
+    pr = sp.add_parser("round", help=tr(context, "cli.review_loop.round"))
     pr.add_argument("--run-id", required=True)
     pr.add_argument("--iteration", required=True, type=_nonneg)
-    pr.add_argument("--found", required=True, type=_nonneg, help="FIND 발견 수")
-    pr.add_argument("--survived", required=True, type=_nonneg, help="REFUTE 생존 수")
-    pr.add_argument("--accepted", required=True, type=_nonneg, help="REWORK 채택 수")
-    pr.add_argument("--arch", default=0, type=_nonneg, help="아키텍처 에스컬레이션 수")
-    pr.add_argument("--tokens", default=0, type=_nonneg, help="누적 토큰")
+    pr.add_argument("--found", required=True, type=_nonneg, help=tr(context, "cli.review_loop.found"))
+    pr.add_argument("--survived", required=True, type=_nonneg, help=tr(context, "cli.review_loop.survived"))
+    pr.add_argument("--accepted", required=True, type=_nonneg, help=tr(context, "cli.review_loop.accepted"))
+    pr.add_argument("--arch", default=0, type=_nonneg, help=tr(context, "cli.review_loop.arch"))
+    pr.add_argument("--tokens", default=0, type=_nonneg, help=tr(context, "cli.review_loop.tokens"))
     pr.add_argument("--lens-receipts", default=None,
-                    help="이번 라운드에 실제 완료한 comma-separated 렌즈 receipt")
+                    help=tr(context, "cli.review_loop.lens_receipts"))
     pr.add_argument("--root", default=None)
     pr.set_defaults(func=_run_round)
 
-    pc = sp.add_parser("close", help="루프 종료 기록(result/reason/iterations)")
+    pc = sp.add_parser("close", help=tr(context, "cli.review_loop.close"))
     pc.add_argument("--run-id", required=True)
     pc.add_argument("--result", required=True, choices=["APPROVED", "BLOCKED"])
     pc.add_argument("--reason", required=True,
                     choices=sorted(_APPROVED_REASONS | _BLOCKED_REASONS))
     pc.add_argument("--iterations", required=True, type=_nonneg)
     pc.add_argument("--reviewer-actual", default=None,
-                    help="실제 수행된 리뷰어 모드(예: cross_model|same_runtime). open 의 --reviewer-requested 와 다르면 degraded")
+                    help=tr(context, "cli.review_loop.reviewer_actual"))
     pc.add_argument("--root", default=None)
     pc.set_defaults(func=_run_close)
 
-    ps = sp.add_parser("show", help="루프 감사 요약(+무결성 점검). --vault 면 Obsidian 대시보드 노트도 작성")
-    ps.add_argument("--run-id", default=None, help="특정 run_id(미지정: 전체 요약)")
+    ps = sp.add_parser("show", help=tr(context, "cli.review_loop.show"))
+    ps.add_argument("--run-id", default=None, help=tr(context, "cli.review_loop.run_id_2"))
     ps.add_argument("--vault", nargs="?", const="", default=None,
-                    help="Obsidian vault 대시보드 작성. 경로 생략 시 profile.knowledge_capture.vault_path 사용")
+                    help=tr(context, "cli.review_loop.vault"))
     ps.add_argument("--root", default=None)
     ps.set_defaults(func=_run_show)
 
-    pn = sp.add_parser("next", help="기록된 라운드 + profile cfg 로 계속/종료를 결정론 권고(감사 기록 안 함)")
+    pn = sp.add_parser("next", help=tr(context, "cli.review_loop.next"))
     pn.add_argument("--run-id", required=True)
     pn.add_argument("--root", default=None)
     pn.set_defaults(func=_run_next)
@@ -130,7 +143,7 @@ def _load_profile(root):
     return layers.shared if layers.has_fail else layers.effective
 
 
-def _validated_profile(root):
+def _validated_profile(root, language=None):
     """게이트 판단용 profile. 설치되지 않은 저장소는 legacy {}, 손상된 계층은 FAIL."""
     ppath = os.path.join(root, "sage", "project-profile.yaml")
     if not os.path.exists(ppath):
@@ -140,8 +153,9 @@ def _validated_profile(root):
     if not failures:
         return layers.effective
     for message in failures:
-        print(f"[sage review-loop] profile 계층 FAIL: {message} "
-              f"(shared={layers.shared_path}, local={layers.local_path})", file=sys.stderr)
+        print(tr(language, "cli.review_loop.msg01", message=render_issue(language, message),
+                 layers_shared_path=layers.shared_path, layers_local_path=layers.local_path),
+              file=sys.stderr)
     return None
 
 
@@ -162,12 +176,12 @@ def _is_closed(la, root, run_id):
     return la.close_of(root, run_id) is not None
 
 
-def _write_audit(la, operation):
+def _write_audit(la, operation, language=None):
     """Convert fail-closed audit writer failures into the CLI's blocking contract."""
     try:
         return operation()
     except (la.AuditWriteError, OSError) as exc:
-        print(f"[sage review-loop] audit write failed — 기록하지 않음: {exc}", file=sys.stderr)
+        print(tr(language, "cli.review_loop.msg02", exc=exc), file=sys.stderr)
         return None
 
 
@@ -183,12 +197,12 @@ def _comma_list(value):
 def _run_open(args):
     la = _load_loop_audit()
     root = _root(args)
-    profile = _validated_profile(root)
+    profile = _validated_profile(root, language_of(args))
     if profile is None:
         return 2
     # 명시 run_id 중복 open 거부(integrity 불변식을 write 시점에 강제 — strict CLI 레이어).
     if args.run_id and _is_open(la, root, args.run_id):
-        print(f"[sage review-loop] run_id '{args.run_id}' 이미 open 됨 — 중복 open 거부(integrity)", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg03", args_run_id=args.run_id), file=sys.stderr)
         return 2
     try:
         lenses = _comma_list(args.lenses)
@@ -201,6 +215,7 @@ def _run_open(args):
                              run_id=args.run_id,
                              reviewer_requested=args.reviewer_requested,
                              cycle_stem=args.cycle_stem, lenses=lenses),
+        language=language_of(args),
     )
     if rid is None:
         return 2
@@ -214,21 +229,21 @@ def _run_round(args):
     root = _root(args)
     # orphan 차단: loop_open 없는 run_id 의 round 거부(codex S3 P2 — CLI 가 integrity 를 write 시 강제).
     if not _is_open(la, root, args.run_id):
-        print(f"[sage review-loop] run_id '{args.run_id}' 의 loop_open 없음 — orphan round 거부. 먼저 open", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg04", args_run_id=args.run_id), file=sys.stderr)
         return 2
     if _is_closed(la, root, args.run_id):
-        print(f"[sage review-loop] run_id '{args.run_id}' 이미 종료됨 — 종료 후 round 거부", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg05", args_run_id=args.run_id), file=sys.stderr)
         return 2
     # 불가능 튜플 거부(순수 산술, 읽기 불요): survived ≤ found, accepted ≤ survived, arch ≤ survived.
     #   (REFUTE 는 발견 부분집합, REWORK 채택은 생존 부분집합, arch 에스컬레이션은 생존 중 분류.)
     if args.survived > args.found:
-        print(f"[sage review-loop] survived({args.survived}) > found({args.found}) 불가(생존은 발견의 부분집합)", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg06", args_survived=args.survived, args_found=args.found), file=sys.stderr)
         return 2
     if args.accepted > args.survived:
-        print(f"[sage review-loop] accepted({args.accepted}) > survived({args.survived}) 불가(채택은 생존의 부분집합)", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg07", args_accepted=args.accepted, args_survived=args.survived), file=sys.stderr)
         return 2
     if args.arch > args.survived:
-        print(f"[sage review-loop] arch({args.arch}) > survived({args.survived}) 불가(아키텍처는 생존 중 분류)", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg08", args_arch=args.arch, args_survived=args.survived), file=sys.stderr)
         return 2
     try:
         lens_receipts = _comma_list(args.lens_receipts)
@@ -240,6 +255,7 @@ def _run_round(args):
         lambda: la.record_round(root, args.run_id, args.iteration, args.found,
                                 args.survived, args.accepted, arch=args.arch,
                                 tokens=args.tokens, lens_receipts=lens_receipts),
+        language=language_of(args),
     )
     if written is None:
         return 2
@@ -330,17 +346,20 @@ def _approved_phase00_hash(la, root, profile, run_id):
 
 
 def _termination_discrepancies(la, root, run_id, result, reason, iterations, cfg, risk):
-    """기록된 라운드 + cfg(review_loop)로 close 의 result/reason 일관성 검산 → [(kind, msg)].
+    """기록된 라운드 + cfg(review_loop)로 close 의 result/reason 일관성 검산 → [(kind, Diagnostic)].
     kind: 'mismatch'(사실과 모순 — enforce 가 거부) | 'skip'(cfg/데이터 부족으로 검증 불가 — 항상 WARN, 차단 안 함).
-    7.8단계 A. 결정론(LLM 0, audit 사실 vs cfg 산술 비교만, codex 리뷰 A 반영)."""
+    7.8단계 A. 결정론(LLM 0, audit 사실 vs cfg 산술 비교만, codex 리뷰 A 반영).
+
+    검산 결과는 언어 중립 진단이다 — 여기서 문장을 만들면 같은 모순이 표시 언어마다 다른
+    문자열로 남아, enforce 거부 사유를 나중에 대조할 수 없다. 문장은 `_run_close` 가 만든다."""
     out = []
     rounds = la.rounds_of(root, run_id)
     if not rounds:
         # 라운드 0 — 수렴/승인을 뒷받침할 증거 없음(codex P1). BLOCKED 는 즉시차단 가능하므로 미해당.
         if result == "APPROVED" or reason in ("CONVERGED", "DRY"):
-            out.append(("mismatch", "라운드 기록 0 — 루프가 돈 증거 없는데 수렴/승인 주장"))
+            out.append(("mismatch", Diagnostic("review_loop.term_no_rounds_claims_convergence")))
         else:
-            out.append(("skip", "라운드 기록 0 — 검산할 사실 없음"))
+            out.append(("skip", Diagnostic("review_loop.term_no_rounds_nothing_to_check")))
         return out
     last_survived = int(rounds[-1].get("survived", 0) or 0)
     total_tokens = max((int(r.get("tokens", 0) or 0) for r in rounds), default=0)  # tokens=누적 → max=총량
@@ -356,57 +375,63 @@ def _termination_discrepancies(la, root, run_id, result, reason, iterations, cfg
 
     # APPROVED/CONVERGED 는 미해결(survived>0)과 공존 불가 (cfg 불요)
     if result == "APPROVED" and last_survived > 0:
-        out.append(("mismatch", f"APPROVED 인데 마지막 라운드 survived={last_survived}(미해결 남음) — 수렴 아님"))
+        out.append(("mismatch", Diagnostic("review_loop.term_approved_with_survivors",
+                                           survived=last_survived)))
     if reason == "CONVERGED" and last_survived > 0:
-        out.append(("mismatch", f"CONVERGED 인데 마지막 라운드 survived={last_survived}(0 이어야)"))
+        out.append(("mismatch", Diagnostic("review_loop.term_converged_with_survivors",
+                                           survived=last_survived)))
     # 예산(cfg 필요): APPROVED 면 미초과, BUDGET_TOK 면 초과여야. budget 미설정 → skip+WARN
     if reason == "BUDGET_TOK" or (result == "APPROVED"):
         if budget is None:
-            out.append(("skip", f"budget_tokens[{risk}] 미설정 — 예산 검산 skip"))
+            out.append(("skip", Diagnostic("review_loop.term_budget_unset", risk=risk)))
         else:
             if result == "APPROVED" and total_tokens >= budget:
-                out.append(("mismatch", f"APPROVED 인데 누적 tokens={total_tokens} ≥ budget={budget} — BUDGET_TOK/BLOCKED 여야"))
+                out.append(("mismatch", Diagnostic("review_loop.term_approved_over_budget",
+                                                   tokens=total_tokens, budget=budget)))
             if reason == "BUDGET_TOK" and total_tokens < budget:
-                out.append(("mismatch", f"BUDGET_TOK 인데 누적 tokens={total_tokens} < budget={budget}(초과 아님)"))
+                out.append(("mismatch", Diagnostic("review_loop.term_budget_tok_under_budget",
+                                                   tokens=total_tokens, budget=budget)))
     # 반복 상한(cfg 필요): BUDGET_ITER 면 상한 도달 AND 미수렴(survived>0). max 미설정 → skip
     if reason == "BUDGET_ITER":
         if max_iter is None:
-            out.append(("skip", f"max_iterations[{risk}] 미설정 — 반복상한 검산 skip"))
+            out.append(("skip", Diagnostic("review_loop.term_max_iterations_unset", risk=risk)))
         else:
             if int(iterations) < max_iter:
-                out.append(("mismatch", f"BUDGET_ITER 인데 iterations={iterations} < max[{risk}]={max_iter}(상한 미도달)"))
+                out.append(("mismatch", Diagnostic("review_loop.term_budget_iter_below_max",
+                                                   iterations=iterations, risk=risk,
+                                                   max_iterations=max_iter)))
             if last_survived == 0:
-                out.append(("mismatch", "BUDGET_ITER 인데 마지막 survived=0(수렴함 — CONVERGED 여야)"))
+                out.append(("mismatch", Diagnostic("review_loop.term_budget_iter_converged")))
     # 아키텍처 에스컬레이션(cfg 불요)
     if reason == "BLOCKED_ARCH" and not any_arch:
-        out.append(("mismatch", "BLOCKED_ARCH 인데 arch>0 인 라운드 없음"))
+        out.append(("mismatch", Diagnostic("review_loop.term_blocked_arch_without_arch")))
     # dry 수렴(cfg 필요): 마지막 dry 라운드가 각각 found==0. dry 미설정 → skip
     if reason == "DRY":
         if dry is None:
-            out.append(("skip", "dry_rounds 미설정 — dry 검산 skip"))
+            out.append(("skip", Diagnostic("review_loop.term_dry_rounds_unset")))
         elif len(rounds) < dry or any(int(r.get("found", 0) or 0) > 0 for r in rounds[-dry:]):
-            out.append(("mismatch", f"DRY 인데 마지막 {dry} 라운드에 found>0(신규 있음) 또는 라운드 부족"))
+            out.append(("mismatch", Diagnostic("review_loop.term_dry_not_dry", dry=dry)))
     return out
 
 
 def _run_close(args):
     # result↔reason 의미 짝 강제(감사 트레일 일관성). 라이브러리는 permissive 이므로 여기서 게이트.
     if args.result == "APPROVED" and args.reason not in _APPROVED_REASONS:
-        print(f"[sage review-loop] APPROVED 는 reason ∈ {sorted(_APPROVED_REASONS)} 만 — 받음 '{args.reason}'", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg09", arg=sorted(_APPROVED_REASONS), args_reason=args.reason), file=sys.stderr)
         return 2
     if args.result == "BLOCKED" and args.reason not in _BLOCKED_REASONS:
-        print(f"[sage review-loop] BLOCKED 는 reason ∈ {sorted(_BLOCKED_REASONS)} 만 — 받음 '{args.reason}'", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg10", arg=sorted(_BLOCKED_REASONS), args_reason=args.reason), file=sys.stderr)
         return 2
     la = _load_loop_audit()
     root = _root(args)
     if not _is_open(la, root, args.run_id):
-        print(f"[sage review-loop] run_id '{args.run_id}' 의 loop_open 없음 — orphan close 거부. 먼저 open", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg11", args_run_id=args.run_id), file=sys.stderr)
         return 2
     if _is_closed(la, root, args.run_id):
-        print(f"[sage review-loop] run_id '{args.run_id}' 이미 종료됨 — 중복 close 거부", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg12", args_run_id=args.run_id), file=sys.stderr)
         return 2
 
-    profile = _validated_profile(root)
+    profile = _validated_profile(root, language_of(args))
     if profile is None:
         return 2
 
@@ -416,25 +441,26 @@ def _run_close(args):
     raw_mode = cfg.get("termination_enforce", "advisory")
     mode = raw_mode if raw_mode in ("advisory", "enforce") else "advisory"
     if raw_mode != mode:   # 미지 mode 는 침묵 말고 알림(런타임 fail-open 방지)
-        print(f"[sage review-loop] termination_enforce='{raw_mode}' 미지원 → advisory 로 처리(profile 점검)", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg13", raw_mode=raw_mode), file=sys.stderr)
     # audit 무결성 경고(손상/orphan) 있으면 라운드 사실을 못 믿으므로 enforce 라도 advisory 로 degrade(§2).
     integ = la.integrity_issues(root)
     if integ and mode == "enforce":
-        print(f"[sage review-loop] audit 무결성 경고 {len(integ)}건 — 검산 신뢰 불가 → 이번 close 는 advisory 로 degrade", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg14", count=len(integ)), file=sys.stderr)
         mode = "advisory"
     risk = _run_risk(la, root, args.run_id)
     checks = _termination_discrepancies(la, root, args.run_id, args.result, args.reason, args.iterations, cfg, risk)
     mismatches = [m for k, m in checks if k == "mismatch"]
     for _, m in [(k, m) for k, m in checks if k == "skip"]:
-        print(f"[sage review-loop] 종료 검산 skip(데이터 부족): {m}", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg15",
+                 m=render_issue(language_of(args), m)), file=sys.stderr)
     if mismatches:
         for m in mismatches:
-            print(f"[sage review-loop] 종료 검산 불일치: {m}", file=sys.stderr)
+            print(tr(language_of(args), "cli.review_loop.msg16",
+                     m=render_issue(language_of(args), m)), file=sys.stderr)
         if mode == "enforce":
-            print("[sage review-loop] termination_enforce=enforce → close 거부. 일관된 result/reason 으로 "
-                  "재close 하거나 BLOCKED 로 닫으세요.", file=sys.stderr)
+            print(tr(language_of(args), "cli.review_loop.msg17"), file=sys.stderr)
             return 2
-        print("[sage review-loop] (advisory — 기록은 진행. profile 의 review_loop.termination_enforce=enforce 로 강제 가능)",
+        print(tr(language_of(args), "cli.review_loop.msg18"),
               file=sys.stderr)
 
     phase00_hash = None
@@ -446,10 +472,10 @@ def _run_close(args):
             done_issue = f"Done Criteria approval check failed: {type(exc).__name__}: {exc}"
             done_mode = "enforce"
         if done_issue:
-            print(f"[sage review-loop] Done Criteria 승인 결속 실패: {done_issue}", file=sys.stderr)
+            print(tr(language_of(args), "cli.review_loop.msg19", done_issue=done_issue), file=sys.stderr)
             if done_mode == "enforce":
                 return 2
-            print("[sage review-loop] (advisory — close는 기록하지만 Phase 06에서 경고)", file=sys.stderr)
+            print(tr(language_of(args), "cli.review_loop.msg20"), file=sys.stderr)
 
     written = _write_audit(
         la,
@@ -457,13 +483,14 @@ def _run_close(args):
                               args.iterations,
                               reviewer_actual=args.reviewer_actual,
                               phase00_hash=phase00_hash),
+        language=language_of(args),
     )
     if written is None:
         return 2
     print(f"[sage review-loop] close run_id={args.run_id} {args.result}/{args.reason} iterations={args.iterations}", file=sys.stderr)
     if phase00_hash is not None:
         print(f"Phase00-Hash: {phase00_hash}", file=sys.stderr)
-    _auto_write_vault_dashboard(la, root)
+    _auto_write_vault_dashboard(la, root, language_of(args))
     return 0
 
 
@@ -474,24 +501,27 @@ def _run_show(args):
     integ = la.integrity_issues(root)
     target_runs = [args.run_id] if args.run_id else la.runs(root)
     if not target_runs:
-        print("기록 없음.")
+        print(tr(language_of(args), "cli.review_loop.msg21"))
     for rid in target_runs:
         rounds = la.rounds_of(root, rid)
         close = la.close_of(root, rid)
-        status = f"{close['result']}/{close['reason']} ({close['iterations']}회)" if close else "진행중(미종료)"
-        print(f"  · {rid}: {status}, 라운드 {len(rounds)}건")
+        # result/reason 은 감사 어휘라 번역하지 않는다 — 셈 단위와 미종료 표기만 표시 언어를 따른다.
+        status = (tr(language_of(args), "cli.review_loop.status_closed", result=close["result"],
+                     reason=close["reason"], iterations=close["iterations"])
+                  if close else tr(language_of(args), "cli.review_loop.status_open"))
+        print(tr(language_of(args), "cli.review_loop.msg22", rid=rid, status=status, count=len(rounds)))
         if close and close.get("phase00_hash"):
             print(f"      Phase00-Hash: {close['phase00_hash']}")
         for r in rounds:
             print(f"      [{r.get('iteration')}] found={r.get('found')} survived={r.get('survived')} "
                   f"accepted={r.get('accepted')} arch={r.get('arch')} tokens={r.get('tokens')}")
     if integ:
-        print("⚠️  무결성 경고:")
+        print(tr(language_of(args), "cli.review_loop.msg23"))
         for i in integ:
-            print(f"   - {i}")
+            print(f"   - {render_issue(language_of(args), i)}")
 
     if args.vault is not None:
-        _write_vault_dashboard(la, root, args.vault or None)
+        _write_vault_dashboard(la, root, args.vault or None, language_of(args))
     return 1 if integ else 0
 
 
@@ -500,7 +530,9 @@ def _next_recommendation(la, root, run_id, cfg, risk):
     _termination_discrepancies 와 같은 신호(survived/tokens/arch + cfg tier)를 쓰되, 사후 검산이
     아니라 전향 권고를 낸다. 반환: (action, result, reason, why, skips).
     action == 'STOP' 이면 result/reason 은 close 에 그대로 넘길 값. 권고는 사실 기반이라, 자료가
-    부족한 축(cfg tier 미설정)은 STOP 을 권하지 않고 skip 사유만 남긴다(false STOP 방지)."""
+    부족한 축(cfg tier 미설정)은 STOP 을 권하지 않고 skip 사유만 남긴다(false STOP 방지).
+
+    `why`·`skips` 는 언어 중립 진단이다 — 권고 근거는 판정이고 문장은 `_run_next` 가 만든다."""
     rounds = la.rounds_of(root, run_id)
 
     def _tier_int(section):
@@ -512,12 +544,12 @@ def _next_recommendation(la, root, run_id, cfg, risk):
 
     skips = []
     if budget is None:
-        skips.append(f"budget_tokens[{risk}] 미설정 — 예산 초과 종료 권고 불가")
+        skips.append(Diagnostic("review_loop.next_budget_unset", risk=risk))
     if max_iter is None:
-        skips.append(f"max_iterations[{risk}] 미설정 — 반복상한 종료 권고 불가")
+        skips.append(Diagnostic("review_loop.next_max_iterations_unset", risk=risk))
 
     if not rounds:
-        return ("CONTINUE", None, None, "라운드 기록 0 — 첫 라운드부터 진행", skips)
+        return ("CONTINUE", None, None, Diagnostic("review_loop.next_no_rounds"), skips)
 
     iterations = len(rounds)
     last_survived = int(rounds[-1].get("survived", 0) or 0)
@@ -528,49 +560,53 @@ def _next_recommendation(la, root, run_id, cfg, risk):
     # 우선순위: 아키텍처 > 예산 > 반복상한 > 수렴 > 계속.
     if any_arch:
         return ("STOP", "BLOCKED", "BLOCKED_ARCH",
-                "아키텍처 에스컬레이션 기록됨(arch>0) — 루프 밖 상위 결정 필요", skips)
+                Diagnostic("review_loop.next_arch_escalated"), skips)
     if budget is not None and total_tokens >= budget:
         return ("STOP", "BLOCKED", "BUDGET_TOK",
-                f"누적 tokens={total_tokens} ≥ budget[{risk}]={budget}", skips)
+                Diagnostic("review_loop.next_over_budget", tokens=total_tokens, risk=risk,
+                           budget=budget), skips)
     if max_iter is not None and iterations >= max_iter:
         if converged:
             return ("STOP", "APPROVED", "CONVERGED",
-                    f"반복 상한 도달(iter={iterations}=max[{risk}]={max_iter}) + 마지막 survived=0(수렴)", skips)
+                    Diagnostic("review_loop.next_max_iter_converged", iterations=iterations,
+                               risk=risk, max_iterations=max_iter), skips)
         return ("STOP", "BLOCKED", "BUDGET_ITER",
-                f"반복 상한 도달(iter={iterations}=max[{risk}]={max_iter}) + survived={last_survived}(미수렴)", skips)
+                Diagnostic("review_loop.next_max_iter_unresolved", iterations=iterations,
+                           risk=risk, max_iterations=max_iter, survived=last_survived), skips)
     if converged:
-        return ("STOP", "APPROVED", "CONVERGED", "마지막 라운드 survived=0 — 미해결 없음(수렴)", skips)
+        return ("STOP", "APPROVED", "CONVERGED", Diagnostic("review_loop.next_converged"), skips)
     return ("CONTINUE", None, None,
-            f"마지막 survived={last_survived}(미해결 남음), 예산·반복상한 여유 — 라운드 계속", skips)
+            Diagnostic("review_loop.next_continue", survived=last_survived), skips)
 
 
 def _run_next(args):
     la = _load_loop_audit()
     root = _root(args)
     if not _is_open(la, root, args.run_id):
-        print(f"[sage review-loop] run_id '{args.run_id}' 의 loop_open 없음 — 먼저 open", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg24", args_run_id=args.run_id), file=sys.stderr)
         return 2
     if _is_closed(la, root, args.run_id):
         close = la.close_of(root, args.run_id)
-        print(f"[sage review-loop] run_id '{args.run_id}' 이미 종료됨: {close['result']}/{close['reason']}", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg25", args_run_id=args.run_id, arg=close['result'], arg2=close['reason']), file=sys.stderr)
         print("NEXT: DONE")
         return 0
-    profile = _validated_profile(root)
+    profile = _validated_profile(root, language_of(args))
     if profile is None:
         return 2
     cfg = _cfg_snapshot(root, profile)
     risk = _run_risk(la, root, args.run_id)
     action, result, reason, why, skips = _next_recommendation(la, root, args.run_id, cfg, risk)
     for s in skips:
-        print(f"[sage review-loop] 권고 skip: {s}", file=sys.stderr)
-    print(f"[sage review-loop] 근거: {why}", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg26",
+                 s=render_issue(language_of(args), s)), file=sys.stderr)
+    print(tr(language_of(args), "cli.review_loop.msg27",
+             why=render_issue(language_of(args), why)), file=sys.stderr)
     if action == "CONTINUE":
         print("NEXT: CONTINUE")
     else:
         print(f"NEXT: STOP result={result} reason={reason}")
-        print(f"[sage review-loop] 권고 close: sage review-loop close --run-id {args.run_id} "
-              f"--result {result} --reason {reason} --iterations {len(la.rounds_of(root, args.run_id))}", file=sys.stderr)
-    print("[sage review-loop] (권고만 — 감사 기록/종료는 close 가 수행. 사실이 다르면 host 는 무시 가능)", file=sys.stderr)
+        print(tr(language_of(args), "cli.review_loop.msg28", args_run_id=args.run_id, result=result, reason=reason, count=len(la.rounds_of(root, args.run_id))), file=sys.stderr)
+    print(tr(language_of(args), "cli.review_loop.msg29"), file=sys.stderr)
     return 0
 
 
@@ -620,9 +656,13 @@ def _retro_links_by_run(vault, folder):
     return out
 
 
-def _dashboard_md(la, root, retro_links=None):
+def _dashboard_md(la, root, retro_links=None, language=None):
     """loop_audit → Obsidian 대시보드 마크다운(plain 테이블 — DataView 플러그인 무관 항상 가독).
-    run 별 1행: run_id·risk·rounds·found/accepted 합계·종료. 무결성 경고 섹션."""
+    run 별 1행: run_id·risk·rounds·found/accepted 합계·종료. 무결성 경고 섹션.
+
+    사용자가 vault 에서 읽는 산출물이라 본문 문장은 표시 언어를 따른다. 반대로 표 구조 marker,
+    감사 레코드의 필드명 열, `run_id`, `result/reason` 어휘는 언어와 무관하게 고정한다 — 같은
+    사실이 언어마다 다른 문자열로 남으면 두 언어로 쓴 노트를 나중에 대조할 수 없다."""
     retro_links = retro_links or {}
     rows = []
     for rid in la.runs(root):
@@ -632,7 +672,8 @@ def _dashboard_md(la, root, retro_links=None):
                      if r.get("event") == "loop_open" and r.get("run_id") == rid), "")
         f_tot = sum(int(r.get("found", 0) or 0) for r in rounds)
         a_tot = sum(int(r.get("accepted", 0) or 0) for r in rounds)
-        status = f"{close['result']}/{close['reason']}" if close else "진행중"
+        status = (f"{close['result']}/{close['reason']}" if close
+                  else tr(language, "cli.review_loop.dashboard_status_open"))
         iters = close["iterations"] if close else len(rounds)
         retro = ", ".join(retro_links.get(rid, [])) or "-"
         rows.append(f"| {rid} | {risk} | {len(rounds)} | {f_tot} | {a_tot} | {status} | {iters} | {retro} |")
@@ -642,15 +683,23 @@ def _dashboard_md(la, root, retro_links=None):
     # 섞인 개행(`\n## x`)이 H1 본문에 살아 대시보드가 주입 헤딩으로 깨진다.
     name = _project_name(_load_profile(root))
     title_suffix = f" — {_safe_title(name)}" if name else ""
-    body = [f"# SAGE Loop A 감사 대시보드{title_suffix}", "",
-            "> Phase 05 적대적 review-rework 루프 이력. `accepted` 합계 = 리뷰가 채운 host 의 체계적 누락.",
-            "> 정본 데이터: `.sage/loop_audit.jsonl`. 이 노트는 `sage review-loop show --vault` 또는 `loop_audit_dashboard: true` 상태의 close 로 갱신.", "",
-            "| run_id | risk | rounds | found(합) | accepted(합) | 종료 | iters | retro |",
+    # 열 개수는 코드가 고정한다 — 헤더 행 전체를 catalog 에 두면 번역하면서 열이 늘거나 줄어
+    # 구분자 행과 어긋난다. 사람이 읽는 열 이름만 번역하고 감사 필드명 열은 그대로 둔다.
+    header = ("| run_id | risk | rounds"
+              f" | {tr(language, 'cli.review_loop.dashboard_col_found')}"
+              f" | {tr(language, 'cli.review_loop.dashboard_col_accepted')}"
+              f" | {tr(language, 'cli.review_loop.dashboard_col_result')}"
+              " | iters | retro |")
+    body = [f"# {tr(language, 'cli.review_loop.dashboard_title')}{title_suffix}", "",
+            f"> {tr(language, 'cli.review_loop.dashboard_note_accepted')}",
+            f"> {tr(language, 'cli.review_loop.dashboard_note_source')}", "",
+            header,
             "|---|---|---:|---:|---:|---|---:|---|"]
-    body += rows or ["| (기록 없음) | | | | | | | |"]
+    body += rows or [f"| {tr(language, 'cli.review_loop.dashboard_no_records')} | | | | | | | |"]
     integ = la.integrity_issues(root)
     if integ:
-        body += ["", "## ⚠️ 무결성 경고", ""] + [f"- {i}" for i in integ]
+        body += ["", f"## ⚠️ {tr(language, 'cli.review_loop.dashboard_integrity_heading')}", ""]
+        body += [f"- {render_issue(language, i)}" for i in integ]
     return "\n".join(body) + "\n"
 
 
@@ -667,22 +716,25 @@ def _dashboard_filename(profile):
     return _note_filename(profile, "TECH", f"{name} loop audit")
 
 
-def _write_vault_dashboard(la, root, override):
+def _write_vault_dashboard(la, root, override, language=None):
     from sage.commands import _vault
     profile = _load_profile(root)
     vault, folder = _vault.vault_target(profile, override, root)
     if not vault:
-        print("  ℹ️  vault 비활성(knowledge_capture.vault_path 미설정, --vault 경로도 없음) → 대시보드 생략", file=sys.stderr)
+        print(tr(language, "cli.review_loop.msg30"), file=sys.stderr)
         return
     import datetime
+    # frontmatter 는 노트의 출처 기록이다 — 표시 언어를 따라 흔들리면 같은 산출물이 언어마다 다른
+    # provenance 를 갖고, 나중에 vault 를 훑어 생성기별로 모을 수 없다. 언어 중립으로 고정한다.
     fm = {"tags": ["sage", "loop-audit"], "updated": datetime.date.today().isoformat(),
-          "generated_by": "sage review-loop (close 자동 / show --vault)"}
+          "generated_by": "sage review-loop (close auto / show --vault)"}
     path = _vault.write_note(vault, folder, _dashboard_filename(profile), fm,
-                             _dashboard_md(la, root, _retro_links_by_run(vault, folder)))
-    print(f"  ✅ Obsidian 대시보드 작성: {path}", file=sys.stderr)
+                             _dashboard_md(la, root, _retro_links_by_run(vault, folder),
+                                           language=language))
+    print(tr(language, "cli.review_loop.msg31", path=path), file=sys.stderr)
 
 
-def _auto_write_vault_dashboard(la, root):
+def _auto_write_vault_dashboard(la, root, language=None):
     """profile opt-in 이면 close 직후 vault 대시보드를 갱신한다.
 
     `loop_audit_dashboard` 는 사람이 별도 `show --vault` 를 실행해야 하는 힌트가 아니라
@@ -695,6 +747,6 @@ def _auto_write_vault_dashboard(la, root):
     if kc.get("loop_audit_dashboard") is not True:
         return
     try:
-        _write_vault_dashboard(la, root, None)
+        _write_vault_dashboard(la, root, None, language)
     except Exception as e:
-        print(f"  ⚠️  Obsidian 대시보드 자동 갱신 실패: {type(e).__name__}: {e}", file=sys.stderr)
+        print(tr(language, "cli.review_loop.msg32", arg=type(e).__name__, e=e), file=sys.stderr)

@@ -1,3 +1,4 @@
+<!-- sage-doc-source: README.md sha256:19b8863e0df9d98773e5cb5a0e3ef82163482fabbf5327d6585234d8c193d7d3 -->
 # SAGE Documentation
 
 [한국어](README.md) | [Project README](../README.en.md)
@@ -12,6 +13,7 @@ Start with the document that matches your task.
 | User resolving installation or runtime errors | [Troubleshooting](troubleshooting.en.md) |
 | Contributor changing SAGE internals | [Architecture](ARCHITECTURE.en.md) |
 | Developer locating generated artifacts and deciding what to commit | [Artifacts](ARTIFACTS.en.md) |
+| Maintainer deciding whether a release is possible | [Release readiness](release-readiness.en.md) |
 
 ## Harness Specifications
 

@@ -18,13 +18,14 @@ import sys
 from pathlib import Path
 
 from sage.commands import validate as V
+from sage.i18n import language_of, tr
 
 
-def register(sub):
-    p = sub.add_parser("asset-check", help="프레임워크 자산 중 자동 통과 가능/사람 확인 필요를 나눕니다(구 sage review)")
+def register(sub, context):
+    p = sub.add_parser("asset-check", help=tr(context, "cli.asset_check.asset_check"))
     p.add_argument("--kind", choices=["hook", "agent", "skill", "mcp", "all"], default="all")
-    p.add_argument("--batch", action="store_true", help="auto 버킷을 1줄 요약")
-    p.add_argument("--gate", action="store_true", help="review 버킷 있으면 exit 1 (CI 게이트)")
+    p.add_argument("--batch", action="store_true", help=tr(context, "cli.asset_check.batch"))
+    p.add_argument("--gate", action="store_true", help=tr(context, "cli.asset_check.gate"))
     p.add_argument("--root", default=None)
     p.set_defaults(func=run)
 
@@ -44,31 +45,31 @@ def _render_current(entry):
     return "claude" in rh or "codex" in rh
 
 
-def auto_approve_decision(asset_id, validate_sev, entry):
+def auto_approve_decision(asset_id, validate_sev, entry, language=None):
     """auto|review 결정 + 사유. validate_sev 가 PASS 가 아니면 그 자체가 review 사유."""
     reasons = []
     if validate_sev != "PASS":
         reasons.append(f"validate={validate_sev}")
     if entry.get("unresolved"):
-        reasons.append(f"unresolved {len(entry['unresolved'])}건")
+        reasons.append(tr(language, "cli.asset_check.reason_unresolved", count=len(entry["unresolved"])))
     if entry.get("safety_degraded"):
         reasons.append("safety_degraded")
     if entry.get("risk"):
-        reasons.append(f"risk {len(entry['risk'])}건")
+        reasons.append(tr(language, "cli.asset_check.reason_risk", count=len(entry["risk"])))
     if not _render_current(entry):
-        reasons.append("render 미최신(stamp 누락)")
+        reasons.append(tr(language, "cli.asset_check.reason_render_stale"))
     return {"decision": "auto" if not reasons else "review", "reasons": reasons}
 
 
 def run(args):
     root = V._find_root(args.root)
     if not root:
-        print("[sage asset-check] TOOL ERROR: manifest 없음", file=sys.stderr)
+        print(tr(language_of(args), "cli.asset_check.msg01"), file=sys.stderr)
         return 2
     try:
         manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
     except Exception as e:
-        print(f"[sage asset-check] TOOL ERROR: manifest 파싱 실패: {e}", file=sys.stderr)
+        print(tr(language_of(args), "cli.asset_check.msg02", e=e), file=sys.stderr)
         return 2
 
     assets = manifest.get("assets", {})
@@ -105,21 +106,21 @@ def run(args):
                 sev = "FAIL"
         else:
             sev, _ = V._validate_interpretive(root, aid, entry, run_regression=False)
-        d = auto_approve_decision(aid, sev, entry)
+        d = auto_approve_decision(aid, sev, entry, language_of(args))
         (auto if d["decision"] == "auto" else review).append((aid, d["reasons"]))
 
     print(f"== sage asset-check ({args.kind}) — auto_approve_safe_default ==")
     if args.batch:
-        print(f"✅ auto-approved (batch): {len(auto)}건 — {', '.join(a for a, _ in auto) or '없음'}")
+        print(tr(language_of(args), "cli.asset_check.msg03", count=len(auto), items=', '.join(a for a, _ in auto) or tr(language_of(args), 'cli.common.none')))
     else:
-        print(f"✅ auto-approved: {len(auto)}건 (사람 확인 불필요)")
+        print(tr(language_of(args), "cli.asset_check.msg04", count=len(auto)))
         for aid, _ in auto:
             print(f"   - {aid}")
-    print(f"⚠️  review 필요: {len(review)}건 (사람 검토 예외)")
+    print(tr(language_of(args), "cli.asset_check.msg05", count=len(review)))
     for aid, reasons in review:
         print(f"   - {aid}: {', '.join(reasons)}")
 
     if args.gate and review:
-        print("---- GATE: review 버킷 존재 → exit 1 ----")
+        print(tr(language_of(args), "cli.asset_check.msg06"))
         return 1
     return 0

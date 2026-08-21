@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:985c6bfd051fa7aaa10b80799a72e3489db93be8c829219226755ef39b0b63e8 -->
+<!-- sage-doc-source: profile-reference.md sha256:3953b0f2f8166620de4a566db5b704fe7d5d8edd0f2a706777898f640e5f6598 -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -16,6 +16,20 @@ Generate converges the compiled profile to mode `0600`. A `0644` file produced b
 becomes owner-only on the next generation. In CI or containers where hooks run under another UID,
 run them under the same UID or arrange an explicit profile handoff; widening the file mode for
 cross-user sharing is not part of the supported contract.
+
+The local profile also owns the interface language.
+
+```yaml
+interface:
+  language: en      # absent means ko; only ko | en are accepted
+```
+
+It never reaches the shared profile, the compiled `project-profile.json`, a manifest, or the
+profile hash — a language preference behaves like a machine capability and stays local. For a
+single run, put the global `--lang` before the subcommand (`sage --lang en validate`).
+Resolution order is `--lang` → local profile → `ko`; hooks take no `--lang` and follow the
+local profile and the default only. An invalid value falls back to `ko` and `sage validate`
+reports it as a configuration failure, but no gate verdict or exit code changes.
 
 ## Minimal workflow
 
@@ -282,6 +296,7 @@ cycle and requirement ID; there is no silent pass.
 
 | Key | Default | Meaning |
 |---|---|---|
+| `pdca.cycle_binding_visibility` | `gated` | How far gate **pass** lines disclose the bound cycle stem. `gated` shows it only where a verdict line already exists (L2/L3 pass, WARN). `all` also emits a line on L1/L0 passes — turn it on to catch mis-binding by eye on long-lived branches, at the cost of one line per edit. The binding evidence itself is recorded in `.sage/override.jsonl` regardless of this setting |
 | `pdca.retro.report_gate_enforce` | `off` | Stop hook confirms after the fact that `sage retro --check` ran. `enforce` can BLOCK at most once per session |
 | `pdca.writeback.depth_review_gate` | `off` | Stop hook confirms an L2/L3 write-back note self-declared a host self-review (`Depth-Self-Review: performed`) |
 | `conventions` | `[]` | Pointers to stack-specific convention docs: `[{ scope, stack, doc, file_globs }]` |

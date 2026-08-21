@@ -14,7 +14,7 @@
         "codex": "sha256:dfd1c978994ea5bd6da91b39ae7940d8daebb69b81123ebf19d153f668249687"
       },
       "risk": [],
-      "spec_hash": "sha256:827b565e3fbd165d9ff21a98b3bcac8d09e69070145cb70632b06809b6177a92",
+      "spec_hash": "sha256:7ec904d3c79d6cb7517df5645b66537bedce61629e034cec3959979e8ae7f9b8",
       "test": "scripts/sage_harness/hooks/tests/test_capture_declared_risk.py",
       "unresolved": []
     },
@@ -32,7 +32,7 @@
         "codex": "sha256:eef506545ad80aa90064de2471fce4350ce5454730d2473d988a6d1593b995de"
       },
       "risk": [],
-      "spec_hash": "sha256:abad0d2e9e1285b906a590a390b6cca79e91ba13fd70a23334db2b130abf89d0",
+      "spec_hash": "sha256:783d10b73ddcb7db77e39b26c512680526cc90989cf5530068f8a097f7aaf59e",
       "test": "scripts/sage_harness/hooks/tests/test_generated_artifact_write_guard.py",
       "unresolved": []
     },
@@ -50,7 +50,7 @@
         "codex": "sha256:b37349688572c5e6925b32689517e3ecd4c714b2b59dba890f1ffb980adb1ed9"
       },
       "risk": [],
-      "spec_hash": "sha256:9bcc616cb18a6dc4ad91646e1fdff815d2958822a8cd38b58d368a430367a718",
+      "spec_hash": "sha256:7433950d1a5dd4e1ee7dbee2ba07f52520cedea1c8a5066c5ef9247fea6fec08",
       "test": "scripts/sage_harness/hooks/tests/test_post_tool_logger.py",
       "unresolved": []
     },
@@ -60,7 +60,7 @@
         "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
         "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
       },
-      "canonical_hash": "sha256:20c1e7f25a282bcd48e0b7f0a7b6c7a5169d66484de6264736d401049ef8446c",
+      "canonical_hash": "sha256:9bb62d4caf9f6253c719014ef97f296a8ab3ac3c844b82ee48baf79747862791",
       "conformance": "PASS",
       "form": "core_adapter",
       "l3_review_strategy": "codex_feature_signal",
@@ -70,7 +70,7 @@
       },
       "risk": [],
       "safety_degraded": false,
-      "spec_hash": "sha256:253d3c475da80da53cb7d9707cbc577abf511631fdcc36617e5a05233731ac64",
+      "spec_hash": "sha256:c3eef0ee455cf562fca7d7ef8d59c273589d4de1c1d982e77290d0503c1d12fa",
       "test": "scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py",
       "unresolved": []
     },
@@ -88,7 +88,7 @@
         "codex": "sha256:90a0205df56a47207e6e610a4a7f32dea87b2a42d893eef4ec59529f65e1747a"
       },
       "risk": [],
-      "spec_hash": "sha256:efefbbe4a9eb20485cc5bc48c5d09dd6c697b31153c86714d202a43425acfa44",
+      "spec_hash": "sha256:8d92c5cb8be382af34fd620237610b9cd03257c7862f416eb12328c59ef7b04b",
       "test": "scripts/sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py",
       "unresolved": []
     },
@@ -106,7 +106,7 @@
         "codex": "sha256:080cb526553aa3ee9e6383e0664e5f2a35cdffdde426b7b6f0aa9936c4615527"
       },
       "risk": [],
-      "spec_hash": "sha256:8f2a83ca8956f23050fafd12261745a0dacbb1c18c6505f2e6efe0f197c0e113",
+      "spec_hash": "sha256:0cfa2620bf411be651d420d9b9a4ec6d809b13566060e99b6e4effb58800f171",
       "unresolved": []
     },
     "hooks/stop-compliance-report": {
@@ -123,16 +123,16 @@
         "codex": "sha256:1e3437fb58f182aa65a1c36669f008db6c61d9ca92a3b9b6c8d1cb0e4d4e79b1"
       },
       "risk": [],
-      "spec_hash": "sha256:7c5c1d5546c0631e123cee48ae2a01699900f9038cc43a1675f9b30ddd698e76",
+      "spec_hash": "sha256:19d50f02fed0c4411ae2fadc3e035359516608b2846c16e170158456c47c6375",
       "test": "scripts/sage_harness/hooks/tests/test_stop_compliance_report.py",
       "unresolved": []
     }
   },
   "generator_version": "0.9.84",
   "hook_runtime_hash": {
-    "claude": "sha256:b4bffc51b3ca3d0b8cc5a62b3490af09a4c7935936d177cb4e11336edf0797a7",
-    "codex": "sha256:016abcf7122b1c23950365e17e5d7161b07347fb83aad725ee6ddeab11624f53",
-    "shared": "sha256:de734f00806aa2ccc59655d0dfa230f07b1c58a12ee96d2c8c295837c11a928f"
+    "claude": "sha256:2d0318a75804defae4ac5b53e3ea9e4fe5766c21a937c1c091f45bb780be8254",
+    "codex": "sha256:3519535630dd81a83cbe191b51fa3668d09ed3a9c46842e5948145a3737c941c",
+    "shared": "sha256:f3a9a29b46b7f08092a4223be1427df649b3dea5a51f12167ba38e8b98a42b5d"
   },
   "host_runtime": "claude",
   "sage_version": "0.1.0",

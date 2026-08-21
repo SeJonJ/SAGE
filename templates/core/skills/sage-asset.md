@@ -18,6 +18,12 @@ assets), then hand off to `sage generate` to extract and register.
   "자산 추가", "에이전트/스킬/훅 추가·수정"
 
 ## procedure
+0. Resolve the conversation language once: an explicit `--lang ko|en` on this skill's
+   invocation, then `interface.language` in `sage/project-profile.local.yaml`, then `ko`.
+   Every question, proposal, progress note, warning and summary uses it; machine values
+   and Phase 00–06 `Document-Language:` prose do not. Document prose includes section headings
+   and list labels, except `## 5. Done Criteria` and `## 6. Done Criteria Revision Log`, which a
+   parser reads by their exact string. See `docs/agent/language-policy.md`.
 1. Read context: profile (confirm bootstrapped), AGENT_GUIDE, bootstrap-authoring §5,
    existing assets under docs/sage_harness/.
 2. Identify operation (add | modify) and kind (hook | agent | skill) and id.
@@ -35,7 +41,7 @@ assets), then hand off to `sage generate` to extract and register.
 ## advisory_scope
 - role_boundary: does not edit generated artifacts to change assets (edit spec/render
   then regenerate); does not bypass validate FAIL; does not author single-runtime
-  interpretive assets (codex 함께 — both renders required)
+  interpretive assets (codex included — both renders required)
 - hook contract: lowercase kebab id, structured frontmatter bindings for both hosts,
   `CONTRACT_VERSION` in the core, and first registration with `--target both`
 - uses: sage generate / sage validate / sage doctor, bootstrap-authoring.md

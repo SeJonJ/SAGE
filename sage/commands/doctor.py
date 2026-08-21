@@ -12,19 +12,21 @@ import shutil
 import sys
 from pathlib import Path
 
-from sage.runtime_hosts import (active_host, configured_hosts, opposite_host, profile_issues,
+from sage.runtime_hosts import (active_host, configured_hosts, profile_issues,
                                 receipt_hosts, receipt_issues)
 from sage.hook_launcher import resolve_sage_hook
 from sage.profile_layers import load_profile_layers, local_profile_git_issues
+from sage.i18n import language_of, render_issue, tr
 
 
-def register(sub):
-    p = sub.add_parser("doctor", help="SAGE 실행에 필요한 도구와 리뷰 설정을 점검합니다")
-    p.add_argument("--profile", default=None, help="project-profile.yaml 경로 (없으면 templates 기본)")
+def register(sub, context):
+    p = sub.add_parser("doctor", help=tr(context, "cli.doctor.doctor"))
+    p.add_argument("--profile", default=None, help=tr(context, "cli.doctor.profile"))
     p.set_defaults(func=run)
 
 
-def reviewer_resolution(profile: dict, caps: dict, current: str | None = None) -> dict:
+def reviewer_resolution(profile: dict, caps: dict, current: str | None = None,
+                        language=None) -> dict:
     """Phase 05 reviewer 해석 (순수). caps={'codex':bool,'claude':bool} 는 doctor 가 주입(peer CLI 가용성).
 
     7차 배치2: gstack 의존 폐기. cross-model 리뷰는 SAGE 가 반대 런타임 CLI 를 직접 호출하므로
@@ -50,15 +52,16 @@ def reviewer_resolution(profile: dict, caps: dict, current: str | None = None) -
 
     if not cross:
         return res("clean_context_same_runtime", host, False, False, None,
-                   "cross_model off — 의도적 same-runtime (degraded 아님)")
+                   tr(language, "cli.doctor.notice_same_runtime_intentional"))
     from sage.model_routing import reviewer_selection
     peer, _ = reviewer_selection(profile, current)
     if caps.get(peer):
         invoker = "codex exec" if peer == "codex" else "claude -p"
         return res("opposite_runtime", peer, False, False, None,
-                   f"{host}-host → {peer} via `{invoker}` (SAGE 직접 호출, gstack 불요)")
+                   tr(language, "cli.doctor.notice_opposite_runtime", host=host, peer=peer,
+                      invoker=invoker))
     return res("blocked", peer, False, True, f"{peer}_cli_unavailable",
-               f"cross_model on 이나 {peer} CLI 미가용 → Phase 05 BLOCKED")
+               tr(language, "cli.doctor.notice_peer_cli_unavailable", peer=peer))
 
 
 _DEFAULT_PROFILE = {"runtime": {"host": "claude"}, "options": {"cross_model": False}}
@@ -75,11 +78,12 @@ def _load_profile_context(path):
     except ImportError:
         return None, "missing_pyyaml", None
     layers = load_profile_layers(path)
-    shared_load_error = next((message for severity, message in layers.issues
-                              if severity == "FAIL" and message.startswith("shared profile YAML 파싱 오류")), None)
+    shared_load_error = next(
+        (message for severity, message in layers.issues
+         if severity == "FAIL" and getattr(message, "code", None) == "layers.yaml_parse_error"
+         and message.arguments.get("label") == "shared"), None)
     if shared_load_error:
-        error_name = shared_load_error.split("오류(", 1)[-1].split(")", 1)[0]
-        return None, f"parse_error:{error_name}", layers
+        return None, f"parse_error:{shared_load_error.arguments['kind']}", layers
     if layers.has_fail:
         return layers.effective, "layer_error", layers
     return layers.effective, "ok", layers
@@ -99,7 +103,7 @@ def _sha256_file(path):
     return h.hexdigest()
 
 
-def _check_codex_skill_deployment(prof_path, profile):
+def _check_codex_skill_deployment(prof_path, profile, language=None):
     """manifest-추적 skill 의 codex 전역 배포 상태 점검(Part C). 환경 부수상태라 WARN 만(FAIL 아님).
 
     repo .codex/skills/<id>/SKILL.md(정본) 대비 $CODEX_HOME/skills/<prefix>-<id>/SKILL.md(배포 캐시):
@@ -130,32 +134,32 @@ def _check_codex_skill_deployment(prof_path, profile):
     from sage.commands.install import _codex_skills_root
     prefix = str((profile.get("project") or {}).get("prefix") or "").strip()
     g_root = _codex_skills_root()
-    print("## codex skill 전역 배포 (Part C — repo 정본 대비 발견용 캐시)")
+    print(tr(language, 'cli.doctor.msg01'))
     if not prefix:
         # generate --deploy-codex 가 prefix 없이는 fail-closed(전역 네임스페이스 충돌 방지) → doctor 도 bare-id 점검 금지.
-        print("  ⚠️  project.prefix 미설정 → codex 전역 배포 불가(네임스페이스 충돌 방지). profile 의 project.prefix 설정 필요.")
+        print(tr(language, 'cli.doctor.msg02'))
         return
     import re as _re
     if not _re.match(r"^[A-Za-z0-9_-]+$", prefix):
         # generate 와 동일 검증(경로 탈출 방지) — 안전치 않은 prefix 는 점검 불가.
-        print(f"  ⚠️  project.prefix 가 안전하지 않음('{prefix}') — [A-Za-z0-9_-] 만 허용. 점검 생략.")
+        print(tr(language, 'cli.doctor.msg03', prefix=prefix))
         return
     for sid in sorted(skill_ids):
         if not _re.match(r"^[A-Za-z0-9_-]+$", sid):
-            print(f"  ⚠️  {sid}: 안전하지 않은 skill id — 점검 생략(경로 탈출 방지).")
+            print(tr(language, 'cli.doctor.msg04', sid=sid))
             continue
         canon = os.path.join(root, ".codex", "skills", sid, "SKILL.md")
         if not os.path.exists(canon):
-            print(f"  ℹ️  {sid}: repo .codex/skills 정본 없음 → 전역 배포 N/A (claude 전용 skill?)")
+            print(tr(language, 'cli.doctor.msg05', sid=sid))
             continue
         gid = f"{prefix}-{sid}"
         gdst = os.path.join(g_root, gid, "SKILL.md")
         if not os.path.exists(gdst):
-            print(f"  ⚠️  {sid}: codex 전역 미배포 ({gdst}) → `sage generate --kind skill --id {sid} --deploy-codex`")
+            print(tr(language, 'cli.doctor.msg06', sid=sid, gdst=gdst, sid2=sid))
         elif _sha256_file(gdst) != _sha256_file(canon):
-            print(f"  ⚠️  {sid}: 전역 캐시가 정본과 다름(stale) → `sage generate --kind skill --id {sid} --deploy-codex` 로 갱신")
+            print(tr(language, 'cli.doctor.msg07', sid=sid, sid2=sid))
         else:
-            print(f"  ✅ {sid}: 전역 배포 최신 (${gid})")
+            print(tr(language, 'cli.doctor.msg08', sid=sid, gid=gid))
 
 
 def _project_root_from_profile(prof_path):
@@ -167,32 +171,34 @@ def _project_root_from_profile(prof_path):
     return os.path.dirname(os.path.dirname(norm))
 
 
-def _emit_core_drift(kind, id_, status, dst, stale, missing):
+def _emit_core_drift(kind, id_, status, dst, stale, missing, language=None):
     if status == "ok":
-        print(f"  ✅ [{kind}] {id_}: 최신 ({dst})")
+        print(tr(language, 'cli.doctor.msg09', kind=kind, id_=id_, dst=dst))
     elif status == "missing":
-        print(f"  ⚠️  [{kind}] {id_}: 미설치 ({dst})")
+        print(tr(language, 'cli.doctor.msg10', kind=kind, id_=id_, dst=dst))
         missing.append((kind, id_))
     elif status == "stale":
-        print(f"  ⚠️  [{kind}] {id_}: 현재 SAGE 번들과 다름(stale) ({dst})")
+        print(tr(language, 'cli.doctor.msg11', kind=kind, id_=id_, dst=dst))
         stale.append((kind, id_))
     elif status == "source_missing":
-        print(f"  ⚠️  [{kind}] {id_}: 번들 CORE 소스 없음 → 설치 패키지 손상 가능")
+        print(tr(language, 'cli.doctor.msg12', kind=kind, id_=id_))
     else:
-        print(f"  ⚠️  [{kind}] {id_}: 점검 실패 ({dst})")
+        # status == "error" 면 dst 자리에는 경로가 아니라 진단이 온다 — 렌더를 거쳐야 문장이 된다.
+        print(tr(language, 'cli.doctor.msg13', kind=kind, id_=id_,
+                 dst=render_issue(language, dst)))
 
 
-def _report_codex_core_skill_scope(root, manifest):
+def _report_codex_core_skill_scope(root, manifest, language=None):
     """Report live Codex CORE skill copies without claiming undocumented host precedence."""
     print("## Codex CORE skill scope")
     if root is None or "codex" not in receipt_hosts(manifest, "claude"):
-        print("  N/A (Codex installed surface 없음 또는 프로젝트 루트 미상)")
+        print(tr(language, 'cli.doctor.msg14'))
         return
     from sage.commands import install
     receipts = manifest.get("core_skill_receipts") if isinstance(manifest, dict) else None
     receipt = receipts.get("codex") if isinstance(receipts, dict) else None
     if not install._valid_core_skill_receipt(receipt):
-        print("  ⚠️  scope receipt 없음/손상 — 우선순위를 추정하지 않음; 명시적 --skill-scope로 재설치")
+        print(tr(language, 'cli.doctor.msg15'))
         selected = None
     else:
         selected = receipt["scope"]
@@ -216,18 +222,18 @@ def _report_codex_core_skill_scope(root, manifest):
                 if name != selected and path:
                     cleanup_paths.add(os.path.dirname(path))
     if not duplicates:
-        print("  ✅ 중복 CORE skill discovery surface 없음")
+        print(tr(language, 'cli.doctor.msg16'))
     else:
-        print(f"  ⚠️  duplicate {len(duplicates)}종; manifest scope는 의도일 뿐 실제 host precedence를 증명하지 않음")
+        print(tr(language, 'cli.doctor.msg17', count=len(duplicates)))
         if conflicts:
             print("  ❌ version/content conflict: " + ", ".join(f"${sid}" for sid in conflicts))
-        print("  정리: 선택 scope를 확인한 뒤 아래 반대 사본 디렉터리를 제거하고 `sage doctor` 재실행")
+        print(tr(language, 'cli.doctor.msg18'))
         for path in sorted(cleanup_paths):
             print(f"    - {path}")
-        print("  SAGE는 공유 home/저장소 사본을 자동 삭제하지 않습니다.")
+        print(tr(language, 'cli.doctor.msg19'))
 
 
-def _check_core_render_drift(profile, prof_path):
+def _check_core_render_drift(profile, prof_path, language=None):
     """Hand-shipped CORE renders (CORE skills 7종 + roster agents 6종) are not
     manifest-tracked. A stale copy silently runs outdated profile/review-loop rules, and
     `sage install --force` overwrites local edits without warning. Diagnose stale/missing
@@ -249,11 +255,10 @@ def _check_core_render_drift(profile, prof_path):
         except Exception:
             manifest = None
     hosts = receipt_hosts(manifest, host)
-    desired_hosts = configured_hosts(profile)
-    print("## CORE 렌더 drift 점검 (스킬 + 로스터 에이전트)")
-    print(f"  installed_hosts={hosts} · 기준: `sage install` hand-shipped CORE 렌더")
+    print(tr(language, 'cli.doctor.msg20'))
+    print(tr(language, 'cli.doctor.msg21', hosts=hosts))
     for _, message in receipt_issues(profile, manifest):
-        print(f"  ⚠️  {message} — 누락 host는 `sage install --host <host>`로 설치하고 profile/receipt를 재대조")
+        print(tr(language, 'cli.doctor.msg22', message=message))
     stale, missing = [], []
 
     for installed_host in hosts:
@@ -266,7 +271,7 @@ def _check_core_render_drift(profile, prof_path):
                 if scope == "disabled":
                     continue
                 if scope not in ("global", "project-local"):
-                    print(f"  ⚠️  [skill] {sid}: scope receipt 없음 — 위치 추정 생략")
+                    print(tr(language, 'cli.doctor.msg23', sid=sid))
                     continue
                 status, dst = install.codex_core_skill_status(sid, dest=root, scope=scope)
             elif root is not None:
@@ -275,12 +280,12 @@ def _check_core_render_drift(profile, prof_path):
                     os.path.join(root, ".claude", "skills", sid, "SKILL.md"))
             else:
                 continue
-            _emit_core_drift("skill", sid, status, dst, stale, missing)
+            _emit_core_drift("skill", sid, status, dst, stale, missing, language)
 
     # install 이 쓰기 전에 거부하는 것과 **같은 검사**. 여기서 잡히면 렌더 대조는 의미가 없다.
     invalid = [m for sev, m in install.team_runtime_issues(profile) if sev == "FAIL"]
     for msg in invalid:
-        print(f"  ❌ [agent] {msg}")
+        print(f"  ❌ [agent] {render_issue(language, msg)}")
 
     if root is not None and not invalid:
         for installed_host in hosts:
@@ -290,35 +295,32 @@ def _check_core_render_drift(profile, prof_path):
                 status, dst = install.core_render_status(
                     install._core_agent_source(aid),
                     os.path.join(root, agent_dir, "agents", f"{aid}.md"), overrides)
-                _emit_core_drift("agent", aid, status, dst, stale, missing)
+                _emit_core_drift("agent", aid, status, dst, stale, missing, language)
     elif root is None:
-        print("  ℹ️  프로젝트 루트 미상(templates 기본 profile) → 로스터 에이전트 점검 생략.")
+        print(tr(language, 'cli.doctor.msg24'))
 
     # 오버레이 물리화 drift 표면화(진단용). 권위 게이트는 `sage validate`(exit 1) — 여기선 가시성만 제공.
     if root is not None:
-        import json as _json
         from sage import overlay_materialize as _mat
-        mpath = os.path.join(root, "docs", "sage_harness", ".manifest.json")
         _mani = manifest
         cr = _mani.get("core_renders") if isinstance(_mani, dict) else None
         if cr:
             for installed_host in hosts:
                 ov = _mat.check(root, installed_host, cr)
                 if ov:
-                    print(f"  [{installed_host}] 오버레이 물리화 drift "
-                          "(→ `sage sync-overlays` → `sage validate --strict`):")
+                    print(tr(language, 'cli.doctor.msg25', installed_host=installed_host))
                     for sev, key, msg in ov:
-                        print(f"    {'❌' if sev == 'FAIL' else '🕒'} {sev} [{key}] {msg}")
+                        print(f"    {'❌' if sev == 'FAIL' else '🕒'} {sev} [{key}] "
+                              f"{render_issue(language, msg)}")
         elif isinstance(_mani, dict) and "core_renders" not in _mani:
-            print("  ℹ️  overlay 물리화 앵커 없음 → `sage install --force` 로 생성 권장.")
+            print(tr(language, 'cli.doctor.msg26'))
 
     if invalid:
         # 이 profile 로는 install 이 거부한다 → `--force` 를 권하면 유저가 헛돈다. stale/missing 안내는
         # profile 을 고치고 재진단한 뒤에만 의미가 있으므로 여기서 멈춘다.
-        print(f"  ❌ profile 오류 {len(invalid)}건 → sage/project-profile.yaml 수정 → `sage validate` → "
-              f"`sage doctor` 재실행")
+        print(tr(language, 'cli.doctor.msg27', count=len(invalid)))
         if stale or missing:
-            print(f"      (렌더 drift {len(stale) + len(missing)}건도 있으나 profile 을 고친 뒤 다시 진단하세요)")
+            print(tr(language, 'cli.doctor.msg28', count=len(stale) + len(missing)))
         return 1
     if stale or missing:
         repair_host = hosts[0] if len(hosts) == 1 else "<host>"
@@ -331,12 +333,12 @@ def _check_core_render_drift(profile, prof_path):
         scope_arg = (f" --skill-scope {repair_scope}"
                      if repair_scope in ("global", "project-local") else "")
         if stale:
-            print(f"  ⚠️  갱신 필요 {len(stale)}건 → `sage install --host {repair_host}{scope_arg} --force`")
+            print(tr(language, 'cli.doctor.msg29', count=len(stale), repair_host=repair_host, scope_arg=scope_arg))
         if missing:
-            print(f"  ⚠️  미설치 {len(missing)}건 → `sage install --host {repair_host}{scope_arg} --force`")
-        print("      (eligible non-gate CORE worker만 sage/asset_overrides/** 로 커스터마이즈할 수 있습니다 — /sage-asset-override.)")
+            print(tr(language, 'cli.doctor.msg30', count=len(missing), repair_host=repair_host, scope_arg=scope_arg))
+        print(tr(language, 'cli.doctor.msg31'))
     else:
-        print("  ✅ 모든 CORE 렌더 최신")
+        print(tr(language, 'cli.doctor.msg32'))
 
     if root is not None:
         print("## critical-domain protocol pointers")
@@ -345,7 +347,7 @@ def _check_core_render_drift(profile, prof_path):
             if pointer and os.path.isfile(os.path.join(root, pointer)):
                 print(f"  ✅ {domain.get('id')}: {pointer}")
             else:
-                print(f"  ⚠️  {domain.get('id')}: protocol pointer 없음 ({pointer or 'unset'})")
+                print(tr(language, 'cli.doctor.msg33', domain_get=domain.get('id'), arg=pointer or 'unset'))
     return 0
 
 
@@ -379,7 +381,7 @@ def _discover_profile(start=None):
         cur = parent
 
 
-def _report_model_routing(profile, current=None):
+def _report_model_routing(profile, current=None, language=None):
     """Compare explicit profile model selections with read-only local catalogs."""
     from sage.model_catalog import discover
     from sage.model_routing import catalog_status, profile_issues as routing_issues, reviewer_selection
@@ -410,10 +412,11 @@ def _report_model_routing(profile, current=None):
         if model:
             selected.append(("cross-reviewer", host, model))
         elif dropped:
-            print(f"  cross-reviewer : {host}/(peer CLI default) — {dropped}")
+            print(f"  cross-reviewer : {host}/(peer CLI default) — "
+                  f"{render_issue(language, dropped)}")
     if not selected:
         if not dropped:
-            print("  (명시적 runtime model 선택 없음 — host CLI defaults)")
+            print(tr(language, 'cli.doctor.msg34'))
         return
 
     catalogs = {host: discover(host) for host in {host for _, host, _ in selected}}
@@ -425,7 +428,7 @@ def _report_model_routing(profile, current=None):
               f" stale={catalog.get('stale')}")
 
 
-def _report_version_contract(profile, manifest):
+def _report_version_contract(profile, manifest, language=None):
     from sage import __version__
     from sage.version_contract import version_axes, version_contract_issues
 
@@ -438,15 +441,17 @@ def _report_version_contract(profile, manifest):
     failed = False
     for issue in version_contract_issues(profile, manifest, __version__):
         mark = "❌" if issue.severity == "FAIL" else ("⚠️ " if issue.severity == "WARN" else "ℹ️ ")
-        print(f"  {mark} {issue.severity} [{issue.axis}] {issue.message}")
+        print(f"  {mark} {issue.severity} [{issue.axis}] "
+              f"{render_issue(language, issue.message)}")
         if issue.remediation:
-            print(f"      → `{issue.remediation}`")
+            print(f"      → `{render_issue(language, issue.remediation)}`")
         failed = failed or issue.severity == "FAIL"
     return failed
 
 
 def run(args):
     from sage import _resources
+    language = language_of(args)
     prof_path = (args.profile or _discover_profile()
                  or os.path.join(_resources.templates_dir(), "project-profile.yaml"))
     profile, status, layers = _load_profile_context(prof_path)
@@ -456,22 +461,22 @@ def run(args):
     if status == "ok":
         pass  # profile 정상 로드
     elif status == "missing_file":
-        print(f"  ℹ️  profile 없음 ({prof_path}) — 기본값 가정 (sage install 후 값 채움)")
+        print(tr(language_of(args), 'cli.doctor.msg35', prof_path=prof_path))
         profile = dict(_DEFAULT_PROFILE)
     elif status == "missing_pyyaml":
-        print(f"  ⚠️  WARN pyyaml 미설치 → profile 검사 불가, 기본값 가정. `pip install pyyaml` (선언 의존성)")
+        print(tr(language_of(args), 'cli.doctor.msg36'))
         profile = dict(_DEFAULT_PROFILE)
     elif status.startswith("parse_error"):
         rc = 1  # profile 이 존재하나 깨짐 = 실제 오류(설정이 조용히 무시되는 것 방지)
-        print(f"  ❌ FAIL profile YAML 파싱 오류({status.split(':', 1)[1]}): {prof_path}")
-        print(f"        → 선언한 설정이 무시됩니다. YAML 수정 필요.")
+        print(tr(language_of(args), 'cli.doctor.msg37', status_split=status.split(':', 1)[1], prof_path=prof_path))
+        print(tr(language_of(args), 'cli.doctor.msg38'))
         profile = dict(_DEFAULT_PROFILE)
     elif status == "layer_error":
         rc = 1
-        print("  ❌ FAIL shared/local profile 계층 오류")
+        print(tr(language_of(args), 'cli.doctor.msg39'))
         for severity, message in layers.issues:
             if severity in ("FAIL", "WARN"):
-                print(f"        {severity}: {message}")
+                print(f"        {severity}: {render_issue(language_of(args), message)}")
 
     if layers is not None:
         local_state = "loaded" if layers.local is not None else "missing (legacy/default behavior)"
@@ -479,25 +484,23 @@ def run(args):
         root = _project_root_from_profile(prof_path)
         if root is not None:
             for severity, message in local_profile_git_issues(root, layers.local_path):
-                print(f"  {'⚠️ ' if severity == 'WARN' else 'ℹ️ '} {severity} {message}")
+                print(f"  {'⚠️ ' if severity == 'WARN' else 'ℹ️ '} {severity} "
+                      f"{render_issue(language_of(args), message)}")
 
     # 실행 환경: generate 가 등록한 command와 같은 launcher 후보를 점검한다.
     sage_hook, sage_hook_source = resolve_sage_hook()
     bash_path = shutil.which("bash")
-    print("## 실행 환경")
+    print(tr(language_of(args), 'cli.doctor.msg40'))
     print(f"  OS       : {platform.system()} ({os.name})")
     print(f"  python   : {platform.python_version()} (sys.executable={sys.executable})")
     print(f"  sage-hook: {sage_hook or 'NOT FOUND'}"
-          + (f" (source={sage_hook_source})" if sage_hook else
-             "  ⚠️  hook 실행 진입점을 찾지 못함 → 등록돼도 hook 이 안 돎(게이트 무력화). "
-             "`pipx install sage-harness`(또는 `pip install -e .`)로 재설치"
-             + ("하거나 SAGE_HOOK_BIN을 지정." if os.name != "nt" else ".")))
+          + (f" (source={sage_hook_source})" if sage_hook else tr(
+             language, "cli.doctor.no_hook_entry_windows" if os.name == "nt"
+             else "cli.doctor.no_hook_entry_posix")))
     print(f"  bash     : {bash_path or 'NOT FOUND'}"
-          + ("" if bash_path else "  ℹ️  선택적 개발자 스크립트(scripts/verify-changes.sh) 실행에만 필요"
-             " (설치 hook은 Python sage-hook 경로)."))
+          + ("" if bash_path else tr(language, "cli.doctor.bash_optional_full")))
     if os.name == "nt" or platform.system() == "Windows":
-        print("  ✅ Windows 네이티브: 설치 hook 7종은 sage-hook으로 실행되며 bash가 필요하지 않습니다. "
-              "선택적 `.sh` 개발자 회귀 테스트만 SAGE_BASH로 Git Bash를 명시할 수 있습니다.")
+        print(tr(language_of(args), 'cli.doctor.msg41'))
 
     # 옵션 의존성
     caps_prof = profile.get("capabilities", {}) or {}
@@ -516,26 +519,27 @@ def run(args):
     peer_avail = codex_avail if peer == "codex" else claude_avail
     _kc = profile.get("knowledge_capture")
     vault = _kc.get("vault_path", "") if isinstance(_kc, dict) else ""   # 비-dict kc 방어(codex A)
-    print("## 옵션 의존성")
+    print(tr(language_of(args), 'cli.doctor.msg42'))
     desired_hosts = configured_hosts(profile)
-    print(f"  active_host : {host}" + ("" if detected else " (env 판별 불가 — 프로필 기준)"))
-    print(f"  desired_hosts: {desired_hosts} (동시 실행/자동 handoff 없음)")
+    print(f"  active_host : {host}" + ("" if detected else tr(language_of(args), 'cli.doctor.msg43')))
+    print(tr(language_of(args), 'cli.doctor.msg44', desired_hosts=desired_hosts))
     for note in host_detection_notes(profile, detected):
-        print(f"  ⚠️  WARN {note}")
+        print(f"  ⚠️  WARN {render_issue(language_of(args), note)}")
     for severity, message in profile_issues(profile):
         if severity in ("FAIL", "WARN"):
-            print(f"  {'❌' if severity == 'FAIL' else '⚠️ '} {severity} {message}")
+            print(f"  {'❌' if severity == 'FAIL' else '⚠️ '} {severity} "
+                  f"{render_issue(language_of(args), message)}")
     from sage.commands.review import effort_issue, resolve_effort   # review→doctor import 순환 회피(함수 지역)
     _eff, _set = resolve_effort(profile)   # `or` 로 판정하면 effort: false/0 을 "기본값" 이라 거짓 보고한다
     _issue = effort_issue(peer, _eff) if _set is not None else None
-    _note = " — 기본값" if _set is None else (f" — ❌ {_issue}" if _issue else "")
+    _note = f" — {tr(language, 'cli.doctor.note_default')}" if _set is None \
+        else (f" — ❌ {render_issue(language, _issue)}" if _issue else "")
     print(f"  cross_model : {opts.get('cross_model', False)} (peer={peer}, effort={_eff!r}{_note})")
     _invoker = "codex exec" if peer == "codex" else "claude -p"
-    print(f"  peer CLI    : {peer} {'available' if peer_avail else 'unavailable'} "
-          f"(PATH which {peer} | capabilities.{peer}) — cross-model 시 `{_invoker}` 직접 호출")
-    print(f"  codegraph   : {opts.get('codegraph', 'optional')} (MCP 필요 — 미연결 시 rg/read degrade)")
-    print(f"  obsidian    : vault_path={'set' if vault else 'empty → 기능 OFF(N/A)'}")
-    _report_model_routing(profile, detected)
+    print(tr(language_of(args), 'cli.doctor.msg45', peer=peer, arg='available' if peer_avail else 'unavailable', peer2=peer, peer3=peer, invoker=_invoker))
+    print(tr(language_of(args), 'cli.doctor.msg46', opts_get=opts.get('codegraph', 'optional')))
+    print(f"  obsidian    : vault_path={'set' if vault else tr(language_of(args), 'cli.doctor.msg47')}")
+    _report_model_routing(profile, detected, language)
 
     # codex skill 전역 배포 점검(Part C) — manifest-추적 프로젝트 skill 이 codex 전역에 배포됐는지.
     #   정본 = repo .codex/skills/<id>/SKILL.md (manifest 추적), 전역 = $CODEX_HOME/skills/<prefix>-<id> (발견용 캐시).
@@ -548,17 +552,18 @@ def run(args):
             manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
         except Exception:
             manifest = None
-    if _report_version_contract(profile, manifest):
+    if _report_version_contract(profile, manifest, language):
         rc = 1
-    _report_codex_core_skill_scope(root, manifest)
-    if _check_core_render_drift(profile, prof_path):
+    _report_codex_core_skill_scope(root, manifest, language)
+    if _check_core_render_drift(profile, prof_path, language):
         rc = 1   # 에이전트 frontmatter 로 주입될 값이 무효 = 설정이 조용히 무시되는 것 방지
-    _check_codex_skill_deployment(prof_path, profile)
+    _check_codex_skill_deployment(prof_path, profile, language)
 
     # reviewer resolution — 위에서 판별한 같은 값을 쓴다(감지 중복·기준 분기 방지).
-    rr = reviewer_resolution(profile, {"codex": codex_avail, "claude": claude_avail}, detected)
+    rr = reviewer_resolution(profile, {"codex": codex_avail, "claude": claude_avail}, detected,
+                             language)
     print("## Phase 05 reviewer")
-    print(f"  detected: {detected or '(판별 불가 — 프로필 값 사용)'}")
+    print(f"  detected: {detected or tr(language_of(args), 'cli.doctor.msg48')}")
     print(f"  mode    : {rr['reviewer_mode']} (runtime={rr['reviewer_runtime']})")
     print(f"  notice  : {rr['notice']}")
     if rr["reviewer_mode"] == "blocked":
@@ -568,21 +573,21 @@ def run(args):
 
     # Loop A (review_loop) — 켜졌는지 + 설정 유효성(profile_validate 의 review_loop 발 이슈만 표면화).
     # 환경 진단이라 정보성. 강제(fail-closed)는 generate/validate 가 담당(같은 validate_profile 경유).
-    _report_review_loop(profile)
-    _report_acceptance_policy(profile, _project_root_from_profile(prof_path))
+    _report_review_loop(profile, language)
+    _report_acceptance_policy(profile, _project_root_from_profile(prof_path), language)
     # Loop C (retro gate) — 미완료로 종료된 사이클(retro --check 안 하고 06 완료)을 표면화(9-C v1).
-    _report_retro_gate(profile, _project_root_from_profile(prof_path))
+    _report_retro_gate(profile, _project_root_from_profile(prof_path), language)
     return rc
 
 
-def _report_retro_gate(profile, root):
+def _report_retro_gate(profile, root, language=None):
     """retro_audit.jsonl 에서 최신 상태가 missing 인 run(= retro --check 없이 06 완료된 사이클)을
     표면화한다. Stop 훅이 남긴 영구 기록의 사람용 소비 경로(9-C v1 유저 스코프). root 미상이면 skip."""
     mode = ((profile.get("pdca") or {}).get("retro") or {}).get("report_gate_enforce") or "off"
     print("## Loop C (retro gate)")
     print(f"  enforce : {mode}")
     if root is None:
-        print("  (프로젝트 루트 미상 → retro_audit 점검 생략)")
+        print(tr(language, 'cli.doctor.msg49'))
         return
     try:
         from sage import _resources
@@ -594,25 +599,24 @@ def _report_retro_gate(profile, root):
         # (codex 구현리뷰 3R·4R P1: 감사 불능이 '없음' 으로 둔갑 금지). status 로 분기.
         status, summary = retro_audit.audit_summary_status(root)
     except Exception:
-        print("  ⚠️  retro_audit 조회 불가 — 미완료 기록을 신뢰할 수 없음")
+        print(tr(language, 'cli.doctor.msg50'))
         return
     if status == "unreadable":
-        print(f"  ⚠️  retro_audit 신뢰 불가({retro_audit.audit_path(root)}: 파일 아님/읽기 실패) — 미완료 기록을 신뢰할 수 없음")
+        print(tr(language, 'cli.doctor.msg51', retro_audit_audit_path=retro_audit.audit_path(root)))
         return
     missing = sorted(rid for rid, s in summary.items() if s.get("state") == "missing")
     if not missing:
-        print("  ✅ 미완료(retro --check 누락) 사이클 없음")
+        print(tr(language, 'cli.doctor.msg52'))
         return
     for rid in missing:
-        print(f"  ⚠️  run {rid}: 06 완료됐으나 retro --check 미실행 → "
-              f"`sage retro --run-id {rid} --feature <stem>` 후 `sage retro --check <노트> --run-id {rid}`")
+        print(tr(language, 'cli.doctor.msg53', rid=rid, rid2=rid, rid3=rid))
 
 
-def _report_review_loop(profile):
+def _report_review_loop(profile, language=None):
     rl = ((profile.get("pdca") or {}).get("review_loop")) or {}
     print("## Loop A (Phase 05 review_loop)")
     if not rl:
-        print("  enabled : (미선언) — 단발 리뷰(sage-review 단일 패스). 적대적 루프 미사용")
+        print(tr(language, 'cli.doctor.msg54'))
         return
     enabled = rl.get("enabled") is True
     print(f"  enabled : {enabled} (lenses {len(rl.get('lenses') or [])}, refuters {rl.get('refuters')}, "
@@ -622,12 +626,13 @@ def _report_review_loop(profile):
         from sage.profile_validate import _review_loop_issues
         for sev, msg in _review_loop_issues(profile):
             if sev in ("FAIL", "WARN"):
-                print(f"  {'❌' if sev == 'FAIL' else '⚠️ '} {sev} {msg}")
+                print(f"  {'❌' if sev == 'FAIL' else '⚠️ '} {sev} "
+                      f"{render_issue(language, msg)}")
     except Exception:
         pass
 
 
-def _report_acceptance_policy(profile, root):
+def _report_acceptance_policy(profile, root, language=None):
     acceptance = ((profile.get("verification") or {}).get("acceptance") or {})
     print("## Acceptance report policy")
     if not isinstance(acceptance, dict) or acceptance.get("enabled") is not True:
@@ -636,8 +641,8 @@ def _report_acceptance_policy(profile, root):
     by_risk = acceptance.get("report_gate_by_risk")
     legacy = acceptance.get("report_gate_enforce")
     if legacy is not None:
-        behavior = "전 위험도 enforce 유지" if legacy == "enforce" else "L2 advisory/L3 enforce로 안전 승격"
-        print(f"  ⚠️  legacy report_gate_enforce={legacy} — {behavior}")
+        behavior_key = 'cli.doctor.msg57' if legacy == "enforce" else 'cli.doctor.msg58'
+        print(f"  ⚠️  legacy report_gate_enforce={legacy} — {tr(language, behavior_key)}")
         print("      migration: report_gate_by_risk: { L2: advisory, L3: enforce }")
     elif isinstance(by_risk, dict):
         print(f"  policy  : L2={by_risk.get('L2')} L3={by_risk.get('L3')} "
@@ -655,9 +660,9 @@ def _report_acceptance_policy(profile, root):
         aw, _, _ = _load_runtime_modules()
         summary = aw.audit_summary(root)
     except Exception as exc:
-        print(f"  ⚠️  waiver audit 조회 실패: {type(exc).__name__}: {exc}")
+        print(tr(language, 'cli.doctor.msg55', arg=type(exc).__name__, exc=exc))
         return
     if not summary["valid"]:
-        print("  ❌ waiver audit invalid — L3 waiver는 fail-closed: " + "; ".join(summary["issues"][:3]))
+        print(tr(language, 'cli.doctor.msg56') + "; ".join(summary["issues"][:3]))
     else:
         print(f"  active  : {len(summary['active'])} ({aw.audit_path(root)})")

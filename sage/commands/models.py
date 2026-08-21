@@ -2,13 +2,14 @@
 import json
 
 from sage.model_catalog import discover
+from sage.i18n import tr
 
 
-def register(sub):
-    parser = sub.add_parser("models", help="host 모델 후보와 검증 출처를 표시합니다")
+def register(sub, context):
+    parser = sub.add_parser("models", help=tr(context, "cli.models.models"))
     parser.add_argument("--host", choices=["claude", "codex"], required=True)
     parser.add_argument("--output", choices=["text", "json"], default="text")
-    parser.add_argument("--codex-home", default=None, help="Codex cache root (기본 CODEX_HOME 또는 ~/.codex)")
+    parser.add_argument("--codex-home", default=None, help=tr(context, "cli.models.codex_home"))
     parser.set_defaults(func=run)
 
 

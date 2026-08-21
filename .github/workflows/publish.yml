@@ -16,12 +16,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # preflight의 지원 하한 fixture는 v0.9.84 tag에서 직접 읽는다.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      - name: Publish preflight (증거 불일치면 여기서 차단 — publish 는 되돌릴 수 없다)
+        run: python scripts/ci/publish_preflight.py --tag "${{ github.ref_name }}"
       - name: Install build tools
         run: pip install build twine
 

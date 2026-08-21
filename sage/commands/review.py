@@ -19,20 +19,23 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from sage.commands import doctor as _doctor
+from sage.diagnostics import Diagnostic
+from sage.i18n import language_of, render_issue, tr
 
 _DEFAULT_TIMEOUT = 540   # codex/claude 비대화 1턴 상한(초). gstack /codex 의 330~600 대역과 정합.
 
 
-def register(sub):
-    pr = sub.add_parser("review", help="Phase 05 same-runtime 리뷰(cross_model=false 경로)")
+def register(sub, context):
+    pr = sub.add_parser("review", help=tr(context, "cli.review.review"))
     pr.add_argument("--packet-file",
-                    help="리뷰 패킷(phase 문서 + 변경 파일) — active host headless stdin으로 전달")
+                    help=tr(context, "cli.review.packet_file"))
     pr.add_argument("--host", choices=["claude", "codex"],
-                    help="현재 active host. profile 값과 충돌하면 실행 차단")
+                    help=tr(context, "cli.review.host"))
     pr.add_argument("--timeout", type=int, default=_DEFAULT_TIMEOUT,
-                    help=f"headless 호출 상한 초(기본 {_DEFAULT_TIMEOUT})")
+                    help=tr(context, "cli.review.timeout", default=_DEFAULT_TIMEOUT))
     pr.add_argument("--root", default=None)
     # 마이그레이션 shim(codex 배치2 R3 P1): `sage review` 는 자산분류→Phase05 리뷰로 의미가 바뀌었다.
     # 구 자산분류 플래그를 hidden 으로 받아, 쓰이면 친절히 `sage asset-check` 로 안내(암호적 argparse 실패 방지).
@@ -42,14 +45,14 @@ def register(sub):
     pr.add_argument("--gate", action="store_true", help=argparse.SUPPRESS)
     pr.set_defaults(func=run_review)
 
-    pc = sub.add_parser("cross-check", help="Phase 05 cross-model 리뷰 — 반대 런타임 CLI 직접 호출")
+    pc = sub.add_parser("cross-check", help=tr(context, "cli.review.cross_check"))
     pc.add_argument("--packet-file", required=True,
-                    help="리뷰 패킷(변경 diff + 05 맥락) 파일 — peer 에게 전달할 프롬프트")
+                    help=tr(context, "cli.review.packet_file_2"))
     pc.add_argument("--host", choices=["claude", "codex"],
-                    help="현재 실행 중인 host. env 판별이 모호할 때(중첩 실행 등) 필수")
-    pc.add_argument("--timeout", type=int, default=_DEFAULT_TIMEOUT, help=f"peer 호출 상한 초(기본 {_DEFAULT_TIMEOUT})")
+                    help=tr(context, "cli.review.host_2"))
+    pc.add_argument("--timeout", type=int, default=_DEFAULT_TIMEOUT, help=tr(context, "cli.review.timeout_peer", default=_DEFAULT_TIMEOUT))
     pc.add_argument("--strict", action="store_true",
-                    help="하위호환 플래그. reviewer 실패는 설정과 무관하게 BLOCKED/nonzero")
+                    help=tr(context, "cli.review.strict"))
     pc.add_argument("--root", default=None)
     pc.set_defaults(func=run_cross_check)
 
@@ -114,21 +117,26 @@ def cross_model_issues(profile):
         return []
     if not isinstance(cm, dict):
         # jsonschema 는 선택 의존성 → 구조검증이 skip 되는 환경에서 여기가 유일한 관문이다.
-        return [("FAIL", f"cross_model 은 매핑이어야 함 (받음: {type(cm).__name__})")]
+        return [("FAIL", Diagnostic("review.cross_model_not_mapping",
+                                    received=type(cm).__name__))]
     issues = []
     unknown = [k for k in cm if k not in CROSS_MODEL_KEYS]
     if unknown:
         # `effrot: max` 가 조용히 무시되면 기본값으로 돌면서 설정대로 돈 것처럼 보인다.
-        issues.append(("FAIL", f"cross_model 의 알 수 없는 키: {', '.join(sorted(str(k) for k in unknown))} "
-                               f"(허용: {', '.join(sorted(CROSS_MODEL_KEYS))})"))
+        issues.append(("FAIL", Diagnostic(
+            "review.cross_model_unknown_keys",
+            keys=", ".join(sorted(str(k) for k in unknown)),
+            allowed=", ".join(sorted(CROSS_MODEL_KEYS)))))
     policy = cm.get("policy")
     if policy not in (None, "", "required", "recommended", "off"):
-        issues.append(("FAIL", f"cross_model.policy={policy!r} — required, recommended, off 중 하나여야 함"))
+        issues.append(("FAIL", Diagnostic("review.cross_model_policy_invalid",
+                                          policy=repr(policy))))
     for key, only in CROSS_MODEL_FIXED.items():
         val = cm.get(key)
         if val not in (None, "") and val != only:
-            issues.append(("FAIL", f"cross_model.{key}={val!r} 는 엔진이 구현하지 않는 값 — "
-                                   f"`{only}` 만 지원합니다(다른 값은 무동작이라 안전정책으로 오인됩니다)"))
+            # `key` 는 render 의 translate(key, **arguments) 와 충돌하는 예약 이름이다 — `field` 로 쓴다.
+            issues.append(("FAIL", Diagnostic("review.cross_model_fixed_value",
+                                              field=key, value=repr(val), only=only)))
     effort, configured = resolve_effort(profile)
     if configured is not None:
         # 정적으로 peer 를 하나로 좁힐 수 없으면(active_host: auto) 가능한 peer 전부에서 유효해야
@@ -144,14 +152,14 @@ def cross_model_issues(profile):
 
 
 def effort_issue(peer, effort):
-    """cross_model.effort 검증 → 문제 문자열(없으면 None). validate/doctor/cross-check 공용."""
+    """cross_model.effort 검증 → Diagnostic(없으면 None). validate/doctor/cross-check 공용."""
     if effort in (None, ""):
         return None
     if peer not in PEER_EFFORTS:
-        return f"cross_model.effort: 알 수 없는 peer {peer!r}"
+        return Diagnostic("review.effort_unknown_peer", peer=repr(peer))
     if effort not in PEER_EFFORTS[peer]:
-        return (f"cross_model.effort={effort!r} 는 {peer} 가 모르는 값 "
-                f"(허용: {', '.join(PEER_EFFORTS[peer])}). {peer} 는 모르는 값을 조용히 무시하므로 차단합니다")
+        return Diagnostic("review.effort_unknown_value", effort=repr(effort), peer=peer,
+                          allowed=", ".join(PEER_EFFORTS[peer]))
     return None
 
 
@@ -224,7 +232,7 @@ def _parse_peer_output(peer, text):
 def _invoke_peer(peer, prompt, timeout, effort=None, model=None):
     """peer 런타임을 비대화 실행 → (ok, review_text, err). 미설치/타임아웃/비정상종료/파싱실패 = (False, None, 사유)."""
     if not shutil.which(peer):
-        return False, None, f"{peer} CLI 미설치(PATH 없음)"
+        return False, None, Diagnostic("review.peer_cli_missing", peer=peer)
     cmd = _peer_command(peer, effort, model)
     try:
         # 프롬프트는 stdin 으로(ARG_MAX 회피, codex R1 P1). codex exec/claude -p 가 stdin 을 프롬프트로 읽음.
@@ -237,14 +245,17 @@ def _invoke_peer(peer, prompt, timeout, effort=None, model=None):
         r = subprocess.run(cmd, input=prompt, capture_output=True, env=peer_env(peer),
                            text=True, encoding="utf-8", timeout=timeout)
     except subprocess.TimeoutExpired:
-        return False, None, f"{peer} 호출 timeout({timeout}s)"
+        return False, None, Diagnostic("review.peer_timeout", peer=peer, timeout=timeout)
     except Exception as e:
-        return False, None, f"{peer} 호출 예외: {e}"
+        # evidence 는 외부 도구/런타임이 낸 원문이라 번역하지 않는다.
+        return False, None, Diagnostic("review.peer_exception", evidence=str(e), peer=peer)
     if r.returncode != 0:
-        return False, None, f"{peer} 비정상 종료(exit {r.returncode}): {(r.stderr or '').strip()[:200]}"
+        return False, None, Diagnostic("review.peer_exit_nonzero",
+                                       evidence=(r.stderr or "").strip()[:200],
+                                       peer=peer, code=r.returncode)
     review = _parse_peer_output(peer, r.stdout or "")
     if not review:
-        return False, None, f"{peer} 출력에서 리뷰 메시지 파싱 실패"
+        return False, None, Diagnostic("review.peer_parse_failed", peer=peer)
     return True, review, None
 
 
@@ -284,19 +295,19 @@ def host_detection_notes(profile, detected):
     notes = []
     declared = declared_active_host(profile)
     if declared is not None and declared != detected:
-        notes.append(f"active_host={declared}(프로필)와 감지된 실행 host={detected} 가 다릅니다 "
-                     f"— 감지값으로 진행합니다. 프로필을 auto 로 두면 이 경고가 사라집니다")
+        notes.append(Diagnostic("review.host_declared_mismatch",
+                                declared=declared, detected=detected))
     installed = configured_hosts(profile)
     if detected not in installed:
-        notes.append(f"감지된 실행 host={detected} 가 installed_hosts={installed} 에 없습니다 "
-                     f"— install 영수증이 낡았을 수 있습니다")
+        notes.append(Diagnostic("review.host_not_in_installed",
+                                detected=detected, installed=installed))
     return notes
 
 
-def _print_host_notes(command, profile, detected):
+def _print_host_notes(command, profile, detected, language=None):
     # stdout 은 `REVIEWER_ACTUAL:` 기계 판독 계약이 쓰는 채널이라 섞으면 sage-team 캡처가 깨진다.
     for note in host_detection_notes(profile, detected):
-        print(f"[{command}] ⚠️  {note}", file=sys.stderr)
+        print(f"[{command}] ⚠️  {render_issue(language, note)}", file=sys.stderr)
 
 
 def _model_for_peer(profile, peer, model):
@@ -312,8 +323,8 @@ def _model_for_peer(profile, peer, model):
     reviewer = cross.get("reviewer") if isinstance(cross, dict) else None
     chosen_for = reviewer.get("host") if isinstance(reviewer, dict) else None
     if chosen_for in ("claude", "codex") and chosen_for != peer:
-        return None, (f"cross_model.reviewer.model={model!r} 은 {chosen_for} 용으로 지정됐는데 실제 "
-                      f"peer 는 {peer} 입니다 — 모델을 넘기지 않고 {peer} CLI 기본값을 씁니다")
+        return None, Diagnostic("review.model_for_other_peer",
+                                model=repr(model), chosen_for=chosen_for, peer=peer)
     return model, None
 
 
@@ -335,14 +346,14 @@ def _find_root(explicit):
         cur = parent
 
 
-def _read_packet(path, command):
+def _read_packet(path, command, language=None):
     try:
-        prompt = open(path, encoding="utf-8").read()
+        prompt = Path(path).read_text(encoding="utf-8")
     except Exception as exc:
-        print(f"[{command}] TOOL ERROR: 패킷 파일 읽기 실패: {exc}", file=sys.stderr)
+        print(tr(language, 'cli.review.msg01', command=command, exc=exc), file=sys.stderr)
         return None
     if not prompt.strip():
-        print(f"[{command}] TOOL ERROR: 패킷이 비어 있음", file=sys.stderr)
+        print(tr(language, 'cli.review.msg02', command=command), file=sys.stderr)
         return None
     return prompt
 
@@ -394,10 +405,10 @@ def _blocked_review(command, message, status_code=3):
     return status_code
 
 
-def _run_same_runtime(profile, host, packet_file, timeout, command="sage review"):
-    prompt = _read_packet(packet_file, command)
+def _run_same_runtime(profile, host, packet_file, timeout, command="sage review", language=None):
+    prompt = _read_packet(packet_file, command, language)
     if prompt is None:
-        return _blocked_review(command, "유효한 리뷰 패킷이 필요합니다", 2)
+        return _blocked_review(command, tr(language, "cli.review.blocked_packet_required"), 2)
     model = _same_runtime_model(profile)
     if model:
         ok, review, error = _invoke_peer(host, prompt, timeout, model=model)
@@ -420,8 +431,7 @@ def run_review(args):
     """Run a clean-context headless review on the explicitly active host."""
     # 구 `sage review`(자산분류) 플래그 감지 → 친절한 이름변경 안내(codex 배치2 R3 P1).
     if getattr(args, "kind", None) is not None or getattr(args, "batch", False) or getattr(args, "gate", False):
-        print("[sage review] 이 명령은 Phase 05 리뷰로 의미가 바뀌었습니다. 자산 자동승인 분류는 "
-              "`sage asset-check` 로 이름이 변경됐습니다 — `sage asset-check --kind … [--batch] [--gate]`.",
+        print(tr(language_of(args), "cli.review.msg03"),
               file=sys.stderr)
         return 2
     root = _find_root(args.root)
@@ -429,47 +439,57 @@ def run_review(args):
     layer_failures = _blocking_layer_issues(layers)
     if layer_failures:
         for message in layer_failures:
-            print(f"[sage review] TOOL ERROR: {message}", file=sys.stderr)
+            print(f"[sage review] TOOL ERROR: "
+                  f"{render_issue(language_of(args), message)}", file=sys.stderr)
         print("REVIEWER_STATUS: BLOCKED")
         return 2
     from sage.runtime_hosts import profile_issues as runtime_profile_issues
     runtime_failures = [message for severity, message in runtime_profile_issues(profile) if severity == "FAIL"]
     if runtime_failures:
         for message in runtime_failures:
-            print(f"[sage review] TOOL ERROR: {message}", file=sys.stderr)
+            print(f"[sage review] TOOL ERROR: "
+                  f"{render_issue(language_of(args), message)}", file=sys.stderr)
         print("REVIEWER_STATUS: BLOCKED")
         return 2
     cross_failures = [message for severity, message in cross_model_issues(profile) if severity == "FAIL"]
     if cross_failures:
         for message in cross_failures:
-            print(f"[sage review] TOOL ERROR: {message}", file=sys.stderr)
+            print(f"[sage review] TOOL ERROR: "
+                  f"{render_issue(language_of(args), message)}", file=sys.stderr)
         print("REVIEWER_STATUS: BLOCKED")
         return 2
     host = getattr(args, "host", None)
     if host not in ("claude", "codex"):
-        return _blocked_review("sage review", "--host claude|codex 명시가 필요합니다", 2)
+        return _blocked_review("sage review",
+                               tr(language_of(args), "cli.review.blocked_host_required"), 2)
     from sage.runtime_hosts import detect_current_host
     detected = detect_current_host()
-    _print_host_notes("sage review", profile, detected)
+    _print_host_notes("sage review", profile, detected, language_of(args))
     # 실행 관측이 있으면 그게 정본이다 — 선언과 달라도 지금 도는 프로세스가 사실이다.
-    expected, source = ((detected, "감지된 실행 host") if detected is not None
+    expected, source = ((detected, tr(language_of(args), "cli.review.source_detected_host"))
+                        if detected is not None
                         else (_profile_active_host(profile), "profile active_host"))
     if expected is not None and expected != host:
         return _blocked_review(
-            "sage review", f"--host={host}와 {source}={expected}가 다릅니다", 2
+            "sage review", tr(language_of(args), "cli.review.blocked_host_mismatch",
+                              host=host, source=source, expected=expected), 2
         )
     from sage.profile_layers import cross_model_policy
     policy = cross_model_policy(profile)
     if policy == "required":
-        return _blocked_review("sage review", "cross_model.policy=required는 same-runtime 리뷰로 완화할 수 없음")
+        return _blocked_review("sage review",
+                               tr(language_of(args), "cli.review.blocked_policy_required"))
     if rr["reviewer_mode"] == "opposite_runtime":
-        return _blocked_review("sage review", "cross-model이 활성화되어 있습니다. sage cross-check를 사용하세요")
+        return _blocked_review("sage review",
+                               tr(language_of(args), "cli.review.blocked_use_cross_check"))
     if not _same_runtime_authorized(profile, layers):
         reason = rr.get("reviewer_degrade_reason") or "cross-model reviewer unavailable"
         return _blocked_review(
-            "sage review", f"명시적 local opt-out 없이 cross-model을 same-runtime으로 완화할 수 없음 ({reason})"
+            "sage review", tr(language_of(args), "cli.review.blocked_no_local_opt_out",
+                              reason=reason)
         )
-    return _run_same_runtime(profile, host, args.packet_file, args.timeout)
+    return _run_same_runtime(profile, host, args.packet_file, args.timeout,
+                             language=language_of(args))
 
 
 def run_cross_check(args):
@@ -478,26 +498,27 @@ def run_cross_check(args):
     explicit = getattr(args, "host", None)
     profile, _, rr, layers = _load_profile_layers_caps(root, explicit)
     from sage.runtime_hosts import detect_current_host, running_host
-    _print_host_notes("sage cross-check", profile, detect_current_host())
+    _print_host_notes("sage cross-check", profile, detect_current_host(), language_of(args))
     current = running_host(profile, explicit)
     if current is None:
         # 지금 도는 host 를 모르면 어느 쪽을 빼야 할지도 모른다 — 추측해서 고르면 실행 중인 host 를
         # 리뷰어로 뽑을 수 있고(중첩 실행에서 실제로 그렇게 된다) 그건 독립 리뷰가 아니다.
         return _blocked_review(
             "sage cross-check",
-            "실행 중인 host 를 확정할 수 없습니다(중첩 실행 등으로 env 표식이 모호). "
-            "`--host claude|codex` 로 명시하세요", 2)
+            tr(language_of(args), "cli.review.blocked_ambiguous_running_host"), 2)
     layer_failures = _blocking_layer_issues(layers)
     if layer_failures:
         for message in layer_failures:
-            print(f"[sage cross-check] TOOL ERROR: {message}", file=sys.stderr)
+            print(f"[sage cross-check] TOOL ERROR: "
+                  f"{render_issue(language_of(args), message)}", file=sys.stderr)
         print("REVIEWER_STATUS: BLOCKED")
         return 2
     from sage.runtime_hosts import profile_issues as runtime_profile_issues
     runtime_failures = [message for severity, message in runtime_profile_issues(profile) if severity == "FAIL"]
     if runtime_failures:
         for message in runtime_failures:
-            print(f"[sage cross-check] TOOL ERROR: {message}", file=sys.stderr)
+            print(f"[sage cross-check] TOOL ERROR: "
+                  f"{render_issue(language_of(args), message)}", file=sys.stderr)
         print("REVIEWER_STATUS: BLOCKED")
         return 2
 
@@ -506,7 +527,8 @@ def run_cross_check(args):
     fails = [m for sev, m in cross_model_issues(profile) if sev == "FAIL"]
     if fails:
         for m in fails:
-            print(f"[sage cross-check] TOOL ERROR: {m}", file=sys.stderr)
+            print(f"[sage cross-check] TOOL ERROR: "
+                  f"{render_issue(language_of(args), m)}", file=sys.stderr)
         print("REVIEWER_STATUS: BLOCKED")
         return 2
     effort, configured = resolve_effort(profile)
@@ -520,12 +542,17 @@ def run_cross_check(args):
         if not enabled and policy != "required":
             host = _profile_active_host(profile)
             if host is None:
-                return _blocked_review("sage cross-check", "same-runtime fallback의 active host를 확인할 수 없음", 2)
-            print(f"[sage cross-check] cross-model 비활성 정책 → {host} intentional same-runtime headless 실행",
+                return _blocked_review(
+                    "sage cross-check",
+                    tr(language_of(args), "cli.review.blocked_same_runtime_no_active_host"), 2)
+            print(tr(language_of(args), "cli.review.msg04", host=host),
                   file=sys.stderr)
-            return _run_same_runtime(profile, host, args.packet_file, args.timeout, command="sage cross-check")
+            return _run_same_runtime(profile, host, args.packet_file, args.timeout,
+                                     command="sage cross-check", language=language_of(args))
         reason = rr.get("reviewer_degrade_reason") or "peer_unavailable"
-        return _blocked_review("sage cross-check", f"cross-model reviewer를 실행할 수 없음 ({reason})")
+        return _blocked_review("sage cross-check",
+                               tr(language_of(args), "cli.review.blocked_reviewer_unavailable",
+                                  reason=reason))
 
     peer = rr["reviewer_runtime"]
 
@@ -533,27 +560,33 @@ def run_cross_check(args):
     # minimal 을 모른다). 프로필 기준 peer 와 실제 peer 가 갈릴 수 있으므로 실제 peer 로 다시 본다.
     issue = effort_issue(peer, effort) if configured else None
     if issue:
-        print(f"[sage cross-check] TOOL ERROR: {issue}", file=sys.stderr)
+        print(f"[sage cross-check] TOOL ERROR: {render_issue(language_of(args), issue)}",
+              file=sys.stderr)
         print("REVIEWER_STATUS: BLOCKED")
         return 2
     reviewer_model, model_note_suffix = _model_for_peer(profile, peer, reviewer_model)
 
-    prompt = _read_packet(args.packet_file, "sage cross-check")
+    prompt = _read_packet(args.packet_file, "sage cross-check", language_of(args))
     if prompt is None:
-        return _blocked_review("sage cross-check", "유효한 리뷰 패킷이 필요합니다", 2)
+        return _blocked_review("sage cross-check",
+                               tr(language_of(args), "cli.review.blocked_packet_required"), 2)
 
     if model_note_suffix:
-        print(f"[sage cross-check] ⚠️  {model_note_suffix}", file=sys.stderr)
-    eff_note = f"effort={effort}" + ("" if configured else " (기본값)")
+        print(f"[sage cross-check] ⚠️  {render_issue(language_of(args), model_note_suffix)}",
+              file=sys.stderr)
+    eff_note = f"effort={effort}" + ("" if configured
+                                     else tr(language_of(args), "cli.review.effort_default_suffix"))
     model_note = reviewer_model or "peer CLI default"
-    print(f"[sage cross-check] {peer} 직접 호출 중(timeout {args.timeout}s, {eff_note}, model={model_note})…", file=sys.stderr)
+    print(tr(language_of(args), "cli.review.msg05", peer=peer, args_timeout=args.timeout, eff_note=eff_note, model_note=model_note), file=sys.stderr)
     if reviewer_model:
         ok, review, err = _invoke_peer(peer, prompt, args.timeout, effort, reviewer_model)
     else:
         # Keep the legacy call shape for downstream monkeypatch/adapters when no model was configured.
         ok, review, err = _invoke_peer(peer, prompt, args.timeout, effort)
     if not ok:
-        return _blocked_review("sage cross-check", f"{peer} 리뷰 실패: {err}")
+        return _blocked_review("sage cross-check",
+                               tr(language_of(args), "cli.review.blocked_peer_review_failed",
+                                  peer=peer, err=render_issue(language_of(args), err)))
 
     # peer 리뷰 본문 = stdout(스킬이 05 문서/REWORK 입력으로 사용). 마지막 줄에 REVIEWER_ACTUAL.
     print(f"===== {peer.upper()} CROSS-MODEL REVIEW =====")

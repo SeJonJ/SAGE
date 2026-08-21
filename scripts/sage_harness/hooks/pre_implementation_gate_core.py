@@ -270,6 +270,19 @@ def _pdca_cfg(profile: dict):
     return p
 
 
+def _discloses_low_risk_binding(profile: dict) -> bool:
+    """EH-15/16: L1·L0 통과 줄에도 결속 stem 을 노출할지.
+
+    기본은 기존 동작(노출 안 함)이다. 통과 줄은 양 host 모두 비차단 컨텍스트 채널로 나가므로
+    (EH-12) 항상 켜면 편집 빈도가 가장 높은 tier 에서 매번 모델 컨텍스트에 한 줄이 쌓인다.
+    결속 증거 자체는 `.sage/override.jsonl` 에 위험도와 무관하게 남으므로 이건 손실 복구가
+    아니라 감시 편의이며, 필요한 프로젝트만 켜는 것이 맞다.
+
+    `pdca.enabled=false` 는 대상이 아니다 — 사이클 개념 자체가 없어 노출할 stem 이 없다.
+    """
+    return ((profile.get("pdca") or {}).get("cycle_binding_visibility") or "gated") == "all"
+
+
 def _missing_pre_impl_phases(event: dict, profile: dict, snapshot: dict, risk: str,
                              fast_state=None):
     """구현 전 의무 phase 중 문서가 없는 것 목록. pdca 비활성이면 None(=강제 안 함).
@@ -443,6 +456,200 @@ def _bound_phase00_risk(event, profile, snapshot):
                 "cycle_stem": binding["stem"]}
     return {"status": "valid", "risk": declarations[0], "path": path,
             "detail": "", "cycle_stem": binding["stem"]}
+
+
+def _leaves_the_path(change):
+    """이 변경 뒤 그 경로가 비는가 — 삭제이거나, 다른 경로로 옮겨 나가는 원본이거나.
+
+    move 는 source(`Update File`) + destination(`Move to`) 두 변경으로 표현된다. source 를
+    일반 수정으로 두면 사라질 문서의 선언과 본문이 최종 문서처럼 검사돼, 잘못 선언된 문서를
+    사이클 밖으로 빼내는 정리 작업이 영구히 막힌다 — phase 문서 집합 관점에서 move-out 은
+    그냥 삭제다. 목적지가 여전히 사이클 문서면 그쪽이 같은 stem 으로 잡히므로 검사는
+    목적지에서 계속된다.
+
+    **경로가 아니라 변경 단위로 묻는다.** 같은 패치가 비운 경로에 새 문서를 다시 만들 수 있고
+    (`Move to` 뒤의 `Add File`), 경로로 기억한 배제는 그 새 문서까지 검사에서 빼버린다.
+    변경 순서대로 적용하면 나중 변경이 최종 상태를 이긴다.
+    """
+    return (change or {}).get("op") == "delete" or bool((change or {}).get("move_destination"))
+
+
+def _overlay_changed_documents(event, cfg, stem, documents):
+    """디스크 문서 집합 위에 **이번 변경 후**의 문서를 덮어쓴다(제자리 수정).
+
+    snapshot 은 쓰기 **전** 상태다. 그것만 비교하면 이번 쓰기가 바꾸는 선언 자체가 검사에서
+    빠져, en 사이클의 문서를 ko 로 되돌리는 쓰기가 통과한다 — 막으려는 바로 그 상태다.
+    삭제는 집합에서 뺀다. 지워지는 문서의 선언으로 남은 문서를 막으면 잘못 선언된 문서를
+    치우는 일이 영구히 불가능해진다.
+
+    재구성 실패(post_image_error)는 여기서 조각을 문서로 오해하지 말고 그냥 둔다 — 그 실패는
+    본문 게이트가 fail-closed 로 잡는다. 여기서 조각을 읽으면 정상 부분 편집이 전부 marker
+    미선언으로 떨어진다.
+    """
+    globs = [item.get("glob") or "" for item in ((cfg or {}).get("phases") or [])]
+    for change in (event.get("changes") or []):
+        path = (change or {}).get("path") or ""
+        if not path or cycle_binding.path_stem(path) != stem:
+            continue
+        if not any(cycle_binding.matches_glob(path, glob) for glob in globs if glob):
+            continue
+        if _leaves_the_path(change):
+            documents.pop(path, None)
+            continue
+        image, error = _post_image(change)
+        if error is None and image is not None:
+            documents[path] = image
+
+
+def _document_language_gate(event, profile, snapshot, stem):
+    """같은 사이클 문서들의 `Document-Language` 일관성 판정.
+
+    Phase 00 마커가 정본이고 `.sage/cycle.json` 은 재개 편의를 위한 미러다. 둘이 다르면 파일이
+    이기는 게 아니라 hard conflict 이고, 게이트는 어느 쪽도 자동으로 고치지 않는다 — 고르는
+    순간 사용자가 선언하지 않은 언어로 사이클 절반이 계속 쓰인다.
+
+    **부재는 차단하지 않는다.** 마커 이전에 시작한 사이클이 전부 즉시 막히는 과차단이 되고,
+    그건 이 기능이 만든 결함이다. 대신 **일부만 선언한 상태**는 WARN 으로 드러낸다. 부분 이관과
+    완전 이관이 똑같이 조용하면 마이그레이션이 언제 끝났는지 셀 수 없다.
+
+    손상(중복 선언·미지원 값)과 불일치는 차단한다. 이건 부재가 아니라 선언이 서로 다른 답을
+    내는 상태이고, 그 위에서 쓴 문서는 어느 언어로 검토돼야 하는지 정할 수 없다.
+
+    반환: None(해당없음) | {"status": "block"|"warn", "reason": str}
+    """
+    if _pdca_cfg(profile) is None or not stem:
+        return None
+    try:
+        import document_language
+    except Exception:
+        return None                     # 모듈 부재 → 판정 불가, 다른 게이트에 맡김
+
+    documents = {}
+    for docs in (snapshot.get("phase_docs") or {}).values():
+        for doc in docs or []:
+            path = (doc or {}).get("path") or ""
+            if path and cycle_binding.path_stem(path) == stem:
+                documents.setdefault(path, doc.get("content") or "")
+    _overlay_changed_documents(event, _pdca_cfg(profile), stem, documents)
+    if not documents:
+        return None
+
+    declared = event.get("cycle_document_language")
+    issues = document_language.consistency_issues(documents, declared)
+    if not issues:
+        return None
+
+    missing = sorted(path for path, reason in issues if reason == document_language.MISSING)
+    if len(missing) == len(issues):
+        # 전부 미선언이고 미러도 비었으면 마커 도입 이전의 사이클이다 — legacy 로 통과시킨다.
+        if len(missing) == len(documents) and declared is None:
+            return None
+        return {"status": "warn",
+                "reason": (f"문서 언어 선언 누락 {len(missing)}건 — {', '.join(missing[:3])}"
+                           f"{' 외' if len(missing) > 3 else ''}")}
+
+    hard = sorted((path, reason) for path, reason in issues
+                  if reason != document_language.MISSING)
+    detail = "; ".join(f"{path}: {reason}" for path, reason in hard[:3])
+    return {"status": "block", "reason": f"문서 언어 선언 충돌 {len(hard)}건 — {detail}"}
+
+
+def _resolved_document_language(event, snapshot, stem):
+    """이 stem 의 판정된 문서 언어. 마커가 없거나 손상됐으면 None(무엇에 맞춰 볼지 미정의).
+
+    declared 미러가 유효하면 그것을 쓴다. 없으면 이 stem 의 Phase 00 자기 marker 를 읽는다 —
+    Phase 00 이 정본이라는 계약(§7.6)과 같은 우선순위를 여기서도 지킨다. 위쪽 `_document_language_gate`
+    가 이미 hard conflict 를 차단했으므로, 여기 도달했다면 두 값이 있어도 서로 다르지 않다.
+    """
+    declared = event.get("cycle_document_language")
+    if declared in ("ko", "en"):
+        return declared
+    try:
+        import document_language
+    except Exception:
+        return None
+    for doc in (snapshot.get("phase_docs") or {}).get("00") or []:
+        path = (doc or {}).get("path") or ""
+        if path and cycle_binding.path_stem(path) == stem:
+            language, problem = document_language.scan(doc.get("content") or "")
+            if not problem:
+                return language
+    return None
+
+
+def _post_image(change):
+    """이 변경 후의 **전체 본문**. (image, error) — 둘 중 하나만 채워진다.
+
+    Write / apply_patch Add File 은 content 가 곧 전체 본문이고(`full_content`), 부분 diff
+    (Claude Edit/MultiEdit, apply_patch Update File)는 오케스트레이터가 디스크 원본에 적용해
+    되짚어 싣는다. 되짚기가 실패했으면 `post_image_error` 가 실려 오고, 그건 조용히 넘길 일이
+    아니다 — 최종 문서를 모르는 채 통과시키면 그 경로가 곧 검사 우회로가 된다.
+    """
+    if change.get("full_content"):
+        return change.get("content"), None
+    return change.get("post_image"), change.get("post_image_error")
+
+
+def _prose_diagnostic(key, path, line=0, evidence=""):
+    """언어 중립 진단. 문장이 아니라 위치와 원문 조각뿐이다 — 사람이 읽는 설명은 표시 계층
+    catalog 가 소유한다. 여기서 한국어 문장을 만들면 표시 언어가 en 인 화면에 그대로 실려 나간다."""
+    return {"key": key, "path": path, "line": line, "evidence": evidence}
+
+
+def _document_prose_gate(event, snapshot, stem):
+    """이번 write 로 새로 생기거나 바뀌는 이 stem 의 본문이 선언 언어를 어겼는가.
+
+    두 질문의 전제가 다르므로 입력도 갈라 쓴다.
+    - en 문서에 **새로 들어오는** 한국어: 이번에 추가되는 내용만 보면 된다. 디스크의 legacy
+      문서까지 소급하면 문서 하나가 이후 모든 편집을 막는 과차단이 된다(§7.7).
+    - ko 문서에 한국어가 **아예 없다**: 변경 후 전체 본문이 있어야만 물을 수 있다. 부분 diff 에
+      물으면 정상 문서에 영어 조각을 더하는 편집이 곧바로 차단된다.
+
+    Markdown 문서(.md)만 본다. 이 모듈의 규칙은 전부 Markdown 구조(fence·inline code·blockquote)
+    이고, 같은 stem 의 소스 파일에 적용하면 주석 한 줄로 차단되거나 되짚기 실패로 막힌다.
+
+    반환: None(해당없음/통과) | 언어 중립 진단 dict
+    """
+    language = _resolved_document_language(event, snapshot, stem)
+    if language not in ("ko", "en"):
+        return None
+    try:
+        import prose_language
+    except Exception as exc:
+        # 판정 정본이 사라졌는데 통과시키면, 파일 하나를 지우는 것이 이 게이트를 끄는 스위치가 된다.
+        # 설명 문장은 catalog 가 소유한다 — 여기서는 원문 예외를 evidence 로만 넘긴다.
+        return _prose_diagnostic("block_prose_scanner_unavailable", "",
+                                 evidence=f"{type(exc).__name__}: {exc}")
+    for change in (event.get("changes") or []):
+        path = (change or {}).get("path") or ""
+        if not path or not path.endswith(".md") or cycle_binding.path_stem(path) != stem:
+            continue
+        if _leaves_the_path(change):
+            continue           # 최종 상태에 남지 않는다 — 판정은 목적지·후속 변경에서 이어진다
+        image, error = _post_image(change)
+        if error:
+            return _prose_diagnostic("block_document_post_image", path, evidence=error)
+        if image is None:
+            # 쓰기는 하는데 변경 후 문서를 알 수 없다 — 모르는 채 통과시키면 그 도구가 우회로다.
+            if change.get("content"):
+                return _prose_diagnostic("block_document_post_image", path,
+                                         evidence="no post-image contract")
+            continue
+        # 변경 전·후 **전체 문서**를 Markdown 문맥째로 판정하고, 그 차이(이번 변경이 늘린
+        # 부채)만 차단한다. 새로 추가된 줄만 보면 fence 한 줄을 지워 안에 있던 한국어가 prose 로
+        # 드러나는 경우를 놓치고, 변경 후만 보면 legacy 문서 하나가 이후 모든 편집을 막는다.
+        before = change.get("pre_image") or ""
+        found = prose_language.new_foreign_prose(before, image, language)
+        if found:
+            line_no, snippet = found[0]
+            return _prose_diagnostic("block_document_prose_language", path,
+                                     line=line_no, evidence=snippet[:80])
+        unclosed = prose_language.new_unclosed_fence(before, image)
+        if unclosed:
+            return _prose_diagnostic("block_document_unclosed_fence", path, line=unclosed)
+        if prose_language.newly_lacks_native_prose(before, image, language):
+            return _prose_diagnostic("block_document_prose_structure", path)
+    return None
 
 
 def _report_gate(event: dict, profile: dict, snapshot: dict):
@@ -1164,9 +1371,12 @@ def _stamp_cycle_identity(decision: dict, event: dict, profile: dict, snapshot: 
     감사 — env 선언 stem 은 이미 완결된 사이클을 지목해 게이트 전체를 통과시킬 수 있어서, 어댑터가
     그 사실을 기록할 수 있어야 한다. core 는 IO 를 하지 않으므로 여기서는 사실만 싣는다.
     """
-    cfg = _pdca_cfg(profile)
-    if cfg is None or not isinstance(decision, dict):
+    if not isinstance(decision, dict):
         return decision
+    cfg = _pdca_cfg(profile)
+    if cfg is None:
+        # pdca 비활성이면 사이클 개념 자체가 없다 — 노출할 결속이 없으므로 줄도 만들지 않는다.
+        return _drop_contentless_binding_line(decision)
     binding = cycle_binding.resolve(event, snapshot, cfg)
     source = binding.get("source") or []
     decision["cycle_stem"] = binding.get("stem") or ""
@@ -1175,6 +1385,17 @@ def _stamp_cycle_identity(decision: dict, event: dict, profile: dict, snapshot: 
     # 선언 통로가 둘(env / .sage/cycle.json)이라 출처만으로는 어디서 읽었는지 알 수 없다.
     # 순수 판정 모듈(cycle_binding)은 건드리지 않고 어댑터가 실어 보낸 사실을 여기서 옮긴다.
     decision["cycle_stem_origin"] = event.get("cycle_stem_origin") or ""
+    return _drop_contentless_binding_line(decision)
+
+
+def _drop_contentless_binding_line(decision: dict) -> dict:
+    """EH-15/16: 결속할 stem 이 없으면 L1·L0 통과 줄을 만들지 않는다.
+
+    이 줄의 목적은 "이 편집이 어느 사이클에 결속됐나" 하나뿐이다. stem 이 없는데도 내보내면
+    정보가 0인 줄이 편집마다 모델 컨텍스트에 쌓인다 — 켠 사람이 얻는 것 없이 비용만 낸다.
+    """
+    if decision.get("message_key") in ("ok_l1", "ok_l0") and not decision.get("cycle_stem"):
+        decision["message_key"] = None
     return decision
 
 
@@ -1207,6 +1428,7 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
     cfg = _pdca_cfg(profile)
     changed_phases = set()
     fast_state = None
+    language_warning = None
     if cfg is not None and (_is_phase_write(event, cfg) or risk in ("L1", "L2", "L3")):
         binding = cycle_binding.resolve(event, snapshot, cfg)
         if binding.get("error"):
@@ -1229,6 +1451,32 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
                     "reason": f"{_binding_origin_label(source)} stem {binding['stem']!r} 은 "
                               f"완결된 사이클",
                     "file_short": c["file_short"]}
+        # 문서 언어는 사이클 결속이 성립한 뒤에만 물을 수 있다 — stem 이 없으면 "같은 사이클의
+        # 문서" 라는 집합 자체가 정의되지 않는다. 결속 실패는 위에서 이미 차단된다.
+        language = _document_language_gate(event, profile, snapshot, binding["stem"])
+        if language and language["status"] == "block":
+            return {"status": "block", "exit_code": 2, "risk": "PDCA",
+                    "message_key": "block_document_language_conflict",
+                    "reason": language["reason"], "file_short": c["file_short"]}
+        if language:
+            language_warning = {"status": "warn", "exit_code": 0, "risk": "PDCA",
+                                "message_key": "warn_document_language_missing",
+                                "reason": language["reason"], "file_short": c["file_short"]}
+
+        # marker 는 선언 자체(한 줄)만 본다 — 그 아래 본문이 실제로 그 언어인지는 별개 판정이다.
+        # 여기서 보는 것은 **이번에 새로 쓰거나 바뀌는 내용**뿐이다(§7.7): 이미 디스크에 있는
+        # 다른 phase 문서까지 소급 검사하면 legacy 문서 하나가 이후 모든 편집을 막는다.
+        prose = _document_prose_gate(event, snapshot, binding["stem"])
+        if prose is not None:
+            where = prose["path"] + (f":{prose['line']}" if prose["line"] else "")
+            return {"status": "block", "exit_code": 2, "risk": "PDCA",
+                    "message_key": prose["key"],
+                    # reason 은 두 언어에서 글자까지 같아야 한다 — 위치와 원문 조각뿐이고
+                    # 설명 문장은 catalog 가 소유한다.
+                    "reason": f"{where} {prose['evidence']!r}".strip() if prose["evidence"]
+                              else where,
+                    "file_short": prose["path"] or c["file_short"]}
+
         changed_phases = _changed_phase_ids(event, cfg)
         report_phase = str(cfg.get("report_phase") or "")
         dependency_phases = {str(phase.get("id") or "") for phase in (cfg.get("phases") or [])}
@@ -1286,6 +1534,8 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
     # Acceptance evidence gate: 04 가 요구사항별 PASS/FAIL/NOT TESTED 를 기록했는지 확인.
     # build/test/lint 통과가 사용자 요구사항 충족을 자동 증명하지 않는 갭을 advisory-first 로 닫는다.
     pending_gate_decisions = []
+    if language_warning is not None:
+        pending_gate_decisions.append(language_warning)
     dcg = _done_criteria_gate(event, profile, snapshot)
     if dcg is not None:
         pending_gate_decisions.append(dcg)
@@ -1333,7 +1583,9 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
                     "message_key": "warn_l0_l3_content",
                     "reason": "L0 문서/plan 에 L3 내용 키워드 — 민감정보 노출 여부 점검",
                     "file_short": c["l0_l3_file"]}
-        return {"status": "ok", "exit_code": 0, "risk": risk, "message_key": None, "reason": c["reason"]}
+        return {"status": "ok", "exit_code": 0, "risk": risk,
+                "message_key": "ok_l0" if _discloses_low_risk_binding(profile) else None,
+                "reason": c["reason"], "file_short": c["file_short"]}
 
     # PDCA 의무 phase 강제: 구현 전 필수 phase 결핍 시 L2/L3 BLOCK, L1 WARN.
     # missing=None(pdca 비활성) 또는 [](충족) → falsy → 기존 per-level 로직으로 (하위호환).
@@ -1389,4 +1641,6 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
                 "message_key": "ok_l2", "reason": c["reason"], "file_short": c["file_short"]}
 
     # L1 통과
-    return {"status": "ok", "exit_code": 0, "risk": "L1", "message_key": None, "reason": c["reason"]}
+    return {"status": "ok", "exit_code": 0, "risk": "L1",
+            "message_key": "ok_l1" if _discloses_low_risk_binding(profile) else None,
+            "reason": c["reason"], "file_short": c["file_short"]}

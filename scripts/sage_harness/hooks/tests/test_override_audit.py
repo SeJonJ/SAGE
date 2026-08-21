@@ -22,6 +22,7 @@ RUNTIME = os.path.join(os.path.dirname(HERE), "runtime")
 sys.path.insert(0, RUNTIME)
 import override_audit as ov          # noqa: E402
 import hook_runtime as hr            # noqa: E402
+from pathlib import Path
 
 GATE = "pre-implementation-gate"
 BLOCK = {"status": "block", "exit_code": 2, "message_key": "block_l3_strategy_unresolved"}
@@ -130,7 +131,7 @@ class TestAuditPermissionSplit(unittest.TestCase):
             ov.grant(src, "원격 우회", 50000, gate=GATE, now=1000)
             os.makedirs(os.path.dirname(ov.audit_path(dst)), exist_ok=True)
             with open(ov.audit_path(dst), "w", encoding="utf-8") as f:
-                f.write(open(ov.audit_path(src), encoding="utf-8").read())
+                f.write(Path(ov.audit_path(src)).read_text(encoding="utf-8"))
             # 감사 이력은 보이지만(추적 가능)
             self.assertTrue(any(r["event"] == "grant" for r in ov.read_records(dst)))
             # 활성 권한은 전파되지 않는다

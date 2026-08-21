@@ -8,7 +8,6 @@
   4. 견고성: 손상 줄 skip, 비-dict 줄 skip, 부재 파일 → []
   5. 경로: .sage/retro_audit.jsonl (커밋 대상, loop_audit.jsonl 과 동일 자리)
 """
-import json
 import os
 import sys
 import tempfile

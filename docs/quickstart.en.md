@@ -1,3 +1,4 @@
+<!-- sage-doc-source: quickstart.md sha256:c530d4cadaff5dede17b872981608db4b6700eef37da24d7ffeafa3bc483b86b -->
 # SAGE Quickstart
 
 [한국어](quickstart.md) | [README](../README.en.md)
@@ -49,6 +50,20 @@ host you just installed for**.
 
 The first init separates shared policy in `sage/project-profile.yaml` from Git-ignored machine
 capabilities in `sage/project-profile.local.yaml`.
+
+This is where you choose the language SAGE talks to you in. The init conversation asks, and
+you can change it later by editing `sage/project-profile.local.yaml`, which Git ignores.
+
+```yaml
+interface:
+  language: en      # absent means ko
+```
+
+For a single run in another language, put the global `--lang` **before** the subcommand:
+`sage --lang en doctor`. Language never changes a verdict — the status and exit code stay the
+same and only the sentence you read differs. The language Phase 00–06 documents are *written*
+in is a separate decision, fixed once when the cycle starts. See the
+[CLI reference](cli-reference.en.md).
 
 ## 4. Generate and validate hooks — turn the profile into runtime files
 

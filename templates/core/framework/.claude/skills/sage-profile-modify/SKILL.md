@@ -22,6 +22,26 @@ Do not edit this CORE render directly (the write-guard blocks it and `sage insta
 > repo (`.claude/skills/sage-profile-modify/`); Codex reads it from the user-global
 > skills dir (`$CODEX_HOME/skills/sage-profile-modify/`).
 
+## Conversation language (mandatory)
+
+Resolve it once, before the first turn, in this order:
+
+1. an explicit `--lang ko|en` on this skill's invocation,
+2. `interface.language` in `sage/project-profile.local.yaml`,
+3. `ko`.
+
+Conduct **every** question, proposal, progress note, warning and summary in that language.
+
+Only the conversation takes it. Machine values are never translated — paths, globs, command
+strings, component ids, strategy enums, statuses and the fixed schema keys. Phase 00–06 document
+prose follows the cycle's `Document-Language:` marker, which is a **separate** decision and may
+differ from the conversation. That document prose includes the **human-facing structure** — section
+headings, list labels, table headers and checklist text — not just paragraphs; a Korean document
+under English headings is the mixed state the marker exists to prevent. The two headings a parser
+reads by their exact string, `## 5. Done Criteria` and `## 6. Done Criteria Revision Log`, stay
+English in every language. Only `/sage-init` and `/sage-init-local` may persist a language
+preference. Full rules: `docs/agent/language-policy.md`.
+
 ## What this skill is NOT
 
 The profile is **hand-authored SSOT**, not a generated artifact — so this skill edits
@@ -60,6 +80,8 @@ From the user's stated intent, or by asking, pin the **section**:
 - `project` (name/prefix) · `components[]` · `verification.commands` ·
   `risk.*` (L0–L3 globs / content keywords / `l3_review_strategy`) ·
   **`pdca.base_plan.done_criteria_gate`** (`off|advisory|enforce`) ·
+  **`pdca.cycle_binding_visibility`** (`gated|all` — `all` also discloses the bound cycle
+  on L1/L0 gate passes) ·
   **`pdca.review_loop`** (the Phase-05 loop — use the shared interview set) ·
   **`pdca.fast_cycle`** (`enabled`, `reason_required`, `minimum_rounds`,
   `minimum_lenses`, ordered L2/L3 lenses) ·

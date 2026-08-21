@@ -123,6 +123,36 @@ Fast 명령은 `pdca.fast_cycle.enabled: true`인 L2/L3에만 열립니다. 실�
 | `sage authority attest` | exact PDCA evidence attestation 생성 |
 | `sage authority gate` | 보호된 CI에서 attestation과 현재 변경을 결속해 판정 |
 
+## 표시 언어
+
+전역 `--lang` 은 **하위 명령 앞**에 옵니다. 이 자리를 지키지 않으면 그대로 실패합니다 —
+`sage doctor --lang en` 은 지원하는 형태가 아닙니다.
+
+```text
+sage [--lang {ko,en}] <command> [command options]
+```
+
+```bash
+sage --lang en doctor        # 이 실행에만 적용
+```
+
+매번 붙이지 않으려면 Git이 추적하지 않는 `sage/project-profile.local.yaml` 에 적어 둡니다.
+
+```yaml
+interface:
+  language: en      # 없으면 ko
+```
+
+우선순위는 `--lang` → local profile → `ko` 입니다. Hook은 `--lang` 을 받지 않으므로 local
+profile과 기본값만 따릅니다. 이 설정은 공유 profile·`project-profile.json`·manifest·profile
+hash 어디에도 들어가지 않습니다 — 언어는 키보드 앞에 앉은 사람의 속성이지 프로젝트 거버넌스가
+아닙니다. **표시 언어는 판정을 바꾸지 않습니다**: 같은 입력이면 `ko` 와 `en` 의 상태·종료코드·
+`message_key` 가 같고, 사람이 읽는 문장만 달라집니다.
+
+Phase 00~06 문서를 쓰는 언어는 이것과 **별개 결정**이며 사이클마다 `Document-Language:` 로
+한 번 고정합니다. 자세한 규칙은 `templates/core/framework/docs/agent/language-policy.md` 에
+있습니다.
+
 ## 공통 종료코드
 
 명령별 세부 계약은 `--help`와 출력이 우선합니다. 일반적으로 `0`은 PASS, `1`은 검증 FAIL,

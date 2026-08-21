@@ -11,6 +11,8 @@ import os
 import re
 from pathlib import Path
 
+from sage.diagnostics import Diagnostic
+
 CONTRACT_VERSION = "1"
 
 MCP_TRANSPORTS = ("stdio", "http", "sse")
@@ -36,7 +38,15 @@ _HOME_PATH_RE = re.compile(r"/(?:Users|home)/[^/\s]+")
 
 
 class MCPSpecError(Exception):
-    """spec frontmatter 파싱/구조 오류 (generate 가 FAIL 로 변환)."""
+    """spec frontmatter 파싱/구조 오류 (generate 가 FAIL 로 변환).
+
+    `diagnostic` 이 판정을 낸다. `str(exc)` 는 code 를 낸다 — 문장은 아니지만, 이 예외를
+    그대로 찍던 경로에서도 원인이 사라지지 않는다.
+    """
+
+    def __init__(self, diagnostic):
+        self.diagnostic = diagnostic
+        super().__init__(str(diagnostic))
 
 
 def parse_mcp_spec(spec_path):
@@ -48,50 +58,51 @@ def parse_mcp_spec(spec_path):
     try:
         import yaml
     except ImportError as e:
-        raise MCPSpecError("pyyaml 미설치 (generate 빌드 의존성) — pip install pyyaml") from e
+        raise MCPSpecError(Diagnostic("mcp.pyyaml_missing")) from e
     text = Path(spec_path).read_text(encoding="utf-8")
     # CRLF/구분자 뒤 공백 허용(codex R3 P2 — 이식성). 본문의 '---' 는 non-greedy 로 첫 닫힘만.
     m = re.match(r"^---[ \t]*\r?\n(.*?)\r?\n---[ \t]*\r?\n", text, re.DOTALL)
     if not m:
-        raise MCPSpecError(f"frontmatter 없음: {spec_path}")
+        raise MCPSpecError(Diagnostic("mcp.frontmatter_missing", path=spec_path))
     try:
         fm = yaml.safe_load(m.group(1)) or {}
     except Exception as e:
-        raise MCPSpecError(f"frontmatter YAML 파싱 실패: {e}") from e
+        raise MCPSpecError(Diagnostic("mcp.frontmatter_yaml_error", evidence=str(e))) from e
     if not isinstance(fm, dict):
-        raise MCPSpecError("frontmatter 가 매핑이 아님")
+        raise MCPSpecError(Diagnostic("mcp.frontmatter_not_mapping"))
     sid = fm.get("id")
     transport = fm.get("transport")
     targets = fm.get("runtime_targets") or []
     binding = fm.get("server_binding") or {}
     if not sid or not isinstance(sid, str):
-        raise MCPSpecError("id 누락/문자열 아님")
+        raise MCPSpecError(Diagnostic("mcp.id_missing"))
     if not _SERVER_ID_RE.match(sid):
-        raise MCPSpecError(f"id {sid!r} 부적합 — 영숫자/_/- 만 허용(점·공백 금지: TOML 중첩테이블 오인 방지)")
+        raise MCPSpecError(Diagnostic("mcp.id_invalid", value=repr(sid)))
     if transport not in MCP_TRANSPORTS:
-        raise MCPSpecError(f"미지원 transport: {transport!r} (허용: {', '.join(MCP_TRANSPORTS)})")
+        raise MCPSpecError(Diagnostic("mcp.transport_unsupported", value=repr(transport),
+                                      allowed=", ".join(MCP_TRANSPORTS)))
     if not isinstance(targets, list) or not targets:
-        raise MCPSpecError("runtime_targets 가 비었거나 리스트가 아님")
+        raise MCPSpecError(Diagnostic("mcp.runtime_targets_empty"))
     for t in targets:
         if t not in ("claude", "codex"):
-            raise MCPSpecError(f"미지원 runtime_target: {t!r}")
+            raise MCPSpecError(Diagnostic("mcp.runtime_target_unsupported", value=repr(t)))
     if not isinstance(binding, dict):
-        raise MCPSpecError("server_binding 이 매핑이 아님")
+        raise MCPSpecError(Diagnostic("mcp.server_binding_not_mapping"))
     # args/env 타입 강제 (codex R3 P1 — 문자열을 리스트로 오인해 문자분해 직렬화되는 것 방지)
     args = binding.get("args")
     if args is not None:
         if not isinstance(args, list) or any(not isinstance(a, (str, int, float, bool)) for a in args):
-            raise MCPSpecError("server_binding.args 는 스칼라 리스트여야 함(문자열 단일값 금지)")
+            raise MCPSpecError(Diagnostic("mcp.args_not_scalar_list"))
     env = binding.get("env")
     if env is not None:
         if not isinstance(env, list) or any(not isinstance(e, str) for e in env):
-            raise MCPSpecError("server_binding.env 는 문자열(변수명) 리스트여야 함")
+            raise MCPSpecError(Diagnostic("mcp.env_not_string_list"))
     if transport == "stdio":
         if not binding.get("command") or not isinstance(binding["command"], str):
-            raise MCPSpecError("stdio transport 는 server_binding.command(문자열) 필수")
+            raise MCPSpecError(Diagnostic("mcp.stdio_command_required"))
     else:  # http/sse
         if not binding.get("url") or not isinstance(binding["url"], str):
-            raise MCPSpecError(f"{transport} transport 는 server_binding.url(문자열) 필수")
+            raise MCPSpecError(Diagnostic("mcp.url_required", transport=transport))
     return {"id": sid, "transport": transport,
             "runtime_targets": list(targets), "server_binding": binding}
 
@@ -107,7 +118,7 @@ def check_secrets(model):
     # env: 변수명만 허용 (리터럴 값 차단)
     for name in (b.get("env") or []):
         if not isinstance(name, str) or not _ENV_NAME_RE.match(name):
-            issues.append(("FAIL", f"env 항목 '{name}' 은 변수명이 아님 — 변수명만 허용(리터럴 값 금지)"))
+            issues.append(("FAIL", Diagnostic("mcp.env_not_variable_name", name=name)))
     # args 검사 (same-arg 컨텍스트 + split-arg 인접 컨텍스트 둘 다 — codex R3 P1)
     args = [str(a) for a in (b.get("args") or [])]
     prev_is_flag = False
@@ -115,26 +126,26 @@ def check_secrets(model):
         same_arg_secret = _SECRET_CONTEXT_RE.search(s) and _HI_ENTROPY_RE.search(s)
         bearer = re.search(r"(?i)bearer\s+\S{8,}", s)
         if same_arg_secret or bearer:
-            issues.append(("FAIL", f"args 에 인라인 시크릿 의심(key/token/auth + 고엔트로피): {_redact(s)}"))
+            issues.append(("FAIL", Diagnostic("mcp.args_inline_secret", evidence=_redact(s))))
         elif prev_is_flag and _HI_ENTROPY_RE.search(s):
             # 직전 인자가 시크릿 플래그(--token 등)이고 이 인자가 고엔트로피 → split 형태 시크릿
-            issues.append(("FAIL", f"args 에 split 인라인 시크릿 의심(시크릿 플래그 뒤 고엔트로피): {_redact(s)}"))
+            issues.append(("FAIL", Diagnostic("mcp.args_split_secret", evidence=_redact(s))))
         elif _HI_ENTROPY_RE.search(s):
-            issues.append(("WARN", f"args 에 고엔트로피 토큰(단독 — 시크릿일 수 있음 확인): {_redact(s)}"))
+            issues.append(("WARN", Diagnostic("mcp.args_high_entropy_token", evidence=_redact(s))))
         if _HOME_PATH_RE.search(s):
-            issues.append(("WARN", f"args 에 홈경로 username 누출(이식성): {s}"))
+            issues.append(("WARN", Diagnostic("mcp.args_home_path_leak", evidence=s)))
         prev_is_flag = bool(_SECRET_FLAG_RE.search(s))
     # command 홈경로
     cmd = b.get("command")
     if cmd and _HOME_PATH_RE.search(str(cmd)):
-        issues.append(("WARN", f"command 에 홈경로 username 누출(이식성): {cmd}"))
+        issues.append(("WARN", Diagnostic("mcp.command_home_path_leak", evidence=str(cmd))))
     # url userinfo / token-query
     url = b.get("url")
     if url:
         if _USERINFO_RE.search(str(url)):
-            issues.append(("FAIL", f"url 에 userinfo(user:pass@) 포함: {_redact(str(url))}"))
+            issues.append(("FAIL", Diagnostic("mcp.url_userinfo", evidence=_redact(str(url)))))
         if _URL_TOKEN_QUERY_RE.search(str(url)):
-            issues.append(("FAIL", f"url 쿼리에 token/key 포함: {_redact(str(url))}"))
+            issues.append(("FAIL", Diagnostic("mcp.url_token_query", evidence=_redact(str(url)))))
     return issues
 
 
@@ -213,9 +224,9 @@ def replace_codex_block(existing_text, block):
     starts = existing_text.count(CODEX_BLOCK_START)
     ends = existing_text.count(CODEX_BLOCK_END)
     if starts > 1 or ends > 1:
-        return existing_text, "managed-block 마커 중복"
+        return existing_text, Diagnostic("mcp.codex_block_duplicated")
     if (starts == 1) != (ends == 1):
-        return existing_text, "managed-block 마커 짝 불일치(malformed)"
+        return existing_text, Diagnostic("mcp.codex_block_unpaired")
     if starts == 0:
         sep = "" if existing_text.endswith("\n") or not existing_text else "\n"
         joiner = "\n" if existing_text else ""
@@ -262,12 +273,12 @@ def verify_toml(text):
     """생성된 TOML 유효성 검증 → (ok, note). py3.11+ tomllib / py<3.11 tomli / 둘 다 없으면 best-effort skip."""
     parser = _toml_parser()
     if parser is None:
-        return True, "tomllib/tomli 미가용 — TOML 검증 skip(best-effort)"
+        return True, Diagnostic("mcp.toml_parser_unavailable")
     try:
         parser.loads(text)
         return True, None
     except Exception as e:
-        return False, f"TOML 파싱 실패: {e}"
+        return False, Diagnostic("mcp.toml_parse_failed", evidence=str(e))
 
 
 def canonical_render(model, target):

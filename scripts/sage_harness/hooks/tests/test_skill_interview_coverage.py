@@ -38,6 +38,15 @@ class TestSkillInterviewCoverage(unittest.TestCase):
         text = SAGE_INIT.read_text(encoding="utf-8")
         self.assertIn("l2_content_keywords", text)
 
+    def test_cycle_binding_visibility_has_a_documented_owner(self):
+        # EH-15/16 은 인터뷰 대상이 아니다(기본값이 옳고 all 은 비용을 아는 사람이 켠다).
+        # 그렇다면 사후 편집 경로와 "왜 안 묻는가"가 반드시 문서에 있어야 EH-18 이 고친
+        # "스키마에는 있는데 대화 경로가 없는 키" 로 되돌아가지 않는다.
+        self.assertIn("pdca.cycle_binding_visibility",
+                      PROFILE_MODIFY.read_text(encoding="utf-8"))
+        self.assertIn("pdca.cycle_binding_visibility",
+                      BOOTSTRAP_AUTHORING.read_text(encoding="utf-8"))
+
     def test_profile_modify_lists_conventions(self):
         text = PROFILE_MODIFY.read_text(encoding="utf-8")
         self.assertIn("`conventions`", text)

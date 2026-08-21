@@ -18,6 +18,12 @@ a structured review report for the current implementation cycle.
   or "cross-model review"
 
 ## procedure
+0. Resolve the conversation language once: an explicit `--lang ko|en` on this skill's
+   invocation, then `interface.language` in `sage/project-profile.local.yaml`, then `ko`.
+   Every question, proposal, progress note, warning and summary uses it; machine values
+   and Phase 00–06 `Document-Language:` prose do not. Document prose includes section headings
+   and list labels, except `## 5. Done Criteria` and `## 6. Done Criteria Revision Log`, which a
+   parser reads by their exact string. See `docs/agent/language-policy.md`.
 1. Read the effective shared/local profile — `options.cross_model` resolves the review mode
    (`required` always uses `sage cross-check` and blocks when the peer is unavailable;
    recommended local opt-out or `off` uses clean-context same-runtime via `sage review`);

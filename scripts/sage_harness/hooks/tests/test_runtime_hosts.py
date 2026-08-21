@@ -10,6 +10,11 @@ from sage.runtime_hosts import (active_host, configured_hosts, opposite_host, pr
                                 receipt_hosts, receipt_issues)
 
 
+def _codes(messages):
+    """진단 목록의 code 집합. 문자열이 섞여 있으면 그대로 담는다(이행 중 경로)."""
+    return {getattr(item, "code", item) for item in messages}
+
+
 class RuntimeHostTests(unittest.TestCase):
     def test_legacy_host_remains_compatible(self):
         profile = {"runtime": {"host": "codex"}}
@@ -46,17 +51,17 @@ class RuntimeHostTests(unittest.TestCase):
             "team": {"core": {"reviewer": {"runtime": {"effort": "high"}}}},
         }
         issues = team_runtime_issues(profile)
-        self.assertTrue(any(severity == "WARN" and "codex host" in message
+        self.assertTrue(any(severity == "WARN" and message.code == "install.team_runtime_codex_inert"
                             for severity, message in issues))
 
     def test_legacy_alias_conflict_is_fail_closed(self):
         profile = {"runtime": {"host": "claude", "active_host": "codex",
                                "installed_hosts": ["claude", "codex"]}}
         failures = [message for severity, message in profile_issues(profile) if severity == "FAIL"]
-        self.assertTrue(any("정본이 모호" in message for message in failures))
+        self.assertIn("runtime.alias_conflicts_with_active", _codes(failures))
         validated = validate_profile(profile, ".")
-        self.assertTrue(any(severity == "FAIL" and "정본이 모호" in message
-                            for severity, message in validated))
+        self.assertIn("runtime.alias_conflicts_with_active",
+                      _codes(m for s, m in validated if s == "FAIL"))
 
     def test_malformed_or_missing_active_membership_fails(self):
         cases = [
@@ -74,8 +79,8 @@ class RuntimeHostTests(unittest.TestCase):
         profile = {"runtime": {"installed_hosts": ["claude", "codex"], "active_host": "codex"},
                    "options": {"cross_model": False}}
         issues = profile_issues(profile)
-        self.assertTrue(any(severity == "WARN" and "강하게 권장" in message
-                            for severity, message in issues))
+        self.assertIn("runtime.double_host_without_cross_model",
+                      _codes(m for s, m in issues if s == "WARN"))
         result = reviewer_resolution(profile, {"claude": True, "codex": True})
         self.assertEqual("clean_context_same_runtime", result["reviewer_mode"])
 
@@ -91,8 +96,8 @@ class RuntimeHostTests(unittest.TestCase):
 
     def test_unknown_runtime_key_fails_without_jsonschema(self):
         issues = profile_issues({"runtime": {"active_hsot": "codex"}})
-        self.assertTrue(any(severity == "FAIL" and "알 수 없는 키" in message
-                            for severity, message in issues))
+        self.assertIn("runtime.unknown_keys",
+                      _codes(m for s, m in issues if s == "FAIL"))
 
 
 if __name__ == "__main__":

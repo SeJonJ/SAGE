@@ -90,6 +90,29 @@ class TestParse(unittest.TestCase):
             _inst(t); p = _spec(t, "x", "---\nid: x\nkind: mcp\ntransport: http\nruntime_targets: [claude]\nserver_binding: {}\n---\n")
             self.assertRaises(M.MCPSpecError, M.parse_mcp_spec, p)
 
+    def test_parse_error_codes_are_specific(self):
+        """MCPSpecError 마다 code 가 다른지 확인한다 — 이관 전에는 code 자체가 없었다."""
+        with tempfile.TemporaryDirectory() as t:
+            _inst(t)
+            cases = [
+                ("no-frontmatter", "no frontmatter here\n", "mcp.frontmatter_missing"),
+                ("bad-id", "---\nid: has.dot\nkind: mcp\ntransport: stdio\n"
+                          "runtime_targets: [claude]\nserver_binding: {command: x}\n---\n",
+                 "mcp.id_invalid"),
+                ("bad-transport", "---\nid: y\nkind: mcp\ntransport: ws\n"
+                                 "runtime_targets: [claude]\nserver_binding: {command: x}\n---\n",
+                 "mcp.transport_unsupported"),
+                ("no-targets", "---\nid: z\nkind: mcp\ntransport: stdio\n"
+                              "runtime_targets: []\nserver_binding: {command: x}\n---\n",
+                 "mcp.runtime_targets_empty"),
+            ]
+            for name, spec, expected in cases:
+                with self.subTest(name=name):
+                    path = _spec(t, name, spec)
+                    with self.assertRaises(M.MCPSpecError) as ctx:
+                        M.parse_mcp_spec(path)
+                    self.assertEqual(ctx.exception.diagnostic.code, expected)
+
 
 class TestSecrets(unittest.TestCase):
     def _model(self, binding, transport="stdio", targets=("claude",)):
@@ -131,10 +154,10 @@ class TestGenerate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             _inst(t); _spec(t, "codegraph", _CODEGRAPH)
             self.assertEqual(G.run(GArgs(t)), 0)
-            doc = json.loads(open(os.path.join(t, ".mcp.json")).read())
+            doc = json.loads(Path(os.path.join(t, ".mcp.json")).read_text())
             self.assertIn("codegraph", doc["mcpServers"])
             self.assertEqual(doc["mcpServers"]["codegraph"]["env"]["CODEGRAPH_TOKEN"], "${CODEGRAPH_TOKEN}")
-            cfg = open(os.path.join(t, ".codex", "config.toml")).read()
+            cfg = Path(os.path.join(t, ".codex", "config.toml")).read_text()
             self.assertIn("[mcp_servers.codegraph]", cfg)
             self.assertIn(M.CODEX_BLOCK_START, cfg)
 
@@ -153,9 +176,9 @@ class TestGenerate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             _inst(t); _spec(t, "codegraph", _CODEGRAPH)
             os.makedirs(os.path.join(t, ".codex"))
-            open(os.path.join(t, ".codex", "config.toml"), "w").write('model = "gpt-5"\n\n[history]\npersistence = "save-all"\n')
+            Path(os.path.join(t, ".codex", "config.toml")).write_text('model = "gpt-5"\n\n[history]\npersistence = "save-all"\n')
             G.run(GArgs(t))
-            cfg = open(os.path.join(t, ".codex", "config.toml")).read()
+            cfg = Path(os.path.join(t, ".codex", "config.toml")).read_text()
             self.assertIn('model = "gpt-5"', cfg)
             self.assertIn("[history]", cfg)
             self.assertIn("[mcp_servers.codegraph]", cfg)
@@ -164,9 +187,9 @@ class TestGenerate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             _inst(t); _spec(t, "codegraph", _CODEGRAPH)
             G.run(GArgs(t))
-            a = open(os.path.join(t, ".codex", "config.toml")).read()
+            a = Path(os.path.join(t, ".codex", "config.toml")).read_text()
             G.run(GArgs(t))
-            b = open(os.path.join(t, ".codex", "config.toml")).read()
+            b = Path(os.path.join(t, ".codex", "config.toml")).read_text()
             self.assertEqual(a, b)
 
     def test_secret_fail_aborts_before_write(self):
@@ -180,7 +203,7 @@ class TestGenerate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             _inst(t); _spec(t, "cg", "---\nid: cg\nkind: mcp\ntransport: stdio\nruntime_targets: [codex]\nserver_binding: { command: codegraph }\n---\n")
             os.makedirs(os.path.join(t, ".codex"))
-            open(os.path.join(t, ".codex", "config.toml"), "w").write('[mcp_servers.cg]\ncommand = "other"\n')
+            Path(os.path.join(t, ".codex", "config.toml")).write_text('[mcp_servers.cg]\ncommand = "other"\n')
             self.assertEqual(G.run(GArgs(t)), 1)
 
     def test_enabled_toggle_narrows(self):
@@ -188,16 +211,16 @@ class TestGenerate(unittest.TestCase):
             _inst(t); _spec(t, "codegraph", _CODEGRAPH)
             _spec(t, "obsidian", "---\nid: obsidian\nkind: mcp\ntransport: stdio\nruntime_targets: [claude]\nserver_binding: { command: npx }\n---\n")
             os.makedirs(os.path.join(t, "sage"))
-            open(os.path.join(t, "sage", "project-profile.yaml"), "w").write("project: { name: t }\nmcp:\n  enabled: [codegraph]\n")
+            Path(os.path.join(t, "sage", "project-profile.yaml")).write_text("project: { name: t }\nmcp:\n  enabled: [codegraph]\n")
             G.run(GArgs(t, target="claude"))
-            doc = json.loads(open(os.path.join(t, ".mcp.json")).read())
+            doc = json.loads(Path(os.path.join(t, ".mcp.json")).read_text())
             self.assertEqual(sorted(doc["mcpServers"].keys()), ["codegraph"])   # obsidian 제외
 
     def test_enabled_unknown_spec_fail(self):
         with tempfile.TemporaryDirectory() as t:
             _inst(t); _spec(t, "codegraph", _CODEGRAPH)
             os.makedirs(os.path.join(t, "sage"))
-            open(os.path.join(t, "sage", "project-profile.yaml"), "w").write("project: { name: t }\nmcp:\n  enabled: [nonexistent]\n")
+            Path(os.path.join(t, "sage", "project-profile.yaml")).write_text("project: { name: t }\nmcp:\n  enabled: [nonexistent]\n")
             self.assertEqual(G.run(GArgs(t)), 1)
 
 
@@ -212,7 +235,7 @@ class TestValidate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             _inst(t); p = _spec(t, "cg", "---\nid: cg\nkind: mcp\ntransport: stdio\nruntime_targets: [claude]\nserver_binding: { command: codegraph, args: [\"serve\"] }\n---\n")
             G.run(GArgs(t))
-            open(p, "w").write("---\nid: cg\nkind: mcp\ntransport: stdio\nruntime_targets: [claude]\nserver_binding: { command: codegraph, args: [\"serve\", \"--mcp\"] }\n---\n")
+            Path(p).write_text("---\nid: cg\nkind: mcp\ntransport: stdio\nruntime_targets: [claude]\nserver_binding: { command: codegraph, args: [\"serve\", \"--mcp\"] }\n---\n")
             self.assertEqual(V.run(VArgs(t)), 3)   # STALE
 
     def test_ownership_conflict_validate_fail(self):
@@ -220,8 +243,8 @@ class TestValidate(unittest.TestCase):
             _inst(t); _spec(t, "cg", "---\nid: cg\nkind: mcp\ntransport: stdio\nruntime_targets: [codex]\nserver_binding: { command: codegraph }\n---\n")
             G.run(GArgs(t))
             cfg = os.path.join(t, ".codex", "config.toml")
-            generated = open(cfg).read()   # read 먼저(truncate 전) — managed-block 보존
-            open(cfg, "w").write('[mcp_servers.cg]\ncommand = "rogue"\n\n' + generated)
+            generated = Path(cfg).read_text()   # read 먼저(truncate 전) — managed-block 보존
+            Path(cfg).write_text('[mcp_servers.cg]\ncommand = "rogue"\n\n' + generated)
             self.assertEqual(V.run(VArgs(t)), 1)   # FAIL 소유권 충돌(블록 밖 중복)
 
     def test_orphan_spec_warn(self):
@@ -234,9 +257,9 @@ class TestValidate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             _inst(t); _spec(t, "codegraph", _CODEGRAPH)
             G.run(GArgs(t))
-            doc = json.loads(open(os.path.join(t, ".mcp.json")).read())
+            doc = json.loads(Path(os.path.join(t, ".mcp.json")).read_text())
             doc["mcpServers"]["rogue"] = {"command": "x"}
-            open(os.path.join(t, ".mcp.json"), "w").write(json.dumps(doc))
+            Path(os.path.join(t, ".mcp.json")).write_text(json.dumps(doc))
             self.assertEqual(V.run(VArgs(t)), 0)   # WARN(비게이팅)
 
 
@@ -249,9 +272,9 @@ class TestR3Hardening(unittest.TestCase):
             _inst(t); _spec(t, "cg", "---\nid: cg\nkind: mcp\ntransport: stdio\nruntime_targets: [claude]\nserver_binding: { command: codegraph }\n---\n")
             G.run(GArgs(t, target="claude"))
             mj = os.path.join(t, ".mcp.json")
-            doc = json.loads(open(mj).read())
+            doc = json.loads(Path(mj).read_text())
             doc["mcpServers"]["cg"]["command"] = "rogue"
-            open(mj, "w").write(json.dumps(doc))
+            Path(mj).write_text(json.dumps(doc))
             self.assertEqual(V.run(VArgs(t)), 3)   # STALE
 
     def test_artifact_drift_codex_block_stale(self):
@@ -260,8 +283,8 @@ class TestR3Hardening(unittest.TestCase):
             _inst(t); _spec(t, "cg", "---\nid: cg\nkind: mcp\ntransport: stdio\nruntime_targets: [codex]\nserver_binding: { command: codegraph }\n---\n")
             G.run(GArgs(t, target="codex"))
             cfg = os.path.join(t, ".codex", "config.toml")
-            edited = open(cfg).read().replace("codegraph", "rogue")   # read 먼저(truncate 전)
-            open(cfg, "w").write(edited)
+            edited = Path(cfg).read_text().replace("codegraph", "rogue")   # read 먼저(truncate 전)
+            Path(cfg).write_text(edited)
             self.assertEqual(V.run(VArgs(t)), 3)   # STALE
 
     def test_split_arg_secret_fail(self):
@@ -287,7 +310,7 @@ class TestR3Hardening(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             _inst(t); _spec(t, "cg", "---\nid: cg\nkind: mcp\ntransport: stdio\nruntime_targets: [claude, codex]\nserver_binding: { command: codegraph }\n---\n")
             os.makedirs(os.path.join(t, ".codex"))
-            open(os.path.join(t, ".codex", "config.toml"), "w").write('[mcp_servers.cg]\ncommand = "other"\n')
+            Path(os.path.join(t, ".codex", "config.toml")).write_text('[mcp_servers.cg]\ncommand = "other"\n')
             self.assertEqual(G.run(GArgs(t, target="both")), 1)
             self.assertFalse(os.path.exists(os.path.join(t, ".mcp.json")))   # 부분상태 없음
 
@@ -295,7 +318,7 @@ class TestR3Hardening(unittest.TestCase):
         # P2: CRLF 줄바꿈 spec 파싱
         with tempfile.TemporaryDirectory() as t:
             _inst(t); p = os.path.join(t, "docs", "sage_harness", "mcps", "cr.md")
-            open(p, "wb").write(b"---\r\nid: cr\r\nkind: mcp\r\ntransport: stdio\r\nruntime_targets: [claude]\r\nserver_binding: { command: x }\r\n---\r\nbody\r\n")
+            Path(p).write_bytes(b"---\r\nid: cr\r\nkind: mcp\r\ntransport: stdio\r\nruntime_targets: [claude]\r\nserver_binding: { command: x }\r\n---\r\nbody\r\n")
             m = M.parse_mcp_spec(p)
             self.assertEqual(m["id"], "cr")
 
@@ -313,7 +336,7 @@ class TestR4Hardening(unittest.TestCase):
                        'note = """\n[mcp_servers.cg]\ncommand = "codegraph"\n"""\n'
                        '[mcp_servers.cg]\ncommand = "rogue"\n'
                        f'{M.CODEX_BLOCK_END}\n')
-            open(cfg, "w").write(evasion)
+            Path(cfg).write_text(evasion)
             self.assertEqual(V.run(VArgs(t)), 3)   # STALE (substring 이면 우회됐을 것)
 
     def test_codex_block_match_via_toml(self):
@@ -343,7 +366,7 @@ class TestR4Hardening(unittest.TestCase):
             injected = (f'{M.CODEX_BLOCK_START}\n[mcp_servers.cg]\ncommand = "codegraph"\n\n'
                         '[mcp_servers.rogue]\ncommand = "evil"\n'
                         f'{M.CODEX_BLOCK_END}\n')
-            open(cfg, "w").write(injected)
+            Path(cfg).write_text(injected)
             self.assertEqual(V.run(VArgs(t)), 1)   # FAIL
 
     def test_inside_block_servers_listed(self):
@@ -366,7 +389,7 @@ class TestReview(unittest.TestCase):
             _inst(t); _spec(t, "cg", "---\nid: cg\nkind: mcp\ntransport: stdio\nruntime_targets: [codex]\nserver_binding: { command: codegraph }\n---\n")
             G.run(GArgs(t, target="codex"))
             cfg = os.path.join(t, ".codex", "config.toml")
-            open(cfg, "w").write(f'{M.CODEX_BLOCK_START}\n[mcp_servers.cg]\ncommand = "codegraph"\n\n[mcp_servers.rogue]\ncommand = "evil"\n{M.CODEX_BLOCK_END}\n')
+            Path(cfg).write_text(f'{M.CODEX_BLOCK_START}\n[mcp_servers.cg]\ncommand = "codegraph"\n\n[mcp_servers.rogue]\ncommand = "evil"\n{M.CODEX_BLOCK_END}\n')
             ra = RArgs(t); ra.gate = True
             self.assertEqual(R.run(ra), 1)   # review --gate exit 1 (auto 아님)
 

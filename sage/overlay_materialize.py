@@ -18,6 +18,7 @@ import yaml
 
 from sage import __version__
 from sage import overlay_classify as _cls
+from sage.diagnostics import Diagnostic
 from sage import overlay_common as _oc
 
 
@@ -131,9 +132,9 @@ def _project_path_issue(dest, path, leaf_kind=None):
     target = os.path.abspath(path)
     try:
         if os.path.commonpath((root, target)) != root:
-            return f"project input path가 root 밖임: {target}"
+            return Diagnostic("materialize.path_outside_root", path=target)
     except ValueError:
-        return f"project input path와 root의 filesystem이 다름: {target}"
+        return Diagnostic("materialize.path_filesystem_mismatch", path=target)
 
     cursor = root
     parts = os.path.relpath(target, root)
@@ -146,15 +147,15 @@ def _project_path_issue(dest, path, leaf_kind=None):
         except FileNotFoundError:
             return None
         except OSError as exc:
-            return f"project input path 상태 확인 실패: {cursor} ({exc})"
+            return Diagnostic("materialize.path_stat_failed", path=cursor, evidence=str(exc))
         if stat.S_ISLNK(mode):
-            return f"project input symlink는 허용되지 않음: {cursor}"
+            return Diagnostic("materialize.path_symlink_forbidden", path=cursor)
         if not is_leaf and not stat.S_ISDIR(mode):
-            return f"project input ancestor가 directory가 아님: {cursor}"
+            return Diagnostic("materialize.path_ancestor_not_dir", path=cursor)
         if is_leaf and leaf_kind == "file" and not stat.S_ISREG(mode):
-            return f"project input이 regular file이 아님: {cursor}"
+            return Diagnostic("materialize.path_not_regular_file", path=cursor)
         if is_leaf and leaf_kind == "dir" and not stat.S_ISDIR(mode):
-            return f"project input이 directory가 아님: {cursor}"
+            return Diagnostic("materialize.path_not_dir", path=cursor)
     return None
 
 
@@ -204,12 +205,13 @@ def load_profile(dest):
             if yaml_profile is None:
                 yaml_profile = {}
             if not isinstance(yaml_profile, dict):
-                return {}, f"profile 최상위가 mapping이 아님: {yaml_rel}"
+                return {}, Diagnostic("materialize.profile_not_mapping", path=yaml_rel)
             from sage.profile_compile import ProfileCompileError, materialize_profile
             try:
                 compiled_yaml = materialize_profile(yaml_profile)
             except ProfileCompileError as exc:
-                return {}, f"profile materialize 실패({yaml_rel}): {exc}"
+                return {}, Diagnostic("materialize.profile_compile_failed", path=yaml_rel,
+                                      evidence=str(exc))
         else:
             compiled_yaml = None
 
@@ -220,13 +222,14 @@ def load_profile(dest):
                 return {}, err
             json_profile = json.loads(text)
             if not isinstance(json_profile, dict):
-                return {}, f"profile 최상위가 mapping이 아님: {json_rel}"
+                return {}, Diagnostic("materialize.profile_not_mapping", path=json_rel)
             if compiled_yaml is not None and not _exact_data_equal(json_profile, compiled_yaml):
-                return {}, "project-profile.yaml과 project-profile.json이 다름; sage generate 재실행 필요"
+                return {}, Diagnostic("materialize.profile_yaml_json_mismatch")
             return json_profile, None
         return compiled_yaml, None
     except Exception as exc:
-        return {}, f"profile 로드 실패: {exc}"
+        return {}, Diagnostic("materialize.profile_load_failed", kind=type(exc).__name__,
+                              evidence=str(exc))
 
 
 def _load_profile(dest):
@@ -304,10 +307,10 @@ def preflight_overlays(dest, profile=None):
             errors.append((path, filename_error))
             continue
         if not _cls.is_core(kind, id):
-            errors.append((path, f"미지/오타 CORE 자산 오버레이: '{id}' 는 CORE {kind} 아님"))
+            errors.append((path, Diagnostic("overlay.unknown_core_asset", id=id, kind=kind)))
             continue
         if _cls.classify(kind, id) == "blocked":
-            errors.append((path, f"{kind}/{id} 는 오버레이 미지원(독립 게이트 오라클 미보증 blocked)"))
+            errors.append((path, Diagnostic("overlay.unsupported_blocked", kind=kind, id=id)))
             continue
         text, read_error = _oc.read_text_lf(path)
         if read_error:
@@ -318,11 +321,42 @@ def preflight_overlays(dest, profile=None):
             errors.append((path, validation_error))
             continue
         relax_hits = scan_text(text)
-        if relax_hits:
-            details = "; ".join(f"{pattern_id}: {description}"
-                                for pattern_id, description in relax_hits)
-            errors.append((path, f"overlay-gate-relaxation: {details}"))
+        # 히트마다 진단 하나. 여기서 문장으로 합치면 안쪽 설명이 번역되지 않은 채 굳는다.
+        for pattern_id, description in relax_hits:
+            errors.append((path, Diagnostic("overlay.gate_relaxation",
+                                            pattern=pattern_id, reason=description)))
     return errors
+
+
+# 언어 정책은 host별 렌더가 아니라 양 host 가 같은 설치본을 공유하는 managed framework doc 이라
+# host 축이 없는 `shared` 앵커를 쓴다. overlay 합성 대상이 아니므로 plan 은 만들지 않고 영수증만 남긴다.
+_LANGUAGE_POLICY_SOURCE = "core/framework/docs/agent/language-policy.md"
+_LANGUAGE_POLICY_INSTALLED = ("docs", "agent", "language-policy.md")
+_LANGUAGE_POLICY_ANCHOR = anchor_key("shared", "framework-doc", "docs/agent/language-policy")
+
+
+def _language_policy_receipt(dest):
+    """(receipt, error). 설치본이 없으면 (None, None) — 구버전 소비자는 upgrade 가 추가한다."""
+    installed_path = os.path.join(dest, *_LANGUAGE_POLICY_INSTALLED)
+    if not os.path.isfile(installed_path):
+        return None, None
+    installed, read_error = _oc.read_text_lf(installed_path)
+    if read_error:
+        return None, (installed_path, read_error)
+
+    from sage import _resources
+    source_path = os.path.join(_resources.core_dir(), "framework",
+                               *_LANGUAGE_POLICY_INSTALLED)
+    source, source_error = _oc.read_text_lf(source_path)
+    if source_error:
+        return None, (source_path, source_error)
+
+    return {
+        "base_sha256": _sha256(installed),
+        "sage_version": __version__,
+        "semantic_source": _LANGUAGE_POLICY_SOURCE,
+        "semantic_source_sha256": _sha256(source),
+    }, None
 
 
 def plan_materialize(dest, host, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
@@ -355,6 +389,12 @@ def plan_materialize(dest, host, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
             "base_sha256": _sha256(base),
             "sage_version": __version__,
         }
+
+    policy_receipt, policy_error = _language_policy_receipt(dest)
+    if policy_error:
+        errors.append(policy_error)
+    elif policy_receipt:
+        core_renders[_LANGUAGE_POLICY_ANCHOR] = policy_receipt
 
     if errors:
         return {}, [], errors
@@ -444,7 +484,8 @@ def check(dest, host, core_renders, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
     routing_profile, routing_profile_error = load_profile(dest)
     if routing_profile_error:
         findings.append(("FAIL", f"{host}/framework/AGENT_GUIDE",
-                         f"라우팅 블록 profile 로드 실패: {routing_profile_error}"))
+                         Diagnostic("materialize.routing_profile_load_failed",
+                                   reason=routing_profile_error)))
         routing_profile = {}
     # 오버레이 파일 선스캔 — 오타/미지 CORE id, 읽기 실패를 하드-리포트(R1 #5·#12). render_targets 는
     #   유효 CORE id 만 돌므로 여기서 별도로 실제 파일을 열어 typo 를 잡는다.
@@ -455,7 +496,8 @@ def check(dest, host, core_renders, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
             continue
         if not _cls.is_core(kind, id):
             findings.append(("FAIL", f"{host}/{kind}/{id}",
-                             f"미지/오타 CORE 자산 오버레이: {opath} ('{id}' 는 CORE {kind} 아님)"))
+                             Diagnostic("overlay.unknown_core_asset_at", path=opath, id=id,
+                                       kind=kind)))
             continue
         _, rerr = _oc.read_text_lf(opath)
         if rerr:
@@ -467,13 +509,16 @@ def check(dest, host, core_renders, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
             op = _cls.overlay_path(dest, kind, id)
             if os.path.isfile(op):
                 findings.append(("FAIL", key,
-                                 f"{kind}/{id} 는 오버레이 미지원(독립 게이트 오라클 미보증 blocked): {op} 삭제 필요"))
+                                 Diagnostic("overlay.unsupported_blocked_remove", kind=kind,
+                                           id=id, path=op)))
         if not os.path.isfile(path):
-            findings.append(("FAIL", key, f"CORE 렌더 없음: {path}"))
+            findings.append(("FAIL", key, Diagnostic("materialize.core_render_missing", path=path)))
             continue
         anchor = core_renders.get(key)
         if not isinstance(anchor, dict) or "base_sha256" not in anchor:
-            findings.append(("FAIL", key, f"core_renders 앵커 부재/손상: {key}"))
+            # 인자명 `key` 는 render() 파이프라인의 translate(key, **arguments) 위치 인자와
+            # 충돌한다 — Diagnostic 인자에 절대 `key` 를 쓰지 않는다(전역 예약어).
+            findings.append(("FAIL", key, Diagnostic("materialize.anchor_missing", anchor_key=key)))
             continue
         installed, rerr = _oc.read_text_lf(path)
         if rerr:
@@ -481,29 +526,32 @@ def check(dest, host, core_renders, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
             continue
         base, berr = _oc.base_of(installed)
         if berr:
-            findings.append(("FAIL", key, f"{path}: {berr}"))
+            findings.append(("FAIL", key, Diagnostic("overlay.installed_span_broken",
+                                                     path=path, reason=berr)))
             continue
         if _sha256(base) != anchor["base_sha256"]:
-            findings.append(("FAIL", key, f"base drift/변조: {path} (앵커 불일치)"))
+            findings.append(("FAIL", key, Diagnostic("materialize.base_drift", path=path)))
             continue
         block, cerr = _cls.expected_block(kind, id, dest)
         if cerr:
-            findings.append(("FAIL", key, f"{path}: {cerr}"))
+            findings.append(("FAIL", key, Diagnostic("overlay.expected_block_failed", path=path,
+                                                      reason=cerr)))
             continue
         actual = _oc.extract_block(installed) or ""
         if actual != block:
-            findings.append(("FAIL", key, f"오버레이 미반영/stale: {path} (`sage sync-overlays` 필요)"))
+            findings.append(("FAIL", key, Diagnostic("overlay.block_stale", path=path)))
             continue
         routing_block, routing_err = _cls.expected_routing_block(kind, id, dest, routing_profile)
         if routing_err:
-            findings.append(("FAIL", key, f"{path}: 라우팅 블록 계산 실패({routing_err})"))
+            findings.append(("FAIL", key, Diagnostic("routing_input.compute_failed", path=path,
+                                                      reason=routing_err)))
             continue
         routing_actual = _oc.extract_routing_block(installed) or ""
         if routing_actual != routing_block:
-            findings.append(("FAIL", key,
-                             f"라우팅 블록 미반영/stale: {path} (`sage sync-overlays` 필요)"))
+            findings.append(("FAIL", key, Diagnostic("routing_input.block_stale", path=path)))
             continue
         if anchor.get("sage_version") != __version__:
             findings.append(("STALE", key,
-                             f"{key} 는 SAGE {anchor.get('sage_version')} 로 설치됨(현재 {__version__}) — `sage install --force` 로 업그레이드"))
+                             Diagnostic("materialize.stale_sage_version", anchor_key=key,
+                                       installed=anchor.get("sage_version"), current=__version__)))
     return findings

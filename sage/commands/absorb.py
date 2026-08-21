@@ -16,20 +16,21 @@ import sys
 from pathlib import Path
 
 from sage.asset_paths import AssetPaths
+from sage.i18n import CATALOGS, language_of, tr
 
 
-def register(sub):
-    p = sub.add_parser("absorb", help="직접 고친 생성 파일을 spec 수정안으로 되돌려 제안합니다")
+def register(sub, context):
+    p = sub.add_parser("absorb", help=tr(context, "cli.absorb.absorb"))
     # --kind/--id 는 기본 absorb 에 필수, --from-retro 모드에선 불요(아래 run 에서 검증).
     p.add_argument("--kind", choices=["hook", "agent", "skill"])
     p.add_argument("--id")
     p.add_argument("--from-blocked-diff", action="store_true",
-                   help="write guard 에 막힌 diff 를 재입력 없이 바로 patch 후보로 변환")
+                   help=tr(context, "cli.absorb.from_blocked_diff"))
     p.add_argument("--from-retro", default=None, metavar="NOTE",
-                   help="승인된(approved:true) retro human-gate 노트를 읽어 제안→자산 patch 후보로 변환(Loop C)")
-    p.add_argument("--claude", default="", help="(agent/skill) 수정된 .claude 산출물 경로")
-    p.add_argument("--codex", default="", help="(agent/skill) 수정된 .codex 산출물 경로")
-    p.add_argument("--guide", default="", help="(agent/skill) AGENT_GUIDE 경로")
+                   help=tr(context, "cli.absorb.from_retro"))
+    p.add_argument("--claude", default="", help=tr(context, "cli.absorb.claude"))
+    p.add_argument("--codex", default="", help=tr(context, "cli.absorb.codex"))
+    p.add_argument("--guide", default="", help=tr(context, "cli.absorb.guide"))
     p.add_argument("--config", default="", help="(agent/skill) ExtractConfig (module:VAR | *.json)")
     p.add_argument("--root", default=None)
     p.set_defaults(func=run)
@@ -62,7 +63,7 @@ def _absorb_interpretive(args, root, kind):
         subdir, driver = "skills", "extract_skill"
 
     if not (args.claude and args.codex):
-        print(f"[sage absorb] {kind} 는 --claude/--codex (수정된 산출물 경로) 필요", file=sys.stderr)
+        print(tr(language_of(args), "cli.absorb.msg01", kind=kind), file=sys.stderr)
         return 2
     config = load_config(args.config) if args.config else None
     guide = Path(args.guide).read_text(encoding="utf-8") if args.guide and os.path.exists(args.guide) else ""
@@ -78,19 +79,18 @@ def _absorb_interpretive(args, root, kind):
     removed_fb = sorted(cur["forbidden"] - new_fb)
     new_unresolved = sorted(set(new["unresolved"]) - cur["unresolved"])
 
-    print(f"== sage absorb ({kind}:{args.id}) — spec patch 제안 (자동반영 없음) ==")
+    print(tr(language_of(args), "cli.absorb.msg02", kind=kind, args_id=args.id))
     if not any([added_req, removed_req, added_fb, removed_fb, new_unresolved]):
-        print("변경 없음 — 수정 산출물의 claims 가 현 spec 과 동일. (absorb 불필요)")
+        print(tr(language_of(args), "cli.absorb.msg03"))
         return 0
-    print(f"【 제안: docs/sage_harness/{subdir}/{args.id}.claims.yml 패치 】")
+    print(tr(language_of(args), "cli.absorb.msg04", subdir=subdir, args_id=args.id))
     for v in added_req:   print(f"  + required:   {v}")
     for v in removed_req: print(f"  - required:   {v}")
     for v in added_fb:    print(f"  + forbidden:  {v}")
     for v in removed_fb:  print(f"  - forbidden:  {v}")
     for v in new_unresolved:
-        print(f"  ⚠ unresolved: {v} (한쪽-only/근거부족 — 사람 확인 필요)")
-    print(f"\n승인 시: 위 의도를 spec(intent/advisory_scope)에 반영 → "
-          f"sage 재추출({driver} --register) → validate. 자동 반영하지 않음(SSOT 보호).")
+        print(tr(language_of(args), "cli.absorb.msg05", v=v))
+    print(tr(language_of(args), "cli.absorb.msg06", driver=driver))
     return 0
 
 
@@ -107,7 +107,7 @@ def _absorb_hook(args, root):
     manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
     entry = manifest.get("assets", {}).get(f"hooks/{args.id}")
     if not entry:
-        print(f"[sage absorb] manifest 에 hooks/{args.id} 없음", file=sys.stderr)
+        print(tr(language_of(args), "cli.absorb.msg07", args_id=args.id), file=sys.stderr)
         return 2
 
     paths = AssetPaths(root, "hook", args.id)   # 경로 규약 단일소스(P2-6)
@@ -131,22 +131,22 @@ def _absorb_hook(args, root):
                 elif sha(ap) != arec:
                     diverged.append((f"adapter:{rt}", os.path.relpath(ap, root)))
 
-    print(f"== sage absorb (hook:{args.id}) — 정본 직접수정 비교 (자동반영 없음) ==")
+    print(tr(language_of(args), "cli.absorb.msg08", args_id=args.id))
     if not diverged and not unstamped:
-        print("변경 없음 — canonical/adapter 가 manifest 스탬프와 일치. (absorb 불필요)")
+        print(tr(language_of(args), "cli.absorb.msg09"))
         return 0
     if unstamped:
-        print("【 미스탬프(아직 hash 없음) — generate 로 스탬프 필요 】")
+        print(tr(language_of(args), "cli.absorb.msg10"))
         for p in unstamped:
             print(f"  · {p}")
     if diverged:
-        print("【 정본 직접수정 감지 — manifest 스탬프와 다름 】")
+        print(tr(language_of(args), "cli.absorb.msg11"))
         for what, path in diverged:
             print(f"  ~ {what}: {path}")
-    print("\n흡수 절차(자동 아님):")
-    print(f"  1. 동작/계약이 바뀌었으면 spec 갱신: docs/sage_harness/hooks/{args.id}.md (intent/runtime_bindings/tests)")
-    print(f"  2. sage generate --kind hook --id {args.id} --write   → shim 재생성 + manifest 재스탬프")
-    print(f"  3. sage validate --kind hook --id {args.id}           → drift/regression 확인")
+    print(tr(language_of(args), "cli.absorb.msg12"))
+    print(tr(language_of(args), "cli.absorb.msg13", args_id=args.id))
+    print(tr(language_of(args), "cli.absorb.msg14", args_id=args.id))
+    print(tr(language_of(args), "cli.absorb.msg15", args_id=args.id))
     return 0
 
 
@@ -172,23 +172,23 @@ def _overlay_hint(p):
     return f"sage/asset_overrides/{subdir}/{safe}.md"
 
 
-def _overlay_resolution(p):
+def _overlay_resolution(p, language=None):
     """retro proposal의 CORE overlay eligibility와 안내 문구를 단일 분류기로 판정한다."""
     from sage.overlay_classify import classify, is_core
 
     target = p.get("target") if isinstance(p, dict) else None
     raw = p.get("asset_id") or p.get("id") or p.get("asset")
     if not raw:
-        return f"대상 확인 필요: {_overlay_hint(p)} (asset_id 지정 후 COMPOSE_ALLOWED 검증)"
+        return tr(language, "cli.absorb.overlay_target_needs_id", hint=_overlay_hint(p))
 
     hint = _overlay_hint(p)
     kind = "agents" if target == "agent" else "skills"
     asset_id = os.path.basename(hint)[:-3]
     if is_core(kind, asset_id) and classify(kind, asset_id) == "compose":
-        return f"eligible overlay 후보: {hint}"
+        return tr(language, "cli.absorb.overlay_eligible_candidate", hint=hint)
     if is_core(kind, asset_id):
-        return f"overlay 미지원: {kind}/{asset_id} (gate-bearing 또는 독립 oracle 미보증)"
-    return f"CORE 대상 아님: {kind}/{asset_id} (새 프로젝트 자산은 /sage-asset)"
+        return tr(language, "cli.absorb.overlay_unsupported", kind=kind, asset_id=asset_id)
+    return tr(language, "cli.absorb.overlay_not_core_target", kind=kind, asset_id=asset_id)
 
 
 def frontmatter_value(text, key):
@@ -224,7 +224,11 @@ def _parse_frontmatter_approved(text):
 
 
 _FENCE = re.compile(r"^\s*```+\s*([A-Za-z0-9_+-]*)\s*$")
-_PROPOSAL_HEADING = re.compile(r"^##\s*제안")
+# 헤딩 이름을 catalog(cli.retro.heading_proposals) 에서 가져와 정규식을 구성한다 — retro 가 노트를
+# 생성할 때 쓰는 것과 같은 소스라, 헤딩 문구가 바뀌어도 이 파서가 자동으로 따라간다(§4c/§4d SSOT).
+_PROPOSAL_HEADING_ALTERNATION = "|".join(
+    re.escape(CATALOGS[lang]["cli.retro.heading_proposals"]) for lang in CATALOGS)
+_PROPOSAL_HEADING = re.compile(rf"^##\s*(?:{_PROPOSAL_HEADING_ALTERNATION})")
 # 섹션 경계 — 임의 레벨 헤딩 / 수평선 / <details>. 반드시 **펜스 밖**에서만 판정한다:
 # 코드블록 안의 `---` 나 `### …` 는 마크다운상 본문 텍스트지 경계가 아니다.
 _SECTION_BOUNDARY = re.compile(r"^(?:#{1,6}\s|---+\s*$|<details\b)")
@@ -277,7 +281,7 @@ def _is_proposal_candidate(lang, content):
     return lang == "json" or content.lstrip().startswith("[")
 
 
-def _extract_proposals(text):
+def _extract_proposals(text, language=None):
     """`## 제안` 섹션의 첫 제안 후보 블록 → (list, None). 없음/실패 → (None, 사유).
 
     마스킹 금지: 후보 블록이 파싱에 실패하면 뒤 블록으로 구제하지 않고 즉시 실패한다. 그러지 않으면
@@ -285,9 +289,9 @@ def _extract_proposals(text):
     """
     blocks = _fenced_blocks_in_proposal_section(text)
     if blocks is None:
-        return None, "## 제안 섹션을 찾지 못함"
+        return None, tr(language, "cli.absorb.proposals_section_not_found")
     if not blocks:
-        return None, "## 제안 섹션에 코드블록이 없음"
+        return None, tr(language, "cli.absorb.proposals_section_no_codeblock")
     for lang, content in blocks:
         raw = content.strip()
         if not raw or not _is_proposal_candidate(lang, raw):
@@ -295,31 +299,30 @@ def _extract_proposals(text):
         try:
             data = json.loads(raw)
         except Exception as e:
-            return None, f"제안 JSON 파싱 실패: {e}"
+            return None, tr(language, "cli.absorb.proposals_json_parse_failed", e=e)
         if not isinstance(data, list):
-            return None, "제안 블록이 JSON 배열이 아님"
+            return None, tr(language, "cli.absorb.proposals_not_json_array")
         return data, None
-    return None, "유효한 JSON 배열 블록 없음"
+    return None, tr(language, "cli.absorb.proposals_no_valid_json_block")
 
 
 def _absorb_from_retro(args) -> int:
     """승인된 retro 노트(Loop C)의 제안을 target 별 자산 patch *후보*로 변환(자동반영 없음, absorb 철학)."""
     path = args.from_retro
     if not os.path.exists(path):
-        print(f"[sage absorb] retro 노트 없음: {path}", file=sys.stderr)
+        print(tr(language_of(args), "cli.absorb.msg16", path=path), file=sys.stderr)
         return 2
     text = Path(path).read_text(encoding="utf-8")
     approved = _parse_frontmatter_approved(text)
     if approved is not True:
-        print(f"[sage absorb] retro 노트가 승인되지 않음(frontmatter approved={approved}) — "
-              f"사람이 검토 후 approved: true 로 바꿔야 반영 후보를 출력합니다(human gate)", file=sys.stderr)
+        print(tr(language_of(args), "cli.absorb.msg17", approved=approved), file=sys.stderr)
         return 2
-    proposals, err = _extract_proposals(text)
+    proposals, err = _extract_proposals(text, language_of(args))
     if err:
         print(f"[sage absorb] {err}", file=sys.stderr)
         return 2
 
-    print(f"== sage absorb --from-retro ({os.path.basename(path)}) — 자산 patch 후보 (자동반영 없음) ==")
+    print(tr(language_of(args), "cli.absorb.msg18", os_path=os.path.basename(path)))
     # target 이 str 일 때만 분류 — list/dict 등 unhashable target 의 set membership 크래시 방지(codex B).
     def _bucket(p):
         if not isinstance(p, dict) or not isinstance(p.get("target"), str):
@@ -331,43 +334,45 @@ def _absorb_from_retro(args) -> int:
     skipped = [p for p in proposals if _bucket(p) == "skip"]
 
     if not proposals:
-        print("제안 없음(빈 배열) — distill 결과가 비어 있습니다.")
+        print(tr(language_of(args), "cli.absorb.msg19"))
         return 0
 
     def _show(p):
         ev = p.get("evidence") or []
         ev_s = ("; ".join(map(str, ev)) if isinstance(ev, list) else str(ev))
-        print(f"  · [{p.get('target')}] {p.get('proposed_change', '(변경안 없음)')} "
+        print(f"  · [{p.get('target')}] "
+              f"{p.get('proposed_change') or tr(language_of(args), 'cli.absorb.msg20')} "
               f"(confidence={p.get('confidence', '?')})")
         if p.get("pattern"):
-            print(f"      패턴: {p['pattern']}")
+            print(tr(language_of(args), "cli.absorb.msg21", arg=p["pattern"]))
         if ev_s:
-            print(f"      근거: {ev_s}")
+            print(tr(language_of(args), "cli.absorb.msg22", ev_s=ev_s))
 
     if mech:
-        print("\n【 기계적 누락 → profile / hook (결정론 강제) 】")
+        print(tr(language_of(args), "cli.absorb.msg23"))
         for p in mech:
             _show(p)
-        print("  적용: profile 키 수정(/sage-profile-modify) 또는 hook spec/코드 수정 → sage generate → sage validate")
-        print("  주의: hook 은 결정론 런타임이므로 overlay 파일만으로 실행 동작을 바꾸지 않습니다.")
+        print(tr(language_of(args), "cli.absorb.msg24"))
+        print(tr(language_of(args), "cli.absorb.msg25"))
     if sem:
-        print("\n【 의미적 누락 → agent / skill (자산별 반영 경로 판정) 】")
+        print(tr(language_of(args), "cli.absorb.msg26"))
         for p in sem:
             _show(p)
-            print(f"      {_overlay_resolution(p)}")
-        print("  적용: CORE 렌더 직접수정 금지. COMPOSE_ALLOWED 자산만 `/sage-asset-override` 로 작성하세요.")
-        print("        gate-bearing CORE 자산은 독립 oracle 보증 전까지 overlay 미지원이며, 새 프로젝트 자산은 `/sage-asset` 경로입니다.")
-        print("        eligible overlay는 렌더에 물리화되고 `sage validate`가 게이트하며 install --force에도 보존됩니다.")
-        print("        범용화할 내용이면 이후 spec/CORE 반영은 별도 변경으로 승격하세요.")
+            print(f"      {_overlay_resolution(p, language_of(args))}")
+        print(tr(language_of(args), "cli.absorb.msg27"))
+        print(tr(language_of(args), "cli.absorb.msg28"))
+        print(tr(language_of(args), "cli.absorb.msg29"))
+        print(tr(language_of(args), "cli.absorb.msg30"))
     if skipped:
-        print(f"\n⚠️  target 미지/누락 {len(skipped)}건 — target ∈ {{profile,hook,agent,skill}} 이어야 분류됨:")
+        print(tr(language_of(args), "cli.absorb.msg31", count=len(skipped)))
         for p in skipped:
             if isinstance(p, dict):   # 비-dict 항목(예: 숫자)도 크래시 없이 표시(codex B P1)
-                print(f"  · {p.get('proposed_change', '(변경안 없음)')!r} (target={p.get('target')})")
+                fallback = tr(language_of(args), "cli.absorb.msg32")
+                print(f"  · {p.get('proposed_change', fallback)!r} (target={p.get('target')})")
             else:
-                print(f"  · {p!r} (dict 아님 — 제안 항목은 객체여야)")
+                print(tr(language_of(args), "cli.absorb.msg33", arg=repr(p)))
 
-    print("\n자동 반영하지 않음(SSOT 보호). 위 후보를 사람이 검토·적용 후 generate/validate 로 닫으세요.")
+    print(tr(language_of(args), "cli.absorb.msg34"))
     return 0
 
 
@@ -376,7 +381,7 @@ def run(args) -> int:
     if args.from_retro:
         return _absorb_from_retro(args)
     if not args.kind or not args.id:
-        print("[sage absorb] --kind 와 --id 가 필요합니다 (또는 --from-retro <노트>)", file=sys.stderr)
+        print(tr(language_of(args), "cli.absorb.msg35"), file=sys.stderr)
         return 2
 
     root = args.root or os.getcwd()
@@ -385,7 +390,7 @@ def run(args) -> int:
     while not os.path.exists(os.path.join(cur, "docs", "sage_harness", ".manifest.json")):
         parent = os.path.dirname(cur)
         if parent == cur:
-            print("[sage absorb] TOOL ERROR: manifest 미발견", file=sys.stderr)
+            print(tr(language_of(args), "cli.absorb.msg36"), file=sys.stderr)
             return 2
         cur = parent
     root = cur

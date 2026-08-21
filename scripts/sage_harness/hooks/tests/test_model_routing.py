@@ -10,6 +10,16 @@ from sage import model_routing as MR  # noqa: E402
 from sage.profile_validate import severity_of, validate_profile  # noqa: E402
 
 
+def _has(issues, severity, code, **arguments):
+    """판정을 문구가 아니라 code·인자로 확인한다 — 문안은 catalog 소유다."""
+    for sev, message in issues:
+        if sev != severity or getattr(message, "code", None) != code:
+            continue
+        if all(message.arguments.get(name) == value for name, value in arguments.items()):
+            return True
+    return False
+
+
 class TestModelRouting(unittest.TestCase):
     def _profile(self):
         return {
@@ -37,8 +47,7 @@ class TestModelRouting(unittest.TestCase):
         self.assertEqual(MR.reviewer_selection(profile), ("claude", "opus"))
         profile["cross_model"]["reviewer"]["host"] = "codex"   # = active_host
         issues = MR.profile_issues(profile)
-        self.assertTrue(any(sev == "FAIL" and "자기 자신은 독립 리뷰어가 될 수 없음" in msg
-                            for sev, msg in issues))
+        self.assertTrue(_has(issues, "FAIL", "routing.reviewer_host_is_active"))
 
     def test_reviewer_host_must_be_installed(self):
         # 설치되지 않은 runtime 을 리뷰어로 지정하면 실행 시점에 CLI 가 없어 BLOCKED 로 끝난다.
@@ -47,7 +56,7 @@ class TestModelRouting(unittest.TestCase):
         profile["runtime"] = {"installed_hosts": ["codex"], "active_host": "codex"}
         profile["cross_model"]["reviewer"]["host"] = "claude"
         issues = MR.profile_issues(profile)
-        self.assertTrue(any(sev == "FAIL" and "installed_hosts에 없음" in msg for sev, msg in issues))
+        self.assertTrue(_has(issues, "FAIL", "routing.reviewer_host_not_installed"))
 
     def test_auto_active_host_leaves_reviewer_host_to_runtime(self):
         # auto 면 peer 가 실행 시점에만 정해지므로 정적으로 옳고 그름을 말할 수 없다 → 판정하지 않는다.
@@ -67,8 +76,8 @@ class TestModelRouting(unittest.TestCase):
         profile["runtime"]["active_host"] = "auto"
         for partial in ({"model": "opus"}, {"host": "claude"}):
             profile["cross_model"]["reviewer"] = partial
-            self.assertTrue(any(sev == "FAIL" and "host와 model을 모두 명시" in msg
-                                for sev, msg in MR.profile_issues(profile)), partial)
+            self.assertTrue(_has(MR.profile_issues(profile), "FAIL",
+                                 "routing.reviewer_incomplete"), partial)
 
     def test_detected_host_is_never_its_own_reviewer(self):
         """감지가 성공하면 pin 과 무관하게 현재 host 를 제외한다 — 이게 10-b 의 본체다."""
@@ -126,14 +135,14 @@ class TestModelRouting(unittest.TestCase):
         profile = self._profile()
         profile["components"][1]["runtime_models"] = {"claude": "sonnet"}
         issues = MR.profile_issues(profile)
-        self.assertTrue(any(sev == "WARN" and "frontend" in msg and "active_host" in msg
-                            for sev, msg in issues))
+        self.assertTrue(_has(issues, "WARN", "routing.runtime_models_no_active_choice",
+                             label="frontend"))
 
     def test_cross_reviewer_config_while_cross_model_off_is_warning(self):
         profile = self._profile()
         profile["options"]["cross_model"] = False
         issues = MR.profile_issues(profile)
-        self.assertTrue(any(sev == "WARN" and "무동작" in msg for sev, msg in issues))
+        self.assertTrue(_has(issues, "WARN", "routing.reviewer_set_but_disabled"))
 
     def test_cross_model_without_explicit_reviewer_warns_about_cli_default(self):
         for cross_value in (None, {"peer": "opposite_runtime"}):
@@ -143,8 +152,7 @@ class TestModelRouting(unittest.TestCase):
             else:
                 profile["cross_model"] = cross_value
             issues = MR.profile_issues(profile)
-            self.assertTrue(any(sev == "WARN" and "host/model 미선택" in msg
-                                and "CLI 기본 모델" in msg for sev, msg in issues), cross_value)
+            self.assertTrue(_has(issues, "WARN", "routing.reviewer_unselected"), cross_value)
 
     def test_catalog_status_distinguishes_confirmed_syntax_only_and_unknown(self):
         confirmed = {"verification": "cache-confirmed", "candidates": [{"id": "gpt-a"}]}

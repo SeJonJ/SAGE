@@ -4,6 +4,7 @@ import os
 import sys
 
 from sage import _resources
+from sage.i18n import tr
 
 
 def _load_runtime_modules():
@@ -18,28 +19,28 @@ def _load_runtime_modules():
     return aw, cycle_binding, gate_core
 
 
-def register(sub):
-    p = sub.add_parser("acceptance-waiver", help="특정 L3 acceptance의 운영 검증 유예를 명시적으로 기록합니다")
+def register(sub, context):
+    p = sub.add_parser("acceptance-waiver", help=tr(context, "cli.acceptance_waiver.acceptance_waiver"))
     actions = p.add_subparsers(dest="action", metavar="<action>")
     actions.required = True
 
-    grant = actions.add_parser("grant", help="exact cycle/required acceptance ID waiver 발급")
+    grant = actions.add_parser("grant", help=tr(context, "cli.acceptance_waiver.grant"))
     grant.add_argument("--cycle-stem", required=True)
     grant.add_argument("--acceptance-id", required=True)
     grant.add_argument("--reason", required=True)
     grant.add_argument("--scope", required=True)
     grant.add_argument("--remaining-evidence", required=True)
     grant.add_argument("--confirm-user", required=True,
-                       help="명시 승인한 사용자 표시(로컬 self-asserted audit이며 원격 신원 증명 아님)")
-    grant.add_argument("--ttl", default="24h", help="유효기간, 최대 24h (기본 24h)")
+                       help=tr(context, "cli.acceptance_waiver.confirm_user"))
+    grant.add_argument("--ttl", default="24h", help=tr(context, "cli.acceptance_waiver.ttl"))
     grant.add_argument("--root", default=None)
     grant.set_defaults(func=_run_grant)
 
-    listing = actions.add_parser("list", help="waiver audit와 현재 active grant 조회")
+    listing = actions.add_parser("list", help=tr(context, "cli.acceptance_waiver.list"))
     listing.add_argument("--root", default=None)
     listing.set_defaults(func=_run_list)
 
-    revoke = actions.add_parser("revoke", help="active waiver 명시 회수")
+    revoke = actions.add_parser("revoke", help=tr(context, "cli.acceptance_waiver.revoke"))
     revoke.add_argument("--waiver-id", required=True)
     revoke.add_argument("--reason", required=True)
     revoke.add_argument("--confirm-user", required=True)

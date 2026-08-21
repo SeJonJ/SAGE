@@ -10,19 +10,25 @@ from typing import Any
 
 import yaml
 
+from sage.diagnostics import Diagnostic
 
 HOSTS = ("claude", "codex")
 POLICIES = ("required", "recommended", "off")
 LOCAL_PROFILE_NAME = "project-profile.local.yaml"
 _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")
-_LOCAL_KEYS = frozenset({"runtime", "capabilities", "cross_model", "knowledge_capture", "models"})
+_LOCAL_KEYS = frozenset({"runtime", "capabilities", "cross_model", "knowledge_capture", "models",
+                         "interface"})
 _SECTION_KEYS = {
     "runtime": frozenset({"installed_hosts"}),
     "capabilities": frozenset(HOSTS),
     "cross_model": frozenset({"enabled"}),
     "knowledge_capture": frozenset({"enabled", "vault_path"}),
     "models": frozenset({"available"}),
+    "interface": frozenset({"language"}),
 }
+# 표시 언어. local 전용이고 `effective_profile` 이 복사하지 않아 공유 profile·manifest·생성물·
+# profile hash 어디에도 들어가지 않는다 — 판정에 관여하지 않는 개인 설정이기 때문이다.
+INTERFACE_LANGUAGES = ("ko", "en")
 
 
 @dataclass(frozen=True)
@@ -71,17 +77,18 @@ def _unknown_key_issues(local: dict[str, Any]) -> list[tuple[str, str]]:
     issues: list[tuple[str, str]] = []
     unknown = sorted((key for key in local if key not in _LOCAL_KEYS), key=str)
     if unknown:
-        issues.append(("FAIL", f"local의 알 수 없는 최상위 키: {unknown}"))
+        issues.append(("FAIL", Diagnostic("layers.local_unknown_top_keys", keys=unknown)))
     for section, allowed in _SECTION_KEYS.items():
         value = local.get(section)
         if value is None:
             continue
         if not isinstance(value, dict):
-            issues.append(("FAIL", f"local {section}는 매핑이어야 함"))
+            issues.append(("FAIL", Diagnostic("layers.local_section_not_mapping", section=section)))
             continue
         section_unknown = sorted((key for key in value if key not in allowed), key=str)
         if section_unknown:
-            issues.append(("FAIL", f"local {section}의 알 수 없는 키: {section_unknown}"))
+            issues.append(("FAIL", Diagnostic("layers.local_section_unknown_keys", section=section,
+                                              keys=section_unknown)))
     return issues
 
 
@@ -92,42 +99,50 @@ def _local_type_issues(local: dict[str, Any]) -> list[tuple[str, str]]:
         hosts = runtime["installed_hosts"]
         if (not isinstance(hosts, list) or not hosts or len(set(hosts)) != len(hosts)
                 or any(host not in HOSTS for host in hosts)):
-            issues.append(("FAIL", "local runtime.installed_hosts는 non-empty unique host 배열이어야 함"))
+            issues.append(("FAIL", Diagnostic("layers.installed_hosts_shape")))
 
     capabilities = local.get("capabilities")
     if isinstance(capabilities, dict):
         for host, enabled in capabilities.items():
             if host in HOSTS and not isinstance(enabled, bool):
-                issues.append(("FAIL", f"local capabilities.{host}는 boolean이어야 함"))
+                issues.append(("FAIL", Diagnostic("layers.capabilities_not_bool", host=host)))
 
     cross = local.get("cross_model")
     if isinstance(cross, dict) and "enabled" in cross and not isinstance(cross["enabled"], bool):
-        issues.append(("FAIL", "local cross_model.enabled는 boolean이어야 함"))
+        issues.append(("FAIL", Diagnostic("layers.cross_model_enabled_not_bool")))
+
+    interface = local.get("interface")
+    if isinstance(interface, dict) and "language" in interface:
+        # 정확한 소문자만 받는다. 대소문자·공백을 관대하게 받으면 profile 마다 표기가 갈리고
+        # 그 다양성이 그대로 hook·skill 의 언어 해석 분기로 흘러간다.
+        if interface["language"] not in INTERFACE_LANGUAGES:
+            issues.append(("FAIL", Diagnostic("layers.interface_language_invalid",
+                                              allowed=list(INTERFACE_LANGUAGES))))
 
     knowledge = local.get("knowledge_capture")
     if isinstance(knowledge, dict):
         if "enabled" in knowledge and not isinstance(knowledge["enabled"], bool):
-            issues.append(("FAIL", "local knowledge_capture.enabled는 boolean이어야 함"))
+            issues.append(("FAIL", Diagnostic("layers.knowledge_capture_enabled_not_bool")))
         path = knowledge.get("vault_path")
         if path is not None and (not isinstance(path, str) or not path or "\x00" in path):
-            issues.append(("FAIL", "local knowledge_capture.vault_path는 유효한 non-empty 문자열이어야 함"))
+            issues.append(("FAIL", Diagnostic("layers.vault_path_invalid")))
 
     models = local.get("models")
     if isinstance(models, dict) and "available" in models:
         available = models["available"]
         if not isinstance(available, dict):
-            issues.append(("FAIL", "local models.available은 host별 model 배열 매핑이어야 함"))
+            issues.append(("FAIL", Diagnostic("layers.models_available_shape")))
         else:
             unknown = sorted((host for host in available if host not in HOSTS), key=str)
             if unknown:
-                issues.append(("FAIL", f"local models.available의 알 수 없는 host: {unknown}"))
+                issues.append(("FAIL", Diagnostic("layers.models_available_unknown_host", hosts=unknown)))
             for host, values in available.items():
                 if host not in HOSTS:
                     continue
                 if (not isinstance(values, list) or not values
                         or any(not isinstance(value, str) or not _MODEL_RE.fullmatch(value)
                                for value in values)):
-                    issues.append(("FAIL", f"local models.available.{host}는 non-empty model id 배열이어야 함"))
+                    issues.append(("FAIL", Diagnostic("layers.models_available_host_shape", host=host)))
     return issues
 
 
@@ -135,20 +150,21 @@ def profile_layer_issues(shared: dict[str, Any] | None,
                          local: dict[str, Any] | None) -> list[tuple[str, str]]:
     issues: list[tuple[str, str]] = []
     if not isinstance(shared, dict):
-        issues.append(("FAIL", "shared profile은 매핑이어야 함"))
+        issues.append(("FAIL", Diagnostic("layers.shared_not_mapping")))
         return issues
     cross = shared.get("cross_model")
     if isinstance(cross, dict) and "policy" in cross and cross["policy"] not in POLICIES:
-        issues.append(("FAIL", f"cross_model.policy={cross['policy']!r} — {list(POLICIES)} 중 하나여야 함"))
+        issues.append(("FAIL", Diagnostic("layers.cross_model_policy_invalid",
+                                              value=repr(cross["policy"]), allowed=list(POLICIES))))
     if local is None:
         return issues
     if not isinstance(local, dict):
-        issues.append(("FAIL", "local profile은 매핑이어야 함"))
+        issues.append(("FAIL", Diagnostic("layers.local_not_mapping")))
         return issues
     issues.extend(_unknown_key_issues(local))
     issues.extend(_local_type_issues(local))
     if cross_model_policy(shared) == "required" and _local_cross_model_value(local) is False:
-        issues.append(("FAIL", "cross_model.policy=required는 local cross_model.enabled=false로 완화할 수 없음"))
+        issues.append(("FAIL", Diagnostic("layers.cross_model_required_not_relaxable")))
     return issues
 
 
@@ -198,9 +214,10 @@ def _load_yaml(path: str, label: str) -> tuple[dict[str, Any] | None, list[tuple
         with open(path, encoding="utf-8") as handle:
             value = yaml.safe_load(handle) or {}
     except Exception as exc:
-        return None, [("FAIL", f"{label} profile YAML 파싱 오류({type(exc).__name__}): {path}")]
+        return None, [("FAIL", Diagnostic("layers.yaml_parse_error", label=label,
+                                          kind=type(exc).__name__, path=path))]
     if not isinstance(value, dict):
-        return None, [("FAIL", f"{label} profile은 매핑이어야 함: {path}")]
+        return None, [("FAIL", Diagnostic("layers.yaml_not_mapping", label=label, path=path))]
     return value, []
 
 
@@ -213,7 +230,7 @@ def load_profile_layers(shared_path: str, local_path: str | None = None) -> Prof
     if shared is None:
         shared = {}
         if not issues:
-            issues.append(("FAIL", f"shared profile 없음: {shared_path}"))
+            issues.append(("FAIL", Diagnostic("layers.shared_missing", path=shared_path)))
     local, local_load_issues = _load_yaml(local_path, "local")
     issues.extend(local_load_issues)
     if not local_load_issues:
@@ -244,15 +261,15 @@ def local_profile_git_issues(project_root: str,
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
-        return [("INFO", "local profile Git 점검 N/A (Git 실행 불가)")]
+        return [("INFO", Diagnostic("layers.git_unavailable"))]
     if probe.returncode != 0:
-        return [("INFO", "local profile Git 점검 N/A (Git 저장소 아님)")]
+        return [("INFO", Diagnostic("layers.git_not_a_repo"))]
     git_root = os.path.realpath(probe.stdout.strip())
     try:
         if os.path.commonpath((git_root, local)) != git_root:
-            return [("WARN", f"local profile이 Git 저장소 밖에 있음: {local}")]
+            return [("WARN", Diagnostic("layers.local_outside_git_root", path=local))]
     except ValueError:
-        return [("WARN", f"local profile Git 경로를 비교할 수 없음: {local}")]
+        return [("WARN", Diagnostic("layers.local_git_path_incomparable", path=local))]
     rel = os.path.relpath(local, git_root)
     try:
         tracked = subprocess.run(
@@ -263,9 +280,9 @@ def local_profile_git_issues(project_root: str,
             check=False,
         ).returncode == 0
     except (OSError, subprocess.SubprocessError):
-        return [("WARN", f"local profile Git 추적 상태 점검 실패: {rel}")]
+        return [("WARN", Diagnostic("layers.git_tracked_check_failed", path=rel))]
     if tracked:
-        return [("WARN", f"local profile이 Git에 추적됨: {rel} — index에서 제외 필요")]
+        return [("WARN", Diagnostic("layers.local_is_git_tracked", path=rel))]
     try:
         ignored = subprocess.run(
             ["git", "-C", git_root, "check-ignore", "--quiet", "--", rel],
@@ -275,7 +292,7 @@ def local_profile_git_issues(project_root: str,
             check=False,
         ).returncode == 0
     except (OSError, subprocess.SubprocessError):
-        return [("WARN", f"local profile Git ignore 상태 점검 실패: {rel}")]
+        return [("WARN", Diagnostic("layers.git_ignore_check_failed", path=rel))]
     if not ignored:
-        return [("WARN", f"local profile이 .gitignore에서 ignore되지 않음: {rel}")]
+        return [("WARN", Diagnostic("layers.local_not_gitignored", path=rel))]
     return []

@@ -20,6 +20,7 @@ from sage.fast_cycle_contract import (
 )
 from sage.profile_layers import load_profile_layers
 from sage.profile_validate import validate_profile
+from sage.i18n import english_text, language_of, render_issue, tr
 
 
 def _positive(value):
@@ -33,12 +34,12 @@ def _positive(value):
     return parsed
 
 
-def register(sub):
-    parser = sub.add_parser("fast-cycle", help="축약 PDCA Fast Cycle 감사를 시작·검증·종료합니다")
+def register(sub, context):
+    parser = sub.add_parser("fast-cycle", help=tr(context, "cli.fast_cycle.fast_cycle"))
     actions = parser.add_subparsers(dest="action", metavar="<action>")
     actions.required = True
 
-    opened = actions.add_parser("open", help="composite Fast Plan을 감사 run에 결속합니다")
+    opened = actions.add_parser("open", help=tr(context, "cli.fast_cycle.open"))
     opened.add_argument("--stem", required=True)
     opened.add_argument("--level", required=True, choices=["L2", "L3"])
     opened.add_argument("--lens-count", required=True, type=_positive)
@@ -46,24 +47,24 @@ def register(sub):
     opened.add_argument("--root", default=None)
     opened.set_defaults(func=_run_open)
 
-    reviewed = actions.add_parser("review", help="APPROVED Loop Audit을 Fast run에 결속합니다")
+    reviewed = actions.add_parser("review", help=tr(context, "cli.fast_cycle.review"))
     reviewed.add_argument("--run-id", required=True)
     reviewed.add_argument("--loop-run-id", required=True)
     reviewed.add_argument("--root", default=None)
     reviewed.set_defaults(func=_run_review)
 
-    closed = actions.add_parser("close", help="승인·보고 증거를 검증하고 Fast run을 종료합니다")
+    closed = actions.add_parser("close", help=tr(context, "cli.fast_cycle.close"))
     closed.add_argument("--run-id", required=True)
     closed.add_argument("--root", default=None)
     closed.set_defaults(func=_run_close)
 
-    aborted = actions.add_parser("abort", help="사유를 남기고 활성 Fast run을 중단합니다")
+    aborted = actions.add_parser("abort", help=tr(context, "cli.fast_cycle.abort"))
     aborted.add_argument("--run-id", required=True)
     aborted.add_argument("--reason", required=True)
     aborted.add_argument("--root", default=None)
     aborted.set_defaults(func=_run_abort)
 
-    shown = actions.add_parser("show", help="Fast Cycle 감사 요약을 표시합니다")
+    shown = actions.add_parser("show", help=tr(context, "cli.fast_cycle.show"))
     shown.add_argument("--run-id", default=None)
     shown.add_argument("--vault", nargs="?", const="", default=None)
     shown.add_argument("--root", default=None)
@@ -89,8 +90,9 @@ def _profile(root):
     if not os.path.isfile(path):
         raise ValueError(f"shared profile not found: {path}")
     layers = load_profile_layers(path)
-    failures = [message for severity, message in layers.issues if severity == "FAIL"]
-    failures.extend(message for severity, message in validate_profile(layers.effective, _resources.sage_root())
+    failures = [english_text(message) for severity, message in layers.issues if severity == "FAIL"]
+    failures.extend(english_text(message)
+                    for severity, message in validate_profile(layers.effective, _resources.sage_root())
                     if severity == "FAIL")
     if failures:
         raise ValueError("profile invalid: " + "; ".join(failures[:3]))
@@ -155,16 +157,16 @@ def _profile_hash(profile):
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _warn(actual_risk, level, rounds, lenses, reason, run_id):
+def _warn(actual_risk, level, rounds, lenses, reason, run_id, language=None):
     print(f"⚠️ [SAGE FAST {actual_risk}]", file=sys.stderr)
     if actual_risk == "L3" and level == "L2":
-        print("이 작업은 L3 위험도로 분류됐지만 L2 Fast 리뷰 절차를 사용합니다.", file=sys.stderr)
+        print(tr(language, 'cli.fast_cycle.msg01'), file=sys.stderr)
     else:
-        print(f"표준 {actual_risk} PDCA 대신 Fast Cycle을 사용합니다.", file=sys.stderr)
-    print(f"리뷰가 {rounds}라운드·{len(lenses)}개 렌즈로 축약되어 표준 절차보다 검증 보증이 낮습니다.", file=sys.stderr)
-    print(f"선택 렌즈: {', '.join(lenses)}", file=sys.stderr)
-    print(f"사유: {reason}", file=sys.stderr)
-    print(f"감사 기록: .sage/fast_cycle.jsonl ({run_id})", file=sys.stderr)
+        print(tr(language, 'cli.fast_cycle.msg02', actual_risk=actual_risk), file=sys.stderr)
+    print(tr(language, 'cli.fast_cycle.msg03', rounds=rounds, count=len(lenses)), file=sys.stderr)
+    print(tr(language, 'cli.fast_cycle.msg04', items=', '.join(lenses)), file=sys.stderr)
+    print(tr(language, 'cli.fast_cycle.msg05', reason=reason), file=sys.stderr)
+    print(tr(language, 'cli.fast_cycle.msg06', run_id=run_id), file=sys.stderr)
 
 
 def _open_snapshot_issues(state, *, stem, actual_risk, level, rounds, lenses,
@@ -206,7 +208,8 @@ def _run_open(args):
         cycle_state = _runtime("cycle_state")
         stem, _origin, state_error = cycle_state.resolve_stem(root)
         if state_error or stem != args.stem:
-            raise ValueError(f"active cycle stem must be {args.stem!r}; active={stem!r}, error={state_error}")
+            error_text = english_text(state_error) if state_error else None
+            raise ValueError(f"active cycle stem must be {args.stem!r}; active={stem!r}, error={error_text}")
         path = _stem_doc(root, profile, "00", args.stem)
         audit = _runtime("fast_cycle_audit")
         profile_hash = _profile_hash(profile)
@@ -279,7 +282,8 @@ def _run_open(args):
                     raise ValueError("Fast-Audit-Run does not match its audit snapshot: "
                                      + "; ".join(snapshot_issues))
         print(run_id)
-        _warn(actual_risk, args.level, rounds, lenses, args.reason, run_id)
+        _warn(actual_risk, args.level, rounds, lenses, args.reason, run_id,
+              language_of(args))
         return 0
     except (OSError, ValueError, KeyError) as exc:
         print(f"⛔ [sage fast-cycle] open rejected: {exc}", file=sys.stderr)
@@ -297,7 +301,9 @@ def _run_review(args):
         audit_issues = audit.integrity_issues(root)
         state = audit.audit_summary(root)["runs"].get(args.run_id)
         if audit_issues or not state or state.get("terminal"):
-            raise ValueError("active clean Fast run required: " + "; ".join(audit_issues[:3]))
+            # 이 표면은 표시 언어와 무관하게 영어다 — 틀이 영어면 하부 진단도 영어로 맞춘다.
+            raise ValueError("active clean Fast run required: "
+                             + "; ".join(english_text(item) for item in audit_issues[:3]))
         stem = state.get("cycle_stem")
         plan_path = _stem_doc(root, profile, "00", stem)
         content = Path(plan_path).read_text(encoding="utf-8")
@@ -322,7 +328,9 @@ def _run_review(args):
         loop_issues = loop.integrity_issues(root)
         loop_state = loop.audit_summary(root)["runs"].get(args.loop_run_id)
         if loop_issues or not loop_state:
-            raise ValueError("Loop Audit invalid or run missing: " + "; ".join(loop_issues[:3]))
+            # 이 표면은 표시 언어와 무관하게 영어다 — 틀이 영어면 하부 진단도 영어로 맞춘다.
+            raise ValueError("Loop Audit invalid or run missing: "
+                             + "; ".join(english_text(item) for item in loop_issues[:3]))
         if not (loop_state.get("clean") and loop_state.get("closed")
                 and loop_state.get("result") == "APPROVED"
                 and loop_state.get("seq_ok") is True
@@ -403,7 +411,7 @@ def _run_close(args):
                          plan_hash_final=current_hash,
                          report_path=os.path.relpath(report_path, root).replace(os.sep, "/"))
         print(f"[sage fast-cycle] closed {args.run_id}")
-        _auto_dashboard(root)
+        _auto_dashboard(root, language_of(args))
         _warn(plan.metadata.get("Risk Level"), state.get("fast_review_level"),
               state.get("minimum_rounds"), state.get("lenses") or [],
               state.get("reason"), args.run_id)
@@ -435,7 +443,7 @@ def _run_abort(args):
         print(f"⛔ [sage fast-cycle] abort audit failure: {exc}", file=sys.stderr)
         return 2
     print(f"[sage fast-cycle] aborted {args.run_id}")
-    _auto_dashboard(root)
+    _auto_dashboard(root, language_of(args))
     return 0
 
 
@@ -457,7 +465,7 @@ def _run_show(args):
               f"fast={state.get('fast_review_level')} result={state.get('result') or 'ACTIVE'}")
     if args.vault is not None:
         try:
-            _write_dashboard(root, args.vault or None)
+            _write_dashboard(root, args.vault or None, language_of(args))
         except Exception as exc:
             print(f"⚠️ [sage fast-cycle] vault dashboard failed: {type(exc).__name__}: {exc}", file=sys.stderr)
             return 2
@@ -468,7 +476,7 @@ def _table(value):
     return str(value if value is not None else "").replace("|", "\\|").replace("\n", " ")
 
 
-def _dashboard_body(root):
+def _dashboard_body(root, language=None):
     audit = _runtime("fast_cycle_audit")
     records = audit.read_records(root)
     summary = audit.audit_summary(root)
@@ -488,19 +496,20 @@ def _dashboard_body(root):
             state.get("loop_run_id") or "-", result,
             opened.get("ts") or "-", terminal.get("ts") or "-")) + " |")
     body = [
-        "# SAGE Fast Cycle 감사 대시보드", "",
-        "> 정본 데이터: `.sage/fast_cycle.jsonl`. 이 노트는 파생 대시보드이며 정본이 아닙니다.", "",
+        tr(language, "cli.fast_cycle.dashboard_title"), "",
+        tr(language, "cli.fast_cycle.dashboard_note"), "",
         "| run | stem | actual risk | Fast level | min rounds | actual rounds | lenses | reason | Loop run | result | opened | terminal |",
         "|---|---|---|---|---:|---:|---|---|---|---|---|---|",
-        *(rows or ["| (기록 없음) | | | | | | | | | | | |"]),
+        *(rows or [tr(language, "cli.fast_cycle.dashboard_empty_row")]),
     ]
     issues = audit.integrity_issues(root)
     if issues:
-        body.extend(["", "## 무결성 경고", *[f"- {_table(issue)}" for issue in issues]])
+        body.extend(["", tr(language, "cli.fast_cycle.dashboard_integrity_heading"),
+                    *[f"- {_table(render_issue(language, issue))}" for issue in issues]])
     return "\n".join(body) + "\n"
 
 
-def _write_dashboard(root, override=None):
+def _write_dashboard(root, override=None, language=None):
     import datetime
     from sage.commands import _vault
     from sage.commands._common import _project_name
@@ -514,17 +523,17 @@ def _write_dashboard(root, override=None):
     frontmatter = {"tags": ["sage", "fast-cycle", "audit"],
                    "updated": datetime.date.today().isoformat(),
                    "generated_by": "sage fast-cycle"}
-    path = _vault.write_note(vault, folder, filename, frontmatter, _dashboard_body(root))
+    path = _vault.write_note(vault, folder, filename, frontmatter, _dashboard_body(root, language))
     print(f"[sage fast-cycle] Obsidian dashboard: {path}", file=sys.stderr)
 
 
-def _auto_dashboard(root):
+def _auto_dashboard(root, language=None):
     try:
         profile = _profile(root)
         capture = profile.get("knowledge_capture") if isinstance(profile, dict) else None
         if not isinstance(capture, dict) or capture.get("fast_cycle_dashboard") is not True:
             return
-        _write_dashboard(root)
+        _write_dashboard(root, language=language)
     except Exception as exc:
         print(f"⚠️ [sage fast-cycle] automatic vault dashboard failed: {type(exc).__name__}: {exc}",
               file=sys.stderr)

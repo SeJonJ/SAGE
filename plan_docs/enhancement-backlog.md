@@ -5,18 +5,22 @@
 
 ## 전체 현황 (2026-08-12, `v0.9.84` 기준)
 
-**EH-1~EH-19 중 10건 완료 · 1건 일부 완료 · 8건 보류.**
+**EH-1~EH-19 중 14건 완료 · 1건 일부 완료 · 4건 보류.**
 
 | 상태 | 항목 |
 |---|---|
-| ✅ 완료 | EH-1·2(`v0.9.x` 초기) · EH-3(`v0.9.75`) · EH-5(`v0.9.72`) · EH-6(`v0.9.65`) · EH-7(`v0.9.71`) · EH-9(`v0.9.77`) · EH-12(`v0.9.79`) · **EH-18·EH-19(`v0.9.84`)** |
+| ✅ 완료 | EH-1·2(`v0.9.x` 초기) · EH-3(`v0.9.75`) · EH-5(`v0.9.72`) · EH-6(`v0.9.65`) · EH-7(`v0.9.71`) · EH-9(`v0.9.77`) · EH-12(`v0.9.79`) · EH-18·EH-19(`v0.9.84`) · **EH-13·EH-14·EH-15·EH-16(미릴리즈, `sage-gate-diagnostics-batch`)** |
 | 🕗 일부 완료 | EH-11 — 9개 하위 중 8개 완료(J-4·5·6·8·9 = `v0.9.78`, 결속 본체 J-1·2·3 = `v0.9.79`, J-11 기각), **잔여 J-7만 보류** |
-| 🕗 보류 | EH-4 · EH-8 · EH-10 · EH-13 · EH-14 · EH-15 · EH-16 · EH-17 |
+| 🕗 보류 | EH-4 · EH-8 · EH-10 · EH-17 |
 
-보류 8건의 성격: **EH-4·8·10**은 범위 경계로 분리된 독립 L3 설계 대상(각각 retro 게이트 잔여 우회,
-감사 로그 3종 무결성, adapter freshness)이고, **EH-13·14**는 원인 규명이 끝나 진단·테스트 하네스
-개선만 남은 소품, **EH-15·16**은 한 묶음의 가시성 개선(증거는 이미 남고 화면에만 안 보임),
-**EH-17**은 트리거 대기(오버레이 누적 성장이 실측될 때).
+보류 4건의 성격: **EH-4·8·10**은 범위 경계로 분리된 독립 L3 설계 대상(각각 retro 게이트 잔여 우회,
+감사 로그 3종 무결성, adapter freshness)이고, **EH-17**은 트리거 대기(오버레이 누적 성장이 실측될 때).
+EH-8·EH-10은 아직 설계 정본이 없어 착수하려면 설계부터다.
+
+**EH-13~16 배치에서 얻은 것(2026-08-12)**: 넷 다 "원인 규명 끝, 착수만 하면 됨" 상태였는데 실제로
+코드를 열자 **두 건의 서술이 틀렸다** — EH-14의 "12곳"은 실제 1곳이었고(나머지 17곳은 이미 `input=`으로
+stdin이 닫힌다), EH-16의 "재료는 이미 있다"는 L0에만 맞고 pdca 비활성에는 틀렸다. 보류 항목의 범위
+서술은 착수 시점에 코드로 재확인해야 한다는 실측 사례다.
 
 ### 코드 재검증 이력 (2026-07-28)
 
@@ -360,7 +364,11 @@
   소스를 일시 변경하므로 install 계열 테스트가 정당하게 실패한다.
 - **규모·위험**: 작다. 진단 문자열과 preflight 자료구조만 바뀐다.
 - **트리거**: install 트랜잭션을 다시 손댈 때. 또는 같은 진단이 실제 원인 불명으로 나올 때.
-- **상태**: 보류. 원인 규명 완료(제품 결함 아님), 진단 개선만 남음.
+- **상태**: ✅ **완료(2026-08-12, `sage-gate-diagnostics-batch`)**. `build_identity.source_core_content_snapshot()`
+  이 단일 pass 로 (집계 해시, 논리경로별 해시)를 함께 돌려주고, `describe_content_drift()` 가 변경·추가·삭제
+  경로를 5건까지 나열 + 나머지는 건수로 요약한다. install 의 두 drift 지점이 이 서술을 메시지에 싣는다.
+  **집계 해시 알고리즘은 바이트 단위로 불변**이며(설치된 프로젝트 manifest 에 박힌 값이라 바꾸면 전 소비자가
+  drift 로 오판) 이를 회귀로 못박았다. 진단 맵 수집 실패는 원래 오류를 가리지 않도록 문자열로 degrade 한다.
 
 ---
 
@@ -376,16 +384,22 @@
   영원히 멈춘다. 테스트 개수와 무관하며 테스트 1개여도 같다.
   나쁜 쪽은 실패가 아니라 **무한 대기**라는 점이다 — CI 러너를 타임아웃까지 점유하고, 원인이 로그에
   남지 않아 "테스트가 많아 느린 것"으로 오진단된다.
-- **범위**: adapter 를 bash 로 직접 실행하는 호출 12곳 — `test_stop_compliance_report`(5),
+- **범위(원안 추정)**: adapter 를 bash 로 직접 실행하는 호출 12곳 — `test_stop_compliance_report`(5),
   `test_capture_declared_risk`(2), `test_golden_instance_e2e` · `test_post_tool_logger` ·
   `test_pre_implementation_gate` · `test_pre_phase4_checklist_gate` · `test_runtime_smoke`(각 1).
+- **범위(2026-08-12 실측 정정)**: **실제 결함은 1곳이다.** adapter 호출은 18곳으로 늘었지만 그중 17곳은
+  이미 `input=...` 을 넘긴다 — `subprocess.run(input=)` 은 파이프를 열어 쓰고 닫으므로 EOF 가 전달되고
+  대기하지 않는다. `stdin`·`input` 을 **둘 다** 안 넘기는 것은 `test_stop_compliance_report.py:162`
+  (`test_no_log_skips`) 하나뿐이고, 실제로 멈춘 테스트도 정확히 이것이었다. 원안의 "12곳"은 mechanism 을
+  맞게 진단한 뒤 범위를 호출 목록 전체로 넓게 잡은 과대 추정이었다.
 - **접근**: 해당 호출에 `stdin=subprocess.DEVNULL` 을 넘긴다. adapter 는 고치지 않는다 — stdin 을
   읽는 것은 hook wire 계약이고, 입력을 주지 않는 쪽이 테스트의 결함이다.
 - **경계**: 테스트 하네스만 바뀐다. 제품 동작·게이트 판정은 불변이다.
-- **규모·위험**: 작다. 인자 하나씩 12곳.
-- **우회(현재)**: 게이트 실행 시 `run-all.sh < /dev/null`.
-- **트리거**: CI 가 실제로 이 대기에 걸릴 때, 또는 테스트에 adapter subprocess 호출을 추가할 때.
-- **상태**: 보류. 원인 규명 완료, 우회 존재.
+- **우회(구)**: 게이트 실행 시 `run-all.sh < /dev/null`.
+- **상태**: ✅ **완료(2026-08-12, `sage-gate-diagnostics-batch`)**. 실측 1곳 수정 + 정적 회귀
+  `test_adapter_stdin_contract.py`(`run-all.sh` #52) 신설. AST 로 `subprocess.run/Popen(["bash", ...])`
+  호출을 찾아 `input`·`stdin` 이 둘 다 없으면 실패시키므로, 앞으로 추가되는 adapter 호출도 같은 방식으로
+  멈출 수 없다. 검사기 자체가 결함을 잡는지 확인하는 변이 케이스도 함께 넣었다.
 
 ---
 
@@ -404,8 +418,14 @@
 - **경계**: 판정은 불변. 통과 시 출력 한 줄이 늘어나므로 **소음 검토가 필수**다 — L1 은 편집 빈도가
   가장 높은 tier 라 매 편집마다 줄이 뜬다.
 - **규모·위험**: 작다. `messages.py` 한 곳.
-- **트리거**: L1 편집에서 오결속이 실제로 관측될 때, 또는 게이트 출력 정책을 다시 손댈 때.
-- **상태**: 보류. 감시 개선이고 증거는 이미 남는다.
+- **상태**: ✅ **완료(2026-08-12, `sage-gate-diagnostics-batch`)**. **opt-in 으로 구현했다** —
+  신규 shared 키 `pdca.cycle_binding_visibility: gated|all`, 키 부재는 `gated`(기존 동작 그대로).
+  `all` 이면 core 가 L1·L0 통과에 `ok_l1`/`ok_l0` message_key 를 실어 결속 stem 과 출처가 나온다.
+  **항상 켜지 않은 이유**: 통과 줄은 EH-12 이후 양 host 모두 비차단 컨텍스트 채널로 나가므로, 편집 빈도가
+  가장 높은 tier 에서 매 편집마다 모델 컨텍스트에 한 줄이 쌓인다 — 증거는 이미 `.sage/override.jsonl` 에
+  남으므로 이건 손실 복구가 아니라 감시 편의이고, 비용을 아는 쪽이 켜는 게 맞다.
+  결속할 stem 이 없으면(pdca 비활성 등) 정보 0 인 줄을 만들지 않는다. 판정(status·exit_code)은 불변이며
+  회귀로 못박았다.
 
 ---
 
@@ -420,8 +440,13 @@
   사이클이 그 근거를 물려받지 않게 여기 적어둔다.
 - **접근**: EH-15 와 같은 변경으로 함께 해결된다(통과 줄 렌더가 `message_key` 에 의존하지 않게).
 - **규모·위험**: EH-15 에 포함.
-- **트리거**: EH-15 착수 시 함께.
-- **상태**: 보류. EH-15 와 한 묶음.
+- **상태**: ✅ **L0 부분 완료 · pdca 비활성 부분은 대상 아님으로 종결(2026-08-12,
+  `sage-gate-diagnostics-batch`)**. L0 통과는 EH-15 와 같은 키(`all`)로 `ok_l0` 를 내보낸다.
+  **`pdca.enabled=false` 는 구현하지 않았고 앞으로도 대상이 아니다** — 실측 확인 결과
+  `_stamp_cycle_identity` 는 `_pdca_cfg(profile) is None` 이면 즉시 반환해 stem 자체를 싣지 않는다.
+  즉 "재료는 이미 있다"는 원안 서술은 L0 에만 맞고 pdca 비활성에는 틀렸다. 더 중요한 건 의미다 —
+  PDCA 가 꺼져 있으면 사이클 개념이 없으므로 노출할 결속이 존재하지 않으며, 없는 stem 을 만들어 보여주는
+  것은 없는 근거를 지어내는 것이다.
 
 ---
 
@@ -568,6 +593,53 @@
   검증과 diff check 를 통과했다. 신규 정본 모듈 `sage/done_criteria_contract.py` 를 로컬 게이트와
   `ci_authority` 가 함께 소비하며, `test_done_criteria.py` 로 회귀를 박제했다.
   정본: vault `SAGE - Phase 00 Done Criteria 검증 게이트 설계 (EH-19, 26.08.10)`.
+
+---
+
+## EH-20 — CORE skill spec 정본 위치 정리 (SSOT 경로 3분화)
+
+- **배경**: SLR-AC24 작업(2026-08-15, 배치 7) 중 CORE skill 소스가 이 저장소 안에서 세 경로로 갈라져
+  있음을 발견했다. (1) 설계문서(`docs/superpowers/specs/2026-08-12-...design.md` §10.2)는
+  `templates/core/skills/<id>.md`를 "One CORE skill procedure"의 정본으로 명시한다. (2) 실제 배포
+  렌더(`templates/core/framework/.claude/skills/<id>/SKILL.md`, `sage/commands/install.py`가
+  소비자에게 실제로 복사하는 경로)는 파일 자신이 "Its reference spec lives at
+  `docs/sage_harness/skills/<id>.md`"라고 스스로 다른 경로를 authoritative spec으로 지목한다.
+  (3) 이 엔진 저장소의 `docs/sage_harness/skills/`는 `.gitkeep`뿐인 빈 디렉터리다 — 사용자 확인 결과
+  이건 결손이 아니라 **소비자 설치 산출물**(설치 후 소비자 프로젝트에 채워지는 경로) 성격이라, 엔진
+  저장소 자체에는 원래 비어 있는 게 맞다.
+- **판정(2026-08-15, 사용자 확인)**: `templates/core/skills/*.md` = semantic reference spec,
+  `templates/core/framework/.claude/skills/*/SKILL.md` = 현재 배포 render, 소비자
+  `docs/sage_harness/skills/*.md` = 설치 산출물. 3분화 자체는 구조 문제가 아니라 역할이 다른
+  세 계층이라는 것으로 일단 정리됐다 — 다만 (1)↔(2) 두 소스가 **내용까지 동기화되어야 하는지**,
+  동기화된다면 hash-stamp 같은 자동 staleness 추적이 있어야 하는지는 아직 미정이다(설계문서
+  §10.4가 "canonical source and normalized source hash... restamped"를 언급하지만 이 hash 계약이
+  실제 코드로 구현된 흔적은 없다 — `spec_hash`/`render_hash`는 project-authored 자산 전용이고 CORE
+  skill은 명시적으로 그 트랙 밖이다).
+- **이번에 한 일**: SLR-AC24 배치는 (1)·(2) 둘 다에 Document-Language 지시문을 반영했다(수동
+  동기화, hash 계약 없음). 구조 자체는 바꾸지 않았다.
+- **규모/위험**: 구조 결정(수동 동기화 유지 vs hash-stamp 자동 추적 신설 vs 한쪽 폐기)이라 설계
+  판단이 필요하다. 잘못 고르면 렌더가 spec 없이 조용히 stale해지거나, 존재하지 않는 자동화를
+  전제로 한 프로세스 문서가 남는다.
+- **트리거**: 다음에 CORE skill 프롬프트를 수정할 일이 생기거나, AC38(독립 Phase 05) 준비 시.
+- **상태**: 🕗 보류 — 미착수, 판단만 기록.
+
+## EH-21 — sage upgrade rollback 경로의 복원 쓰기가 링크를 따라간다
+
+- **배경**: SLR R4·R5 재검수(2026-08-21)에서 `sage upgrade` 의 "부재로 오인" 계열을 닫았다.
+  `_cycle_migration()`·`_read_profile()` 은 `lexists` 로 진짜 부재만 no-op 처리하고 symlink·
+  디렉터리·끊어진 링크를 mutation 전에 차단하며, 선언 쓰기 세 곳(`_write_declaration`,
+  `_refresh_compiled_profile_json`)은 `os.replace` 원자 교체로 링크를 따라가지 않는다.
+- **문제**: 되돌리기 경로는 아직 그 계약 밖이다. `_restore_tree()` 와 `_restore_user_owned()` 는
+  스냅샷 본문을 `open(path, "wb")` 로 쓴다. `_snapshot_tree()` 가 symlink 를 담지 않으므로,
+  복원 대상 경로에 링크가 끼어 있으면 그 링크를 따라가 저장소 밖 파일을 쓴다.
+- **접근**: 선언 쓰기와 같은 `_atomic_write` 를 복원에도 쓰거나, 복원 직전에 대상 경로의 객체
+  종류를 확인하고 비정규 객체는 복원 실패로 보고한다(rollback 불완전은 이미 exit 2 축이 있다).
+- **규모/위험**: 소규모. 다만 복원은 실패 처리 중에 도는 경로라 여기서 새 예외를 만들면 원인이
+  두 단계 떨어져 보인다 — 회귀에 "복원 실패를 어떻게 보고하는가"를 함께 고정해야 한다.
+- **판정(2026-08-21)**: **1.0 비차단 잔여 위험으로 수용.** 이 경로는 apply 실패 중에만 닿고,
+  그 시점에 링크를 끼워 넣을 수 있는 주체는 이미 트리 쓰기 권한을 갖는다. 1.0 을 막지 않는다.
+- **트리거**: `sage upgrade` 의 트랜잭션·rollback 을 다음에 손댈 때. 이름: `sage-upgrade-rollback-hardening`.
+- **상태**: 🕗 보류 — 수용 후 이관, 미착수.
 
 ---
 

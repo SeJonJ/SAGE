@@ -155,11 +155,14 @@ class TestProfileGate(unittest.TestCase):
 
     def test_validator_rejects_unknown_key(self):
         issues = _feedback_issues({"feedback": {"enabled": True, "blockRelease": True}})
-        self.assertTrue(any(sev == "FAIL" and "미지 키" in msg for sev, msg in issues), issues)
+        self.assertTrue(any(sev == "FAIL" and getattr(msg, "code", "") == "validate.feedback_unknown_keys"
+                            for sev, msg in issues), issues)
 
     def test_validator_warns_when_block_release_has_no_scanner(self):
         issues = _feedback_issues({"feedback": {"block_release": True}})
-        self.assertTrue(any(sev == "WARN" and "무동작" in msg for sev, msg in issues), issues)
+        self.assertTrue(any(sev == "WARN"
+                            and getattr(msg, "code", "") == "validate.feedback_block_release_ineffective"
+                            for sev, msg in issues), issues)
 
     def test_valid_section_is_clean(self):
         self.assertEqual(_feedback_issues({"feedback": {
@@ -168,8 +171,10 @@ class TestProfileGate(unittest.TestCase):
 
 
 class TestCli(unittest.TestCase):
-    def _run(self, root, *extra):
-        return subprocess.run([sys.executable, "-m", "sage.cli", "feedback", "--root", root, *extra],
+    def _run(self, root, *extra, lang=None):
+        prefix = ["--lang", lang] if lang else []
+        return subprocess.run([sys.executable, "-m", "sage.cli", *prefix, "feedback",
+                               "--root", root, *extra],
                               capture_output=True, text=True, cwd=REPO)
 
     def _project(self, root, enabled=True, **feedback):
@@ -268,6 +273,24 @@ class TestCli(unittest.TestCase):
                       "--cycle-stem", "2026-07-25-x", "--vault", vault)
             self.assertEqual(len(os.listdir(os.path.join(vault, "wiki"))), 1)
             self.assertIn("근거 없음", Path(note).read_text(encoding="utf-8"))
+
+    def test_record_writes_vault_cycle_note_in_english_when_lang_en(self):
+        """vault 노트 본문도 language_of() 를 따른다 — --lang en 이면 헤더·verdict·라벨이 영어."""
+        with tempfile.TemporaryDirectory() as root:
+            self._project(root, record=True)
+            vault = os.path.join(root, "vault")
+            result = self._run(root, "--record", "--path", "a.py", "--line", "1",
+                               "--verdict", "fixed", "--note", "restored via TTL",
+                               "--cycle-stem", "2026-07-25-x", "--vault", vault, lang="en")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            note = os.path.join(vault, "wiki", "SAGE - demo feedback 2026-07-25-x.md")
+            body = Path(note).read_text(encoding="utf-8")
+            self.assertIn("developer feedback marker history", body)
+            self.assertIn("- note: restored via TTL", body)
+            self.assertIn(" — fixed", body)
+            self.assertNotIn("처리 이력", body)
+            self.assertNotIn("수정함", body)
+            self.assertNotIn("판단:", body)
 
     def test_scan_failure_is_fail_closed_for_enforcing_callers(self):
         # git 이 없는 PATH 로 실행해 스캔 불능을 만든다. "마커 0건" 으로 통과시키면 안 된다.

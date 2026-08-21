@@ -112,32 +112,32 @@ class TestReadWriteClear(unittest.TestCase):
         self.root = _mark_project(os.path.realpath(self.tmp.name))
 
     def test_round_trip(self):
-        cs.write_declaration(self.root, STEM)
-        self.assertEqual(cs.read_declaration(self.root), (STEM, ""))
+        cs.write_declaration(self.root, STEM, document_language="ko")
+        self.assertEqual(cs.read_declaration(self.root), (STEM, None))
 
     def test_absent_declaration_is_not_an_error(self):
-        self.assertEqual(cs.read_declaration(self.root), ("", ""))
+        self.assertEqual(cs.read_declaration(self.root), ("", None))
 
     def test_clear_reports_whether_it_existed(self):
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         self.assertTrue(cs.clear_declaration(self.root))
         self.assertFalse(cs.clear_declaration(self.root))
-        self.assertEqual(cs.read_declaration(self.root), ("", ""))
+        self.assertEqual(cs.read_declaration(self.root), ("", None))
 
     def test_malformed_stems_are_refused_at_write_time(self):
         # 게이트가 문서 부재로 걸러주긴 하지만, 경로 구분자·제어문자는 형식 자체가 틀렸다.
         for bad in ("", "   ", "a/b", "a\\b", "..", ".", "x\ty", "z" * 161):
             with self.assertRaises(ValueError, msg=bad):
-                cs.write_declaration(self.root, bad)
-        self.assertEqual(cs.read_declaration(self.root), ("", ""))
+                cs.write_declaration(self.root, bad, document_language="ko")
+        self.assertEqual(cs.read_declaration(self.root), ("", None))
 
     def test_corruption_is_reported_not_silently_absent(self):
-        """부재와 손상이 똑같이 `""` 로 뭉개지면 파일을 1바이트만 잘라도 선언이 조용히 사라진다.
+        """부재와 손상이 똑같이 `None` 으로 뭉개지면 파일을 1바이트만 잘라도 선언이 조용히 사라진다.
 
         선언이 차단 근거로 승격됐으므로(완결 사이클) 그 침묵이 곧 우회 레버다.
         """
         path = cs.declaration_path(self.root)
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         for label, blob in (("잘린 JSON", '{"cycle_stem": "x"'),
                             ("객체 아님", '["x"]'),
                             ("stem 없음", '{"version": 1}'),
@@ -146,7 +146,7 @@ class TestReadWriteClear(unittest.TestCase):
             stem, error = cs.read_declaration(self.root)
             self.assertEqual(stem, "", label)
             self.assertTrue(error, label)
-            self.assertIn(path, error, label)
+            self.assertEqual(error["arguments"].get("path"), path, label)
 
     def test_interrupted_write_keeps_the_previous_declaration(self):
         """원자적 쓰기 — 직접 `open(w)` 으로 되돌리면 이 갈래에서 선언이 사라진다.
@@ -154,19 +154,19 @@ class TestReadWriteClear(unittest.TestCase):
         `open(w)` 은 여는 순간 대상을 잘라내므로, 쓰기가 중단되면 게이트가 읽는 자리에 잘린
         파일이 남는다. `mkstemp` + `os.replace` 는 온전한 파일을 만든 뒤 한 번에 갈아끼운다.
         """
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         with mock.patch.object(os, "replace", side_effect=OSError("boom")):
             with self.assertRaises(OSError):
-                cs.write_declaration(self.root, "other-cycle")
-        self.assertEqual(cs.read_declaration(self.root), (STEM, ""))
+                cs.write_declaration(self.root, "other-cycle", document_language="ko")
+        self.assertEqual(cs.read_declaration(self.root), (STEM, None))
         leftovers = [n for n in os.listdir(os.path.join(self.root, ".sage")) if n != "cycle.json"]
         self.assertEqual(leftovers, [])          # 실패한 임시 파일이 남으면 다음 진단을 흐린다
 
     def test_a_stale_entry_at_a_predictable_temp_name_does_not_block_writes(self):
         # 고정 tmp 이름으로 되돌리면 크래시가 남긴 잔해가 이후 모든 선언을 영구히 막는다.
         os.makedirs(os.path.join(self.root, ".sage", "cycle.json.tmp"))
-        cs.write_declaration(self.root, STEM)
-        self.assertEqual(cs.read_declaration(self.root), (STEM, ""))
+        cs.write_declaration(self.root, STEM, document_language="ko")
+        self.assertEqual(cs.read_declaration(self.root), (STEM, None))
 
 
 class TestPrecedenceAndIsolation(unittest.TestCase):
@@ -178,14 +178,14 @@ class TestPrecedenceAndIsolation(unittest.TestCase):
         self.root = _mark_project(os.path.realpath(self.tmp.name))
 
     def test_env_beats_file_beats_nothing(self):
-        self.assertEqual(cs.resolve_stem(self.root, environ={}), ("", "", ""))
-        cs.write_declaration(self.root, STEM)
-        self.assertEqual(cs.resolve_stem(self.root, environ={}), (STEM, "cli", ""))
+        self.assertEqual(cs.resolve_stem(self.root, environ={}), ("", "", None))
+        cs.write_declaration(self.root, STEM, document_language="ko")
+        self.assertEqual(cs.resolve_stem(self.root, environ={}), (STEM, "cli", None))
         self.assertEqual(cs.resolve_stem(self.root, environ={"SAGE_CYCLE_STEM": "from-env"}),
-                         ("from-env", "env", ""))
+                         ("from-env", "env", None))
         cs.clear_declaration(self.root)
         self.assertEqual(cs.resolve_stem(self.root, environ={"SAGE_CYCLE_STEM": "from-env"}),
-                         ("from-env", "env", ""))
+                         ("from-env", "env", None))
 
     def test_env_winning_still_reports_a_corrupt_file(self):
         # 지금 판정에 안 쓰였을 뿐 깨진 파일은 남아 있고, env 가 사라지는 순간 조용히 발화한다.
@@ -198,7 +198,7 @@ class TestPrecedenceAndIsolation(unittest.TestCase):
     def test_declaring_does_not_export_anything_to_child_processes(self):
         # env 와 다를 게 없어지면 이 기능의 존재 이유가 사라진다.
         os.environ.pop("SAGE_CYCLE_STEM", None)
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         self.assertIsNone(os.environ.get("SAGE_CYCLE_STEM"))
         child = subprocess.run(
             [sys.executable, "-c",
@@ -208,8 +208,8 @@ class TestPrecedenceAndIsolation(unittest.TestCase):
 
     def test_one_projects_declaration_does_not_reach_another(self):
         other = _mark_project(os.path.realpath(tempfile.mkdtemp()))
-        cs.write_declaration(self.root, STEM)
-        self.assertEqual(cs.resolve_stem(other, environ={}), ("", "", ""))
+        cs.write_declaration(self.root, STEM, document_language="ko")
+        self.assertEqual(cs.resolve_stem(other, environ={}), ("", "", None))
 
 
 class TestDeclarationFileIsGuarded(unittest.TestCase):
@@ -303,7 +303,9 @@ class TestCorruptionIsSurfaced(unittest.TestCase):
     """T8 양방향 — degrade 하되(BLOCK 아님) 조용하지는 않게."""
 
     def _decision(self, **kw):
-        return {"status": "ok", "exit_code": 0, "cycle_declaration_error": "/p/.sage/cycle.json: 손상",
+        return {"status": "ok", "exit_code": 0,
+                "cycle_declaration_error": {"code": "cycle_state.json_invalid",
+                                            "arguments": {"path": "/p/.sage/cycle.json"}, "evidence": ""},
                 "file_short": "a.java", **kw}
 
     def test_a_pass_with_no_gate_line_still_carries_the_notice(self):
@@ -408,7 +410,7 @@ class TestFullWiring(unittest.TestCase):
         self.assertIn(".sage/cycle.json 선언", text)
 
     def test_clear_returns_the_gate_to_inference(self):
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         self.assertEqual(self._run_gate()[0], 0)
         proc = subprocess.run([sys.executable, "-m", "sage", "cycle", "clear"],
                               cwd=self.root, capture_output=True, text=True,
@@ -418,11 +420,146 @@ class TestFullWiring(unittest.TestCase):
         self.assertEqual(self._run_gate()[0], 2)
 
     def test_a_corrupt_declaration_degrades_and_says_so_through_the_real_gate(self):
-        cs.write_declaration(self.root, STEM)
+        cs.write_declaration(self.root, STEM, document_language="ko")
         Path(cs.declaration_path(self.root)).write_text('{"cycle_stem"', encoding="utf-8")
         rc, text = self._run_gate()
         self.assertEqual(rc, 2)                  # 선언 부재와 같은 판정 — 차단이 아니라 degrade
         self.assertIn("사이클 선언 무시됨", text)
+
+
+class TestDocumentLanguageCrossHostParity(unittest.TestCase):
+    """AC25 — 같은 사이클의 문서 언어 충돌이 Claude/Codex 두 host 에서 동일하게 막히는가.
+
+    `_document_language_gate` 자체는 host 를 모른다. 하지만 그걸 부르는
+    `run_pre_implementation_gate`가 `io_claude`/`io_codex` 어댑터별로 다른 이벤트를 조립하므로,
+    잎 함수 단위 테스트(`test_document_language.py::TestGateWiring`)만으로는 이 배선이 한쪽
+    host 에서만 끊겨도 통과한다. 실제 두 어댑터를 태워 판정이 갈라지지 않는지 확인한다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = _mark_project(os.path.realpath(self.tmp.name))
+        os.makedirs(os.path.join(self.root, "sage"), exist_ok=True)
+        Path(os.path.join(self.root, "sage", "project-profile.yaml")).write_text(
+            "project: t\n", encoding="utf-8")
+        self.profile = {
+            "risk": {"l0_pass_globs": ["*plan_docs/*"], "l2_path_globs": ["*backend/*"]},
+            "pdca": {"enabled": True,
+                     "phases": [{"id": p, "glob": f"plan_docs/{p}-x/**/*.md"}
+                                for p in ("00", "01")],
+                     "report_phase": "06", "approve_phase": "05"},
+        }
+        profile_path = os.path.join(self.root, "profile.json")
+        Path(profile_path).write_text(json.dumps(self.profile), encoding="utf-8")
+        for key, value in {"SAGE_PROFILE": profile_path, "SAGE_GATE_BRANCH": BRANCH}.items():
+            old = os.environ.get(key)
+            os.environ[key] = value
+            self.addCleanup(lambda k=key, o=old: os.environ.__setitem__(k, o) if o is not None
+                            else os.environ.pop(k, None))
+        os.environ.pop("SAGE_CYCLE_STEM", None)
+
+    def _write_docs(self, languages):
+        for phase, language in languages.items():
+            doc = os.path.join(self.root, "plan_docs", f"{phase}-x", f"{STEM}.md")
+            os.makedirs(os.path.dirname(doc), exist_ok=True)
+            risk = "Risk Level: L2\n" if phase == "00" else ""
+            Path(doc).write_text(
+                f"Cycle-Stem: `{STEM}`\n{risk}Document-Language: {language}\n", encoding="utf-8")
+
+    @staticmethod
+    def _capture(fn):
+        from contextlib import redirect_stdout, redirect_stderr
+        import io as _io
+        out, err = _io.StringIO(), _io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = fn()
+        return rc, out.getvalue() + err.getvalue()
+
+    def _run_claude(self, path=None, content=None):
+        import hook_runtime as hr
+        import io_claude
+        target = path or os.path.join(self.root, "backend", "App.java")
+        body = "class App {}" if content is None else content
+        raw = json.dumps({"session_id": "s-1", "tool_name": "Write",
+                          "tool_input": {"file_path": target, "content": body}})
+        return self._capture(lambda: hr.run_pre_implementation_gate(io_claude, self.root, HOOKS_DIR, raw))
+
+    def _run_codex(self, path=None, content=None):
+        import hook_runtime as hr
+        import io_codex
+        rel = os.path.relpath(path, self.root) if path else "backend/App.java"
+        body = "class App {}" if content is None else content
+        added = "\n".join(f"+{line}" for line in body.splitlines())
+        cmd = f"*** Begin Patch\n*** Add File: {rel}\n{added}\n*** End Patch"
+        raw = json.dumps({"session_id": "s-1", "tool_name": "apply_patch",
+                          "tool_input": {"command": cmd}})
+        return self._capture(lambda: hr.run_pre_implementation_gate(io_codex, self.root, HOOKS_DIR, raw))
+
+    def test_conflicting_document_language_blocks_on_both_hosts(self):
+        self._write_docs({"00": "en", "01": "ko"})
+        cs.write_declaration(self.root, STEM, document_language="en")
+        rc_claude, text_claude = self._run_claude()
+        rc_codex, text_codex = self._run_codex()
+        self.assertEqual(rc_claude, 2, text_claude)
+        self.assertEqual(rc_codex, 2, text_codex)
+        self.assertIn("문서 언어", text_claude)
+        self.assertIn("문서 언어", text_codex)
+
+    def test_agreeing_document_language_passes_on_both_hosts(self):
+        self._write_docs({"00": "en", "01": "en"})
+        cs.write_declaration(self.root, STEM, document_language="en")
+        rc_claude, text_claude = self._run_claude()
+        rc_codex, text_codex = self._run_codex()
+        self.assertEqual(rc_claude, 0, text_claude)
+        self.assertEqual(rc_codex, 0, text_codex)
+
+    def test_korean_prose_in_a_declared_english_cycle_blocks_on_both_hosts(self):
+        """AC25 — marker 는 맞아도 새로 쓰는 본문이 선언 언어를 어기면 두 host 모두 쓰기 전에 막는가."""
+        self._write_docs({"00": "en", "01": "en"})
+        cs.write_declaration(self.root, STEM, document_language="en")
+        phase01 = os.path.join(self.root, "plan_docs", "01-x", f"{STEM}.md")
+        body = (f"Cycle-Stem: `{STEM}`\nDocument-Language: en\n\n이것은 한글 문장입니다.\n")
+        rc_claude, text_claude = self._run_claude(phase01, body)
+        rc_codex, text_codex = self._run_codex(phase01, body)
+        self.assertEqual(rc_claude, 2, text_claude)
+        self.assertEqual(rc_codex, 2, text_codex)
+
+    def _run_claude_edit(self, path, old, new):
+        import hook_runtime as hr
+        import io_claude
+        raw = json.dumps({"session_id": "s-1", "tool_name": "Edit",
+                          "tool_input": {"file_path": path, "old_string": old,
+                                         "new_string": new}})
+        return self._capture(
+            lambda: hr.run_pre_implementation_gate(io_claude, self.root, HOOKS_DIR, raw))
+
+    def test_an_edit_that_leaves_no_korean_in_a_korean_document_blocks(self):
+        """부분 diff 라도 **변경 후 전체 본문**을 되짚을 수 있으면 판정한다 — 되짚지 않으면
+        한국어를 걷어내는 편집이 조용히 통과한다."""
+        self._write_docs({"00": "ko", "01": "ko"})
+        cs.write_declaration(self.root, STEM, document_language="ko")
+        phase01 = os.path.join(self.root, "plan_docs", "01-x", f"{STEM}.md")
+        korean = "이 문서는 한국어로 작성된 정상 계획 문서이며 표본을 넘길 만큼 충분히 깁니다.\n"
+        english = ("This paragraph replaced the Korean narrative wholesale, leaving the "
+                   "document without any Korean prose at all.\n")
+        Path(phase01).write_text(
+            f"Cycle-Stem: `{STEM}`\nDocument-Language: ko\n\n{korean}", encoding="utf-8")
+        rc, text = self._run_claude_edit(phase01, korean, english)
+        self.assertEqual(rc, 2, text)
+
+    def test_adding_an_english_paragraph_to_a_korean_document_does_not_block(self):
+        """반대 방향 — 조각을 문서 전체로 오해하면 이 정상 편집이 곧바로 막힌다."""
+        self._write_docs({"00": "ko", "01": "ko"})
+        cs.write_declaration(self.root, STEM, document_language="ko")
+        phase01 = os.path.join(self.root, "plan_docs", "01-x", f"{STEM}.md")
+        korean = "이 문서는 한국어로 작성된 정상 계획 문서이며 표본을 넘길 만큼 충분히 깁니다.\n"
+        Path(phase01).write_text(
+            f"Cycle-Stem: `{STEM}`\nDocument-Language: ko\n\n{korean}", encoding="utf-8")
+        added = ("The upstream release note is quoted here verbatim because translating "
+                 "it would change the evidence being cited.\n")
+        rc, text = self._run_claude_edit(phase01, korean, korean + "\n" + added)
+        self.assertEqual(rc, 0, text)
 
 
 class TestCliSurfacesWhatItChecked(unittest.TestCase):

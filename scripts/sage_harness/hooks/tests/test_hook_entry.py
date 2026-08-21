@@ -101,6 +101,26 @@ class TestOutputEncoding(unittest.TestCase):
         stderr.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
 
 
+
+def _codes(stderr):
+    """stderr 에서 판정 code 를 뽑는다. 문구는 catalog 소유라 테스트가 고정하지 않는다.
+
+    code 가 화면에 그대로 찍히지는 않으므로, 렌더된 문장을 두 언어 catalog 와 대조해
+    어느 code 였는지 역으로 찾는다 — 검사 대상은 **원인** 이지 문장이 아니다.
+    """
+    import sys as _sys
+    _sys.path.insert(0, os.path.join(REPO, "scripts", "sage_harness", "hooks", "runtime"))
+    import i18n as hook_i18n
+    found = set()
+    for language in ("ko", "en"):
+        for key, template in hook_i18n.FRAGMENTS[language].items():
+            if not key.startswith("hook.entry."):
+                continue
+            stem = template.split("{")[0].strip()
+            if stem and stem in stderr:
+                found.add(key[len("hook."):])
+    return found
+
 class TestDispatchIntegration(unittest.TestCase):
     def _write_profile(self, root, yaml_data=None, json_data=None):
         os.makedirs(os.path.join(root, "sage"), exist_ok=True)
@@ -280,7 +300,7 @@ class TestDispatchIntegration(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             r = self._run("pre-implementation-gate", stdin="{}", root=root)
             self.assertEqual(r.returncode, 2)
-            self.assertIn("프로필 YAML 로드 실패", r.stderr)
+            self.assertIn("entry.profile_yaml_unreadable", _codes(r.stderr))
 
     def test_missing_profile_hint_distinguishes_uninstalled_from_broken(self):
         """10-b-B: 프로필 부재 시에도 차단은 유지하되, 원인별 복구 안내를 가른다.
@@ -291,7 +311,7 @@ class TestDispatchIntegration(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:  # manifest 없음 = 설치 대상 아님
             r = self._run("pre-implementation-gate", stdin="{}", root=root)
             self.assertEqual(r.returncode, 2)
-            self.assertIn("SAGE 설치 대상이 아닐 수 있다", r.stderr)
+            self.assertIn("entry.not_an_install_target", _codes(r.stderr))
             self.assertIn(".claude/settings.json", r.stderr)
 
         with tempfile.TemporaryDirectory() as root:  # manifest 있음 = 설치 손상
@@ -301,8 +321,8 @@ class TestDispatchIntegration(unittest.TestCase):
                 json.dump({"generator_version": __version__}, fh)
             r = self._run("pre-implementation-gate", stdin="{}", root=root)
             self.assertEqual(r.returncode, 2)
-            self.assertIn("설치가 손상됐다", r.stderr)
-            self.assertNotIn("설치 대상이 아닐 수 있다", r.stderr)
+            self.assertIn("entry.profile_missing_damaged", _codes(r.stderr))
+            self.assertNotIn("entry.not_an_install_target", _codes(r.stderr))
 
     def test_missing_profile_hint_names_host_specific_registration(self):
         with tempfile.TemporaryDirectory() as root:
@@ -321,7 +341,7 @@ class TestDispatchIntegration(unittest.TestCase):
                 fh.write("{")
             r = self._run("pre-phase4-checklist-gate", stdin="{}", root=root)
             self.assertEqual(r.returncode, 2)
-            self.assertIn("컴파일 프로필 로드 실패", r.stderr)
+            self.assertIn("entry.compiled_profile_unreadable", _codes(r.stderr))
 
     def test_gate_blocks_yaml_json_drift_for_both_hosts(self):
         with tempfile.TemporaryDirectory() as root:
@@ -345,7 +365,7 @@ class TestDispatchIntegration(unittest.TestCase):
                 with self.subTest(runtime=runtime):
                     r = self._run("pre-implementation-gate", stdin="{}", root=root, runtime=runtime)
                     self.assertEqual(r.returncode, 2)
-                    self.assertIn("raw risk 필드 타입 오류", r.stderr)
+                    self.assertIn("entry.raw_risk_type", _codes(r.stderr))
 
     def test_non_gate_remains_fail_open_without_profile(self):
         with tempfile.TemporaryDirectory() as root:
@@ -543,8 +563,10 @@ class TestStopRetryNotBlockedForever(unittest.TestCase):
         # `.codex/config.toml` 은 MCP managed-block 소유다. 안내가 엉뚱한 파일을 가리키면
         # 사용자가 지워도 차단이 안 풀린다.
         hint = hook_entry._missing_profile_hint(tempfile.gettempdir(), "codex")
-        self.assertIn(".codex/hooks.json", hint)
-        self.assertNotIn("config.toml", hint)
+        # 판정은 이제 언어 중립 진단이다 — 파일 경로는 **인자**로 실려야 안내가 번역돼도 남는다.
+        self.assertEqual(hint.code, "entry.not_an_install_target")
+        self.assertEqual(hint.arguments.get("settings"), ".codex/hooks.json")
+        self.assertNotIn("config.toml", str(hint.arguments))
 
 
 if __name__ == "__main__":

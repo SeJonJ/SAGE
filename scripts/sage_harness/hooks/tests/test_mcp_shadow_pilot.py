@@ -19,6 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(HERE))))
 sys.path.insert(0, REPO)
 from sage.commands import generate as G, validate as V, asset_check as R  # noqa: E402
+from pathlib import Path
 
 _FIXTURE = os.path.join(HERE, "fixtures", "mcp_chatforyou")
 
@@ -58,12 +59,12 @@ class TestShadowPilot(unittest.TestCase):
             self.assertEqual(G.run(GArgs(tmp)), 0)
 
             # claude .mcp.json: 두 서버 결정론 직렬화
-            doc = json.loads(open(os.path.join(tmp, ".mcp.json")).read())
+            doc = json.loads(Path(os.path.join(tmp, ".mcp.json")).read_text())
             self.assertEqual(sorted(doc["mcpServers"].keys()), ["codegraph", "obsidian"])
             self.assertEqual(doc["mcpServers"]["codegraph"]["args"], ["serve", "--mcp"])
 
             # codex managed-block: 두 서버 + 기존 비-MCP 설정 보존
-            cfg = open(os.path.join(tmp, ".codex", "config.toml")).read()
+            cfg = Path(os.path.join(tmp, ".codex", "config.toml")).read_text()
             self.assertIn('model = "gpt-5-codex"', cfg)          # 사용자 설정 보존
             self.assertIn('approval_policy = "on-request"', cfg)
             self.assertIn("[mcp_servers.codegraph]", cfg)

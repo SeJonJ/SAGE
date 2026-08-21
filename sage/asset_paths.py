@@ -71,6 +71,15 @@ def hook_runtime_files(root: str) -> dict[str, list[str]]:
             # 항상 빈 stem 을 돌려주게 바꾸면 선언이 조용히 사라지고, 반대로 고정 stem 을 돌려주게
             # 바꾸면 완결 사이클 차단이 통째로 무력화된다. override_audit 과 같은 근거다.
             os.path.join(runtime, "cycle_state.py"),
+            # document_language.py: 사이클 문서 언어 충돌 판정 그 자체. 미추적 시 이 파일만
+            # 변조해도 hook_runtime_hash 가 PASS 하는데, `consistency_issues` 가 항상 빈 목록을
+            # 돌려주게 바꾸면 언어 충돌 차단이 통째로 사라지고 아무 표시도 남지 않는다.
+            # cycle_state 와 같은 근거다 — 게이트가 읽는 해석 정본은 전부 추적한다.
+            os.path.join(runtime, "document_language.py"),
+            # prose_language.py: marker 아래 **본문**이 선언 언어를 지키는가의 판정 정본.
+            # document_language 와 같은 근거이고, 게이트가 import 실패를 fail-closed 로 받는
+            # 것과 짝을 이룬다 — 차단은 되지만 그 상태가 왜 생겼는지는 validate 가 짚어줘야 한다.
+            os.path.join(runtime, "prose_language.py"),
         ] + strategy_files,
         "claude": [os.path.join(runtime, "io_claude.py")],
         "codex": [os.path.join(runtime, "io_codex.py")],

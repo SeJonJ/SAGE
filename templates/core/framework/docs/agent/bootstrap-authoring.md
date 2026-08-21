@@ -139,6 +139,13 @@ bytes) is intentionally **not** interviewed. Its shipped default is a reasonable
 nearly every project; treat it as advanced internal tuning reachable through
 `sage-profile-modify` if a project genuinely needs to change it, not a bootstrap question.
 
+`pdca.cycle_binding_visibility` (`gated` default / `all`) is likewise **not** a bootstrap
+question. It only widens which gate *pass* lines disclose the bound cycle stem — `all` adds a
+line on every L1/L0 pass, which is the highest-frequency edit tier, so it is a deliberate
+opt-in for projects running many cycles on one long-lived branch rather than a default worth
+asking about. Nothing is lost while it is off: the binding is recorded in
+`.sage/override.jsonl` regardless. Reachable through `sage-profile-modify`.
+
 Present the filled profile (or the consequential choices) for user approval.
 
 #### Phase 00 Done Criteria gate (shared policy)
@@ -146,10 +153,11 @@ Present the filled profile (or the consequential choices) for user approval.
 Ask this in every first-authoring `/sage-init` conversation and when
 `/sage-profile-modify` targets PDCA completion policy:
 
-> "Phase 00 완료 기준을 각 단계와 최종 보고에서 어느 강도로 확인할까요?"
-> · `off` — 기존 문서와 동작을 유지하며 검사하지 않음
-> · `advisory` (신규 프로젝트 권장) — 구조·진행·재계획·stale 승인 문제를 경고하지만 진행 허용
-> · `enforce` — 잘못된 구조/재계획과 미완료·stale 05 승인을 차단
+> "How strictly should Phase 00 done criteria be checked at each phase and in the final report?"
+> · `off` — keep existing documents and behavior; run no check
+> · `advisory` (recommended for a new project) — warn on structure, progress, replanning and
+>   stale-approval problems, but allow the run to continue
+> · `enforce` — block invalid structure or replanning, and unresolved or stale Phase 05 approval
 
 Write the answer to `pdca.base_plan.done_criteria_gate`. Explain that `[ ]` is allowed
 during Phases 01–04, but APPROVED/06 requires every item resolved. Replanning increments
@@ -164,37 +172,51 @@ Single source of the loop questions so the two skills never drift. Every toggle 
 a one-line plain explanation (same style as the L0–L3 explanation). One topic per turn.
 
 **Loop toggle** (default off — `pdca.review_loop.enabled`):
-> "Phase 05 리뷰를 적대적 루프로 돌릴까요? (기본: 단발 리뷰)"
-> · 단발(off) — reviewer 1회. 가볍고 빠름.
-> · 루프(on) — 찾기→반박→수정을 수렴까지 반복(L2/L3만). 거짓양성 거르고 누락 줄이나 비쌈.
+> "Should the Phase 05 review run as an adversarial loop? (default: a single pass)"
+> · single pass (off) — one reviewer, once. Light and fast.
+> · loop (on) — find → refute → rework, repeated until convergence, on L2/L3 only. Filters false
+>   positives and reduces misses, but costs more.
 
 If **off**, leave `review_loop.enabled: false` and skip the rest. If **on**, author
 `pdca.review_loop` (each value with its one-line meaning):
 
 | ask | key | one-line meaning |
 |---|---|---|
-| 어떤 관점? (스택 기반 제안) | `lenses` | FIND 렌즈(엔진 어휘: correctness/security/concurrency/convention/lifecycle/performance/error_handling/data_integrity/api_contract). **렌즈 1개 = 라운드당 리뷰어 서브에이전트 1개** |
-| L2·L3 최대 라운드? | `max_iterations` | 수렴 못 하면 이 횟수에서 BLOCKED (기본 L2:1·L3:3) |
-| 토큰 예산? | `budget_tokens` | 누적 초과 시 BLOCKED (기본 L2:150k·L3:600k) |
-| 반박자 수? | `refuters` | **라운드당** 반박자 수(전체 finding 을 한 번에 배치 판정 — finding 수와 무관). 생존=반증표 < 과반 (기본 2) |
-| 연속 dry 라운드? | `dry_rounds` | K라운드 연속 신규 0 → 수렴 (기본 1) |
-| 승인 불가 심각도? | `severity_block` | 미해결 시 APPROVED 차단 (기본 [P0,P1]) |
-| cross-model 반박? | `cross_model` | `options.cross_model` 연동 — 이미 물었으면 그 값 재사용(새로 묻지 않음) |
-| 06←05 audit 게이트 강도? | `report_gate_enforce` | 06 작성 시 05 가 가리키는 loop run 이 clean·closed·APPROVED·seq연속·degraded아님인지 검사. `advisory`(기본, WARN) / `enforce`(BLOCK — 모든 05 가 루프 돌 때만 안전) / `off`(마커만). 안정화 전 advisory 권장, 팀 합의 후 enforce |
+| Which perspectives? (propose from the stack) | `lenses` | FIND lenses, from the engine vocabulary: correctness / security / concurrency / convention / lifecycle / performance / error_handling / data_integrity / api_contract. **One lens = one reviewer subagent per round.** |
+| Maximum rounds for L2 and L3? | `max_iterations` | Without convergence the run is BLOCKED at this count (defaults L2:1, L3:3) |
+| Token budget? | `budget_tokens` | BLOCKED once the cumulative total is exceeded (defaults L2:150k, L3:600k) |
+| How many refuters? | `refuters` | Refuters **per round**. They judge all findings in one batch, so the count is independent of how many findings there are. A finding survives when disproving votes stay below a majority (default 2) |
+| Consecutive dry rounds? | `dry_rounds` | K consecutive rounds with zero new findings means convergence (default 1) |
+| Severities that block approval? | `severity_block` | APPROVED is blocked while any of these is unresolved (default [P0,P1]) |
+| Cross-model refutation? | `cross_model` | Tied to `options.cross_model` — reuse that answer if it was already asked; do not ask again |
+| Strictness of the 06←05 audit gate? | `report_gate_enforce` | When 06 is written, check that the loop run 05 points at is clean, closed, APPROVED, sequentially numbered and not degraded. `advisory` (default, WARN) / `enforce` (BLOCK — safe only when every 05 runs the loop) / `off` (marker only). Prefer advisory until things settle, then enforce once the team agrees |
 
-> **비용(토큰) 감 잡기 — 이 값들이 곧 서브에이전트 수입니다.** 이 앞의 용어부터: **finding = 리뷰가 찾은 문제**, **refuter = 그 문제가 진짜인지 따지는 검사관**. Phase 05 루프는 서브에이전트로 돕니다:
-> - **FIND**: `lenses` 개수만큼 리뷰어가 매 라운드 병렬로 뜹니다(렌즈 6개 = 라운드당 6개). 각자 코드를 읽습니다.
-> - **REFUTE**: 검사관(`refuters`)이 매 라운드 그 수만큼 뜹니다 — **문제가 몇 개든 검사관은 라운드당 이 수로 고정**(전체 문제를 한 번에 배치 판정). 기본 2.
-> - **cross_model**: **FIND 단계에** 반대 런타임(codex/claude) peer 리뷰어 1명을 더합니다(`sage cross-check`, 별도 토큰). 이건 문제를 *찾는* 쪽이라 검사관(refuters)과 역할이 다릅니다 — refuters 수를 늘리는 게 아닙니다.
-> - 이게 **최대 `max_iterations` 라운드** 반복되고, 누적 토큰이 `budget_tokens` 를 넘으면 종료됩니다.
-> 즉 **렌즈·refuters·라운드·cross_model 을 키울수록 토큰이 늘어납니다.** 안전-크리티컬이 아닌 앱은 렌즈를 3~4개로 줄이면 커버리지 대비 토큰을 크게 아낍니다.
+> **Getting a feel for the token cost — these values *are* the subagent count.** Two terms
+> first: a **finding** is a problem the review found, and a **refuter** is an inspector that
+> argues whether that problem is real. The Phase 05 loop runs on subagents:
+> - **FIND**: one reviewer per entry in `lenses` spawns in parallel each round — six lenses means
+>   six per round. Each reads the code independently.
+> - **REFUTE**: `refuters` inspectors spawn each round. **However many findings there are, the
+>   inspector count per round is fixed at this number**, because they judge the whole set in one
+>   batch. Default 2.
+> - **cross_model**: adds one peer reviewer on the opposite runtime (codex/claude) **to the FIND
+>   stage** via `sage cross-check`, on its own token budget. It *finds* problems, so its role
+>   differs from a refuter — it does not raise the refuter count.
+> - This repeats for at most `max_iterations` rounds and stops once cumulative tokens exceed
+>   `budget_tokens`.
+>
+> So **raising lenses, refuters, rounds or cross_model raises the token cost.** For anything that
+> is not safety-critical, cutting to three or four lenses saves a great deal of budget for the
+> coverage given up.
 
 **Vault outputs** — ask **only if the loop is on AND `knowledge_capture.vault_path` is set**
 (one turn; otherwise skip entirely):
-> "루프 산출물을 Obsidian vault 에도 남길까요? (vault_path 감지됨)"
-> · 감사 대시보드 — 라운드별 발견/채택/수렴 추이를 vault 노트로 (plain 테이블, 플러그인 무관) → `knowledge_capture.loop_audit_dashboard`
-> · 회고 노트 — `sage retro` 결과를 approved:false 노트로, vault 에서 검토·승인(human-gate) → `knowledge_capture.retro_note`
-> · [둘 다 / 대시보드만 / 회고만 / 안 함]
+> "Should loop output also be written to the Obsidian vault? (vault_path detected)"
+> · audit dashboard — per-round found/accepted/convergence trends as a vault note, using a plain
+>   table so no plugin is required → `knowledge_capture.loop_audit_dashboard`
+> · retro note — `sage retro` output as an `approved:false` note, reviewed and approved in the
+>   vault as a human gate → `knowledge_capture.retro_note`
+> · [both / dashboard only / retro only / neither]
 
 These flags require `vault_path` (the master gate); `sage validate` WARNs if a flag is
 true while `vault_path` is empty.
@@ -203,10 +225,10 @@ true while `vault_path` is empty.
 
 Raise Fast Cycle as a separate shared-policy topic, default off:
 
-> "긴급하거나 범위가 작은 L2/L3 작업에 Fast Cycle을 허용할까요? (기본: off)"
-> · 표준 risk/build/test/lint/acceptance/05/06은 유지
-> · 물리 01~04를 composite 00에 합치고 리뷰 최소치를 별도 설정
-> · 모든 실행은 사유와 선택 렌즈를 `.sage/fast_cycle.jsonl`에 공유 감사
+> "Should Fast Cycle be allowed for urgent or small-scope L2/L3 work? (default: off)"
+> · the standard risk, build, test, lint, acceptance, 05 and 06 requirements all stay
+> · physical Phases 01–04 collapse into a composite 00, with review minimums configured separately
+> · every run records its reason and chosen lenses to the shared audit at `.sage/fast_cycle.jsonl`
 
 If off, keep `pdca.fast_cycle.enabled: false` and preserve the template defaults.
 If on, propose these values from the project's risk domains and ask for one focused
@@ -231,10 +253,12 @@ local profile. `sage-init-local` must not ask for or write `pdca.fast_cycle`.
 
 **PDCA knowledge scan/write-back** — ask when `knowledge_capture.vault_path` is set
 (one turn, default both on):
-> "개발 전후로 vault 지식 캡처를 자동 실행할까요?"
-> · 사전 조회 — `/sage-plan`이 구현 전에 vault를 검색해 `.sage/knowledge_scan.md`를 갱신 → `knowledge_capture.scan_before_dev`
-> · 개발 후 갱신 — `/sage-team` 완료 시 vault 노트와 `wiki/log.md`를 갱신 → `knowledge_capture.update_after_dev`
-> · [둘 다 / 사전 조회만 / 개발 후 갱신만 / 안 함]
+> "Should vault knowledge capture run automatically before and after development?"
+> · lookup beforehand — `/sage-plan` searches the vault before implementation and refreshes
+>   `.sage/knowledge_scan.md` → `knowledge_capture.scan_before_dev`
+> · update afterwards — `/sage-team` refreshes vault notes and `wiki/log.md` on completion
+>   → `knowledge_capture.update_after_dev`
+> · [both / lookup only / update only / neither]
 
 These are explicit host-side steps backed by `sage knowledge scan` and
 `sage knowledge write-back`; they are not hidden background writes.
@@ -325,7 +349,7 @@ the **`/sage-asset` skill** drives it conversationally:
 - **hook**: author the spec under `docs/sage_harness/hooks/<id>.md` + the canonical
   `scripts/sage_harness/hooks/<id>_core.py`, then `sage generate --kind hook --write`.
 - **agent/skill** (interpretive): author BOTH runtime renders (`.claude/...` and
-  `.codex/...` — codex 함께), then `sage generate --kind <agent|skill> --id <id>
+  `.codex/...` — codex included), then `sage generate --kind <agent|skill> --id <id>
   --write` reverse-extracts spec+claims and registers them (render_hash for both
   runtimes). It fails closed if either render is missing.
   - For a skill codex must discover, add `--deploy-codex` (copies the repo-canonical

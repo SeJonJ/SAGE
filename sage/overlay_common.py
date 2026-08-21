@@ -14,7 +14,8 @@ import os
 import re
 import stat
 import uuid
-from pathlib import Path
+
+from sage.diagnostics import Diagnostic
 
 # 버전 붙은 HTML 주석 마커. 전 대상이 markdown 이라 주석 하나로 통일한다. START 는 편집
 # 리다이렉트 힌트를 담고, 버전(v1)은 미래 포맷 변경 시 옛 마커를 식별·재합성하는 근거.
@@ -57,7 +58,7 @@ def read_text_lf(path):
         with open(path, "r", encoding="utf-8", newline="") as f:
             raw = f.read()
     except (OSError, UnicodeError) as e:
-        return None, f"오버레이/렌더 읽기 실패: {path} ({e})"
+        return None, Diagnostic("overlay.read_failed", path=path, evidence=str(e))
     return raw.replace("\r\n", "\n").replace("\r", "\n"), None
 
 
@@ -106,7 +107,7 @@ def validate_overlay(text):
     """
     for tok in _MARKER_TOKENS + _ROUTING_TOKENS:
         if tok in text:
-            return f"오버레이 본문에 예약 마커 토큰('{tok}')이 있어 합성할 수 없습니다"
+            return Diagnostic("overlay.reserved_token_in_body", token=tok)
     return None
 
 
@@ -118,7 +119,7 @@ def routing_block_token_error(text):
     """
     for tok in _MARKER_TOKENS + _ROUTING_TOKENS:
         if tok in text:
-            return f"라우팅 블록 본문에 예약 마커 토큰('{tok}')이 있어 생성할 수 없습니다"
+            return Diagnostic("routing.reserved_token_in_body", token=tok)
     return None
 
 
@@ -150,32 +151,36 @@ def compose_block(overlay_text, kind, id):
     return f"{MARKER_START}\n{header}\n{body}\n{MARKER_END}\n"
 
 
-def _counts_ok(text, start, end, block_re, label):
+def _counts_ok(text, start, end, block_re, prefix):
     """마커 구간 정합 검사 → error | None. 중복(>1)·짝불일치·순서역전을 malformed 로 잡는다.
 
     count 만 보면 END 가 START 앞에 온 역순(각 1개)이 통과하지만, block_re(START..END DOTALL)는
     추출에 실패해 base_of 가 그 마커를 base 에 남긴다 → 앵커 오염 + drift 미감지. count 가 1-and-1
     이면 실제 정규식 추출이 되는지까지 확인해 이 괴리를 없앤다(codex R1-1).
+
+    `prefix` 는 관리 구간 이름(code 조각)이지 문장이 아니다. 오버레이/라우팅을 인자로 끼운
+    한 문장을 쓰면 어순이 다른 언어에서 깨지므로, 구간마다 완성 문장 code 를 따로 둔다.
     """
     starts = text.count(start)
     ends = text.count(end)
     if starts > 1 or ends > 1:
-        return f"{label} 마커 중복(관리 블록이 2개 이상)"
+        return Diagnostic(f"{prefix}.marker_duplicated")
     if (starts == 1) != (ends == 1):
-        return f"{label} 마커 짝 불일치(malformed)"
+        return Diagnostic(f"{prefix}.marker_unpaired")
     if starts == 1 and not block_re.search(text):
-        return f"{label} 마커 순서/중첩 오류(START..END 추출 불가)"
+        return Diagnostic(f"{prefix}.marker_unextractable")
     return None
 
 
 def _marker_counts_ok(text):
     """오버레이 마커 짝 검사 → error | None."""
-    return _counts_ok(text, MARKER_START, MARKER_END, _BLOCK_RE, "오버레이")
+    return _counts_ok(text, MARKER_START, MARKER_END, _BLOCK_RE, "overlay")
 
 
 def _routing_marker_counts_ok(text):
     """라우팅 마커 짝 검사 → error | None."""
-    return _counts_ok(text, ROUTING_MARKER_START, ROUTING_MARKER_END, _ROUTING_BLOCK_RE, "라우팅")
+    return _counts_ok(text, ROUTING_MARKER_START, ROUTING_MARKER_END, _ROUTING_BLOCK_RE,
+                      "routing")
 
 
 def base_of(installed_text):
@@ -198,7 +203,7 @@ def base_of(installed_text):
     # SAGE 예약 마커를 담지 않으며(오버레이/라우팅 본문도 마커 토큰을 reject) 정상 입력엔 무영향.
     if any(mark in stripped for mark in (MARKER_START, MARKER_END,
                                          ROUTING_MARKER_START, ROUTING_MARKER_END)):
-        return installed_text, "오버레이·라우팅 마커 교차 중첩(관리 구간 겹침)"
+        return installed_text, Diagnostic("overlay.markers_interleaved")
     return _normalize_trailing(stripped), None
 
 

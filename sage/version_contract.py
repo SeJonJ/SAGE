@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import re
 from typing import Any
 
+from sage.diagnostics import Diagnostic
+
 
 UNKNOWN = "unknown"
 _EXACT_VERSION_RE = re.compile(
@@ -26,12 +28,19 @@ class VersionAxes:
 
 @dataclass(frozen=True)
 class VersionContractIssue:
+    """version 축 하나의 판정. `message` 는 **언어 중립 진단**이다.
+
+    `remediation` 은 두 종류가 섞인다 — 사용자가 그대로 입력하는 명령(`sage install ...`)은
+    문자열로 두고 번역하지 않으며, 지시문은 진단으로 둔다. 호출부의 렌더가 문자열은 그대로
+    통과시키므로 두 종류가 같은 필드에 있어도 안전하다.
+    """
+
     severity: str
     axis: str
     current: str
     required: str
-    message: str
-    remediation: str | None = None
+    message: "Diagnostic"
+    remediation: "Diagnostic | str | None" = None
 
 
 def version_is_exact(value: Any) -> bool:
@@ -85,21 +94,21 @@ def version_contract_issues(profile: dict[str, Any] | None,
     if sage_section is not None and not isinstance(sage_section, dict):
         return [VersionContractIssue(
             "FAIL", "required", axes.required, axes.required,
-            "sage 섹션은 매핑(object)이어야 합니다.",
+            Diagnostic("version.sage_section_not_mapping"),
         )]
     required_present = isinstance(sage_section, dict) and "required_version" in sage_section
     required_raw = sage_section.get("required_version") if required_present else None
     if required_present and not version_is_exact(required_raw):
         return [VersionContractIssue(
             "FAIL", "required", axes.required, axes.required,
-            f"sage.required_version={required_raw!r}은 exact SemVer 형식이 아닙니다.",
-            "예: sage.required_version: 1.2.3",
+            Diagnostic("version.required_not_semver", value=repr(required_raw)),
+            Diagnostic("version.required_semver_example"),
         )]
     if axes.required == UNKNOWN:
         return [VersionContractIssue(
             "INFO", "required", UNKNOWN, UNKNOWN,
-            "프로젝트 요구 SAGE 버전이 없습니다(legacy profile).",
-            "shared profile에 sage.required_version을 exact 버전으로 설정",
+            Diagnostic("version.required_absent"),
+            Diagnostic("version.set_required"),
         )]
 
     remediations = {
@@ -124,13 +133,16 @@ def version_contract_issues(profile: dict[str, Any] | None,
         if current == axes.required:
             continue
         present, raw = raw_axes[axis]
+        # 상태별로 **완전한 문장**을 고른다. `f"SAGE {axis} 버전 {state}"` 처럼 조각을 이어
+        # 붙이면 어순이 다른 언어에서 반드시 깨지고, 깨진 뒤 어느 조각이 원인인지 보이지 않는다.
         if present and not version_is_exact(raw):
-            state = f"형식 오류 ({raw!r})"
+            message = Diagnostic("version.axis_malformed", axis=axis, value=repr(raw))
+        elif current == UNKNOWN:
+            message = Diagnostic("version.axis_unknown", axis=axis)
         else:
-            state = "확인할 수 없음" if current == UNKNOWN else f"{current} != {axes.required}"
+            message = Diagnostic("version.axis_differs", axis=axis,
+                                 current=current, required=axes.required)
         issues.append(VersionContractIssue(
-            "WARN", axis, current, axes.required,
-            f"SAGE {axis} 버전 {state}",
-            remediations[axis],
+            "WARN", axis, current, axes.required, message, remediations[axis],
         ))
     return issues

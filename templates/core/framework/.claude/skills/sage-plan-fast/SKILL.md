@@ -10,6 +10,26 @@ Invoke as `/sage-plan-fast` on Claude or `$sage-plan-fast` on Codex.
 This is a **CORE framework bootstrap asset**, hand-shipped by `sage install` and
 not manifest-tracked. Do not edit an installed copy directly.
 
+## Conversation language (mandatory)
+
+Resolve it once, before the first turn, in this order:
+
+1. an explicit `--lang ko|en` on this skill's invocation,
+2. `interface.language` in `sage/project-profile.local.yaml`,
+3. `ko`.
+
+Conduct **every** question, proposal, progress note, warning and summary in that language.
+
+Only the conversation takes it. Machine values are never translated — paths, globs, command
+strings, component ids, strategy enums, statuses and the fixed schema keys. Phase 00–06 document
+prose follows the cycle's `Document-Language:` marker, which is a **separate** decision and may
+differ from the conversation. That document prose includes the **human-facing structure** — section
+headings, list labels, table headers and checklist text — not just paragraphs; a Korean document
+under English headings is the mixed state the marker exists to prevent. The two headings a parser
+reads by their exact string, `## 5. Done Criteria` and `## 6. Done Criteria Revision Log`, stay
+English in every language. Only `/sage-init` and `/sage-init-local` may persist a language
+preference. Full rules: `docs/agent/language-policy.md`.
+
 ## Hard boundary
 
 Before any document, cycle declaration, audit, or source write, explicitly obtain:
@@ -29,12 +49,18 @@ build/test/lint/acceptance requirements. Fast is unavailable for actual L0/L1.
    first N configured lenses for the chosen level and show them for approval.
 3. Complete the standard planning interview, propose the actual L2/L3 risk, and
    choose a collision-free Cycle-Stem.
-4. Run `sage cycle set <stem> --create --risk <actual-risk>`. Fill the generated
-   00 as a composite Fast Plan containing `Done-Criteria-Revision: 1`, a concrete
-   `### Done Criteria` list of initially unchecked outcomes, and exact `## Phase 00` through
-   `## Phase 04` sections. Keep Done Criteria separate from the checked Document Mapping
-   readiness list. Preserve the standard Phase 00 prior knowledge,
-   summary, impact, risks, conclusion, and Document Mapping checklist.
+   Ask which language this run's composite Phase 00 through 06 should be written in
+   (`ko` or `en`) unless an existing Phase 00 for this stem already carries a
+   `Document-Language:` line — that line wins and is not re-asked. This is the
+   document language, not the language you talk in; see `docs/agent/language-policy.md`.
+4. Run `sage cycle set <stem> --create --risk <actual-risk> --document-language <ko|en>`.
+   Fill the generated 00 as a composite Fast Plan containing `Done-Criteria-Revision: 1`, a
+   concrete `### Done Criteria` list of initially unchecked outcomes, and exact `## Phase 00`
+   through `## Phase 04` sections. Keep Done Criteria separate from the checked Document
+   Mapping readiness list. Preserve the standard Phase 00 prior knowledge,
+   summary, impact, risks, conclusion, and Document Mapping checklist. Confirm the generated
+   skeleton's `Document-Language:` line matches what was asked; it is fixed for the whole
+   Fast run and every phase document you author stays in that language.
 5. Embed Phase 01 requirements and acceptance matrix, Phase 02 design/failure
    handling, and Phase 03 ownership/checklists/verification plan. Leave Phase 04
    at the exact pre-implementation pending marker.

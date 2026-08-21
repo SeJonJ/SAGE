@@ -22,6 +22,16 @@ from sage.profile_validate import validate_profile
 REPO = Path(__file__).resolve().parents[4]
 
 
+def _has(issues, severity, code, **arguments):
+    """판정을 문구가 아니라 code·인자로 확인한다 — 문안은 catalog 소유다."""
+    for sev, message in issues:
+        if sev != severity or getattr(message, "code", None) != code:
+            continue
+        if all(message.arguments.get(name) == value for name, value in arguments.items()):
+            return True
+    return False
+
+
 class ProfileLayerContractTests(unittest.TestCase):
     def setUp(self):
         self.shared = {
@@ -49,10 +59,7 @@ class ProfileLayerContractTests(unittest.TestCase):
         local = {"cross_model": {"enabled": False}}
 
         issues = profile_layer_issues(self.shared, local)
-        self.assertIn(
-            ("FAIL", "cross_model.policy=required는 local cross_model.enabled=false로 완화할 수 없음"),
-            issues,
-        )
+        self.assertTrue(_has(issues, "FAIL", "layers.cross_model_required_not_relaxable"))
         self.assertTrue(cross_model_enabled(self.shared, local))
         self.assertTrue(effective_profile(self.shared, local)["options"]["cross_model"])
 
@@ -93,28 +100,39 @@ class ProfileLayerContractTests(unittest.TestCase):
 
     def test_policy_owned_and_unknown_local_keys_fail_closed(self):
         cases = [
-            ({"sage": {"required_version": "0.9.60"}}, "local의 알 수 없는 최상위 키: ['sage']"),
-            ({"risk": {"l3_filename_globs": ["**"]}}, "local의 알 수 없는 최상위 키: ['risk']"),
-            ({"runtime": {"active_host": "claude"}}, "local runtime의 알 수 없는 키: ['active_host']"),
-            ({"cross_model": {"policy": "off"}}, "local cross_model의 알 수 없는 키: ['policy']"),
-            ({"knowledge_capture": {"provider": "none"}}, "local knowledge_capture의 알 수 없는 키: ['provider']"),
-            ({"capabilities": {"gstack": True}}, "local capabilities의 알 수 없는 키: ['gstack']"),
+            ({"sage": {"required_version": "0.9.60"}},
+             "layers.local_unknown_top_keys", {"keys": ["sage"]}),
+            ({"risk": {"l3_filename_globs": ["**"]}},
+             "layers.local_unknown_top_keys", {"keys": ["risk"]}),
+            ({"runtime": {"active_host": "claude"}},
+             "layers.local_section_unknown_keys", {"section": "runtime", "keys": ["active_host"]}),
+            ({"cross_model": {"policy": "off"}},
+             "layers.local_section_unknown_keys", {"section": "cross_model", "keys": ["policy"]}),
+            ({"knowledge_capture": {"provider": "none"}},
+             "layers.local_section_unknown_keys",
+             {"section": "knowledge_capture", "keys": ["provider"]}),
+            ({"capabilities": {"gstack": True}},
+             "layers.local_section_unknown_keys", {"section": "capabilities", "keys": ["gstack"]}),
         ]
-        for local, expected in cases:
+        for local, code, arguments in cases:
             with self.subTest(local=local):
-                self.assertIn(("FAIL", expected), profile_layer_issues(self.shared, local))
+                self.assertTrue(_has(profile_layer_issues(self.shared, local), "FAIL", code,
+                                     **arguments))
 
     def test_malformed_local_types_fail_without_coercion(self):
         cases = [
-            ({"runtime": {"installed_hosts": "codex"}}, "local runtime.installed_hosts는 non-empty unique host 배열이어야 함"),
-            ({"cross_model": {"enabled": "false"}}, "local cross_model.enabled는 boolean이어야 함"),
-            ({"knowledge_capture": {"enabled": 1}}, "local knowledge_capture.enabled는 boolean이어야 함"),
-            ({"knowledge_capture": {"vault_path": ""}}, "local knowledge_capture.vault_path는 유효한 non-empty 문자열이어야 함"),
-            ({"models": {"available": {"codex": "gpt"}}}, "local models.available.codex는 non-empty model id 배열이어야 함"),
+            ({"runtime": {"installed_hosts": "codex"}}, "layers.installed_hosts_shape", {}),
+            ({"cross_model": {"enabled": "false"}}, "layers.cross_model_enabled_not_bool", {}),
+            ({"knowledge_capture": {"enabled": 1}},
+             "layers.knowledge_capture_enabled_not_bool", {}),
+            ({"knowledge_capture": {"vault_path": ""}}, "layers.vault_path_invalid", {}),
+            ({"models": {"available": {"codex": "gpt"}}},
+             "layers.models_available_host_shape", {"host": "codex"}),
         ]
-        for local, expected in cases:
+        for local, code, arguments in cases:
             with self.subTest(local=local):
-                self.assertIn(("FAIL", expected), profile_layer_issues(self.shared, local))
+                self.assertTrue(_has(profile_layer_issues(self.shared, local), "FAIL", code,
+                                     **arguments))
 
 
 class ProfileLayerLoadingTests(unittest.TestCase):
@@ -158,8 +176,7 @@ class ProfileLayerLoadingTests(unittest.TestCase):
             local_path = sage_dir / "project-profile.local.yaml"
             local_path.write_text("cross_model: [", encoding="utf-8")
             broken = load_profile_layers(str(shared_path))
-            self.assertTrue(any(severity == "FAIL" and "local profile YAML 파싱 오류" in message
-                                for severity, message in broken.issues))
+            self.assertTrue(_has(broken.issues, "FAIL", "layers.yaml_parse_error", label="local"))
 
     def test_local_values_never_appear_in_shared_materialization(self):
         shared = {"project": {"name": "demo"}, "options": {"cross_model": True}}
@@ -178,21 +195,17 @@ class ProfileLayerLoadingTests(unittest.TestCase):
             local.parent.mkdir()
             local.write_text("cross_model: { enabled: false }\n", encoding="utf-8")
 
-            self.assertEqual(
-                [("INFO", "local profile Git 점검 N/A (Git 저장소 아님)")],
-                local_profile_git_issues(tmp, str(local)),
-            )
+            not_a_repo = local_profile_git_issues(tmp, str(local))
+            self.assertTrue(_has(not_a_repo, "INFO", "layers.git_not_a_repo"))
 
             subprocess.run(["git", "init", "-q", tmp], check=True)
             issues = local_profile_git_issues(tmp, str(local))
-            self.assertTrue(any(severity == "WARN" and "ignore되지 않음" in message
-                                for severity, message in issues), issues)
+            self.assertTrue(_has(issues, "WARN", "layers.local_not_gitignored"), issues)
 
             subprocess.run(["git", "-C", tmp, "add", "-f", "sage/project-profile.local.yaml"],
                            check=True)
             tracked = local_profile_git_issues(tmp, str(local))
-            self.assertTrue(any(severity == "WARN" and "Git에 추적됨" in message
-                                for severity, message in tracked), tracked)
+            self.assertTrue(_has(tracked, "WARN", "layers.local_is_git_tracked"), tracked)
 
     def test_local_profile_git_diagnostics_normalize_status_probe_timeout(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -208,8 +221,7 @@ class ProfileLayerLoadingTests(unittest.TestCase):
             ):
                 issues = local_profile_git_issues(tmp, str(local))
 
-            self.assertTrue(any(severity == "WARN" and "Git 추적 상태 점검 실패" in message
-                                for severity, message in issues), issues)
+            self.assertTrue(_has(issues, "WARN", "layers.git_tracked_check_failed"), issues)
 
 
 class ProfileLayerSchemaTests(unittest.TestCase):
@@ -233,8 +245,9 @@ class ProfileLayerSchemaTests(unittest.TestCase):
                 self.assertFalse(any(severity == "FAIL" for severity, _ in issues), issues)
 
         issues = validate_profile({"cross_model": {"policy": "optional"}}, str(REPO))
-        self.assertTrue(any(severity == "FAIL" and "cross_model.policy" in message
-                            for severity, message in issues), issues)
+        # `cross_model_issues` 가 Diagnostic 을 돌려주므로 code 로 확인한다(문안은 catalog 소유).
+        self.assertTrue(_has(issues, "FAIL", "review.cross_model_policy_invalid",
+                            policy="'optional'"), issues)
 
     def test_local_schema_is_closed_and_matches_manual_contract(self):
         schema_path = REPO / "schema" / "profile.local.schema.json"

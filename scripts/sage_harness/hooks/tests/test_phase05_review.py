@@ -13,6 +13,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import contextmanager, redirect_stdout, redirect_stderr
+from pathlib import Path
 from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
@@ -125,9 +126,11 @@ class TestEffortIssue(unittest.TestCase):
         self.assertIsNotNone(RV.effort_issue("claude", "minimal"))
 
     def test_unknown_value_blocked_because_peer_ignores_it_silently(self):
-        msg = RV.effort_issue("codex", "bogus")
-        self.assertIn("bogus", msg)
-        self.assertIn("조용히 무시", msg)
+        # 판정은 문구가 아니라 code·인자로 확인한다 — "조용히 무시하므로 차단" 근거는 catalog 문안이 담는다.
+        issue = RV.effort_issue("codex", "bogus")
+        self.assertEqual("review.effort_unknown_value", issue.code)
+        self.assertIn("bogus", issue.arguments["effort"])
+        self.assertEqual("codex", issue.arguments["peer"])
 
     def test_unknown_peer(self):
         self.assertIsNotNone(RV.effort_issue("gpt", "high"))
@@ -188,7 +191,7 @@ class TestReview(_StableHostTestCase):
                 rc = RV.run_review(_Args(root=d))
 
             self.assertEqual(2, rc)
-            self.assertIn("완화할 수 없음", err.getvalue())
+            self.assertIn("완화", err.getvalue())
 
     def test_review_same_runtime(self):
         with tempfile.TemporaryDirectory() as d:
@@ -333,7 +336,8 @@ class TestReview(_StableHostTestCase):
     def test_review_parser_allows_legacy_flag_to_reach_migration_shim(self):
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
-        RV.register(sub)
+        from sage.i18n.context import LanguageContext
+        RV.register(sub, LanguageContext())
 
         args = parser.parse_args(["review", "--gate"])
 
@@ -345,7 +349,7 @@ class TestReview(_StableHostTestCase):
 class TestCrossCheck(_StableHostTestCase):
     def _packet(self, d):
         p = os.path.join(d, "pkt.txt")
-        open(p, "w", encoding="utf-8").write("review this diff")
+        Path(p).write_text("review this diff", encoding="utf-8")
         return p
 
     def test_unknown_running_host_blocks_before_calling_a_peer(self):

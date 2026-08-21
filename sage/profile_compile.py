@@ -2,6 +2,8 @@
 
 from copy import deepcopy
 
+from sage.diagnostics import Diagnostic
+
 
 _RISK_STRING_LIST_FIELDS = (
     "l0_pass_globs",
@@ -15,32 +17,39 @@ _RISK_STRING_LIST_FIELDS = (
 
 
 class ProfileCompileError(ValueError):
-    """Raw profile cannot be safely materialized without coercing invalid values."""
+    """Raw profile cannot be safely materialized without coercing invalid values.
+
+    `issues` 는 언어 중립 진단 목록이다. 이 모듈은 hook 이 닿는 경로(`hook_entry`)가 import 하므로
+    어느 도메인의 catalog 도 알 수 없다 — 문장은 잡은 쪽이 만든다.
+
+    `str(exc)` 는 code 를 낸다. 사람이 읽는 문장은 아니지만, 이 예외를 그대로 찍던 경로에서도
+    무엇이 잘못됐는지가 사라지지 않는다.
+    """
 
     def __init__(self, issues):
         self.issues = tuple(issues)
-        super().__init__("; ".join(self.issues))
+        super().__init__("; ".join(getattr(item, "code", str(item)) for item in self.issues))
 
 
 def _string_list_issue(value, path):
     if not isinstance(value, list):
-        return f"{path} 는 비어있지 않은 문자열의 리스트여야 함(받음: {type(value).__name__})"
+        return Diagnostic("compile.not_string_list", path=path, actual=type(value).__name__)
     bad = [idx for idx, item in enumerate(value)
            if not isinstance(item, str) or not item.strip()]
     if bad:
-        return f"{path} 에 비문자열/빈 문자열 item index {bad}"
+        return Diagnostic("compile.bad_string_items", path=path, indexes=bad)
     return None
 
 
 def materialization_issues(profile):
     """Return deterministic raw-type issues for fields consumed by the compiler."""
     if not isinstance(profile, dict):
-        return [f"profile 은 매핑(object)이어야 함(받음: {type(profile).__name__})"]
+        return [Diagnostic("compile.profile_not_mapping", actual=type(profile).__name__)]
     if "risk" not in profile:
         return []
     risk = profile.get("risk")
     if not isinstance(risk, dict):
-        return [f"risk 섹션은 매핑(object)이어야 함(받음: {type(risk).__name__})"]
+        return [Diagnostic("compile.risk_not_mapping", actual=type(risk).__name__)]
 
     issues = []
     for field in _RISK_STRING_LIST_FIELDS:
@@ -53,16 +62,17 @@ def materialization_issues(profile):
         return issues
     domains = risk.get("domains")
     if not isinstance(domains, list):
-        issues.append(f"risk.domains 는 리스트여야 함(받음: {type(domains).__name__})")
+        issues.append(Diagnostic("compile.domains_not_list", actual=type(domains).__name__))
         return issues
     for idx, domain in enumerate(domains):
         path = f"risk.domains[{idx}]"
         if not isinstance(domain, dict):
-            issues.append(f"{path} 는 매핑(object)이어야 함(받음: {type(domain).__name__})")
+            issues.append(Diagnostic("compile.domain_not_mapping", path=path,
+                                     actual=type(domain).__name__))
             continue
         level = domain.get("risk_level")
         if level not in ("L1", "L2", "L3"):
-            issues.append(f"{path}.risk_level 은 L1/L2/L3 중 하나여야 함(받음: {level!r})")
+            issues.append(Diagnostic("compile.risk_level_invalid", path=path, actual=repr(level)))
         for field in ("path_globs", "content_keywords"):
             if field not in domain:
                 continue

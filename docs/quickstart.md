@@ -48,6 +48,19 @@ sage install --host claude
 최초 init은 공유 정책 `sage/project-profile.yaml`과 Git에서 제외되는 현재 머신 capability
 `sage/project-profile.local.yaml`을 분리해 작성합니다.
 
+SAGE가 말을 거는 언어는 여기서 정합니다. init 대화 중에 물어보며, 나중에 바꾸려면
+Git이 추적하지 않는 `sage/project-profile.local.yaml`에 직접 적어도 됩니다.
+
+```yaml
+interface:
+  language: en      # 없으면 ko
+```
+
+한 번만 다른 언어로 실행하려면 하위 명령 **앞에** 전역 `--lang`을 붙입니다:
+`sage --lang en doctor`. 표시 언어는 판정을 바꾸지 않습니다 — 상태·종료코드는 그대로이고
+읽는 문장만 달라집니다. Phase 00~06 문서를 쓰는 언어는 별개 결정으로, 사이클 시작 때
+한 번 고정합니다. 자세한 내용은 [CLI 레퍼런스](cli-reference.md)를 보세요.
+
 ## 4. Hook 생성과 검증 — profile 대로 실제 실행 파일 만들기
 
 profile을 채운 것만으로는 아직 실제 hook이 생성되지 않습니다. `generate`가 profile 내용을 읽어

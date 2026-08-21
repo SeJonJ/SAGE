@@ -3,6 +3,7 @@
 import os
 import re
 import sys
+from sage.i18n import language_of, tr
 
 _CV_RE = re.compile(r'^CONTRACT_VERSION\s*=\s*["\']([^"\']+)["\']', re.M)
 
@@ -21,19 +22,21 @@ def contract_version_of(core_path: str):
         return None
 
 # stub(미구현) 명령만 not_implemented 가 참조. validate/review/change/doctor 는 구현됨(여기 미포함).
-STEP = {
-    "install": "부트스트랩(host 택1 + 빈 스키마 배치) — v1 stub",
-    "generate": "spec → 산출물 렌더. agent/skill render 는 interpretive(런타임 AI) — v1 stub",
-    "absorb": "직접수정 diff → spec patch 제안 (§5 M3) — v1 stub",
+_STEP_KEY = {
+    "install": "cli._common.step_install",
+    "generate": "cli._common.step_generate",
+    "absorb": "cli._common.step_absorb",
 }
 
 
-def not_implemented(command: str, detail: str = "") -> int:
+def not_implemented(command: str, detail: str = "", language=None) -> int:
     """아직 로직이 없는 명령을 정직하게 알린다 (조용한 실패 금지)."""
-    print(f"[sage {command}] 스캐폴드 단계 — 아직 미구현입니다.", file=sys.stderr)
-    print(f"  진행 단계: {STEP.get(command, 'N/A')}", file=sys.stderr)
+    step_key = _STEP_KEY.get(command)
+    step = tr(language, step_key) if step_key else "N/A"
+    print(tr(language, 'cli._common.msg01', command=command), file=sys.stderr)
+    print(tr(language, 'cli._common.msg02', step_get=step), file=sys.stderr)
     if detail:
-        print(f"  예정 동작: {detail}", file=sys.stderr)
+        print(tr(language, 'cli._common.msg03', detail=detail), file=sys.stderr)
     return 2
 
 
@@ -120,17 +123,11 @@ def _load_profile_yaml(path):
 
 
 # 부트스트랩 게이트 사유 → 사람이 읽는 메시지(generate=차단, validate=경고로 재사용). host-중립(codex 리뷰 P2).
-_BOOTSTRAP_HINT = (
-    "  대화형 부트스트랩으로 profile 을 작성하세요:\n"
-    "    · Claude: 이 디렉토리에서 claude 실행 → `/sage-init`\n"
-    "    · Codex:  codex 실행 → `docs/agent/bootstrap-authoring.md` 프로토콜 (CODEX.md 안내)\n"
-    "  (수동: sage/project-profile.yaml 의 project.name + risk/components 를 채운 뒤 재실행)"
-)
-_BOOTSTRAP_MSG = {
-    "missing": "profile 미설치 (sage/project-profile.yaml 없음) — 거버넌스 게이트가 무력화됩니다.",
-    "parse":   "profile 파싱 실패 (sage/project-profile.yaml) — 손상된 상태로 산출물 생성 차단.",
-    "no_yaml": "pyyaml 미설치 — profile 부트스트랩 검증 불가(fail-closed). `pip install pyyaml` 후 재실행.",
-    "unbootstrapped": "profile 미부트스트랩 (project.name 비어있거나 risk/components 미설정) — risk globs 0 → 모든 변경 L0 → 거버넌스 무력화.",
+_BOOTSTRAP_MSG_KEY = {
+    "missing": "cli._common.bootstrap_msg_missing",
+    "parse": "cli._common.bootstrap_msg_parse",
+    "no_yaml": "cli._common.bootstrap_msg_no_yaml",
+    "unbootstrapped": "cli._common.bootstrap_msg_unbootstrapped",
 }
 
 
@@ -159,11 +156,13 @@ def bootstrap_gate_reason(root, dest):
     return None if _project_name(prof) != "" else "unbootstrapped"
 
 
-def bootstrap_block_text(reason):
+def bootstrap_block_text(reason, language=None):
     """generate 차단용 멀티라인 메시지."""
-    return f"[sage generate] BLOCK: {_BOOTSTRAP_MSG[reason]}\n{_BOOTSTRAP_HINT}"
+    return (f"[sage generate] BLOCK: {tr(language, _BOOTSTRAP_MSG_KEY[reason])}\n"
+            f"{tr(language, 'cli._common.bootstrap_hint')}")
 
 
-def bootstrap_warn_text(reason):
+def bootstrap_warn_text(reason, language=None):
     """validate 경고용 1블록 메시지(읽기전용 → WARN)."""
-    return f"⚠️  WARN  {_BOOTSTRAP_MSG[reason]}\n{_BOOTSTRAP_HINT}"
+    return (f"⚠️  WARN  {tr(language, _BOOTSTRAP_MSG_KEY[reason])}\n"
+            f"{tr(language, 'cli._common.bootstrap_hint')}")

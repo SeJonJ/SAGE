@@ -75,14 +75,21 @@ a time and drive each turn yourself.
 
 ### Language (mandatory)
 
-Conduct the entire interview **in Korean** — every proposal, question,
-acknowledgement, and progress summary. (English support is planned but not yet
-active; default to Korean.) Only the **conversation** is Korean: the **machine** values you
-write into `project-profile.yaml` stay language-neutral as-is — paths, globs,
-command strings, component ids, strategy enums, and the fixed schema keys are
-never translated. The one exception is **human-facing message values** such as
-`desktop_block_hint` (a notice shown to the developer): write those in Korean too,
-matching the conversation — they are prose, not machine tokens.
+Conduct the entire interview in the **resolved conversation language** — every
+proposal, question, acknowledgement, and progress summary. Resolve it once, before
+the first question: an explicit `--lang ko|en` on this skill's invocation, then
+`interface.language` in `sage/project-profile.local.yaml`, then `ko`.
+
+Only the **conversation** takes that language: the **machine** values you write into
+`project-profile.yaml` stay language-neutral as-is — paths, globs, command strings,
+component ids, strategy enums, and the fixed schema keys are never translated. The one
+exception is **human-facing message values** such as `desktop_block_hint` (a notice shown
+to the developer): write those in the conversation language too — they are prose, not
+machine tokens.
+
+This skill is one of only two flows (with `/sage-init-local`) permitted to **persist** a
+language preference, and only to the local profile after explicit user approval. Full
+rules: `docs/agent/language-policy.md`.
 
 ### Interview style (mandatory)
 

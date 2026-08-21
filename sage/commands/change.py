@@ -13,15 +13,16 @@ from pathlib import Path
 
 from sage.commands import validate as V
 from sage.commands import asset_check as R
+from sage.i18n import language_of, tr
 
 # action 분류 — absorb 를 generate 보다 먼저 판정(이미 고친 산출물 흡수 우선). 그 외는 generate (default).
 _ABSORB_KW = ["이미 고쳤", "이미 수정", "직접 수정", "직접수정", "생성물", "산출물", "blocked", "되돌려", "흡수"]
 _KIND_HINT = {"hook": "hook", "hooks": "hook", "agent": "agent", "agents": "agent", "skill": "skill", "skills": "skill"}
 
 
-def register(sub):
-    p = sub.add_parser("change", help="하고 싶은 변경을 어떤 SAGE 명령으로 처리할지 안내합니다")
-    p.add_argument("intent", help='예: "capture-declared-risk hook 고쳐줘"')
+def register(sub, context):
+    p = sub.add_parser("change", help=tr(context, "cli.change.change"))
+    p.add_argument("intent", help=tr(context, "cli.change.intent"))
     p.add_argument("--root", default=None)
     p.set_defaults(func=run)
 
@@ -62,12 +63,12 @@ def _score(intent_tokens, asset_id, kind_hint):
 def run(args):
     root = V._find_root(args.root)
     if not root:
-        print("[sage change] TOOL ERROR: manifest 없음", file=sys.stderr)
+        print(tr(language_of(args), "cli.change.msg01"), file=sys.stderr)
         return 2
     try:
         manifest = json.loads(Path(os.path.join(root, "docs", "sage_harness", ".manifest.json")).read_text())
     except Exception as e:
-        print(f"[sage change] TOOL ERROR: manifest 파싱 실패: {e}", file=sys.stderr)
+        print(tr(language_of(args), "cli.change.msg02", e=e), file=sys.stderr)
         return 2
     assets = manifest.get("assets", {})
 
@@ -80,13 +81,13 @@ def run(args):
     kind = _kind_hint(low)
 
     print(f'== sage change — "{intent}" ==')
-    print(f"의도 분류: action={action}" + (f", kind={kind}" if kind else ""))
+    print(tr(language_of(args), "cli.change.msg03", action=action) + (f", kind={kind}" if kind else ""))
 
     if action == "absorb":
         tgt = exact or "<id>"
         k = (exact.split("/")[0][:-1] if exact else (kind or "<kind>"))
-        print("→ 결정: ABSORB (이미 고친 산출물을 spec 으로 흡수)")
-        print(f"   명령: sage absorb --kind {k} --id {tgt.split('/')[-1] if exact else '<id>'} --from-blocked-diff")
+        print(tr(language_of(args), "cli.change.msg04"))
+        print(tr(language_of(args), "cli.change.msg05", k=k, tgt_split=tgt.split('/')[-1] if exact else '<id>'))
         return 0
 
     # generate 경로: 매칭 점수
@@ -104,14 +105,14 @@ def run(args):
             sev, _ = V._validate_interpretive(root, tgt, entry, run_regression=False)
         dec = R.auto_approve_decision(tgt, sev, entry)
         k = tgt.split("/")[0][:-1]
-        print(f"→ 결정: GENERATE (기존 자산 수정) — 대상: {tgt}")
-        print(f"   흐름: docs/sage_harness/{tgt.split('/')[0]}/{tgt.split('/')[-1]}.md (spec) 수정 → sage generate --kind {k} --id {tgt.split('/')[-1]} --write")
-        print("   ※ generate 는 v1 stub(render=런타임 AI 영역). 현재는 spec 수정 후 런타임이 산출물을 렌더, validate/review 로 검증.")
-        print(f"   현재 승인상태: {dec['decision']}" + (f" ({', '.join(dec['reasons'])})" if dec["reasons"] else ""))
+        print(tr(language_of(args), "cli.change.msg06", tgt=tgt))
+        print(tr(language_of(args), "cli.change.msg07", tgt_split=tgt.split('/')[0], tgt_split2=tgt.split('/')[-1], k=k, tgt_split3=tgt.split('/')[-1]))
+        print(tr(language_of(args), "cli.change.msg08"))
+        print(tr(language_of(args), "cli.change.msg09", arg=dec['decision']) + (f" ({', '.join(dec['reasons'])})" if dec["reasons"] else ""))
         return 0
 
     if top[0] > 0 and (len(ties) > 1 or top[0] < 0.4):
-        print("→ 모호: 후보 (—id 로 재시도)")
+        print(tr(language_of(args), "cli.change.msg10"))
         for s, a in scored[:5]:
             if s > 0:
                 print(f"   - {a} (score={s:.2f})")
@@ -119,8 +120,8 @@ def run(args):
 
     # 무매칭 → 신규
     if kind:
-        print(f"→ 결정: GENERATE (신규 {kind}) — sage generate --kind {kind} --id <id> --write")
-        print(f"   먼저 docs/sage_harness/{kind}s/<id>.md (spec) 작성")
+        print(tr(language_of(args), "cli.change.msg11", kind=kind, kind2=kind))
+        print(tr(language_of(args), "cli.change.msg12", kind=kind))
     else:
-        print("→ 무매칭: --kind hook|agent|skill 를 지정하거나 자산 id 를 포함해 다시 시도하세요")
+        print(tr(language_of(args), "cli.change.msg13"))
     return 0

@@ -152,6 +152,10 @@ echo "### 25b. project hook lifecycle (10-i 통합 등록·양 host dispatch·�
 python3 "$HERE/test_project_hook_lifecycle.py" || rc=1
 
 echo ""
+echo "### 25c. project hook spec 계약 (판정 code · binding 위반 분리)"
+python3 "$HERE/test_project_hook_contract.py" || rc=1
+
+echo ""
 echo "### 26. profile_validate (R2 profile 스키마+의미검증 — 오타키 FAIL/전략부재 FAIL/미정의phase FAIL, P0-2)"
 python3 "$HERE/test_profile_validate.py" || rc=1
 
@@ -287,6 +291,70 @@ python3 "$HERE/test_feedback.py" || rc=1
 echo ""
 echo "### 51. skill interview coverage (EH-18 — sage-init/sage-profile-modify/bootstrap-authoring drift guard)"
 python3 "$HERE/test_skill_interview_coverage.py" || rc=1
+
+echo ""
+echo "### 52. adapter stdin contract (EH-14 — adapter 실행 테스트가 stdin 을 닫는지 정적 검사)"
+python3 "$HERE/test_adapter_stdin_contract.py" || rc=1
+
+echo ""
+echo "### 53. runner inventory (디스크의 모든 test 파일이 실행망에 있거나 사유와 함께 제외됐는지)"
+python3 "$HERE/test_runner_inventory.py" || rc=1
+
+echo ""
+echo "### 54. build identity (source hash 안정성 + install stamp + content drift 진단)"
+python3 "$HERE/test_build_identity.py" || rc=1
+
+echo ""
+echo "### 55. profile compile (domain 물질화 + trigger 계약 + 무효 profile 불변성)"
+python3 "$HERE/test_profile_compile.py" || rc=1
+
+echo ""
+echo "### 56. resource hygiene (핸들을 놓지 않는 open 정적 검사 — ResourceWarning 재발 차단)"
+python3 "$HERE/test_resource_hygiene.py" || rc=1
+
+echo ""
+echo "### 57. language policy asset (정본·설치본·영수증·논리경로 4축 고정)"
+python3 "$HERE/test_language_policy_asset.py" || rc=1
+
+echo ""
+echo "### 58. language context (우선순위·공유산출물 격리·채널/exit·catalog 정합)"
+python3 "$HERE/test_language_context.py" || rc=1
+
+echo ""
+echo "### 59. localization inventory (사용자 표시 literal 목록이 코드와 어긋나지 않는지)"
+python3 "$HERE/test_localization_inventory.py" || rc=1
+
+echo ""
+echo "### 60. hook locale (엔진 비의존 독립 실행 + 두 도메인 분리·정합)"
+python3 "$HERE/test_hook_locale.py" || rc=1
+
+echo ""
+echo "### 61. cycle document language (Phase 00 정본 · state 미러 · legacy 해석)"
+python3 "$HERE/test_document_language.py" || rc=1
+
+echo ""
+echo "### 62. 소비 프로젝트 locale e2e (설치본 host 2 × locale 2 동일 판정)"
+python3 "$HERE/test_locale_consumer_e2e.py" || rc=1
+
+echo ""
+echo "### 63. sage upgrade (읽기 전용 진단 · 트랜잭션 적용 · 멱등 · 소유 경계)"
+python3 "$HERE/test_upgrade.py" || rc=1
+
+echo ""
+echo "### 64. 릴리스 증거 게이트 (플랫폼 smoke 계약 · publish preflight 차단)"
+python3 "$HERE/test_release_readiness.py" || rc=1
+
+echo ""
+echo "### 65. 언어 중립 판정 계약 (hook 경로 code/key · 도메인별 렌더)"
+python3 "$HERE/test_diagnostics_contract.py" || rc=1
+
+echo ""
+echo "### 66. 소비 프로젝트 scope e2e (Codex global/project-local/dual 실제 doctor 판독)"
+python3 "$HERE/test_clean_consumer_scope_matrix.py" || rc=1
+
+echo ""
+echo "### 67. 소비 프로젝트 문서 본문 언어 e2e (실제 설치 shim, AC20·24·25 Claude-host 축)"
+python3 "$HERE/test_document_prose_consumer_e2e.py" || rc=1
 
 echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi

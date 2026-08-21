@@ -15,18 +15,19 @@ import sys
 import time
 
 from sage import _resources
+from sage.i18n import exception_text, language_of, tr
 
 _GATES = ["pre-implementation-gate", "pre-phase4-checklist-gate", "all"]
 
 
-def register(sub):
-    p = sub.add_parser("override", help="막힌 작업을 사유와 시간 제한을 남기고 임시로 허용합니다")
-    p.add_argument("--reason", help="우회 사유 (grant 시 필수 — 감사 기록)")
-    p.add_argument("--ttl", help="유효기간: 30m | 2h | 1d | 90s | 1800(초)")
-    p.add_argument("--gate", default="all", help=f"대상 게이트 ({' | '.join(_GATES)}). 기본 all")
-    p.add_argument("--list", action="store_true", help="활성 override + 최근 감사 요약")
-    p.add_argument("--revoke", metavar="GRANT_ID", help="활성 grant 를 만료 전에 회수 (--list 의 id)")
-    p.add_argument("--root", default=None, help="대상 프로젝트 루트 (기본 cwd)")
+def register(sub, context):
+    p = sub.add_parser("override", help=tr(context, "cli.override.override"))
+    p.add_argument("--reason", help=tr(context, "cli.override.reason"))
+    p.add_argument("--ttl", help=tr(context, "cli.override.ttl"))
+    p.add_argument("--gate", default="all", help=tr(context, "cli.override.gate", gates=" | ".join(_GATES)))
+    p.add_argument("--list", action="store_true", help=tr(context, "cli.override.list"))
+    p.add_argument("--revoke", metavar="GRANT_ID", help=tr(context, "cli.override.revoke"))
+    p.add_argument("--root", default=None, help=tr(context, "cli.override.root"))
     p.set_defaults(func=run)
 
 
@@ -45,7 +46,7 @@ def run(args):
         return _run(args, root, ov)
     except ov.StateHomeError as exc:
         # 권한 캐시 위치를 안전하게 정할 수 없음 = 우회를 만들 수 없음. traceback 대신 안내한다.
-        print(f"⛔ [sage override] {exc}", file=sys.stderr)
+        print(f"⛔ [sage override] {exception_text(language_of(args), exc)}", file=sys.stderr)
         return 2
 
 
@@ -63,50 +64,48 @@ def _run(args, root, ov):
         print(f"== sage override --list ({ov.audit_path(root)}) ==")
         # 권한 캐시는 저장소 밖에 있어 `.sage/tmp` 삭제로 리셋되지 않는다 — 위치를 보여줘야
         # 운영자가 "왜 아직 활성이지"를 추적할 수 있다.
-        print(f"   권한 캐시(머신 로컬, 비커밋): {ov.grants_path(root)}")
-        print(f"활성 override: {len(active)}건")
+        print(tr(language_of(args), "cli.override.msg01", ov_grants_path=ov.grants_path(root)))
+        print(tr(language_of(args), "cli.override.msg02", count=len(active)))
         for g in active:
-            print(f"   - id={g.get('grant_id')} | gate={g['gate']} | 만료 {g['expires_at']} | 사유: {g.get('reason')} | by {g.get('user')}")
-        print(f"감사 총계: grant {len(grants)}건, bypass {len(bypasses)}건, "
-              f"cycle stem 선언 {len(declared)}건 (append-only)")
+            print(tr(language_of(args), "cli.override.msg03", g_get=g.get('grant_id'), arg=g['gate'], arg2=g['expires_at'], g_get2=g.get('reason'), g_get3=g.get('user')))
+        print(tr(language_of(args), "cli.override.msg04", count=len(grants), count2=len(bypasses), count3=len(declared)))
         for b in bypasses[-5:]:
-            print(f"   · bypass {b.get('ts')} gate={b.get('gate')} {b.get('message_key')} 파일 {len(b.get('files') or [])}건")
+            print(tr(language_of(args), "cli.override.msg05", b_get=b.get('ts'), b_get2=b.get('gate'), b_get3=b.get('message_key'), count=len(b.get('files') or [])))
         for d in declared[-5:]:
             # 통로를 읽은 자리 그대로 적는다 — 통로가 둘(env / .sage/cycle.json)인데 한쪽 이름으로
             # 뭉치면 감사가 거짓을 말한다. 기원 필드가 없는 옛 레코드는 env 시절 기록이다.
             channel = {"env": "SAGE_CYCLE_STEM", "cli": ".sage/cycle.json"}.get(
                 d.get("origin") or "", "SAGE_CYCLE_STEM")
-            print(f"   · 사이클 선언({channel}) {d.get('ts')} stem={d.get('cycle_stem')} "
-                  f"판정={d.get('status')} by {d.get('user')}")
+            print(tr(language_of(args), "cli.override.msg06", channel=channel, d_get=d.get('ts'), d_get2=d.get('cycle_stem'), d_get3=d.get('status'), d_get4=d.get('user')))
         return 0
 
     # revoke 경로
     if args.revoke:
         rec = ov.revoke(root, args.revoke, reason=args.reason)
         if rec is None:
-            print(f"[sage override] 활성 grant id '{args.revoke}' 없음 (이미 만료/회수됐거나 오타). --list 로 확인", file=sys.stderr)
+            print(tr(language_of(args), "cli.override.msg07", args_revoke=args.revoke), file=sys.stderr)
             return 2
-        print(f"✅ override 회수 — id={args.revoke} gate={rec['gate']} (이후 이 권한은 비활성)")
+        print(tr(language_of(args), "cli.override.msg08", args_revoke=args.revoke, arg=rec['gate']))
         return 0
 
     # grant 경로
     if not args.reason or not args.ttl:
-        print("[sage override] grant 에는 --reason 과 --ttl 둘 다 필요 (또는 --list)", file=sys.stderr)
+        print(tr(language_of(args), "cli.override.msg09"), file=sys.stderr)
         return 2
     if args.gate not in _GATES:
-        print(f"[sage override] --gate 는 {_GATES} 중 하나여야 함 (받음: {args.gate})", file=sys.stderr)
+        print(tr(language_of(args), "cli.override.msg10", gates=_GATES, args_gate=args.gate), file=sys.stderr)
         return 2
     ttl = ov.parse_ttl(args.ttl)
     if ttl is None:
-        print(f"[sage override] --ttl 형식 오류: '{args.ttl}' (예: 30m, 2h, 1d, 90s, 1800)", file=sys.stderr)
+        print(tr(language_of(args), "cli.override.msg11", args_ttl=args.ttl), file=sys.stderr)
         return 2
     # 상한 초과는 거부 — 시한부가 무한정 길어지면 사실상 상시 우회가 된다(라이브러리도 ValueError 로 이중방어).
     if ttl > ov.MAX_TTL_SECONDS:
-        print(f"[sage override] --ttl {ttl}s 가 상한 {ov.MAX_TTL_SECONDS}s(24h) 초과 — 더 짧게 grant 하거나 만료 후 재grant", file=sys.stderr)
+        print(tr(language_of(args), "cli.override.msg12", ttl=ttl, ov_max_ttl_seconds=ov.MAX_TTL_SECONDS), file=sys.stderr)
         return 2
 
     rec = ov.grant(root, args.reason, ttl, gate=args.gate)
-    print(f"✅ override grant — gate={rec['gate']} | 만료 {rec['expires_at']} (TTL {rec['ttl_seconds']}s)")
-    print(f"   사유: {rec['reason']} | 감사: {ov.audit_path(root)}")
-    print("   (만료 시 자동 회수. 우회가 BLOCK 을 통과시킬 때마다 bypass 가 append 됨)")
+    print(tr(language_of(args), "cli.override.msg13", arg=rec['gate'], arg2=rec['expires_at'], arg3=rec['ttl_seconds']))
+    print(tr(language_of(args), "cli.override.msg14", arg=rec['reason'], ov_audit_path=ov.audit_path(root)))
+    print(tr(language_of(args), "cli.override.msg15"))
     return 0

@@ -1,0 +1,342 @@
+#!/usr/bin/env python3
+"""publish preflight — 릴리스 직전에 **증거들이 서로 같은 것을 가리키는지** 결정론으로 확인한다.
+
+publish 는 되돌릴 수 없다. PyPI 는 같은 버전을 다시 올릴 수 없고, tag 는 남의 clone 으로 이미
+퍼진다. 그래서 이 검사는 "빌드가 되는가"가 아니라 **"이 아티팩트가 주장하는 것과 저장소가
+주장하는 것이 같은가"** 를 본다. 둘이 다른 채로 올라가면 사용자는 자기가 뭘 설치했는지 알 수
+없고, 그건 되돌릴 수 없는 상태다.
+
+각 검사는 독립이고 전부 돈다 — 첫 실패에서 멈추면 두 번째 문제를 다음 실행에서야 발견하고,
+publish 준비가 한 번에 한 개씩만 진행된다.
+
+이 스크립트는 **아무것도 바꾸지 않는다.** version 을 올리거나 tag 를 만들지 않는다. 그건 사용자
+결정이고(FR-R05), 검사 도구가 대신 하면 승인 경계가 사라진다.
+"""
+from __future__ import annotations
+
+import argparse
+import contextlib
+import hashlib
+import io
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from types import SimpleNamespace
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[2]
+
+
+class Finding:
+    __slots__ = ("check", "detail")
+
+    def __init__(self, check, detail):
+        self.check, self.detail = check, detail
+
+    def __str__(self):
+        return f"[{self.check}] {self.detail}"
+
+
+def _engine_version():
+    text = (REPO / "sage" / "__init__.py").read_text(encoding="utf-8")
+    match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', text, re.M)
+    return match.group(1) if match else None
+
+
+def check_tag_matches_version(tag):
+    """tag 와 패키지 version 이 같은가. 다르면 사용자가 설치한 것과 tag 가 가리키는 것이 다르다."""
+    version = _engine_version()
+    if version is None:
+        return [Finding("tag-version", "sage/__init__.py 에서 __version__ 을 읽지 못했다")]
+    if tag is None:
+        return []
+    normalized = tag[1:] if tag.startswith("v") else tag
+    if normalized != version:
+        return [Finding("tag-version", f"tag {tag!r} 와 __version__ {version!r} 가 다르다")]
+    return []
+
+
+def check_catalog_parity():
+    """catalog 가 key·placeholder·**내용**까지 정합한가.
+
+    한쪽에만 있는 key 는 런타임 fallback 으로 조용히 넘어간다 — 그 상태로 릴리스하면 사용자가
+    빈틈을 대신 발견한다. 영어 값에 남은 한국어도 인벤토리가 세지 못하는 누출이라 같이 본다.
+
+    검사 자체를 여기서 다시 구현하지 않고 `sage.i18n.validation` 의 단일 oracle 을 부른다 —
+    두 벌로 두면 한쪽에만 검사가 추가돼 publish 게이트가 테스트보다 느슨해진다.
+    """
+    sys.path.insert(0, str(REPO))
+    try:
+        from sage.i18n.validation import catalog_issues
+    except Exception as exc:
+        return [Finding("catalog", f"catalog 를 import 하지 못했다: {type(exc).__name__}: {exc}")]
+    return [Finding("catalog", issue) for issue in catalog_issues(str(REPO))]
+
+
+def check_localization_debt():
+    """남아 있는 표시 언어 부채 자체를 실패로 본다.
+
+    `catalog` 검사는 "알려진 부채가 목록 그대로인가"만 본다 — 개발 중에는 그게 통과여야
+    작업이 진행된다. 하지만 publish 는 다르다: 목록에 적어뒀다는 사실이 출하 근거가 될 수
+    없다. 여기서는 선언 목록이 아니라 실제 남은 누출을 세므로 부채를 기재하는 것만으로는
+    게이트를 통과할 수 없다.
+
+    인벤토리가 0 이어도 이 검사가 남으면 영어 화면에 한국어가 나간다 — 두 검사는 서로를
+    대신하지 못한다.
+    """
+    sys.path.insert(0, str(REPO))
+    try:
+        from sage.i18n.validation import release_debt_issues
+    except Exception as exc:
+        return [Finding("localization-debt",
+                        f"검사를 import 하지 못했다: {type(exc).__name__}: {exc}")]
+    return [Finding("localization-debt", issue) for issue in release_debt_issues(str(REPO))]
+
+
+_SOURCE_MARKER = re.compile(
+    r"^<!-- sage-doc-source: (?P<source>[^ ]+) sha256:(?P<digest>[0-9a-f]{64}) -->$")
+
+
+def _source_digest(path):
+    """호스트마다 다른 줄바꿈을 LF 로 정규화한 뒤 해시한다."""
+    text = path.read_bytes().decode("utf-8")
+    return hashlib.sha256(
+        text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")).hexdigest()
+
+
+def _mirror_stale_issues(korean, english):
+    """mirror 첫 줄의 source hash 가 현재 한국어 원본과 일치하는가.
+
+    짝의 **존재**만 보면 한국어만 고친 릴리스가 그대로 통과한다 — 두 문서가 갈리는 건
+    한쪽이 없을 때가 아니라 한쪽만 낡았을 때다. 방향은 한국어가 authoring source 이고
+    영어가 mirror 다(`docs/release-readiness.md`).
+    """
+    digest = _source_digest(korean)
+    expected = f"<!-- sage-doc-source: {korean.name} sha256:{digest} -->"
+    text = english.read_text(encoding="utf-8")
+    first = text.splitlines()[0] if text else ""
+    marker = _SOURCE_MARKER.fullmatch(first)
+    rel = english.relative_to(REPO)
+    if text.count("<!-- sage-doc-source:") != 1 or marker is None:
+        return [f"source marker 가 1행에 정확히 하나 있어야 한다: {rel} — {expected}"]
+    if marker.group("source") != korean.name or marker.group("digest") != digest:
+        return [f"mirror 가 낡았다: {rel} — marker 를 {expected} 로 교체하라"]
+    return []
+
+
+def check_document_pairs():
+    """한국어 사용자 문서마다 영어 짝이 있고, 그 짝이 낡지 않았는가."""
+    findings = []
+    for korean in sorted((REPO / "docs").glob("*.md")) + [REPO / "README.md"]:
+        if korean.name.endswith(".en.md") or not korean.is_file():
+            continue
+        english = korean.parent / (korean.stem + ".en.md")
+        if not english.is_file():
+            findings.append(Finding("docs-pair", f"영어 짝 없음: {english.relative_to(REPO)}"))
+            continue
+        findings.extend(Finding("docs-pair", issue)
+                        for issue in _mirror_stale_issues(korean, english))
+    return findings
+
+
+def check_inventory_is_current():
+    """인벤토리는 최신이어야 하고 미이관 사용자 표시 literal은 0건이어야 한다."""
+    generator = REPO / "scripts" / "ci" / "build_localization_inventory.py"
+    done = subprocess.run([sys.executable, str(generator), "--root", str(REPO), "--check"],
+                          capture_output=True, text=True)
+    if done.returncode != 0:
+        return [Finding("inventory", "코드와 어긋남 — 재생성이 필요하다")]
+    try:
+        document = json.loads(
+            (REPO / "docs" / "sage_harness" / "localization-inventory.json").read_text(
+                encoding="utf-8"))
+        entries = document.get("entries") if isinstance(document, dict) else None
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return [Finding("inventory", f"인벤토리를 읽지 못했다: {type(exc).__name__}")]
+    return _inventory_completion_findings(entries)
+
+
+def _inventory_completion_findings(entries):
+    """최신성과 독립된 완료 조건. 합성 결손으로 gate의 실패 동작을 검증할 수 있게 분리한다."""
+    if not isinstance(entries, list):
+        return [Finding("inventory", "entries가 리스트가 아니다")]
+    pending = [item for item in entries
+               if not isinstance(item, dict) or not isinstance(item.get("key"), str)
+               or not item["key"].strip()]
+    if pending:
+        hook_reachable = sum(
+            1 for item in pending if isinstance(item, dict) and item.get("hook_reachable") is True)
+        return [Finding(
+            "inventory",
+            f"catalog 미이관 사용자 표시 literal {len(pending)}건"
+            f" (hook-reachable {hook_reachable}건) — 영어 출력 완료 전 publish 차단",
+        )]
+    return []
+
+
+def check_no_release_mutation(before_ref=None):
+    """저장소가 릴리스 준비 과정에서 바뀌지 않았는가 (FR-R03).
+
+    후보는 임시 source copy 에서만 만든다. 저장소 자체가 `1.0.0` 으로 stamp 되면 그건 승인 없이
+    version 을 올린 것이고, 되돌리기 전까지 모든 후속 판정이 그 값을 사실로 읽는다.
+    """
+    done = subprocess.run(["git", "-C", str(REPO), "status", "--porcelain"],
+                          capture_output=True, text=True)
+    if done.returncode != 0:
+        return [Finding("mutation", "git status 를 읽지 못했다")]
+    dirty = [line for line in done.stdout.splitlines()
+             if line and not line.endswith("/") and "??" not in line[:2]]
+    if dirty:
+        return [Finding("mutation", f"작업 트리에 추적 변경이 있다: {len(dirty)}건")]
+    return []
+
+
+def check_upgrade_evidence():
+    """upgrade 계약이 실행망에 있고 실제 지원 하한에서 managed 자산까지 이행하는가.
+
+    명령과 단위 테스트 이름만 있으면 scalar 두 개만 바꾸는 구현도 완료로 오인할 수 있다. 실제
+    v0.9.84 소비자 형태를 임시 디렉터리에 만들고 현재 source의 신규 managed policy와 receipt가
+    함께 배포되는지 확인한다. 저장소는 읽기만 하고 임시 소비자만 변경한다.
+    """
+    findings = []
+    if not (REPO / "sage" / "commands" / "upgrade.py").is_file():
+        findings.append(Finding("upgrade", "sage/commands/upgrade.py 가 없다"))
+    runner = REPO / "scripts" / "sage_harness" / "hooks" / "tests" / "run-all.sh"
+    if runner.is_file() and "test_upgrade.py" not in runner.read_text(encoding="utf-8"):
+        findings.append(Finding("upgrade", "test_upgrade.py 가 run-all.sh 에 등록되지 않았다"))
+    if findings:
+        return findings
+
+    profile = subprocess.run(
+        ["git", "-C", str(REPO), "show", "v0.9.84:templates/project-profile.yaml"],
+        capture_output=True, text=True,
+    )
+    manifest = subprocess.run(
+        ["git", "-C", str(REPO), "show", "v0.9.84:docs/sage_harness/.manifest.json"],
+        capture_output=True, text=True,
+    )
+    if profile.returncode != 0 or manifest.returncode != 0:
+        return [Finding("upgrade", "지원 하한 v0.9.84 실제 fixture를 읽지 못했다")]
+
+    with tempfile.TemporaryDirectory(prefix="sage-upgrade-preflight-") as temporary:
+        root = Path(temporary)
+        (root / "sage").mkdir()
+        (root / "docs" / "sage_harness").mkdir(parents=True)
+        # v0.9.84 **소비자**는 `/sage-init` 를 마친 상태다. 템플릿 원본은 부트스트랩 이전이라
+        # 그대로 쓰면 CORE 배포 경로를 아예 타지 않고, 검사가 실제 upgrade 를 못 본다.
+        (root / "sage" / "project-profile.yaml").write_text(
+            profile.stdout
+            + '\nproject:\n  name: "preflight-consumer"\n  prefix: "preflight"\n'
+              'components:\n  - { id: core, paths: ["src/**"] }\n'
+              'risk:\n  l2_path_globs: ["src/**"]\n',
+            encoding="utf-8")
+        (root / "docs" / "sage_harness" / ".manifest.json").write_text(
+            manifest.stdout, encoding="utf-8")
+        try:
+            from sage.commands import upgrade
+            args = SimpleNamespace(check=False, apply=True, root=str(root), force=True)
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                result = upgrade.run(args)
+        except Exception as exc:
+            return [Finding("upgrade", f"v0.9.84 fixture 적용 중 예외: {type(exc).__name__}")]
+
+        policy = root / "docs" / "agent" / "language-policy.md"
+        try:
+            upgraded_manifest = json.loads(
+                (root / "docs" / "sage_harness" / ".manifest.json").read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            upgraded_manifest = {}
+        receipt = ((upgraded_manifest.get("core_renders") or {}).get(
+            "shared/framework-doc/docs/agent/language-policy")
+            if isinstance(upgraded_manifest, dict) else None)
+        findings.extend(_managed_upgrade_findings(result, policy.is_file(), receipt))
+    return findings
+
+
+def _managed_upgrade_findings(result, policy_exists, receipt):
+    """지원 하한 apply의 최소 managed 자산 계약을 현재 구현 상태와 독립해 검증한다."""
+    if result == 0 and policy_exists and isinstance(receipt, dict):
+        return []
+    return [Finding(
+        "upgrade",
+        "v0.9.84 적용 후 managed language-policy 파일과 receipt가 함께 배포되지 않았다",
+    )]
+
+
+def check_version_is_not_a_placeholder():
+    """`0.0.0` 류의 자리표시자로 publish 하지 않는다."""
+    version = _engine_version()
+    if version in (None, "", "0.0.0"):
+        return [Finding("version", f"자리표시자 version: {version!r}")]
+    return []
+
+
+CHECKS = (
+    ("tag-version", lambda tag: check_tag_matches_version(tag)),
+    ("version", lambda tag: check_version_is_not_a_placeholder()),
+    ("catalog", lambda tag: check_catalog_parity()),
+    ("localization-debt", lambda tag: check_localization_debt()),
+    ("docs-pair", lambda tag: check_document_pairs()),
+    ("inventory", lambda tag: check_inventory_is_current()),
+    ("upgrade", lambda tag: check_upgrade_evidence()),
+    ("mutation", lambda tag: check_no_release_mutation()),
+)
+
+
+# tag 가 없으면 대조할 대상이 없다. 그 상태를 `OK` 로 찍으면 **검사한 것과 구별되지 않는다** —
+# 이 job 의 존재 이유가 "릴리스 당일에 처음 도는 검사를 만들지 않는다" 인데, 무엇을 아직 안 봤는지
+# 화면에 남지 않으면 그 목적이 반만 달성된다.
+_SKIPPED_WITHOUT_TAG = ("tag-version",)
+
+
+def _tag_from_environment():
+    """CI 가 준 ref 가 **tag 일 때만** tag 다.
+
+    `GITHUB_REF_NAME` 은 PR 에서 `6/merge`, 브랜치 push 에서 `main` 이 된다. 그걸 tag 로 읽으면
+    릴리스가 아닌 실행이 전부 tag 불일치로 떨어진다 — 릴리스 전에 증거를 미리 맞춰 보려고 PR 에서
+    함께 돌리는 job 이 정작 그 이유 하나로 항상 빨간불이 되고, 그러면 나머지 7건의 신호도 같이
+    죽는다. 릴리스 경로(`publish.yml`)는 `--tag` 를 명시로 넘기므로 영향받지 않는다.
+    """
+    if os.environ.get("GITHUB_REF_TYPE") != "tag":
+        return None
+    return os.environ.get("GITHUB_REF_NAME") or None
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--tag", default=_tag_from_environment(),
+                        help="검증할 release tag (없으면 tag 대조를 생략한다)")
+    parser.add_argument("--skip", action="append", default=[],
+                        help="이 실행에서 제외할 검사 이름 (사유는 호출부가 남긴다)")
+    args = parser.parse_args()
+
+    print("== publish preflight ==")
+    print(f"   version: {_engine_version()}   tag: {args.tag or '(없음)'}")
+
+    findings = []
+    for name, run in CHECKS:
+        if name in args.skip:
+            print(f"   SKIP {name} (명시적 제외)")
+            continue
+        if args.tag is None and name in _SKIPPED_WITHOUT_TAG:
+            print(f"   SKIP {name} (tag 없음 — 릴리스 실행에서만 대조한다)")
+            continue
+        result = run(args.tag)
+        findings.extend(result)
+        print(f"   {'FAIL' if result else 'OK  '} {name}")
+
+    if findings:
+        print("\n차단 사유:", file=sys.stderr)
+        for finding in findings:
+            print(f"  - {finding}", file=sys.stderr)
+        print("\npublish 는 되돌릴 수 없다 — 위 항목을 해소한 뒤 다시 실행하세요.", file=sys.stderr)
+        return 1
+    print("\n모든 증거가 일치한다. publish 를 진행할 수 있다(사용자 승인은 별개).")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

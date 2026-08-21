@@ -17,6 +17,12 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
   "팀 오케스트레이션", "run the team", or asks to drive the team through implementation→review
 
 ## procedure
+0. Resolve the conversation language once: an explicit `--lang ko|en` on this skill's
+   invocation, then `interface.language` in `sage/project-profile.local.yaml`, then `ko`.
+   Every question, proposal, progress note, warning and summary uses it; machine values
+   and Phase 00–06 `Document-Language:` prose do not. Document prose includes section headings
+   and list labels, except `## 5. Done Criteria` and `## 6. Done Criteria Revision Log`, which a
+   parser reads by their exact string. See `docs/agent/language-policy.md`.
 1. Read `sage/project-profile.yaml` — confirm bootstrapped; confirm a plan doc (Phases
    00–02) for this cycle exists. If not bootstrapped → direct to `/sage-init`; if no plan
    → direct to `/sage-plan` (do not author the plan here).
@@ -29,6 +35,11 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
    On a resumed session with a user-supplied context packet, first run
    `sage context restore --snapshot <path>` and read the generated briefing. Reject a
    failed/stale packet instead of using it as advisory context.
+   Read the cycle's document language from Phase 00's `Document-Language:` line and author
+   every 03–06 document with that same line, in that language. Phase 00 is the source of
+   truth; disagreement with `.sage/cycle.json` is a conflict to raise, not one to resolve by
+   choosing a side. A cycle with no marker predates it — follow the language the existing
+   documents use and do not mark only some of them.
    Before every 01–05 phase boundary, re-open Phase 00 and inspect its exact Done Criteria:
    `[ ]` is normal progress, `[x]` is demonstrated completion, and `[~]` is resolved only
    with a same-line `(N/A: reason)`. Update only criteria actually satisfied by the completed

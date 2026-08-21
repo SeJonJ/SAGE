@@ -12,6 +12,7 @@
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -22,8 +23,21 @@ from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNTIME = os.path.join(os.path.dirname(HERE), "runtime")
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(HERE))))
 sys.path.insert(0, RUNTIME)
+sys.path.insert(0, REPO)
 import loop_audit as la  # noqa: E402
+
+
+def _has(issues, code, **arguments):
+    """무결성 위반을 문구가 아니라 code·인자로 확인한다 — 문안은 부른 쪽 catalog 소유다."""
+    for issue in issues:
+        if issue.get("code") != code:
+            continue
+        if all(issue.get("arguments", {}).get(name) == value
+               for name, value in arguments.items()):
+            return True
+    return False
 
 
 class TestLoopAudit(unittest.TestCase):
@@ -148,7 +162,7 @@ class TestLoopAudit(unittest.TestCase):
         self.assertIsNone(la.close_of(self.tmp, "rl-x"))
 
     def test_unicode_safe(self):
-        rid = la.open_loop(self.tmp, "L3", cfg={"note": "보안 렌즈 검토"}, now=0)
+        la.open_loop(self.tmp, "L3", cfg={"note": "보안 렌즈 검토"}, now=0)
         self.assertEqual(la.read_records(self.tmp)[0]["cfg"]["note"], "보안 렌즈 검토")
 
     # --- codex S2 후속: valid-but-non-dict 줄이 소비자 .get() 크래시 안 내게 skip ---
@@ -176,27 +190,65 @@ class TestLoopAudit(unittest.TestCase):
     def test_integrity_orphan_round(self):
         la.record_round(self.tmp, "rl-ghost", 1, 1, 0, 0, 0, 10, now=1)   # open 없이 round
         issues = la.integrity_issues(self.tmp)
-        self.assertTrue(any("orphan" in i and "rl-ghost" in i for i in issues))
+        self.assertTrue(_has(issues, "loop_audit.orphan_event", event="round",
+                            run_id="'rl-ghost'"), issues)
 
     def test_integrity_duplicate_open(self):
         la.open_loop(self.tmp, "L3", run_id="rl-dup", now=0)
         la.open_loop(self.tmp, "L2", run_id="rl-dup", now=1)   # 같은 id 재사용
         issues = la.integrity_issues(self.tmp)
-        self.assertTrue(any("중복" in i and "rl-dup" in i for i in issues))
+        self.assertTrue(_has(issues, "loop_audit.duplicate_open", run_id="'rl-dup'", count=2),
+                        issues)
 
     def test_integrity_duplicate_close(self):
         rid = la.open_loop(self.tmp, "L3", now=0)
         la.close_loop(self.tmp, rid, "APPROVED", "CONVERGED", 1, now=1)
         la.close_loop(self.tmp, rid, "BLOCKED", "BUDGET_ITER", 2, now=2)   # 중복 close
         issues = la.integrity_issues(self.tmp)
-        self.assertTrue(any("loop_close" in i and "중복" in i for i in issues))
+        self.assertTrue(_has(issues, "loop_audit.duplicate_close", run_id=repr(rid), count=2),
+                        issues)
 
     def test_integrity_activity_after_close(self):
         rid = la.open_loop(self.tmp, "L3", now=0)
         la.close_loop(self.tmp, rid, "APPROVED", "CONVERGED", 1, now=1)
         la.record_round(self.tmp, rid, 2, 1, 0, 0, 0, 10, now=2)   # 종료 후 round
         issues = la.integrity_issues(self.tmp)
-        self.assertTrue(any("after loop_close" in i for i in issues))
+        self.assertTrue(_has(issues, "loop_audit.event_after_close", event="round"), issues)
+
+    def test_integrity_diagnostics_carry_no_finished_sentence(self):
+        """이 모듈은 어느 catalog 도 알 수 없다 — 완성 문장을 만들면 그 언어를 호출부가 못 고른다.
+
+        원문 증거(파서 메시지)는 번역 대상이 아니라 `evidence` 로 그대로 실린다.
+        """
+        korean = re.compile(r"[가-힣]")
+        path = la.audit_path(self.tmp)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("{ corrupt\n")
+        issues = la.integrity_issues(self.tmp)
+
+        self.assertTrue(issues)
+        for issue in issues:
+            self.assertEqual({"code", "arguments", "evidence"}, set(issue))
+            self.assertFalse(korean.search(json.dumps(issue, ensure_ascii=False)), issue)
+        self.assertTrue(_has(issues, "loop_audit.malformed_line"), issues)
+        self.assertIn("malformed JSON",
+                      next(i for i in issues if i["code"] == "loop_audit.malformed_line")["evidence"])
+
+    def test_integrity_diagnostics_render_in_both_languages(self):
+        """같은 진단이 두 언어로 렌더되고, run_id·증거는 언어와 무관하게 같아야 한다."""
+        from sage.i18n import LanguageContext, render_issue
+        la.record_round(self.tmp, "rl-ghost", 1, 1, 0, 0, 0, 10, now=1)
+        issue = la.integrity_issues(self.tmp)[0]
+
+        korean = render_issue(LanguageContext(language="ko"), issue)
+        english = render_issue(LanguageContext(language="en"), issue)
+
+        self.assertIn("rl-ghost", korean)
+        self.assertIn("rl-ghost", english)
+        self.assertIn("loop_open 없음", korean)
+        self.assertIn("there is no loop_open", english)
+        self.assertNotRegex(english, r"[가-힣]")
 
     # --- 7차 배치3: seq 무결성 (수기 위조·순서조작 탐지) ---
     def test_seq_stamped_monotonic(self):
@@ -213,7 +265,7 @@ class TestLoopAudit(unittest.TestCase):
 
     def test_seq_handwritten_round_detected(self):
         # CLI/라이브러리 우회한 수기 round(seq 없음) → seq_ok False + integrity 위반.
-        rid = la.open_loop(self.tmp, "L3", run_id="rl-forge", now=0)
+        la.open_loop(self.tmp, "L3", run_id="rl-forge", now=0)
         with open(la.audit_path(self.tmp), "a", encoding="utf-8") as f:
             f.write(json.dumps({"event": "round", "run_id": "rl-forge", "iteration": 1,
                                 "found": 9, "survived": 9, "accepted": 9}) + "\n")   # seq 누락
@@ -222,7 +274,8 @@ class TestLoopAudit(unittest.TestCase):
         run = la.audit_summary(self.tmp)["runs"]["rl-forge"]
         self.assertFalse(run["seq_ok"])
         self.assertFalse(run["chain_ok"])
-        self.assertTrue(any("시퀀스" in i and "rl-forge" in i for i in la.integrity_issues(self.tmp)))
+        self.assertTrue(_has(la.integrity_issues(self.tmp), "loop_audit.sequence_broken",
+                             run_id="'rl-forge'"), la.integrity_issues(self.tmp))
 
     def test_seq_legacy_no_seq_skips(self):
         # 구버전 기록(seq 전무) → seq_ok None(검사 skip, 하위호환).
@@ -239,7 +292,7 @@ class TestLoopAudit(unittest.TestCase):
 
     # --- 7차 배치3: reviewer degraded (cross-model 폴백 침묵 차단) ---
     def test_reviewer_degraded_on_mismatch(self):
-        rid = la.open_loop(self.tmp, "L3", run_id="rl-x", now=0, reviewer_requested="cross_model")
+        la.open_loop(self.tmp, "L3", run_id="rl-x", now=0, reviewer_requested="cross_model")
         la.close_loop(self.tmp, "rl-x", "APPROVED", "CONVERGED", 1, now=1,
                       reviewer_actual="same_runtime")
         run = la.audit_summary(self.tmp)["runs"]["rl-x"]
@@ -248,14 +301,14 @@ class TestLoopAudit(unittest.TestCase):
         self.assertTrue(run["degraded"])
 
     def test_reviewer_not_degraded_when_match(self):
-        rid = la.open_loop(self.tmp, "L3", run_id="rl-y", now=0, reviewer_requested="cross_model")
+        la.open_loop(self.tmp, "L3", run_id="rl-y", now=0, reviewer_requested="cross_model")
         la.close_loop(self.tmp, "rl-y", "APPROVED", "CONVERGED", 1, now=1,
                       reviewer_actual="cross_model")
         self.assertFalse(la.audit_summary(self.tmp)["runs"]["rl-y"]["degraded"])
 
     def test_reviewer_absent_not_degraded(self):
         # reviewer 미기록(legacy/미사용) → degraded False(오탐 방지).
-        rid = la.open_loop(self.tmp, "L3", run_id="rl-z", now=0)
+        la.open_loop(self.tmp, "L3", run_id="rl-z", now=0)
         la.close_loop(self.tmp, "rl-z", "APPROVED", "CONVERGED", 1, now=1)
         self.assertFalse(la.audit_summary(self.tmp)["runs"]["rl-z"]["degraded"])
 

@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:d5d3c74eb1e6594b6c7cd65510a103d87b2723a36e939560f6b38c88b9801202 -->
+<!-- sage-doc-source: cli-reference.md sha256:b44c8067da8fb4c87d53f7bcb3824e45a464815023f648f3e764ae5017632367 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -127,6 +127,37 @@ switching. Close normally with `fast-cycle close` before `cycle clear`; abandon 
 | `sage authority inspect` | Inspect base/head changes and their highest risk |
 | `sage authority attest` | Generate an attestation for exact PDCA evidence |
 | `sage authority gate` | Bind the attestation to current changes and evaluate it in protected CI |
+
+## Interface language
+
+The global `--lang` goes **before the subcommand**. Put it anywhere else and the command
+fails — `sage doctor --lang en` is not a supported form.
+
+```text
+sage [--lang {ko,en}] <command> [command options]
+```
+
+```bash
+sage --lang en doctor        # applies to this invocation only
+```
+
+To avoid repeating it, set it in `sage/project-profile.local.yaml`, which Git ignores.
+
+```yaml
+interface:
+  language: en      # absent means ko
+```
+
+Resolution order is `--lang` → local profile → `ko`. Hooks take no `--lang`, so they follow
+the local profile and the default only. This setting never appears in the shared profile,
+`project-profile.json`, a manifest, or the profile hash — a language preference is a property
+of the person at the keyboard, not of the project's governance. **Language never changes a
+verdict**: for the same input, `ko` and `en` produce the same status, exit code, and
+`message_key`; only the human-readable sentence differs.
+
+The language Phase 00–06 documents are *written* in is a **separate** decision, fixed once per
+cycle with `Document-Language:`. Full rules live in
+`templates/core/framework/docs/agent/language-policy.md`.
 
 ## Common exit codes
 

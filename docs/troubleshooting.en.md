@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:54e85808c89c535403a9b0eb0774ea3285a5d7c898a51f77485f924d4e520e58 -->
+<!-- sage-doc-source: troubleshooting.md sha256:b4ec420111b9defd8067d06bd7383ac8bf3d05b171c9153a67f64d8dc564ed2c -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -138,6 +138,23 @@ unset SAGE_CYCLE_STEM                # if you declared it through the environmen
 The block message states whether the binding was read as **declared** or **inferred from the
 branch**, so the guidance tells you which one to clear.
 
+## `sage install` fails with "SAGE source resources changed"
+
+If the SAGE engine sources change while an install is running, the result would be a half-mixed
+tree, so install stops itself and rolls back. The check is working as designed; the usual cause is
+**a test or review tool editing repository files and reverting them**.
+
+The message names the logical paths that differ.
+
+```
+❌ sage install apply 실패: InstallDriftError: SAGE source resources changed during install
+   — 변경 2건: hooks/runtime/messages.py, engine/commands/install.py
+```
+
+Use the paths to identify what touched them, let that work finish, and install again. Do **not** run
+mutation tests or an independent review at the same time as the full suite — both change repository
+sources temporarily, so the install tests fail legitimately.
+
 ## `sage fast-cycle open` is rejected
 
 ```
@@ -233,3 +250,29 @@ pipx install --force "sage-harness[schema]"
 
 Without `jsonschema`, hash checks and built-in semantic checks continue, but JSON Schema validation
 is skipped with a warning.
+
+## Output stays Korean even with `--lang en`
+
+The global `--lang` only works **before the subcommand**. `sage doctor --lang en` is not a
+supported form.
+
+```bash
+sage --lang en doctor        # this is the right position
+```
+
+Hook output takes no `--lang` at all. To get English hook messages, configure the target
+project's `sage/project-profile.local.yaml`.
+
+```yaml
+interface:
+  language: en
+```
+
+If it is still Korean, check three things: that the local profile sits in **the project root the
+hook is inspecting**, that the value is `ko` or `en` (anything else falls back to `ko` and
+`sage validate` reports it as a configuration failure), and whether the remaining Korean is
+**quoted source text** — a fragment read from a file and handed back as evidence is never
+translated. That is evidence, not a defect.
+
+Phase 00–06 documents being written in Korean is unrelated to this setting. Document language is
+fixed per cycle with `Document-Language:`, and an active cycle does not change with `--lang`.

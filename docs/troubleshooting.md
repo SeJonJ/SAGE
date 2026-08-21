@@ -127,6 +127,22 @@ unset SAGE_CYCLE_STEM                # env로 선언했다면
 차단 메시지가 결속을 **선언된**으로 읽었는지 **브랜치에서 추론한**으로 읽었는지 알려주므로, 어느 쪽을
 지워야 하는지는 안내를 보고 판단하면 됩니다.
 
+## `sage install`이 "SAGE source resources changed"로 실패
+
+설치 도중 SAGE 엔진 소스가 바뀌면 반쯤 섞인 산출물이 나오므로 install이 스스로 중단하고 롤백합니다.
+검사는 정상 동작이고, 대부분 원인은 **테스트나 리뷰 도구가 저장소 파일을 잠깐 고쳤다 되돌리는 것**입니다.
+
+메시지가 어떤 논리경로가 달라졌는지 함께 알려줍니다.
+
+```
+❌ sage install apply 실패: InstallDriftError: SAGE source resources changed during install
+   — 변경 2건: hooks/runtime/messages.py, engine/commands/install.py
+```
+
+경로를 보고 무엇이 건드렸는지 특정한 뒤 그 작업을 끝내고 다시 설치하세요. 변이 테스트나 독립 리뷰를
+**전체 스위트와 동시에 돌리지 마세요** — 둘 다 저장소 소스를 일시 변경하므로 install 계열이 정당하게
+실패합니다.
+
 ## `sage fast-cycle open`이 rejected로 거부됨
 
 ```
@@ -215,3 +231,27 @@ pipx install --force "sage-harness[schema]"
 ```
 
 `jsonschema`가 없으면 hash와 내장 의미 검사는 계속되지만 JSON Schema 검사는 WARN으로 건너뜁니다.
+
+## `--lang en`을 붙였는데 출력이 그대로 한국어
+
+전역 `--lang`은 **하위 명령 앞**에만 옵니다. `sage doctor --lang en`은 지원하는 형태가 아닙니다.
+
+```bash
+sage --lang en doctor        # 이 자리가 맞습니다
+```
+
+Hook 출력은 `--lang`을 아예 받지 않습니다. Hook이 영어로 나와야 한다면 대상 프로젝트의
+`sage/project-profile.local.yaml`에 설정합니다.
+
+```yaml
+interface:
+  language: en
+```
+
+그래도 한국어가 나온다면 확인할 것이 셋입니다. local profile이 **hook이 검사하는 그 프로젝트
+루트**에 있는지, 값이 `ko`나 `en`인지(다른 값은 `ko`로 되돌아가며 `sage validate`가 설정 실패로
+보고합니다), 그리고 남은 한국어가 **인용된 원문**인지 — 파일에서 읽어 근거로 되돌려주는 조각은
+번역하지 않습니다. 그건 결함이 아니라 증거입니다.
+
+Phase 00~06 문서가 한국어로 쓰이는 것은 이 설정과 무관합니다. 문서 언어는 사이클마다
+`Document-Language:`로 따로 고정하며, 진행 중인 사이클은 `--lang`으로 바뀌지 않습니다.

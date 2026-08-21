@@ -418,35 +418,49 @@ def _new_summary_entry():
             "reviewer_requested": None, "reviewer_actual": None}
 
 
+def _diagnostic(code, evidence="", **arguments):
+    """언어 중립 진단 하나. 이 모듈은 어느 catalog 도 알 수 없다.
+
+    설치본에서 이 runtime 은 엔진(`sage` 패키지) 없이 단독 실행되므로 `sage.diagnostics` 를
+    import 할 수 없다. 그래서 진단을 그 모듈이 받아주는 매핑 형태로 올리고, 문장은 CLI 든
+    hook 이든 부른 쪽의 catalog 가 만든다. 여기서 완성 문장을 만들면 그 언어를 호출부가
+    고를 수 없어 영어 화면에도 한국어가 실린다.
+
+    `evidence` 는 파서가 돌려준 원문이라 번역하지 않는다.
+    """
+    return {"code": code, "arguments": arguments, "evidence": evidence}
+
+
 def integrity_issues(root):
-    """감사 트레일 구조 무결성 검사 → [문자열] (비면 정상). run_id 는 join key 이므로 무결성이 깨지면
-    트레일 자체가 malformed입니다. writer는 락 안에서 원문과 target run 체인을 검증하고, 소비자와
-    테스트도 같은 불변식을 재검증합니다.
+    """감사 트레일 구조 무결성 검사 → [언어 중립 진단] (비면 정상). run_id 는 join key 이므로
+    무결성이 깨지면 트레일 자체가 malformed입니다. writer는 락 안에서 원문과 target run 체인을
+    검증하고, 소비자와 테스트도 같은 불변식을 재검증합니다.
 
     run_id 계약: 호출자가 open_loop()(또는 new_run_id())로 1회 발급하고 그 id 로만 round/close 한다.
     검출(codex S3/S4 강화): ① loop_open 없는 round/close(orphan) ② loop_open 중복 ③ loop_close 중복
     ④ loop_close 이후의 round/close(종료 후 활동) ⑤ 손상/비-dict 줄(읽기 시 silent drop → 증거 불완전).
     append 순서를 그대로 따라 한 패스로 판정."""
     recs, file_issues = _read_status(audit_path(root))
-    issues = [f"손상/비-dict 감사 줄 — {issue}" for issue in file_issues]
+    issues = [_diagnostic("loop_audit.malformed_line", evidence=issue) for issue in file_issues]
     opens, closes = {}, {}
     for r in recs:
         if r.get("event") == "loop_open":
             opens[r.get("run_id")] = opens.get(r.get("run_id"), 0) + 1
     for rid, n in opens.items():
         if n > 1:
-            issues.append(f"run_id {rid!r} loop_open {n}회 중복(uuid 충돌/명시 재사용)")
+            issues.append(_diagnostic("loop_audit.duplicate_open", run_id=repr(rid), count=n))
     for r in recs:
         ev, rid = r.get("event"), r.get("run_id")
         if ev in ("round", "loop_close") and rid not in opens:
-            issues.append(f"orphan {ev}: run_id {rid!r} 의 loop_open 없음")
+            issues.append(_diagnostic("loop_audit.orphan_event", event=ev, run_id=repr(rid)))
             continue
         if ev in ("round", "loop_close") and closes.get(rid):
-            issues.append(f"{ev} after loop_close: run_id {rid!r} 는 이미 종료됨(종료 후 활동)")
+            issues.append(_diagnostic("loop_audit.event_after_close", event=ev, run_id=repr(rid)))
         if ev == "loop_close":
             closes[rid] = closes.get(rid, 0) + 1
             if closes[rid] > 1:
-                issues.append(f"run_id {rid!r} loop_close {closes[rid]}회 중복")
+                issues.append(_diagnostic("loop_audit.duplicate_close", run_id=repr(rid),
+                                          count=closes[rid]))
     # ⑥ 시퀀스 무결성(7차 배치3): seq 누락/불연속/순서조작 — 수기 JSONL append·재정렬 탐지.
     #    라이브러리가 seq 를 stamp 하므로(open=0, append 순 +1), CLI/lib 우회 기록은 seq 부재/불연속으로 걸린다.
     seqs = {}
@@ -456,8 +470,9 @@ def integrity_issues(root):
             seqs.setdefault(rid, []).append(r.get("seq"))
     for rid, sl in seqs.items():
         if _seq_ok(sl) is False:
-            issues.append(f"run_id {rid!r} 시퀀스 불연속/누락 {sl} — 수기 기록 또는 순서 조작 의심")
+            issues.append(_diagnostic("loop_audit.sequence_broken", run_id=repr(rid),
+                                      sequence=sl))
     for rid, state in _chain_states(recs).items():
         if state is False:
-            issues.append(f"run_id {rid!r} strict hash-chain 불일치 — 감사 레코드 수정/누락/순서 조작 의심")
+            issues.append(_diagnostic("loop_audit.hash_chain_mismatch", run_id=repr(rid)))
     return issues

@@ -19,6 +19,7 @@ from sage import _resources
 from sage import ci_authority
 from sage.profile_compile import ProfileCompileError, materialize_profile
 from sage.profile_validate import severity_of, validate_profile
+from sage.i18n import english_text, tr
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 _PHASE_IDS = ("00", "01", "02", "03", "04", "05")
@@ -38,19 +39,19 @@ def _is_regular_blob(entry: dict[str, str] | None) -> bool:
     return bool(entry and entry.get("kind") == "blob" and entry.get("mode") in _REGULAR_BLOB_MODES)
 
 
-def register(sub):
+def register(sub, context):
     parser = sub.add_parser(
         "authority",
-        help="보호된 CI에서 base/head 정책과 exact PDCA 증거를 검증합니다",
+        help=tr(context, "cli.authority.authority"),
     )
     actions = parser.add_subparsers(dest="action", metavar="<action>")
     actions.required = True
 
-    inspect = actions.add_parser("inspect", help="base/head git object를 읽어 권위 판정을 계산합니다")
-    _add_inspection_args(inspect)
+    inspect = actions.add_parser("inspect", help=tr(context, "cli.authority.inspect"))
+    _add_inspection_args(inspect, context)
     inspect.set_defaults(func=_run_inspect)
 
-    attest = actions.add_parser("attest", help="보호된 CI 판정 claims를 HMAC 서명합니다")
+    attest = actions.add_parser("attest", help=tr(context, "cli.authority.attest"))
     attest.add_argument("--issuer", required=True)
     attest.add_argument("--repository", required=True)
     attest.add_argument("--base", required=True)
@@ -64,19 +65,19 @@ def register(sub):
     attest.add_argument("--ttl", type=int, default=300)
     attest.set_defaults(func=_run_attest)
 
-    gate = actions.add_parser("gate", help="권위 판정과 protected attestation 결속을 검증합니다")
-    _add_inspection_args(gate)
+    gate = actions.add_parser("gate", help=tr(context, "cli.authority.gate"))
+    _add_inspection_args(gate, context)
     gate.add_argument("--attestation-file", required=True)
     gate.set_defaults(func=_run_gate)
 
 
-def _add_inspection_args(parser: argparse.ArgumentParser):
-    parser.add_argument("--root", default=".", help="base/head object가 존재하는 git repository")
+def _add_inspection_args(parser: argparse.ArgumentParser, context):
+    parser.add_argument("--root", default=".", help=tr(context, "cli.authority.root"))
     parser.add_argument("--base", required=True, help="full base commit SHA")
     parser.add_argument("--head", required=True, help="full head commit SHA")
     parser.add_argument("--repository", required=True, help="owner/name")
     parser.add_argument("--cycle-stem", required=True)
-    parser.add_argument("--issuer", required=True, help="gate에서는 attestation expected issuer")
+    parser.add_argument("--issuer", required=True, help=tr(context, "cli.authority.issuer"))
 
 
 def _git(root: str, *args: str, max_output: int | None = None) -> bytes:
@@ -231,12 +232,13 @@ def _profile(root: str, tree: dict[str, dict[str, str]], revision: str) -> dict[
         raise AuthorityCliError("protected authority requires the SAGE schema dependency") from exc
     issues = validate_profile(profile, _resources.sage_root())
     if severity_of(issues) == "FAIL":
-        failures = [message for severity, message in issues if severity == "FAIL"]
+        failures = [english_text(message) for severity, message in issues if severity == "FAIL"]
         raise AuthorityCliError(f"{revision} profile validation failed: {'; '.join(failures[:4])}")
     try:
         return materialize_profile(profile)
     except ProfileCompileError as exc:
-        raise AuthorityCliError(f"{revision} profile materialization failed: {exc}") from exc
+        raise AuthorityCliError(
+            f"{revision} profile materialization failed: {english_text(exc)}") from exc
 
 
 def _phase_globs(profile: dict[str, Any]) -> dict[str, set[str]]:

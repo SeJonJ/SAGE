@@ -23,6 +23,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(HERE))))
 sys.path.insert(0, REPO)
 from sage.commands import generate as G, validate as V  # noqa: E402
 from sage import mcp_common as M  # noqa: E402
+from pathlib import Path
 
 # mcps 경로 손조립 패턴(os.path.join 의 "sage_harness","mcps" 인접). 메시지 문자열의 슬래시형
 # (docs/sage_harness/mcps/...)은 일부러 매치하지 않는다 — 그건 경로 조립이 아니라 사용자 안내다.
@@ -69,7 +70,7 @@ class TestNoDirectPathAssembly(unittest.TestCase):
     def test_generate_validate_no_mcps_handassembly(self):
         # AssetPaths 경유 강제 — 새 kind 가 경로 규약을 우회할 수 없게.
         for rel in ("sage/commands/generate.py", "sage/commands/validate.py"):
-            src = open(os.path.join(REPO, rel), encoding="utf-8").read()
+            src = Path(os.path.join(REPO, rel)).read_text(encoding="utf-8")
             self.assertIsNone(_ASSEMBLY.search(src),
                               f"{rel} 가 mcps 경로를 손조립함 → AssetPaths(root,'mcp',id).spec 사용할 것")
 
@@ -79,7 +80,7 @@ class TestContractVersionStamped(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             _inst(t)
             self.assertEqual(G.run(GArgs(t)), 0)
-            manifest = json.loads(open(os.path.join(t, "docs", "sage_harness", ".manifest.json")).read())
+            manifest = json.loads(Path(os.path.join(t, "docs", "sage_harness", ".manifest.json")).read_text())
             mcp_entries = {k: v for k, v in manifest["assets"].items() if k.startswith("mcps/")}
             self.assertTrue(mcp_entries, "생성된 mcps 엔트리가 없음")
             for key, entry in mcp_entries.items():
@@ -91,9 +92,9 @@ class TestContractVersionStamped(unittest.TestCase):
             _inst(t)
             G.run(GArgs(t))
             mp = os.path.join(t, "docs", "sage_harness", ".manifest.json")
-            manifest = json.loads(open(mp).read())
+            manifest = json.loads(Path(mp).read_text())
             manifest["assets"]["mcps/codegraph"]["adapter_contract_version"] = "999"   # 계약 드리프트 주입
-            open(mp, "w").write(json.dumps(manifest))
+            Path(mp).write_text(json.dumps(manifest))
             self.assertEqual(V.run(VArgs(t)), 3)   # STALE
 
     def test_legacy_unstamped_contract_is_stale(self):
@@ -103,15 +104,15 @@ class TestContractVersionStamped(unittest.TestCase):
             _inst(t)
             G.run(GArgs(t))
             mp = os.path.join(t, "docs", "sage_harness", ".manifest.json")
-            manifest = json.loads(open(mp).read())
+            manifest = json.loads(Path(mp).read_text())
             del manifest["assets"]["mcps/codegraph"]["adapter_contract_version"]   # legacy 시뮬레이션
-            open(mp, "w").write(json.dumps(manifest))
+            Path(mp).write_text(json.dumps(manifest))
             self.assertEqual(V.run(VArgs(t)), 3)   # STALE
 
 
 class TestSchemaSectionsClosed(unittest.TestCase):
     def test_mcp_section_additional_properties_false(self):
-        schema = json.loads(open(os.path.join(REPO, "schema", "profile.schema.json"), encoding="utf-8").read())
+        schema = json.loads(Path(os.path.join(REPO, "schema", "profile.schema.json")).read_text(encoding="utf-8"))
         props = schema.get("properties") or {}
         # mcp 도 risk/pdca/output_contract 와 동등하게 닫혀 있어야(오타 키 방어 대칭).
         for sec in ("risk", "pdca", "output_contract", "mcp"):

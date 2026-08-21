@@ -274,7 +274,7 @@ class TestInstall(unittest.TestCase):
                      "/sage/project-profile.local.yaml\n"
                      "# >>> SAGE LOCAL PROFILE\n")
 
-        with self.assertRaisesRegex(install._tx.InstallDriftError, "관리 마커가 손상됨"):
+        with self.assertRaisesRegex(install._tx.InstallDriftError, "install.gitignore_marker_corrupt"):
             install._render_local_profile_gitignore(malformed)
 
     def test_inverted_local_state_gitignore_markers_report_install_drift(self):
@@ -282,7 +282,7 @@ class TestInstall(unittest.TestCase):
                      "/.sage/*\n"
                      "# >>> SAGE LOCAL STATE\n")
 
-        with self.assertRaisesRegex(install._tx.InstallDriftError, "관리 마커가 손상됨"):
+        with self.assertRaisesRegex(install._tx.InstallDriftError, "install.gitignore_marker_corrupt"):
             install._render_local_profile_gitignore(malformed)
 
     def test_blocked_overlay_aborts_without_manifest(self):
@@ -410,7 +410,8 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(manifest["installed_hosts"], ["claude", "codex"])
             self.assertTrue(os.path.isdir(os.path.join(d, ".claude")))
             self.assertTrue(os.path.isdir(os.path.join(d, ".codex")))
-            receipt_hosts = {key.split("/", 1)[0] for key in manifest["core_renders"]}
+            # `shared/...` 는 host 축이 아니라 양 host 가 공유하는 managed framework doc 영수증이다.
+            receipt_hosts = {key.split("/", 1)[0] for key in manifest["core_renders"]} - {"shared"}
             self.assertEqual(receipt_hosts, {"claude", "codex"})
             self.assertEqual(manifest["core_renders"]["claude/framework/AGENT_GUIDE"],
                              manifest["core_renders"]["codex/framework/AGENT_GUIDE"])
@@ -441,7 +442,8 @@ class TestInstall(unittest.TestCase):
             manifest = json.loads(Path(os.path.join(
                 d, "docs", "sage_harness", ".manifest.json")).read_text(encoding="utf-8"))
             self.assertEqual(manifest["installed_hosts"], ["claude", "codex"])
-            receipt_hosts = {key.split("/", 1)[0] for key in manifest["core_renders"]}
+            # `shared/...` 는 host 축이 아니라 양 host 가 공유하는 managed framework doc 영수증이다.
+            receipt_hosts = {key.split("/", 1)[0] for key in manifest["core_renders"]} - {"shared"}
             self.assertEqual(receipt_hosts, {"claude", "codex"})
 
     def test_legacy_manifest_seeds_installed_hosts_before_append(self):
@@ -1308,6 +1310,28 @@ class TestInstall(unittest.TestCase):
 
             self.assertEqual(_tree_snapshot(d), {})
 
+    def test_source_resource_drift_names_the_changed_logical_paths(self):
+        # EH-13: "소스가 바뀌었다"만으로는 원인 특정에 가설 배제가 필요했다. 진단이 논리경로를
+        # 지목해야 한다 — 검사 자체(fail-closed·rollback)는 위 테스트가 계속 지킨다.
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            stderr = io.StringIO()
+            with mock.patch("sage.build_identity.source_core_content_hash",
+                            side_effect=["sha256:" + "1" * 64,
+                                         "sha256:" + "2" * 64,
+                                         "sha256:" + "2" * 64]), \
+                 mock.patch("sage.build_identity.source_core_content_snapshot",
+                            side_effect=[("sha256:" + "1" * 64, {"hooks/runtime/messages.py": "a" * 64}),
+                                         ("sha256:" + "2" * 64, {"hooks/runtime/messages.py": "b" * 64})]), \
+                 redirect_stderr(stderr):
+                self.assertEqual(install.run(Args("claude", d)), 1)
+
+            out = stderr.getvalue()
+            self.assertIn("SAGE source resources changed", out)
+            self.assertIn("hooks/runtime/messages.py", out)
+            self.assertIn("변경 1건", out)
+            self.assertEqual(_tree_snapshot(d), {})
+
     def test_install_owned_output_drift_before_commit_rolls_back_force(self):
         import unittest.mock as mock
         with tempfile.TemporaryDirectory() as d:
@@ -1556,7 +1580,7 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(rc, 1)
             self.assertEqual(Path(leader).read_bytes(), b"\xff\xfeUNTRUSTED")
             self.assertEqual(Path(manifest_path).read_bytes(), manifest_before)
-            self.assertIn("오버레이/렌더 읽기 실패", err.getvalue())
+            self.assertIn("오버레이/렌더를 읽지 못했습니다", err.getvalue())
 
     def test_malformed_marker_core_render_is_rejected_and_preserved(self):
         from sage import overlay_common
@@ -1576,7 +1600,7 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(Path(guide).read_text(encoding="utf-8"), malformed)
             self.assertEqual(Path(manifest_path).read_bytes(), manifest_before)
             self.assertIn("blocked block 정리 실패", err.getvalue())
-            self.assertIn("오버레이 마커 짝 불일치", err.getvalue())
+            self.assertIn("오버레이 마커 짝이 맞지 않습니다", err.getvalue())
 
     def test_non_force_install_cleans_blocked_block_before_overlay_failure(self):
         from sage import overlay_common
@@ -2074,7 +2098,8 @@ class TestAgentRender(unittest.TestCase):
         prof = {"team": {"core": {"leader": {"runtim": {"model": "opus"}}}}}
         fails = [m for s, m in install.team_runtime_issues(prof) if s == "FAIL"]
         self.assertTrue(fails)
-        self.assertIn("runtim", fails[0])
+        self.assertEqual(fails[0].code, "install.team_role_unknown_keys")
+        self.assertIn("runtim", fails[0].arguments.get("keys", ""))
 
     def test_legitimate_role_keys_pass(self):
         prof = {"team": {"core": {"reviewer": {"enabled": True, "owns": ["x"], "runtime": {"effort": "max"},

@@ -18,6 +18,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.d
 sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.join(REPO, "scripts", "sage_harness"))
 from sage.commands import absorb  # noqa: E402
+from sage.i18n.context import LanguageContext  # noqa: E402
 
 GUIDE = "Do not run git commit or git push."
 BASE = '---\nname: "demo"\ndescription: "데모"\n---\n소유: myapp/src/core\ndocs/a.md 준수\n'
@@ -232,6 +233,22 @@ class TestAbsorbFromRetro(unittest.TestCase):
             self.assertEqual(rc, 0, out)
             self.assertIn("eligible overlay 후보: sage/asset_overrides/agents/implementer-a.md", out)
 
+    def test_overlay_resolution_follows_language(self):
+        """overlay 안내 문구도 language_of() 를 따른다."""
+        with tempfile.TemporaryDirectory() as d:
+            props = ('[{"target":"agent","asset_id":"implementer-a","proposed_change":"x"},'
+                     '{"target":"agent","asset_id":"qa","proposed_change":"y"},'
+                     '{"target":"agent","proposed_change":"no id"}]')
+            rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals=props),
+                                      _language_context=LanguageContext(language="en", source="cli")))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("eligible overlay candidate: sage/asset_overrides/agents/implementer-a.md", out)
+            self.assertIn("overlay unsupported: agents/qa", out)
+            self.assertIn("target confirmation needed: sage/asset_overrides/agents/<agent-id>.md", out)
+            self.assertNotIn("eligible overlay 후보", out)
+            self.assertNotIn("overlay 미지원", out)
+            self.assertNotIn("대상 확인 필요", out)
+
     def test_agent_skill_overlay_hint_missing_and_malformed_id(self):
         with tempfile.TemporaryDirectory() as d:
             props = ('[{"target":"agent","proposed_change":"id 없음"},'
@@ -281,6 +298,23 @@ class TestAbsorbFromRetro(unittest.TestCase):
             self.assertEqual(rc, 2)
             self.assertIn("파싱 실패", out)
 
+    def test_proposals_errors_follow_language(self):
+        """`## 제안` 파싱 오류 문구도 language_of() 를 따른다."""
+        en = LanguageContext(language="en", source="cli")
+        with tempfile.TemporaryDirectory() as d:
+            rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals="[not json"),
+                                      _language_context=en))
+            self.assertEqual(rc, 2)
+            self.assertIn("proposals JSON parse failed", out)
+            self.assertNotIn("파싱 실패", out)
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "n.md")
+            Path(p).write_text('---\napproved: true\n---\n## 증거\n```\nx\n```\n', encoding="utf-8")
+            rc, out = run_absorb(Args(from_retro=p, _language_context=en))
+            self.assertEqual(rc, 2)
+            self.assertIn("Proposals section not found", out)
+            self.assertNotIn("제안 섹션을 찾지 못함", out)
+
     def test_unknown_target_flagged(self):
         with tempfile.TemporaryDirectory() as d:
             props = '[{"target":"weird","proposed_change":"x"}]'
@@ -323,6 +357,30 @@ class TestAbsorbFromRetro(unittest.TestCase):
             rc, out = run_absorb(Args(from_retro=p))
             self.assertEqual(rc, 0, out)
             self.assertIn("risk += y", out)
+
+    def test_english_proposals_heading_parsed(self):
+        # heading 계약(§4c/§4d SSOT): 노트가 영어 canonical heading('## Proposals')으로 쓰여도
+        # absorb 가 catalog 에서 조립한 정규식으로 인식해야 한다.
+        note = ('---\napproved: true\n---\n'
+                '## Proposals\n```json\n[{"target":"profile","proposed_change":"english heading"}]\n```\n')
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "n.md")
+            Path(p).write_text(note, encoding="utf-8")
+            rc, out = run_absorb(Args(from_retro=p))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("english heading", out)
+
+    def test_legacy_korean_proposals_heading_still_parsed(self):
+        # 기존(레거시) 한국어 노트 호환 — heading 계약이 catalog 기반으로 바뀐 뒤에도 '## 제안' 을
+        # 계속 인식해야 한다(하위 호환).
+        note = ('---\napproved: true\n---\n'
+                '## 제안\n```json\n[{"target":"hook","proposed_change":"legacy korean heading"}]\n```\n')
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "n.md")
+            Path(p).write_text(note, encoding="utf-8")
+            rc, out = run_absorb(Args(from_retro=p))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("legacy korean heading", out)
 
     def test_no_auto_apply_writes_nothing(self):
         # 자동반영 금지: --from-retro 가 어떤 파일도 생성/수정하지 않음.

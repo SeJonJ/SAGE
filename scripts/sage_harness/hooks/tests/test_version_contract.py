@@ -92,7 +92,8 @@ class VersionContractTests(unittest.TestCase):
         self.assertEqual(1, len(issues))
         self.assertEqual("FAIL", issues[0].severity)
         self.assertEqual("required", issues[0].axis)
-        self.assertIn("1.2", issues[0].message)
+        self.assertEqual("version.required_not_semver", issues[0].message.code)
+        self.assertIn("1.2", issues[0].message.arguments["value"])
 
     def test_malformed_receipt_and_runtime_axes_are_explicit_nonblocking_warnings(self):
         cases = (
@@ -110,7 +111,7 @@ class VersionContractTests(unittest.TestCase):
                 self.assertEqual(1, len(issues))
                 self.assertEqual("WARN", issues[0].severity)
                 self.assertEqual(expected_axis, issues[0].axis)
-                self.assertIn("형식 오류", issues[0].message)
+                self.assertEqual("version.axis_malformed", issues[0].message.code)
 
     def test_exact_version_format_accepts_suffixes_and_rejects_ranges(self):
         self.assertTrue(version_is_exact("1.2.3"))

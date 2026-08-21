@@ -18,6 +18,8 @@ authoring(profile_validate)이 같은 함수를 공유**해 검증이 optional a
 import os
 import re
 
+from sage.diagnostics import Diagnostic
+
 _VALID_RISK = ("L1", "L2", "L3")
 _MAX_LABEL_LEN = 80
 # 렌더될 경로: 안전 상대경로 문자만. 백틱/공백/마크다운/백슬래시/제어 배제(코드스팬 breakout 차단).
@@ -45,13 +47,13 @@ def _is_single_line(value):
 def _path_issue(value):
     """렌더될 경로 필드의 안전성 → 사유 | None. 문자열 안전만(봉쇄는 별도)."""
     if not isinstance(value, str) or value.strip() == "":
-        return "비어있지 않은 문자열이어야 함"
+        return Diagnostic("routing_input.not_string")
     if not _is_single_line(value) or _has_control(value):
-        return "개행/제어문자 불가(단일 라인)"
+        return Diagnostic("routing_input.multiline_or_control")
     if not _PATH_RE.fullmatch(value):
-        return "안전 상대경로 세그먼트만 허용(세그먼트당 leading dot 후 영숫자; 절대경로·백틱·공백·마크다운·백슬래시 불가)"
+        return Diagnostic("routing_input.path_unsafe")
     if ".." in value.split("/"):
-        return "상위 경로(..) 세그먼트 불가"
+        return Diagnostic("routing_input.path_parent_segment")
     return None
 
 
@@ -63,26 +65,26 @@ def _code_value_issue(value):
     마커 토큰 주입은 raw parser 가 code span 을 모르므로 여기서 막지 못한다 → 호출측이 _scan 도 돌린다.
     """
     if not isinstance(value, str) or value.strip() == "":
-        return "비어있지 않은 문자열이어야 함"
+        return Diagnostic("routing_input.not_string")
     if not _is_single_line(value) or _has_control(value):
-        return "개행/제어문자 불가(단일 라인)"
+        return Diagnostic("routing_input.multiline_or_control")
     if "`" in value:
-        return "백틱 불가(코드스팬 breakout 차단)"
+        return Diagnostic("routing_input.backtick_forbidden")
     return None
 
 
 def _label_issue(value):
     """렌더될 라벨 필드의 안전성 → 사유 | None."""
     if not isinstance(value, str) or value.strip() == "":
-        return "비어있지 않은 문자열이어야 함"
+        return Diagnostic("routing_input.not_string")
     if not _is_single_line(value) or _has_control(value):
-        return "개행/제어문자 불가(단일 라인)"
+        return Diagnostic("routing_input.multiline_or_control")
     if len(value) > _MAX_LABEL_LEN:
-        return f"라벨은 {_MAX_LABEL_LEN}자 이하여야 함(짧은 라우팅 라벨)"
+        return Diagnostic("routing_input.label_too_long", limit=_MAX_LABEL_LEN)
     if any(ch in _LABEL_BAD_CHARS for ch in value):
-        return "마크다운 활성 문자(` * _ [ ] < > # | \\ ~) 불가 — 지시/마크다운 주입 차단"
+        return Diagnostic("routing_input.label_markdown_char")
     if "://" in value:
-        return "URL 스킴(://) 불가 — GFM autolink 주입 차단"
+        return Diagnostic("routing_input.label_url_scheme")
     return None
 
 
@@ -100,7 +102,7 @@ def _containment_issue(root, rel, require_exists):
     if issue:
         return issue
     if require_exists and not os.path.isfile(target):
-        return f"경로가 존재하지 않음(프로젝트 상대 파일): {rel}"
+        return Diagnostic("routing_input.path_not_found", path=rel)
     return None
 
 
@@ -139,7 +141,8 @@ def routing_input_issues(domains, governance_docs, root=None):
         if not isinstance(value, str):
             return
         for pattern_id, description in scan_text(value):
-            issues.append((where, f"gate-relaxation({pattern_id}): {description}"))
+            issues.append((where, Diagnostic("routing.gate_relaxation",
+                                             pattern=pattern_id, reason=description)))
 
     def _scan_marker(where, value):
         # id 는 _code_value_issue 가 lenient(<>공백 허용) 라 마커 토큰이 들어올 수 있어 검사한다.
@@ -153,11 +156,11 @@ def routing_input_issues(domains, governance_docs, root=None):
     # malformed shape 를 render 경계에서 fail-closed 로 잡는다 — 조용히 무시하면 install --force 가
     # 오염/빈 블록을 쓰거나 기존 블록을 소리없이 지운다(codex R2-2). None(키 부재/명시 null)은 정상.
     if governance_docs is not None and not isinstance(governance_docs, list):
-        issues.append(("governance_docs", "리스트여야 함"))
+        issues.append(("governance_docs", Diagnostic("routing_input.not_list")))
     if isinstance(governance_docs, list):
         for idx, entry in enumerate(governance_docs):
             if not isinstance(entry, dict):
-                issues.append((f"governance_docs[{idx}]", "매핑(object)이어야 함"))
+                issues.append((f"governance_docs[{idx}]", Diagnostic("routing_input.not_mapping")))
                 continue
             # 미지 키를 render 경계에서 거부 — schema additionalProperties:false 는 --schema 검증에서만
             # 도므로 JSON-only/무-스키마 경로가 우회한다(codex R3-1 논리). 여분 키가 렌더되진 않지만
@@ -167,7 +170,8 @@ def routing_input_issues(domains, governance_docs, root=None):
             unknown = sorted(set(entry) - {"doc", "label"}, key=repr)
             if unknown:
                 issues.append((f"governance_docs[{idx}]",
-                               f"미지 키: {', '.join(map(str, unknown))} (doc/label 만 허용)"))
+                               Diagnostic("routing_input.unknown_keys",
+                                         keys=", ".join(map(str, unknown)))))
             doc, label = entry.get("doc"), entry.get("label")
             path_issue = _path_issue(doc)
             if path_issue:
@@ -184,11 +188,11 @@ def routing_input_issues(domains, governance_docs, root=None):
     # domains 도 fail-closed. YAML 은 materialize_profile 이 타입을 검증하지만 JSON-only profile 은
     # 그 검증을 우회하므로(codex R3-1) render 경계가 타입·entry·risk_level 을 직접 막아야 한다.
     if domains is not None and not isinstance(domains, list):
-        issues.append(("risk.domains", "리스트여야 함"))
+        issues.append(("risk.domains", Diagnostic("routing_input.not_list")))
     if isinstance(domains, list):
         for idx, domain in enumerate(domains):
             if not isinstance(domain, dict):
-                issues.append((f"risk.domains[{idx}]", "매핑(object)이어야 함"))
+                issues.append((f"risk.domains[{idx}]", Diagnostic("routing_input.not_mapping")))
                 continue
             did = domain.get("id")
             id_issue = _code_value_issue(did)
@@ -198,7 +202,8 @@ def routing_input_issues(domains, governance_docs, root=None):
             # 은 raw parser 를 막지 못한다(codex R2-4). 프로즈 스캔은 하지 않는다(정상 id 오탐 방지).
             _scan_marker(f"risk.domains[{idx}].id", did)
             if domain.get("risk_level") not in _VALID_RISK:
-                issues.append((f"risk.domains[{idx}].risk_level", "L1/L2/L3 중 하나여야 함"))
+                issues.append((f"risk.domains[{idx}].risk_level",
+                               Diagnostic("routing_input.risk_level_invalid")))
             pointer = domain.get("protocol_pointer")
             pe = pointer_issue(pointer, root)
             if pe:
