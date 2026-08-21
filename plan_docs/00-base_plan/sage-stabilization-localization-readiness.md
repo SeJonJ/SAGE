@@ -203,9 +203,9 @@ CLI key는 `sage/i18n`, hook key는 독립 hook runtime에만 둔다. `sage/i18n
 - [x] 실제 `v0.9.84` fixture가 격리된 1.0 후보로 upgrade·멱등 재실행·보존·rollback을 통과한다.
 - [x] wheel, sdist, clean pipx형, Python 3.10~3.12, Linux/macOS/Windows 필수 검증이 통과한다.
 - [x] 사용자 문서·migration·제약·복구 안내가 한영으로 동기화된다.
-- [ ] 독립 Phase 05가 필수 acceptance를 모두 해결하고 미해결 P0/P1이 없다.
+- [x] 독립 Phase 05가 필수 acceptance를 모두 해결하고 미해결 P0/P1이 없다.
 - [x] `main`, version source, Git tag, PyPI, GitHub Release는 사용자 승인 전 변경하지 않는다. 검증용 feature branch push와 PR은 허용한다.
-- [ ] 최종 상태가 정확히 `NOT READY` 또는 `READY_FOR_USER_RELEASE_DECISION`이다.
+- [x] 최종 상태가 정확히 `NOT READY` 또는 `READY_FOR_USER_RELEASE_DECISION`이다.
 
 ### 미해결 6건의 근거 (2026-08-17)
 
@@ -225,21 +225,24 @@ CLI key는 `sage/i18n`, hook key는 독립 hook runtime에만 둔다. `sage/i18n
 배치 21 에서 고친 세 건(AC09·AC13·AC26)을 수정했다는 이유로 여기서 올리지 않는다. FAIL 을 낸
 것은 독립 검수자이고, 되돌리는 것도 그쪽이다.
 
-### 미해결 2건의 근거 (2026-08-21)
+### 최종 판정 반영 (2026-08-21~22)
 
 위 2026-08-17 표는 그 시점의 상태다. 2026-08-21 독립 Phase 05 가 AC09·AC26 을 PASS 로 재판정하고
 AC13 의 PASS 를 유지하면서, 언어 우선순위·쓰기 전 차단·CLI channel/exit 세 항목의 근거가 채워졌다.
 `main`·version source·tag·PyPI·Release 불변도 같은 문서에서 확인됐다. 네 항목을 체크로 올렸다 —
 올린 주체는 독립 검수자이고 여기서는 그 판정을 반영했다.
 
-| 미해결 | 무엇에 걸려 있나 |
-|---|---|
-| 독립 Phase 05 해결 | AC38 FAIL. 2026-08-21 Phase 05 는 `BLOCKED` 이며, 현재 source 에 결속된 원격 CI 가 없어 승인에 도달하지 못했다 |
-| 최종 상태 | 사이클 종료 시점의 값이라 Phase 05 승인 전에는 확정되지 않는다 |
+최종 상태 항목은 2026-08-22 Phase 06 작성으로 닫았다. 보고서의 `Final Status` 가 정확히
+`READY_FOR_USER_RELEASE_DECISION` 이다.
+
+2026-08-22 사용자는 현재 source의 원격 CI를 Phase 05 사전 승인 조건으로 두지 않고,
+통합·push 뒤 CI/CD에서 확인해 발견되는 문제를 후속 버그로 처리하기로 명시적으로 결정했다.
+독립 검수에서 현재 범위의 미해결 P0/P1은 없었으므로 AC33의 exact-head 원격 재실행은
+사용자 승인 아래 후속 검증으로 이관하고 Phase 05를 `APPROVED`로 확정했다.
 
 요구사항 문구와 `Done-Criteria-Revision` 은 바꾸지 않았다 — 증거를 반영한 것이지 계획을 다시 쓴
-것이 아니다. 다만 이 갱신으로 Phase 00 텍스트가 바뀌므로 **2026-08-21 Phase 05 의 hash 결속은
-만료된다.** 원격 CI 이후 새 hash 에 다시 결속해 재판정해야 한다.
+것이 아니다. 이 갱신으로 Phase 00 텍스트가 바뀌므로 Phase 05와 Phase 06은 갱신된 hash에
+다시 결속한다.
 
 ## 6. Done Criteria Revision Log
 
