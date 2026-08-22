@@ -14,7 +14,9 @@ Delegate a complete explicitly enabled Fast Cycle to sage-plan-fast and sage-tea
    and list labels, except `## 5. Done Criteria` and `## 6. Done Criteria Revision Log`, which a
    parser reads by their exact string. See `docs/agent/language-policy.md`.
 1. Confirm shared policy enables Fast Cycle and resolve the current cycle state.
-2. Delegate composite planning and audit open to `sage-plan-fast`.
+2. Delegate composite planning and audit open to `sage-plan-fast` — a fresh Fast run from a
+   composite Phase 00, or, for a cycle already past Phase 00 and only when
+   `pdca.fast_cycle.standard_transition.enabled` is true, an explicitly confirmed conversion.
 3. Delegate implementation, review, completion evidence, audit close, and cycle clear to `sage-team-fast`.
 ## advisory_scope
 - self_overlay: unsupported; Fast state transitions are gate-bearing and have no independent overlay oracle.

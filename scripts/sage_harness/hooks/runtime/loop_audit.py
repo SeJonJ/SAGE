@@ -24,7 +24,20 @@ _CHAIN_FIELDS = ("chain_version", "prev_hash", "record_hash")
 
 # 종료 어휘(설계 §3) — 호출자가 close 에 넘기는 표준값. 라이브러리는 강제 아닌 참조용 상수로 노출.
 CLOSE_RESULTS = ("APPROVED", "BLOCKED")
-CLOSE_REASONS = ("CONVERGED", "DRY", "BUDGET_ITER", "BUDGET_TOK", "BLOCKED_ARCH")
+EARLY_CLOSE_REASON = "USER_AUTHORIZED_EARLY"
+CLOSE_REASONS = ("CONVERGED", "DRY", "BUDGET_ITER", "BUDGET_TOK", "BLOCKED_ARCH",
+                 EARLY_CLOSE_REASON)
+SEVERITIES = ("P0", "P1", "P2", "P3")
+# 조기 종료로 닫힌 run 은 일반 승인과 같은 토큰(APPROVED)을 쓰되 보증 수준이 다르다는 것을
+# 이 값으로 드러낸다. 값이 없으면 두 승인이 구분되지 않는다.
+REVIEW_ASSURANCE_REDUCED = "REDUCED_BY_USER_AUTHORIZATION"
+# 상한이 설정되지 않은 상태를 나타내는 명시 토큰. 예전에는 `-1` 을 썼는데, 그건 "상한 없음" 이
+# 아니라 "라운드 -1 회" 로 읽힌다 — 대시보드에 `2/-1 rounds` 로 나갔다. 레코드 필드는 None 을
+# 받을 수 없으므로(조기 종료 계약이 누락을 거부한다) 값 자체가 뜻을 말해야 한다.
+UNBOUNDED_ITERATIONS = "unbounded"
+_EARLY_CLOSE_FIELDS = ("authorization_reason", "confirmed_by", "completed_rounds",
+                       "configured_max_iterations", "survived_by_severity", "actual_risk",
+                       "mode")
 
 
 class AuditWriteError(RuntimeError):
@@ -302,8 +315,43 @@ def open_loop(root, risk, cfg=None, run_id=None, now=None, reviewer_requested=No
     return rid
 
 
+def _severity_total(receipt):
+    """검산용 합계. 손상된 값은 여기서 예외로 만들지 않고 `severity_receipt_issues` 가 진단한다."""
+    if not isinstance(receipt, dict):
+        return 0
+    return sum(value for key in SEVERITIES
+               for value in [receipt.get(key)] if type(value) is int and value >= 0)
+
+
+def severity_receipt_issues(receipt, survived):
+    """심각도별 잔여 영수증 검산. 합계가 `survived` 와 정확히 같아야 한다.
+
+    합계를 강제하지 않으면 "P0=0" 만 적어 넣고 실제 차단 finding 을 숨긴 채 조기 종료를 통과시킬 수
+    있다. bool 은 int 의 하위형이라 따로 막는다 — `True` 가 1 로 세어지면 개수가 조용히 틀어진다.
+    """
+    if not isinstance(receipt, dict):
+        return ["survived_by_severity must be a mapping"]
+    issues = []
+    unknown = sorted(set(receipt) - set(SEVERITIES), key=str)
+    if unknown:
+        issues.append(f"unknown severities: {unknown}")
+    missing = sorted(set(SEVERITIES) - set(receipt), key=str)
+    if missing:
+        issues.append(f"missing severities: {missing}")
+    total = 0
+    for key in SEVERITIES:
+        value = receipt.get(key)
+        if type(value) is not int or value < 0:
+            issues.append(f"{key} must be a non-negative integer")
+            continue
+        total += value
+    if not issues and total != int(survived):
+        issues.append(f"severity total {total} does not equal survived {int(survived)}")
+    return issues
+
+
 def record_round(root, run_id, iteration, found, survived, accepted, arch=0, tokens=0, now=None,
-                 lens_receipts=None):
+                 lens_receipts=None, survived_by_severity=None):
     """라운드 1건 기록.
     found=FIND 발견수, survived=REFUTE 생존수, accepted=REWORK 채택수, arch=아키텍처 에스컬레이션수, tokens=누적 토큰.
     seq=append 순 단조 번호(라이브러리 stamp, 수기 위조·순서조작 탐지용 — 7차 배치3)."""
@@ -315,11 +363,31 @@ def record_round(root, run_id, iteration, found, survived, accepted, arch=0, tok
     }
     if lens_receipts is not None:
         record["lens_receipts"] = list(lens_receipts)
-    return _append(audit_path(root), record)
+    if survived_by_severity is not None:
+        issues = severity_receipt_issues(survived_by_severity, survived)
+        if issues:
+            raise AuditWriteError("survived_by_severity invalid: " + "; ".join(issues))
+        record["survived_by_severity"] = {key: int(survived_by_severity[key])
+                                          for key in SEVERITIES}
+
+    # close 와 같은 이유로 lock 안에서 다시 본다. CLI 는 orphan(open 없음)과 종료된 run 을 이미
+    # 거부하지만 그 검사는 lock 밖이라, round 와 close 가 경합하면 둘 다 통과해 종료 뒤에 라운드가
+    # 붙는다. 그 줄은 해시 체인의 일부라 지울 수 없고, `integrity_issues` 가 영구히 붉어진다 —
+    # 우회가 아니라 복구 불가능한 손상이다. 판정은 CLI 와 **같은 두 가지**만 옮긴다: iteration
+    # 단조성 같은 새 규칙을 여기서 켜면 지금 통과하던 기록이 소급 거부된다.
+    # (주석인 이유: 중첩 함수의 한국어 docstring 은 판정 문자열 오라클에 판정으로 잡힌다.)
+    def _open_and_not_closed(prior, _record):
+        mine = [item for item in prior if item.get("run_id") == run_id]
+        if not any(item.get("event") == "loop_open" for item in mine):
+            raise AuditWriteError(f"run {run_id!r} was never opened")
+        if any(item.get("event") == "loop_close" for item in mine):
+            raise AuditWriteError(f"run {run_id!r} is already closed")
+
+    return _append(audit_path(root), record, validator=_open_and_not_closed)
 
 
 def close_loop(root, run_id, result, reason, iterations, now=None, reviewer_actual=None,
-               phase00_hash=None):
+               phase00_hash=None, authorization=None):
     """루프 종료 기록. result ∈ CLOSE_RESULTS, reason ∈ CLOSE_REASONS(호출 레이어가 강제).
     reviewer_actual=실제 수행된 리뷰어 모드(예: cross_model/same_runtime) — open 의 reviewer_requested 와
     비교해 audit_summary 가 degraded 를 파생(7차 배치3: cross-model 폴백 침묵 차단)."""
@@ -330,7 +398,79 @@ def close_loop(root, run_id, result, reason, iterations, now=None, reviewer_actu
         rec["reviewer_actual"] = reviewer_actual
     if phase00_hash is not None:
         rec["phase00_hash"] = phase00_hash
-    return _append(audit_path(root), rec)
+    # 조기 종료와 일반 종료는 같은 terminal 레코드를 쓰되 서로의 필드를 가질 수 없다. 섞이면
+    # 어느 쪽 계약으로 닫혔는지가 사후에 판별되지 않는다.
+    if reason == EARLY_CLOSE_REASON:
+        if not isinstance(authorization, dict):
+            raise AuditWriteError(f"{EARLY_CLOSE_REASON} close requires an authorization record")
+        missing = [field for field in _EARLY_CLOSE_FIELDS if authorization.get(field) is None]
+        if missing:
+            raise AuditWriteError(f"authorization record is missing {missing}")
+        # 합계를 인자로 만들면서 영수증을 건드리면 검산기의 가드에 닿기 전에 터진다. 합계 계산은
+        # 손상을 견디고, 손상 자체의 진단은 검산기가 만든다. 여기서 넘기는 합계는 영수증에서 파생한
+        # 값이라 총계 대조는 항등식이다 — 라운드 기록과의 실제 대조는 CLI 의 조기 종료 검사가 한다.
+        receipt = authorization["survived_by_severity"]
+        receipt_issues = severity_receipt_issues(receipt, _severity_total(receipt))
+        if receipt_issues:
+            raise AuditWriteError("authorization severity receipt invalid: "
+                                  + "; ".join(receipt_issues))
+        rec.update({key: authorization[key] for key in _EARLY_CLOSE_FIELDS})
+        rec["lens_receipts"] = list(authorization.get("lens_receipts") or [])
+        if authorization.get("fast_run_id") is not None:
+            rec["fast_run_id"] = authorization["fast_run_id"]
+        if authorization.get("done_criteria_revision") is not None:
+            rec["done_criteria_revision"] = authorization["done_criteria_revision"]
+        rec["attestation"] = "self_asserted_local"
+        rec["review_assurance"] = REVIEW_ASSURANCE_REDUCED
+    elif authorization is not None:
+        raise AuditWriteError("authorization record is only valid for "
+                              f"{EARLY_CLOSE_REASON} closes")
+
+    # lock 안에서 다시 확인하는 것은 둘이다 — terminal 단일성과, 조기 종료 판정이 아직 유효한가.
+    # 호출부의 선검사는 lock 밖이라 두 close 가 경합하면 둘 다 통과할 수 있다. 사후에는
+    # `audit_summary` 의 `clean`(closes<=1)이 잡아 게이트가 막지만, 그건 이미 기록이 두 줄 남은
+    # 뒤다.
+    #
+    # 조기 종료는 반대 순서가 더 나쁘다. close 가 1라운드 기준으로 판정을 끝낸 사이 2라운드가
+    # 먼저 append 되면, 최신 P0 finding 을 무시한 승인이 남는데 그 감사는 무결성·체인·seq 가 전부
+    # 정상이라 어느 층도 잡지 못한다. `record_round` 의 in-lock 검증은 close→round 한 방향만
+    # 막았다. 여기서 반대 방향을 막는다.
+    #
+    # 옮기는 것은 **CLI 가 이미 강제하던 네 판정**뿐이고, 넷 다 CLI 가 같은 한 번의 읽기에서
+    # 파생시킨 값이다(`completed_rounds`·영수증·lens 는 마지막 라운드에서, `iterations` 는 라운드
+    # 수에서). 그래서 이 검증은 새 규칙이 아니라 같은 판정을 한 순간 뒤에 다시 보는 것이다.
+    # 일반 close 에는 걸지 않는다 — `iterations` 가 라운드 수와 다른 정상 호출이 이미 있고,
+    # 수렴 판정은 프로젝트 mode 에 따라 advisory 로 통과하는 것이 계약이다.
+    #
+    # 나머지 검증(Done Criteria·profile)까지 lock 안으로 옮기지는 않는다 — CLI 가 profile 과
+    # phase 문서를 lock 을 쥔 채 읽는다는 뜻이라 대기 시간이 파일시스템에 묶인다.
+    # (설명을 docstring 이 아니라 주석으로 두는 이유: 중첩 함수의 한국어 docstring 은 runtime
+    #  판정 문자열 오라클에 "한국어 문장을 돌려주는 판정" 으로 잡힌다.)
+    def _terminal_once(prior, _record):
+        mine = [item for item in prior if item.get("run_id") == run_id]
+        if any(item.get("event") == "loop_close" for item in mine):
+            raise AuditWriteError(f"run {run_id!r} is already closed")
+        if reason != EARLY_CLOSE_REASON:
+            return
+        rounds = [item for item in mine if item.get("event") == "round"]
+        if len(rounds) != int(iterations):
+            raise AuditWriteError(
+                f"run {run_id!r} now has {len(rounds)} round(s), not the {int(iterations)} this "
+                "close was authorized against")
+        if len(rounds) != rec.get("completed_rounds"):
+            raise AuditWriteError(
+                f"run {run_id!r} now has {len(rounds)} round(s), not the "
+                f"{rec.get('completed_rounds')} recorded in the authorization")
+        last = rounds[-1] if rounds else {}
+        if last.get("survived_by_severity") != rec.get("survived_by_severity"):
+            raise AuditWriteError(
+                f"run {run_id!r} last round severity receipt changed after the authorization: "
+                f"{last.get('survived_by_severity')!r} != {rec.get('survived_by_severity')!r}")
+        if list(last.get("lens_receipts") or []) != list(rec.get("lens_receipts") or []):
+            raise AuditWriteError(
+                f"run {run_id!r} last round lens receipts changed after the authorization")
+
+    return _append(audit_path(root), rec, validator=_terminal_once)
 
 
 def runs(root):
@@ -394,6 +534,13 @@ def audit_summary(root):
                 e["reviewer_actual"] = r.get("reviewer_actual")
             if r.get("phase00_hash") is not None:
                 e["phase00_hash"] = r.get("phase00_hash")
+            # 조기 종료는 일반 승인과 같은 result 토큰을 쓴다. 게이트가 둘을 구분하려면 종료
+            # 사유와 보증 수준이 요약에 실려야 한다 — 없으면 06 이 두 승인을 같게 본다.
+            e["close_reason"] = r.get("reason")
+            e["review_assurance"] = r.get("review_assurance")
+            e["completed_rounds"] = r.get("completed_rounds")
+            e["configured_max_iterations"] = r.get("configured_max_iterations")
+            e["survived_by_severity"] = r.get("survived_by_severity")
     for rid, e in summary.items():
         e["clean"] = (e["opens"] == 1 and e["closes"] <= 1)
         e["seq_ok"] = _seq_ok(seqs.get(rid) or [])
@@ -415,7 +562,9 @@ def audit_summary(root):
 
 def _new_summary_entry():
     return {"closed": False, "result": None, "opens": 0, "closes": 0,
-            "reviewer_requested": None, "reviewer_actual": None}
+            "reviewer_requested": None, "reviewer_actual": None,
+            "close_reason": None, "review_assurance": None, "completed_rounds": None,
+            "configured_max_iterations": None, "survived_by_severity": None}
 
 
 def _diagnostic(code, evidence="", **arguments):

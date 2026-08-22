@@ -151,6 +151,8 @@ Status: PENDING — implementation not started        (Fast Phase 04 open marker
                                                     (Fast Phase 03 pre-implementation items)
 Cycle-Stem  Document-Language  Risk Level  Done-Criteria-Revision  Loop-Run  Phase00-Hash
 Final Status  Source-05  Fast-Run  Fast-Audit-Run  Fast-Review-Level  Fast-Lenses  Fast-Reason
+Review-Assurance  Review-Close-Reason  Review-Rounds  Residual-Findings
+REDUCED_BY_USER_AUTHORIZATION  USER_AUTHORIZED_EARLY  FAST-CONVERTED
 APPROVED  FAIL  BLOCKED  PASS  WARN  NOT TESTED  N/A  L0  L1  L2  L3
 ```
 

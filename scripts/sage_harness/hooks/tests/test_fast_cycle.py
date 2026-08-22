@@ -307,6 +307,49 @@ Status: PENDING — implementation not started
                       Path(self.root, "plan_docs", "00-base_plan", "hotfix.md").read_text(encoding="utf-8"))
         self.assertTrue(Path(self.root, ".sage", "fast_cycle.jsonl").is_file())
 
+    def test_open_rejection_carries_the_retry_command_and_the_standard_exit(self):
+        """원인만 적힌 거부는 사용자를 막다른 길에 세운다.
+
+        재실행 명령과 "Fast 를 안 써도 된다" 는 출구가 같이 있어야 한다 — open 은 실패 시 아무
+        것도 기록하지 않으므로 그 출구에 되돌릴 상태가 없다는 사실까지 포함한다.
+        """
+        proc = self._run("fast-cycle", "open", "--stem", "hotfix", "--level", "L2",
+                         "--lens-count", "9", "--reason", "production outage")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn("open rejected", proc.stderr)
+        self.assertIn("sage fast-cycle open --stem hotfix --level L2 --lens-count 9",
+                      proc.stderr)
+        self.assertIn("Standard", proc.stderr)
+        self.assertFalse(Path(self.root, ".sage", "fast_cycle.jsonl").exists())
+
+    def test_a_tampered_audit_refuses_a_fresh_open(self):
+        """`file_ok` 는 줄이 JSON 으로 읽히는지만 본다 — 레코드 값을 고쳐도 참이다.
+
+        기존 run 에 결속된 재개(reopen)는 그 run 의 chain 상태를 이미 대조한다. 구멍은 **새 run** 이다
+        — 다른 run 의 기록이 손상돼 있어도 그 위에 opener 를 하나 더 얹었다. review·close 는 이미
+        `integrity_issues` 로 거부하므로, open 만 통과하면 원인이 두 단계 뒤에서 드러난다.
+        """
+        import fast_cycle_audit as fca  # noqa: PLC0415
+
+        Path(self.root, ".sage").mkdir(exist_ok=True)
+        fca.open_fast(self.root, cycle_stem="other-cycle", actual_risk="L3",
+                      fast_review_level="L2", reason="unrelated", minimum_rounds=1,
+                      lenses=["correctness", "error_handling"],
+                      profile_hash="sha256:p", plan_hash_open="sha256:q")
+        audit_path = Path(self.root, ".sage", "fast_cycle.jsonl")
+        audit_path.write_text(
+            audit_path.read_text(encoding="utf-8").replace('"unrelated"', '"tampered"'),
+            encoding="utf-8")
+        tampered = audit_path.read_text(encoding="utf-8")
+        self.assertTrue(fca.audit_summary(self.root)["file_ok"])
+        self.assertTrue(fca.integrity_issues(self.root))
+
+        opened = self._run("fast-cycle", "open", "--stem", "hotfix", "--level", "L2",
+                           "--lens-count", "2", "--reason", "production outage")
+        self.assertEqual(opened.returncode, 2, opened.stdout)
+        self.assertIn("integrity", (opened.stderr or "").lower())
+        self.assertEqual(audit_path.read_text(encoding="utf-8"), tampered)
+
     def test_reopen_rejects_values_that_differ_from_the_audit_snapshot(self):
         opened = self._run("fast-cycle", "open", "--stem", "hotfix", "--level", "L2",
                            "--lens-count", "2", "--reason", "production outage")
@@ -727,6 +770,29 @@ class TestFastSkills(unittest.TestCase):
             self.assertIn("minimum_lenses", text)
             self.assertIn("fast_cycle_dashboard", text)
         self.assertNotIn("pdca.fast_cycle", local)
+
+class TestDashboardTableShape(unittest.TestCase):
+    """표는 열 수가 맞아야 표다. 빈 행 한 줄이 짧으면 markdown 렌더가 무너진다."""
+
+    def test_every_row_of_the_empty_dashboard_has_the_same_column_count(self):
+        import tempfile as _tempfile  # noqa: PLC0415
+
+        from sage.commands import fast_cycle as fc  # noqa: PLC0415
+
+        def cells(row):
+            return len(row.strip().strip("|").split("|"))
+
+        for language in ("ko", "en"):
+            with self.subTest(language=language), _tempfile.TemporaryDirectory() as root:
+                os.makedirs(os.path.join(root, ".sage"), exist_ok=True)
+                rows = [line for line in fc._dashboard_body(root, language).splitlines()
+                        if line.startswith("|")]
+                self.assertGreaterEqual(len(rows), 3, rows)
+                widths = {cells(row) for row in rows}
+                self.assertEqual(len(widths), 1,
+                                 f"{language}: 열 수가 행마다 다르다 — "
+                                 + "; ".join(f"{cells(row)}: {row}" for row in rows))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -46,14 +46,22 @@ _KNOWN_SEVERITY = {"P0", "P1", "P2", "P3"}
 _LOOP_TIERS = {"L2", "L3"}   # L0/L1 은 루프 없음(risk → mandatory phase 표)
 _REVIEW_LOOP_KEYS = {"enabled", "lenses", "refuters", "refute_threshold", "max_iterations",
                      "dry_rounds", "budget_tokens", "cross_model", "severity_block",
-                     "architecture_escalation", "termination_enforce", "report_gate_enforce"}
+                     "architecture_escalation", "termination_enforce", "report_gate_enforce",
+                     "early_completion"}
 _TERMINATION_MODES = {"advisory", "enforce"}   # 종료 검산 모드(기본 advisory)
 _REPORT_GATE_MODES = {"off", "advisory", "enforce"}   # 06←05 audit 게이트 모드(기본 advisory)
 _BASE_PLAN_KEYS = {"done_criteria_gate"}
 _DONE_CRITERIA_GATE_MODES = {"off", "advisory", "enforce"}
 # EH-15/16 통과 줄 결속 노출. 닫힌 어휘 — 오타가 조용히 기본값으로 떨어지면 켠 줄 알고 안 켜진다.
 _CYCLE_BINDING_VISIBILITY = {"gated", "all"}
-_FAST_CYCLE_KEYS = {"enabled", "reason_required", "minimum_rounds", "minimum_lenses", "lenses"}
+_FAST_CYCLE_KEYS = {"enabled", "reason_required", "minimum_rounds", "minimum_lenses", "lenses",
+                    "standard_transition"}
+# Standard→Fast 명시 전환 opt-in. 키 부재는 비활성이다 — 여기서 부재를 활성으로 읽으면 설정하지
+# 않은 프로젝트에서 전환이 열린다.
+_STANDARD_TRANSITION_KEYS = {"enabled"}
+# 사용자 승인 리뷰 조기 완료 opt-in. 하한은 엔진이 1로 고정하고 profile 은 상향만 가능하다.
+_EARLY_COMPLETION_KEYS = {"enabled", "minimum_completed_rounds"}
+EARLY_COMPLETION_ROUND_FLOOR = 1
 _ACCEPTANCE_KEYS = {"enabled", "require_for_risk", "statuses", "unresolved_statuses",
                     "report_gate_enforce", "report_gate_by_risk", "waiver"}
 _ACCEPTANCE_TIERS = {"L1", "L2", "L3"}
@@ -139,6 +147,10 @@ def _fast_cycle_issues(profile):
             else:
                 tier_values[(key, tier)] = item
 
+    issues.extend(_opt_in_block_issues(fast.get("standard_transition"), _STANDARD_TRANSITION_KEYS,
+                                       _STANDARD_TRANSITION_CODES,
+                                       "fast_cycle.standard_transition"))
+
     lenses = fast.get("lenses")
     if not isinstance(lenses, dict):
         issues.append(("FAIL", Diagnostic("validate.fast_cycle_lenses_not_mapping")))
@@ -158,6 +170,57 @@ def _fast_cycle_issues(profile):
         minimum = tier_values.get(("minimum_lenses", tier))
         if minimum is not None and len(values) < minimum:
             issues.append(("FAIL", Diagnostic("validate.fast_cycle_lenses_below_minimum", tier=tier)))
+    return issues
+
+
+def _opt_in_block_issues(block, allowed, codes, field):
+    """`{enabled: bool}` 형태 opt-in 블록의 공통 검증. 부재는 비활성이므로 검증 대상이 아니다.
+
+    진단 code 는 호출부가 리터럴로 넘긴다 — f-string 으로 조립하면 catalog 완전성 oracle 이 그 code
+    를 정적으로 찾지 못해, 번역이 빠진 채로 배포돼도 테스트가 통과한다.
+    """
+    if block is None:
+        return []
+    if not isinstance(block, dict):
+        return [("FAIL", Diagnostic(codes["not_mapping"], field=field))]
+    issues = []
+    unknown = sorted((key for key in block if key not in allowed), key=str)
+    if unknown:
+        issues.append(("FAIL", Diagnostic(codes["unknown_keys"], field=field,
+                                          keys=unknown, allowed=sorted(allowed))))
+    if not isinstance(block.get("enabled"), bool):
+        issues.append(("FAIL", Diagnostic(codes["enabled_not_bool"], field=field)))
+    return issues
+
+
+_STANDARD_TRANSITION_CODES = {
+    "not_mapping": "validate.standard_transition_not_mapping",
+    "unknown_keys": "validate.standard_transition_unknown_keys",
+    "enabled_not_bool": "validate.standard_transition_enabled_not_bool",
+}
+_EARLY_COMPLETION_CODES = {
+    "not_mapping": "validate.early_completion_not_mapping",
+    "unknown_keys": "validate.early_completion_unknown_keys",
+    "enabled_not_bool": "validate.early_completion_enabled_not_bool",
+}
+
+
+def _early_completion_issues(review_loop):
+    """리뷰 조기 완료 opt-in. `minimum_completed_rounds` 는 엔진 하한 1 아래로 못 내려간다.
+
+    하한을 profile 이 0 으로 내릴 수 있으면 "리뷰 0라운드 승인" 이 설정 한 줄로 열린다. 그건
+    이 기능이 절대 허용하지 않는 상태이므로 상향만 받는다.
+    """
+    block = review_loop.get("early_completion")
+    issues = _opt_in_block_issues(block, _EARLY_COMPLETION_KEYS, _EARLY_COMPLETION_CODES,
+                                  "review_loop.early_completion")
+    if not isinstance(block, dict):
+        return issues
+    if "minimum_completed_rounds" in block:
+        value = block.get("minimum_completed_rounds")
+        if type(value) is not int or value < EARLY_COMPLETION_ROUND_FLOOR:
+            issues.append(("FAIL", Diagnostic("validate.early_completion_round_floor",
+                                              floor=EARLY_COMPLETION_ROUND_FLOOR)))
     return issues
 
 
@@ -185,6 +248,7 @@ def _review_loop_issues(profile):
     if unknown:
         issues.append(("FAIL", Diagnostic("validate.review_loop_unknown_keys", keys=unknown,
                                           allowed=sorted(_REVIEW_LOOP_KEYS))))
+    issues.extend(_early_completion_issues(rl))
 
     # enabled 타입 검사 (codex P0): bool 아닌 truthy(enabled:1, "true")는 `is True` 가 False →
     # 루프가 침묵 비활성. jsonschema 없으면 type:boolean 도 못 잡으므로 순수파이썬으로 fail-closed.

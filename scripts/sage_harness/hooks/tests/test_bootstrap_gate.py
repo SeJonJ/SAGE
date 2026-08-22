@@ -62,6 +62,8 @@ def _root(d):
     )
     Path(os.path.join(d, "scripts", "sage_harness", "hooks", "cycle_binding.py")).write_text(
         "# cycle_binding.py\n")
+    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "risk_declaration.py")).write_text(
+        "# risk_declaration.py\n")
     Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "retro_gate.py")).write_text("# retro_gate\n")
     Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "writeback_depth_gate.py")).write_text("# writeback_depth_gate\n")
     for fn in ("claude_grep_first.py", "codex_feature_signal.py", "cycle_domain_review.py"):

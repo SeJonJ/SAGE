@@ -257,7 +257,7 @@ def _phase_globs(profile: dict[str, Any]) -> dict[str, set[str]]:
 
 def _phase_docs(root: str, head_tree: dict[str, dict[str, str]],
                 base_profile: dict[str, Any], head_profile: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
-    _, cycle_binding = ci_authority._trusted_gate_modules()
+    _, cycle_binding, _risk = ci_authority._trusted_gate_modules()
     patterns = _phase_globs(base_profile)
     for phase, values in _phase_globs(head_profile).items():
         patterns[phase].update(values)

@@ -131,6 +131,9 @@ pdca:
     severity_block: ["P0", "P1"]
     termination_enforce: advisory
     report_gate_enforce: advisory
+    early_completion:
+      enabled: false
+      minimum_completed_rounds: 1
 ```
 
 Phase 05의 find→refute→triage→rework 적대적 반복 루프입니다. 기본은 꺼져 있습니다. `lenses`가 각
@@ -138,6 +141,14 @@ Phase 05의 find→refute→triage→rework 적대적 반복 루프입니다. �
 `dry_rounds`가 "신규 발견 0"이 몇 라운드 연속이면 수렴으로 볼지입니다. `termination_enforce`/
 `report_gate_enforce`는 `off | advisory | enforce`이며, `enforce`는 06 작성을 실제로 차단합니다.
 표준 사이클의 정식 절차이고, 명시적으로 허용된 L2/L3에서만 쓰는 축약판은 아래 Fast Cycle입니다.
+
+`early_completion`은 사용자의 명시적 승인으로 수렴 전에 루프를 닫을 수 있게 하는 옵트인이며 기본은
+꺼짐입니다. 블록 자체가 없으면 꺼진 것으로 읽습니다. `minimum_completed_rounds`는 엔진 하한이 1이고
+프로젝트가 올릴 수만 있습니다 — 0을 허용하면 "리뷰 0라운드 승인"이 설정 한 줄로 열립니다. 이 옵트인은
+게이트를 **느슨하게** 하는 방향이라, 판정 토큰은 `APPROVED`를 유지하되 Phase 05가
+`Review-Assurance: REDUCED_BY_USER_AUTHORIZATION`을 함께 적어 나중에 읽는 사람과 CI 권위가 수렴
+승인과 구분할 수 있게 합니다. **설정을 켠 것은 개별 실행의 승인이 아닙니다** — 사유·승인자·확인 토큰은
+close 시점에 사용자가 직접 줍니다.
 
 ### Fast Cycle
 
@@ -151,6 +162,8 @@ pdca:
     lenses:
       L2: [correctness, error_handling, convention]
       L3: [correctness, security, data_integrity, concurrency]
+    standard_transition:
+      enabled: false
 ```
 
 Fast Cycle은 L2/L3의 별도 축약 절차이며 일반 override가 아닙니다. `enabled`는 공유 정책이고 기본값은
@@ -158,6 +171,13 @@ false입니다. `reason_required`는 true로 고정되며 완화할 수 없습�
 2 이상이어야 하고 각 후보 목록은 최소 수 이상이어야 합니다. 실행자는 `sage-cycle-fast`에서 Fast
 level·렌즈 수·한 줄 사유를 모두 입력합니다. 실제 Risk Level은 composite 00에 별도로 남고 Fast level이
 이를 낮추지 않습니다. `sage-init`과 `sage-profile-modify`가 이 공유 설정을 대화로 수집합니다.
+
+`standard_transition`은 이미 진행 중인 Standard Cycle을 `sage fast-cycle convert`로 Fast 계약에
+넘길 수 있게 하는 별도 옵트인이며 기본은 꺼짐입니다. 블록이 없으면 꺼진 것으로 읽습니다. 켜면
+composite 계획 없이도 Fast 리뷰 최소치에 도달할 수 있으므로, 문서가 아니라 감사 레코드가 그 run이
+어떻게 Fast로 들어왔는지에 대한 유일한 증거가 됩니다. 전환은 문서를 쓰지 않고, 전환된 run은 감사에
+남은 phase 목록이 담고 있는 pre-implementation phase만 면제받습니다. **설정을 켠 것은 개별 전환의
+확인이 아닙니다** — `--confirm FAST-CONVERTED`·사유·승인자는 전환 시점에 사용자가 직접 줍니다.
 
 ### Components
 

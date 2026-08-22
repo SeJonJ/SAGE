@@ -280,6 +280,13 @@ toggle's detail entirely when it stays off.
   Also surface that set's **token-cost note** (each lens = one reviewer subagent per round;
   `refuters` = reviewers per round batched over findings; cross_model adds a peer) so the
   user sets `lenses`/`refuters` knowing the subagent/token impact.
+  - **Early completion (conditional)**: only when the loop is **on**, ask the one turn from
+    the shared set for `pdca.review_loop.early_completion` (default off). If enabled, author
+    `enabled: true` and optionally `minimum_completed_rounds` (engine floor 1). State the gate
+    consequence: the approval stays `APPROVED` but carries
+    `Review-Assurance: REDUCED_BY_USER_AUTHORIZATION` so a later reader and the CI authority
+    can tell it apart. Say plainly that the authorization reason, approver and confirmation
+    token always come from the user at close time and are never inferred by a skill.
   - **Vault outputs (conditional)**: only when the loop is **on AND
     `knowledge_capture.vault_path` is set**, ask the one vault turn from the shared set —
     `loop_audit_dashboard` (감사 대시보드) and/or `retro_note` (회고 human-gate 노트).
@@ -291,6 +298,13 @@ toggle's detail entirely when it stays off.
   `reason_required: true`; never offer a switch that disables per-run reasons.
   Explain that actual risk and its verification/acceptance remain unchanged and
   that Fast consolidates physical 01 through 04 into the composite 00.
+  - **Standard→Fast conversion (conditional)**: only when Fast is **on**, ask the one turn
+    from the shared set for `pdca.fast_cycle.standard_transition` (default off). If enabled,
+    `sage fast-cycle convert` may switch a cycle already past Phase 00 to the Fast contract.
+    State the gate consequence: the run can reach Fast review minimums without a composite
+    plan, so the audit record — not a document — becomes the only evidence of how it entered
+    Fast. The conversion writes no document, and its confirmation token, reason and approver
+    always come from the user at conversion time and are never inferred by a skill.
   If effective vault capability/path is configured, ask in the vault-output turn
   whether `knowledge_capture.fast_cycle_dashboard` should be enabled. This is a
   shared automation flag; the private path remains local. `sage-init-local` does

@@ -357,5 +357,21 @@ echo "### 67. 소비 프로젝트 문서 본문 언어 e2e (실제 설치 shim, 
 python3 "$HERE/test_document_prose_consumer_e2e.py" || rc=1
 
 echo ""
+echo "### 68. Phase 00 Risk 선언 파서 단일 정본 (헤더 한정 · 오류 종류 · 저장소 corpus)"
+python3 "$HERE/test_risk_declaration.py" || rc=1
+
+echo ""
+echo "### 69. Fast CLI profile 검증 root 정합 (validate/Fast 판정 일치)"
+python3 "$HERE/test_fast_cycle_root.py" || rc=1
+
+echo ""
+echo "### 70. Standard→Fast 명시 전환 (opt-in · preflight · 문서 무변환 · opener 정규화)"
+python3 "$HERE/test_fast_convert.py" || rc=1
+
+echo ""
+echo "### 71. 사용자 승인 리뷰 조기 완료 (severity 영수증 · 거부 목록 · 보증 저하 결속)"
+python3 "$HERE/test_review_early_close.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

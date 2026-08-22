@@ -136,6 +136,8 @@ behavior rather than presentation:
 APPROVED, BLOCKED, FAIL, PASS, WARN, NOT TESTED, N/A
 L0, L1, L2, L3
 Cycle-Stem, Document-Language, Risk Level, Done-Criteria-Revision, Final Status, Loop-Run, Phase00-Hash
+Review-Assurance, Review-Close-Reason, Review-Rounds, Residual-Findings
+REDUCED_BY_USER_AUTHORIZATION, USER_AUTHORIZED_EARLY, FAST-CONVERTED
 message_key, run_id, cycle_stem, phase00_hash
 commands, options, paths, filenames, YAML and JSON keys, enum values, IDs, hashes
 ```

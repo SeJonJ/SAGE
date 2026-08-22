@@ -1,13 +1,19 @@
 """Strict audit trail for the SAGE Fast Cycle protocol."""
 
 import os
+import re
 import time
 import uuid
 
 import loop_audit as _chain
+from sage.fast_cycle_contract import PHASES as SOURCE_PHASES
 
 AUDIT_REL = os.path.join(".sage", "fast_cycle.jsonl")
-EVENTS = ("fast_open", "fast_review", "fast_close", "fast_abort")
+EVENTS = ("fast_open", "fast_convert", "fast_review", "fast_close", "fast_abort")
+# run 을 여는 이벤트는 둘이다 — 새 Fast Plan(`fast_open`)과 Standard 에서 전환한 run(`fast_convert`).
+# 이후 review/close/abort 는 두 경로가 공유하므로 "opener 정확히 1개" 라는 공통 상태로 정규화한다.
+OPENER_EVENTS = ("fast_open", "fast_convert")
+ENTRY_MODES = {"fast_open": "FAST", "fast_convert": "FAST-CONVERTED"}
 TERMINAL_EVENTS = ("fast_close", "fast_abort")
 AuditWriteError = _chain.AuditWriteError
 
@@ -39,7 +45,7 @@ def _for_run(root, run_id):
 
 def _state_from_records(all_records, run_id):
     records = [record for record in all_records if record.get("run_id") == run_id]
-    opens = [record for record in records if record.get("event") == "fast_open"]
+    opens = [record for record in records if record.get("event") in OPENER_EVENTS]
     reviews = [record for record in records if record.get("event") == "fast_review"]
     terminals = [record for record in records if record.get("event") in TERMINAL_EVENTS]
     return records, opens, reviews, terminals
@@ -80,6 +86,7 @@ def open_fast(root, *, cycle_stem, actual_risk, fast_review_level, reason,
             raise AuditWriteError(f"cycle stem {cycle_stem!r} already has active run {other_id}")
     record = _base("fast_open", rid, cycle_stem, now)
     record.update({
+        "entry_mode": ENTRY_MODES["fast_open"],
         "actual_risk_open": actual_risk,
         "fast_review_level": fast_review_level,
         "reason": reason,
@@ -106,11 +113,105 @@ def open_fast(root, *, cycle_stem, actual_risk, fast_review_level, reason,
     return rid
 
 
+def convert_fast(root, *, cycle_stem, current_phase, actual_risk, fast_review_level,
+                 reason, confirmed_by, minimum_rounds, lenses, source_phases,
+                 run_id=None, now=None):
+    """진행 중 Standard Cycle 을 Fast 계약으로 바꾸는 opener.
+
+    문서를 하나도 쓰지 않는다 — 그래서 prepare/commit 중간 상태도, 교차 파일 롤백도 없다. 이 append
+    가 실패하면 전환 전 상태가 그대로 남는다. `source_phases` 는 전환 시점에 존재하던 00~04 각각의
+    저장소 상대 경로·raw-byte SHA-256·크기이고, 동결 기준이 아니라 "어디까지 어떤 문서로 Standard 를
+    진행했는가" 를 남기는 provenance 다.
+
+    `actual_risk` 와 `fast_review_level` 은 다른 값이다. 전자는 실제 위험도라 감사에 고정되고,
+    후자는 Fast 리뷰 정책 선택일 뿐 실제 risk 를 바꾸지 않는다.
+    """
+    rid = run_id or new_run_id()
+    records, opens, _reviews, terminals = _state(root, rid)
+    if records or opens or terminals:
+        raise AuditWriteError(f"run {rid!r} already exists")
+    for other_id, state in audit_summary(root)["runs"].items():
+        if state.get("cycle_stem") == cycle_stem and not state.get("terminal"):
+            raise AuditWriteError(f"cycle stem {cycle_stem!r} already has active run {other_id}")
+    record = _base("fast_convert", rid, cycle_stem, now)
+    record.update({
+        "entry_mode": ENTRY_MODES["fast_convert"],
+        "current_phase": current_phase,
+        "actual_risk_open": actual_risk,
+        "fast_review_level": fast_review_level,
+        "reason": reason,
+        "confirmed_by": confirmed_by,
+        "attestation": "self_asserted_local",
+        "minimum_rounds": minimum_rounds,
+        "lens_count": len(lenses),
+        "lenses": list(lenses),
+        "source_phases_open": source_phases,
+    })
+
+    def validate(prior, _record):
+        records, opens, _reviews, terminals = _state_from_records(prior, rid)
+        if records or opens or terminals:
+            raise AuditWriteError(f"run {rid!r} already exists")
+        run_ids = {item.get("run_id") for item in prior
+                   if isinstance(item.get("run_id"), str) and item.get("run_id")}
+        for other_id in run_ids:
+            _items, other_opens, _other_reviews, other_terminals = _state_from_records(prior, other_id)
+            if (len(other_opens) == 1 and not other_terminals
+                    and other_opens[0].get("cycle_stem") == cycle_stem):
+                raise AuditWriteError(f"cycle stem {cycle_stem!r} already has active run {other_id}")
+
+    _append(root, record, validator=validate)
+    return rid
+
+
+def _snapshot_delta(before, after):
+    """전환 시점 스냅샷 대비 리뷰 시점의 추가·변경·삭제. 판정이 아니라 구조화된 기록이다.
+
+    변경 판단은 phase 별 `sha256` 과 `path` 둘 다로 한다 — 내용이 같고 파일만 옮긴 경우도 리뷰가
+    본 것과 다른 문서다. `added`/`removed` 는 리뷰 스냅샷 범위가 전환 시점과 같아 보통 비어 있지만,
+    범위가 달라지는 호출자를 위해 계산은 남긴다.
+    """
+    before = before if isinstance(before, dict) else {}
+    after = after if isinstance(after, dict) else {}
+    changed = [phase for phase in sorted(set(before) & set(after))
+               if ((before[phase] or {}).get("sha256") != (after[phase] or {}).get("sha256")
+                   or (before[phase] or {}).get("path") != (after[phase] or {}).get("path"))]
+    return {"added": sorted(set(after) - set(before)),
+            "removed": sorted(set(before) - set(after)),
+            "changed": changed}
+
+
+def _review_snapshot_issue(snapshot):
+    """전환 review가 증언하는 최종 00~04 스냅샷의 최소 구조 계약."""
+    if not isinstance(snapshot, dict) or set(snapshot) != set(SOURCE_PHASES):
+        found = sorted(snapshot) if isinstance(snapshot, dict) else snapshot
+        return f"expected phases {list(SOURCE_PHASES)}, found {found!r}"
+    for phase in SOURCE_PHASES:
+        entry = snapshot.get(phase)
+        if not isinstance(entry, dict):
+            return f"phase {phase} entry must be an object"
+        path = entry.get("path")
+        digest = entry.get("sha256")
+        size = entry.get("size")
+        if not isinstance(path, str) or not path.strip():
+            return f"phase {phase} path must be a non-empty string"
+        if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+            return f"phase {phase} sha256 must be a canonical digest"
+        if type(size) is not int or size < 0:
+            return f"phase {phase} size must be a non-negative integer"
+    return None
+
+
 def record_review(root, run_id, *, loop_run_id, actual_risk, rounds,
-                  lens_receipts_hash, plan_hash_before_review, result, now=None):
+                  lens_receipts_hash, plan_hash_before_review, result, now=None,
+                  source_phases_review=None):
     _records_for_run, opens, reviews, terminals = _state(root, run_id)
     if len(opens) != 1 or terminals:
         raise AuditWriteError(f"run {run_id!r} cannot accept fast_review")
+    converted = opens[0].get("entry_mode") == ENTRY_MODES["fast_convert"]
+    snapshot_issue = _review_snapshot_issue(source_phases_review) if converted else None
+    if snapshot_issue:
+        raise AuditWriteError(f"converted fast_review source phase snapshot is invalid: {snapshot_issue}")
     record = _base("fast_review", run_id, opens[0].get("cycle_stem"), now)
     record.update({
         "loop_run_id": loop_run_id,
@@ -120,11 +221,22 @@ def record_review(root, run_id, *, loop_run_id, actual_risk, rounds,
         "plan_hash_before_review": plan_hash_before_review,
         "result": result,
     })
+    # 전환 run 은 composite 문서가 없어 plan hash 로 "리뷰가 무엇을 봤는가" 를 고정할 수 없다.
+    # 그 자리를 스냅샷이 대신한다. fresh run 에는 plan hash 가 정본이므로 지어내지 않는다.
+    if source_phases_review is not None:
+        record["source_phases_review"] = source_phases_review
+        record["source_phases_delta"] = _snapshot_delta(
+            opens[0].get("source_phases_open"), source_phases_review)
 
     def validate(prior, _record):
         _records_for_run, current_opens, _current_reviews, current_terminals = _state_from_records(prior, run_id)
         if len(current_opens) != 1 or current_terminals:
             raise AuditWriteError(f"run {run_id!r} cannot accept fast_review")
+        if current_opens[0].get("entry_mode") == ENTRY_MODES["fast_convert"]:
+            issue = _review_snapshot_issue(source_phases_review)
+            if issue:
+                raise AuditWriteError(
+                    f"converted fast_review source phase snapshot is invalid: {issue}")
 
     return _append(root, record, validator=validate)
 
@@ -182,12 +294,16 @@ def audit_summary(root):
             continue
         state = runs.setdefault(rid, {
             "cycle_stem": None, "opens": 0, "reviews": 0, "terminals": 0,
-            "terminal": False, "result": None, "loop_run_id": None,
+            "terminal": False, "result": None, "loop_run_id": None, "entry_mode": None,
         })
         seqs.setdefault(rid, []).append(record.get("seq"))
         event = record.get("event")
-        if event == "fast_open":
+        if event in OPENER_EVENTS:
             state["opens"] += 1
+            state["entry_mode"] = ENTRY_MODES[event]
+            state["current_phase"] = record.get("current_phase")
+            state["confirmed_by"] = record.get("confirmed_by")
+            state["source_phases_open"] = record.get("source_phases_open")
             state["cycle_stem"] = record.get("cycle_stem")
             state["actual_risk"] = record.get("actual_risk_open")
             state["fast_review_level"] = record.get("fast_review_level")
@@ -201,6 +317,9 @@ def audit_summary(root):
             state["loop_run_id"] = record.get("loop_run_id")
             state["review_result"] = record.get("result")
             state["plan_hash_before_review"] = record.get("plan_hash_before_review")
+            # 전환 run 의 "리뷰가 무엇을 봤는가" 는 plan hash 가 아니라 이 스냅샷이다. 상태로
+            # 올리지 않으면 close 가 대조할 기준을 갖지 못한다.
+            state["source_phases_review"] = record.get("source_phases_review")
         elif event in TERMINAL_EVENTS:
             state["terminals"] += 1
             state["terminal"] = True

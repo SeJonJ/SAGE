@@ -33,6 +33,10 @@ def hook_runtime_files(root: str) -> dict[str, list[str]]:
     return {
         "shared": [
             os.path.join(root, _HOOKS_REL, "cycle_binding.py"),
+            # risk_declaration.py: Phase 00 Risk 선언을 읽는 유일한 정본. 게이트와 hook_runtime 이
+            # 둘 다 import 하므로 누락되면 설치본에서 hook 이 import 단계에서 죽는다. 추적하지
+            # 않으면 이 파일만 바꿔 tier 를 낮춰 읽게 만들어도 hook_runtime_hash 가 PASS 한다.
+            os.path.join(root, _HOOKS_REL, "risk_declaration.py"),
             os.path.join(runtime, "run_hook.py"),
             os.path.join(runtime, "hook_runtime.py"),
             # checklist_contract.py: profile 검증과 pre-phase4 runtime이 공유하는 경로 봉쇄 계약.

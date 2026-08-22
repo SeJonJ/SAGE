@@ -548,6 +548,7 @@ def _runtime_root(d):
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(runtime, fn)).write_text(f"# {fn}\n", encoding="utf-8")
     Path(os.path.join(hooks, "cycle_binding.py")).write_text("# cycle_binding.py\n", encoding="utf-8")
+    Path(os.path.join(hooks, "risk_declaration.py")).write_text("# risk_declaration.py\n", encoding="utf-8")
     Path(os.path.join(policies, "retro_gate.py")).write_text("# retro_gate\n", encoding="utf-8")
     Path(os.path.join(policies, "writeback_depth_gate.py")).write_text("# writeback_depth_gate\n", encoding="utf-8")
     for fn in ("claude_grep_first.py", "codex_feature_signal.py", "cycle_domain_review.py"):

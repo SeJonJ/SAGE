@@ -28,6 +28,7 @@ HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if HOOKS_DIR not in sys.path:
     sys.path.insert(0, HOOKS_DIR)
 import cycle_binding
+import risk_declaration
 import checklist_contract
 import cycle_state
 
@@ -1277,7 +1278,6 @@ def _retro_gate_active(profile, root):
     return mode in ("advisory", "enforce") and notes_enabled
 
 
-_RISK_LEVEL_RE = re.compile(r"\s*Risk Level:\s*(L[0-3])\b", re.I)   # 00/06 헤더의 사이클 risk tier
 _DEPTH_REVIEW_RE = re.compile(r"\s*Depth-Self-Review:\s*(\S+)", re.I)   # 06 의 self-review 자기선언
 # 제로폭/BOM 포맷 문자(유니코드 Cf) — `\s` 는 이들을 매치하지 못해, 라인 앞에 끼면 정규식이 선언을 놓친다
 # (BOM'd `Risk Level: L3` 이 무시돼 낮은 tier 로 under-read, codex R7 P1). 스캔 전 전역 제거로 봉쇄한다.
@@ -1292,7 +1292,7 @@ def _header_fields_06(content):
     performed`·`Risk Level:` 예시 라인이 실제 선언으로 오인돼 게이트가 조용히 OK 되는 걸 막는다.
     tier ∈ {"L1","L2","L3"} 또는 None(미기재). declared 는 'performed' 선언이 있고 'skipped' 선언은
     없을 때만 True — performed/skipped 상충이나 skipped 우회는 미선언(fail-closed)으로 본다."""
-    tier = None
+    tier = _doc_risk_tier(content)   # tier 해석은 공용 파서 단일 정본
     performed = False
     skipped = False
     in_fence = None   # None 또는 연 펜스 마커("```"/"~~~") — 같은 종류로만 닫는다(혼합 펜스 우회 방지)
@@ -1308,10 +1308,6 @@ def _header_fields_06(content):
             continue
         if _H2_PLUS_RE.match(stripped):
             break
-        if tier is None:
-            m = _RISK_LEVEL_RE.match(line)
-            if m:
-                tier = m.group(1).upper()
         m = _DEPTH_REVIEW_RE.match(line)
         if m:
             v = m.group(1).strip().casefold()
@@ -1328,30 +1324,25 @@ _TIER_RANK = {"L0": 0, "L1": 1, "L2": 2, "L3": 3}   # _RISK_LEVEL_RE 가 L0 도 
 def _doc_risk_tier(content):
     """문서 **헤더 메타블록**(첫 H2 이상 헤딩 전)의 Risk Level 최대 tier(L0<L1<L2<L3). 없으면 None.
 
-    _header_fields_06 와 동일하게 첫 H2 에서 멈춘다 — 본문의 산문/루브릭 라인('escalation rejected —
-    Risk Level: L3' 등)을 tier 로 오독해 실제 L1 사이클을 하드 BLOCK 하는 false-positive 를 막는다.
-    Risk Level 은 규약상 헤더 필드다. 펜스 코드블록(``` / ~~~ 종류별)과 제로폭/BOM 은 이미 제거·제외."""
-    rank = _TIER_RANK
-    best = None
-    in_fence = None
-    for line in content.translate(_ZERO_WIDTH_STRIP).splitlines():
-        stripped = line.lstrip()
-        fence = "```" if stripped.startswith("```") else ("~~~" if stripped.startswith("~~~") else None)
-        if in_fence is not None:
-            if fence == in_fence:
-                in_fence = None
-            continue
-        if fence is not None:
-            in_fence = fence
-            continue
-        if _H2_PLUS_RE.match(stripped):
-            break   # 헤더 블록 종료 — 본문 산문의 Risk Level 을 tier 로 읽지 않는다
-        m = _RISK_LEVEL_RE.match(line)
-        if m:
-            t = m.group(1).upper()
-            if best is None or rank[t] > rank[best]:
-                best = t
-    return best
+    무엇이 선언인지는 `risk_declaration` 이 소유한다 — 게이트와 각자 정규식을 들고 있던 탓에 같은
+    문서에 다른 tier 가 나왔다. 본문 산문('escalation rejected — Risk Level: L3' 등)을 tier 로 오독해
+    실제 L1 사이클을 하드 BLOCK 하던 false-positive 봉쇄는 그 모듈의 헤더 한정 규칙이 이어받는다.
+
+    **여기서 최대를 취하는 것이 fail-closed 다.** 선언 하나를 놓치면 tier 가 낮게 읽혀 06 검증이
+    얕아진다(BOM 이 낀 `Risk Level: L3` 를 놓쳐 under-read 되던 결함). 사이클 결속 쪽은 반대로
+    "정확히 1개"를 요구하는데, 그 방향 차이 때문에 선택은 파서가 아니라 소비자가 한다.
+    """
+    found, error = risk_declaration.scan(content)
+    if error is not None:
+        # 문법을 벗어났지만 선언을 의도한 게 분명한 줄(`Risk Level [custom]: L3`)을 건너뛰고 옆의
+        # 정상 선언을 채택하면, 작성자가 L3 로 쓰려던 사이클이 동거하는 L1 로 확정된다. 그러면
+        # `_authoritative_cycle_tier` 가 None 대신 L1 을 돌려주고 06 심층 검증이 통째로 꺼진다 —
+        # 조용한 하향이다. 게이트의 acceptance risk 추정(`unknown`)과 같은 방향으로 맞춘다.
+        return None
+    tiers = [tier for _line, tier in found]
+    if not tiers:
+        return None
+    return max(tiers, key=_TIER_RANK.__getitem__)
 
 
 def _authoritative_cycle_tier(root, profile, stem, exclude_keys=None):

@@ -209,6 +209,27 @@ If **off**, leave `review_loop.enabled: false` and skip the rest. If **on**, aut
 > is not safety-critical, cutting to three or four lenses saves a great deal of budget for the
 > coverage given up.
 
+**Early completion by user authorization** — ask **only if the loop is on** (one turn,
+default off — `pdca.review_loop.early_completion`):
+> "May the reviewer close the loop early when the user explicitly authorizes it? (default: off)"
+> · off — the loop closes only on convergence or the configured maximum
+> · on — with an explicit user authorization the loop may close before convergence, recording
+>   the reason, the approver, and the per-severity residual receipt to `.sage/loop_audit.jsonl`.
+>   Left unset, one completed round is enough for such a close
+> · what it never waives: zero rounds, unresolved `severity_block` findings, architecture
+>   escalation, failed verification, unresolved Done Criteria, acceptance FAIL, audit damage
+
+If on, author `pdca.review_loop.early_completion` (`enabled: true`, and optionally
+`minimum_completed_rounds` — an engine floor of 1 that a project may raise). State the gate
+consequence plainly: the Phase 05 approval is still `APPROVED`, but it carries
+`Review-Assurance: REDUCED_BY_USER_AUTHORIZATION` so a later reader and the CI authority can
+tell it apart from a converged approval.
+
+**Never infer the authorization.** The confirmation token, the reason and the approver come
+from the user in that turn; a skill may not supply them from context, from a previous run, or
+from its own judgement that the remaining findings look harmless. When upgrading an existing
+profile without an explicit choice, leave the block absent — absence is off.
+
 **Vault outputs** — ask **only if the loop is on AND `knowledge_capture.vault_path` is set**
 (one turn; otherwise skip entirely):
 > "Should loop output also be written to the Obsidian vault? (vault_path detected)"
@@ -245,6 +266,25 @@ Explain that actual `Risk Level` remains independent from `Fast-Review-Level`.
 An actual L3 run may choose L2 Fast but remains L3 for deterministic verification
 and acceptance and receives the explicit downgrade warning. The selected N lenses
 are the first N configured candidates; run-time arbitrary lens strings are not accepted.
+
+**Standard→Fast conversion** — ask **only if Fast is on** (one turn, default off —
+`pdca.fast_cycle.standard_transition`):
+> "May a Standard Cycle already in progress be converted to Fast? (default: off)"
+> · off — a Fast run starts only from a composite Phase 00 authored up front
+> · on — `sage fast-cycle convert` switches a cycle that is already past Phase 00 to the Fast
+>   contract, recording the reason, the approver and the phases already produced
+> · the conversion writes no document: existing Phases 00–04 are neither deleted, moved,
+>   merged nor rewritten, and no conversion metadata is inserted into them
+> · the converted run waives only the pre-implementation phases it can show it already has
+
+Write `standard_transition.enabled`. State the gate consequence: with this on, a cycle can
+reach Fast review minimums without ever authoring a composite plan, so the audit record — not
+a document — becomes the only evidence of how the run entered Fast.
+
+**Never infer the conversion.** `--confirm FAST-CONVERTED`, `--reason` and `--confirmed-by`
+come from the user in that turn. A skill may not derive them from context or reuse them from an
+earlier run. When upgrading an existing profile without an explicit choice, leave the block
+absent — absence is off.
 
 When Fast is enabled and an effective vault path exists, include
 `knowledge_capture.fast_cycle_dashboard` in the vault-output turn. This shared flag

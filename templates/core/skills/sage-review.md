@@ -60,7 +60,17 @@ a structured review report for the current implementation cycle.
    and require every affected phase to carry the current `Done-Criteria-Revision`. BLOCK /
    BLOCKED on an L3 change → record in the plan doc and stop (no release until cleared).
    The report←approve hook (06←05 APPROVED) is the deterministic backstop — never bypass it.
-8. Record the outcome under `## Phase-05 Review` (Loop A: include Review Loop Iterations
+8. Early completion (`review_loop.early_completion.enabled` only, and only while `next`
+   recommends `CONTINUE`): `close --reason USER_AUTHORIZED_EARLY` with authorization-reason,
+   confirmed-by and the confirmation token — all from the user in that turn, never inferred.
+   Rounds carry `--survived-by-severity` whose total equals `--survived`. It waives no blocker:
+   zero rounds, `severity_block` survivors, architecture escalation, unresolved Done Criteria,
+   acceptance FAIL, a required NOT TESTED without an exact waiver, audit damage and binding
+   mismatch all still block. Failed build/test/lint has no engine-readable receipt — the agent
+   must not close early over one. The Phase-05 document records the four reduced-assurance
+   markers with the audit's values, including the `(configured max: <max>)` ceiling; the value,
+   not the presence, is what triggers the check.
+9. Record the outcome under `## Phase-05 Review` (Loop A: include Review Loop Iterations
    table + audit run_id). Write exactly one `Loop-Run: <run_id>` line outside fenced code blocks in the Phase-05 doc so the
    06←05 audit gate (report_gate_enforce) can bind the report to this closed APPROVED run.
    Copy the exact `Phase00-Hash: sha256:...` printed by an APPROVED `review-loop close`

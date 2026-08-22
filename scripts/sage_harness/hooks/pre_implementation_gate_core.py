@@ -19,6 +19,7 @@ import re
 import sys
 
 import cycle_binding
+import risk_declaration
 try:
     from sage.done_criteria_contract import (
         document_revision,
@@ -42,11 +43,11 @@ CONTRACT_VERSION = "2"   # EH-7: decide() 가 cycle_stem/cycle_source/cycle_stem
                          # 하고 기록을 못 해 무감사 통과가 되므로 STALE 로 잡는다.
 _RANK = {"none": -1, "L0": 0, "L1": 1, "L2": 2, "L3": 3}
 _STRUCTURED_LABEL_EMPHASIS_RE = re.compile(
-    r"(?P<mark>\*{1,3}|_{1,3})(?P<label>Final\s+Status|Loop-Run|Risk\s+Level|Risk|위험도)"
+    r"(?P<mark>\*{1,3}|_{1,3})(?P<label>Final\s+Status|Loop-Run"
+    r"|Review-Assurance|Review-Close-Reason|Review-Rounds|Residual-Findings)"
     r"(?P<colon>\s*[:：]?)(?P=mark)",
     re.IGNORECASE,
 )
-_RISK_LABEL_CANDIDATE_RE = re.compile(r"(?i)(risk\s*level|\brisk\b|위험도).*[：:]")
 
 
 def _imatch(path: str, glob: str) -> bool:
@@ -283,6 +284,24 @@ def _discloses_low_risk_binding(profile: dict) -> bool:
     return ((profile.get("pdca") or {}).get("cycle_binding_visibility") or "gated") == "all"
 
 
+def _fast_covers_required(fast_state, required):
+    """Fast 면제를 줘도 되는가 — 그 run 이 요구 phase 를 실제로 담고 있는가.
+
+    fresh Fast 는 composite 00 하나가 00~04 를 담고, `parse_fast_plan` 이 phase heading 과 Document
+    Mapping 체크리스트로 그걸 확인한 뒤에만 state 가 만들어진다. 그래서 면제가 성립한다.
+
+    전환 run 에는 composite 문서가 없다. 담보는 전환 시점에 실재하던 Standard 문서들이고, 그 목록이
+    `source_phases_open` 이다. 이걸 확인하지 않으면 Phase 00 하나만 쓴 상태에서 전환해 계획 00~03
+    요구를 통째로 면제받을 수 있다 — 전환이 계획을 건너뛰는 통로가 된다.
+    """
+    if fast_state.get("entry_mode") != CONVERTED_ENTRY_MODE:
+        return True
+    recorded = fast_state.get("source_phases_open")
+    if not isinstance(recorded, dict):
+        return False
+    return set(required).issubset(set(recorded))
+
+
 def _missing_pre_impl_phases(event: dict, profile: dict, snapshot: dict, risk: str,
                              fast_state=None):
     """구현 전 의무 phase 중 문서가 없는 것 목록. pdca 비활성이면 None(=강제 안 함).
@@ -299,18 +318,73 @@ def _missing_pre_impl_phases(event: dict, profile: dict, snapshot: dict, risk: s
     required = (cfg.get("pre_implementation_required") or {}).get(risk) or []
     if not required:
         return []
-    if fast_state is not None and set(required).issubset({"00", "01", "02", "03"}):
+    if (fast_state is not None and set(required).issubset({"00", "01", "02", "03"})
+            and _fast_covers_required(fast_state, required)):
         return []
     phase_docs = snapshot.get("phase_docs") or {}
     binding = cycle_binding.resolve(event, snapshot, cfg)
     if binding.get("error"):
         return ["cycle-binding"]
+    # 게이트가 요구하는 문서를 게이트가 막는 교착을 푼다 — L2/L3 를 선언하면 계획 문서 편집도 그
+    # 위험도로 올라가므로, 01 을 만들려는 쓰기가 02·03 부재로 차단된다. 면제 조건은 둘 다 성립할
+    # 때뿐이다: 변경이 **전부** phase 문서이고(`_phase_only_change` 는 `all()` 이라 소스가 한 줄
+    # 이라도 섞이면 거짓 — `_is_phase_write` 의 `any()` 를 쓰면 방향이 뒤집혀 차단 전체가 꺼진다),
+    # 그 phase 들이 **요구 목록 안**일 것. 04~06 은 자기 자신을 요구하지 않아 교착이 없으므로
+    # 면제 근거도 없다 — 면제하면 01·02·03 이 하나도 없는 채로 승인 문서를 먼저 쓸 수 있다.
+    # stem 검사를 따로 하지 않는 이유는 위 결속이 이미 그것이기 때문이다 — 다른 stem 문서가 섞이면
+    # resolve 가 후보 두 개로 실패해 여기 도달하지 못한다.
+    if _phase_only_change(event, cfg) and _changed_phase_ids(event, cfg) <= set(required):
+        return []
     missing = []
     for pid in required:
         _doc, error = cycle_binding.select_document(phase_docs.get(pid) or [], binding["stem"])
         if error:
             missing.append(pid)
     return missing
+
+
+CONVERTED_ENTRY_MODE = "FAST-CONVERTED"
+
+
+def _converted_fast_state(audit, converted, stem, content, cfg):
+    """Standard→Fast 로 전환된 run 의 상태. Fast Plan 문서를 요구하지 않는다.
+
+    전환은 문서를 쓰지 않기로 한 상태 전이라(설계 §6.5) Phase 00 은 그대로 Standard 문서다. 이 경로를
+    fresh Fast 의 `parse_fast_plan()` 에 통과시키려 하면 전환 직후 그 사이클의 모든 governed 쓰기가
+    막히고, 유일한 해소책이 설계가 금지한 composite 00 재작성이 된다.
+
+    결속은 문서 안 marker 가 아니라 **exact cycle stem + 유일한 active converted run** 이다. 대신
+    문서에서 읽을 수 있는 하나 — Phase 00 의 실제 위험도 — 는 감사 open snapshot 과 대조한다.
+    """
+    # 비교 대상은 **같은 stem 의** active run 이다. 전역 active 와 비교하면 다른 사이클이 남긴
+    # run 하나가 이 사이클의 모든 쓰기를 막고, 진단문은 관계없는 run 을 가리킨다.
+    stem_active = [rid for rid in (audit.get("active") or [])
+                   if (audit.get("runs") or {}).get(rid, {}).get("cycle_stem") == stem]
+    if len(converted) != 1 or len(converted) != len(stem_active):
+        return None, (f"converted Fast run binding is ambiguous: converted={converted}, "
+                      f"active={audit.get('active')}")
+    policy = cfg.get("fast_cycle")
+    if not isinstance(policy, dict) or policy.get("enabled") is not True:
+        return None, "pdca.fast_cycle.enabled=true is required for a converted Fast run"
+    if audit.get("snapshot_error"):
+        return None, f"Fast audit snapshot failed: {audit['snapshot_error']}"
+    if audit.get("file_ok") is not True:
+        details = "; ".join(str(item) for item in (audit.get("file_issues") or [])[:3])
+        return None, f"Fast audit file integrity failed: {details or 'cause unavailable'}"
+    state = (audit.get("runs") or {}).get(converted[0]) or {}
+    if (not state.get("clean") or state.get("chain_ok") is not True
+            or state.get("seq_ok") is False or state.get("terminal")):
+        return None, "active converted Fast run integrity/state is invalid"
+    if state.get("cycle_stem") != stem:
+        return None, "converted Fast run is bound to another cycle stem"
+    declaration = risk_declaration.parse(content)
+    if declaration.status != "valid":
+        return None, ("converted Fast run requires a readable Phase 00 Risk Level: "
+                      + _risk_declaration_detail(declaration))
+    if state.get("actual_risk") != declaration.tier:
+        return None, (f"actual risk differs between Phase 00 ({declaration.tier}) and the "
+                      f"converted audit snapshot ({state.get('actual_risk')})")
+    return state, None
 
 
 def _fast_cycle_state(event, profile, snapshot, cfg):
@@ -331,6 +405,11 @@ def _fast_cycle_state(event, profile, snapshot, cfg):
     audit = snapshot.get("fast_cycle_audit") or {}
     matching_active = [run_id for run_id in (audit.get("active") or [])
                        if (audit.get("runs") or {}).get(run_id, {}).get("cycle_stem") == binding["stem"]]
+    runs = audit.get("runs") or {}
+    converted = [run_id for run_id in matching_active
+                 if runs.get(run_id, {}).get("entry_mode") == CONVERTED_ENTRY_MODE]
+    if converted:
+        return _converted_fast_state(audit, converted, binding["stem"], content, cfg)
     mode = plan.metadata.get("Cycle-Mode") if plan is not None else None
     if mode != "FAST" and not matching_active:
         return None, None
@@ -396,26 +475,17 @@ def _structured_declaration_line(raw):
     return line
 
 
-def _parse_risk_declaration(raw):
-    """Return L1/L2/L3, unknown for risk-like malformed text, or None when unrelated."""
-    line = _structured_declaration_line(raw)
-    label_pattern = r"(?i)(risk\s*level|risk|위험도)\s*[:：]"
-    labels = list(re.finditer(label_pattern, line))
-    if labels:
-        # Keep the historical read compatibility for Markdown bullets and trailing reasons,
-        # while rejecting two declarations hidden on one line.
-        if len(labels) != 1:
-            return "unknown"
-        match = re.search(label_pattern + r"\s*(L[123])\b", line)
-        if not match:
-            return "unknown"
-        # Placeholder alternatives such as L1|L2|L3 used to be misread as L1.
-        if re.match(r"\s*[|/]\s*L[123]\b", line[match.end():], re.IGNORECASE):
-            return "unknown"
-        return match.group(2).upper()
-    if _RISK_LABEL_CANDIDATE_RE.search(line):
-        return "unknown"
-    return None
+def _risk_declaration_detail(declaration):
+    """무엇이 왜 틀렸는지와 몇 번째 줄인지 — 선언을 고칠 수 있는 최소 정보."""
+    reason = {
+        "missing": "Phase 00 헤더에 Risk Level 선언 없음",
+        "duplicate": "Risk Level 선언이 헤더에 둘 이상",
+        "placeholder": "Risk Level 이 선택지 나열(placeholder)",
+        "malformed": "Risk Level 선언 문법 오류",
+    }.get(declaration.status, "Risk Level 선언이 L1~L3 이 아님")
+    if declaration.line is None:
+        return reason
+    return f"{reason} (line {declaration.line}: {declaration.excerpt})"
 
 
 def _bound_phase00_risk(event, profile, snapshot):
@@ -442,19 +512,13 @@ def _bound_phase00_risk(event, profile, snapshot):
         return {"status": status, "risk": None, "path": "",
                 "detail": error, "cycle_stem": binding["stem"]}
     path = (doc or {}).get("path") or ""
-    declarations = []
-    for raw in _non_fenced_lines((doc or {}).get("content") or ""):
-        parsed = _parse_risk_declaration(raw)
-        if parsed == "unknown":
-            return {"status": "invalid", "risk": None, "path": path,
-                    "detail": "malformed 또는 placeholder Risk Level 선언", "cycle_stem": binding["stem"]}
-        if parsed is not None:
-            declarations.append(parsed)
-    if len(declarations) != 1:
+    declaration = risk_declaration.parse((doc or {}).get("content") or "")
+    # tier 정책은 소비자 몫이다 — 파서는 L0 도 인식해 돌려주지만, 사이클 결속의 authoritative
+    # 선언은 L1~L3 다. L0 선언은 여기서 잘못된 선언과 같게 막는다.
+    if declaration.status != "valid" or declaration.tier not in ("L1", "L2", "L3"):
         return {"status": "invalid", "risk": None, "path": path,
-                "detail": f"Risk Level 선언은 정확히 1개여야 함(found {len(declarations)})",
-                "cycle_stem": binding["stem"]}
-    return {"status": "valid", "risk": declarations[0], "path": path,
+                "detail": _risk_declaration_detail(declaration), "cycle_stem": binding["stem"]}
+    return {"status": "valid", "risk": declaration.tier, "path": path,
             "detail": "", "cycle_stem": binding["stem"]}
 
 
@@ -741,13 +805,21 @@ def _cycle_risk(event, profile, snapshot, cfg):
         if error:
             return "unknown"
         content = (doc or {}).get("content") or ""
-        for raw in _non_fenced_lines(content):
-            parsed = _parse_risk_declaration(raw)
-            if parsed is None:
-                continue
-            if parsed == "unknown":
+        # 선언은 헤더 metadata 영역에만 있다 — 본문 산문의 `Risk Level` 언급을 세면 추정치가
+        # 위로 튀어 acceptance 요구가 과해진다. 다만 여러 phase 의 최대를 취하는 보수성은 그대로
+        # 둔다: 여기서 낮게 읽는 것이 이 게이트에서는 위험한 방향이다.
+        found, error = risk_declaration.scan(content)
+        if error is not None:
+            # risk 를 쓰려다 만 줄은 조용히 넘기지 않는다 — 넘기면 옆의 낮은 선언이 채택돼
+            # acceptance 요구가 실제보다 헐거워진다.
+            return "unknown"
+        for _line, tier in found:
+            # 이 층이 아는 사이클 tier 는 L1~L3 다. `L0` 를 조용히 건너뛰면 옆의 낮은 선언이
+            # 채택되거나 선언이 하나도 안 남아, acceptance gate 가 통째로 꺼진다(L1 은
+            # required_risks 밖이라 게이트가 실행조차 되지 않는다). `_declared_risk` 와 같은 방향.
+            if tier not in rank:
                 return "unknown"
-            risks.append(parsed)
+            risks.append(tier)
     return max(risks, key=rank.get) if risks else "unknown"
 
 
@@ -867,16 +939,15 @@ def _has_na_reason(value):
     return normalized not in ("", "-", "--", "n/a", "na", "none", "없음", "해당 없음", "해당없음")
 
 
-def _acceptance_gate(event, profile, snapshot):
-    """06 작성 시 04 acceptance evidence와 exact L3 waiver를 검사한다.
+def acceptance_policy(profile, cycle_risk):
+    """이 위험도에서 acceptance 를 강제하는가, 그리고 어떤 상태값이 미해결인가.
 
-    SAGE 의 실패 모드: build/test/review 는 통과했지만 명시 요구사항이 미검증/미구현. 이 gate 는
-    04 문서의 구조화된 상태만 확인한다. Waiver는 exact L3 ``NOT TESTED``를 residual WARN으로
-    바꿀 뿐 PASS로 만들지 않으며, FAIL/unknown risk/invalid audit에는 적용되지 않는다.
+    06 report 게이트와 리뷰 조기 완료가 **같은 정책 한 벌**을 봐야 한다. 두 자리에 따로 적으면
+    06 이 막는 04 상태를 조기 완료가 먼저 통과시키고, 그 뒤 06 에서 막히는 순서만 바뀐다 —
+    조기 완료는 사용자가 잔여 위험을 인수하는 자리이지 미검증 요구사항을 넘기는 자리가 아니다.
+
+    반환: `None`(이 위험도에서 강제하지 않음) 또는 `mode`·`statuses`·`unresolved`·`acceptance`.
     """
-    cfg = _pdca_cfg(profile)
-    if cfg is None or not _is_writing_report(event, cfg):
-        return None
     verification = profile.get("verification") or {}
     ac = verification.get("acceptance") if isinstance(verification, dict) else None
     if not isinstance(ac, dict) or not ac.get("enabled"):
@@ -888,7 +959,6 @@ def _acceptance_gate(event, profile, snapshot):
     # L3 acceptance enforcement is an engine invariant. A profile may opt L1/L2 in or out,
     # but cannot bypass the gate entirely by omitting L3 from require_for_risk.
     required_risks.add("L3")
-    cycle_risk = _cycle_risk(event, profile, snapshot, cfg)
     if cycle_risk != "unknown" and cycle_risk not in required_risks:
         return None
     effective_risk = "L3" if cycle_risk == "unknown" else cycle_risk
@@ -926,35 +996,30 @@ def _acceptance_gate(event, profile, snapshot):
     # Profiles cannot mint new resolved states. Only PASS and reasoned N/A resolve;
     # every configured extension remains an unresolved, non-waivable status.
     unresolved.update(statuses - {"PASS", "N/A"})
-    phase_docs = snapshot.get("phase_docs") or {}
-    docs01 = phase_docs.get("01") or []
-    docs04 = phase_docs.get("04") or []
-    binding = cycle_binding.resolve(event, snapshot, cfg)
+    return {"mode": mode, "statuses": statuses, "unresolved": unresolved, "acceptance": ac}
 
-    def fail(detail):
-        return {"ok": False, "mode": mode, "detail": detail}
 
-    if binding.get("error"):
-        return fail(f"cycle binding 실패: {binding['error']}")
-    plan_doc, plan_error = cycle_binding.select_document(docs01, binding["stem"])
-    if plan_error:
-        return fail(f"01 선택 실패: {plan_error}")
-    sel, sel_error = cycle_binding.select_document(docs04, binding["stem"])
-    if sel_error:
-        return fail(f"04 선택 실패: {sel_error}")
-    plan_path = plan_doc.get("path")
-    sel_path = sel.get("path")
-    matrix = _acceptance_matrix((plan_doc or {}).get("content") or "")
+def acceptance_findings(plan_content, report_content, policy, *, plan_path, report_path):
+    """01 matrix 와 04 evidence 대조. `(구조 오류, 미해결 행)`.
+
+    구조 오류는 표를 읽을 수 없다는 뜻이라 판정 자체가 불가능하고, 미해결 행은 읽었는데 통과하지
+    못한 요구사항이다. 둘을 한 리스트로 합치면 waiver 를 적용할 수 있는 행과 그렇지 않은 상태를
+    호출부가 구분하지 못한다.
+    """
+    statuses = policy["statuses"]
+    unresolved = policy["unresolved"]
+    matrix = _acceptance_matrix(plan_content)
     required_ids = matrix["required"]
-    evidence_rows = _acceptance_evidence_rows(sel.get("content") or "")
+    evidence_rows = _acceptance_evidence_rows(report_content)
     if matrix["invalid"]:
-        return fail(f"선택된 01 문서({plan_path})에 invalid acceptance ID: {matrix['invalid']}")
+        return [f"선택된 01 문서({plan_path})에 invalid acceptance ID: {matrix['invalid']}"], []
     if matrix["duplicates"]:
-        return fail(f"선택된 01 문서({plan_path})에 duplicate acceptance ID: {matrix['duplicates']}")
+        return [f"선택된 01 문서({plan_path})에 duplicate acceptance ID: {matrix['duplicates']}"], []
     if not matrix["all"]:
-        return fail(f"선택된 01 문서({plan_path or '미선택'})에 acceptance matrix ID 없음")
+        return [f"선택된 01 문서({plan_path or '미선택'})에 acceptance matrix ID 없음"], []
     if not evidence_rows:
-        return fail(f"선택된 04 문서({sel_path})에 acceptance evidence table 없음(PASS/FAIL/NOT TESTED/N/A 필요)")
+        return [f"선택된 04 문서({report_path})에 acceptance evidence table 없음"
+                "(PASS/FAIL/NOT TESTED/N/A 필요)"], []
     known_statuses = set(statuses)
     unresolved_rows = []
     seen_ids = []
@@ -982,44 +1047,99 @@ def _acceptance_gate(event, profile, snapshot):
                                     "detail": f"{row.get('raw')} (N/A 사유 누락)"})
     duplicate_evidence = sorted({rid for rid in seen_ids if seen_ids.count(rid) > 1})
     if duplicate_evidence:
-        return fail(f"04 acceptance evidence duplicate ID: {duplicate_evidence}")
+        return [f"04 acceptance evidence duplicate ID: {duplicate_evidence}"], []
     unknown_ids = sorted(set(seen_ids) - set(matrix["all"]))
     if unknown_ids:
-        return fail(f"04 acceptance evidence 에 01 matrix 미정의 ID: {unknown_ids}")
+        return [f"04 acceptance evidence 에 01 matrix 미정의 ID: {unknown_ids}"], []
     missing_ids = [rid for rid in required_ids if rid not in set(seen_ids)]
     if missing_ids:
-        return fail(f"04 acceptance evidence 에 01 matrix required ID 누락: {missing_ids}")
+        return [f"04 acceptance evidence 에 01 matrix required ID 누락: {missing_ids}"], []
+    return [], unresolved_rows
+
+
+def acceptance_waiver_split(unresolved_rows, policy, cycle_risk, stem, waiver_summary, *,
+                            report_path):
+    """미해결 행을 `(여전히 막는 것, exact waiver 로 잔여가 된 것)` 으로 가른다.
+
+    waiver 는 상태를 PASS 로 바꾸지 않는다 — L3 에서 명시 승인된 `NOT TESTED` 하나를 잔여 위험
+    표기로 옮길 뿐이다. FAIL·형식 오류·미인식 상태는 어떤 승인으로도 옮겨지지 않는다.
+    """
+    ac = policy["acceptance"]
+    waiver_cfg = ac.get("waiver") if isinstance(ac.get("waiver"), dict) else {}
+    can_consider_waiver = cycle_risk == "L3" and waiver_cfg.get("enabled") is True
+    waiver_uses, remaining = [], []
+    for row in unresolved_rows:
+        if not (can_consider_waiver and row["waivable"] and row["id"]):
+            remaining.append(row)
+            continue
+        if not waiver_summary.get("valid"):
+            issues = "; ".join((waiver_summary.get("issues") or [])[:3]) or "unknown audit error"
+            remaining.append(dict(row, detail=f"{row['detail']} (waiver audit invalid: {issues})"))
+            continue
+        matches = [grant for grant in (waiver_summary.get("active") or [])
+                   if isinstance(grant, dict)
+                   and grant.get("cycle_stem") == stem
+                   and grant.get("acceptance_id") == row["id"]]
+        if len(matches) != 1:
+            if len(matches) > 1:
+                row = dict(row, detail=f"{row['detail']} (conflicting exact waivers: {len(matches)})")
+            remaining.append(row)
+            continue
+        grant = matches[0]
+        required_grant_fields = ("waiver_id", "reason", "scope", "remaining_evidence", "confirmed_by")
+        if any(not isinstance(grant.get(field), str) or not grant.get(field).strip()
+               for field in required_grant_fields):
+            remaining.append(dict(row, detail=f"{row['detail']} (malformed exact waiver)"))
+            continue
+        waiver_uses.append(dict(grant, report_path=report_path))
+    return remaining, waiver_uses
+
+
+def _acceptance_gate(event, profile, snapshot):
+    """06 작성 시 04 acceptance evidence와 exact L3 waiver를 검사한다.
+
+    SAGE 의 실패 모드: build/test/review 는 통과했지만 명시 요구사항이 미검증/미구현. 이 gate 는
+    04 문서의 구조화된 상태만 확인한다. Waiver는 exact L3 ``NOT TESTED``를 residual WARN으로
+    바꿀 뿐 PASS로 만들지 않으며, FAIL/unknown risk/invalid audit에는 적용되지 않는다.
+    """
+    cfg = _pdca_cfg(profile)
+    if cfg is None or not _is_writing_report(event, cfg):
+        return None
+    cycle_risk = _cycle_risk(event, profile, snapshot, cfg)
+    policy = acceptance_policy(profile, cycle_risk)
+    if policy is None:
+        return None
+    mode = policy["mode"]
+    ac = policy["acceptance"]
+    phase_docs = snapshot.get("phase_docs") or {}
+    docs01 = phase_docs.get("01") or []
+    docs04 = phase_docs.get("04") or []
+    binding = cycle_binding.resolve(event, snapshot, cfg)
+
+    def fail(detail):
+        return {"ok": False, "mode": mode, "detail": detail}
+
+    if binding.get("error"):
+        return fail(f"cycle binding 실패: {binding['error']}")
+    plan_doc, plan_error = cycle_binding.select_document(docs01, binding["stem"])
+    if plan_error:
+        return fail(f"01 선택 실패: {plan_error}")
+    sel, sel_error = cycle_binding.select_document(docs04, binding["stem"])
+    if sel_error:
+        return fail(f"04 선택 실패: {sel_error}")
+    plan_path = plan_doc.get("path")
+    sel_path = sel.get("path")
+    structural, unresolved_rows = acceptance_findings(
+        (plan_doc or {}).get("content") or "", sel.get("content") or "",
+        policy, plan_path=plan_path, report_path=sel_path)
+    if structural:
+        return fail(structural[0])
     if unresolved_rows:
-        waiver_cfg = ac.get("waiver") if isinstance(ac.get("waiver"), dict) else {}
-        can_consider_waiver = cycle_risk == "L3" and waiver_cfg.get("enabled") is True
         waiver_summary = snapshot.get("acceptance_waivers") or {
             "valid": True, "issues": [], "active": []}
-        waiver_uses, remaining = [], []
-        for row in unresolved_rows:
-            if not (can_consider_waiver and row["waivable"] and row["id"]):
-                remaining.append(row)
-                continue
-            if not waiver_summary.get("valid"):
-                issues = "; ".join((waiver_summary.get("issues") or [])[:3]) or "unknown audit error"
-                row = dict(row, detail=f"{row['detail']} (waiver audit invalid: {issues})")
-                remaining.append(row)
-                continue
-            matches = [grant for grant in (waiver_summary.get("active") or [])
-                       if isinstance(grant, dict)
-                       and grant.get("cycle_stem") == binding["stem"]
-                       and grant.get("acceptance_id") == row["id"]]
-            if len(matches) != 1:
-                if len(matches) > 1:
-                    row = dict(row, detail=f"{row['detail']} (conflicting exact waivers: {len(matches)})")
-                remaining.append(row)
-                continue
-            grant = matches[0]
-            required_grant_fields = ("waiver_id", "reason", "scope", "remaining_evidence", "confirmed_by")
-            if any(not isinstance(grant.get(field), str) or not grant.get(field).strip()
-                   for field in required_grant_fields):
-                remaining.append(dict(row, detail=f"{row['detail']} (malformed exact waiver)"))
-                continue
-            waiver_uses.append(dict(grant, report_path=sel_path))
+        remaining, waiver_uses = acceptance_waiver_split(
+            unresolved_rows, policy, cycle_risk, binding["stem"], waiver_summary,
+            report_path=sel_path)
         if remaining:
             lines = [row["detail"] for row in remaining]
             preview = "; ".join(lines[:3])
@@ -1034,6 +1154,97 @@ def _acceptance_gate(event, profile, snapshot):
                     "detail": f"L3 명시 waiver 적용(상태는 PASS 아님): {residual}",
                     "waiver_uses": waiver_uses}
     return {"ok": True, "mode": mode, "detail": sel_path}
+
+
+_REDUCED_ASSURANCE_MARKERS = ("Review-Assurance", "Review-Close-Reason", "Review-Rounds",
+                              "Residual-Findings")
+EARLY_CLOSE_REASON = "USER_AUTHORIZED_EARLY"
+REVIEW_ASSURANCE_REDUCED = "REDUCED_BY_USER_AUTHORIZATION"
+
+
+def _marker_values(content, label):
+    """fence 밖에서 `Label: value` 를 전부 모은다. 정확히 1개인지는 호출부가 판정한다."""
+    pattern = re.compile(rf"^{re.escape(label)}\s*[:：]\s*(.+?)\s*$", re.IGNORECASE)
+    values = []
+    for raw in _non_fenced_lines(content or ""):
+        match = pattern.match(_structured_declaration_line(raw))
+        if match:
+            values.append(match.group(1).strip())
+    return values
+
+
+_CONFIGURED_MAX_RE = re.compile(
+    r"^\s*\d+\s+\(\s*configured max\s*:\s*([^)]*?)\s*\)\s*$", re.IGNORECASE)
+
+
+def _configured_max_issues(declared, run):
+    """`Review-Rounds` 의 상한 표기가 감사 레코드와 같은가.
+
+    라운드 수만 대조하면 "몇 번 중 몇 번" 의 분모가 검증에서 빠진다. `1 (configured max: 999)` 처럼
+    상한을 부풀리거나 `1 (configured max: 1)` 로 낮춰 적으면, 실제로 얼마나 건너뛴 리뷰인지가 문서만
+    보는 사람에게 다르게 읽힌다 — 네 표기를 강제하는 이유가 바로 그 판별이다.
+
+    레코드에 상한이 없으면 대조 기준이 없으므로 넘긴다. 조기 종료를 기록하는 경로는 이 값을 항상
+    남기지만, 그 사실을 여기서 다시 요구하면 손상된 레코드 하나가 진단을 상한 이야기로 바꾼다 —
+    감사 손상은 `integrity_issues` 가 말할 일이다.
+    """
+    ceiling = run.get("configured_max_iterations")
+    if ceiling is None:
+        return []
+    expected = str(ceiling)
+    match = _CONFIGURED_MAX_RE.fullmatch(declared or "")
+    if match is None:
+        return [f"Review-Rounds 상한 표기가 정확한 형식이 아님"
+                f"(감사 기록: configured max: {expected})"]
+    if match.group(1) != expected:
+        return [f"Review-Rounds 의 상한이 감사 기록과 다름: 문서={match.group(1)!r} 감사={expected!r}"]
+    return []
+
+
+def _reduced_assurance_issues(content, run):
+    """05 문서의 보증 저하 표기와 terminal 감사 레코드가 정확히 일치하는가.
+
+    한쪽만 있으면 차단한다. 문서에만 있으면 감사 없이 보증 저하를 자칭한 것이고, 감사에만 있으면
+    조기 종료로 닫힌 run 이 일반 승인처럼 06 으로 넘어간다. 둘 다 사후 판별을 불가능하게 만든다.
+    """
+    early = (run.get("close_reason") or "") == EARLY_CLOSE_REASON
+    found = {label: _marker_values(content, label) for label in _REDUCED_ASSURANCE_MARKERS}
+    if not early:
+        # `Review-Rounds`·`Residual-Findings` 는 일반 리뷰 문서에도 자연스럽게 적히는 중립 표기다.
+        # 표기의 존재를 트리거로 쓰면 기존 05 문서가 그 한 줄 때문에 막힌다. 차단해야 하는 것은
+        # 문서가 감사와 다르게 보증 저하를 **자칭**하는 경우뿐이다.
+        claimed = [f"{label}: {value}" for label, token in (
+            ("Review-Assurance", REVIEW_ASSURANCE_REDUCED),
+            ("Review-Close-Reason", EARLY_CLOSE_REASON),
+        ) for value in found[label] if value.strip().upper() == token]
+        if claimed:
+            return [f"조기 완료로 닫히지 않은 run 인데 보증 저하를 자칭함: {claimed}"]
+        return []
+    issues = []
+    for label in _REDUCED_ASSURANCE_MARKERS:
+        if len(found[label]) != 1:
+            issues.append(f"{label} 선언은 fence 밖에 정확히 1개여야 함(found {len(found[label])})")
+    if issues:
+        return issues
+    if found["Review-Assurance"][0].upper() != REVIEW_ASSURANCE_REDUCED:
+        issues.append(f"Review-Assurance 는 {REVIEW_ASSURANCE_REDUCED} 여야 함")
+    if found["Review-Close-Reason"][0].upper() != EARLY_CLOSE_REASON:
+        issues.append(f"Review-Close-Reason 은 {EARLY_CLOSE_REASON} 이어야 함")
+    rounds = run.get("completed_rounds")
+    if rounds is not None and (type(rounds) is not int or isinstance(rounds, bool)):
+        # 손상된 레코드는 대조 기준이 될 수 없다. 여기서 크래시하면 진단이 runtime error 로
+        # 뭉개져 무엇이 깨졌는지 안 보인다(판정은 어차피 fail-closed 다).
+        issues.append(f"감사 기록의 completed_rounds 가 정수가 아님: {rounds!r}")
+    elif rounds is not None and not re.match(rf"^{int(rounds)}\b", found["Review-Rounds"][0]):
+        issues.append(f"Review-Rounds 가 감사 기록({rounds})과 다름: {found['Review-Rounds'][0]!r}")
+    issues.extend(_configured_max_issues(found["Review-Rounds"][0], run))
+    receipt = run.get("survived_by_severity")
+    if isinstance(receipt, dict):
+        declared = dict(re.findall(r"(P[0-3])\s*=\s*(\d+)", found["Residual-Findings"][0]))
+        expected = {key: str(int(receipt.get(key, 0))) for key in ("P0", "P1", "P2", "P3")}
+        if declared != expected:
+            issues.append(f"Residual-Findings 가 감사 기록과 다름: 문서={declared} 감사={expected}")
+    return issues
 
 
 def _audit_gate(event, profile, snapshot):
@@ -1127,7 +1338,34 @@ def _audit_gate(event, profile, snapshot):
         # 7차 배치3-4: 의도한 reviewer(open) ≠ 실제(close) — cross-model 요청이 same-runtime 으로 폴백된 정황.
         return fail(f"run {run_id!r} reviewer 불일치: 의도={run.get('reviewer_requested')!r} "
                     f"실제={run.get('reviewer_actual')!r} (cross-model 의도 검토 미수행 의심)")
+    assurance = _reduced_assurance_issues(content, run)
+    if assurance:
+        return fail(f"run {run_id!r} 보증 수준 표기 불일치: " + "; ".join(assurance[:3]))
+    report_issues = _report_assurance_issues(event, cfg, run)
+    if report_issues:
+        return fail(f"run {run_id!r} 리포트 보증 수준 표기 불일치: " + "; ".join(report_issues[:3]))
     return {"ok": True, "mode": mode, "detail": run_id}
+
+
+def _report_assurance_issues(event, cfg, run):
+    """조기 종료로 닫힌 run 의 리포트도 그 사실을 스스로 밝히는가.
+
+    05 만 강제하면 최종 산출물인 06 은 보증 수준을 말하지 않는다 — 리포트만 읽는 사람에게는
+    축약된 리뷰로 닫힌 사이클이 표준 승인과 똑같이 보인다. 05 와 같은 기준으로 06 의 본문을
+    본다: 조기 종료가 아니면 자칭만 막고, 조기 종료면 네 표기가 감사와 일치해야 한다.
+
+    검사 대상은 지금 쓰이는 06 내용이다. 여러 조각으로 쓰는 중이면 조각마다 판정하지 않고
+    합쳐서 본다 — 한 조각에 표기가 없다는 이유로 작성 중간을 막지 않는다.
+    """
+    report_phase = str(cfg.get("report_phase") or "")
+    rglob = _phase_glob(cfg, report_phase)
+    if not rglob:
+        return []
+    written = [change.get("content") or "" for change in (event.get("changes") or [])
+               if cycle_binding.matches_glob(change.get("path") or "", rglob)]
+    if not written:
+        return []
+    return _reduced_assurance_issues("\n".join(written), run)
 
 
 def _done_criteria_decision(mode, key, reason, file_short, **extra):
