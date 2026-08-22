@@ -11,6 +11,7 @@ from pathlib import Path
 
 from sage import _resources, overlay_common
 from sage.fast_cycle_contract import (
+    PHASES,
     bind_run_id,
     done_criteria_issues,
     evidence_marker_issues,
@@ -205,7 +206,9 @@ def _open_snapshot_issues(state, *, stem, actual_risk, level, rounds, lenses,
     return issues
 
 
-CONVERTIBLE_PHASES = ("00", "01", "02", "03", "04")
+# 전환 스냅샷의 phase 집합은 공용 계약 하나에서 온다. 여기서 따로 적으면 권위 층이 기대하는
+# 집합과 조용히 갈라지고, 그 어긋남은 "스냅샷이 덜 들어 있다" 로만 나타나 눈에 띄지 않는다.
+CONVERTIBLE_PHASES = PHASES
 CONVERT_CONFIRMATION = "FAST-CONVERTED"
 
 
@@ -510,8 +513,9 @@ def _run_review(args):
             if actual_risk != state.get("actual_risk"):
                 raise ValueError("Phase 00 risk no longer matches the converted run")
             _apply_standard_done_criteria_policy(profile, content, include_unresolved=True)
-            review_snapshot = _source_phase_snapshot(
-                root, profile, stem, state.get("current_phase") or "04")
+            # current_phase는 전환 당시 provenance의 끝점이다. 리뷰 시점에는 그 뒤에 작성한
+            # 필수 01~04도 승인 범위에 들어가므로 최종 pre-report 문서 전체를 다시 증언한다.
+            review_snapshot = _source_phase_snapshot(root, profile, stem, "04")
         else:
             plan, issues = parse_fast_plan(content)
             if plan is None or issues:
@@ -615,12 +619,12 @@ def _run_close(args):
             # 전환 run 의 계획·설계·구현 기록은 Phase 00 밖에 있다. Phase 00 해시만 대조하면
             # 리뷰 뒤 01~04 가 바뀌어도 통과한다 — fresh 는 composite 하나라 그 자리가 없었다.
             reviewed_snapshot = state.get("source_phases_review")
-            if reviewed_snapshot:
-                current = _source_phase_snapshot(
-                    root, profile, stem, state.get("current_phase") or "04")
-                if current != reviewed_snapshot:
-                    raise ValueError("phase documents changed after the latest review; "
-                                     "run review again")
+            if not isinstance(reviewed_snapshot, dict) or not reviewed_snapshot:
+                raise ValueError("converted review source phase snapshot is missing; run review again")
+            current = _source_phase_snapshot(root, profile, stem, "04")
+            if current != reviewed_snapshot:
+                raise ValueError("phase documents changed after the latest review; "
+                                 "run review again")
         else:
             plan, parse_issues = parse_fast_plan(content)
             if plan is None or parse_issues:

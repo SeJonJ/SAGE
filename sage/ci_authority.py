@@ -18,6 +18,9 @@ import time
 from typing import Any, Callable
 
 from sage import _resources
+# 전환 스냅샷이 담아야 하는 phase 목록. 기록하는 쪽과 검증하는 쪽이 같은 계약을 봐야 한다 —
+# 여기서 다시 적으면 두 집합이 조용히 갈라진다.
+from sage.fast_cycle_contract import PHASES as FAST_SOURCE_PHASES
 
 ATTESTATION_VERSION = 1
 MAX_ATTESTATION_TTL = 3600
@@ -331,6 +334,56 @@ def _converted_fast_run(fast_records, cycle_stem):
     return candidates.pop(), None
 
 
+def _converted_snapshot_reasons(opened, reviewed, selected):
+    """전환 run 이 리뷰한 01~04 가 지금 커밋된 문서와 같은가.
+
+    전환 run 의 계획·설계·구현 기록은 Phase 00 밖에 있다. 이 층은 00 의 `plan_hash` 만 대조했으므로,
+    리뷰 뒤 03 을 갈아끼워도 증거가 그대로 통과했다 — fresh Fast 는 composite 문서 하나라 그 자리가
+    아예 없었고, 전환 run 이 생기면서 열린 구멍이다. 로컬 close 는 같은 대조를 하지만 이 층은 그
+    로컬 훅이 변조됐을 때를 위해 존재한다.
+
+    **대조 범위를 스냅샷 자신이 정하게 두면 안 된다.** opener는 전환 당시 `current_phase`까지의
+    provenance를 증언하지만 review는 그 뒤에 작성된 최종 00~04를 모두 증언한다. 둘을 같은 집합으로
+    강제하면 Phase 00 전환 뒤 작성한 01~04가 승인 범위에서 영구히 빠진다.
+
+    스냅샷이 없는 전환 run 은 대조 기준이 없다. 조용히 넘기면 스냅샷을 지우는 것이 곧 우회가 되므로
+    증거 부재로 막는다 — 전환 run 은 이번 사이클에서 생겼고 스냅샷 없이 기록될 경로가 없다.
+    """
+    snapshot = reviewed.get("source_phases_review")
+    if not isinstance(snapshot, dict) or not snapshot:
+        return ["converted Fast review carries no source phase snapshot to bind 01-04"]
+    current = opened.get("current_phase")
+    if current not in FAST_SOURCE_PHASES:
+        return [f"converted Fast opener records no usable current_phase: {current!r}"]
+    expected_open = set(FAST_SOURCE_PHASES[:FAST_SOURCE_PHASES.index(current) + 1])
+    expected_review = set(FAST_SOURCE_PHASES)
+    if set(snapshot) != expected_review:
+        return ["converted Fast review snapshot does not cover the recorded source phases: "
+                f"expected {sorted(expected_review)}, found {sorted(snapshot)}"]
+    opened_snapshot = opened.get("source_phases_open")
+    if not isinstance(opened_snapshot, dict) or set(opened_snapshot) != expected_open:
+        return ["converted Fast open snapshot does not cover the recorded source phases: "
+                f"expected {sorted(expected_open)}, "
+                f"found {sorted(opened_snapshot) if isinstance(opened_snapshot, dict) else opened_snapshot!r}"]
+    mismatched = []
+    for phase in sorted(snapshot):
+        entry = snapshot.get(phase)
+        document = selected.get(phase)
+        if not isinstance(entry, dict) or not isinstance(document, dict):
+            mismatched.append(f"{phase}(unreadable)")
+            continue
+        payload = (document.get("content") or "").encode("utf-8")
+        digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+        if (entry.get("path") != document.get("path")
+                or entry.get("sha256") != digest
+                or entry.get("size") != len(payload)):
+            mismatched.append(phase)
+    if mismatched:
+        return ["Phase documents changed after the converted Fast review: "
+                + ", ".join(mismatched)]
+    return []
+
+
 def _fast_evidence_reasons(request, selected, cycle_stem):
     """Verify committed Fast and Loop audit evidence against the selected plan/review."""
     plan_doc = selected.get("00") if isinstance(selected, dict) else None
@@ -412,6 +465,8 @@ def _fast_evidence_reasons(request, selected, cycle_stem):
             or reviewed.get("plan_hash_before_review") != plan_hash
             or closed.get("plan_hash_final") != plan_hash):
         reasons.append("Fast review/close result or plan hash binding is invalid")
+    if not composite:
+        reasons.extend(_converted_snapshot_reasons(opened, reviewed, selected))
     loop_run = reviewed.get("loop_run_id")
     if closed.get("loop_run_id") != loop_run:
         reasons.append("Fast close references a different Loop run")
@@ -578,18 +633,71 @@ def _declared_risk(selected: dict[str, dict[str, Any]], risk_declaration):
     return max(found, key=_RANK.get) if found else None
 
 
-def _review_assurance(selected: dict[str, dict[str, Any]], core) -> tuple[str, list[str]]:
-    """Phase 05 가 선언한 리뷰 보증 수준과, 그 선언 자체의 정합성 문제.
+def _loop_run_binding(request, review_text, core):
+    """05 가 가리키는 Loop run 의 terminal 레코드. 결속 불가면 `(None, 사유)`.
+
+    권위 층에는 감사 요약(`audit_summary`)이 없고 커밋 트리의 원문만 있다. 그래서 요약이 파생해 주던
+    무결성 판정(고유 open/close·체인·seq)을 여기서 같은 순서로 다시 만든다 — 그 셋 중 하나라도
+    깨진 레코드를 보증 수준의 근거로 쓰면, 조작된 감사가 문서를 정당화하는 통로가 된다.
+    """
+    run_ids = []
+    for raw in core._non_fenced_lines(review_text):
+        match = re.fullmatch(r"Loop-Run:\s*(\S+)", core._structured_declaration_line(raw),
+                             re.IGNORECASE)
+        if match:
+            run_ids.append(match.group(1))
+    if len(run_ids) != 1:
+        return None, f"Phase 05 Loop-Run must appear exactly once; found={len(run_ids)}"
+    _trusted_gate_modules()
+    import loop_audit
+    raw_text = request.get("loop_audit")
+    if not isinstance(raw_text, str):
+        return None, "committed Loop audit text is required"
+    try:
+        records, file_issues = loop_audit._parse_bytes(raw_text.encode("utf-8"))
+    except Exception as exc:  # noqa: BLE001 - 파싱 실패는 결속 불가이지 크래시가 아니다
+        return None, f"Loop audit parse failed closed: {type(exc).__name__}: {exc}"
+    if file_issues:
+        return None, "Loop audit: " + "; ".join(str(issue) for issue in file_issues[:3])
+    run_id = run_ids[0]
+    run = [record for record in records if record.get("run_id") == run_id]
+    events = [record.get("event") for record in run]
+    if (events.count("loop_open") != 1 or events.count("loop_close") != 1
+            or events[-1:] != ["loop_close"]):
+        return None, f"Loop run {run_id!r} is not uniquely open/closed"
+    if (loop_audit._chain_states(records).get(run_id) is not True
+            or loop_audit._seq_ok([record.get("seq") for record in run]) is not True):
+        return None, f"Loop run {run_id!r} lacks strict chain/sequence integrity"
+    opened, closed = run[0], run[-1]
+    expected_stem = request.get("cycle_stem")
+    if opened.get("cycle_stem") != expected_stem:
+        return None, (f"Loop run {run_id!r} belongs to cycle {opened.get('cycle_stem')!r}, "
+                      f"not {expected_stem!r}")
+    if closed.get("result") != "APPROVED":
+        return None, f"Loop run {run_id!r} did not close APPROVED"
+    return closed, None
+
+
+def _review_assurance(request: dict[str, Any], selected: dict[str, dict[str, Any]],
+                      core) -> tuple[str, list[str]]:
+    """Phase 05 가 선언한 리뷰 보증 수준과, 그 선언과 감사가 어긋나는 지점.
 
     조기 완료 승인은 일반 승인과 같은 `APPROVED` 토큰을 쓴다. 서버 권위가 둘을 구분하지 못하면
-    보증이 낮은 승인이 표준 승인과 같은 무게로 통과한다. 네 표기는 함께 있거나 함께 없어야 하고,
-    일부만 있으면 어느 쪽으로도 해석할 수 없으므로 fail-closed 한다.
+    보증이 낮은 승인이 표준 승인과 같은 무게로 통과한다.
+
+    **문서만 읽어서는 구분할 수 없다.** 문서 안에서만 정합성을 보면 위험한 방향이 그대로 열린다 —
+    감사가 `USER_AUTHORIZED_EARLY` 로 닫혔는데 05 가 네 표기를 아예 생략하면 자칭이 없으니
+    STANDARD 로 통과했다. 로컬 게이트는 같은 상황을 감사와 대조해 막는데, 변조된 로컬 훅을 전제로
+    존재하는 이 층에만 그 축이 없었다. 그래서 판정 자체를 게이트와 **같은 함수**에 위임한다.
+
+    감사에 결속하지 못하는 경우는 두 갈래다. 문서가 보증 저하를 **자칭**했다면 뒷받침 없는 주장이니
+    막는다. 자칭이 없다면 차단 폭을 넓히지 않고 값만 `UNKNOWN` 으로 정직해진다 — 확인하지 못한 것을
+    STANDARD 로 적는 것이 곧 조용한 통과이기 때문이다.
     """
     document = selected.get("05")
     content = document.get("content") or "" if isinstance(document, dict) else ""
     if not content.strip():
-        # 05 를 읽지 못한 상태(선택 실패·phase 결핍)는 "표준 보증" 이 아니다. 미확인을 STANDARD 로
-        # 적으면 조기 종료 승인이 서버 권위에서 일반 승인과 같은 무게로 남는다. 05 를 요구하지 않는
+        # 05 를 읽지 못한 상태(선택 실패·phase 결핍)는 "표준 보증" 이 아니다. 05 를 요구하지 않는
         # 위험도가 있으므로 이유는 만들지 않는다 — 값만 정직해지고 차단 폭은 그대로다.
         return "UNKNOWN", []
     found = {label: core._marker_values(content, label)
@@ -601,19 +709,36 @@ def _review_assurance(selected: dict[str, dict[str, Any]], core) -> tuple[str, l
                   for label, token in (("Review-Assurance", core.REVIEW_ASSURANCE_REDUCED),
                                        ("Review-Close-Reason", core.EARLY_CLOSE_REASON))
                   for value in found[label])
-    if not claimed:
-        return "STANDARD", []
-    duplicated = [label for label, values in found.items() if len(values) > 1]
-    if duplicated:
-        return "UNKNOWN", [f"Phase 05 declares {duplicated} more than once"]
-    missing = [label for label, values in found.items() if not values]
-    if missing:
-        return "UNKNOWN", [f"Phase 05 reduced-assurance markers are incomplete: missing {missing}"]
-    if found["Review-Assurance"][0].upper() != core.REVIEW_ASSURANCE_REDUCED:
-        return "UNKNOWN", [f"Phase 05 Review-Assurance must be {core.REVIEW_ASSURANCE_REDUCED}"]
-    if found["Review-Close-Reason"][0].upper() != core.EARLY_CLOSE_REASON:
-        return "UNKNOWN", [f"Phase 05 Review-Close-Reason must be {core.EARLY_CLOSE_REASON}"]
-    return core.REVIEW_ASSURANCE_REDUCED, []
+    close, binding_issue = _loop_run_binding(request, content, core)
+    if close is None:
+        committed_audit = request.get("loop_audit")
+        loop_run_declared = bool(core._marker_values(content, "Loop-Run"))
+        if claimed or (loop_run_declared and isinstance(committed_audit, str)
+                       and committed_audit.strip()):
+            return "UNKNOWN", [f"Phase 05 declares reduced review assurance but no committed Loop "
+                               f"audit corroborates it: {binding_issue}"]
+        return "UNKNOWN", []
+    run = {"close_reason": close.get("reason"),
+           "completed_rounds": close.get("completed_rounds"),
+           "configured_max_iterations": close.get("configured_max_iterations"),
+           "survived_by_severity": close.get("survived_by_severity")}
+    issues = core._reduced_assurance_issues(content, run)
+    if issues:
+        return "UNKNOWN", [f"Phase 05 review assurance does not match the Loop audit: "
+                           + "; ".join(str(issue) for issue in issues[:3])]
+    if (close.get("reason") or "") == core.EARLY_CLOSE_REASON:
+        return core.REVIEW_ASSURANCE_REDUCED, []
+    return "STANDARD", []
+
+
+def _early_completion_opted_in(profile):
+    """서버 권위가 조기 완료 증거를 요구해야 하는 명시 opt-in인가."""
+    if not isinstance(profile, dict):
+        return False
+    pdca = profile.get("pdca")
+    review = pdca.get("review_loop") if isinstance(pdca, dict) else None
+    early = review.get("early_completion") if isinstance(review, dict) else None
+    return isinstance(early, dict) and early.get("enabled") is True
 
 
 def _acceptance_evidence(selected: dict[str, dict[str, Any]], core):
@@ -704,8 +829,15 @@ def analyze(request: dict[str, Any], classifier: Callable | None = None) -> dict
                 if error or status != marker:
                     reasons.append(f"Phase 05 is not exactly {marker}: {error or status}")
                 reasons.extend(_acceptance_evidence(selected, core))
-        review_assurance, assurance_reasons = _review_assurance(selected, core)
+        review_assurance, assurance_reasons = _review_assurance(request, selected, core)
         reasons.extend(assurance_reasons)
+        if (risk == "L3" and review_assurance == "UNKNOWN" and not assurance_reasons
+                and any(_early_completion_opted_in(request.get(key))
+                        for key in ("base_profile", "head_profile"))):
+            # 기본 false인 기존 프로젝트에는 새 요구를 만들지 않는다. 기능을 명시 활성화한 L3만
+            # 감사와 표기를 모두 지워 축약 승인을 일반 승인처럼 보이게 하는 경로를 닫는다.
+            reasons.append("L3 early-completion opt-in requires committed Loop review assurance "
+                           "evidence; the authority cannot classify this approval")
     return {
         "status": "BLOCK" if reasons else "PASS",
         "exit_code": 2 if reasons else 0,

@@ -45,10 +45,14 @@ preference. Full rules: `docs/agent/language-policy.md`.
    composite Phase 00, and — for a cycle already past Phase 00, only when
    `pdca.fast_cycle.standard_transition.enabled` is true — an explicitly confirmed
    `sage fast-cycle convert`. Read the entry mode before judging a document:
-   `sage fast-cycle show --run-id <fc-id>` prints `entry=FAST` or `entry=FAST-CONVERTED`.
+   `sage fast-cycle show --run-id <fc-id>` prints `entry=FAST`, `entry=FAST-CONVERTED`, or
+   `entry=UNKNOWN`.
    **Only on `entry=FAST-CONVERTED`** is a missing `Fast-Audit-Run` line normal — that run
    binds by stem instead. On `entry=FAST` the same missing or `pending` line is a defect to
    fix, so never treat it as normal without checking which mode you are in.
+   On `entry=UNKNOWN` the opener record cannot be read, so neither rule applies. Stop and
+   report it. `UNKNOWN` does not mean "not Fast" and it does not mean "treat as fresh" —
+   guessing either way makes a damaged audit look like a decided one.
 4. After planning/open succeeds, delegate to `sage-team-fast`. Do not duplicate
    its implementation, review, close, or clear steps here.
 5. Report the actual risk, Fast review level, selected lenses, reason, Fast run,

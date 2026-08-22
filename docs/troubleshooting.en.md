@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:f5dac01969372934ec52b083cb9b316467039c9fc2ea644590934f7862ecdfed -->
+<!-- sage-doc-source: troubleshooting.md sha256:a9190228134cf666946e3f3b334bc75f83ee746325b75ed5bca8dea7ef31f259 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -212,9 +212,13 @@ close normally. A receipt-total error means `--survived-by-severity` does not su
 `--survived` — the check exists to stop a `P0=0`-only receipt from hiding a blocking finding, so
 there is no way around it.
 
-Some things an authorization never carries past the gate: zero rounds, unresolved findings at a
-`severity_block` severity, architecture escalation, failed verification, unresolved Done Criteria,
-acceptance `FAIL`, and audit damage. If one of those is blocking, it has to be genuinely resolved.
+Some things an authorization never carries past the engine gate: zero rounds, unresolved findings
+at a `severity_block` severity, architecture escalation, unresolved Done Criteria, acceptance
+`FAIL`, and audit damage. If one of those is blocking, it has to be genuinely resolved.
+
+A failed required build, test, or lint check also must not be closed early, but those results live
+only in Phase 03 prose and are not machine-readable by the engine. The agent must disclose that
+failure to the user and refuse to close; this is an agent duty, not an engine-enforced receipt.
 
 ## Phase 05 is blocked over reduced-assurance markers
 
@@ -223,14 +227,26 @@ acceptance `FAIL`, and audit damage. If one of those is blocking, it has to be g
 Review-Assurance 선언은 fence 밖에 정확히 1개여야 함(found 0)
 ```
 
-The four markers (`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`, `Residual-Findings`)
-must be **all four or none**. If the loop closed early, record all four with values matching the
-audit record. If it converged normally, do not write the values that claim reduced assurance
-(`REDUCED_BY_USER_AUTHORIZATION`, `USER_AUTHORIZED_EARLY`). A neutral line such as
-`Review-Rounds: 3` on a converged run is not blocked.
+The test is the **value**, not the presence of a marker. Writing either `Review-Assurance:
+REDUCED_BY_USER_AUTHORIZATION` or `Review-Close-Reason: USER_AUTHORIZED_EARLY` claims reduced
+assurance. Once claimed — or once the audit closed early — record all four markers
+(`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`, `Residual-Findings`) with values
+matching the audit record. If the loop converged normally, do not write those two values. A neutral
+line such as `Review-Rounds: 3` on a converged run is not blocked. The `(configured max: <max>)`
+part of `Review-Rounds` must match the audit too; a project with no ceiling configured writes
+`unbounded`, the same word the audit records.
 
 If the markers are written correctly but still report `found 0`, check whether they ended up inside
 a fenced code block — lines inside a fence are not counted.
+
+## An early completion is refused with `unresolved acceptance`
+
+The selected Phase 04 still carries an acceptance `FAIL`, or a required `NOT TESTED` with no active
+exact waiver. Early completion accepts residual review findings, not unverified requirements, so
+this state does not pass on a user confirmation either. Fill the Phase 04 evidence with `PASS`, or
+on an L3 cycle grant an explicit waiver for that ID with `sage acceptance-waiver grant`, then run
+the close again. The judgment uses the same policy as the Phase 06 report gate, so letting it
+through here would only move the block to 06 for the same reason.
 
 ## `sage cycle clear` is blocked by an active Fast run
 

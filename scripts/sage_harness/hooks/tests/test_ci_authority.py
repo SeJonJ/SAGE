@@ -205,6 +205,218 @@ class PureAuthorityTests(unittest.TestCase):
                       "05": request["phase_docs"]["05"][0]}, STEM)
         self.assertEqual(reasons, [])
 
+    def _complete_converted_run(self, *, review_snapshot, phase_docs, run_id="fc-cc01",
+                                loop_run_id="rl-cc01", open_snapshot=None,
+                                current_phase="04"):
+        """전환 run 한 건의 온전한 Fast·Loop 감사 원문 — convert→review→close 를 다 걷는다."""
+        import hashlib as _hashlib  # noqa: PLC0415
+        import tempfile  # noqa: PLC0415
+        from pathlib import Path as _Path  # noqa: PLC0415
+
+        ci_authority._trusted_gate_modules()
+        import fast_cycle_audit as fca  # noqa: PLC0415
+        import loop_audit as la  # noqa: PLC0415
+
+        lenses = ["correctness", "error_handling"]
+        plan_hash = _hashlib.sha256(
+            phase_docs["00"][0]["content"].encode("utf-8")).hexdigest()
+        receipts_hash = _hashlib.sha256(json.dumps(
+            [{"iteration": 1, "lenses": lenses}],
+            ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        with tempfile.TemporaryDirectory() as root:
+            _Path(root, ".sage").mkdir()
+            fca.convert_fast(root, cycle_stem=STEM, current_phase=current_phase, actual_risk="L3",
+                             fast_review_level="L2", reason="긴급", confirmed_by="sejon",
+                             minimum_rounds=1, lenses=lenses,
+                             source_phases=(review_snapshot if open_snapshot is None
+                                            else open_snapshot),
+                             run_id=run_id)
+            la.open_loop(root, "L3", run_id=loop_run_id, cycle_stem=STEM, lenses=lenses)
+            la.record_round(root, loop_run_id, 1, 0, 0, 0, lens_receipts=lenses,
+                            survived_by_severity={"P0": 0, "P1": 0, "P2": 0, "P3": 0})
+            la.close_loop(root, loop_run_id, "APPROVED", "CONVERGED", 1)
+            fca.record_review(root, run_id, loop_run_id=loop_run_id, actual_risk="L3", rounds=1,
+                              lens_receipts_hash=receipts_hash,
+                              plan_hash_before_review=plan_hash, result="APPROVED",
+                              source_phases_review=review_snapshot)
+            fca.close_fast(root, run_id, loop_run_id=loop_run_id, actual_risk="L3",
+                           plan_hash_final=plan_hash,
+                           report_path=f"plan_docs/06-report/{STEM}.md")
+            return (_Path(root, ".sage", "fast_cycle.jsonl").read_text(encoding="utf-8"),
+                    _Path(root, ".sage", "loop_audit.jsonl").read_text(encoding="utf-8"))
+
+    def test_a_converted_run_binds_its_reviewed_phase_documents(self):
+        """전환 run 의 계획·설계·구현 기록은 Phase 00 밖에 있다.
+
+        이 층은 00 의 `plan_hash` 만 대조했으므로, 리뷰 뒤 03 을 갈아끼워도 증거가 그대로
+        통과했다 — fresh Fast 는 composite 문서 하나라 그 자리가 아예 없었고, 전환 run 이
+        생기면서 열린 구멍이다. 로컬 close 는 같은 대조를 하지만 이 층은 그 로컬 훅이
+        변조됐을 때를 위해 존재한다.
+        """
+        import hashlib as _hashlib  # noqa: PLC0415
+
+        request = _request()
+        docs = request["phase_docs"]
+        snapshot = {}
+        for phase in ("00", "01", "02", "03", "04"):
+            document = docs[phase][0]
+            payload = document["content"].encode("utf-8")
+            snapshot[phase] = {
+                "path": document["path"],
+                "sha256": "sha256:" + _hashlib.sha256(payload).hexdigest(),
+                "size": len(payload)}
+        fast_text, loop_text = self._complete_converted_run(
+            review_snapshot=snapshot, phase_docs=docs)
+        request["fast_cycle_audit"] = fast_text
+        request["loop_audit"] = loop_text
+        review = dict(docs["05"][0])
+        review["content"] += ("Fast-Run: fc-cc01\nLoop-Run: rl-cc01\n")
+        selected = {phase: docs[phase][0] for phase in ("00", "01", "02", "03", "04")}
+        selected["05"] = review
+
+        self.assertEqual(ci_authority._fast_evidence_reasons(request, selected, STEM), [])
+
+        drifted = dict(docs["03"][0])
+        drifted["content"] += "\n리뷰가 보지 못한 한 줄.\n"
+        reasons = ci_authority._fast_evidence_reasons(
+            request, {**selected, "03": drifted}, STEM)
+        self.assertTrue(any("changed after the converted Fast review" in reason
+                            for reason in reasons), reasons)
+
+        size_only = copy.deepcopy(snapshot)
+        size_only["03"]["size"] += 999
+        reasons = ci_authority._converted_snapshot_reasons(
+            {"current_phase": "04", "source_phases_open": snapshot},
+            {"source_phases_review": size_only}, selected)
+        self.assertTrue(any("changed after the converted Fast review" in reason
+                            for reason in reasons), reasons)
+
+    def test_a_converted_snapshot_cannot_shrink_its_own_scope(self):
+        """대조 범위를 스냅샷 자신이 정하게 두면 검사를 지우는 것이 곧 통과하는 방법이 된다.
+
+        있는 키만 순회하던 판정에서는 `source_phases_review` 에서 01~04 를 지우고 00 만 남기면
+        01~04 는 아무것도 대조되지 않은 채 통과했다 — 리뷰 뒤 03 을 갈아끼우는 것과 같은 결과를
+        훨씬 싸게 얻는다. 기대 집합은 opener 의 `current_phase` 가 정한다.
+        """
+        import hashlib as _hashlib  # noqa: PLC0415
+
+        request = _request()
+        docs = request["phase_docs"]
+        snapshot = {}
+        for phase in ("00", "01", "02", "03", "04"):
+            document = docs[phase][0]
+            payload = document["content"].encode("utf-8")
+            snapshot[phase] = {
+                "path": document["path"],
+                "sha256": "sha256:" + _hashlib.sha256(payload).hexdigest(),
+                "size": len(payload)}
+        selected = {phase: docs[phase][0] for phase in ("00", "01", "02", "03", "04")}
+        review = dict(docs["05"][0])
+        review["content"] += "Fast-Run: fc-cc01\nLoop-Run: rl-cc01\n"
+        selected["05"] = review
+
+        for label, review_snapshot, open_snapshot in (
+                ("리뷰 스냅샷만 축소", {"00": snapshot["00"]}, snapshot),
+                ("opener 스냅샷만 축소", snapshot, {"00": snapshot["00"]}),
+                ("양쪽 다 축소", {"00": snapshot["00"]}, {"00": snapshot["00"]})):
+            with self.subTest(label):
+                reasons = ci_authority._converted_snapshot_reasons(
+                    {"current_phase": "04", "source_phases_open": open_snapshot},
+                    {"source_phases_review": review_snapshot}, selected)
+                self.assertTrue(
+                    any("does not cover the recorded source phases" in reason
+                        for reason in reasons), (label, reasons))
+
+    def test_a_phase00_conversion_still_binds_every_document_reviewed_later(self):
+        """opener는 전환 당시 00만 증언해도 review는 최종 00~04를 모두 증언해야 한다."""
+        import hashlib as _hashlib  # noqa: PLC0415
+
+        request = _request()
+        docs = request["phase_docs"]
+        snapshot = {}
+        for phase in ("00", "01", "02", "03", "04"):
+            document = docs[phase][0]
+            payload = document["content"].encode("utf-8")
+            snapshot[phase] = {
+                "path": document["path"],
+                "sha256": "sha256:" + _hashlib.sha256(payload).hexdigest(),
+                "size": len(payload),
+            }
+        fast_text, loop_text = self._complete_converted_run(
+            review_snapshot=snapshot, open_snapshot={"00": snapshot["00"]},
+            phase_docs=docs, current_phase="00")
+        review = dict(docs["05"][0])
+        review["content"] += "Fast-Run: fc-cc01\nLoop-Run: rl-cc01\n"
+        selected = {phase: docs[phase][0] for phase in ("00", "01", "02", "03", "04")}
+        selected["05"] = review
+        reasons = ci_authority._fast_evidence_reasons(
+            {**request, "fast_cycle_audit": fast_text, "loop_audit": loop_text},
+            selected, STEM)
+        self.assertEqual(reasons, [])
+
+        drifted = dict(docs["03"][0])
+        drifted["content"] += "\n리뷰 뒤 변경\n"
+        reasons = ci_authority._fast_evidence_reasons(
+            {**request, "fast_cycle_audit": fast_text, "loop_audit": loop_text},
+            {**selected, "03": drifted}, STEM)
+        self.assertTrue(any("changed after the converted Fast review" in reason
+                            for reason in reasons), reasons)
+
+    def test_an_opener_with_no_readable_current_phase_is_refused_not_crashed(self):
+        """기대 집합의 근거가 없으면 판정이 불가능하다 — 진단으로 막지, 예외로 죽지 않는다.
+
+        `current_phase` 가 손질된 opener 에서 그대로 `index()` 를 부르면 authority 전체가
+        `ValueError` 로 죽는다. 결과는 차단이지만 무엇이 문제인지 읽을 수 없고, 그 상태는
+        "권위가 고장났다" 와 구분되지 않는다.
+        """
+        for current in (None, "05", "", 4):
+            with self.subTest(current=current):
+                reasons = ci_authority._converted_snapshot_reasons(
+                    {"current_phase": current, "source_phases_open": {}},
+                    {"source_phases_review": {"00": {}}}, {})
+                self.assertTrue(any("no usable current_phase" in reason for reason in reasons),
+                                reasons)
+
+    def _loop_audit_text(self, *, reason="CONVERGED", rounds=2, receipt=None, run_id="rl-aa01",
+                         result="APPROVED", cycle_stem=STEM):
+        """실제 라이브러리가 쓴 Loop 감사 원문 — 권위는 커밋 트리의 이 텍스트만 본다."""
+        import tempfile  # noqa: PLC0415
+        from pathlib import Path as _Path  # noqa: PLC0415
+
+        ci_authority._trusted_gate_modules()
+        import loop_audit as la  # noqa: PLC0415
+
+        receipt = receipt or {"P0": 0, "P1": 0, "P2": 2, "P3": 0}
+        with tempfile.TemporaryDirectory() as root:
+            _Path(root, ".sage").mkdir()
+            la.open_loop(root, "L3", run_id=run_id, cycle_stem=cycle_stem,
+                         lenses=["correctness", "error_handling"])
+            for iteration in range(1, rounds + 1):
+                la.record_round(root, run_id, iteration, sum(receipt.values()),
+                                sum(receipt.values()), 0, survived_by_severity=receipt)
+            authorization = None
+            if reason == la.EARLY_CLOSE_REASON:
+                authorization = {
+                    "authorization_reason": "일정 마감", "confirmed_by": "sejon",
+                    "completed_rounds": rounds, "configured_max_iterations": 3,
+                    "survived_by_severity": receipt, "actual_risk": "L3", "mode": "STANDARD",
+                }
+            la.close_loop(root, run_id, result, reason, rounds,
+                          authorization=authorization)
+            return _Path(root, ".sage", "loop_audit.jsonl").read_text(encoding="utf-8")
+
+    _EARLY_MARKERS = ("Review-Assurance: REDUCED_BY_USER_AUTHORIZATION\n"
+                      "Review-Close-Reason: USER_AUTHORIZED_EARLY\n"
+                      "Review-Rounds: 2 (configured max: 3)\n"
+                      "Residual-Findings: P0=0, P1=0, P2=2, P3=0\n")
+
+    def _assurance(self, review_body, loop_text):
+        request = _request()
+        request["loop_audit"] = loop_text
+        core, _binding, _risk = ci_authority._trusted_gate_modules()
+        selected = {"05": {"path": "plan_docs/05-expert-review/x.md", "content": review_body}}
+        return ci_authority._review_assurance(request, selected, core)
+
     def test_unread_phase_05_is_unknown_not_standard(self):
         """05 를 못 읽은 상태는 "표준 보증" 이 아니다. 미확인을 STANDARD 로 적으면 조기 종료
         승인이 서버 권위에서 일반 승인과 같은 무게로 남는다.
@@ -214,32 +426,123 @@ class PureAuthorityTests(unittest.TestCase):
         core, _binding, _risk = ci_authority._trusted_gate_modules()
         for selected in ({}, {"05": {}}, {"05": {"content": "   \n"}}):
             with self.subTest(selected=selected):
-                self.assertEqual(ci_authority._review_assurance(selected, core), ("UNKNOWN", []))
+                self.assertEqual(
+                    ci_authority._review_assurance(_request(), selected, core), ("UNKNOWN", []))
 
     def test_the_two_assurance_levels_are_told_apart(self):
         """조기 완료 승인과 일반 승인은 같은 `APPROVED` 토큰을 쓴다.
 
         권위가 둘을 구분하지 못하면 보증이 낮은 승인이 표준 승인과 같은 무게로 통과한다.
-        표기가 하나도 없으면 STANDARD, 넷이 올바르게 있으면 REDUCED 다.
+        판정 기준은 문서의 자칭이 아니라 감사가 적은 종료 사유다.
         """
+        converged = self._loop_audit_text(reason="CONVERGED")
+        early = self._loop_audit_text(reason="USER_AUTHORIZED_EARLY")
         core, _binding, _risk = ci_authority._trusted_gate_modules()
+        head = "Loop-Run: rl-aa01\nFinal Status: APPROVED\n"
         for neutral in ("", "Review-Rounds: 3\n",
                         "Residual-Findings: P0=0, P1=0, P2=0, P3=0\n",
                         "Review-Assurance: STANDARD\nReview-Close-Reason: CONVERGED\n"):
             with self.subTest(neutral=neutral):
-                normal = {"05": {"content": f"Final Status: APPROVED\n{neutral}"}}
-                self.assertEqual(ci_authority._review_assurance(normal, core), ("STANDARD", []))
-        early = {"05": {"content": (
-            "Final Status: APPROVED\n"
-            "Review-Assurance: REDUCED_BY_USER_AUTHORIZATION\n"
-            "Review-Close-Reason: USER_AUTHORIZED_EARLY\n"
-            "Review-Rounds: 2 (configured max: 3)\n"
-            "Residual-Findings: P0=0, P1=0, P2=2, P3=0\n")}}
-        self.assertEqual(ci_authority._review_assurance(early, core),
+                self.assertEqual(self._assurance(head + neutral, converged), ("STANDARD", []))
+        self.assertEqual(self._assurance(head + self._EARLY_MARKERS, early),
                          (core.REVIEW_ASSURANCE_REDUCED, []))
-        partial = {"05": {"content": ("Final Status: APPROVED\n"
-                                      "Review-Assurance: REDUCED_BY_USER_AUTHORIZATION\n")}}
-        level, reasons = ci_authority._review_assurance(partial, core)
+        level, reasons = self._assurance(
+            head + "Review-Assurance: REDUCED_BY_USER_AUTHORIZATION\n", early)
+        self.assertEqual(level, "UNKNOWN")
+        self.assertNotEqual(reasons, [])
+
+    def test_an_early_close_cannot_pass_as_standard_by_saying_nothing(self):
+        """이 층에서 위험한 방향은 자칭이 아니라 **침묵**이다.
+
+        감사가 `USER_AUTHORIZED_EARLY` 로 닫혔는데 05 가 네 표기를 통째로 생략하면, 자칭이 없으니
+        문서만 읽는 판정은 STANDARD 를 준다 — 보증이 낮은 승인이 표준 승인과 같은 무게로 남는다.
+        로컬 게이트는 같은 상황을 감사와 대조해 막는데, 변조된 로컬 훅을 전제로 존재하는 이 층에만
+        그 축이 없었다.
+        """
+        early = self._loop_audit_text(reason="USER_AUTHORIZED_EARLY")
+        level, reasons = self._assurance("Loop-Run: rl-aa01\nFinal Status: APPROVED\n", early)
+        self.assertNotEqual(level, "STANDARD")
+        self.assertNotEqual(reasons, [])
+
+    def test_a_document_claim_must_match_the_audit_in_both_directions(self):
+        """문서와 감사가 어긋나면 어느 쪽도 신뢰할 수 없다 — 라운드 수와 잔여도 같은 축이다."""
+        converged = self._loop_audit_text(reason="CONVERGED")
+        early = self._loop_audit_text(reason="USER_AUTHORIZED_EARLY")
+        head = "Loop-Run: rl-aa01\nFinal Status: APPROVED\n"
+
+        level, reasons = self._assurance(head + self._EARLY_MARKERS, converged)
+        self.assertEqual(level, "UNKNOWN")
+        self.assertNotEqual(reasons, [])
+
+        drifted = self._EARLY_MARKERS.replace("Review-Rounds: 2", "Review-Rounds: 9")
+        level, reasons = self._assurance(head + drifted, early)
+        self.assertEqual(level, "UNKNOWN")
+        self.assertNotEqual(reasons, [])
+
+        residual = self._EARLY_MARKERS.replace("P2=2", "P2=0")
+        level, reasons = self._assurance(head + residual, early)
+        self.assertEqual(level, "UNKNOWN")
+        self.assertNotEqual(reasons, [])
+
+    def test_an_uncorroborated_claim_is_refused_and_an_unbindable_silence_is_not_standard(self):
+        """감사에 결속하지 못하는 두 갈래는 서로 다르게 다뤄야 한다.
+
+        자칭이 있으면 뒷받침 없는 주장이니 막는다. 자칭이 없으면 차단 폭을 넓히지 않되 값은
+        `UNKNOWN` 이다 — 확인하지 못한 것을 STANDARD 로 적는 것이 곧 조용한 통과다.
+        """
+        head = "Loop-Run: rl-aa01\nFinal Status: APPROVED\n"
+        level, reasons = self._assurance(head + self._EARLY_MARKERS, "")
+        self.assertEqual(level, "UNKNOWN")
+        self.assertNotEqual(reasons, [])
+
+        self.assertEqual(self._assurance(head, ""), ("UNKNOWN", []))
+        self.assertEqual(self._assurance("Final Status: APPROVED\n",
+                                         self._loop_audit_text()), ("UNKNOWN", []))
+
+    def test_l3_early_completion_opt_in_cannot_pass_without_loop_evidence(self):
+        """기능을 명시 활성화한 L3는 증거를 지워 일반 승인처럼 보이게 할 수 없다."""
+        for enabled_side in ("base_profile", "head_profile"):
+            with self.subTest(enabled_side=enabled_side):
+                request = _request()
+                request[enabled_side]["pdca"] = {
+                    "review_loop": {"early_completion": {"enabled": True}}}
+                request["loop_audit"] = ""
+                result = ci_authority.analyze(request, classifier=_classifier)
+                self.assertEqual(result["status"], "BLOCK", result)
+                self.assertEqual(result["review_assurance"], "UNKNOWN")
+                self.assertTrue(any("review assurance" in reason.lower()
+                                    for reason in result["reasons"]), result)
+
+        # 기본 false인 기존 프로젝트에는 없던 감사 요구를 만들지 않는다.
+        unchanged = ci_authority.analyze(_request(), classifier=_classifier)
+        self.assertEqual(unchanged["status"], "PASS", unchanged)
+
+    def test_a_blocked_or_other_cycle_loop_cannot_be_standard_assurance(self):
+        head = "Loop-Run: rl-aa01\nFinal Status: APPROVED\n"
+        blocked_audit = self._loop_audit_text(result="BLOCKED", reason="BLOCKED_ARCH")
+        for label, audit in (
+                ("blocked", blocked_audit),
+                ("other cycle", self._loop_audit_text(cycle_stem="other-cycle"))):
+            with self.subTest(label=label):
+                level, reasons = self._assurance(head, audit)
+                self.assertEqual(level, "UNKNOWN")
+                self.assertNotEqual(reasons, [])
+
+        request = _request()
+        request["base_profile"]["pdca"] = {
+            "review_loop": {"early_completion": {"enabled": True}}}
+        request["phase_docs"]["05"][0]["content"] += "Loop-Run: rl-aa01\n"
+        request["loop_audit"] = blocked_audit
+        result = ci_authority.analyze(request, classifier=_classifier)
+        self.assertEqual(result["status"], "BLOCK", result)
+        self.assertEqual(result["review_assurance"], "UNKNOWN")
+
+    def test_a_tampered_loop_audit_cannot_justify_the_document(self):
+        """조작된 감사를 보증 수준의 근거로 쓰면, 감사를 고치는 것이 곧 문서를 정당화하는 통로다."""
+        early = self._loop_audit_text(reason="USER_AUTHORIZED_EARLY")
+        head = "Loop-Run: rl-aa01\nFinal Status: APPROVED\n"
+        tampered = early.replace('"iteration": 2', '"iteration": 7')
+        level, reasons = self._assurance(head + self._EARLY_MARKERS, tampered)
         self.assertEqual(level, "UNKNOWN")
         self.assertNotEqual(reasons, [])
 
@@ -348,6 +651,7 @@ class PureAuthorityTests(unittest.TestCase):
     def test_risk_declarations_share_gate_core_normalization_and_unknown_floor(self):
         cases = (
             ("**Risk Level:** L3", "L3"),
+            # plain-text near-miss가 있으면 낮은 선언을 authoritative tier로 채택하지 않는다.
             ("Residual risk: acceptable", "L3"),
             ("Risk Level 결정: L3", "L3"),
             ("Risk Level: L0", "L3"),

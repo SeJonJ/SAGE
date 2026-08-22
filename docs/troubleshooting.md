@@ -197,9 +197,12 @@ Phase 00에서 전환했다면 01~03을 그대로 작성해야 합니다. 전환
 영수증 합계 오류는 `--survived-by-severity`의 합이 그 라운드의 `--survived`와 다르다는 뜻입니다 —
 `P0=0`만 적어 차단 finding을 숨기는 것을 막는 검사라 우회 경로가 없습니다.
 
-승인으로도 통과하지 않는 것들이 있습니다: 라운드 0건, `severity_block` 심각도의 미해결 finding,
-architecture escalation, 검증 실패, Done Criteria 미해결, acceptance `FAIL`, 감사 손상.
+승인으로도 엔진 차단을 통과하지 않는 것들이 있습니다: 라운드 0건, `severity_block` 심각도의 미해결
+finding, architecture escalation, Done Criteria 미해결, acceptance `FAIL`, 감사 손상.
 이 중 하나로 막혔다면 그 원인을 실제로 해소해야 합니다.
+
+필수 build/test/lint 실패도 조기 완료해서는 안 되지만, 그 결과는 Phase 03 산문에만 있어 엔진이 직접
+읽지 못합니다. 이 항목은 에이전트가 사용자에게 그대로 알리고 close를 진행하지 않아야 하는 의무입니다.
 
 ## Phase 05가 "보증 저하 표기" 때문에 막힘
 
@@ -208,13 +211,24 @@ architecture escalation, 검증 실패, Done Criteria 미해결, acceptance `FAI
 Review-Assurance 선언은 fence 밖에 정확히 1개여야 함(found 0)
 ```
 
-네 표기(`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`, `Residual-Findings`)는 **넷 다
-있거나 넷 다 없어야** 합니다. 조기 종료로 닫았다면 넷을 모두 적고, 값이 감사 레코드와 일치해야
-합니다. 정상 수렴한 run이라면 보증 저하를 자칭하는 값(`REDUCED_BY_USER_AUTHORIZATION`,
-`USER_AUTHORIZED_EARLY`)을 적지 않습니다. `Review-Rounds: 3` 같은 중립 표기만 있는 것은 막지 않습니다.
+기준은 표기의 존재가 아니라 **값**입니다. `Review-Assurance: REDUCED_BY_USER_AUTHORIZATION` 또는
+`Review-Close-Reason: USER_AUTHORIZED_EARLY` 중 하나라도 적으면 보증 저하를 자칭한 것입니다. 자칭
+했거나 감사가 조기 종료로 닫혔다면 네 표기(`Review-Assurance`, `Review-Close-Reason`,
+`Review-Rounds`, `Residual-Findings`)를 모두 적고 값이 감사 레코드와 일치해야 합니다. 정상 수렴한
+run이라면 그 두 값을 적지 않습니다. `Review-Rounds: 3` 같은 중립 표기만 있는 것은 막지 않습니다.
+`Review-Rounds`의 `(configured max: <max>)`도 감사와 같아야 합니다. 상한이 없는 프로젝트는 감사와
+같은 낱말인 `unbounded`를 적습니다.
 
 표기를 올바르게 적었는데 `found 0`으로 막힌다면 fence 안에 들어갔는지 확인하십시오 — 코드블록 안의
 줄은 세지 않습니다.
+
+## 조기 완료가 `unresolved acceptance`로 거부됨
+
+선택된 Phase 04에 acceptance `FAIL`이나 exact waiver 없는 필수 `NOT TESTED`가 남아 있습니다. 조기
+완료는 리뷰가 남긴 finding을 인수하는 절차이지 미검증 요구사항을 넘기는 절차가 아니라, 이 상태는
+사용자 확인으로도 통과하지 않습니다. 04 증거를 `PASS`로 채우거나, L3에서 `sage acceptance-waiver
+grant`로 해당 ID를 명시 승인한 뒤 다시 실행하십시오. 판정은 Phase 06 리포트 게이트와 같은 정책을
+쓰므로, 여기서 통과시켜도 06에서 같은 이유로 막힙니다.
 
 ## `sage cycle clear`가 활성 Fast run 때문에 막힘
 

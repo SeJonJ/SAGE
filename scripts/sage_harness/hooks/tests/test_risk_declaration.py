@@ -204,6 +204,25 @@ class TestErrorKinds(unittest.TestCase):
         self.assertIsNone(both.tier)
         self.assertEqual(rd.parse(header("Risk Level: L1 and Risk Level: L3")).status, "malformed")
 
+    def test_a_structural_near_miss_cannot_hide_behind_a_later_example(self):
+        """선언 위치의 구조 표시는 값 철자와 무관하게 선언 의도다.
+
+        뒤쪽의 정확한 label만 훔쳐 읽으면 `L 3`나 `high`처럼 tier token이 아닌 손상값이
+        산문으로 사라지고, 다음 L1 선언이 실제 위험도로 채택된다.
+        """
+        for broken in ("Risk Level [custom]: high; example `Risk Level: L1`",
+                       "Risk Level [custom]: L 3; example `Risk Level: L1`"):
+            with self.subTest(broken=broken):
+                only = rd.parse(header(broken))
+                self.assertEqual(only.status, "malformed")
+                lowered = rd.parse(header(broken, "Risk Level: L1"))
+                self.assertEqual(lowered.status, "malformed")
+                self.assertIsNone(lowered.tier)
+
+    def test_guidance_that_starts_with_the_label_is_still_prose(self):
+        guidance = "Risk Level guidance: use `Risk Level: L1`"
+        self.assertEqual(rd.parse(header(guidance)).status, "missing")
+
     def test_excerpt_is_bounded_and_single_line(self):
         d = rd.parse(header("Risk Level: " + "L9" * 200))
         self.assertEqual(d.status, "malformed")
@@ -430,6 +449,112 @@ class TestConsumerParity(unittest.TestCase):
         self.assertEqual(authority, "L0")
         self.assertIsNone(fast_reading)
 
+
+
+class TestTheDeclarationMustStartItsLine(unittest.TestCase):
+    """영역을 헤더로 좁힌 뒤에도 **문장 중간의 언급**은 그대로 선언으로 읽혔다.
+
+    헤더에 그런 줄만 있으면 산문이 곧 tier 가 된다. 선언 위치가 아닌 산문은 후보에서 제외하되,
+    선언 위치에서 문법만 깨진 near-miss는 계속 `malformed`로 막는다.
+    """
+
+    def test_a_mid_sentence_mention_is_never_a_tier(self):
+        for line in ("Example: `Risk Level: L1`",
+                     "Do not use Risk Level: L1 here.",
+                     "The default Risk Level: L1 applies unless stated."):
+            with self.subTest(line=line):
+                d = rd.parse(header(line))
+                self.assertNotEqual(d.status, "valid", line)
+                self.assertIsNone(d.tier, line)
+
+    def test_an_inline_example_is_ignored_but_plain_near_miss_is_not(self):
+        self.assertEqual(rd.parse(header("Example: `Risk Level: L1`")).status, "missing")
+        self.assertEqual(rd.parse(header("Residual risk: acceptable")).status, "malformed")
+
+    def test_a_prefixed_high_tier_cannot_be_discarded_beside_a_low_declaration(self):
+        for prefixed in ("Final Risk Level: L3", "실제 Risk Level: L3"):
+            with self.subTest(prefixed=prefixed):
+                damaged = rd.parse(header("Risk Level: L1", prefixed))
+                self.assertEqual(damaged.status, "malformed")
+                self.assertIsNone(damaged.tier)
+                found, error = rd.scan(header("Risk Level: L1", prefixed))
+                self.assertEqual(found, [(3, "L1")])
+                self.assertIsNotNone(error)
+
+    def test_an_example_cannot_outvote_the_real_declaration(self):
+        """예시가 선언으로 세어지면 정상 문서가 중복으로 막히거나 tier 가 갈린다."""
+        found, error = rd.scan(header("Risk Level: L2", "Example: `Risk Level: L1`"))
+        self.assertEqual([tier for _line, tier in found], ["L2"])
+        self.assertIsNone(error)
+
+    def test_a_declaration_position_near_miss_still_fails_closed(self):
+        self.assertEqual(rd.parse(header("Risk Level [custom]: L3")).status, "malformed")
+
+    def test_a_near_miss_cannot_steal_a_tier_from_a_later_inline_example(self):
+        """값 탐색은 첫 label 뒤에 결속된다.
+
+        줄 시작의 손상된 L3 선언을 확인한 뒤 줄 전체를 다시 검색하면, 뒤쪽 예시의 L1을 그
+        선언의 값으로 오인해 위험도를 낮춘다.
+        """
+        damaged = rd.parse(header(
+            "Risk Level [custom]: L3; example `Risk Level: L1`"))
+        self.assertEqual(damaged.status, "malformed")
+        self.assertIsNone(damaged.tier)
+
+    def test_guidance_that_starts_with_the_label_is_still_prose(self):
+        guidance = "Risk Level guidance: use `Risk Level: L1`"
+        self.assertEqual(rd.parse(header(guidance)).status, "missing")
+        declared = rd.parse(header("Risk Level: L3", guidance))
+        self.assertEqual((declared.status, declared.tier), ("valid", "L3"))
+
+    def test_the_authoring_forms_the_hint_shows_still_read(self):
+        """안내 문구는 `Risk Level: L1` 을 백틱째 보여준다 — 그대로 적은 줄이 안 읽히면
+        안내가 스스로를 배신한다."""
+        for line, tier in (("Risk Level: L2", "L2"), ("- Risk Level: L2", "L2"),
+                           ("1. Risk Level: L1", "L1"), ("**Risk Level:** L3", "L3"),
+                           ("`Risk Level: L1`", "L1"), ("위험도: L2", "L2"),
+                           ("Risk Level: L2 — 전환 사유", "L2")):
+            with self.subTest(line=line):
+                d = rd.parse(header(line))
+                self.assertEqual((d.status, d.tier), ("valid", tier), line)
+
+
+class TestHookRuntimeFailsClosedOnADamagedDeclaration(unittest.TestCase):
+    """06 검증 깊이를 정하는 층이 손상 선언을 조용히 건너뛰면 tier 가 낮게 읽힌다.
+
+    `_authoritative_cycle_tier` 는 도크스트링으로 "부재·모호면 None" 을 선언해 놓고 실제로는
+    옆의 정상 선언을 채택했다 — L1 정상 + L3 손상이 L1 로 확정되고 심층 검증이 꺼졌다.
+    """
+
+    def _hook_runtime(self):
+        import importlib  # noqa: PLC0415
+
+        runtime = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(rd.__file__))), "hooks", "runtime")
+        if runtime not in sys.path:
+            sys.path.insert(0, runtime)
+        return importlib.import_module("hook_runtime")
+
+    def test_a_damaged_line_beside_a_valid_one_reads_as_no_tier(self):
+        hook_runtime = self._hook_runtime()
+        damaged = header("Risk Level [custom]: L3", "Risk Level: L1")
+        self.assertEqual(rd.parse(damaged).status, "malformed")
+        self.assertIsNone(hook_runtime._doc_risk_tier(damaged))
+
+    def test_a_clean_document_still_reads_its_highest_tier(self):
+        """fail-closed 를 이유로 정상 문서까지 None 으로 떨어뜨리면 게이트가 통째로 보수화된다."""
+        hook_runtime = self._hook_runtime()
+        self.assertEqual(hook_runtime._doc_risk_tier(header("Risk Level: L1")), "L1")
+        self.assertEqual(
+            hook_runtime._doc_risk_tier(header("Risk Level: L1", "Risk Level: L3")), "L3")
+
+    def test_the_gate_and_the_hook_runtime_agree_on_a_damaged_document(self):
+        """같은 문서에 두 층이 다른 답을 내면 어느 쪽이 정본인지 사후에 알 수 없다."""
+        hook_runtime = self._hook_runtime()
+        damaged = header("Risk Level [custom]: L3", "Risk Level: L1")
+        _found, error = rd.scan(damaged)
+        self.assertIsNotNone(error)
+        self.assertIsNone(hook_runtime._doc_risk_tier(damaged))
 
 
 if __name__ == "__main__":

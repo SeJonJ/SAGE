@@ -6,6 +6,8 @@
 확인으로도 통과하지 못한다. 그래서 이 파일의 대부분은 "닫히면 안 되는 상태" 목록이다.
 """
 
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -159,6 +161,21 @@ class TestEarlyCloseCLI(unittest.TestCase):
         self.assertEqual(close["confirmed_by"], "sejon")
         self.assertEqual(close["actual_risk"], "L3")
         self.assertEqual(close["mode"], "STANDARD")
+
+    def test_an_unset_ceiling_is_recorded_as_unbounded_not_as_minus_one(self):
+        """상한이 설정되지 않은 프로젝트에서 감사에 `-1` 이 남으면, 그 값은 "상한 없음" 이
+        아니라 "라운드 -1 회" 로 읽힌다 — 대시보드가 `1/-1 rounds` 를 냈다. 레코드 필드는
+        None 을 받을 수 없으므로(조기 종료 계약이 누락을 거부한다) 값 자체가 뜻을 말해야 한다.
+        """
+        self.profile["pdca"]["review_loop"].pop("max_iterations")
+        self._write_profile()
+        self._open()
+        self.assertEqual(self._round().returncode, 0)
+        result = self._close()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        close = self._closes()[-1]
+        self.assertEqual(close["configured_max_iterations"], la.UNBOUNDED_ITERATIONS)
+        self.assertIn(f"ceiling: {la.UNBOUNDED_ITERATIONS}", result.stderr)
 
     def test_every_refusal_writes_no_close(self):
         self._open()
@@ -452,6 +469,39 @@ class TestReducedAssuranceBinding(unittest.TestCase):
                 self.assertNotEqual(
                     self.core._reduced_assurance_issues(doc, self._early_run()), [], label)
 
+    def test_the_declared_ceiling_must_match_the_audit(self):
+        """라운드 수만 대조하면 "몇 번 중 몇 번" 의 분모가 검증에서 빠진다.
+
+        `2 (configured max: 3)` 를 `2 (configured max: 999)` 로 부풀리면 아직 한참 남은 리뷰를
+        접은 것처럼, `2 (configured max: 2)` 로 낮추면 상한까지 다 돈 정상 승인처럼 읽힌다.
+        네 표기를 강제하는 이유가 그 판별인데 분모만 자유롭게 적을 수 있었다.
+        """
+        for wrong in ("2 (configured max: 999)", "2 (configured max: 2)",
+                      "2 (configured max: unbounded)", "2",
+                      "2 (configured max: 3) (configured max: 999)"):
+            with self.subTest(wrong=wrong):
+                issues = self.core._reduced_assurance_issues(
+                    self._doc(**{"Review-Rounds": wrong}), self._early_run())
+                self.assertNotEqual(issues, [], wrong)
+
+    def test_an_unset_ceiling_is_declared_with_the_same_word_the_audit_uses(self):
+        """상한 없는 프로젝트의 분모는 숫자가 아니다. 화면·감사·문서가 같은 낱말을 써야
+        `unbounded` 를 임의의 숫자로 바꿔 적는 자리가 생기지 않는다."""
+        run = self._early_run(configured_max_iterations="unbounded")
+        self.assertEqual(
+            self.core._reduced_assurance_issues(
+                self._doc(**{"Review-Rounds": "2 (configured max: unbounded)"}), run), [])
+        self.assertNotEqual(
+            self.core._reduced_assurance_issues(
+                self._doc(**{"Review-Rounds": "2 (configured max: 3)"}), run), [])
+
+    def test_a_record_without_a_ceiling_is_not_turned_into_a_ceiling_complaint(self):
+        """감사에 상한이 없으면 대조 기준이 없다. 그때 상한 표기를 요구하면 손상된 레코드 하나가
+        진단을 엉뚱한 이야기로 바꾼다 — 감사 손상은 무결성 검사가 말할 일이다."""
+        run = self._early_run(configured_max_iterations=None)
+        self.assertEqual(
+            self.core._reduced_assurance_issues(self._doc(**{"Review-Rounds": "2"}), run), [])
+
     def test_a_normal_close_may_carry_neutral_review_lines(self):
         """`Review-Rounds` 는 일반 리뷰 문서에도 자연스럽게 적힌다. 차단 근거는 표기의 존재가
         아니라 문서가 보증 저하를 **자칭**하는 것이다."""
@@ -556,7 +606,16 @@ class TestEarlyCloseAuditContract(unittest.TestCase):
         return auth
 
     def _close(self, auth):
+        """이 계약이 사는 상태를 그대로 세운다 — 라운드 없이 `iterations=2` 로 닫는 것은 애초에
+        CLI 가 막는 상태이고, 이제 라이브러리도 막는다. 영수증 계약만 보려고 불가능한 상태를
+        지름길로 쓰면, 그 지름길이 막히는 날 계약이 깨진 것처럼 보인다."""
         rid = la.open_loop(self.tmp, "L3", now=0)
+        receipt = auth.get("survived_by_severity")
+        if not isinstance(receipt, dict):
+            receipt = {"P0": 0, "P1": 0, "P2": 2, "P3": 0}
+        for iteration in (1, 2):
+            la.record_round(self.tmp, rid, iteration, 2, 2, 0, 0, 10, now=iteration,
+                            survived_by_severity=dict(receipt))
         return la.close_loop(self.tmp, rid, result="APPROVED", reason=la.EARLY_CLOSE_REASON,
                              iterations=2, now=5, authorization=auth)
 
@@ -654,6 +713,189 @@ class TestEarlyCloseOnTheDashboard(unittest.TestCase):
         _rid, md = self._dashboard(early=False)
         self.assertNotIn("USER_AUTHORIZED_EARLY", md)
         self.assertNotIn("P2=", md)
+
+    def test_an_unset_ceiling_never_renders_as_a_negative_round_count(self):
+        """상한 미설정을 `-1` 로 적으면 노트가 `1/-1 rounds` 를 낸다 — 읽는 사람에게 그건
+        "상한 없음" 이 아니라 "라운드 -1 회" 다. 옛 레코드의 `-1` 도 같은 단어로 렌더한다.
+        """
+        from sage.commands import review_loop as rl  # noqa: PLC0415
+
+        receipt = {"P0": 0, "P1": 0, "P2": 2, "P3": 0}
+        rid = la.open_loop(self.tmp, "L3", now=0, cycle_stem="demo")
+        la.record_round(self.tmp, rid, 1, 5, 2, 3, now=1, survived_by_severity=receipt)
+        la.close_loop(self.tmp, rid, "APPROVED", la.EARLY_CLOSE_REASON, 1, now=5,
+                      authorization={"authorization_reason": "창구 마감",
+                                     "confirmed_by": "sejon", "completed_rounds": 1,
+                                     "configured_max_iterations": -1,
+                                     "survived_by_severity": receipt,
+                                     "actual_risk": "L3", "mode": "STANDARD"})
+        md = rl._dashboard_md(la, self.tmp)
+        self.assertNotIn("/-1 rounds", md)
+        self.assertIn(f"1/{la.UNBOUNDED_ITERATIONS} rounds", md)
+
+    def test_a_fast_cycle_is_not_recorded_as_a_standard_close(self):
+        """`mode` 는 예전에 구조적으로 FAST 가 될 수 없었다.
+
+        Fast run 이 `loop_run_id` 를 적는 것은 `sage fast-cycle review` 이고 그건 Loop 가 닫힌
+        **뒤**에 실행된다. close 시점에 역방향으로 찾으면 어떤 Fast run 도 이 Loop 를 가리키지
+        않으므로, 조기 종료 감사가 예외 없이 STANDARD 로 남았다. 결속 축은 open 시점에 이미
+        양쪽에 있는 stem 이다.
+        """
+        sys.path.insert(0, os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))))), "scripts", "sage_harness", "hooks", "runtime"))
+        import fast_cycle_audit as fca  # noqa: PLC0415
+
+        from sage.commands import review_loop as rl  # noqa: PLC0415
+
+        rid = la.open_loop(self.tmp, "L3", now=0, cycle_stem="demo-fast")
+        self.assertEqual(rl._cycle_mode(la, self.tmp, rid), "STANDARD")
+
+        fast_id = fca.open_fast(self.tmp, cycle_stem="demo-fast", actual_risk="L3",
+                                fast_review_level="L2", reason="긴급", minimum_rounds=1,
+                                lenses=["correctness"], profile_hash="b" * 64,
+                                plan_hash_open="a" * 64)
+        self.assertEqual(rl._cycle_mode(la, self.tmp, rid), "FAST")
+        self.assertEqual(rl._fast_run_id(la, self.tmp, rid), fast_id)
+
+    def test_an_ambiguous_or_finished_fast_run_is_not_guessed_at(self):
+        """살아있는 후보가 정해지지 않으면 아무거나 고르지 않는다 — 틀린 run 을 가리키는
+        기록은 결속이 없는 것보다 나쁘다."""
+        sys.path.insert(0, os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))))), "scripts", "sage_harness", "hooks", "runtime"))
+        import fast_cycle_audit as fca  # noqa: PLC0415
+
+        from sage.commands import review_loop as rl  # noqa: PLC0415
+
+        rid = la.open_loop(self.tmp, "L3", now=0, cycle_stem="demo-fast")
+        other = fca.open_fast(self.tmp, cycle_stem="다른-사이클", actual_risk="L3",
+                              fast_review_level="L2", reason="긴급", minimum_rounds=1,
+                              lenses=["correctness"], profile_hash="b" * 64,
+                                plan_hash_open="a" * 64)
+        self.assertEqual(rl._fast_run_id(la, self.tmp, rid), None, other)
+
+        first = fca.open_fast(self.tmp, cycle_stem="demo-fast", actual_risk="L3",
+                              fast_review_level="L2", reason="긴급", minimum_rounds=1,
+                              lenses=["correctness"], profile_hash="b" * 64,
+                              plan_hash_open="a" * 64)
+        self.assertEqual(rl._fast_run_id(la, self.tmp, rid), first)
+        # 라이브러리는 stem 당 활성 run 을 하나로 강제한다. 후보가 둘인 상태는 수기 편집이나 옛
+        # 클라이언트가 남긴 감사에서만 나오므로, 그 모양을 직접 만들어 가드를 고정한다.
+        opener = next(record for record in fca._records(self.tmp)[0]
+                      if record.get("cycle_stem") == "demo-fast")
+        fca._append(self.tmp, dict(opener, run_id="fc-hand-edited"))
+        self.assertEqual(rl._fast_run_id(la, self.tmp, rid), None)
+
+    def test_the_screen_and_the_audit_use_the_same_word_for_no_ceiling(self):
+        """화면은 `unset`, 감사는 `-1` 이던 시절에는 같은 사실이 두 곳에서 다른 모양이었다."""
+        from sage.commands import review_loop as rl  # noqa: PLC0415
+
+        self.assertEqual(rl._UNBOUNDED_LABEL, la.UNBOUNDED_ITERATIONS)
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            rl._print_early_disclosure(
+                {"survived_by_severity": {"P0": 0, "P1": 0, "P2": 1, "P3": 0},
+                 "completed_rounds": 2}, None)
+        self.assertIn(f"ceiling: {la.UNBOUNDED_ITERATIONS}", stream.getvalue())
+
+
+class TestEarlyCloseAcceptance(TestEarlyCloseCLI):
+    """미검증 요구사항은 조기 완료가 인수하는 잔여 위험이 아니다.
+
+    조기 완료는 리뷰가 남긴 finding 을 사용자 권한으로 인수하는 절차다. 요구사항이 FAIL 이거나
+    승인 없이 `NOT TESTED` 인 것은 리뷰의 잔여가 아니라 검증되지 않은 기능이고, 그건 06 리포트
+    게이트가 어차피 막는다 — 다만 그때는 05 가 이미 조기 승인으로 닫힌 뒤라 감사에는 "축약된
+    리뷰로 승인" 만 남고 무엇이 미검증이었는지는 남지 않는다.
+    """
+
+    STEM = "demo"
+
+    def setUp(self):
+        super().setUp()
+        self.profile["pdca"]["phases"] += [
+            {"id": "01", "glob": "plan_docs/01-plan/**/*.md"},
+            {"id": "04", "glob": "plan_docs/04-analyze/**/*.md"},
+        ]
+        self.profile["verification"] = {"acceptance": {
+            "enabled": True, "require_for_risk": ["L2", "L3"],
+            "report_gate_by_risk": {"L2": "advisory", "L3": "enforce"},
+            "waiver": {"enabled": True},
+        }}
+        self._write_profile()
+        self._write_phase("01", "\n".join([
+            "## Acceptance Matrix",
+            "| ID | User Requirement | Required Evidence | Owner | Required? |",
+            "|---|---|---|---|---|",
+            "| A1 | 도시 검색 | test | qa | yes |",
+        ]))
+        # 물려받은 조기 완료 테스트들은 acceptance 를 다루지 않는다. 기본을 통과 상태로 두면
+        # 그 테스트들이 acceptance 가 켜진 프로젝트에서도 그대로 성립하는지까지 같이 확인된다.
+        self._write_phase("04", self._evidence("PASS"))
+
+    def _write_phase(self, phase, body):
+        directory = {"01": "01-plan", "04": "04-analyze"}[phase]
+        target = Path(self.root, "plan_docs", directory)
+        target.mkdir(parents=True, exist_ok=True)
+        Path(target, f"{self.STEM}.md").write_text(
+            f"Cycle-Stem: `{self.STEM}`\n\n{body}\n", encoding="utf-8")
+
+    def _evidence(self, status, reason="테스트 로그"):
+        return "\n".join([
+            "## Acceptance Evidence",
+            "| ID | Status | Evidence |",
+            "|---|---|---|",
+            f"| A1 | {status} | {reason} |",
+        ])
+
+    def _open(self):
+        result = self._run("open", "--risk", self.RISK, "--cycle-stem", self.STEM)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.run_id = result.stdout.strip().split()[-1]
+        return self.run_id
+
+    def _early(self, status, reason="테스트 로그"):
+        self._write_phase("04", self._evidence(status, reason))
+        self._open()
+        self.assertEqual(self._round().returncode, 0)
+        return self._close()
+
+    def test_a_failed_requirement_cannot_be_closed_early(self):
+        result = self._early("FAIL")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("unresolved acceptance", result.stderr)
+        self.assertEqual(self._closes(), [])
+
+    def test_an_unwaived_not_tested_requirement_cannot_be_closed_early(self):
+        result = self._early("NOT TESTED")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("unresolved acceptance", result.stderr)
+        self.assertEqual(self._closes(), [])
+
+    def test_a_passing_requirement_does_not_block(self):
+        self.assertEqual(self._early("PASS").returncode, 0)
+        self.assertEqual(len(self._closes()), 1)
+
+    def test_an_exactly_waived_not_tested_requirement_is_an_accepted_residual(self):
+        """L3 명시 waiver 로 잔여가 된 `NOT TESTED` 는 이미 승인된 잔여 위험이다 —
+        조기 완료가 인수하는 것과 같은 종류라 여기서 두 번 막지 않는다."""
+        sys.path.insert(0, os.path.join(REPO, "scripts", "sage_harness", "hooks", "runtime"))
+        import acceptance_waiver  # noqa: PLC0415
+
+        Path(self.root, ".sage").mkdir(exist_ok=True)
+        acceptance_waiver.grant(self.root, self.STEM, "A1", reason="계측 장비 대기",
+                                scope="A1 만", remaining_evidence="다음 사이클 실측",
+                                confirmed_by="sejon")
+        self.assertEqual(self._early("NOT TESTED").returncode, 0)
+        self.assertEqual(len(self._closes()), 1)
+
+    def test_a_project_without_acceptance_is_not_given_a_new_gate(self):
+        """`verification.acceptance` 를 쓰지 않는 프로젝트에 없던 검사를 새로 켜지 않는다."""
+        self.profile["verification"]["acceptance"]["enabled"] = False
+        self._write_profile()
+        self.assertEqual(self._early("FAIL").returncode, 0)
+        self.assertEqual(len(self._closes()), 1)
+
 
 
 if __name__ == "__main__":

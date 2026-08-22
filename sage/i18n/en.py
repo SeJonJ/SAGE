@@ -283,11 +283,11 @@ MESSAGES = {
     "cli.fast_cycle.msg04": "Selected lenses: {items}",
     "cli.fast_cycle.msg05": "Reason: {reason}",
     "cli.fast_cycle.msg06": "Audit record: .sage/fast_cycle.jsonl ({run_id})",
-    "cli.fast_cycle.open_retry": "Retry: sage fast-cycle open --stem {stem} --level {level} --lens-count {lens_count} --reason \"<reason>\"",
+    "cli.fast_cycle.open_retry": "Retry as Fast: fix the cause above first, then — sage fast-cycle open --stem {stem} --level {level} --lens-count {lens_count} --reason \"<reason>\" (if the cause is one of these arguments, change it before re-running)",
     "cli.fast_cycle.open_standard_fallback": "Continue as Standard: to proceed with the standard PDCA instead of Fast, do not re-run this command — author the Phase 00-03 documents. No run was opened, so there is nothing to undo.",
     "cli.fast_cycle.dashboard_title": "# SAGE Fast Cycle Audit Dashboard",
     "cli.fast_cycle.dashboard_note": "> Source of truth: `.sage/fast_cycle.jsonl`. This note is a derived dashboard, not the source of truth.",
-    "cli.fast_cycle.dashboard_empty_row": "| (no records) | | | | | | | | | | | |",
+    "cli.fast_cycle.dashboard_empty_row": "| (no records) | | | | | | | | | | | | |",
     "cli.fast_cycle.dashboard_integrity_heading": "## Integrity Warnings",
 
     "cli.fast_cycle_audit.damaged": "fast cycle audit damaged: {detail}",

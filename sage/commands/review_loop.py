@@ -22,6 +22,10 @@ from sage.i18n import language_of, render_issue, tr
 _APPROVED_REASONS = {"CONVERGED", "DRY", "USER_AUTHORIZED_EARLY"}
 _EARLY_REASON = "USER_AUTHORIZED_EARLY"
 _EARLY_AUTHORIZATION_ARGS = ("authorization_reason", "confirmed_by", "confirm")
+# 상한 미설정을 화면과 감사가 같은 단어로 말한다. 예전에는 화면이 `unset`, 감사가 `-1` 이라
+# 같은 사실이 두 곳에서 다른 모양이었고, 대시보드는 그 `-1` 을 `2/-1 rounds` 로 냈다.
+# `loop_audit` 이 정본이지만 그 모듈 import 는 런타임 경로 주입 뒤에만 가능해 여기 상수로 둔다.
+_UNBOUNDED_LABEL = "unbounded"
 _BLOCKED_REASONS = {"BUDGET_ITER", "BUDGET_TOK", "BLOCKED_ARCH"}
 
 
@@ -506,6 +510,77 @@ def _phase00_identity(la, root, profile, run_id):
         return None, None
 
 
+def _load_gate_core():
+    hooks = _resources.hooks_src_dir()
+    if hooks not in sys.path:
+        sys.path.insert(0, hooks)
+    import pre_implementation_gate_core
+    return pre_implementation_gate_core
+
+
+def _acceptance_blockers(la, root, args, profile, risk):
+    """미해결 acceptance 가 조기 완료를 막는가.
+
+    조기 완료는 **잔여 리뷰 findings** 를 사용자 권한으로 인수하는 절차다. 요구사항이 FAIL 이거나
+    승인 없이 `NOT TESTED` 인 것은 리뷰가 남긴 잔여가 아니라 검증되지 않은 기능이고, 그 둘은 인수
+    대상이 다르다. 06 report 게이트가 어차피 막지만 그때는 05 가 이미 조기 승인으로 닫힌 뒤라,
+    감사에는 "축약된 리뷰로 승인" 만 남고 무엇이 미검증이었는지는 남지 않는다.
+
+    판정은 06 과 **같은 정책·같은 파서**를 쓴다. 여기서 규칙을 새로 적으면 06 이 막는 상태를 조기
+    완료가 통과시키거나 그 반대가 되고, 어느 쪽이든 두 층이 같은 문서에 다른 답을 내는 상태다.
+    L3 exact waiver 로 잔여가 된 `NOT TESTED` 는 여기서도 막지 않는다 — 그건 이미 명시 승인된
+    잔여 위험이고, 조기 완료가 인수하는 것과 같은 종류다.
+    """
+    try:
+        core = _load_gate_core()
+    except Exception as exc:  # noqa: BLE001 - 게이트 코어를 못 읽으면 판정 자체가 불가능하다
+        return [f"acceptance check failed: {type(exc).__name__}: {exc}"]
+    # `open` 은 `--risk` 를 L2/L3 로 강제하므로 정상 run 에는 항상 값이 있다. 없는 것은 손질된
+    # 기록이고, 그때 검사를 끄면 위험도를 지우는 것이 곧 우회가 된다 — 게이트와 같은 `unknown`
+    # 으로 넘겨 가장 엄격한 정책을 받는다.
+    policy = core.acceptance_policy(profile, risk if risk in ("L1", "L2", "L3") else "unknown")
+    if policy is None:
+        return []   # 이 위험도에서 acceptance 를 강제하지 않는 프로젝트 — 없던 검사를 켜지 않는다
+    opened = _open_record(la, root, args.run_id) or {}
+    stem = opened.get("cycle_stem")
+    if not isinstance(stem, str) or not stem:
+        return ["review-loop open record has no --cycle-stem"]
+    binding = _load_cycle_binding()
+    selected = {}
+    for phase in ("01", "04"):
+        document, error = binding.select_document(_phase_docs(root, profile, phase), stem)
+        if error:
+            return [f"Phase {phase} exact cycle selection failed: {error}"]
+        selected[phase] = document
+    structural, unresolved_rows = core.acceptance_findings(
+        selected["01"].get("content") or "", selected["04"].get("content") or "", policy,
+        plan_path=selected["01"].get("path"), report_path=selected["04"].get("path"))
+    if structural:
+        return [f"acceptance evidence unreadable: {structural[0]}"]
+    if not unresolved_rows:
+        return []
+    try:
+        rt = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks", "runtime")
+        if rt not in sys.path:
+            sys.path.insert(0, rt)
+        import acceptance_waiver
+        waivers = acceptance_waiver.audit_summary(root)
+    except Exception as exc:  # noqa: BLE001
+        # 승인 대장을 읽지 못하면 "승인이 없다" 가 아니라 "모른다" 다. 없는 것으로 치면 승인된
+        # 잔여가 막히고, 유효한 것으로 치면 대장을 지우는 것이 곧 승인이 된다.
+        waivers = {"valid": False, "active": [],
+                   "issues": [f"{type(exc).__name__}: {exc}"]}
+    remaining, _uses = core.acceptance_waiver_split(
+        unresolved_rows, policy, risk if risk in ("L1", "L2", "L3") else "unknown", stem, waivers,
+        report_path=selected["04"].get("path"))
+    if not remaining:
+        return []
+    lines = [row["detail"] for row in remaining]
+    more = "" if len(lines) <= 3 else f"; ... and {len(lines) - 3} more"
+    return ["unresolved acceptance must be resolved or waived before an early close: "
+            + "; ".join(lines[:3]) + more]
+
+
 def _early_close_blockers(la, root, args, profile, cfg, risk, language):
     """조기 종료를 막아야 하는 상태 전부. 하나라도 걸리면 append 0건이다."""
     blockers = []
@@ -532,7 +607,8 @@ def _early_close_blockers(la, root, args, profile, cfg, risk, language):
     receipt = (rounds[-1].get("survived_by_severity") if rounds else None)
     if not isinstance(receipt, dict):
         blockers.append("the last round has no survived_by_severity receipt; "
-                        "legacy runs cannot close early")
+                        "legacy runs cannot close early. Record one more round with "
+                        "--survived-by-severity, or close normally once the loop converges")
     else:
         issues = la.severity_receipt_issues(receipt, rounds[-1].get("survived", 0))
         if issues:
@@ -554,6 +630,9 @@ def _early_close_blockers(la, root, args, profile, cfg, risk, language):
     if done_issue and done_mode in ("advisory", "enforce"):
         blockers.append(f"Phase 00 Done Criteria must be resolved: {done_issue}")
 
+
+    blockers.extend(_acceptance_blockers(la, root, args, profile, risk))
+
     action, result, reason, _why, _skips = _next_recommendation(la, root, args.run_id, cfg, risk)
     if action != "CONTINUE":
         # 정상 종료가 가능한 상태에서는 조기 종료를 쓰지 않는다. 쓰면 정상 승인이 보증 저하로
@@ -562,8 +641,17 @@ def _early_close_blockers(la, root, args, profile, cfg, risk, language):
     return blockers
 
 
-def _fast_run_id(root, loop_run_id):
-    """이 Loop run 을 참조하는 Fast run(있으면). Standard 면 None 이다."""
+def _fast_run_id(la, root, loop_run_id):
+    """이 Loop run 이 속한 Fast run(있으면). Standard 면 None 이다.
+
+    **결속 축은 cycle stem 이다.** 예전에는 Fast run 이 적어 둔 `loop_run_id` 를 역방향으로 찾았는데,
+    그 값을 심는 것은 `sage fast-cycle review` 이고 그건 Loop 가 닫힌 **뒤**에 실행된다. 그래서 close
+    시점에는 어떤 Fast run 도 이 Loop 를 가리키지 않아 `mode` 가 구조적으로 FAST 가 될 수 없었다 —
+    조기 종료 감사가 예외 없이 STANDARD 로 기록됐다. stem 은 open 시점에 이미 양쪽에 있다.
+
+    살아있는 후보가 둘 이상이면 어느 쪽인지 정할 수 없으므로 None 이다. 여기서 아무거나 고르면
+    기록이 틀린 run 을 가리키고, 그건 결속이 없는 것보다 나쁘다.
+    """
     try:
         rt = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks", "runtime")
         if rt not in sys.path:
@@ -571,25 +659,33 @@ def _fast_run_id(root, loop_run_id):
         import fast_cycle_audit as fca
     except Exception:  # noqa: BLE001 - Fast 미사용 프로젝트에서 결속 정보가 없는 것은 정상
         return None
+    open_record = _open_record(la, root, loop_run_id)
+    stem = (open_record or {}).get("cycle_stem")
     try:
         summary = fca.audit_summary(root)
     except Exception:  # noqa: BLE001
         return None
-    for rid, state in (summary.get("runs") or {}).items():
+    runs = summary.get("runs") or {}
+    for rid, state in runs.items():
         if state.get("loop_run_id") == loop_run_id:
             return rid
-    return None
+    if not stem:
+        return None
+    live = [rid for rid, state in runs.items()
+            if state.get("cycle_stem") == stem and not state.get("terminal")
+            and state.get("clean") is not False]
+    return live[0] if len(live) == 1 else None
 
 
 def _cycle_mode(la, root, loop_run_id):
-    return "FAST" if _fast_run_id(root, loop_run_id) else "STANDARD"
+    return "FAST" if _fast_run_id(la, root, loop_run_id) else "STANDARD"
 
 
 def _print_early_disclosure(authorization, max_iterations):
     """무엇을 인수하는지 화면에 먼저 드러낸다 — 조기 종료는 잔여 위험의 명시적 인수다."""
     receipt = authorization["survived_by_severity"]
     residual = ", ".join(f"{key}={int(receipt.get(key, 0))}" for key in ("P0", "P1", "P2", "P3"))
-    ceiling = max_iterations if max_iterations is not None else "unset"
+    ceiling = max_iterations if max_iterations is not None else _UNBOUNDED_LABEL
     print("", file=sys.stderr)
     print("⚠️  [SAGE REVIEW EARLY COMPLETION]", file=sys.stderr)
     print(f"    configured iteration ceiling: {ceiling}", file=sys.stderr)
@@ -689,12 +785,13 @@ def _run_close(args):
             "done_criteria_revision": done_revision,
             "confirmed_by": args.confirmed_by,
             "completed_rounds": len(rounds),
-            "configured_max_iterations": max_iterations if max_iterations is not None else -1,
+            "configured_max_iterations": (max_iterations if max_iterations is not None
+                                          else la.UNBOUNDED_ITERATIONS),
             "survived_by_severity": last.get("survived_by_severity"),
             "actual_risk": risk or "unknown",
             "mode": _cycle_mode(la, root, args.run_id),
             "lens_receipts": last.get("lens_receipts") or [],
-            "fast_run_id": _fast_run_id(root, args.run_id),
+            "fast_run_id": _fast_run_id(la, root, args.run_id),
         }
         _print_early_disclosure(authorization, max_iterations)
 
@@ -947,7 +1044,10 @@ def _early_close_rows(la, root):
         residual = (", ".join(f"{key}={receipt.get(key, 0)}" for key in la.SEVERITIES)
                     if isinstance(receipt, dict) else "-")
         rounds = close.get("completed_rounds")
+        # 옛 레코드는 상한 미설정을 `-1` 로 적었다. 그대로 렌더하면 `2/-1 rounds` 가 된다.
         configured = close.get("configured_max_iterations")
+        if configured in (-1, None):
+            configured = _UNBOUNDED_LABEL
         rows.append(f"- `{rid}` — {rounds}/{configured} rounds · {residual}"
                     f" · {close.get('confirmed_by') or '-'}"
                     f" · {close.get('authorization_reason') or '-'}")

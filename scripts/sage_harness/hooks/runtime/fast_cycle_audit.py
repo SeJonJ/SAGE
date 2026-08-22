@@ -1,10 +1,12 @@
 """Strict audit trail for the SAGE Fast Cycle protocol."""
 
 import os
+import re
 import time
 import uuid
 
 import loop_audit as _chain
+from sage.fast_cycle_contract import PHASES as SOURCE_PHASES
 
 AUDIT_REL = os.path.join(".sage", "fast_cycle.jsonl")
 EVENTS = ("fast_open", "fast_convert", "fast_review", "fast_close", "fast_abort")
@@ -179,12 +181,37 @@ def _snapshot_delta(before, after):
             "changed": changed}
 
 
+def _review_snapshot_issue(snapshot):
+    """전환 review가 증언하는 최종 00~04 스냅샷의 최소 구조 계약."""
+    if not isinstance(snapshot, dict) or set(snapshot) != set(SOURCE_PHASES):
+        found = sorted(snapshot) if isinstance(snapshot, dict) else snapshot
+        return f"expected phases {list(SOURCE_PHASES)}, found {found!r}"
+    for phase in SOURCE_PHASES:
+        entry = snapshot.get(phase)
+        if not isinstance(entry, dict):
+            return f"phase {phase} entry must be an object"
+        path = entry.get("path")
+        digest = entry.get("sha256")
+        size = entry.get("size")
+        if not isinstance(path, str) or not path.strip():
+            return f"phase {phase} path must be a non-empty string"
+        if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+            return f"phase {phase} sha256 must be a canonical digest"
+        if type(size) is not int or size < 0:
+            return f"phase {phase} size must be a non-negative integer"
+    return None
+
+
 def record_review(root, run_id, *, loop_run_id, actual_risk, rounds,
                   lens_receipts_hash, plan_hash_before_review, result, now=None,
                   source_phases_review=None):
     _records_for_run, opens, reviews, terminals = _state(root, run_id)
     if len(opens) != 1 or terminals:
         raise AuditWriteError(f"run {run_id!r} cannot accept fast_review")
+    converted = opens[0].get("entry_mode") == ENTRY_MODES["fast_convert"]
+    snapshot_issue = _review_snapshot_issue(source_phases_review) if converted else None
+    if snapshot_issue:
+        raise AuditWriteError(f"converted fast_review source phase snapshot is invalid: {snapshot_issue}")
     record = _base("fast_review", run_id, opens[0].get("cycle_stem"), now)
     record.update({
         "loop_run_id": loop_run_id,
@@ -205,6 +232,11 @@ def record_review(root, run_id, *, loop_run_id, actual_risk, rounds,
         _records_for_run, current_opens, _current_reviews, current_terminals = _state_from_records(prior, run_id)
         if len(current_opens) != 1 or current_terminals:
             raise AuditWriteError(f"run {run_id!r} cannot accept fast_review")
+        if current_opens[0].get("entry_mode") == ENTRY_MODES["fast_convert"]:
+            issue = _review_snapshot_issue(source_phases_review)
+            if issue:
+                raise AuditWriteError(
+                    f"converted fast_review source phase snapshot is invalid: {issue}")
 
     return _append(root, record, validator=validate)
 

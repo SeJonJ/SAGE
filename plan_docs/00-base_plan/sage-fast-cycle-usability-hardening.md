@@ -3,8 +3,8 @@
 Cycle-Stem: `sage-fast-cycle-usability-hardening`
 Document-Language: ko
 Risk Level: L3
-Done-Criteria-Revision: 1
-Status: NOT READY — 구현 시작 전
+Done-Criteria-Revision: 2
+Status: READY_FOR_USER_MERGE_DECISION
 
 ## 0. 사전 지식
 
@@ -197,43 +197,62 @@ pre-implementation 예외는 모든 변경 대상이 선언된 exact stem의 pha
 
 ## 5. Done Criteria
 
-- [ ] 프로젝트 상대 `governance_docs`를 가진 fixture에서 `sage validate`와 `sage fast-cycle open`이 같은 경로 판정을 내린다.
-- [ ] `--root` 명시값과 자동 탐색값이 검증·문서 선택·감사 경로에서 동일하다.
-- [ ] Fast profile 검증에 `_resources.sage_root()`를 되돌리는 mutation이 테스트로 실패한다.
-- [ ] hook root resolver와 cycle declaration 테스트가 무변경으로 PASS한다.
-- [ ] `ci_authority.py`의 root 인자를 이번 사이클에서 교체하지 않았고, base/head fixture가 각 revision 파일 집합만 참조한다.
-- [ ] 선언된 exact stem의 phase 문서 00·01·02·03 각각의 단독 생성이 허용된다.
-- [ ] phase 문서와 소스가 섞인 변경에는 예외가 없고, 다른 stem 문서와 ambiguous 문서는 차단된다.
-- [ ] pending Fast Plan의 작성·복구는 허용되고 `sage fast-cycle open` 성공 전 소스 편집은 BLOCK이다.
-- [ ] `sage fast-cycle open` 실패 메시지가 원인, 재실행 명령, Standard 복구 절차를 함께 표시한다.
-- [ ] Phase 00 헤더 metadata 영역만 읽는 dependency-free Risk parser가 존재하고 설명문·인라인 코드·인용문·첫 H2 뒤 본문의 `Risk Level`을 무시한다.
-- [ ] 중복·placeholder·malformed·missing이 구분되고 줄 번호와 원문 발췌가 표시된다.
-- [ ] gate, Fast, report/write-back, authority가 같은 Phase 00 fixture에 같은 판정을 내린다.
-- [ ] 저장소에 Risk 선언을 자체 해석하는 두 번째 정규식이 남아 있지 않다.
-- [ ] `standard_transition`과 `early_completion`이 shared profile 기본 `false`이고 local profile에서 활성화하거나 하한을 낮출 수 없다.
-- [ ] `minimum_completed_rounds`의 엔진 하한이 1이며 profile은 상향만 가능하다.
-- [ ] 확인 토큰·사유·승인자·level·lens 중 하나라도 없으면 전환이 exit 2이고 파일·감사 write가 0건이다.
-- [ ] 완결 cycle, active Fast 충돌, 손상 audit, 실제 L1은 전환을 차단한다.
-- [ ] 전환 전후 원본 00~04 바이트가 동일하고 composite 문서가 생성되지 않는다.
-- [ ] `fast_convert`가 00~04의 경로·SHA-256·크기와 `--current-phase`, Done Criteria revision을 기록한다.
-- [ ] 전환 후 Phase 04 변경이 허용되고 review snapshot이 delta를 기록한다.
-- [ ] 감사 append 실패 시 문서·상태 write가 0건이고, 동시 전환에서 단일 run만 생성된다.
-- [ ] Fresh `fast_open`과 Converted `fast_convert`가 혼동되지 않고 이후 review·close를 공유한다.
-- [ ] 전환 승인이 리뷰 조기 완료 확인으로 오용되지 않는다.
-- [ ] `review-loop round`가 `--survived-by-severity`를 기록하고 합계가 `survived`와 정확히 일치하지 않으면 거부한다.
-- [ ] severity 영수증이 없는 레거시 run은 조기 완료에 사용할 수 없으나 정상 `CONVERGED|DRY`에는 계속 쓸 수 있다.
-- [ ] 리뷰 0라운드, `severity_block` 미해결, architecture escalation, 필수 검증 실패, Done Criteria 미해결, acceptance FAIL, waiver 없는 필수 NOT TESTED, 감사 손상이 조기 완료를 차단한다.
-- [ ] `next=STOP|CONVERGED` 상태에서 조기 종료가 거부되고 정상 close가 안내된다.
-- [ ] `loop_close`가 run당 한 번만 append되며 조기 close 이후 round·중복 close·교차 cycle 사용이 차단된다.
-- [ ] loop close append 실패 시 run이 계속 active이고 Phase 06이 차단된다.
-- [ ] Phase 05·06에 보증 수준·종료 사유·라운드 수·잔여 finding 집계가 정확히 1개씩 기록되고, metadata와 terminal audit이 서로 없거나 다르면 차단된다.
-- [ ] 일반 정상 1라운드 `CONVERGED`와 상한까지 진행한 `APPROVED` 경로에 회귀가 없다.
-- [ ] 새 사용자 노출 문구의 한영 catalog key·placeholder가 일치하고 도메인 충돌이 0건이다.
-- [ ] vault 미설정은 N/A이고 vault 쓰기 실패는 WARN이며 core 감사 close를 되돌리지 않는다.
-- [ ] vault dashboard를 JSONL에서 재생성할 수 있고 vault 내용을 변조해도 gate 판정이 불변이다.
-- [ ] `run-all.sh`가 none·Claude·Codex 환경에서 통과하고 양 host 실제 adapter subprocess 회귀가 통과한다.
-- [ ] `sage validate --kind all --check --schema`가 `STALE 0`으로 통과한다.
-- [ ] clean wheel install·generate·validate·CLI smoke와 Windows 네이티브 경로·lock 분기가 통과한다.
-- [ ] `git diff --check`가 통과하고 한영 문서가 미러 상태다.
-- [ ] manifest와 hook runtime hash가 current다.
-- [ ] 세 결함의 해소가 fixture와 격리 소비 프로젝트에서 재현·검증되었고, 로컬 무증상을 증거로 쓰지 않았다.
+- [x] 프로젝트 상대 `governance_docs`를 가진 fixture에서 `sage validate`와 `sage fast-cycle open`이 같은 경로 판정을 내린다.
+- [x] `--root` 명시값과 자동 탐색값이 검증·문서 선택·감사 경로에서 동일하다.
+- [x] Fast profile 검증에 `_resources.sage_root()`를 되돌리는 mutation이 테스트로 실패한다.
+- [x] hook root resolver와 cycle declaration 테스트가 무변경으로 PASS한다.
+- [x] `ci_authority.py`의 root 인자를 이번 사이클에서 교체하지 않았고, base/head fixture가 각 revision 파일 집합만 참조한다.
+- [x] 선언된 exact stem의 phase 문서 00·01·02·03 각각의 단독 생성이 허용된다.
+- [x] phase 문서와 소스가 섞인 변경에는 예외가 없고, 다른 stem 문서와 ambiguous 문서는 차단된다.
+- [x] pending Fast Plan의 작성·복구는 허용되고 `sage fast-cycle open` 성공 전 소스 편집은 BLOCK이다.
+- [x] `sage fast-cycle open` 실패 메시지가 원인, 재실행 명령, Standard 복구 절차를 함께 표시한다.
+- [x] Phase 00 헤더 metadata 영역만 읽는 dependency-free Risk parser가 존재하고 설명문·인라인 코드·인용문·첫 H2 뒤 본문의 `Risk Level`을 무시한다.
+- [x] 중복·placeholder·malformed·missing이 구분되고 줄 번호와 원문 발췌가 표시된다.
+- [x] gate, Fast, report/write-back, authority가 같은 Phase 00 fixture에 같은 판정을 내린다.
+- [x] 저장소에 Risk 선언을 자체 해석하는 두 번째 정규식이 남아 있지 않다.
+- [x] `standard_transition`과 `early_completion`이 shared profile 기본 `false`이고 local profile에서 활성화하거나 하한을 낮출 수 없다.
+- [x] `minimum_completed_rounds`의 엔진 하한이 1이며 profile은 상향만 가능하다.
+- [x] 확인 토큰·사유·승인자·level·lens 중 하나라도 없으면 전환이 exit 2이고 파일·감사 write가 0건이다.
+- [x] 완결 cycle, active Fast 충돌, 손상 audit, 실제 L1은 전환을 차단한다.
+- [x] 전환 전후 원본 00~04 바이트가 동일하고 composite 문서가 생성되지 않는다.
+- [x] `fast_convert`가 00~04의 경로·SHA-256·크기와 `--current-phase`, Done Criteria revision을 기록한다.
+- [x] 전환 후 Phase 04 변경이 허용되고 review snapshot이 delta를 기록한다.
+- [x] 감사 append 실패 시 문서·상태 write가 0건이고, 동시 전환에서 단일 run만 생성된다.
+- [x] Fresh `fast_open`과 Converted `fast_convert`가 혼동되지 않고 이후 review·close를 공유한다.
+- [x] 전환 승인이 리뷰 조기 완료 확인으로 오용되지 않는다.
+- [x] `review-loop round`가 `--survived-by-severity`를 기록하고 합계가 `survived`와 정확히 일치하지 않으면 거부한다.
+- [x] severity 영수증이 없는 레거시 run은 조기 완료에 사용할 수 없으나 정상 `CONVERGED|DRY`에는 계속 쓸 수 있다.
+- [x] 리뷰 0라운드, `severity_block` 미해결, architecture escalation, Done Criteria 미해결, acceptance FAIL, exact waiver 없는 필수 NOT TESTED, 감사 손상, 결속 불일치가 조기 완료를 차단하고 append는 0건이다.
+- [x] acceptance 판정이 Phase 06 리포트 게이트와 같은 정책·같은 파서를 쓰고, `verification.acceptance`를 쓰지 않는 프로젝트에는 없던 검사가 켜지지 않는다.
+- [x] 필수 검증 실패(FR-E05a)와 05 이후 재리뷰(FR-E05b)가 엔진 차단 대상이 아니라는 사실이 스킬·사용자 문서·Phase 04 잔여에 명시돼 있다.
+- [x] `next=STOP|CONVERGED` 상태에서 조기 종료가 거부되고 정상 close가 안내된다.
+- [x] `loop_close`가 run당 한 번만 append되며 조기 close 이후 round·중복 close·교차 cycle 사용이 차단된다.
+- [x] loop close append 실패 시 run이 계속 active이고 Phase 06이 차단된다.
+- [x] Phase 05·06에 보증 수준·종료 사유·라운드 수·잔여 finding 집계가 정확히 1개씩 기록되고, metadata와 terminal audit이 서로 없거나 다르면 차단된다.
+- [x] 일반 정상 1라운드 `CONVERGED`와 상한까지 진행한 `APPROVED` 경로에 회귀가 없다.
+- [x] 새 사용자 노출 문구의 한영 catalog key·placeholder가 일치하고 도메인 충돌이 0건이다.
+- [x] vault 미설정은 N/A이고 vault 쓰기 실패는 WARN이며 core 감사 close를 되돌리지 않는다.
+- [x] vault dashboard를 JSONL에서 재생성할 수 있고 vault 내용을 변조해도 gate 판정이 불변이다.
+- [x] `run-all.sh`가 none·Claude·Codex 환경에서 통과하고 양 host 실제 adapter subprocess 회귀가 통과한다.
+- [x] `sage validate --kind all --check --schema`가 `STALE 0`으로 통과한다.
+- [x] clean wheel install·generate·validate·CLI smoke와 Windows 네이티브 경로·lock 분기가 통과한다.
+- [x] `git diff --check`가 통과하고 한영 문서가 미러 상태다.
+- [x] manifest와 hook runtime hash가 current다.
+- [x] 세 결함의 해소가 fixture와 격리 소비 프로젝트에서 재현·검증되었고, 로컬 무증상을 증거로 쓰지 않았다.
+
+## 6. Done Criteria Revision Log
+
+### Revision 2
+
+- Changed-At: Phase 05
+- Reason: FR-E05가 한 줄에 두 층의 책임을 적었다. 조기 완료 경로가 막을 수 있는 상태와, 엔진이 읽을 수 있는 근거 자체가 없는 상태를 구분하지 않았다.
+- Affected-Phases: 01, 02, 03, 04, 05
+- Summary: acceptance FAIL과 exact waiver 없는 필수 NOT TESTED를 조기 완료 차단 대상으로 구현하고, 필수 build/test/lint 실패는 FR-E05a(에이전트 의무), 05 이후 재리뷰는 FR-E05b(06 게이트·권위 책임)로 분리했다.
+
+필수 검증 결과는 `scripts/verify-changes.sh`가 실행하고 Phase 03 산문에만 남는다. 프로필 `verification` 블록에서 엔진이 읽는 것은 `acceptance` 하위뿐이라, "필수 검증이 실패했다"를 가리키는 기계 판독 영수증이 저장소 어디에도 없다. 영수증 계약을 새로 만드는 것은 이 사이클의 범위 밖이므로, 그 상태를 막는 책임을 엔진이 아닌 에이전트에게 명시적으로 둔다 — 없는 검사를 요구사항이 있다고 적어 두는 것보다, 어디가 사람의 책임인지 적어 두는 편이 사후 판별에 낫다.
+
+05 이후 재리뷰는 close 시점에 성립할 수 없다. Phase 05는 loop가 닫힌 **뒤**에 작성되므로 조기 close가 볼 수 있는 05 상태가 없다.
+
+이 상태를 실제로 막는 층은 무엇이 바뀌었느냐에 따라 다르다. **계획 문서**가 바뀌면 `Phase00-Hash`와 `Done-Criteria-Revision` 대조가 06과 서버 권위 양쪽에서 잡는다. **소스만** 바뀌면 둘 다 그대로이므로 이 축은 아무것도 잡지 못한다 — 로컬 06 게이트는 문서를 결속하지 실행 코드를 결속하지 않아 소스 전용 변경을 탐지하지 못한다. 남는 차단 근거는 서버 권위 하나다: `ci_authority.evaluate`가 요구하는 attestation은 `diff_sha256`·`head_sha`에 정확히 묶여 있어, 05 이후 소스가 바뀌면 diff가 달라져 그 attestation이 더는 검증되지 않는다.
+
+즉 소스 전용 변경의 재리뷰 강제는 **원격 권위에만 있다**. 서버 권위를 쓰지 않는 프로젝트에서는 05 이후 소스를 고쳐도 로컬 게이트가 통과시킨다.

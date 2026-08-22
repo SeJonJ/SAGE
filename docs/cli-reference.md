@@ -98,6 +98,18 @@ pre-implementation phase만** 면제받습니다 — Phase 00에서 전환하면
 필요합니다. `--confirm FAST-CONVERTED`·`--reason`·`--confirmed-by` 셋 중 하나라도 없으면 아무것도
 기록하지 않고 종료합니다. 전환된 run은 문서에 `Fast-Audit-Run` 줄을 갖지 않고 stem으로 결속합니다.
 
+`show`와 dashboard는 각 run을 `entry=` 한 값으로 구분합니다. 어느 계약으로 열렸는지가 이후 판정을
+가르기 때문입니다.
+
+| `entry` | 뜻 | 어디서 왔나 |
+|---|---|---|
+| `FAST` | `open`으로 연 fresh Fast run | composite Phase 00 한 장이 계획 정본 |
+| `FAST-CONVERTED` | `convert`로 넘어온 전환 run | 기존 00~04가 그대로 정본, 문서에 `Fast-Audit-Run` 없음 |
+| `UNKNOWN` | opener 레코드를 읽을 수 없는 run | 감사 손상·수기 편집·옛 기록. 증거로 쓰지 말고 `sage validate`로 진단 |
+
+`UNKNOWN`은 "Fast가 아님"이 아니라 **판별 불가**입니다. 그 run의 증거로 게이트를 통과시키려 하지
+말고, 감사 무결성을 먼저 확인하십시오.
+
 Fast 명령은 `pdca.fast_cycle.enabled: true`인 L2/L3에만 열립니다. 실제 Risk Level은 별도로 유지되고,
 `--level`은 적용할 Fast 리뷰 계약입니다. `open`은 필수 입력 셋을 모두 검증한 뒤에만 00과 감사를 쓰며,
 활성 Fast run이 있으면 `sage cycle clear`와 다른 stem 전환을 막습니다. 정상 순서는
@@ -121,14 +133,28 @@ Fast 명령은 `pdca.fast_cycle.enabled: true`인 L2/L3에만 열립니다. 실�
 아직 `CONTINUE`를 권고하는 상태에서만 의미가 있습니다. 반복 횟수 면제가 아니라 **잔여 비차단 위험을
 사용자가 명시적으로 인수**하는 것이라, 다음은 승인으로도 통과하지 않습니다 — 라운드 0건 또는
 `minimum_completed_rounds` 미만, `severity_block` 심각도의 미해결 finding, architecture escalation과
-`BLOCKED_ARCH`, build/test/lint 실패, Done Criteria 미해결과 revision 재실행 누락, acceptance `FAIL`,
+`BLOCKED_ARCH`, Done Criteria 미해결과 revision 재실행 누락, acceptance `FAIL`,
 waiver 없는 필수 `NOT TESTED`, 감사 손상과 chain/seq 실패, 결속 불일치.
 
 판정 토큰은 호환을 위해 `APPROVED`를 유지하므로, Phase 05 문서가 어떻게 도달했는지를 적습니다.
-네 표기(`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`, `Residual-Findings`)는 fence 밖에
-정확히 하나씩, **넷 다 있거나 넷 다 없어야** 합니다. 정상 종료한 run이 보증 저하를 자칭하면 차단되고,
-반대로 조기 종료한 run이 표기를 빠뜨려도 차단됩니다. `--survived-by-severity`의 합계는 `--survived`와
+차단 여부를 정하는 것은 표기의 **존재가 아니라 값**입니다. `Review-Assurance:
+REDUCED_BY_USER_AUTHORIZATION` 또는 `Review-Close-Reason: USER_AUTHORIZED_EARLY` 중 하나라도 적혀
+있으면 보증 저하를 자칭한 것으로 봅니다. 자칭했거나 감사가 실제로 조기 종료로 닫혔다면, 네
+표기(`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`, `Residual-Findings`)가 fence 밖에
+정확히 하나씩 있어야 하고 값이 감사 레코드와 일치해야 합니다. 정상 종료한 run이 보증 저하를
+자칭하면 차단되고, 반대로 조기 종료한 run이 표기를 빠뜨려도 차단됩니다 — 후자는 서버 권위도
+같은 기준으로 봅니다. `Review-Rounds: 3` 같은 중립 표기 한 줄만 있는 것은 막지 않습니다.
+`Review-Rounds`의 `(configured max: <max>)`도 대조 대상입니다 — 그 값이 "몇 번 중 몇 번"의 분모라,
+부풀리거나 낮춰 적으면 얼마나 건너뛴 리뷰인지가 다르게 읽힙니다. 상한을 설정하지 않은 프로젝트는
+감사와 같은 낱말인 `unbounded`를 적습니다. `--survived-by-severity`의 합계는 `--survived`와
 정확히 같아야 합니다 — `P0=0`만 적어 차단 finding을 숨기는 것을 막습니다.
+
+조기 완료가 인수하는 것은 리뷰가 남긴 finding이지 미검증 요구사항이 아닙니다. 선택된 Phase 04에
+acceptance `FAIL`이나 exact waiver 없는 필수 `NOT TESTED`가 남아 있으면 조기 완료가 거부되고 감사
+append는 0건입니다. 판정은 Phase 06 리포트 게이트와 **같은 정책·같은 파서**를 씁니다 — `verification.
+acceptance`를 쓰지 않는 프로젝트에는 없던 검사가 새로 켜지지 않습니다. 다만 build/test/lint 결과는
+Phase 03 산문에만 있어 어떤 게이트도 읽지 못합니다. 필수 검증이 실패한 상태의 조기 완료는 엔진이
+막지 못하니 사람이 막아야 합니다.
 
 ## 지식과 컨텍스트
 

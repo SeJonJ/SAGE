@@ -771,5 +771,28 @@ class TestFastSkills(unittest.TestCase):
             self.assertIn("fast_cycle_dashboard", text)
         self.assertNotIn("pdca.fast_cycle", local)
 
+class TestDashboardTableShape(unittest.TestCase):
+    """표는 열 수가 맞아야 표다. 빈 행 한 줄이 짧으면 markdown 렌더가 무너진다."""
+
+    def test_every_row_of_the_empty_dashboard_has_the_same_column_count(self):
+        import tempfile as _tempfile  # noqa: PLC0415
+
+        from sage.commands import fast_cycle as fc  # noqa: PLC0415
+
+        def cells(row):
+            return len(row.strip().strip("|").split("|"))
+
+        for language in ("ko", "en"):
+            with self.subTest(language=language), _tempfile.TemporaryDirectory() as root:
+                os.makedirs(os.path.join(root, ".sage"), exist_ok=True)
+                rows = [line for line in fc._dashboard_body(root, language).splitlines()
+                        if line.startswith("|")]
+                self.assertGreaterEqual(len(rows), 3, rows)
+                widths = {cells(row) for row in rows}
+                self.assertEqual(len(widths), 1,
+                                 f"{language}: 열 수가 행마다 다르다 — "
+                                 + "; ".join(f"{cells(row)}: {row}" for row in rows))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

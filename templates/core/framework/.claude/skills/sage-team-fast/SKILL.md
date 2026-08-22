@@ -35,7 +35,7 @@ preference. Full rules: `docs/agent/language-policy.md`.
 1. Resolve the exact stem, entry mode, open snapshot, actual risk, Fast level, minimum
    rounds, and selected lenses. Stop on ambiguity, malformed audit, mismatch, or terminal run.
    **Read the entry mode first** — `sage fast-cycle show --run-id <fc-id>` prints
-   `entry=FAST` or `entry=FAST-CONVERTED`, and the two are not interchangeable:
+   `entry=FAST`, `entry=FAST-CONVERTED`, or `entry=UNKNOWN`, and they are not interchangeable:
    - `FAST` — a fresh run. Resolve the composite Phase 00 and its `Fast-Audit-Run` line as
      below; a missing or `pending` line there is a defect to fix before continuing.
    - `FAST-CONVERTED` — a Standard Cycle converted in place. There is **no composite Phase 00
@@ -44,10 +44,15 @@ preference. Full rules: `docs/agent/language-policy.md`.
      Fast metadata, or a composite section to them — the run binds by stem and its single
      active converted run, and the engine reads risk and Done Criteria from the standard
      documents.
-   Read the cycle's document language from the composite Phase 00's `Document-Language:`
-   line before writing anything. Every phase document you author (05, 06) carries that same
+   - `UNKNOWN` — the opener record cannot be read (damaged, hand-edited, or legacy audit).
+     Neither rule above applies. Stop and report it; do not fall back to either mode.
+     `UNKNOWN` is not "not Fast" and not "treat as fresh" — guessing either way makes a
+     damaged audit look decided, which is exactly what this step exists to prevent.
+   For `FAST`, read the cycle's document language from the composite Phase 00. For
+   `FAST-CONVERTED`, read it from the existing Standard Phase 00 instead. Every phase document
+   you author (05, 06) carries that same
    line and is written in that language; a run with no marker predates it — keep writing in
-   the language the composite document already uses. See `docs/agent/language-policy.md`.
+   the language the selected Phase 00 already uses. See `docs/agent/language-policy.md`.
 2. Implement only within recorded ownership. Keep Phase 03 current with changed
    files and real build/test/lint results required by the actual risk.
 3. Replace the Phase 04 pending marker with design-gap, coverage, acceptance
@@ -75,8 +80,10 @@ phases, and rerun those phases. Review and close require zero unresolved items.
 5. Write 05 with exact `Fast-Run`, `Loop-Run`, and `Final Status: APPROVED`. If the Loop
    Audit closed with `USER_AUTHORIZED_EARLY`, the same 05 also carries the four
    reduced-assurance markers (`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`,
-   `Residual-Findings`) with values matching the audit record — all four or none; see
-   `sage-review`. Then:
+   `Residual-Findings`) with values matching the audit record, including the
+   `(configured max: <max>)` ceiling on `Review-Rounds`. What triggers the check is the value,
+   not the presence of a marker — a neutral `Review-Rounds:` line on a converged run is fine.
+   See `sage-review`. Then:
 
 ```text
 sage fast-cycle review --run-id <fc-id> --loop-run-id <loop-id>

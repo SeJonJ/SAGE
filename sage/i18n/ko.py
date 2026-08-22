@@ -291,11 +291,11 @@ MESSAGES = {
     "cli.fast_cycle.msg04": "선택 렌즈: {items}",
     "cli.fast_cycle.msg05": "사유: {reason}",
     "cli.fast_cycle.msg06": "감사 기록: .sage/fast_cycle.jsonl ({run_id})",
-    "cli.fast_cycle.open_retry": "재실행: sage fast-cycle open --stem {stem} --level {level} --lens-count {lens_count} --reason \"<사유>\"",
+    "cli.fast_cycle.open_retry": "Fast 로 재시도: 위 원인을 먼저 고친 뒤 — sage fast-cycle open --stem {stem} --level {level} --lens-count {lens_count} --reason \"<사유>\" (원인이 인자에 있다면 해당 인자를 바꿔 실행하십시오)",
     "cli.fast_cycle.open_standard_fallback": "Standard 로 진행: Fast 를 쓰지 않고 표준 PDCA 로 계속하려면 이 명령을 다시 실행하지 말고 Phase 00~03 문서를 작성하십시오. 이미 열린 run 은 없으므로 되돌릴 것도 없습니다.",
     "cli.fast_cycle.dashboard_title": "# SAGE Fast Cycle 감사 대시보드",
     "cli.fast_cycle.dashboard_note": "> 정본 데이터: `.sage/fast_cycle.jsonl`. 이 노트는 파생 대시보드이며 정본이 아닙니다.",
-    "cli.fast_cycle.dashboard_empty_row": "| (기록 없음) | | | | | | | | | | | |",
+    "cli.fast_cycle.dashboard_empty_row": "| (기록 없음) | | | | | | | | | | | | |",
     "cli.fast_cycle.dashboard_integrity_heading": "## 무결성 경고",
 
     # fast_cycle_audit 판정(code+arguments) 렌더. 이 함수는 CLI(cycle.py/fast_cycle.py)에서만

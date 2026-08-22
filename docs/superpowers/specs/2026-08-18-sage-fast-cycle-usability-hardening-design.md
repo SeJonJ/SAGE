@@ -382,6 +382,21 @@ Residual findings the profile does not block, such as `P2/P3`, are not treated a
 Their exact counts and a summary are recorded in Phase 05, Phase 06, and the Loop Audit, and the
 user must accept that residual risk.
 
+> **Amended during implementation — Done Criteria Revision 2 (Phase 00 §6).** Two entries in the
+> list above name states the engine cannot observe at close time, and the requirement was split
+> rather than left as a rule nothing enforces.
+>
+> - *Failure of a required build, test, or lint verification.* Those commands are run by
+>   `scripts/verify-changes.sh` and their results live only in Phase 03 prose; the profile's
+>   `verification` block exposes nothing machine-readable about them. The close command has no
+>   receipt to read, so the obligation moved to the agent and is stated in the `sage-review` skill.
+>   A verification-receipt contract is out of scope for this cycle.
+> - *The plan or source changed after 05 and re-review is required.* Phase 05 is written **after**
+>   the loop closes, so this state cannot exist when `review-loop close` runs. It is enforced by the
+>   06←05 audit gate and, for source-only changes, by the server authority's attestation binding.
+>
+> The remaining entries are enforced by `review-loop close` itself, with append refused.
+
 ### 7.3 Profile contract draft
 
 ```yaml
@@ -442,9 +457,13 @@ standard L3.
 ### 7.5 Canonical audit record
 
 The canonical record is the terminal `loop_close` in the existing `.sage/loop_audit.jsonl`. No
-separate grant/use/revoke file is created. Because the close is appended inside the same OS lock
-critical section immediately after verification, there is no TTL, reuse, or post-approval state
-change problem.
+separate grant/use/revoke file is created. The OS lock serializes the audit transition and repeats
+the audit-local terminal, round-count, severity-receipt, and lens-receipt checks immediately before
+append. Profile and Phase document I/O is intentionally outside that lock so filesystem latency
+does not hold the audit writer. Downstream Phase 06 and server-authority checks detect a persistent
+document change, but a concurrent edit between the preflight check and append is not made atomic by
+this lock. That narrow same-user race is an accepted residual risk rather than a claim that external
+documents and the audit are one transaction.
 
 Required fields for `loop_close(reason=USER_AUTHORIZED_EARLY)`:
 

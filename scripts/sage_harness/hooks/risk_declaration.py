@@ -58,8 +58,19 @@ _LABEL_EMPHASIS_RE = re.compile(
 _LABEL_RE = re.compile(r"(?i)(risk\s*level|risk|위험도)\s*[:：]")
 _VALUE_RE = re.compile(r"(?i)(risk\s*level|risk|위험도)\s*[:：]\s*(L[0-3])\b")
 _ALTERNATIVES_RE = re.compile(r"\s*[|/]\s*L[0-3]\b", re.IGNORECASE)
+_TIER_TOKEN_RE = re.compile(r"(?i)\bL[0-9]+\b")
+# 선언 label 바로 뒤의 구조 표시는 값 철자가 깨져도 선언 의도가 명확하다. `guidance` 같은
+# 산문 접미사까지 선언으로 만들지 않도록 구조 문자만 좁게 받는다.
+_STRUCTURAL_NEAR_MISS_RE = re.compile(
+    r"(?i)^(?:risk\s*level|risk|위험도)\s*(?:[\[({<]|=)")
 # 문법을 벗어났지만 선언을 의도한 게 분명한 줄 — 조용히 무시하지 않고 fail-closed 한다.
 _NEAR_MISS_RE = re.compile(r"(?i)(risk\s*level|\brisk\b|위험도).*[：:]")
+_INLINE_CODE_RE = re.compile(r"(`+).*?\1")
+# 선언은 줄을 **시작**해야 한다. 영역을 헤더로 좁힌 뒤에도 문장 중간의 언급은 그대로 통과했다 —
+# `Example: `Risk Level: L1`` 과 `Do not use Risk Level: L1 here.` 가 둘 다 유효한 L1 선언이었고,
+# 헤더에 그런 줄만 있으면 산문이 곧 tier 가 됐다. 여기서 막는 것도 문법이 아니라 **자리**다:
+# bullet 접두·강조·인라인코드 래핑·뒤쪽 사유는 실제 문서가 쓰는 형태라 전부 그대로 허용한다.
+_DECLARATION_START_RE = re.compile(r"(?i)^(?:[-*+]|\d+[.)])?\s*(risk\s*level|risk|위험도)\b")
 
 _EXCERPT_MAX = 80
 
@@ -95,10 +106,15 @@ def _excerpt(raw):
 
 
 def _normalize(raw):
-    """label 강조와 줄 전체를 감싼 강조 하나를 벗긴다."""
+    """label 강조와 줄 전체를 감싼 강조·인라인코드 하나를 벗긴다.
+
+    백틱을 함께 벗기는 이유는 hint 문구가 `Risk Level: L1` 을 백틱째 보여주기 때문이다 — 그대로
+    복사해 적은 줄이 선언으로 읽히지 않으면 안내가 스스로를 배신한다. 줄 전체를 감싼 경우만
+    벗기므로 문장 안의 인라인 예시(Example: 뒤에 백틱으로 감싼 형태)는 대상이 아니다.
+    """
     line = _LABEL_EMPHASIS_RE.sub(
         lambda match: f"{match.group('label')}{match.group('colon')}", raw or "").strip()
-    for marker in ("***", "___", "**", "__", "*", "_"):
+    for marker in ("***", "___", "**", "__", "*", "_", "``", "`"):
         if len(line) > len(marker) * 2 and line.startswith(marker) and line.endswith(marker):
             return line[len(marker):-len(marker)].strip()
     return line
@@ -152,13 +168,30 @@ def header_lines(content):
 
 def _classify(line):
     """한 줄을 (status, tier) 로 — status None 은 선언과 무관한 줄이다."""
-    labels = _LABEL_RE.findall(line)
+    labels = list(_LABEL_RE.finditer(line))
+    # 인라인 예시는 선언 후보가 아니다. 그 밖의 평문에 선언과 같은 label/colon이 남아 있으면
+    # 조용히 무시하지 않는다. `Final Risk Level: L3` 같은 prefixed 선언을 버리면 옆의 L1이
+    # authoritative tier로 채택되기 때문이다. blockquote와 fenced/indented code는 header_lines가
+    # 이 분기 전에 제외한다.
+    if not _DECLARATION_START_RE.match(line):
+        prose = _INLINE_CODE_RE.sub("", line)
+        return (("malformed", None)
+                if _NEAR_MISS_RE.search(prose) else (None, None))
     if not labels:
         return ("malformed", None) if _NEAR_MISS_RE.search(line) else (None, None)
+    start = _DECLARATION_START_RE.match(line)
+    if labels[0].start() != start.start(1):
+        # 줄이 label 로 시작해도 첫 label 뒤 문법이 깨졌다면, 뒤쪽 인라인 예시의 정확한 label을
+        # 그 선언으로 훔쳐 읽으면 안 된다. 첫 구간에 tier가 있으면 명백한 near-miss이므로 막고,
+        # `Risk Level guidance: use `Risk Level: L1`` 같은 산문은 선언으로 만들지 않는다.
+        prefix = line[start.start(1):labels[0].start()]
+        return (("malformed", None)
+                if (_TIER_TOKEN_RE.search(prefix) or _STRUCTURAL_NEAR_MISS_RE.search(prefix))
+                else (None, None))
     if len(labels) != 1:
         # 한 줄에 선언 둘을 숨기는 형태.
         return "malformed", None
-    match = _VALUE_RE.search(line)
+    match = _VALUE_RE.match(line, labels[0].start())
     if not match:
         return "malformed", None
     if _ALTERNATIVES_RE.match(line[match.end():]):

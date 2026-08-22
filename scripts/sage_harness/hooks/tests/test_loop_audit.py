@@ -40,12 +40,20 @@ def _has(issues, code, **arguments):
     return False
 
 
+def _round_record(run_id, iteration, *, now):
+    """`record_round` 가 만드는 것과 같은 모양의 round 레코드(검증기만 우회)."""
+    return {"event": "round", "run_id": run_id, "ts": "t", "epoch": int(now),
+            "iteration": iteration, "found": 1, "survived": 0, "accepted": 0,
+            "arch": 0, "tokens": 10}
+
+
 def _append_out_of_band(root, record):
     """라이브러리 계약을 우회해 들어온 기록을 흉내 낸다.
 
-    `close_loop` 은 lock 안에서 "run 당 terminal 한 번" 을 강제하므로 중복 close 를 만들지 않는다.
-    그래도 사후 탐지층은 있어야 한다 — 수기 편집이나 옛 클라이언트가 남긴 두 번째 close 는 여전히
-    파일에 있을 수 있고, 그걸 잡는 게 `clean`/`integrity_issues` 의 일이다.
+    `close_loop` 과 `record_round` 는 lock 안에서 "terminal 한 번"·"open 된 run 에만" 을 강제하므로
+    중복 close 도, 종료 후 라운드도 만들지 않는다. 그래도 사후 탐지층은 있어야 한다 — 수기 편집이나
+    옛 클라이언트가 남긴 기록은 여전히 파일에 있을 수 있고, 그걸 잡는 게 `clean`/`integrity_issues`
+    의 일이다. 쓰기를 막았다고 탐지를 지우면 이미 손상된 파일이 조용히 통과한다.
     """
     return la._append(la.audit_path(root), record)
 
@@ -210,7 +218,7 @@ class TestLoopAudit(unittest.TestCase):
         self.assertEqual(la.integrity_issues(self.tmp), [])
 
     def test_integrity_orphan_round(self):
-        la.record_round(self.tmp, "rl-ghost", 1, 1, 0, 0, 0, 10, now=1)   # open 없이 round
+        _append_out_of_band(self.tmp, _round_record("rl-ghost", 1, now=1))   # open 없이 round
         issues = la.integrity_issues(self.tmp)
         self.assertTrue(_has(issues, "loop_audit.orphan_event", event="round",
                             run_id="'rl-ghost'"), issues)
@@ -242,10 +250,94 @@ class TestLoopAudit(unittest.TestCase):
                   if r.get("event") == "loop_close" and r.get("run_id") == rid]
         self.assertEqual(len(closes), 1)
 
+    def test_record_round_refuses_a_closed_or_unopened_run_inside_the_lock(self):
+        """탐지층이 있다고 해서 라이브러리가 손상을 써도 되는 것은 아니다.
+
+        해시 체인이라 붙은 줄은 지울 수 없다. 종료 뒤 라운드 한 줄이면 그 감사는 영구히
+        `integrity_issues` 가 붉고, 복구 수단이 없다 — 우회가 아니라 복구 불가능한 손상이다.
+        """
+        rid = la.open_loop(self.tmp, "L3", now=0)
+        la.close_loop(self.tmp, rid, "APPROVED", "CONVERGED", 1, now=1)
+        with self.assertRaises(la.AuditWriteError):
+            la.record_round(self.tmp, rid, 2, 1, 0, 0, 0, 10, now=2)
+        with self.assertRaises(la.AuditWriteError):
+            la.record_round(self.tmp, "rl-never-opened", 1, 1, 0, 0, 0, 10, now=3)
+        self.assertEqual(la.integrity_issues(self.tmp), [])
+        self.assertEqual([r.get("event") for r in la.read_records(self.tmp)],
+                         ["loop_open", "loop_close"])
+
+    def _authorization(self, **over):
+        auth = {"authorization_reason": "배포 창구가 오늘 닫힌다", "confirmed_by": "sejon",
+                "completed_rounds": 1, "configured_max_iterations": 3,
+                "survived_by_severity": {"P0": 0, "P1": 0, "P2": 2, "P3": 0},
+                "actual_risk": "L3", "mode": "STANDARD", "lens_receipts": ["correctness"]}
+        auth.update(over)
+        return auth
+
+    def test_an_early_close_refuses_a_round_that_landed_after_its_authorization(self):
+        """`record_round` 의 in-lock 검증은 close→round 한 방향만 막았다. 반대 순서가 더 나쁘다.
+
+        close 가 1라운드 기준으로 판정을 끝낸 사이 2라운드가 먼저 append 되면, 최신 P0 finding 을
+        무시한 승인이 남는다. 그 감사는 무결성·체인·seq 가 전부 정상이라 게이트도 권위도 잡지
+        못한다 — 손상이 보이는 반대 방향과 달리, 이쪽은 조용히 유효한 stale 승인이 된다.
+        """
+        rid = la.open_loop(self.tmp, "L3", now=0, cycle_stem="demo", lenses=["correctness"])
+        la.record_round(self.tmp, rid, 1, 3, 2, 1, 0, 10, now=1, lens_receipts=["correctness"],
+                        survived_by_severity={"P0": 0, "P1": 0, "P2": 2, "P3": 0})
+        la.record_round(self.tmp, rid, 2, 5, 1, 0, 0, 20, now=2, lens_receipts=["correctness"],
+                        survived_by_severity={"P0": 1, "P1": 0, "P2": 0, "P3": 0})
+
+        with self.assertRaises(la.AuditWriteError):
+            la.close_loop(self.tmp, rid, "APPROVED", la.EARLY_CLOSE_REASON, 1, now=3,
+                          authorization=self._authorization())
+
+        self.assertIsNone(la.close_of(self.tmp, rid))
+        self.assertFalse(la.audit_summary(self.tmp)["runs"][rid]["closed"])
+        self.assertEqual(la.integrity_issues(self.tmp), [])
+
+    def test_an_early_close_refuses_an_authorization_that_no_longer_matches_the_last_round(self):
+        """라운드 수가 같아도 마지막 라운드가 바뀌었으면 그 승인은 다른 사실을 인수한 것이다."""
+        cases = (
+            ("영수증", {"survived_by_severity": {"P0": 0, "P1": 0, "P2": 1, "P3": 0}}),
+            ("lens 영수증", {"lens_receipts": ["correctness", "security"]}),
+            ("라운드 수", {"completed_rounds": 2}),
+        )
+        for label, over in cases:
+            with self.subTest(label), tempfile.TemporaryDirectory() as root:
+                rid = la.open_loop(root, "L3", now=0, cycle_stem="demo", lenses=["correctness"])
+                la.record_round(root, rid, 1, 3, 2, 1, 0, 10, now=1,
+                                lens_receipts=["correctness"],
+                                survived_by_severity={"P0": 0, "P1": 0, "P2": 2, "P3": 0})
+                with self.assertRaises(la.AuditWriteError):
+                    la.close_loop(root, rid, "APPROVED", la.EARLY_CLOSE_REASON, 1, now=2,
+                                  authorization=self._authorization(**over))
+                self.assertIsNone(la.close_of(root, rid))
+
+    def test_a_matching_early_close_still_lands(self):
+        """검증은 판정을 한 순간 뒤에 다시 보는 것이지 새 규칙이 아니다."""
+        rid = la.open_loop(self.tmp, "L3", now=0, cycle_stem="demo", lenses=["correctness"])
+        la.record_round(self.tmp, rid, 1, 3, 2, 1, 0, 10, now=1, lens_receipts=["correctness"],
+                        survived_by_severity={"P0": 0, "P1": 0, "P2": 2, "P3": 0})
+        la.close_loop(self.tmp, rid, "APPROVED", la.EARLY_CLOSE_REASON, 1, now=2,
+                      authorization=self._authorization())
+        self.assertEqual(la.close_of(self.tmp, rid)["reason"], la.EARLY_CLOSE_REASON)
+        self.assertEqual(la.integrity_issues(self.tmp), [])
+
+    def test_a_normal_close_is_not_given_the_early_close_round_binding(self):
+        """일반 close 는 `iterations` 가 라운드 수와 다른 정상 호출이 이미 있다.
+
+        조기 종료에서 옮긴 것은 CLI 가 **이미 강제하던** 판정뿐이다. 같은 검사를 일반 close 로
+        넓히면 지금 통과하던 기록이 소급 거부된다 — 수렴 판정을 advisory 로 두는 것도 계약이다.
+        """
+        rid = la.open_loop(self.tmp, "L3", now=0)
+        la.record_round(self.tmp, rid, 1, 3, 3, 0, 0, 10, now=1)
+        la.close_loop(self.tmp, rid, "APPROVED", "CONVERGED", 5, now=2)
+        self.assertEqual(la.close_of(self.tmp, rid)["iterations"], 5)
+
     def test_integrity_activity_after_close(self):
         rid = la.open_loop(self.tmp, "L3", now=0)
         la.close_loop(self.tmp, rid, "APPROVED", "CONVERGED", 1, now=1)
-        la.record_round(self.tmp, rid, 2, 1, 0, 0, 0, 10, now=2)   # 종료 후 round
+        _append_out_of_band(self.tmp, _round_record(rid, 2, now=2))   # 종료 후 round
         issues = la.integrity_issues(self.tmp)
         self.assertTrue(_has(issues, "loop_audit.event_after_close", event="round"), issues)
 
@@ -272,7 +364,7 @@ class TestLoopAudit(unittest.TestCase):
     def test_integrity_diagnostics_render_in_both_languages(self):
         """같은 진단이 두 언어로 렌더되고, run_id·증거는 언어와 무관하게 같아야 한다."""
         from sage.i18n import LanguageContext, render_issue
-        la.record_round(self.tmp, "rl-ghost", 1, 1, 0, 0, 0, 10, now=1)
+        _append_out_of_band(self.tmp, _round_record("rl-ghost", 1, now=1))
         issue = la.integrity_issues(self.tmp)[0]
 
         korean = render_issue(LanguageContext(language="ko"), issue)

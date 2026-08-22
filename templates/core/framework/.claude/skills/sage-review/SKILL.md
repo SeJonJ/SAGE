@@ -247,12 +247,18 @@ the profile, the host account, or any other metadata — those record who is typ
 accepted the residual risk. `--authorization-reason` carries the user's own words; do not
 summarise, translate, or improve them into a reason they did not give.
 
-What an authorization can never waive — each of these still blocks the close:
+What an authorization can never waive — the command refuses each of these and appends nothing:
 zero completed rounds (or fewer than `minimum_completed_rounds`), unresolved findings at a
-`severity_block` severity, architecture escalation or `BLOCKED_ARCH`, failed build/test/lint,
-unresolved Done Criteria or a revision rerun that has not happened, acceptance `FAIL`, a
-required `NOT TESTED` without an active waiver, audit damage or chain/sequence failure, and a
-binding mismatch.
+`severity_block` severity, architecture escalation or `BLOCKED_ARCH`, unresolved Done Criteria or
+a revision rerun that has not happened, acceptance `FAIL`, a required `NOT TESTED` without an
+active exact waiver, audit damage or chain/sequence failure, and a binding mismatch. The
+acceptance judgment is the same policy and the same parser the Phase-06 report gate uses, so a
+state that gate would refuse cannot pass here first.
+
+**Failed build/test/lint is on you.** Those results live in Phase 03 prose, so no gate can read
+them — the engine has no receipt to check. Closing early on top of a failing required check is a
+state the engine cannot see and will not stop; do not do it, and say so plainly to the user
+rather than treating an accepted close as evidence the state was fine.
 
 The verdict token stays `APPROVED` for compatibility, so the Phase-05 document must say how it
 was reached. Record all four markers outside fenced code blocks, exactly once each, matching
@@ -263,10 +269,16 @@ Review-Close-Reason: USER_AUTHORIZED_EARLY
 Review-Rounds: <completed> (configured max: <max>)
 Residual-Findings: P0=0, P1=0, P2=2, P3=1
 ```
-All four together or none at all — a document carrying some of them is rejected either way, and
-a normally converged run may not claim `REDUCED_BY_USER_AUTHORIZATION` or
-`USER_AUTHORIZED_EARLY`. Neutral lines such as a plain `Review-Rounds:` count on a converged
-run are fine; what is refused is claiming a reduced assurance the audit does not show.
+What triggers the check is **the value, not the presence** of a marker: writing either
+`Review-Assurance: REDUCED_BY_USER_AUTHORIZATION` or `Review-Close-Reason: USER_AUTHORIZED_EARLY`
+claims reduced assurance. Once claimed — or once the audit itself closed early — all four must be
+there with the audit's values, and a document carrying only some of them is rejected either way.
+Neutral lines such as a plain `Review-Rounds:` count on a converged run are fine; what is refused
+is claiming a reduced assurance the audit does not show, or hiding one the audit does.
+
+`(configured max: <max>)` is part of that match, not decoration — it is the denominator that says
+how much review was skipped. Write the ceiling the close disclosure printed; a project with no
+ceiling configured writes `unbounded`, the same word the audit records.
 
 ### After close — Obsidian dashboard (optional)
 If `knowledge_capture.loop_audit_dashboard` is true and `knowledge_capture.vault_path` is set,

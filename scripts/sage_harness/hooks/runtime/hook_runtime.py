@@ -1332,7 +1332,14 @@ def _doc_risk_tier(content):
     얕아진다(BOM 이 낀 `Risk Level: L3` 를 놓쳐 under-read 되던 결함). 사이클 결속 쪽은 반대로
     "정확히 1개"를 요구하는데, 그 방향 차이 때문에 선택은 파서가 아니라 소비자가 한다.
     """
-    tiers = [tier for _line, tier in risk_declaration.declarations(content)]
+    found, error = risk_declaration.scan(content)
+    if error is not None:
+        # 문법을 벗어났지만 선언을 의도한 게 분명한 줄(`Risk Level [custom]: L3`)을 건너뛰고 옆의
+        # 정상 선언을 채택하면, 작성자가 L3 로 쓰려던 사이클이 동거하는 L1 로 확정된다. 그러면
+        # `_authoritative_cycle_tier` 가 None 대신 L1 을 돌려주고 06 심층 검증이 통째로 꺼진다 —
+        # 조용한 하향이다. 게이트의 acceptance risk 추정(`unknown`)과 같은 방향으로 맞춘다.
+        return None
+    tiers = [tier for _line, tier in found]
     if not tiers:
         return None
     return max(tiers, key=_TIER_RANK.__getitem__)

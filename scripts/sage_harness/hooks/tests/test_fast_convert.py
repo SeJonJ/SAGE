@@ -251,7 +251,7 @@ class TestConvertAudit(unittest.TestCase):
         run_id = self._convert()
         fca.record_review(self.root, run_id, loop_run_id="rl-1", actual_risk="L3", rounds=1,
                           lens_receipts_hash="sha256:x", plan_hash_before_review="sha256:y",
-                          result="APPROVED")
+                          result="APPROVED", source_phases_review=self.sources)
         fca.close_fast(self.root, run_id, loop_run_id="rl-1", actual_risk="L3",
                        plan_hash_final="sha256:z", report_path="plan_docs/06-report/demo.md")
         state = fca.audit_summary(self.root)["runs"][run_id]
@@ -259,6 +259,17 @@ class TestConvertAudit(unittest.TestCase):
         self.assertEqual(state["result"], "APPROVED")
         self.assertTrue(state["clean"])
         self.assertIs(state["chain_ok"], True)
+
+    def test_converted_review_rejects_an_incomplete_or_malformed_snapshot(self):
+        run_id = self._convert()
+        malformed = dict(self.sources)
+        malformed["00"] = {}
+        for snapshot in ({"00": self.sources["00"]}, malformed):
+            with self.subTest(snapshot=snapshot), self.assertRaises(fca.AuditWriteError):
+                fca.record_review(
+                    self.root, run_id, loop_run_id="rl-1", actual_risk="L3", rounds=1,
+                    lens_receipts_hash="sha256:x", plan_hash_before_review="sha256:y",
+                    result="APPROVED", source_phases_review=snapshot)
 
     def test_review_re_records_the_snapshot_so_the_delta_is_structured(self):
         """전환 뒤에도 문서는 정상 개발로 바뀐다. 리뷰가 무엇을 봤는지는 그 시점 스냅샷이 정본이다.
@@ -268,7 +279,6 @@ class TestConvertAudit(unittest.TestCase):
         run_id = self._convert()
         changed = dict(self.sources)
         changed["02"] = dict(changed["02"], sha256="sha256:" + "f" * 64, size=999)
-        changed.pop("03")
         changed["04"] = dict(changed["04"])
         fca.record_review(self.root, run_id, loop_run_id="rl-1", actual_risk="L3", rounds=1,
                           lens_receipts_hash="sha256:x", plan_hash_before_review="sha256:y",
@@ -277,7 +287,7 @@ class TestConvertAudit(unittest.TestCase):
         self.assertEqual(review["source_phases_review"], changed)
         delta = review["source_phases_delta"]
         self.assertEqual(delta["changed"], ["02"])
-        self.assertEqual(delta["removed"], ["03"])
+        self.assertEqual(delta["removed"], [])
         self.assertEqual(delta["added"], [])
 
     def test_a_moved_document_counts_as_changed_even_with_identical_bytes(self):
@@ -373,7 +383,7 @@ class TestConvertAudit(unittest.TestCase):
              self.assertRaises(Exception):  # noqa: B017
             fca.record_review(self.root, first, loop_run_id="rl-1", actual_risk="L3", rounds=1,
                               lens_receipts_hash="sha256:x", plan_hash_before_review="sha256:y",
-                              result="APPROVED")
+                              result="APPROVED", source_phases_review=self.sources)
         self.assertEqual(path.read_bytes(), before)
         self.assertEqual([r["event"] for r in fca.read_records(self.root)], ["fast_convert"])
 
@@ -649,6 +659,61 @@ class TestConvertedRunCompletesItsLifecycle(unittest.TestCase):
         self.assertEqual(closed.returncode, 2, closed.stdout)
         self.assertIn("changed after the latest review", closed.stderr)
         self.assertNotIn("fast_close", [record["event"] for record in self._audit()])
+
+    def test_close_refuses_a_converted_review_without_a_document_snapshot(self):
+        """전환 review의 snapshot 부재는 '변경 없음'이 아니라 '결속 불가'다.
+
+        정상 CLI는 snapshot을 쓰지만 감사 writer의 기본값은 None이다. 그 레코드도 체인상 유효하므로
+        local close가 부재를 건너뛰면 서버 권위를 쓰지 않는 프로젝트에서 00~04 결속 없이 닫힌다.
+        """
+        self.assertEqual(self._convert().returncode, 0)
+        fast_run = self._audit()[0]["run_id"]
+        loop_run = self._loop(fast_run)
+        phase00 = Path(self.root, "plan_docs", "00-x", f"{self.STEM}.md").read_text(
+            encoding="utf-8")
+        # 현재 writer는 이 상태를 거부한다. 과거 writer나 수기 append로 이미 존재하는 체인상 유효
+        # 레코드도 close 검출층이 막는지 보기 위해 저장 primitive로 직접 재현한다.
+        record = fca._base("fast_review", fast_run, self.STEM)
+        record.update({
+            "loop_run_id": loop_run,
+            "actual_risk_review": "L3",
+            "rounds": 1,
+            "lens_receipts_hash": "sha256:test",
+            "plan_hash_before_review": hashlib.sha256(phase00.encode("utf-8")).hexdigest(),
+            "result": "APPROVED",
+        })
+        fca._append(self.root, record)
+        self._evidence("05", fast_run, loop_run)
+        self._evidence("06", fast_run, loop_run)
+
+        closed = self._run("fast-cycle", "close", "--run-id", fast_run)
+        self.assertEqual(closed.returncode, 2, closed.stderr)
+        self.assertIn("snapshot", closed.stderr.lower())
+        self.assertNotIn("fast_close", [record["event"] for record in self._audit()])
+
+    def test_a_phase00_conversion_reviews_later_phase_documents_too(self):
+        """전환 시점은 provenance 범위이지 이후 리뷰 범위의 상한이 아니다.
+
+        Phase 00에서 전환해도 소스 편집 전 01~03을 작성하고 리뷰 전 04까지 작성한다. 리뷰가
+        opener의 current_phase만 다시 읽으면 이후 문서는 승인 결속에서 영구히 빠진다.
+        """
+        self.assertEqual(self._convert(**{"--current-phase": "00"}).returncode, 0)
+        fast_run = self._audit()[0]["run_id"]
+        loop_run = self._loop(fast_run)
+        self._evidence("05", fast_run, loop_run)
+
+        reviewed = self._run("fast-cycle", "review", "--run-id", fast_run,
+                             "--loop-run-id", loop_run)
+        self.assertEqual(reviewed.returncode, 0, reviewed.stderr)
+        review = [record for record in self._audit()
+                  if record["event"] == "fast_review"][-1]
+        self.assertEqual(set(review["source_phases_review"]), {"00", "01", "02", "03", "04"})
+
+        self._evidence("06", fast_run, loop_run)
+        self._write_phase("03", extra="리뷰 뒤에 바뀐 구현 기록\n")
+        closed = self._run("fast-cycle", "close", "--run-id", fast_run)
+        self.assertEqual(closed.returncode, 2, closed.stderr)
+        self.assertIn("changed after the latest review", closed.stderr)
 
     def test_evidence_is_read_from_the_run_s_own_cycle_not_the_declared_one(self):
         """run-id 는 사이클 사이를 넘지 않는다.

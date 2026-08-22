@@ -272,10 +272,14 @@ class TestRetro(_ProjectFixture, unittest.TestCase):
         self.assertIn("feat-x-review.md", r.stdout)   # 루트 자동탐색 성공
 
     def test_integrity_warning_surfaced(self):
-        # orphan round(라이브러리 직접) → retro 가 무결성 경고 표면화.
+        # orphan round → retro 가 무결성 경고 표면화. `record_round` 는 lock 안에서 open 없는
+        # run 을 거부하므로, 수기 편집이나 옛 클라이언트가 남긴 기록을 흉내 내 직접 append 한다.
         sys.path.insert(0, os.path.join(REPO, "scripts", "sage_harness", "hooks", "runtime"))
         import loop_audit as la
-        la.record_round(self.tmp, "rl-ghost", 1, 1, 0, 0, 0, 10)
+        la._append(la.audit_path(self.tmp),
+                   {"event": "round", "run_id": "rl-ghost", "ts": "t", "epoch": 1,
+                    "iteration": 1, "found": 1, "survived": 0, "accepted": 0,
+                    "arch": 0, "tokens": 10})
         self._add_05()
         r = retro(root=self.tmp)
         self.assertIn("무결성", r.stdout)

@@ -939,16 +939,15 @@ def _has_na_reason(value):
     return normalized not in ("", "-", "--", "n/a", "na", "none", "없음", "해당 없음", "해당없음")
 
 
-def _acceptance_gate(event, profile, snapshot):
-    """06 작성 시 04 acceptance evidence와 exact L3 waiver를 검사한다.
+def acceptance_policy(profile, cycle_risk):
+    """이 위험도에서 acceptance 를 강제하는가, 그리고 어떤 상태값이 미해결인가.
 
-    SAGE 의 실패 모드: build/test/review 는 통과했지만 명시 요구사항이 미검증/미구현. 이 gate 는
-    04 문서의 구조화된 상태만 확인한다. Waiver는 exact L3 ``NOT TESTED``를 residual WARN으로
-    바꿀 뿐 PASS로 만들지 않으며, FAIL/unknown risk/invalid audit에는 적용되지 않는다.
+    06 report 게이트와 리뷰 조기 완료가 **같은 정책 한 벌**을 봐야 한다. 두 자리에 따로 적으면
+    06 이 막는 04 상태를 조기 완료가 먼저 통과시키고, 그 뒤 06 에서 막히는 순서만 바뀐다 —
+    조기 완료는 사용자가 잔여 위험을 인수하는 자리이지 미검증 요구사항을 넘기는 자리가 아니다.
+
+    반환: `None`(이 위험도에서 강제하지 않음) 또는 `mode`·`statuses`·`unresolved`·`acceptance`.
     """
-    cfg = _pdca_cfg(profile)
-    if cfg is None or not _is_writing_report(event, cfg):
-        return None
     verification = profile.get("verification") or {}
     ac = verification.get("acceptance") if isinstance(verification, dict) else None
     if not isinstance(ac, dict) or not ac.get("enabled"):
@@ -960,7 +959,6 @@ def _acceptance_gate(event, profile, snapshot):
     # L3 acceptance enforcement is an engine invariant. A profile may opt L1/L2 in or out,
     # but cannot bypass the gate entirely by omitting L3 from require_for_risk.
     required_risks.add("L3")
-    cycle_risk = _cycle_risk(event, profile, snapshot, cfg)
     if cycle_risk != "unknown" and cycle_risk not in required_risks:
         return None
     effective_risk = "L3" if cycle_risk == "unknown" else cycle_risk
@@ -998,35 +996,30 @@ def _acceptance_gate(event, profile, snapshot):
     # Profiles cannot mint new resolved states. Only PASS and reasoned N/A resolve;
     # every configured extension remains an unresolved, non-waivable status.
     unresolved.update(statuses - {"PASS", "N/A"})
-    phase_docs = snapshot.get("phase_docs") or {}
-    docs01 = phase_docs.get("01") or []
-    docs04 = phase_docs.get("04") or []
-    binding = cycle_binding.resolve(event, snapshot, cfg)
+    return {"mode": mode, "statuses": statuses, "unresolved": unresolved, "acceptance": ac}
 
-    def fail(detail):
-        return {"ok": False, "mode": mode, "detail": detail}
 
-    if binding.get("error"):
-        return fail(f"cycle binding 실패: {binding['error']}")
-    plan_doc, plan_error = cycle_binding.select_document(docs01, binding["stem"])
-    if plan_error:
-        return fail(f"01 선택 실패: {plan_error}")
-    sel, sel_error = cycle_binding.select_document(docs04, binding["stem"])
-    if sel_error:
-        return fail(f"04 선택 실패: {sel_error}")
-    plan_path = plan_doc.get("path")
-    sel_path = sel.get("path")
-    matrix = _acceptance_matrix((plan_doc or {}).get("content") or "")
+def acceptance_findings(plan_content, report_content, policy, *, plan_path, report_path):
+    """01 matrix 와 04 evidence 대조. `(구조 오류, 미해결 행)`.
+
+    구조 오류는 표를 읽을 수 없다는 뜻이라 판정 자체가 불가능하고, 미해결 행은 읽었는데 통과하지
+    못한 요구사항이다. 둘을 한 리스트로 합치면 waiver 를 적용할 수 있는 행과 그렇지 않은 상태를
+    호출부가 구분하지 못한다.
+    """
+    statuses = policy["statuses"]
+    unresolved = policy["unresolved"]
+    matrix = _acceptance_matrix(plan_content)
     required_ids = matrix["required"]
-    evidence_rows = _acceptance_evidence_rows(sel.get("content") or "")
+    evidence_rows = _acceptance_evidence_rows(report_content)
     if matrix["invalid"]:
-        return fail(f"선택된 01 문서({plan_path})에 invalid acceptance ID: {matrix['invalid']}")
+        return [f"선택된 01 문서({plan_path})에 invalid acceptance ID: {matrix['invalid']}"], []
     if matrix["duplicates"]:
-        return fail(f"선택된 01 문서({plan_path})에 duplicate acceptance ID: {matrix['duplicates']}")
+        return [f"선택된 01 문서({plan_path})에 duplicate acceptance ID: {matrix['duplicates']}"], []
     if not matrix["all"]:
-        return fail(f"선택된 01 문서({plan_path or '미선택'})에 acceptance matrix ID 없음")
+        return [f"선택된 01 문서({plan_path or '미선택'})에 acceptance matrix ID 없음"], []
     if not evidence_rows:
-        return fail(f"선택된 04 문서({sel_path})에 acceptance evidence table 없음(PASS/FAIL/NOT TESTED/N/A 필요)")
+        return [f"선택된 04 문서({report_path})에 acceptance evidence table 없음"
+                "(PASS/FAIL/NOT TESTED/N/A 필요)"], []
     known_statuses = set(statuses)
     unresolved_rows = []
     seen_ids = []
@@ -1054,44 +1047,99 @@ def _acceptance_gate(event, profile, snapshot):
                                     "detail": f"{row.get('raw')} (N/A 사유 누락)"})
     duplicate_evidence = sorted({rid for rid in seen_ids if seen_ids.count(rid) > 1})
     if duplicate_evidence:
-        return fail(f"04 acceptance evidence duplicate ID: {duplicate_evidence}")
+        return [f"04 acceptance evidence duplicate ID: {duplicate_evidence}"], []
     unknown_ids = sorted(set(seen_ids) - set(matrix["all"]))
     if unknown_ids:
-        return fail(f"04 acceptance evidence 에 01 matrix 미정의 ID: {unknown_ids}")
+        return [f"04 acceptance evidence 에 01 matrix 미정의 ID: {unknown_ids}"], []
     missing_ids = [rid for rid in required_ids if rid not in set(seen_ids)]
     if missing_ids:
-        return fail(f"04 acceptance evidence 에 01 matrix required ID 누락: {missing_ids}")
+        return [f"04 acceptance evidence 에 01 matrix required ID 누락: {missing_ids}"], []
+    return [], unresolved_rows
+
+
+def acceptance_waiver_split(unresolved_rows, policy, cycle_risk, stem, waiver_summary, *,
+                            report_path):
+    """미해결 행을 `(여전히 막는 것, exact waiver 로 잔여가 된 것)` 으로 가른다.
+
+    waiver 는 상태를 PASS 로 바꾸지 않는다 — L3 에서 명시 승인된 `NOT TESTED` 하나를 잔여 위험
+    표기로 옮길 뿐이다. FAIL·형식 오류·미인식 상태는 어떤 승인으로도 옮겨지지 않는다.
+    """
+    ac = policy["acceptance"]
+    waiver_cfg = ac.get("waiver") if isinstance(ac.get("waiver"), dict) else {}
+    can_consider_waiver = cycle_risk == "L3" and waiver_cfg.get("enabled") is True
+    waiver_uses, remaining = [], []
+    for row in unresolved_rows:
+        if not (can_consider_waiver and row["waivable"] and row["id"]):
+            remaining.append(row)
+            continue
+        if not waiver_summary.get("valid"):
+            issues = "; ".join((waiver_summary.get("issues") or [])[:3]) or "unknown audit error"
+            remaining.append(dict(row, detail=f"{row['detail']} (waiver audit invalid: {issues})"))
+            continue
+        matches = [grant for grant in (waiver_summary.get("active") or [])
+                   if isinstance(grant, dict)
+                   and grant.get("cycle_stem") == stem
+                   and grant.get("acceptance_id") == row["id"]]
+        if len(matches) != 1:
+            if len(matches) > 1:
+                row = dict(row, detail=f"{row['detail']} (conflicting exact waivers: {len(matches)})")
+            remaining.append(row)
+            continue
+        grant = matches[0]
+        required_grant_fields = ("waiver_id", "reason", "scope", "remaining_evidence", "confirmed_by")
+        if any(not isinstance(grant.get(field), str) or not grant.get(field).strip()
+               for field in required_grant_fields):
+            remaining.append(dict(row, detail=f"{row['detail']} (malformed exact waiver)"))
+            continue
+        waiver_uses.append(dict(grant, report_path=report_path))
+    return remaining, waiver_uses
+
+
+def _acceptance_gate(event, profile, snapshot):
+    """06 작성 시 04 acceptance evidence와 exact L3 waiver를 검사한다.
+
+    SAGE 의 실패 모드: build/test/review 는 통과했지만 명시 요구사항이 미검증/미구현. 이 gate 는
+    04 문서의 구조화된 상태만 확인한다. Waiver는 exact L3 ``NOT TESTED``를 residual WARN으로
+    바꿀 뿐 PASS로 만들지 않으며, FAIL/unknown risk/invalid audit에는 적용되지 않는다.
+    """
+    cfg = _pdca_cfg(profile)
+    if cfg is None or not _is_writing_report(event, cfg):
+        return None
+    cycle_risk = _cycle_risk(event, profile, snapshot, cfg)
+    policy = acceptance_policy(profile, cycle_risk)
+    if policy is None:
+        return None
+    mode = policy["mode"]
+    ac = policy["acceptance"]
+    phase_docs = snapshot.get("phase_docs") or {}
+    docs01 = phase_docs.get("01") or []
+    docs04 = phase_docs.get("04") or []
+    binding = cycle_binding.resolve(event, snapshot, cfg)
+
+    def fail(detail):
+        return {"ok": False, "mode": mode, "detail": detail}
+
+    if binding.get("error"):
+        return fail(f"cycle binding 실패: {binding['error']}")
+    plan_doc, plan_error = cycle_binding.select_document(docs01, binding["stem"])
+    if plan_error:
+        return fail(f"01 선택 실패: {plan_error}")
+    sel, sel_error = cycle_binding.select_document(docs04, binding["stem"])
+    if sel_error:
+        return fail(f"04 선택 실패: {sel_error}")
+    plan_path = plan_doc.get("path")
+    sel_path = sel.get("path")
+    structural, unresolved_rows = acceptance_findings(
+        (plan_doc or {}).get("content") or "", sel.get("content") or "",
+        policy, plan_path=plan_path, report_path=sel_path)
+    if structural:
+        return fail(structural[0])
     if unresolved_rows:
-        waiver_cfg = ac.get("waiver") if isinstance(ac.get("waiver"), dict) else {}
-        can_consider_waiver = cycle_risk == "L3" and waiver_cfg.get("enabled") is True
         waiver_summary = snapshot.get("acceptance_waivers") or {
             "valid": True, "issues": [], "active": []}
-        waiver_uses, remaining = [], []
-        for row in unresolved_rows:
-            if not (can_consider_waiver and row["waivable"] and row["id"]):
-                remaining.append(row)
-                continue
-            if not waiver_summary.get("valid"):
-                issues = "; ".join((waiver_summary.get("issues") or [])[:3]) or "unknown audit error"
-                row = dict(row, detail=f"{row['detail']} (waiver audit invalid: {issues})")
-                remaining.append(row)
-                continue
-            matches = [grant for grant in (waiver_summary.get("active") or [])
-                       if isinstance(grant, dict)
-                       and grant.get("cycle_stem") == binding["stem"]
-                       and grant.get("acceptance_id") == row["id"]]
-            if len(matches) != 1:
-                if len(matches) > 1:
-                    row = dict(row, detail=f"{row['detail']} (conflicting exact waivers: {len(matches)})")
-                remaining.append(row)
-                continue
-            grant = matches[0]
-            required_grant_fields = ("waiver_id", "reason", "scope", "remaining_evidence", "confirmed_by")
-            if any(not isinstance(grant.get(field), str) or not grant.get(field).strip()
-                   for field in required_grant_fields):
-                remaining.append(dict(row, detail=f"{row['detail']} (malformed exact waiver)"))
-                continue
-            waiver_uses.append(dict(grant, report_path=sel_path))
+        remaining, waiver_uses = acceptance_waiver_split(
+            unresolved_rows, policy, cycle_risk, binding["stem"], waiver_summary,
+            report_path=sel_path)
         if remaining:
             lines = [row["detail"] for row in remaining]
             preview = "; ".join(lines[:3])
@@ -1123,6 +1171,34 @@ def _marker_values(content, label):
         if match:
             values.append(match.group(1).strip())
     return values
+
+
+_CONFIGURED_MAX_RE = re.compile(
+    r"^\s*\d+\s+\(\s*configured max\s*:\s*([^)]*?)\s*\)\s*$", re.IGNORECASE)
+
+
+def _configured_max_issues(declared, run):
+    """`Review-Rounds` 의 상한 표기가 감사 레코드와 같은가.
+
+    라운드 수만 대조하면 "몇 번 중 몇 번" 의 분모가 검증에서 빠진다. `1 (configured max: 999)` 처럼
+    상한을 부풀리거나 `1 (configured max: 1)` 로 낮춰 적으면, 실제로 얼마나 건너뛴 리뷰인지가 문서만
+    보는 사람에게 다르게 읽힌다 — 네 표기를 강제하는 이유가 바로 그 판별이다.
+
+    레코드에 상한이 없으면 대조 기준이 없으므로 넘긴다. 조기 종료를 기록하는 경로는 이 값을 항상
+    남기지만, 그 사실을 여기서 다시 요구하면 손상된 레코드 하나가 진단을 상한 이야기로 바꾼다 —
+    감사 손상은 `integrity_issues` 가 말할 일이다.
+    """
+    ceiling = run.get("configured_max_iterations")
+    if ceiling is None:
+        return []
+    expected = str(ceiling)
+    match = _CONFIGURED_MAX_RE.fullmatch(declared or "")
+    if match is None:
+        return [f"Review-Rounds 상한 표기가 정확한 형식이 아님"
+                f"(감사 기록: configured max: {expected})"]
+    if match.group(1) != expected:
+        return [f"Review-Rounds 의 상한이 감사 기록과 다름: 문서={match.group(1)!r} 감사={expected!r}"]
+    return []
 
 
 def _reduced_assurance_issues(content, run):
@@ -1161,6 +1237,7 @@ def _reduced_assurance_issues(content, run):
         issues.append(f"감사 기록의 completed_rounds 가 정수가 아님: {rounds!r}")
     elif rounds is not None and not re.match(rf"^{int(rounds)}\b", found["Review-Rounds"][0]):
         issues.append(f"Review-Rounds 가 감사 기록({rounds})과 다름: {found['Review-Rounds'][0]!r}")
+    issues.extend(_configured_max_issues(found["Review-Rounds"][0], run))
     receipt = run.get("survived_by_severity")
     if isinstance(receipt, dict):
         declared = dict(re.findall(r"(P[0-3])\s*=\s*(\d+)", found["Residual-Findings"][0]))

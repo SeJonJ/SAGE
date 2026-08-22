@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:c00534a311c9bc286e4e37b3283fcbd0bc421851da6b3132ba0a165660512d9d -->
+<!-- sage-doc-source: cli-reference.md sha256:1c04b29c9877ee428c914be77ced85eeec30fd244c0328174720c6587b5f8781 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -103,6 +103,18 @@ convert at Phase 00 and 01–03 are still required before source edits. Without 
 FAST-CONVERTED`, `--reason`, and `--confirmed-by`, the command exits without writing anything. A
 converted run carries no `Fast-Audit-Run` line in its document and binds by stem instead.
 
+`show` and the dashboard label every run with a single `entry=` value, because which contract
+opened the run is what later verdicts turn on.
+
+| `entry` | Meaning | Where it comes from |
+|---|---|---|
+| `FAST` | A fresh Fast run opened with `open` | One composite Phase 00 is the plan of record |
+| `FAST-CONVERTED` | A run that came across with `convert` | The existing Phases 00–04 stay the record; the document carries no `Fast-Audit-Run` |
+| `UNKNOWN` | The opener record cannot be read | Audit damage, hand editing, or an old record. Do not use it as evidence; diagnose with `sage validate` |
+
+`UNKNOWN` does not mean "not Fast" — it means **undecidable**. Do not push that run's evidence
+through a gate; check audit integrity first.
+
 Fast commands are available only for L2/L3 when `pdca.fast_cycle.enabled: true`. Actual risk remains
 separate from `--level`, which selects the Fast review contract. `open` validates the complete input
 set before writing either the plan or audit. An active Fast run blocks `sage cycle clear` and stem
@@ -127,17 +139,32 @@ Early completion requires `pdca.review_loop.early_completion.enabled: true` and 
 while `sage review-loop next` still recommends `CONTINUE`. It is not an iteration waiver but an
 explicit user acceptance of residual non-blocking risk, so an authorization does not carry any of
 these past the gate: zero completed rounds or fewer than `minimum_completed_rounds`, unresolved
-findings at a `severity_block` severity, architecture escalation or `BLOCKED_ARCH`, failing
-build/test/lint, unresolved Done Criteria or a missing revision rerun, acceptance `FAIL`, a required
+findings at a `severity_block` severity, architecture escalation or `BLOCKED_ARCH`, unresolved
+Done Criteria or a missing revision rerun, acceptance `FAIL`, a required
 `NOT TESTED` without an active waiver, audit damage or chain/sequence failure, and a binding
 mismatch.
 
 The verdict token stays `APPROVED` for compatibility, so the Phase 05 document records how it was
-reached. The four markers (`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`,
-`Residual-Findings`) appear exactly once each outside fenced code blocks, **all four or none**. A
+reached. What decides a block is **the value, not the presence** of a marker. Writing either
+`Review-Assurance: REDUCED_BY_USER_AUTHORIZATION` or `Review-Close-Reason: USER_AUTHORIZED_EARLY`
+counts as claiming reduced assurance. Once claimed — or once the audit itself closed early — all
+four markers (`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`, `Residual-Findings`) must
+appear exactly once each outside fenced code blocks, with values matching the audit record. A
 normally closed run that claims reduced assurance is blocked, and so is an early-closed run that
-omits the markers. The `--survived-by-severity` total must equal `--survived` exactly — that is what
-stops a `P0=0`-only receipt from hiding a blocking finding.
+omits the markers — the server authority applies the same rule to that second case. A single
+neutral line such as `Review-Rounds: 3` is not blocked. The `(configured max: <max>)` part of
+`Review-Rounds` is matched too — it is the denominator that says how much review was skipped, so
+inflating or lowering it changes how the document reads. A project with no ceiling configured
+writes `unbounded`, the same word the audit records. The `--survived-by-severity` total must equal
+`--survived` exactly — that is what stops a `P0=0`-only receipt from hiding a blocking finding.
+
+What an early completion accepts is residual review findings, not unverified requirements. If the
+selected Phase 04 still carries an acceptance `FAIL`, or a required `NOT TESTED` without an active
+exact waiver, the early close is refused and nothing is appended. That judgment uses **the same
+policy and the same parser** as the Phase 06 report gate, so a project that does not use
+`verification.acceptance` gains no new gate here. Build/test/lint results, though, live only in
+Phase 03 prose where no gate can read them: an early close over a failing required check is a
+state the engine cannot stop, so a person has to.
 
 ## Knowledge and context
 

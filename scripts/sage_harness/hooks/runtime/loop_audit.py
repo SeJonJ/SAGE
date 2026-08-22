@@ -31,6 +31,10 @@ SEVERITIES = ("P0", "P1", "P2", "P3")
 # 조기 종료로 닫힌 run 은 일반 승인과 같은 토큰(APPROVED)을 쓰되 보증 수준이 다르다는 것을
 # 이 값으로 드러낸다. 값이 없으면 두 승인이 구분되지 않는다.
 REVIEW_ASSURANCE_REDUCED = "REDUCED_BY_USER_AUTHORIZATION"
+# 상한이 설정되지 않은 상태를 나타내는 명시 토큰. 예전에는 `-1` 을 썼는데, 그건 "상한 없음" 이
+# 아니라 "라운드 -1 회" 로 읽힌다 — 대시보드에 `2/-1 rounds` 로 나갔다. 레코드 필드는 None 을
+# 받을 수 없으므로(조기 종료 계약이 누락을 거부한다) 값 자체가 뜻을 말해야 한다.
+UNBOUNDED_ITERATIONS = "unbounded"
 _EARLY_CLOSE_FIELDS = ("authorization_reason", "confirmed_by", "completed_rounds",
                        "configured_max_iterations", "survived_by_severity", "actual_risk",
                        "mode")
@@ -365,7 +369,21 @@ def record_round(root, run_id, iteration, found, survived, accepted, arch=0, tok
             raise AuditWriteError("survived_by_severity invalid: " + "; ".join(issues))
         record["survived_by_severity"] = {key: int(survived_by_severity[key])
                                           for key in SEVERITIES}
-    return _append(audit_path(root), record)
+
+    # close 와 같은 이유로 lock 안에서 다시 본다. CLI 는 orphan(open 없음)과 종료된 run 을 이미
+    # 거부하지만 그 검사는 lock 밖이라, round 와 close 가 경합하면 둘 다 통과해 종료 뒤에 라운드가
+    # 붙는다. 그 줄은 해시 체인의 일부라 지울 수 없고, `integrity_issues` 가 영구히 붉어진다 —
+    # 우회가 아니라 복구 불가능한 손상이다. 판정은 CLI 와 **같은 두 가지**만 옮긴다: iteration
+    # 단조성 같은 새 규칙을 여기서 켜면 지금 통과하던 기록이 소급 거부된다.
+    # (주석인 이유: 중첩 함수의 한국어 docstring 은 판정 문자열 오라클에 판정으로 잡힌다.)
+    def _open_and_not_closed(prior, _record):
+        mine = [item for item in prior if item.get("run_id") == run_id]
+        if not any(item.get("event") == "loop_open" for item in mine):
+            raise AuditWriteError(f"run {run_id!r} was never opened")
+        if any(item.get("event") == "loop_close" for item in mine):
+            raise AuditWriteError(f"run {run_id!r} is already closed")
+
+    return _append(audit_path(root), record, validator=_open_and_not_closed)
 
 
 def close_loop(root, run_id, result, reason, iterations, now=None, reviewer_actual=None,
@@ -408,17 +426,49 @@ def close_loop(root, run_id, result, reason, iterations, now=None, reviewer_actu
         raise AuditWriteError("authorization record is only valid for "
                               f"{EARLY_CLOSE_REASON} closes")
 
-    # lock 안에서 다시 확인하는 단 하나 — run 당 terminal 은 한 번이다. 호출부의 선검사는 lock
-    # 밖이라 두 close 가 경합하면 둘 다 통과할 수 있다. 사후에는 `audit_summary` 의
-    # `clean`(closes<=1)이 잡아 게이트가 막지만, 그건 이미 기록이 두 줄 남은 뒤다. 나머지
-    # 검증(라운드·수렴·Done Criteria)까지 lock 안으로 옮기지는 않는다 — CLI 가 profile 과 phase
-    # 문서를 lock 을 쥔 채 읽는다는 뜻이라 대기 시간이 파일시스템에 묶인다.
+    # lock 안에서 다시 확인하는 것은 둘이다 — terminal 단일성과, 조기 종료 판정이 아직 유효한가.
+    # 호출부의 선검사는 lock 밖이라 두 close 가 경합하면 둘 다 통과할 수 있다. 사후에는
+    # `audit_summary` 의 `clean`(closes<=1)이 잡아 게이트가 막지만, 그건 이미 기록이 두 줄 남은
+    # 뒤다.
+    #
+    # 조기 종료는 반대 순서가 더 나쁘다. close 가 1라운드 기준으로 판정을 끝낸 사이 2라운드가
+    # 먼저 append 되면, 최신 P0 finding 을 무시한 승인이 남는데 그 감사는 무결성·체인·seq 가 전부
+    # 정상이라 어느 층도 잡지 못한다. `record_round` 의 in-lock 검증은 close→round 한 방향만
+    # 막았다. 여기서 반대 방향을 막는다.
+    #
+    # 옮기는 것은 **CLI 가 이미 강제하던 네 판정**뿐이고, 넷 다 CLI 가 같은 한 번의 읽기에서
+    # 파생시킨 값이다(`completed_rounds`·영수증·lens 는 마지막 라운드에서, `iterations` 는 라운드
+    # 수에서). 그래서 이 검증은 새 규칙이 아니라 같은 판정을 한 순간 뒤에 다시 보는 것이다.
+    # 일반 close 에는 걸지 않는다 — `iterations` 가 라운드 수와 다른 정상 호출이 이미 있고,
+    # 수렴 판정은 프로젝트 mode 에 따라 advisory 로 통과하는 것이 계약이다.
+    #
+    # 나머지 검증(Done Criteria·profile)까지 lock 안으로 옮기지는 않는다 — CLI 가 profile 과
+    # phase 문서를 lock 을 쥔 채 읽는다는 뜻이라 대기 시간이 파일시스템에 묶인다.
     # (설명을 docstring 이 아니라 주석으로 두는 이유: 중첩 함수의 한국어 docstring 은 runtime
     #  판정 문자열 오라클에 "한국어 문장을 돌려주는 판정" 으로 잡힌다.)
     def _terminal_once(prior, _record):
-        for item in prior:
-            if item.get("run_id") == run_id and item.get("event") == "loop_close":
-                raise AuditWriteError(f"run {run_id!r} is already closed")
+        mine = [item for item in prior if item.get("run_id") == run_id]
+        if any(item.get("event") == "loop_close" for item in mine):
+            raise AuditWriteError(f"run {run_id!r} is already closed")
+        if reason != EARLY_CLOSE_REASON:
+            return
+        rounds = [item for item in mine if item.get("event") == "round"]
+        if len(rounds) != int(iterations):
+            raise AuditWriteError(
+                f"run {run_id!r} now has {len(rounds)} round(s), not the {int(iterations)} this "
+                "close was authorized against")
+        if len(rounds) != rec.get("completed_rounds"):
+            raise AuditWriteError(
+                f"run {run_id!r} now has {len(rounds)} round(s), not the "
+                f"{rec.get('completed_rounds')} recorded in the authorization")
+        last = rounds[-1] if rounds else {}
+        if last.get("survived_by_severity") != rec.get("survived_by_severity"):
+            raise AuditWriteError(
+                f"run {run_id!r} last round severity receipt changed after the authorization: "
+                f"{last.get('survived_by_severity')!r} != {rec.get('survived_by_severity')!r}")
+        if list(last.get("lens_receipts") or []) != list(rec.get("lens_receipts") or []):
+            raise AuditWriteError(
+                f"run {run_id!r} last round lens receipts changed after the authorization")
 
     return _append(audit_path(root), rec, validator=_terminal_once)
 
