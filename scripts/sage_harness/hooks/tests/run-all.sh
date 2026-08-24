@@ -373,5 +373,21 @@ echo "### 71. 사용자 승인 리뷰 조기 완료 (severity 영수증 · 거�
 python3 "$HERE/test_review_early_close.py" || rc=1
 
 echo ""
+echo "### 72. project hook runtime API 호환성 결정표 (순수 판정)"
+python3 "$HERE/test_runtime_api.py" || rc=1
+
+echo ""
+echo "### 73. 진단 severity·복구 계약 (code 소유 · 금지 명령 · 결정적 정렬)"
+python3 "$HERE/test_recovery_contract.py" || rc=1
+
+echo ""
+echo "### 74. runtime API preflight 가 core import 앞에 선다 (양 host 실제 entrypoint)"
+python3 "$HERE/test_runtime_api_preflight.py" || rc=1
+
+echo ""
+echo "### 75. sage status / sage explain (읽기 전용 · gate parity · 허용 미보증 · locale 독립)"
+python3 "$HERE/test_status_explain.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

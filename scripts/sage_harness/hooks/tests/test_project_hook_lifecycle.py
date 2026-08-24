@@ -22,6 +22,8 @@ from sage.commands import generate as gen  # noqa: E402
 from sage.commands import install  # noqa: E402
 from sage.commands import validate  # noqa: E402
 from sage.install_transaction import DestinationLock, InstallTransaction  # noqa: E402
+from sage import __version__  # noqa: E402
+from sage.runtime_api import HOOK_RUNTIME_API  # noqa: E402
 from test_generate import Args, make_root  # noqa: E402
 from test_install import Args as InstallArgs  # noqa: E402
 
@@ -93,6 +95,8 @@ class TestProjectHookRegistration(unittest.TestCase):
                             Path(root, "scripts", "sage_harness", "hooks", "cycle_binding.py"))
             shutil.copyfile(Path(REPO, "scripts", "sage_harness", "hooks", "risk_declaration.py"),
                             Path(root, "scripts", "sage_harness", "hooks", "risk_declaration.py"))
+            shutil.copyfile(Path(REPO, "scripts", "sage_harness", "hooks", "path_risk.py"),
+                            Path(root, "scripts", "sage_harness", "hooks", "path_risk.py"))
             for runtime in ("claude", "codex"):
                 with self.subTest(runtime=runtime):
                     self.assertTrue(Path(root, "scripts", "sage_harness", "hooks", "adapters",
@@ -373,7 +377,15 @@ class TestProjectHookRuntime(unittest.TestCase):
                         Path(root, "scripts", "sage_harness", "hooks", "cycle_binding.py"))
         shutil.copyfile(Path(REPO, "scripts", "sage_harness", "hooks", "risk_declaration.py"),
                         Path(root, "scripts", "sage_harness", "hooks", "risk_declaration.py"))
+        shutil.copyfile(Path(REPO, "scripts", "sage_harness", "hooks", "path_risk.py"),
+                        Path(root, "scripts", "sage_harness", "hooks", "path_risk.py"))
+        # 이 fixture 는 **정상 설치된** 소비 프로젝트다. 그래서 runtime API marker 를 갖는다 —
+        # 1.0 manifest 에서 marker 부재는 legacy 가 아니라 손상이고, `sage-hook` 이 project core
+        # 를 import 하기 전에 닫는다. marker 없는 fixture 는 "project 결정이 host 를 막는가" 가
+        # 아니라 "손상된 설치가 막히는가" 를 재는 물건이 된다.
         Path(root, "docs", "sage_harness", ".manifest.json").write_text(json.dumps({
+            "generator_version": __version__,
+            "runtime_api": {"required": HOOK_RUNTIME_API},
             "assets": {"hooks/demo-project-gate": {
                 "origin": "project", "form": "core_adapter", "conformance": "PASS",
                 "adapter_contract_version": "1",

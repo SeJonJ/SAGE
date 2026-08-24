@@ -735,7 +735,20 @@ def run_generated_artifact_write_guard(raw_text, core_dir, direct_path=None):
             sys.path.insert(0, core_dir)
         core = importlib.import_module("generated_artifact_write_guard_core")
         decision = core.decide_input(raw_text or "", direct_path=direct_path)
-        message = decision.get("message") or ""
+        # 표시 언어는 렌더 직전에만 닿는다. 판정(`code`·`exit_code`)은 이미 언어 중립으로
+        # 확정돼 있고 여기서 바꾸는 것은 사람이 읽는 문장뿐이다.
+        code = decision.get("code")
+        if code:
+            # 이 모듈은 설치본에서 flat import 로도 로드된다. 상대 import 하나가 그 경로를
+            # 끊으므로 두 형태를 모두 받는다 — `messages.py` 가 i18n 을 받는 방식과 같다.
+            try:
+                from . import messages as _messages
+            except ImportError:
+                import messages as _messages
+            message = core.block_message(decision.get("path") or "",
+                                         _messages.display_language())
+        else:
+            message = decision.get("message") or ""
         if message:
             print(message, file=sys.stderr)
         return int(decision.get("exit_code", 2))

@@ -53,6 +53,9 @@ project core의 `decide(event, profile, snapshot)`에서 `event`는 `hook_id`, `
 | `sage validate --check` | 회귀 명령을 실행하지 않는 빠른 정합성 검사 |
 | `sage validate --schema` | manifest와 profile JSON Schema 검사 |
 | `sage validate --strict` | bootstrap/schema/overlay/profile drift 등 지정된 advisory check를 실패로 승격 |
+| `sage status` | 지금 이 프로젝트에서 SAGE 를 쓸 수 있는지 1~2초 안에 읽기 전용으로 요약 |
+| `sage status --json` | 같은 결과를 기계가 읽는 schema v1 JSON 으로 출력 (locale 무관) |
+| `sage explain --path PATH` | 그 경로의 위험도 하한·매칭 규칙·결속 cycle·빠진 phase 문서를 설명 |
 | `sage doctor` | Python, hook entry, host, reviewer, profile, optional capability 진단 |
 | `sage models --host HOST` | 로컬에서 확인 가능한 model 후보와 검증 수준 표시 |
 | `sage asset-check --gate` | 자산 변경의 auto-approve 가능 여부를 CI exit code로 반환 |
@@ -202,6 +205,26 @@ hash 어디에도 들어가지 않습니다 — 언어는 키보드 앞에 앉�
 Phase 00~06 문서를 쓰는 언어는 이것과 **별개 결정**이며 사이클마다 `Document-Language:` 로
 한 번 고정합니다. 자세한 규칙은 `templates/core/framework/docs/agent/language-policy.md` 에
 있습니다.
+
+## 어느 명령을 언제 쓰는가
+
+같은 질문에 두 명령이 답하지 않는다. 각 명령은 자기 질문 하나만 소유한다.
+
+| 질문 | 명령 |
+|---|---|
+| 지금 SAGE 를 쓸 수 있는가? | `sage status` |
+| 이 경로는 왜 이런 요구를 받는가? | `sage explain --path ...` |
+| 설치 도구·peer model·optional capability 가 준비됐는가? | `sage doctor` |
+| 전체 자산·schema·hash 가 정확한가? | `sage validate --kind all --check --schema` |
+| 다른 SAGE 버전으로 안전하게 이동할 수 있는가? | `sage upgrade --check` |
+
+`sage status` 는 문제를 발견하면 위 상세 명령으로 **연결**하고, 그 명령의 결과를 대신
+만들어내지 않는다. `status` 와 `explain` 은 읽기 전용이라 파일과 `.sage` 감사 기록을 바꾸지
+않으며, 복구 명령을 자동으로 실행하지도 않는다.
+
+`sage explain --path` 는 경로와 현재 저장소 상태만 본다. 실제 write 는 새 내용, 세션 risk
+선언, 한 번에 변경하는 다른 파일에 따라 더 엄격해질 수 있으므로 이 명령은 허용을 보증하지
+않는다 — 그래서 결과에 `ALLOW` 가 없다.
 
 ## 공통 종료코드
 

@@ -37,6 +37,10 @@ def hook_runtime_files(root: str) -> dict[str, list[str]]:
             # 둘 다 import 하므로 누락되면 설치본에서 hook 이 import 단계에서 죽는다. 추적하지
             # 않으면 이 파일만 바꿔 tier 를 낮춰 읽게 만들어도 hook_runtime_hash 가 PASS 한다.
             os.path.join(root, _HOOKS_REL, "risk_declaration.py"),
+            # path_risk.py: 경로 기준 위험도 하한의 유일한 정본. 게이트와 `sage explain` 이
+            # 둘 다 이 함수를 부른다. 누락되면 설치본에서 게이트가 import 단계에서 죽고,
+            # 추적하지 않으면 이 파일의 glob 순서만 바꿔 위험도를 낮춰도 hash 가 PASS 한다.
+            os.path.join(root, _HOOKS_REL, "path_risk.py"),
             os.path.join(runtime, "run_hook.py"),
             os.path.join(runtime, "hook_runtime.py"),
             # checklist_contract.py: profile 검증과 pre-phase4 runtime이 공유하는 경로 봉쇄 계약.
@@ -70,6 +74,10 @@ def hook_runtime_files(root: str) -> dict[str, list[str]]:
             # messages.py: io_claude/io_codex 가 import 하는 게이트/컴플라이언스 문구 SSOT(5-3).
             # 추적 안 하면 사용자 대상 게이트 문구가 validate 미감지로 표류(loop_audit 과 동일 논리).
             os.path.join(runtime, "messages.py"),
+            # recovery.py: BLOCK 마다 다음 행동을 붙이는 표. `messages.py` 가 import 하므로
+            # 누락되면 게이트 렌더가 import 단계에서 죽는다. 추적하지 않으면 복구 명령을
+            # 조용히 바꿔도 hook_runtime_hash 가 PASS 한다.
+            os.path.join(runtime, "recovery.py"),
             # cycle_state.py: 게이트가 "이 편집이 어느 사이클인가" 를 읽는 선언 파일의 해석 정본.
             # 미추적 시 이 파일만 변조해도 hook_runtime_hash 가 PASS 하는데, read_declaration 이
             # 항상 빈 stem 을 돌려주게 바꾸면 선언이 조용히 사라지고, 반대로 고정 stem 을 돌려주게

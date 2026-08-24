@@ -15,6 +15,7 @@ import subprocess
 import sys
 
 import yaml
+from sage.diagnostic_contract import render_recovery
 from sage.diagnostics import Diagnostic
 
 # 셸 어댑터와 동일: --root 없으면 host 별 env → git 루트 → cwd 순으로 프로젝트 루트 해석.
@@ -245,6 +246,84 @@ def _render_bootstrap_block(runtime, hook, message, core_dir=None, root=None):
     return 2
 
 
+def _required_sage_version(root):
+    """shared profile 의 exact required_version. 못 읽으면 None — 안내용 값이지 판정값이 아니다.
+
+    호환성 판정은 정수 API 가 소유한다. 이 문자열은 "그럼 어느 SAGE 를 깔아야 하나" 에만 답한다.
+    그래서 읽기에 실패해도 판정을 바꾸지 않고 그 줄만 빠진다.
+    """
+    try:
+        with open(os.path.join(root, "sage", "project-profile.yaml"), encoding="utf-8") as fh:
+            profile = yaml.safe_load(fh) or {}
+        value = profile.get("sage", {}).get("required_version")
+        return value if isinstance(value, str) and value else None
+    except Exception:
+        return None
+
+
+def _runtime_api_preflight(runtime, hook, root, core_dir, enforcing):
+    """project core 를 import 하기 **전에** 정수 하나로 호환성을 닫는다.
+
+    이 함수가 `_load_run_hook()` 앞에 서는 것 자체가 계약이다. 뒤로 밀리면 새 core 가
+    아직 없는 `sage.*` 를 import 하면서 `ModuleNotFoundError` 가 먼저 나오고, 그 traceback 은
+    host 에 따라 그냥 "hook 이 죽었다" 로 해석된다 — 정책을 실행해야 할 게이트가 조용히 빠진다.
+
+    manifest 파일 자체를 못 읽는 경우는 여기서 다루지 않는다. 그건 이 검사의 소관이 아니라
+    기존 부트스트랩 경로(`_prepare_gate_profile`)가 이미 소유한 상태다. 여기서 함께 처리하면
+    같은 상태에 두 개의 다른 메시지가 생긴다.
+
+    돌려주는 값이 `None` 이면 계속 진행한다. 정수면 그 값이 프로세스 exit code 다.
+    """
+    from sage.runtime_api import compatibility
+
+    manifest_path = os.path.join(root, "docs", "sage_harness", ".manifest.json")
+    try:
+        with open(manifest_path, encoding="utf-8") as fh:
+            manifest = json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+    status, evidence = compatibility(manifest)
+    if status in ("ok", "legacy"):
+        return None
+
+    if status == "too_old":
+        code = "runtime.api_too_old"
+    elif evidence.get("reason") in ("marker_missing", "marker_missing_version_unreadable"):
+        code = "runtime.api_marker_missing"
+    else:
+        code = "runtime.api_marker_damaged"
+
+    translate, _ = _hook_locale(core_dir, root)
+    required_version = _required_sage_version(root)
+    body = _say(core_dir, root, Diagnostic(
+        code,
+        required=evidence.get("required_api", "?"),
+        current=evidence.get("current_api", "?"),
+        reason=evidence.get("reason", "unknown")))
+    # code 를 화면에 남긴다. 번역된 문장은 언어마다 다르지만 code 는 같다 — 사용자가 그대로
+    # 검색할 수 있고 CI 가 수집할 수 있는 유일한 조각이다. 문장만 내면 그게 사라진다.
+    tail = ([translate("hook.runtime.required_sage", version=required_version)]
+            if required_version else [])
+    tail.extend(render_recovery(code, translate, "hook", host=runtime))
+
+    if not enforcing:
+        # logger·baseline 하나의 비호환이 host 작업 전체를 막을 이유는 없다. 다만 조용히
+        # 넘어가지도 않는다 — 실제 write 는 같은 preflight 를 통과한 gate 가 막는다.
+        print("\n".join([f"[sage-runtime-api] WARN [{code}] {body}", *tail]), file=sys.stderr)
+        return 0
+
+    text = "\n".join([f"⛔ BLOCK [{code}]", body, *tail])
+
+    if runtime == "codex" and hook == "stop-compliance-report":
+        # Codex Stop 의 wire 계약은 stdout 단일 JSON + rc 0 이다. 진단 UX 를 이유로 모든 host
+        # event 를 exit 2 로 통일하지 않는다 — 통일하는 순간 Stop 이 깨진다.
+        print(json.dumps({"decision": "block", "reason": text}, ensure_ascii=False))
+        return 0
+    print(text, file=sys.stderr)
+    return 2
+
+
 def _notify_version_contract(root, hook, core_dir=None):
     if hook != "session-start-snapshot":
         return
@@ -307,6 +386,10 @@ def main():
     project_state = (_project_hook_state(root, a.hook)
                      if a.hook not in _FAIL_CLOSED_HOOKS else "unknown")
     fail_closed = a.hook in _FAIL_CLOSED_HOOKS or project_state in ("project", "damaged")
+    # project core 를 import 하기 전에 선다. 이 위치가 계약이며 mutation test 가 고정한다.
+    api_exit = _runtime_api_preflight(a.runtime, a.hook, root, core_dir, fail_closed)
+    if api_exit is not None:
+        return api_exit
     profile_error = _prepare_gate_profile(
         root, a.hook, a.runtime, project_hook=project_state == "project")
     if profile_error:

@@ -20,6 +20,7 @@ import sys
 
 import cycle_binding
 import risk_declaration
+from path_risk import path_risk_floor
 try:
     from sage.done_criteria_contract import (
         document_revision,
@@ -60,40 +61,23 @@ def _has_kw(content: str, keywords: list) -> bool:
 
 
 def _classify_one(path: str, content: str, profile: dict) -> tuple:
-    """단일 변경의 (risk, reason, trigger_sources) — desktop 은 별도(여기선 분류만)."""
-    r = profile.get("risk", {})
-    l0_excluded = any(_imatch(path, g) for g in r.get("l0_exclude_globs", []))
-    # L0 즉시통과. Domain/explicit exclusion 은 동일 higher-risk path rule로 계속 분류한다.
-    if not l0_excluded:
-        for g in r.get("l0_pass_globs", []):
-            if _imatch(path, g):
-                return ("L0", "문서/plan", ["l0_path"])
+    """단일 변경의 (risk, reason, trigger_sources) — desktop 은 별도(여기선 분류만).
 
-    risk, reason, trigger_sources = "none", "", []
-    # 사유(reason)는 범용 규칙 참조형(제약 #2 독립). 특정 스택/도메인명 금지 —
-    # "어느 매칭 규칙이 발동했는지"만 기술한다. 도메인 명칭은 profile.risk(글롭/키워드)가 정의, core 는 중립.
-    for g in r.get("l3_filename_globs", []):
-        if _imatch(path, g):
-            risk, reason, trigger_sources = "L3", "L3 filename 패턴", ["filename_l3"]
-            break
-    if risk == "none":
-        for g in r.get("l2_path_globs", []):
-            if _imatch(path, g):
-                risk, reason, trigger_sources = "L2", "L2 소스/설정", ["path_l2"]
-                break
-    if risk == "none":
-        for g in r.get("l1_path_globs", []):
-            if _imatch(path, g):
-                risk, reason, trigger_sources = "L1", "L1 저위험", ["path_l1"]
-                break
-    if risk == "none" and l0_excluded:
+    경로 기준 하한은 `path_risk.path_risk_floor` 가 소유한다. 이 모듈이 자기 사본을 갖지
+    않는 이유는 `sage explain --path` 가 같은 판정을 보여줘야 하기 때문이다 — 두 벌을 두면
+    언젠가 갈리고, 갈린 뒤에는 어느 쪽이 진짜 게이트 판정인지 알 수 없다.
+    """
+    r = profile.get("risk", {})
+    floor = path_risk_floor(path, profile)
+    if floor.risk == "L0":
+        return floor.as_tuple()
+    if floor.risk == "none":
+        return ("none", "", [])
+    if "invalid_profile" in floor.trigger_sources:
         # validate/compiler가 orphan exclusion을 차단하지만, pure core도 malformed runtime
         # profile을 L0/none으로 하향하지 않는다.
-        return ("L3", "L0 exclusion 상위 위험도 결속 누락", ["l0_excluded", "invalid_profile"])
-    if risk == "none":
-        return ("none", "", [])
-    if l0_excluded:
-        trigger_sources.append("l0_excluded")
+        return floor.as_tuple()
+    risk, reason, trigger_sources = floor.as_tuple()
 
     # 내용 escalation (L1/L2 → L3, L1 → L2). Filename으로 이미 L3인
     # change도 content provenance는 보존해 감사/compound gate 입력이 정확해야 한다.

@@ -83,6 +83,7 @@ class TestAssetPathsKinds(unittest.TestCase):
             [
                 os.path.join("scripts", "sage_harness", "hooks", "cycle_binding.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "risk_declaration.py"),
+                os.path.join("scripts", "sage_harness", "hooks", "path_risk.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "run_hook.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "hook_runtime.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "checklist_contract.py"),
@@ -93,6 +94,7 @@ class TestAssetPathsKinds(unittest.TestCase):
                 os.path.join("scripts", "sage_harness", "hooks", "policies", "retro_gate.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "policies", "writeback_depth_gate.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "messages.py"),
+                os.path.join("scripts", "sage_harness", "hooks", "runtime", "recovery.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "cycle_state.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "document_language.py"),
                 os.path.join("scripts", "sage_harness", "hooks", "runtime", "prose_language.py"),

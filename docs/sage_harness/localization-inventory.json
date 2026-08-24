@@ -150,7 +150,7 @@
     {
       "source_file": "sage/commands/generate.py",
       "source_symbol": "<module>",
-      "source_line": 609,
+      "source_line": 614,
       "text": "아래는 이 프로젝트",
       "reason": "_OVERLAY_HEADER_PREFIXES — 렌더 본문에서 compose_block 고지 헤더를 걷어내는 prefix 매처. CORE 렌더 헤더는 overlay_common.compose_block 과 동일하게 표시 언어에 매이지 않는 산출물 본문(해시 앵커 입력)이라 번역 대상이 아니다."
     },

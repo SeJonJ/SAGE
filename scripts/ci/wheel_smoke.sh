@@ -46,7 +46,7 @@ print(f"   sage_root = {root} (번들 OK)")
 PYEOF
 
 PROJ="$WORK/proj"; mkdir -p "$PROJ"
-echo "== [4/8] sage install (번들 → 신규 프로젝트 복사) =="
+echo "== [4/9] sage install (번들 → 신규 프로젝트 복사) =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$PROJ" >/dev/null
 test -f "$PROJ/docs/sage_harness/.manifest.json" || { echo "❌ manifest 미생성"; exit 1; }
 test -f "$PROJ/scripts/sage_harness/hooks/pre_implementation_gate_core.py" || { echo "❌ hook 정본 미복사"; exit 1; }
@@ -59,7 +59,7 @@ test -f "$PROJ/scripts/sage_harness/hooks/runtime/fast_cycle_audit.py" || { echo
 echo "   install OK (manifest + hook/Fast 정본 + profile + CORE Fast 스킬 복사)"
 
 # 강제 게이트 검증: 부트스트랩 전(project.name 빈값)엔 generate 가 BLOCK(exit 2) 돼야 한다.
-echo "== [4b/8] 부트스트랩 게이트 (빈 profile → generate BLOCK 기대) =="
+echo "== [4b/9] 부트스트랩 게이트 (빈 profile → generate BLOCK 기대) =="
 if env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --write --dest "$PROJ" >/dev/null 2>&1; then
   echo "❌ 미부트스트랩 profile 인데 generate 가 통과함 (게이트 미작동)"; exit 1
 fi
@@ -76,12 +76,12 @@ t = t.replace('l2_path_globs: []', 'l2_path_globs: ["src/**"]')
 open(p, "w", encoding="utf-8").write(t)
 PY
 
-echo "== [5/8] sage generate --kind hook --write (등록 산출물 + manifest 스탬프) =="
+echo "== [5/9] sage generate --kind hook --write (등록 산출물 + manifest 스탬프) =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --write --dest "$PROJ" >/dev/null
 test -f "$PROJ/.claude/settings.json" || { echo "❌ generate 가 .claude/settings.json 미생성"; exit 1; }
 echo "   generate OK (.claude/settings.json 등록 산출물)"
 
-echo "== [6/8] 설치 template 기반 project hook 등록 + 양 host 실제 dispatch =="
+echo "== [6/9] 설치 template 기반 project hook 등록 + 양 host 실제 dispatch =="
 "$PY" - "$PROJ" <<'PY'
 import os, sys
 from pathlib import Path
@@ -120,10 +120,10 @@ for HOST in claude codex; do
 done
 echo "   project hook lifecycle OK (template → register → claude/codex dispatch)"
 
-echo "== [7/8] sage validate --check --schema (전체 PASS 기대) =="
+echo "== [7/9] sage validate --check --schema (전체 PASS 기대) =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" validate --check --schema --root "$PROJ"
 
-echo "== [8/8] Fast Cycle wheel 진입점 + strict audit runtime =="
+echo "== [8/9] Fast Cycle wheel 진입점 + strict audit runtime =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" fast-cycle --help | grep -q "open"
 "$PY" - "$PROJ" <<'PY'
 import os, sys
@@ -141,5 +141,31 @@ assert summary["file_ok"] is True and state["chain_ok"] is True and state["seq_o
 assert state["cycle_stem"] == "wheel-fast" and state["lenses"] == ["correctness", "error_handling"]
 PY
 echo "   Fast Cycle packaging OK (CLI + runtime + strict-chain open)"
+
+cat > "$WORK/check_status.py" <<'CHECKPY'
+import json, sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["schema_version"] == 1, payload
+assert payload["status"] in ("READY", "ATTENTION", "BLOCKED"), payload["status"]
+assert payload["runtime_api"]["current"] >= 1, payload["runtime_api"]
+# marker 는 install/generate 가 스탬프한다 — 이 프로젝트는 방금 둘 다 거쳤다.
+assert payload["runtime_api"]["required"] == payload["runtime_api"]["current"], payload["runtime_api"]
+for entry in payload["diagnostics"]:
+    assert set(entry) == {"code", "severity", "evidence", "recovery"}, entry
+    for step in entry["recovery"]:
+        assert set(step) == {"id", "command", "mutating"}, step
+CHECKPY
+
+echo "== [9/9] 운영 진단 명령 + runtime API preflight (설치 wheel 단독) =="
+# 설치본에서 실제로 도는지 본다. 엔진 소스 트리에서 도는 것은 배포 증거가 아니다.
+env -u SAGE_RESOURCE_ROOT "$SAGE" status --root "$PROJ" --json > "$WORK/status.json" || true
+"$PY" "$WORK/check_status.py" "$WORK/status.json"
+env -u SAGE_RESOURCE_ROOT "$SAGE" explain --path "src/wheel-smoke.py" --root "$PROJ" > "$WORK/explain.txt" || { echo "❌ explain 실패"; cat "$WORK/explain.txt"; exit 1; }
+grep -q "Path risk floor:" "$WORK/explain.txt" || { echo "❌ explain 출력에 위험도 하한 없음"; exit 1; }
+! grep -q "ALLOW" "$WORK/explain.txt" || { echo "❌ explain 이 허용을 단정함"; exit 1; }
+env -u SAGE_RESOURCE_ROOT "$SAGE" explain --path "../outside.py" --root "$PROJ" > "$WORK/escape.txt" 2>&1 && { echo "❌ root 이탈 경로가 통과함"; exit 1; }
+grep -q "explain.path_outside_root" "$WORK/escape.txt" || { echo "❌ 이탈 거부 code 없음"; exit 1; }
+echo "   operability OK (status schema v1 + explain 비보증 + 경로 봉쇄)"
 
 echo "✅ 순수 wheel 단독배포 게이트 PASS — 번들 리소스만으로 install→generate→validate 폐루프 동작"

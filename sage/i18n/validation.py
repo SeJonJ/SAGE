@@ -57,6 +57,26 @@ def _positional_placeholders(template: str) -> list[str]:
             if name is not None and (name == "" or name.isdigit())]
 
 
+def load_hook_fragments(repo_root: str) -> dict[str, dict]:
+    """설치 hook 의 `FRAGMENTS` 테이블. `MESSAGES` 와 다른 물건이다 —
+    `MESSAGES` 는 게이트 결정이 싣는 message_key 의 표이고, `FRAGMENTS` 는 그 문장에 붙는
+    조각(hint·복구 설명·guard 사유)의 표다. 둘을 같은 것으로 보면 있는 문구를 없다고 한다.
+    """
+    locale_dir = os.path.join(repo_root, *_HOOK_LOCALE_REL)
+    fragments: dict[str, dict] = {}
+    for language in ("ko", "en"):
+        path = os.path.join(locale_dir, f"{language}.py")
+        if not os.path.isfile(path):
+            continue
+        namespace: dict = {}
+        with open(path, encoding="utf-8") as handle:
+            exec(compile(handle.read(), path, "exec"), namespace)  # noqa: S102
+        table = namespace.get("FRAGMENTS")
+        if isinstance(table, dict):
+            fragments[language] = table
+    return fragments
+
+
 def load_hook_catalogs(repo_root: str) -> dict[str, dict]:
     """설치 hook locale 을 resource 로 읽는다. 아직 없으면 빈 dict — 배치 순서를 막지 않는다."""
     locale_dir = os.path.join(repo_root, *_HOOK_LOCALE_REL)
@@ -190,6 +210,97 @@ def release_debt_issues(repo_root: str) -> list[str]:
     return issues
 
 
+
+# 진단 code 로 승격되면 안 되는 이름들. `block_*` 패턴으로 잡히지만 메시지 키가 아니다 —
+# 함수명·함수 파라미터·profile 설정 키·다른 키의 prefix 다. 기계 변환을 채택했다면 이 넷에서
+# `gate.message`·`gate.reason`·`gate.release`·`gate.stale` 이라는 안정 식별자가 만들어졌을
+# 것이고, 안정 식별자는 한 번 나가면 되돌릴 수 없다.
+NOT_MESSAGE_KEYS = frozenset({"block_message", "block_reason", "block_release", "block_stale"})
+
+
+def _load_hook_recovery(repo_root: str):
+    import importlib.util
+    path = os.path.join(repo_root, *_RUNTIME_REL, "recovery.py")
+    spec = importlib.util.spec_from_file_location("_sage_hook_recovery", path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def recovery_issues(repo_root: str) -> list[str]:
+    """BLOCK 에 다음 행동이 있는가 — CLI·hook 두 벌이 어긋나지 않는가.
+
+    두 벌인 이유는 설치된 hook 이 엔진 없이 돌아야 하기 때문이다(`sage.diagnostic_contract` 를
+    import 할 수 없다). 공통인 것은 code 와 recovery id 의 **형태와 의미**이고, 그 일치는
+    런타임이 아니라 여기서 대조한다.
+    """
+    from sage.diagnostic_contract import BLOCK, RECOVERY as CLI_RECOVERY, SEVERITY, contract_issues
+
+    issues = [f"cli/diagnostic_contract: {issue}" for issue in contract_issues()]
+
+    try:
+        hook = _load_hook_recovery(repo_root)
+    except Exception as exc:
+        return issues + [f"hook/recovery: 불러오지 못했다 ({type(exc).__name__})"]
+    if hook is None:
+        return issues + ["hook/recovery: runtime/recovery.py 가 없다"]
+
+    fragments = load_hook_fragments(repo_root)
+
+    # 1. 모든 hook BLOCK code 에 실행 가능한 명령이 최소 하나 있다.
+    for code in sorted(set(hook.CODE_OF.values()) | set(hook.GUARD_CODES)):
+        steps = hook.steps_for(code)
+        if not steps:
+            issues.append(f"hook/recovery: {code} 에 복구 순서가 없다")
+            continue
+        if not any(command for _id, command, _key, _mut in steps):
+            issues.append(f"hook/recovery: {code} 의 복구가 전부 수동 지시다")
+
+    # 2a. catalog 에 있는 모든 `block_*` 메시지 키가 code 를 갖는다. 이 방향이 핵심이다 —
+    #     새 BLOCK 을 추가하고 code 를 잊으면 그 차단만 조용히 `Next:` 없이 나간다.
+    catalogs = load_hook_catalogs(repo_root)
+    for key in sorted(catalogs.get("ko", {})):
+        if not key.startswith("block_") or key in NOT_MESSAGE_KEYS:
+            continue
+        if key not in hook.CODE_OF:
+            issues.append(f"hook/recovery: 메시지 키 {key} 에 진단 code 매핑이 없다 — "
+                          "이 차단은 `Next:` 없이 나간다")
+
+    # 2. 메시지 키가 아닌 이름이 code 로 승격되지 않았다.
+    for name in sorted(NOT_MESSAGE_KEYS & set(hook.CODE_OF)):
+        issues.append(f"hook/recovery: {name} 은 메시지 키가 아닌데 code 로 승격됐다")
+
+    # 3. 같은 recovery id 는 양쪽에서 같은 명령을 낸다.
+    cli_commands = {}
+    for steps in CLI_RECOVERY.values():
+        for step in steps:
+            cli_commands.setdefault(step.id, step.command)
+    for code, steps in sorted(hook.RECOVERY.items()):
+        for step_id, command, _key, _mut in steps:
+            if step_id in cli_commands and cli_commands[step_id] != command:
+                issues.append(f"recovery id {step_id!r} 가 CLI 와 hook 에서 다른 명령을 낸다 — "
+                              f"{cli_commands[step_id]!r} vs {command!r}")
+
+    # 4. Action 단계의 설명 key 가 두 hook catalog 에 모두 있다.
+    for code, steps in sorted(hook.RECOVERY.items()):
+        for step_id, command, description_key, _mut in steps:
+            if command:
+                continue
+            for language in ("ko", "en"):
+                if description_key not in fragments.get(language, {}):
+                    issues.append(f"hook/{description_key}[{language}]: "
+                                  f"복구 설명 문구가 없다 ({code} / {step_id})")
+
+    # 5. CLI 쪽 BLOCK code 도 recovery 를 가진다(contract_issues 가 이미 보지만, 두 검사가
+    #    같은 사실을 보는 편이 낫다 — 한쪽이 조용히 꺼져도 다른 쪽이 남는다).
+    for code, level in sorted(SEVERITY.items()):
+        if level == BLOCK and not CLI_RECOVERY.get(code):
+            issues.append(f"cli/recovery: {code} 가 BLOCK 인데 복구 순서가 없다")
+    return issues
+
+
 def catalog_issues(repo_root: str | None = None, hook_message_keys: set[str] | None = None) -> list[str]:
     """전체 검사 결과. 빈 리스트가 통과다."""
     issues = _domain_issues("cli", CATALOGS)
@@ -204,6 +315,7 @@ def catalog_issues(repo_root: str | None = None, hook_message_keys: set[str] | N
     issues.extend(_content_issues("hook", hooks))
     if repo_root:
         issues.extend(runtime_judgement_issues(repo_root))
+        issues.extend(recovery_issues(repo_root))
 
     if hooks:
         overlap = sorted(set(CATALOGS.get("ko", {})) & set(hooks.get("ko", {})))

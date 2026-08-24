@@ -684,6 +684,33 @@ stdin이 닫힌다), EH-16의 "재료는 이미 있다"는 L0에만 맞고 pdca 
 - **트리거**: 검증 실패를 게이트가 막아야 할 필요가 실제로 생길 때. 이름: `sage-verification-receipt`.
 - **상태**: 🕗 보류 — 미착수.
 
+## EH-24 — 한국어 판정 부채 스캐너가 `hooks/` 최상위를 보지 않는다
+
+- **배경**: `sage/i18n/validation.py:132 korean_returning_runtime_functions` 는 판정 함수가
+  완성 한국어 문장을 돌려주는지 검사하고, `release_debt_issues` 가 그걸 publish 차단 사유로 쓴다.
+  스캔 범위는 `_RUNTIME_REL = ("scripts","sage_harness","hooks","runtime")` 아래
+  `CLI_CONSUMED_RUNTIME_MODULES` 7개뿐이다.
+- **문제**: `hooks/` 최상위의 core 모듈은 범위 밖이다. 그래서
+  `generated_artifact_write_guard_core.py:103 block_message()` 가 사용자 노출 BLOCK 을
+  한국어 전용으로 조립하고 있는데도 `KOREAN_JUDGEMENT_DEBT` 는 비어 있고
+  `runtime_judgement_issues()` 는 `[]` 를 돌려준다 — 부채가 "없음" 으로 보고된다.
+  부재가 통과로 떨어지는 형태이며, 이 저장소가 반복해서 틀린 가정과 같은 종류다.
+- **왜 지금 안 넓히는가**: 현재 술어는 "함수 본문 어딘가에 한국어 리터럴이 있으면 부채" 다.
+  이 술어로 `hooks/` 최상위를 스캔하면 22 건이 잡히는데 상당수가 사용자 메시지가 아니다 —
+  `pre_implementation_gate_core.py:869 normalized` 의 한국어는
+  `re.sub(r"[^a-z0-9가-힣]", ...)` 의 정규식 문자 클래스다. 술어를 그대로 넓히면
+  `release_debt_issues` 가 이것들을 세어 실제 부채가 아닌 것으로 릴리즈를 막는다.
+- **접근**: 술어를 "반환값·예외 메시지로 흘러나가는 문자열" 로 좁힌 뒤 범위를 넓힌다.
+  return 문과 raise 인자에서 도달 가능한 상수만 보고, 정규식 리터럴과 내부 라벨은 제외한다.
+- **규모/위험**: 중간. 술어 정확도가 전부이고, 느슨하면 릴리즈를 잘못 막고 빡빡하면
+  지금과 같은 사각지대가 남는다.
+- **판정(2026-08-23)**: `sage-operability-diagnostics` 가 write guard 표면 자체는 이관해
+  조용한 결함을 없앤다. 스캐너 확장은 과차단을 만들 수 있어 이 사이클에서 분리했다.
+- **트리거**: `hooks/` 최상위에 새 사용자 노출 문자열 표면이 또 생기거나, publish 전
+  한영 동등성을 기계로 보증해야 할 때. 이름: `sage-i18n-debt-scanner-scope`.
+- **상태**: 🕗 보류 — 미착수.
+
+
 ---
 
 ## (참고) 보류 — 자산 사이클 내 기록

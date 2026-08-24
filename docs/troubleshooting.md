@@ -285,6 +285,41 @@ override로 우회할 수 없습니다.
 파일, 사라진 gitdir). 저장소 정체성을 확정하지 못한 채 발급하면 다른 저장소의 권한과 뒤섞이므로
 차단합니다. `.git` 상태를 복구한 뒤 재시도하세요. 자세한 위치 규칙은 [Artifacts](ARTIFACTS.md) §1.1.
 
+## `sage-hook`이 runtime API 불일치로 차단
+
+```text
+⛔ BLOCK [runtime.api_too_old]
+이 프로젝트의 hook 은 SAGE runtime API 2 를 요구하지만, 이 sage-hook 은 API 1 를 제공합니다.
+Next: sage upgrade --check
+Next: pipx upgrade sage-harness
+```
+
+프로젝트에 설치된 hook 은 그 저장소에 설치된 SAGE 가 만들었고, 그걸 실행하는 `sage-hook` 은
+머신에 설치된 package 가 준다. 둘의 나이가 다르면 새 hook 이 아직 없는 module 을 import 하고,
+그 실패는 host 에 따라 그냥 "hook 이 죽었다" 로 처리된다 — 정책을 실행해야 할 게이트가 조용히
+빠지는 경로다. 그래서 이 판정은 **project core 를 import 하기 전에** 정수 비교 하나로 닫는다.
+
+화면의 `Next:` 순서를 그대로 따르면 된다. package 를 먼저 올리고, 설치 자산을 재생성한 뒤,
+`sage status` 로 확인한다.
+
+`runtime_api marker 가 없습니다` 로 막혔다면 manifest 가 1.0 형식인데 marker 만 없는 상태다.
+이때 **marker 부재는 "1.0 이전 설치" 로 인정되지 않는다.** 인정하면 marker 와 version 을 함께
+지운 downgrade 가 통과하기 때문이다. `sage install --host <host> --force --dest .` 로 다시
+스탬프한다.
+
+## 차단 메시지에 `Next:`가 없음
+
+SAGE 가 내는 모든 사용자 노출 차단에는 최소 한 줄의 `Next:` 가 있고, 그중 최소 하나는 그대로
+붙여넣어 실행할 수 있는 명령이다. 사람이 직접 해야 하는 일은 `Next:` 가 아니라 `Action:` 으로
+나온다 — 붙여넣을 수 없는 문장을 `Next:` 로 내면 그 토큰이 "다음에 칠 것" 이라는 뜻을 잃는다.
+
+`Next:` 와 `Action:` 토큰은 한국어·영어에서 동일하다. 화면에서 검색하거나 로그에서 모아야
+하기 때문이다. 대괄호 안의 진단 code(`[gate.phase_incomplete]`)도 같은 이유로 번역하지 않는다.
+
+`Next:` 가 하나도 없는 차단을 만났다면 그건 결함이다. 그 code 와 함께 보고하면 된다.
+직접 만든 project hook 이 낸 메시지에는 SAGE 가 복구 명령을 추측해 붙이지 않으며, 대신
+`Next: sage status` 만 보장한다.
+
 ## Cross-model 리뷰가 BLOCKED
 
 `sage doctor`로 반대 runtime CLI와 model 설정을 확인합니다. required 정책에서는 peer runtime에

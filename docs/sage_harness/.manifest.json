@@ -24,7 +24,7 @@
         "claude": "sha256:ec506d9e4e881f66ca7f8a8a4081b517c0b86d2cdafdf9e9f7f6a869e5facf93",
         "codex": "sha256:eef506545ad80aa90064de2471fce4350ce5454730d2473d988a6d1593b995de"
       },
-      "canonical_hash": "sha256:91ed061d25644ce1c6aeeb85b3005ef98b33902bf1f0bbfeb05bd5876d827291",
+      "canonical_hash": "sha256:fbacf5068ee5395da784f4349c6265353c5f3b9acbd95121ef8940c6bbf9b4b4",
       "conformance": "PASS",
       "form": "core_adapter",
       "render_hash": {
@@ -60,7 +60,7 @@
         "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
         "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
       },
-      "canonical_hash": "sha256:811578f05166d7aa7ab70d579e9a41ffbce28c006a29e3dd4f96feb060ca9e9b",
+      "canonical_hash": "sha256:b50c1ceb5fc12e75f083e5fde7a23a0843de00fd2a0b541352b886546e8c6144",
       "conformance": "PASS",
       "form": "core_adapter",
       "l3_review_strategy": "codex_feature_signal",
@@ -132,9 +132,12 @@
   "hook_runtime_hash": {
     "claude": "sha256:2d0318a75804defae4ac5b53e3ea9e4fe5766c21a937c1c091f45bb780be8254",
     "codex": "sha256:3519535630dd81a83cbe191b51fa3668d09ed3a9c46842e5948145a3737c941c",
-    "shared": "sha256:bb7bf81676eb66e187838c79260fd3153c43fee3e94d8011c195cf23da3168dc"
+    "shared": "sha256:d72fae6d7d9ac6c76547039ba590a45b06aca32c5743c52564ef7fbca91e5d00"
   },
   "host_runtime": "claude",
+  "runtime_api": {
+    "required": 1
+  },
   "sage_version": "0.1.0",
   "template_version": "0.1.0"
 }

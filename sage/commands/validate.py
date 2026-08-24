@@ -22,6 +22,7 @@ from sage.asset_paths import AssetPaths
 from sage.commands._common import contract_version_of
 from sage.diagnostics import Diagnostic
 from sage.hook_runtime_hash import calculate_hook_runtime_hash
+from sage.runtime_api import compatibility
 from sage.i18n import exception_text, language_of, render_issue, tr
 
 # severity rank (exit code 매핑은 _exit_code)
@@ -429,6 +430,25 @@ def _validate_hook_runtime_hash(root, manifest, language=None):
     return sev, msgs
 
 
+def _validate_runtime_api(manifest, language=None):
+    """manifest marker ↔ package 상수 대조.
+
+    `sage-hook` 이 실행 시점에 하는 판정과 **같은 순수 함수**를 쓴다. 여기서 따로 해석하면
+    validate 가 통과시킨 설치를 hook 이 막는(또는 그 반대의) 상태가 만들어진다.
+    """
+    status, evidence = compatibility(manifest)
+    if status == "ok":
+        return "PASS", []
+    if status == "legacy":
+        return "WARN", [tr(language, "cli.validate.runtime_api_legacy")]
+    if status == "too_old":
+        return "FAIL", [tr(language, "cli.validate.runtime_api_too_old",
+                           required=evidence.get("required_api"),
+                           current=evidence.get("current_api"))]
+    return "FAIL", [tr(language, "cli.validate.runtime_api_damaged",
+                       reason=evidence.get("reason", "unknown"))]
+
+
 def _conformance_check(root, asset_id, claims_path, language=None):
     """render(.md) 산출물을 claims 에 conformance_lint → (bump_sev, [msgs]).
 
@@ -804,6 +824,14 @@ def run(args):
         mark = {"PASS": "✅", "WARN": "⚠️ ", "STALE": "🔶", "FAIL": "❌"}[rsev]
         print(f"{mark} {rsev:5} hook_runtime_hash")
         for m in rmsgs:
+            print(m)
+
+        asev, amsgs = _validate_runtime_api(manifest, language_of(args))
+        if _SEV_RANK[asev] > _SEV_RANK[overall]:
+            overall = asev
+        mark = {"PASS": "✅", "WARN": "⚠️ ", "STALE": "🔶", "FAIL": "❌"}[asev]
+        print(f"{mark} {asev:5} runtime_api")
+        for m in amsgs:
             print(m)
 
     for aid in sorted(target_ids):

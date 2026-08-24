@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:a9190228134cf666946e3f3b334bc75f83ee746325b75ed5bca8dea7ef31f259 -->
+<!-- sage-doc-source: troubleshooting.md sha256:91bd2618ea4a8cb8944c7c4a8ac864352a8607f387c5578f01553d0e5df5a91a -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -307,6 +307,44 @@ The message about an undeterminable repository boundary means a `.git` entry exi
 interpreted, such as a corrupted pointer file or a missing gitdir. Issuing without a confirmed
 repository identity would mix permissions across repositories, so it is refused. Repair the `.git`
 state and retry. See [Artifacts](ARTIFACTS.md) section 1.1 for the full location rules.
+
+## `sage-hook` blocks on a runtime API mismatch
+
+```text
+⛔ BLOCK [runtime.api_too_old]
+This project's hooks require SAGE runtime API 2, but this sage-hook provides API 1.
+Next: sage upgrade --check
+Next: pipx upgrade sage-harness
+```
+
+The hooks installed in a project were produced by the SAGE installed in that repository, while the
+`sage-hook` that runs them comes from the package installed on the machine. When the two differ in
+age, the newer hook imports a module that does not exist yet, and depending on the host that failure
+is treated as nothing more than "the hook died" — a path where a gate that should enforce policy
+silently drops out. So this check closes the mismatch with a single integer comparison **before the
+project core is imported**.
+
+Follow the `Next:` order on screen: upgrade the package, regenerate the installed assets, then
+confirm with `sage status`.
+
+If the block says the `runtime_api` marker is absent, the manifest is in 1.0 form but the marker
+alone is missing. In that case **an absent marker is not accepted as a pre-1.0 installation** — if it
+were, a downgrade that erases both the marker and the version would pass. Re-stamp it with
+`sage install --host <host> --force --dest .`.
+
+## A block message has no `Next:`
+
+Every user-facing block SAGE emits carries at least one `Next:` line, and at least one of those is a
+command you can paste and run. Work that a person has to do by hand appears as `Action:` rather than
+`Next:` — putting an unpasteable sentence behind `Next:` would strip that token of its meaning.
+
+The `Next:` and `Action:` tokens are identical in Korean and English, because they have to be
+searchable on screen and collectable from logs. The diagnostic code in brackets
+(`[gate.phase_incomplete]`) is left untranslated for the same reason.
+
+If you meet a block with no `Next:` at all, that is a defect; report it together with the code. For
+messages produced by a project hook you wrote yourself, SAGE does not guess a recovery command and
+guarantees only `Next: sage status`.
 
 ## Cross-model review is BLOCKED
 

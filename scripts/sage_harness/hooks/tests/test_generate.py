@@ -59,7 +59,7 @@ def make_root(d, with_adapter=True):
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "aaa-hook.md")).write_text(SPEC_A)
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "bbb-hook.md")).write_text(SPEC_B)
     for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py",
-               "acceptance_waiver.py", "override_audit.py", "messages.py", "cycle_state.py",
+               "acceptance_waiver.py", "override_audit.py", "messages.py", "recovery.py", "cycle_state.py",
                "document_language.py", "prose_language.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
@@ -71,6 +71,8 @@ def make_root(d, with_adapter=True):
         "# cycle_binding.py\n")
     Path(os.path.join(d, "scripts", "sage_harness", "hooks", "risk_declaration.py")).write_text(
         "# risk_declaration.py\n")
+    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "path_risk.py")).write_text(
+        "# path_risk.py\n")
     Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "retro_gate.py")).write_text("# retro_gate\n")
     Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "writeback_depth_gate.py")).write_text("# writeback_depth_gate\n")
     for fn in ("claude_grep_first.py", "codex_feature_signal.py", "cycle_domain_review.py"):

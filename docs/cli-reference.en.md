@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:1c04b29c9877ee428c914be77ced85eeec30fd244c0328174720c6587b5f8781 -->
+<!-- sage-doc-source: cli-reference.md sha256:6849931ba234c9fc727f4a2366d8b26e72daf6ce3277a98d5287b67e7d413e35 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -55,6 +55,9 @@ symlink leaf matches, and other non-regular paths are contract failures.
 | `sage validate --check` | Run a fast consistency check without executing regression commands |
 | `sage validate --schema` | Validate the manifest and profile against their JSON Schemas |
 | `sage validate --strict` | Promote selected advisory checks, including bootstrap, schema, overlay, and profile drift, to failures |
+| `sage status` | Read-only summary, in one to two seconds, of whether SAGE is usable in this project |
+| `sage status --json` | The same result as machine-readable schema v1 JSON (locale-independent) |
+| `sage explain --path PATH` | Explain a path's risk floor, matched rule, bound cycle, and missing phase documents |
 | `sage doctor` | Diagnose Python, hook entrypoints, hosts, reviewers, profiles, and optional capabilities |
 | `sage models --host HOST` | Show locally discoverable model candidates and their validation level |
 | `sage asset-check --gate` | Return CI exit codes for whether an asset change can be auto-approved |
@@ -213,6 +216,27 @@ verdict**: for the same input, `ko` and `en` produce the same status, exit code,
 The language Phase 00–06 documents are *written* in is a **separate** decision, fixed once per
 cycle with `Document-Language:`. Full rules live in
 `templates/core/framework/docs/agent/language-policy.md`.
+
+## Which command answers which question
+
+Two commands never answer the same question. Each owns exactly one.
+
+| Question | Command |
+|---|---|
+| Can I use SAGE right now? | `sage status` |
+| Why does this path carry these requirements? | `sage explain --path ...` |
+| Are the installed tools, peer models, and optional capabilities ready? | `sage doctor` |
+| Are all assets, schemas, and hashes correct? | `sage validate --kind all --check --schema` |
+| Can I move safely to another SAGE version? | `sage upgrade --check` |
+
+When `sage status` finds a problem it **links** to the detailed command above; it never produces
+that command's result on its behalf. `status` and `explain` are read-only: they change no files and
+no `.sage` audit records, and they never run a recovery command for you.
+
+`sage explain --path` looks only at the path and the current repository state. The real write may be
+stricter depending on new content, the session risk declaration, and other files changed at the same
+time, so this command never guarantees that a write is allowed — which is why its result contains no
+`ALLOW`.
 
 ## Common exit codes
 

@@ -140,6 +140,7 @@ def _read_profile(root):
 def _plan(root, language):
     """읽기 전용 판정. (plan, blockers) — plan 은 apply 가 그대로 쓰는 선언 write set 이다."""
     from sage import __version__
+    from sage.runtime_api import compatibility
     from sage.version_contract import UNKNOWN, version_axes
 
     manifest, manifest_error = _read_json(os.path.join(root, "docs", "sage_harness", ".manifest.json"))
@@ -160,6 +161,21 @@ def _plan(root, language):
                            detail=profile_error[len(_KIND_ERROR):]))
     elif profile_error:
         blockers.append(tr(language, "cli.upgrade.blocker_profile", error=profile_error))
+
+    # runtime API marker. upgrade 는 marker 를 직접 고치지 않는다 — 그건 install/generate 의
+    # 일이고 이 명령은 그 둘을 단계로 부른다. 여기서 보고하는 것은 "이동 전에 무엇이
+    # 필요한가" 뿐이다. `too_old` 만 사람이 먼저 해야 할 일(package upgrade)이 있다.
+    if manifest is not None and not manifest_error:
+        api_status, api_evidence = compatibility(manifest)
+        if api_status == "too_old":
+            notes.append(tr(language, "cli.upgrade.note_runtime_api_too_old",
+                            required=api_evidence.get("required_api"),
+                            current=api_evidence.get("current_api")))
+        elif api_status == "legacy":
+            notes.append(tr(language, "cli.upgrade.note_runtime_api_legacy"))
+        elif api_status == "damaged":
+            notes.append(tr(language, "cli.upgrade.note_runtime_api_damaged",
+                            reason=api_evidence.get("reason", "unknown")))
 
     # required_version scalar. 없으면 upgrade 가 만들지 않는다 — `sage` section 자체가 없는
     # profile 은 부트스트랩 이전 상태이고, 그건 install/init 이 소유한다.
