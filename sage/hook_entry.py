@@ -15,6 +15,7 @@ import subprocess
 import sys
 
 import yaml
+from sage.diagnostic_contract import render_recovery
 from sage.diagnostics import Diagnostic
 
 # 셸 어댑터와 동일: --root 없으면 host 별 env → git 루트 → cwd 순으로 프로젝트 루트 해석.
@@ -30,6 +31,10 @@ _BASELINE_HOOKS = {
     "capture-declared-risk",
     "session-start-snapshot",
 }
+# 아무 정책도 집행하지 않는 **built-in** hook. manifest 를 못 읽어 소유권을 판별할 수 없을 때
+# 통과시켜도 되는 것은 이 닫힌 목록뿐이다. 열린 목록(= "fail-closed 목록에 없으면 통과")으로
+# 두면 이름을 모르는 project 정책 hook 까지 함께 통과한다 — 집행 우회다.
+_NON_ENFORCING_HOOKS = _BASELINE_HOOKS | {"post-tool-logger"}
 _PROFILE_HOOKS = _GATE_HOOKS | _BASELINE_HOOKS | {"post-tool-logger"}
 _PROFILE_REQUIRED_HOOKS = _GATE_HOOKS | _BASELINE_HOOKS
 
@@ -231,14 +236,158 @@ def _is_stop_retry(hook, raw_text):
     return isinstance(value, str) and value.strip().lower() == "true"
 
 
-def _render_bootstrap_block(runtime, hook, message, core_dir=None, root=None):
+def _join(runtime, lines):
+    """host wire 계약에 맞춰 줄을 잇는다.
+
+    Codex 는 한 줄만 받는다 — 개행을 넣으면 뒷줄이 잘려 나가고, 하필 잘리는 것이 복구
+    안내다. 그래서 진단 UX 를 이유로 두 host 를 같은 모양으로 통일하지 않는다.
+    """
+    return (" | " if runtime == "codex" else "\n  ").join(lines)
+
+
+def _recovery_lines(message, runtime, core_dir, root):
+    """이 차단의 code 로 복구 줄을 만든다. code 를 모르면 빈 목록."""
+    first = message[0] if isinstance(message, tuple) else message
+    code = getattr(first, "code", None)
+    if not code:
+        return []
+    translate, _ = _hook_locale(core_dir, root)
+    return render_recovery(code, translate, "hook", host=runtime)
+
+
+def _render_bootstrap_block(runtime, hook, message, core_dir=None, root=None,
+                            blocking_exit=2):
     detail = message
     if isinstance(message, tuple):
         detail = " ".join(_say(core_dir, root, part) for part in message)
     else:
         detail = _say(core_dir, root, message)
     text = _say(core_dir, root, Diagnostic("entry.blocked", hook=hook, detail=detail))
+    # 부트스트랩 차단도 게이트 차단과 같은 계약을 진다 — code 와 다음 행동이 함께 나간다.
+    # 여기만 예외로 두면 "모든 BLOCK 에 Next 가 있다" 는 보장이 문장으로만 남는다.
+    first = message[0] if isinstance(message, tuple) else message
+    code = getattr(first, "code", None)
+    lines = [f"⛔ BLOCK [{code}] {text}" if code else text]
+    lines.extend(_recovery_lines(message, runtime, core_dir, root))
+    text = _join(runtime, lines)
+    # Codex Stop 의 wire 계약은 stdout 단일 JSON + rc 0 이다. 차단 사유가 무엇이든 이 모양을
+    # 지켜야 host 가 그것을 차단으로 읽는다 — stderr + rc 2 로 내면 host 는 hook 이 죽은 것으로
+    # 보고 차단 자체가 사라진다. 그래서 이 분기는 진단 종류와 무관하게 먼저 선다.
     if runtime == "codex" and hook == "stop-compliance-report":
+        print(json.dumps({"decision": "block", "reason": text}, ensure_ascii=False))
+        return 0
+    print(text, file=sys.stderr)
+    return blocking_exit
+
+
+def _required_sage_version(root):
+    """shared profile 의 exact required_version. 못 읽으면 None — 안내용 값이지 판정값이 아니다.
+
+    호환성 판정은 정수 API 가 소유한다. 이 문자열은 "그럼 어느 SAGE 를 깔아야 하나" 에만 답한다.
+    그래서 읽기에 실패해도 판정을 바꾸지 않고 그 줄만 빠진다.
+    """
+    try:
+        with open(os.path.join(root, "sage", "project-profile.yaml"), encoding="utf-8") as fh:
+            profile = yaml.safe_load(fh) or {}
+        value = profile.get("sage", {}).get("required_version")
+        return value if isinstance(value, str) and value else None
+    except Exception:
+        return None
+
+
+def _runtime_api_preflight(runtime, hook, root, core_dir, enforcing):
+    """project core 를 import 하기 **전에** 정수 하나로 호환성을 닫는다.
+
+    이 함수가 `_load_run_hook()` 앞에 서는 것 자체가 계약이다. 뒤로 밀리면 새 core 가
+    아직 없는 `sage.*` 를 import 하면서 `ModuleNotFoundError` 가 먼저 나오고, 그 traceback 은
+    host 에 따라 그냥 "hook 이 죽었다" 로 해석된다 — 정책을 실행해야 할 게이트가 조용히 빠진다.
+
+    manifest 가 **없는** 것과 **못 읽는** 것은 다르다. 없는 것은 설치 전일 수 있으므로 이
+    검사의 소관이 아니다. 그러나 있는데 못 읽거나 JSON 이 깨진 것은 호환성을 판정할 근거가
+    사라진 상태다 — 그대로 통과시키면 판정 없이 core 를 import 하게 되고, "판정 전에는
+    import 하지 않는다" 는 이 함수의 존재 이유가 무너진다. 부재를 안전 방향으로 읽지 않는다.
+
+    돌려주는 값이 `None` 이면 계속 진행한다. 정수면 그 값이 프로세스 exit code 다.
+    """
+    from sage.runtime_api import compatibility
+
+    manifest_path = os.path.join(root, "docs", "sage_harness", ".manifest.json")
+    if not os.path.exists(manifest_path):
+        return None
+    manifest, read_error = None, None
+    try:
+        with open(manifest_path, encoding="utf-8") as fh:
+            manifest = json.load(fh)
+    except (OSError, ValueError) as exc:
+        read_error = type(exc).__name__
+
+    if read_error is not None:
+        # 알림 hook 에서 막으면 얻는 것 없이 세션 시작만 죽는다. 그래서 예외를 두되, 예외는
+        # **이름을 아는 built-in 만** 이다. manifest 가 깨진 상태에서는 어떤 hook 이 project
+        # 소유인지 판별할 수 없으므로, 모르는 이름은 호출부가 계산한 판단을 그대로 따른다.
+        # 여기서 목록을 뒤집어 "fail-closed 가 아니면 통과" 로 두면 임의의 project 정책 hook 이
+        # 손상된 설치에서 조용히 통과한다.
+        enforce = enforcing and hook not in _NON_ENFORCING_HOOKS
+        return _emit_preflight(runtime, hook, root, core_dir, enforce,
+                               "runtime.manifest_unreadable", {"reason": read_error})
+
+    status, evidence = compatibility(manifest)
+    if status == "ok":
+        return None
+    if status == "legacy":
+        # 설계는 legacy 설치에 "기존 동작 + SessionStart 에서만 WARN" 을 요구한다. 조용히
+        # 통과시키면 marker 없는 설치가 화면에서 정상 설치와 구별되지 않고, 사용자는 1.0
+        # marker 를 심을 이유를 알 방법이 없다. 세션 시작 한 번만 말하는 것도 계약이다 —
+        # 매 hook 마다 내면 경고가 배경 소음이 되어 아무도 읽지 않는다.
+        if hook == "session-start-snapshot":
+            code = "runtime.api_marker_absent_legacy"
+            body, tail = _preflight_text(runtime, root, core_dir, code, evidence)
+            print(_join(runtime, [f"[sage-runtime-api] WARN [{code}] {body}", *tail]),
+                  file=sys.stderr)
+        return None
+
+    if status == "too_old":
+        code = "runtime.api_too_old"
+    elif evidence.get("reason") in ("marker_missing", "marker_missing_version_unreadable"):
+        code = "runtime.api_marker_missing"
+    else:
+        code = "runtime.api_marker_damaged"
+    return _emit_preflight(runtime, hook, root, core_dir, enforcing, code, evidence)
+
+
+def _preflight_text(runtime, root, core_dir, code, evidence):
+    """preflight 한 건의 (본문, 꼬리). 차단이든 경고든 같은 문장·같은 복구를 쓴다."""
+    translate, _ = _hook_locale(core_dir, root)
+    required_version = _required_sage_version(root)
+    body = _say(core_dir, root, Diagnostic(
+        code,
+        required=evidence.get("required_api", "?"),
+        current=evidence.get("current_api", "?"),
+        reason=evidence.get("reason", "unknown")))
+    tail = ([translate("hook.runtime.required_sage", version=required_version)]
+            if required_version else [])
+    tail.extend(render_recovery(code, translate, "hook", host=runtime))
+    return body, tail
+
+
+def _emit_preflight(runtime, hook, root, core_dir, enforcing, code, evidence):
+    """preflight 차단 한 건을 host wire 계약대로 낸다."""
+    # code 를 화면에 남긴다. 번역된 문장은 언어마다 다르지만 code 는 같다 — 사용자가 그대로
+    # 검색할 수 있고 CI 가 수집할 수 있는 유일한 조각이다. 문장만 내면 그게 사라진다.
+    body, tail = _preflight_text(runtime, root, core_dir, code, evidence)
+
+    if not enforcing:
+        # logger·baseline 하나의 비호환이 host 작업 전체를 막을 이유는 없다. 다만 조용히
+        # 넘어가지도 않는다 — 실제 write 는 같은 preflight 를 통과한 gate 가 막는다.
+        print(_join(runtime, [f"[sage-runtime-api] WARN [{code}] {body}", *tail]),
+              file=sys.stderr)
+        return 0
+
+    text = _join(runtime, [f"⛔ BLOCK [{code}]", body, *tail])
+
+    if runtime == "codex" and hook == "stop-compliance-report":
+        # Codex Stop 의 wire 계약은 stdout 단일 JSON + rc 0 이다. 진단 UX 를 이유로 모든 host
+        # event 를 exit 2 로 통일하지 않는다 — 통일하는 순간 Stop 이 깨진다.
         print(json.dumps({"decision": "block", "reason": text}, ensure_ascii=False))
         return 0
     print(text, file=sys.stderr)
@@ -307,6 +456,10 @@ def main():
     project_state = (_project_hook_state(root, a.hook)
                      if a.hook not in _FAIL_CLOSED_HOOKS else "unknown")
     fail_closed = a.hook in _FAIL_CLOSED_HOOKS or project_state in ("project", "damaged")
+    # project core 를 import 하기 전에 선다. 이 위치가 계약이며 mutation test 가 고정한다.
+    api_exit = _runtime_api_preflight(a.runtime, a.hook, root, core_dir, fail_closed)
+    if api_exit is not None:
+        return api_exit
     profile_error = _prepare_gate_profile(
         root, a.hook, a.runtime, project_hook=project_state == "project")
     if profile_error:
@@ -323,20 +476,24 @@ def main():
         run_hook = _load_run_hook(core_dir)
     except Exception as e:
         # 코어 로드 실패 = hook 무력화 → 조용히 통과 말고 surface(gate-disable 은 시끄럽게).
-        print(_say(core_dir, root, Diagnostic("entry.core_load_failed", path=core_dir,
-                                              evidence=f"{type(e).__name__}: {e}")),
-              file=sys.stderr)
-        return 2 if fail_closed else 0
+        # 부트스트랩 차단과 같은 렌더러를 쓴다 — 여기만 직접 stderr 로 내면 Codex Stop 이
+        # 받아야 할 JSON 대신 stderr 를 받는다.
+        return _render_bootstrap_block(
+            a.runtime, a.hook,
+            Diagnostic("entry.core_load_failed", path=core_dir,
+                       evidence=f"{type(e).__name__}: {e}"),
+            core_dir, root, blocking_exit=2 if fail_closed else 0)
     try:
         if a.path is None:
             return run_hook.dispatch(a.runtime, a.hook, root, core_dir, raw_text)
         return run_hook.dispatch(
             a.runtime, a.hook, root, core_dir, raw_text, direct_path=a.path)
     except Exception as e:
-        print(_say(core_dir, root, Diagnostic("entry.dispatch_failed", hook=a.hook,
-                                              evidence=f"{type(e).__name__}: {e}")),
-              file=sys.stderr)
-        return 2 if fail_closed else 0
+        return _render_bootstrap_block(
+            a.runtime, a.hook,
+            Diagnostic("entry.dispatch_failed", hook=a.hook,
+                       evidence=f"{type(e).__name__}: {e}"),
+            core_dir, root, blocking_exit=2 if fail_closed else 0)
 
 
 if __name__ == "__main__":

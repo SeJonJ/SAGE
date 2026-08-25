@@ -16,6 +16,7 @@ from pathlib import Path
 
 from sage import __version__
 from sage.diagnostics import Diagnostic
+from sage.runtime_api import HOOK_RUNTIME_API
 from sage import overlay_common as _oc
 from sage.asset_paths import AssetPaths, docs_dir, hook_runtime_files
 from sage.commands._common import contract_version_of
@@ -255,6 +256,9 @@ def _stamped_manifest(root, manifest, hook_ids, runtime_hash):
 
     stamped = deepcopy(manifest)
     stamped["generator_version"] = __version__
+    # 재스탬프이지 보존이 아니다 — 지금 도는 package 가 요구하는 API 를 쓴다. 이전 값을
+    # 그대로 두면 hook 을 새로 만들었는데 marker 는 옛 요구를 가리키는 상태가 된다.
+    stamped["runtime_api"] = {"required": HOOK_RUNTIME_API}
     stamped["hook_runtime_hash"] = runtime_hash
     for hid in hook_ids:
         entry = stamped["assets"].get(f"hooks/{hid}")
@@ -549,6 +553,7 @@ def _stamp_generator_version(root):
     if not isinstance(manifest, dict):
         raise ValueError("manifest root must be an object")
     manifest["generator_version"] = __version__
+    manifest["runtime_api"] = {"required": HOOK_RUNTIME_API}
     atomic_write_json(path, manifest)
 
 

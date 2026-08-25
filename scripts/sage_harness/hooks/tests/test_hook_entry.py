@@ -460,6 +460,10 @@ class TestDispatchIntegration(unittest.TestCase):
                 self.assertEqual(1, result.stderr.count("[sage-version]"))
                 self.assertIn(f"source={source}", result.stderr)
                 self.assertIn("unreadable", result.stderr)
+                if source == "manifest":
+                    # 통과시키되 조용히 넘어가지는 않는다. manifest 를 못 읽으면 runtime
+                    # 호환성을 판정할 근거가 없고, 그 사실이 화면에 남아야 한다.
+                    self.assertIn("runtime.manifest_unreadable", result.stderr)
 
     def test_gate_blocks_core_load_failure_but_non_gate_does_not(self):
         with tempfile.TemporaryDirectory() as root:

@@ -197,7 +197,9 @@ class TestAdapters(unittest.TestCase):
                     stream.write("{")
                 p = run_adapter(runtime, self._raw(runtime), root, profile_path)
                 self.assertEqual(p.returncode, 2)
-                self.assertIn("profile/snapshot 계약 오류", p.stderr)
+                # profile 계약 실패는 core 내부 실패와 다른 code 를 쓴다 — 고칠 곳이 다르다.
+                self.assertIn("runtime.profile_contract", p.stderr)
+                self.assertIn("Next: ", p.stderr)
                 self.assertNotIn("Traceback", p.stderr)
 
     def test_symlink_escape_match_blocks_both_runtimes(self):

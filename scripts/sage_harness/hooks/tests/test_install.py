@@ -315,6 +315,7 @@ class TestInstall(unittest.TestCase):
                 "scripts/sage_harness/hooks/pre_implementation_gate_core.py",
                 "scripts/sage_harness/hooks/cycle_binding.py",
                 "scripts/sage_harness/hooks/risk_declaration.py",
+                "scripts/sage_harness/hooks/path_risk.py",
                 "scripts/sage_harness/hooks/adapters/claude/pre-implementation-gate.sh",
                 "scripts/sage_harness/hooks/adapters/codex/pre-implementation-gate.sh",
                 "scripts/sage_harness/hooks/generated_artifact_write_guard_core.py",

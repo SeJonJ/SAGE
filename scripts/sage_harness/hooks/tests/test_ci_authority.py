@@ -105,6 +105,38 @@ def _claims(result, now=None):
     }
 
 
+def _profile_for(phase_docs):
+    """이 문서 배치를 정확히 가리키는 phase glob profile."""
+    return {"pdca": {"enabled": True,
+                     "phases": [{"id": phase, "glob": entries[0]["path"]}
+                                for phase, entries in sorted(phase_docs.items())]}}
+
+
+_SOURCE_PROFILE = {"pdca": {"enabled": True,
+                            "phases": [{"id": pid, "glob": f"plan_docs/{pid}-x/**/*.md"}
+                                       for pid in ("00", "01", "02", "03", "04")]}}
+
+
+def _sources(root, current_phase, stem=None):
+    """전환 문서를 **실제로 만들고** 그 파일에서 provenance 를 계산한다.
+
+    writer 가 이제 디스크와 대조한다. 손으로 지은 값은 통과하지 않는다 — 그리고 그것이 요점이다:
+    이전 fixture 는 존재하지 않는 파일의 provenance 를 정상으로 쓰고 있었다.
+    """
+    from pathlib import Path as _Path  # noqa: PLC0415
+
+    from sage.fast_cycle_contract import expected_source_phases  # noqa: PLC0415
+    from sage.fast_cycle_sources import source_phase_snapshot  # noqa: PLC0415
+    phases, issue = expected_source_phases(current_phase)
+    assert issue is None, issue
+    stem = stem or STEM
+    for phase in phases:
+        path = _Path(root, f"plan_docs/{phase}-x/{stem}.md")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"Cycle-Stem: `{stem}`\n# {phase}\n", encoding="utf-8")
+    return source_phase_snapshot(root, _SOURCE_PROFILE, stem, current_phase)
+
+
 class PureAuthorityTests(unittest.TestCase):
     def test_a_converted_run_is_not_invisible_to_the_authority(self):
         """전환 run 의 Phase 00 은 Standard 문서라 `Cycle-Mode: FAST` 가 없다.
@@ -120,9 +152,9 @@ class PureAuthorityTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as root:
             _Path(root, ".sage").mkdir()
-            sources = {"00": {"path": "plan_docs/00-base_plan/x.md",
-                              "sha256": "sha256:" + "0" * 64, "size": 1}}
-            fca.convert_fast(root, cycle_stem=STEM, current_phase="04", actual_risk="L3",
+            sources = _sources(root, "04")
+            fca.convert_fast(root, profile=_SOURCE_PROFILE,
+                             cycle_stem=STEM, current_phase="04", actual_risk="L3",
                              fast_review_level="L2", reason="긴급", confirmed_by="sejon",
                              minimum_rounds=1, lenses=["correctness", "error_handling"],
                              source_phases=sources)
@@ -147,12 +179,12 @@ class PureAuthorityTests(unittest.TestCase):
         import fast_cycle_audit as fca  # noqa: PLC0415
 
         stem = stem or STEM
-        sources = {"00": {"path": "plan_docs/00-base_plan/x.md",
-                          "sha256": "sha256:" + "0" * 64, "size": 1}}
         with tempfile.TemporaryDirectory() as root:
             _Path(root, ".sage").mkdir()
+            sources = _sources(root, "04", stem)
             for index in range(converts):
-                rid = fca.convert_fast(root, cycle_stem=stem, current_phase="04",
+                rid = fca.convert_fast(root, profile=_SOURCE_PROFILE,
+                                       cycle_stem=stem, current_phase="04",
                                        actual_risk="L3", fast_review_level="L2", reason="긴급",
                                        confirmed_by="sejon", minimum_rounds=1,
                                        lenses=["correctness", "error_handling"],
@@ -225,7 +257,16 @@ class PureAuthorityTests(unittest.TestCase):
             ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
         with tempfile.TemporaryDirectory() as root:
             _Path(root, ".sage").mkdir()
-            fca.convert_fast(root, cycle_stem=STEM, current_phase=current_phase, actual_risk="L3",
+            # writer 가 디스크와 대조하므로, 증언할 문서를 실제로 놓는다. 이 검사가 보는 것은
+            # 그 다음 층(서버 권위)이지만, 그 층에 닿으려면 감사가 정직하게 쓰여야 한다.
+            profile = _profile_for(phase_docs)
+            for phase, entries in phase_docs.items():
+                document = entries[0]
+                target = _Path(root, document["path"])
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(document["content"], encoding="utf-8")
+            fca.convert_fast(root, profile=profile,
+                             cycle_stem=STEM, current_phase=current_phase, actual_risk="L3",
                              fast_review_level="L2", reason="긴급", confirmed_by="sejon",
                              minimum_rounds=1, lenses=lenses,
                              source_phases=(review_snapshot if open_snapshot is None

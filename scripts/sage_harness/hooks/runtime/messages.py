@@ -14,6 +14,11 @@ try:
 except ImportError:
     import i18n as _i18n
 
+try:
+    from . import recovery as _recovery
+except ImportError:
+    import recovery as _recovery
+
 DEFAULT_LANGUAGE = _i18n.DEFAULT_LANGUAGE
 
 _EMOJI = {"BLOCK": "⛔", "WARN": "⚠️", "OK": "✅"}
@@ -289,6 +294,20 @@ def gate_text(decision, profile, runtime, language=DEFAULT_LANGUAGE):
     if hint:
         hint = hint.replace("{rv}", _review_cmd(runtime))
         line += (" | " if runtime == "codex" else "\n  → ") + hint
+    if sev == "BLOCK":
+        # 차단 뒤에는 항상 다음에 칠 것이 있어야 한다. hint 는 "무엇이 잘못됐나" 를 설명하고
+        # `Next:` 는 "지금 무엇을 치면 되나" 를 준다 — 둘은 다른 물건이다. code 도 함께 낸다:
+        # 번역된 문장은 언어마다 다르지만 code 는 같아서, 사용자가 검색하고 CI 가 수집할 수
+        # 있는 조각은 그것뿐이다.
+        code = _recovery.code_for(decision.get("message_key"))
+        if code:
+            # 줄바꿈은 런타임 규약이다. Codex 는 한 줄 파이프 구분을 요구하므로 여기서
+            # 개행을 쓰면 wire 계약이 깨진다 — hint 가 이미 같은 이유로 분기하고 있다.
+            joiner = " | " if runtime == "codex" else "\n  "
+            parts = [f"[{code}]"]
+            parts.extend(_recovery.render(code, lambda key: _i18n.frag(language, key),
+                                          path=fs or "<path>", host=runtime))
+            line += joiner + joiner.join(parts)
     return f"{notice}\n{line}" if notice else line
 
 

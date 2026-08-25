@@ -1,4 +1,4 @@
-<!-- sage-doc-source: quickstart.md sha256:c530d4cadaff5dede17b872981608db4b6700eef37da24d7ffeafa3bc483b86b -->
+<!-- sage-doc-source: quickstart.md sha256:9971fa2de217f377e21bacc8ff39046d8a05f17d549e04732a0d7ad87f96b7ff -->
 # SAGE Quickstart
 
 [한국어](quickstart.md) | [README](../README.en.md)
@@ -81,6 +81,18 @@ sage doctor
 When validation reports STALE (the definition changed but the runtime file has not been regenerated
 yet), regenerate the kind named in the output. FAIL indicates a real contract violation such as a
 missing file, schema error, or failed execution smoke — resolve the cause first, then retry.
+
+Where `sage doctor` diagnoses the environment in depth, `sage status` answers "can I start
+working in this project right now" on a single screen. It is read-only and finishes in one to two
+seconds, which makes it the first command to run whenever something blocks you.
+
+```bash
+sage status
+```
+
+If anything is blocking, each line is followed by `Next:` commands in the order to run them. To find
+out why one particular file is blocked, run `sage explain --path <path>` to see that path's risk and
+which documents are missing. Neither command changes files or audit records.
 
 ## 5. Start a delivery cycle — when you actually start writing code
 

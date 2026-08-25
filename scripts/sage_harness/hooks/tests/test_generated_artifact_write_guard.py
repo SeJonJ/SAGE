@@ -102,7 +102,9 @@ class TestDispatchFailClosed(unittest.TestCase):
             with redirect_stderr(stderr):
                 rc = hr.run_generated_artifact_write_guard("{}", str(HOOKS_DIR))
         self.assertEqual(rc, 2)
-        self.assertIn("fail-closed", stderr.getvalue())
+        # 산문이 아니라 code 를 본다 — 문장은 언어를 타지만 code 는 타지 않는다.
+        self.assertIn("runtime.core_failure", stderr.getvalue())
+        self.assertIn("Next: ", stderr.getvalue())
         self.assertIn("RuntimeError", stderr.getvalue())
 
     def test_legacy_direct_path_inputs_remain_supported_by_both_adapters(self):

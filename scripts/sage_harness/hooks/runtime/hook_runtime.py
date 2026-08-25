@@ -728,6 +728,52 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
     return io.render_gate(decision, profile, root)   # ← 런타임별 채널/포맷/exit
 
 
+def _runtime_block(hook_id, code, detail):
+    """런타임 직접 BLOCK 한 줄 — code 와 다음 행동을 함께 낸다.
+
+    게이트 결정이 아니라 게이트를 **세우지 못한** 실패라 `gate_text` 를 지나지 않는다.
+    그래서 여기서 직접 붙인다. 이 자리를 비워 두면 가장 깨진 상태의 사용자가 가장 적은
+    정보를 받는다 — code 도 없어 검색조차 못 한다.
+    """
+    # 두 번째 import 도 실패할 수 있다 — 그때 예외가 그대로 올라가면 아래 fallback 에
+    # 도달하지 못하고, 가장 손상된 설치에서 사용자가 아무 다음 행동도 받지 못한다.
+    # 최소 보장은 표가 없어도 살아남아야 한다.
+    _recovery = None
+    for _load in (lambda: __import__("importlib").import_module(".recovery", __package__),
+                  lambda: __import__("recovery")):
+        try:
+            _recovery = _load()
+            break
+        except Exception:
+            continue
+    if _recovery is None:
+        return f"⛔ BLOCK [{code}] [{hook_id}] {detail}\nNext: sage status"
+    try:
+        from . import messages as _messages
+    except Exception:
+        try:
+            import messages as _messages
+        except Exception:
+            return f"⛔ BLOCK [{code}] [{hook_id}] {detail}\nNext: sage status"
+    try:
+        # 설치본은 flat import 로도 로드된다. 상대 import 하나만 시도하면 그 경로에서
+        # 번역이 통째로 꺼지고, 사용자 화면에 catalog 키가 그대로 나간다.
+        try:
+            from . import i18n as _i18n
+        except ImportError:
+            import i18n as _i18n
+        language = _messages.display_language()
+        translate = lambda key: _i18n.frag(language, key) or key   # noqa: E731
+    except Exception:
+        translate = lambda key: key                                # noqa: E731
+    lines = [f"⛔ BLOCK [{code}] [{hook_id}] {detail}"]
+    try:
+        lines.extend(_recovery.render(code, translate, host="<host>"))
+    except Exception:
+        lines.append("Next: sage status")
+    return "\n".join(lines)
+
+
 def run_generated_artifact_write_guard(raw_text, core_dir, direct_path=None):
     """Run the Python write guard; unexpected failures block instead of disabling protection."""
     try:
@@ -735,13 +781,26 @@ def run_generated_artifact_write_guard(raw_text, core_dir, direct_path=None):
             sys.path.insert(0, core_dir)
         core = importlib.import_module("generated_artifact_write_guard_core")
         decision = core.decide_input(raw_text or "", direct_path=direct_path)
-        message = decision.get("message") or ""
+        # 표시 언어는 렌더 직전에만 닿는다. 판정(`code`·`exit_code`)은 이미 언어 중립으로
+        # 확정돼 있고 여기서 바꾸는 것은 사람이 읽는 문장뿐이다.
+        code = decision.get("code")
+        if code:
+            # 이 모듈은 설치본에서 flat import 로도 로드된다. 상대 import 하나가 그 경로를
+            # 끊으므로 두 형태를 모두 받는다 — `messages.py` 가 i18n 을 받는 방식과 같다.
+            try:
+                from . import messages as _messages
+            except ImportError:
+                import messages as _messages
+            message = core.block_message(decision.get("path") or "",
+                                         _messages.display_language())
+        else:
+            message = decision.get("message") or ""
         if message:
             print(message, file=sys.stderr)
         return int(decision.get("exit_code", 2))
     except Exception as exc:
-        print("⛔ [generated-artifact-write-guard] Python core failure → "
-              f"fail-closed BLOCK: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print(_runtime_block("generated-artifact-write-guard", "runtime.core_failure",
+                             f"{type(exc).__name__}: {exc}"), file=sys.stderr)
         return 2
 
 
@@ -892,8 +951,10 @@ def run_pre_phase4_checklist_gate(io, root, core_dir, raw_text):
         snapshot = build_checklist_snapshot(core, event, profile, root)
         decision = core.decide(event, profile, snapshot)
     except Exception as exc:
-        print(f"⛔ [{hid}] profile/snapshot 계약 오류 → fail-closed BLOCK: "
-              f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        # profile/snapshot 계약 오류는 저작자가 고칠 수 있다. core 내부 실패와 같은 code 로
+        # 묶으면 SAGE 버그처럼 보여 고칠 곳을 못 찾는다.
+        print(_runtime_block(hid, "runtime.profile_contract",
+                             f"{type(exc).__name__}: {exc}"), file=sys.stderr)
         return 2
 
     if _maybe_override(hid, root, decision, event["changes"]):   # P1-5: 활성 override 면 BLOCK 우회(감사 기록)
@@ -1053,14 +1114,17 @@ def run_project_hook(io, root, core_dir, hook_id, raw_text):
     except ProfileLoadError as exc:
         # 저작자가 고칠 수 있는 profile 계약 오류다. internal dispatch failure 로 묶으면
         # SAGE 내부 버그처럼 보여 고칠 곳을 못 찾는다.
-        print(f"⛔ [{hook_id}] project hook profile contract failure: {exc}", file=sys.stderr)
+        print(_runtime_block(hook_id, "runtime.profile_contract",
+                             f"profile contract failure: {exc}"), file=sys.stderr)
         return 2
     except ProjectHookError as exc:
-        print(f"⛔ [{hook_id}] project hook contract failure: {exc}", file=sys.stderr)
+        print(_runtime_block(hook_id, "runtime.project_hook_contract",
+                             f"contract failure: {exc}"), file=sys.stderr)
         return 2
     except Exception as exc:
-        print(f"⛔ [{hook_id}] project hook internal dispatch failure: "
-              f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        print(_runtime_block(hook_id, "runtime.core_failure",
+                             f"internal dispatch failure: {type(exc).__name__}: {exc}"),
+              file=sys.stderr)
         return 2
 
 

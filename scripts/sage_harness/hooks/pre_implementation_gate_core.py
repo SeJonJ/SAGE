@@ -20,6 +20,7 @@ import sys
 
 import cycle_binding
 import risk_declaration
+from path_risk import path_risk_floor
 try:
     from sage.done_criteria_contract import (
         document_revision,
@@ -60,40 +61,23 @@ def _has_kw(content: str, keywords: list) -> bool:
 
 
 def _classify_one(path: str, content: str, profile: dict) -> tuple:
-    """단일 변경의 (risk, reason, trigger_sources) — desktop 은 별도(여기선 분류만)."""
-    r = profile.get("risk", {})
-    l0_excluded = any(_imatch(path, g) for g in r.get("l0_exclude_globs", []))
-    # L0 즉시통과. Domain/explicit exclusion 은 동일 higher-risk path rule로 계속 분류한다.
-    if not l0_excluded:
-        for g in r.get("l0_pass_globs", []):
-            if _imatch(path, g):
-                return ("L0", "문서/plan", ["l0_path"])
+    """단일 변경의 (risk, reason, trigger_sources) — desktop 은 별도(여기선 분류만).
 
-    risk, reason, trigger_sources = "none", "", []
-    # 사유(reason)는 범용 규칙 참조형(제약 #2 독립). 특정 스택/도메인명 금지 —
-    # "어느 매칭 규칙이 발동했는지"만 기술한다. 도메인 명칭은 profile.risk(글롭/키워드)가 정의, core 는 중립.
-    for g in r.get("l3_filename_globs", []):
-        if _imatch(path, g):
-            risk, reason, trigger_sources = "L3", "L3 filename 패턴", ["filename_l3"]
-            break
-    if risk == "none":
-        for g in r.get("l2_path_globs", []):
-            if _imatch(path, g):
-                risk, reason, trigger_sources = "L2", "L2 소스/설정", ["path_l2"]
-                break
-    if risk == "none":
-        for g in r.get("l1_path_globs", []):
-            if _imatch(path, g):
-                risk, reason, trigger_sources = "L1", "L1 저위험", ["path_l1"]
-                break
-    if risk == "none" and l0_excluded:
+    경로 기준 하한은 `path_risk.path_risk_floor` 가 소유한다. 이 모듈이 자기 사본을 갖지
+    않는 이유는 `sage explain --path` 가 같은 판정을 보여줘야 하기 때문이다 — 두 벌을 두면
+    언젠가 갈리고, 갈린 뒤에는 어느 쪽이 진짜 게이트 판정인지 알 수 없다.
+    """
+    r = profile.get("risk", {})
+    floor = path_risk_floor(path, profile)
+    if floor.risk == "L0":
+        return floor.as_tuple()
+    if floor.risk == "none":
+        return ("none", "", [])
+    if "invalid_profile" in floor.trigger_sources:
         # validate/compiler가 orphan exclusion을 차단하지만, pure core도 malformed runtime
         # profile을 L0/none으로 하향하지 않는다.
-        return ("L3", "L0 exclusion 상위 위험도 결속 누락", ["l0_excluded", "invalid_profile"])
-    if risk == "none":
-        return ("none", "", [])
-    if l0_excluded:
-        trigger_sources.append("l0_excluded")
+        return floor.as_tuple()
+    risk, reason, trigger_sources = floor.as_tuple()
 
     # 내용 escalation (L1/L2 → L3, L1 → L2). Filename으로 이미 L3인
     # change도 content provenance는 보존해 감사/compound gate 입력이 정확해야 한다.
@@ -293,11 +277,22 @@ def _fast_covers_required(fast_state, required):
     전환 run 에는 composite 문서가 없다. 담보는 전환 시점에 실재하던 Standard 문서들이고, 그 목록이
     `source_phases_open` 이다. 이걸 확인하지 않으면 Phase 00 하나만 쓴 상태에서 전환해 계획 00~03
     요구를 통째로 면제받을 수 있다 — 전환이 계획을 건너뛰는 통로가 된다.
+
+    **key 집합만 보지 않는다.** `{"00": {}, "01": {}}` 는 key 는 맞지만 그 문서가 실재했다는
+    어떤 근거도 싣지 않는다. 이 함수는 `_fast_cycle_state` 뒤에만 불리는 것이 아니라 따로도
+    불릴 수 있으므로, 여기서도 계약을 확인한다 — 호출 순서에 기대는 방어는 순서가 바뀌면
+    사라진다.
     """
     if fast_state.get("entry_mode") != CONVERTED_ENTRY_MODE:
         return True
     recorded = fast_state.get("source_phases_open")
     if not isinstance(recorded, dict):
+        return False
+    try:
+        from sage.fast_cycle_contract import converted_provenance_issue
+    except Exception:
+        return False           # 계약을 부르지 못하면 면제하지 않는다
+    if converted_provenance_issue(fast_state.get("current_phase"), recorded):
         return False
     return set(required).issubset(set(recorded))
 
@@ -346,6 +341,69 @@ def _missing_pre_impl_phases(event: dict, profile: dict, snapshot: dict, risk: s
 CONVERTED_ENTRY_MODE = "FAST-CONVERTED"
 
 
+def _opener_contract_issue(state):
+    """이 run 이 Fast 계약을 실제로 세웠는가 — 조회·무결성과 **같은** 판정을 쓴다.
+
+    이전에는 게이트가 `clean`/`chain_ok`/`seq_ok`/`terminal` 네 조건을 직접 세었다. 그 넷은
+    감사 파일이 말이 되는가만 보고 opener 가 담보를 실었는가는 보지 않는다. 그래서 `ts` 를
+    지우고 해시를 다시 계산한 감사가 조회에서는 손상, 게이트에서는 정상 Fast 였고 — 느슨한
+    쪽이 게이트였으므로 그 상태가 Standard 01·02 면제를 받았다.
+
+    계약 모듈을 부르지 못하면 통과시키지 않는다. 판정할 근거가 없는 것은 통과가 아니다.
+    """
+    try:
+        from sage.fast_cycle_contract import opener_run_issues
+    except Exception as exc:
+        return f"Fast opener contract unavailable: {type(exc).__name__}: {exc}"
+    issues = opener_run_issues(state)
+    if not issues:
+        return None
+    detail = "; ".join(f"{code}({', '.join(f'{k}={v}' for k, v in args.items())})" if args
+                       else code for code, args in issues[:3])
+    return "active Fast run opener contract is invalid: " + detail
+
+
+def _fast_policy_floor_issue(policy, state):
+    """감사에 고정된 Fast 계약이 profile 정책의 **하한**을 실제로 만족하는가.
+
+    `open_issues` 는 Fast Plan 문서와 감사 open snapshot 이 **서로** 일치하는지만 본다. 둘이
+    같은 값을 담고 있으면 그 값이 정책 하한 아래여도 통과한다 — 리뷰를 하나도 요구하지 않는
+    0 round Fast 계약이 Standard 01·02 면제를 받는 통로가 여기였다. 문서끼리의 일치와 정책
+    충족은 다른 질문이고, 앞의 것만 물으면 뒤의 것은 아무도 묻지 않는다.
+
+    level 이 정책에 없으면 하한을 알 수 없다 — 그 상태를 통과로 읽지 않는다.
+    """
+    level = state.get("fast_review_level")
+    rounds_by_level = policy.get("minimum_rounds")
+    lenses_by_level = policy.get("minimum_lenses")
+    if not isinstance(rounds_by_level, dict) or not isinstance(lenses_by_level, dict):
+        return "pdca.fast_cycle policy is missing minimum_rounds/minimum_lenses"
+    if level not in rounds_by_level or level not in lenses_by_level:
+        return f"Fast review level {level!r} is not declared in pdca.fast_cycle policy"
+    rounds = state.get("minimum_rounds")
+    if type(rounds) is not int or rounds < rounds_by_level[level]:
+        return (f"Fast run minimum_rounds={rounds!r} is below the policy floor "
+                f"{rounds_by_level[level]!r} for level {level!r}")
+    lenses = state.get("lenses")
+    if not isinstance(lenses, (list, tuple)):
+        return f"Fast run lenses must be a list (found {type(lenses).__name__})"
+    candidates = (policy.get("lenses") or {}).get(level)
+    if not isinstance(candidates, (list, tuple)):
+        return f"pdca.fast_cycle.lenses is missing level {level!r}"
+    # 개수만 세면 `['anything', 'goes']` 나 같은 렌즈를 두 번 적은 기록이 하한을 만족한다.
+    # 하한이 말하는 것은 "서로 다른, 정책이 선언한 렌즈 몇 개로 봤는가" 다. 실제 CLI 는 언제나
+    # `candidates[:n]` 을 싣는다 — 중복도 미선언 렌즈도 만들 수 없다.
+    declared = {lens for lens in lenses if lens in candidates}
+    if len(declared) < lenses_by_level[level]:
+        return (f"Fast run has {len(declared)} distinct declared lenses, below the policy floor "
+                f"{lenses_by_level[level]!r} for level {level!r}")
+    unknown = sorted({str(lens) for lens in lenses if lens not in candidates})
+    if unknown:
+        return (f"Fast run lenses are not declared in pdca.fast_cycle.lenses[{level!r}]: "
+                f"{unknown[:3]}")
+    return None
+
+
 def _converted_fast_state(audit, converted, stem, content, cfg):
     """Standard→Fast 로 전환된 run 의 상태. Fast Plan 문서를 요구하지 않는다.
 
@@ -372,9 +430,11 @@ def _converted_fast_state(audit, converted, stem, content, cfg):
         details = "; ".join(str(item) for item in (audit.get("file_issues") or [])[:3])
         return None, f"Fast audit file integrity failed: {details or 'cause unavailable'}"
     state = (audit.get("runs") or {}).get(converted[0]) or {}
-    if (not state.get("clean") or state.get("chain_ok") is not True
-            or state.get("seq_ok") is False or state.get("terminal")):
+    if state.get("terminal"):
         return None, "active converted Fast run integrity/state is invalid"
+    opener_issue = _opener_contract_issue(state)
+    if opener_issue:
+        return None, opener_issue
     if state.get("cycle_stem") != stem:
         return None, "converted Fast run is bound to another cycle stem"
     declaration = risk_declaration.parse(content)
@@ -384,6 +444,9 @@ def _converted_fast_state(audit, converted, stem, content, cfg):
     if state.get("actual_risk") != declaration.tier:
         return None, (f"actual risk differs between Phase 00 ({declaration.tier}) and the "
                       f"converted audit snapshot ({state.get('actual_risk')})")
+    floor_issue = _fast_policy_floor_issue(policy, state)
+    if floor_issue:
+        return None, floor_issue
     return state, None
 
 
@@ -427,9 +490,11 @@ def _fast_cycle_state(event, profile, snapshot, cfg):
     if len(matching_active) != 1 or matching_active[0] != run_id:
         return None, f"Fast Plan run binding mismatch: plan={run_id!r}, active={matching_active}"
     state = (audit.get("runs") or {}).get(run_id) or {}
-    if (not state.get("clean") or state.get("chain_ok") is not True
-            or state.get("seq_ok") is False or state.get("terminal")):
+    if state.get("terminal"):
         return None, "active Fast run integrity/state is invalid"
+    opener_issue = _opener_contract_issue(state)
+    if opener_issue:
+        return None, opener_issue
     level = state.get("fast_review_level")
     lenses = state.get("lenses") or []
     issues = open_issues(
@@ -438,6 +503,9 @@ def _fast_cycle_state(event, profile, snapshot, cfg):
         lenses=lenses, require_pending_phase4=False)
     if state.get("actual_risk") != plan.metadata.get("Risk Level"):
         issues.append("actual risk differs between Fast Plan and audit open snapshot")
+    floor_issue = _fast_policy_floor_issue(policy, state)
+    if floor_issue:
+        issues.append(floor_issue)
     if issues:
         return None, "; ".join(issues[:5])
     return state, None

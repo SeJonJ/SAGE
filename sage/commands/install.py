@@ -24,6 +24,7 @@ from sage import __version__
 
 from sage import _resources   # 번들 리소스 경로 단일 해석(env override + repo fallback — 재배치/설치 대비)
 from sage.diagnostics import Diagnostic
+from sage.runtime_api import HOOK_RUNTIME_API
 from sage import overlay_common   # 오버레이 관리 블록 프리미티브(base_of 로 렌더 base 대조)
 from sage import overlay_materialize   # CORE 렌더 오버레이 물리화 + core_renders 앵커
 from sage import install_transaction as _tx
@@ -908,6 +909,10 @@ def _manifest(host, existing=None, core_renders=None, skill_scope=None):
         # 설치를 만든 SAGE 패키지 버전을 그대로 스탬프(sage --version 과 일치).
         # template_version 은 manifest 포맷 버전이라 패키지 버전과 독립적으로 고정.
         "sage_version": __version__, "generator_version": __version__, "template_version": "1",
+        # 이 설치가 요구하는 hook runtime API. `generator_version` 과 같은 자리에 스탬프하는
+        # 이유는 둘이 같은 사실의 두 면이기 때문이다 — 어느 package 가 만들었고, 그 package 의
+        # hook 이 어떤 runtime 을 필요로 하는가. 갈라 두면 한쪽만 갱신되는 상태가 생긴다.
+        "runtime_api": {"required": HOOK_RUNTIME_API},
         "host_runtime": previous_primary if previous_primary in ("claude", "codex") else host,
         "installed_hosts": installed_hosts,
         **identity,
