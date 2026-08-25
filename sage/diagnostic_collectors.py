@@ -176,18 +176,13 @@ def collect_host(profile, manifest):
 
 def collect_cycle(root):
     """선언 부재는 정상이다. 손상은 정상이 아니다."""
-    from sage import _resources
-    import sys
-
-    hooks = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks")
-    for path in (os.path.join(hooks, "runtime"), hooks):
-        if path not in sys.path:
-            sys.path.insert(0, path)
+    _ensure_hook_path()
     try:
         import cycle_state
     except Exception as exc:
         return {"stem": None}, (Finding("cycle.state_unavailable",
-                                        evidence={"error": type(exc).__name__}),)
+                                        evidence={"error": type(exc).__name__},
+                                        arguments={"error": f"{type(exc).__name__}: {exc}"[:160]}),)
 
     try:
         record = cycle_state.read_declaration_record(root)
@@ -199,28 +194,102 @@ def collect_cycle(root):
         return {"stem": None, "risk": None}, (
             Finding("cycle.declaration_damaged", evidence={"error": str(record.error)}),)
     stem = record.stem or None
+    mode, mode_evidence, mode_error = _cycle_mode(root, stem)
     facts = {"stem": stem,
+             "mode": mode,
              "risk": _declared_risk(root, stem),
              "document_language": record.document_language,
              "legacy": bool(record.legacy)}
-    return facts, ()
+    findings = ()
+    if mode_error:
+        # 판정이 터진 것은 프로젝트 상태가 아니라 도구 실패다. `cycle.mode_unknown` 으로
+        # 내면 손상된 감사와 같은 자리에 놓이고, 사용자는 고칠 것이 없는 곳을 고치러 간다.
+        findings = (Finding("cycle.mode_unavailable",
+                            evidence=dict(mode_evidence),
+                            arguments={"error": mode_error}),)
+    elif mode == "UNKNOWN":
+        findings = (Finding("cycle.mode_unknown", evidence=mode_evidence),)
+    return facts, findings
 
 
-# 승인 설계 §5.2 는 cycle 영역에 mode(STANDARD/FAST)도 싣기를 요구했다. **싣지 않는다.**
-#
-# Fast 감사를 읽는 유일한 정본(`fast_cycle_audit`)은 읽기에도 audit lock 을 잡는다 — 일관된
-# 스냅샷을 얻기 위한 설계이고, 그 자체는 옳다. 문제는 그것을 `status` 가 부르면 두 가지가
-# 따라온다는 것이다.
-#
-#   1. `.sage` 에 lock 파일이 생긴다. 읽기 전용이 아니게 된다(G2).
-#   2. 진행 중인 Fast 전이와 락 경쟁을 한다. 1~2초를 약속한 조회 명령이 실제 작업을 기다리게
-#      되고, 반대로 실제 작업이 조회를 기다릴 수도 있다.
-#
-# JSONL 을 직접 파싱해 우회할 수는 있지만, 그건 감사 형식의 두 번째 해석기를 만드는 일이다.
-# 이 사이클이 `path_risk` 와 `risk_declaration` 에서 피한 바로 그 형태다.
-#
-# 그래서 mode 는 그 질문을 이미 소유한 명령에 맡긴다 — `sage cycle show` 와
-# `sage fast-cycle show`. 이건 알려진 한계이고 Phase 04 §3 에 기록돼 있다.
+def _ensure_hook_path():
+    """hook 런타임 모듈을 import 할 수 있게 한다.
+
+    각 collector 가 직접 부른다 — 다른 collector 가 먼저 실행되면서 남긴 sys.path 부작용에
+    기대면, 호출 순서를 바꾸거나 한 영역이 실패했을 때 조용히 import 가 깨진다.
+    """
+    import sys
+
+    from sage import _resources
+    hooks = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks")
+    for path in (os.path.join(hooks, "runtime"), hooks):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+
+
+def _cycle_mode(root, stem):
+    """(mode, evidence, tool_error). STANDARD | FAST | UNKNOWN.
+
+    Fast 감사를 읽되 **락을 잡지 않는다.** 락 경로(`audit_summary`)는 `.sage/` 와 `.lock`
+    파일을 만들고 진행 중인 전이를 기다린다 — 읽기 전용을 약속한 조회 명령이 할 일이 아니다.
+    그래서 정본 모듈 안에 락 없는 `mode_for_stem` 을 두고 그것을 쓴다. 여기서 JSONL 을 직접
+    파싱하면 감사 형식의 두 번째 해석기가 생기므로 그 길은 택하지 않았다.
+
+    못 읽거나 깨진 감사는 STANDARD 로 낮추지 않고 UNKNOWN 이다. 부재를 정상으로 접으면
+    손상된 감사가 조용히 "일반 사이클" 로 보인다.
+    """
+    _ensure_hook_path()
+    try:
+        import fast_cycle_audit
+    except Exception as exc:
+        return "UNKNOWN", {"error": type(exc).__name__}, f"{type(exc).__name__}: {exc}"
+    try:
+        mode, evidence = fast_cycle_audit.mode_for_stem(root, stem)
+    except Exception as exc:
+        return "UNKNOWN", {"error": type(exc).__name__}, f"{type(exc).__name__}: {exc}"
+    return mode, evidence, None
+
+
+def collect_gate(root, profile, risk, stem):
+    """구현 전 요구 phase 가 실제로 있는가. `explain` 과 같은 정본을 쓴다.
+
+    이 영역이 없으면 `status` 는 "필수 phase 가 통째로 없는 저장소" 를 ATTENTION 으로
+    통과시킨다 — 사용자가 "지금 쓸 수 있는가" 를 묻는 명령이 가장 흔한 차단 원인을
+    비차단으로 표시하는 셈이다.
+    """
+    from sage import gate_readiness
+
+    required = gate_readiness.required_phases(profile, risk)
+    if required is None:
+        return {"required_phases": None, "present": (), "missing": (),
+                "fast_cycle_error": None}, ()
+    try:
+        present, missing, fast_error = gate_readiness.phase_readiness(
+            root, profile, stem, required)
+    except Exception as exc:
+        # 판정하지 못한 것을 "요구 없음" 으로 접지 않는다. `missing` 이 비어 있다는 것은
+        # 요구가 충족됐다는 적극적 사실이고, 여기서 그 자리를 빌려 쓰면 판정 실패가 화면에서
+        # 준비 완료와 같아진다.
+        return ({"required_phases": tuple(required), "present": (), "missing": (),
+                 "fast_cycle_error": None},
+                (Finding("gate.readiness_unavailable",
+                         evidence={"error": type(exc).__name__, "detail": str(exc)[:200]},
+                         arguments={"error": f"{type(exc).__name__}: {str(exc)[:160]}"}),))
+    facts = {"required_phases": tuple(required),
+             "present": tuple(present), "missing": tuple(missing),
+             "fast_cycle_error": fast_error}
+    findings = []
+    if fast_error:
+        # 게이트는 이 사유 하나로 막는다 — 요구 문서가 전부 있어도. 그래서 `missing` 이
+        # 비었는지와 무관하게 올린다.
+        findings.append(Finding("gate.fast_cycle_invalid",
+                                evidence={"reason": str(fast_error)[:300]},
+                                arguments={"reason": str(fast_error)[:300]}))
+    if missing:
+        findings.append(Finding("gate.phase_incomplete",
+                                evidence={"missing": ", ".join(missing)},
+                                arguments={"miss": ", ".join(missing)}))
+    return facts, tuple(findings)
 
 
 def _declared_risk(root, stem):
@@ -242,6 +311,7 @@ def _declared_risk(root, stem):
                     if isinstance(entry, dict) and str(entry.get("id")) == "00"), None)
     if not pattern:
         return None
+    _ensure_hook_path()
     try:
         import cycle_binding
         import risk_declaration

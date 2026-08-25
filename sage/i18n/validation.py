@@ -215,6 +215,20 @@ def release_debt_issues(repo_root: str) -> list[str]:
 # 함수명·함수 파라미터·profile 설정 키·다른 키의 prefix 다. 기계 변환을 채택했다면 이 넷에서
 # `gate.message`·`gate.reason`·`gate.release`·`gate.stale` 이라는 안정 식별자가 만들어졌을
 # 것이고, 안정 식별자는 한 번 나가면 되돌릴 수 없다.
+# 한쪽 표에만 있어도 되는 recovery id. **여기 이름이 적혀 있어야** 통과한다 — 비대칭을
+# 자동으로 허용하면 rename 으로 사라진 id 와 의도된 비대칭이 구분되지 않는다.
+# hook 만 내는 복구: 게이트·문서 판정에서만 발생하는 상황이다. CLI 에는 그 진단이 없다.
+HOOK_ONLY_RECOVERY_IDS = frozenset({
+    "cycle-clear", "explain", "fast-open", "fix-document", "fix-report",
+    "fix-risk-declaration", "move-off-desktop", "resolve-feedback", "run-review",
+    "select-l3-strategy", "write-plan",
+})
+# CLI 만 내는 복구: 설치·버전·프로필 정합처럼 hook 이 진단하지 않는 축이다.
+CLI_ONLY_RECOVERY_IDS = frozenset({
+    "doctor", "fast-cycle-show", "fix-required-version", "fix-sage-section",
+    "regenerate-hook", "upgrade-check", "upgrade-package",
+})
+
 NOT_MESSAGE_KEYS = frozenset({"block_message", "block_reason", "block_release", "block_stale"})
 
 
@@ -236,7 +250,9 @@ def recovery_issues(repo_root: str) -> list[str]:
     import 할 수 없다). 공통인 것은 code 와 recovery id 의 **형태와 의미**이고, 그 일치는
     런타임이 아니라 여기서 대조한다.
     """
-    from sage.diagnostic_contract import BLOCK, RECOVERY as CLI_RECOVERY, SEVERITY, contract_issues
+    from sage.diagnostic_contract import (BLOCK, FORBIDDEN_COMMAND,
+                                          RECOVERY as CLI_RECOVERY, SEVERITY,
+                                          contract_issues)
 
     issues = [f"cli/diagnostic_contract: {issue}" for issue in contract_issues()]
 
@@ -273,15 +289,45 @@ def recovery_issues(repo_root: str) -> list[str]:
         issues.append(f"hook/recovery: {name} 은 메시지 키가 아닌데 code 로 승격됐다")
 
     # 3. 같은 recovery id 는 양쪽에서 같은 명령을 낸다.
+    #
+    # 교집합만 비교하면 이빨이 빠진다 — id 를 rename 하면서 명령도 함께 바꾸면 그 id 가
+    # 교집합에서 빠져나가고, 검사는 아무 말도 하지 않는다. 그래서 집합 자체를 양방향으로
+    # 대조하고, 한쪽에만 있어도 되는 id 는 아래 목록에 **이름을 적어** 선언하게 한다.
     cli_commands = {}
     for steps in CLI_RECOVERY.values():
         for step in steps:
             cli_commands.setdefault(step.id, step.command)
+    hook_commands = {}
+    for steps in hook.RECOVERY.values():
+        for step_id, command, _key, _mut in steps:
+            hook_commands.setdefault(step_id, command)
+
+    for step_id in sorted(set(hook_commands) & set(cli_commands)):
+        if cli_commands[step_id] != hook_commands[step_id]:
+            issues.append(f"recovery id {step_id!r} 가 CLI 와 hook 에서 다른 명령을 낸다 — "
+                          f"{cli_commands[step_id]!r} vs {hook_commands[step_id]!r}")
+    for step_id in sorted(set(hook_commands) - set(cli_commands) - HOOK_ONLY_RECOVERY_IDS):
+        issues.append(f"recovery id {step_id!r} 가 hook 에만 있다 — CLI 에도 두거나 "
+                      "HOOK_ONLY_RECOVERY_IDS 에 선언하라")
+    for step_id in sorted(set(cli_commands) - set(hook_commands) - CLI_ONLY_RECOVERY_IDS):
+        issues.append(f"recovery id {step_id!r} 가 CLI 에만 있다 — hook 에도 두거나 "
+                      "CLI_ONLY_RECOVERY_IDS 에 선언하라")
+    # 선언과 실제 차집합을 **정확히** 대조한다. 한쪽 방향만 보면 선언이 실제보다 넓어져도
+    # 통과한다 — 예외 목록이 좁혀지지 않고 낡은 채로 남는 통로다.
+    for step_id in sorted(HOOK_ONLY_RECOVERY_IDS - (set(hook_commands) - set(cli_commands))):
+        issues.append(f"HOOK_ONLY_RECOVERY_IDS 의 {step_id!r} 가 더 이상 hook 전용이 아니다 — "
+                      "선언에서 지워라")
+    for step_id in sorted(CLI_ONLY_RECOVERY_IDS - (set(cli_commands) - set(hook_commands))):
+        issues.append(f"CLI_ONLY_RECOVERY_IDS 의 {step_id!r} 가 더 이상 CLI 전용이 아니다 — "
+                      "선언에서 지워라")
+
+    # 3b. hook 쪽 명령에도 CLI 와 같은 금지 규칙을 적용한다. 두 표가 같은 화면에 나가는데
+    #     한쪽만 검사하면, 파괴적 명령은 검사되지 않는 쪽으로 흘러간다.
     for code, steps in sorted(hook.RECOVERY.items()):
         for step_id, command, _key, _mut in steps:
-            if step_id in cli_commands and cli_commands[step_id] != command:
-                issues.append(f"recovery id {step_id!r} 가 CLI 와 hook 에서 다른 명령을 낸다 — "
-                              f"{cli_commands[step_id]!r} vs {command!r}")
+            if command and FORBIDDEN_COMMAND.search(command):
+                issues.append(f"hook/recovery: {code} 의 {step_id!r} 가 금지된 명령을 낸다 — "
+                              f"{command!r}")
 
     # 4. Action 단계의 설명 key 가 두 hook catalog 에 모두 있다.
     for code, steps in sorted(hook.RECOVERY.items()):

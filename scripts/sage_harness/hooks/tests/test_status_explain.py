@@ -316,7 +316,7 @@ class TestCycleFacts(unittest.TestCase):
         _, out, _ = _run(S, root=root, json=True)
         return json.loads(out)["cycle"]
 
-    def test_a_declared_cycle_reports_stem_and_risk(self):
+    def test_a_declared_cycle_reports_stem_mode_and_risk(self):
         with tempfile.TemporaryDirectory() as root:
             _project(root)
             os.makedirs(os.path.join(root, ".sage"), exist_ok=True)
@@ -324,8 +324,9 @@ class TestCycleFacts(unittest.TestCase):
             facts = self._facts(root)
             self.assertEqual(facts["stem"], "demo-stem")
             self.assertEqual(facts["risk"], "L3")
-            # mode 는 싣지 않는다 — Fast 감사는 읽기에도 lock 을 잡아 읽기 전용 계약을 깬다.
-            self.assertNotIn("mode", facts)
+            # Fast 감사가 없으면 이 사이클은 일반 사이클이다. mode 를 생략하지 않는다 —
+            # 락 없는 읽기 경로로 읽으므로 읽기 전용 계약도 깨지 않는다.
+            self.assertEqual(facts["mode"], "STANDARD")
 
     def test_the_risk_comes_from_the_phase00_declaration(self):
         with tempfile.TemporaryDirectory() as root:
@@ -419,7 +420,7 @@ class TestStatusJson(unittest.TestCase):
             self.assertEqual(
                 set(self._payload(root)),
                 {"schema_version", "status", "exit_code", "project", "version", "runtime_api",
-                 "host", "cycle", "profile", "diagnostics"})
+                 "host", "cycle", "profile", "gate", "diagnostics"})
 
     def _render(self, root, language, as_json):
         from sage.i18n.context import LanguageContext

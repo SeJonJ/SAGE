@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import re
 
+from sage import version_contract as _version_contract
+
 from sage.diagnostics import Diagnostic
 
 INFO = "INFO"
@@ -117,6 +119,8 @@ _VALIDATE = RecoveryStep(
 
 _DOCTOR = RecoveryStep("doctor", "sage doctor", "recovery.doctor", mutating=False)
 _CYCLE_SHOW = RecoveryStep("cycle-show", "sage cycle show", "recovery.cycle_show", mutating=False)
+_FAST_CYCLE_SHOW = RecoveryStep("fast-cycle-show", "sage fast-cycle show",
+                                "recovery.fast_cycle_show", mutating=False)
 _CYCLE_SET = RecoveryStep("cycle-set", "sage cycle set <stem>", "recovery.cycle_set", mutating=True)
 # command 가 None 인 단계는 사람이 해야 하는 일이다 — 렌더에서 `Action:` 으로 갈린다.
 _FIX_SAGE_SECTION = RecoveryStep("fix-sage-section", None, "recovery.fix_sage_section",
@@ -150,18 +154,23 @@ SEVERITY = {
     "runtime.api_too_old": BLOCK,
     "runtime.api_marker_missing": BLOCK,
     "runtime.api_marker_damaged": BLOCK,
+    # manifest 를 못 읽으면 호환성을 판정할 근거가 없다. 근거 없음을 통과로 읽지 않는다.
+    "runtime.manifest_unreadable": BLOCK,
+    # --- hook entry bootstrap ----------------------------------------------
+    # 게이트가 서기도 전에 나는 차단들이다. 여기에 다음 행동이 없으면 사용자는 hook 이
+    # 죽었다는 사실만 보고 무엇을 고쳐야 하는지 알 수 없다.
+    "entry.profile_yaml_unreadable": BLOCK,
+    "entry.compiled_profile_unreadable": BLOCK,
+    "entry.profile_not_mapping": BLOCK,
+    "entry.raw_risk_type": BLOCK,
+    "entry.profile_pair_mismatch": BLOCK,
+    "entry.core_load_failed": BLOCK,
+    "entry.dispatch_failed": BLOCK,
     "runtime.api_marker_absent_legacy": WARN,
     "version.runtime_mismatch": BLOCK,
-    # --- version contract --------------------------------------------------
-    # severity 의 정본은 `sage/version_contract.py` 다. 여기 값은 그 판정을 진단 어휘로 옮긴
-    # 것이지 두 번째 판정이 아니다 — FAIL→BLOCK, WARN→WARN, INFO→INFO 로 정확히 대응하며
-    # `test_status.py` 가 그 대응을 대조한다.
-    "version.sage_section_not_mapping": BLOCK,
-    "version.required_not_semver": BLOCK,
-    "version.required_absent": INFO,
-    "version.axis_malformed": WARN,
-    "version.axis_unknown": WARN,
-    "version.axis_differs": WARN,
+    # version contract 축은 아래에서 `version_contract.ISSUE_SEVERITY` 로부터 **생성**한다.
+    # 손으로 옮겨 적으면 새 code 를 여기 넣는 것을 잊고, 잊으면 기본값 INFO 로 조용히
+    # 떨어진다 — 차단이어야 할 것이 안내로 보이는 방향의 실패다.
     # --- project -----------------------------------------------------------
     "project.not_installed": WARN,
     "project.manifest_unreadable": BLOCK,
@@ -182,8 +191,24 @@ SEVERITY = {
     "gate.phase_incomplete": BLOCK,
     "guard.generated_asset": BLOCK,
     "cycle.binding_missing": BLOCK,
+    # 준비 상태를 **판정하지 못한 것**은 준비됐다는 뜻이 아니다. WARN 으로 두면 rc 0 이
+    # 되어 "지금 쓸 수 있는가" 에 확인 없이 그렇다고 답한다.
+    "gate.readiness_unavailable": BLOCK,
+    # Fast 선언이 깨진 상태. 게이트는 요구 문서가 전부 있어도 이 사유 하나로 막는다.
+    "gate.fast_cycle_invalid": BLOCK,
+    # 한 수집 영역이 통째로 무너진 상태. 모르는 영역을 READY 로 접지 않으려고 BLOCK 이다.
+    "status.area_unavailable": BLOCK,
     # --- cycle -------------------------------------------------------------
+    # 감사를 못 읽어 mode 를 모르는 것은 차단 사유가 아니다. 그러나 STANDARD 로 낮춰
+    # 표시하면 손상이 정상으로 보이므로, 모른다는 사실 자체를 진단으로 올린다.
+    "cycle.mode_unknown": WARN,
+    # 감사가 손상돼 mode 를 모르는 것(위)과 **판정 자체가 터진 것**은 다르다. 앞은 프로젝트
+    # 상태고 뒤는 도구 실패다. 같은 code 로 내면 도구가 죽은 것이 프로젝트 경고로 보이고,
+    # rc 0 으로 끝난다.
+    "cycle.mode_unavailable": BLOCK,
     "cycle.state_unavailable": BLOCK,
+    # `explain` 의 최후 안전망. 설명을 만들지 못한 것은 경로 판정이 아니다.
+    "explain.unavailable": BLOCK,
     "cycle.declaration_unreadable": BLOCK,
     "cycle.declaration_damaged": BLOCK,
 }
@@ -194,7 +219,18 @@ RECOVERY = {
     "runtime.api_too_old": (_UPGRADE_CHECK, _UPGRADE_PACKAGE, _REINSTALL_HOST, _REGENERATE_HOOK,
                             _STATUS),
     "runtime.api_marker_missing": (_STATUS, _REINSTALL_HOST, _REGENERATE_HOOK, _VALIDATE),
+    # WARN 이라 계약이 요구하지는 않는다. 그래도 둔다 — marker 를 심는 방법을 말하지 않으면
+    # 사용자는 경고만 반복해 보고 고칠 길을 못 찾는다.
+    "runtime.api_marker_absent_legacy": (_STATUS, _REINSTALL_HOST, _REGENERATE_HOOK, _VALIDATE),
     "runtime.api_marker_damaged": (_STATUS, _REINSTALL_HOST, _REGENERATE_HOOK, _VALIDATE),
+    "runtime.manifest_unreadable": (_DOCTOR, _REINSTALL_HOST, _REGENERATE_HOOK, _VALIDATE),
+    "entry.profile_yaml_unreadable": (_REINSTALL_HOST, _VALIDATE),
+    "entry.compiled_profile_unreadable": (_REGENERATE_HOOK, _VALIDATE),
+    "entry.profile_not_mapping": (_FIX_SHARED_PROFILE, _VALIDATE),
+    "entry.raw_risk_type": (_FIX_SHARED_PROFILE, _VALIDATE),
+    "entry.profile_pair_mismatch": (_REGENERATE_HOOK, _VALIDATE),
+    "entry.core_load_failed": (_DOCTOR, _REINSTALL_HOST, _VALIDATE),
+    "entry.dispatch_failed": (_DOCTOR, _REINSTALL_HOST, _VALIDATE),
     "version.runtime_mismatch": (_UPGRADE_CHECK, _UPGRADE_PACKAGE, _STATUS),
 
     # `status` 가 내는 진단의 복구에는 `sage status` 를 넣지 않는다. 방금 그 명령을 실행한
@@ -215,8 +251,38 @@ RECOVERY = {
     "cycle.declaration_damaged": (_CYCLE_SHOW, _CYCLE_SET, _VALIDATE),
     "cycle.binding_missing": (_CYCLE_SHOW, _CYCLE_SET),
     "gate.phase_incomplete": (_CYCLE_SHOW, _WRITE_PHASES),
+    "gate.readiness_unavailable": (_CYCLE_SHOW, _VALIDATE),
+    "gate.fast_cycle_invalid": (_FAST_CYCLE_SHOW, _CYCLE_SHOW, _VALIDATE),
+    "cycle.mode_unavailable": (_DOCTOR, _FAST_CYCLE_SHOW, _VALIDATE),
+    "explain.unavailable": (_DOCTOR, _VALIDATE),
+    "status.area_unavailable": (_DOCTOR, _VALIDATE),
+    "cycle.mode_unknown": (_FAST_CYCLE_SHOW, _VALIDATE),
     "guard.generated_asset": (_FIX_CANONICAL_SPEC, _REGENERATE, _VALIDATE),
 }
+
+
+# version contract 의 판정을 진단 어휘로 옮긴다. FAIL→BLOCK, WARN→WARN, INFO→INFO.
+# 대응표가 여기 한 줄로 있고 값은 정본에서 오므로, 두 표가 갈릴 자리가 없다.
+_VERSION_SEVERITY = {"FAIL": BLOCK, "WARN": WARN, "INFO": INFO}
+SEVERITY.update({code: _VERSION_SEVERITY[level]
+                 for code, level in _version_contract.ISSUE_SEVERITY.items()})
+
+
+# 도구가 자기 일을 못 한 상태의 code 들. 정책 차단과 다른 상태 토큰·exit 를 받는다.
+#
+# 정본을 여기 두는 이유는 `status.aggregate` 가 이 목록을 손으로 세고 있었기 때문이다.
+# 특례가 하나뿐일 때는 보이지만, 새 도구 실패 code 가 늘면 그것들은 조용히 정책 차단이나
+# 무경고로 흘러간다 — 등재를 잊는 방향의 실패가 언제나 더 조용한 쪽이다.
+TOOL_FAILURE = frozenset({
+    "status.area_unavailable",
+    "gate.readiness_unavailable",
+    "cycle.mode_unavailable",
+    # 선언을 읽는 모듈 자체를 로드하지 못한 것은 프로젝트가 선언을 잘못 쓴 것이 아니다.
+    # 아래 `cycle.declaration_*` 과 이 code 를 같은 축으로 내면, 고칠 수 없는 것을
+    # 고치라고 말하게 된다.
+    "cycle.state_unavailable",
+    "explain.unavailable",
+})
 
 
 def severity_of(code) -> str:
@@ -241,7 +307,7 @@ def order(findings, severity_of=severity_of):
 
 # 기본 복구로 제시하면 안 되는 것들. 파괴적 명령, 감사 로그 삭제, 그리고 판정을 우회시키는
 # generic override 다. 복구는 사용자를 정상 경로로 되돌리는 것이지, 막은 이유를 지우는 게 아니다.
-_FORBIDDEN_COMMAND = re.compile(
+FORBIDDEN_COMMAND = re.compile(
     r"(^|[\s;&|])(rm|rmdir|shred|truncate)([\s;&|]|$)"
     r"|git\s+reset\s+--hard"
     r"|git\s+clean\b"
@@ -289,7 +355,7 @@ def contract_issues(severity=None, recovery=None):
     commands = {}
     for code, steps in sorted(recovery.items()):
         for step in steps:
-            if step.command and _FORBIDDEN_COMMAND.search(step.command):
+            if step.command and FORBIDDEN_COMMAND.search(step.command):
                 issues.append(f"{code}: 복구 단계 {step.id!r} 가 금지된 명령을 제시한다 "
                               f"({step.command!r})")
             if step.id in commands and commands[step.id] != step.command:

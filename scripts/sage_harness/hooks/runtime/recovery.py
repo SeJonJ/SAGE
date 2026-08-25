@@ -36,6 +36,7 @@ SELECT_L3_STRATEGY = ("select-l3-strategy", None, "recovery.select_l3_strategy",
 RUN_REVIEW = ("run-review", "sage review", "recovery.run_review", True)
 FAST_OPEN = ("fast-open", "sage fast-cycle open", "recovery.fast_open", True)
 FIX_DOCUMENT = ("fix-document", None, "recovery.fix_document", False)
+FIX_SHARED_PROFILE = ("fix-shared-profile", None, "recovery.fix_shared_profile", False)
 FIX_REPORT = ("fix-report", None, "recovery.fix_report", False)
 MOVE_OFF_DESKTOP = ("move-off-desktop", None, "recovery.move_off_desktop", False)
 
@@ -111,6 +112,11 @@ RECOVERY = {
     # --- feedback / gate ---------------------------------------------------
     "feedback.unresolved": (EXPLAIN, RESOLVE_FEEDBACK),
     "gate.runtime_error": (STATUS, REINSTALL_HOST, VALIDATE),
+    # hook 런타임이 자기 core 를 세우지 못한 상태들. 사용자에게 보이는 BLOCK 이므로
+    # 다른 차단과 같은 계약을 진다 — code 와 다음 행동이 함께 나간다.
+    "runtime.core_failure": (STATUS, REINSTALL_HOST, VALIDATE),
+    "runtime.project_hook_contract": (STATUS, FIX_DOCUMENT, VALIDATE),
+    "runtime.profile_contract": (STATUS, FIX_SHARED_PROFILE, VALIDATE),
     "gate.phase_incomplete": (EXPLAIN, CYCLE_SHOW, WRITE_PHASES),
     "gate.l3_plan_missing": (EXPLAIN, WRITE_PLAN),
     "gate.l3_review_evidence_missing": (EXPLAIN, RUN_REVIEW),

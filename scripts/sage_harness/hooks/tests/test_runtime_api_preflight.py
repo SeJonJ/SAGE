@@ -120,10 +120,21 @@ class TestBlockedBeforeCoreImport(unittest.TestCase):
         self.assertNotIn("ModuleNotFoundError", r.stderr)
 
     def test_the_block_carries_an_executable_next(self):
+        """`Next:` 조각을 host wire 모양과 무관하게 센다.
+
+        Codex 는 한 줄만 받으므로 복구 줄이 `|` 로 이어진다. 줄 단위로만 세면 그 host 에서
+        안내가 사라진 것처럼 보이지만, 실제로는 구분자만 다르다.
+        """
         r = self._blocked(_manifest(required=HOOK_RUNTIME_API + 1))
-        nexts = [ln for ln in r.stderr.splitlines() if ln.startswith("Next: ")]
+        parts = [chunk.strip() for line in r.stderr.splitlines()
+                 for chunk in line.split(" | ")]
+        nexts = [chunk for chunk in parts if chunk.startswith("Next: ")]
         self.assertTrue(nexts, r.stderr)
-        self.assertTrue(any("sage " in ln or "pipx " in ln for ln in nexts))
+        self.assertTrue(any("sage " in chunk or "pipx " in chunk for chunk in nexts))
+
+    def test_the_codex_block_stays_on_one_line(self):
+        r = self._blocked(_manifest(required=HOOK_RUNTIME_API + 1))
+        self.assertEqual(len(r.stderr.strip().splitlines()), 1, r.stderr)
 
     def test_every_gate_hook_is_fail_closed(self):
         for hook in GATE_HOOKS:
@@ -211,8 +222,13 @@ class TestCompatibleAndLegacyPassThrough(unittest.TestCase):
         self.assertTrue(reached, r.stderr)
         self.assertNotIn("[sage-runtime-api]", r.stderr)
 
-    def test_an_unreadable_manifest_is_left_to_the_existing_bootstrap_path(self):
-        # 이 검사의 소관이 아니다. 함께 처리하면 같은 상태에 두 개의 다른 메시지가 생긴다.
+    def test_an_unreadable_manifest_is_reported_not_ignored(self):
+        """이전에는 "부트스트랩이 소유한다" 며 넘겼다. 그 경로는 manifest 를 읽지 않는다.
+
+        읽을 수 없으면 호환성을 판정할 근거가 없다. 근거 없음을 통과로 접으면 "판정 전에는
+        import 하지 않는다" 는 계약이 사라진다. 다만 logger 는 아무 정책도 집행하지 않으므로
+        막지는 않는다 — 알리고 통과한다.
+        """
         with tempfile.TemporaryDirectory() as tmp:
             root = os.path.join(tmp, "proj")
             os.makedirs(os.path.join(root, "docs", "sage_harness"))
@@ -220,7 +236,19 @@ class TestCompatibleAndLegacyPassThrough(unittest.TestCase):
                       encoding="utf-8") as fh:
                 fh.write("{")
             r = _run("post-tool-logger", root, _poisoned_core(tmp))
-        self.assertNotIn("[sage-runtime-api]", r.stderr)
+        self.assertIn("runtime.manifest_unreadable", r.stderr)
+
+    def test_an_unreadable_manifest_blocks_a_gate_before_the_core(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = os.path.join(tmp, "proj")
+            os.makedirs(os.path.join(root, "docs", "sage_harness"))
+            with open(os.path.join(root, "docs", "sage_harness", ".manifest.json"), "w",
+                      encoding="utf-8") as fh:
+                fh.write("{")
+            r = _run("pre-implementation-gate", root, _poisoned_core(tmp))
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("runtime.manifest_unreadable", r.stderr)
+        self.assertNotIn("core was imported", r.stderr + r.stdout)
 
 
 class TestProjectHookIsFailClosed(unittest.TestCase):
@@ -244,6 +272,184 @@ class TestRunAllRegistration(unittest.TestCase):
                   encoding="utf-8") as fh:
             self.assertIn("test_runtime_api_preflight.py", fh.read())
 
+
+BUILT_IN_HOOKS = ("capture-declared-risk", "generated-artifact-write-guard",
+                  "post-tool-logger", "pre-implementation-gate",
+                  "pre-phase4-checklist-gate", "session-start-snapshot",
+                  "stop-compliance-report")
+
+
+class TestBothHostsAcrossEveryBuiltInHook(unittest.TestCase):
+    """7종 × 2 host 를 실제 adapter subprocess 로 전부 돌린다.
+
+    이전 증거는 대부분 Codex 진입점 하나였다. host 분기는 실제로 존재하므로(Codex 는 단일 줄,
+    Stop 은 stdout JSON), 한쪽만 도는 증거로 "양 host 통과"를 주장할 수 없다.
+    """
+
+    def _matrix(self, manifest):
+        seen = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _project(os.path.join(tmp, "proj"), manifest)
+            core = _poisoned_core(tmp)
+            for hook in BUILT_IN_HOOKS:
+                for runtime in ("claude", "codex"):
+                    seen[(hook, runtime)] = _run(hook, root, core, runtime=runtime)
+        return seen
+
+    def test_the_matrix_is_seven_hooks_by_two_hosts(self):
+        self.assertEqual(len(BUILT_IN_HOOKS), 7)
+        self.assertEqual(len(self._matrix(_manifest(required=HOOK_RUNTIME_API))), 14)
+
+    def test_no_host_ever_imports_the_poisoned_core_when_incompatible(self):
+        for (hook, runtime), r in self._matrix(_manifest(required=HOOK_RUNTIME_API + 1)).items():
+            with self.subTest(hook=hook, runtime=runtime):
+                self.assertNotIn("core was imported", r.stderr + r.stdout)
+
+    def test_every_hook_names_the_code_on_both_hosts(self):
+        for (hook, runtime), r in self._matrix(_manifest(required=HOOK_RUNTIME_API + 1)).items():
+            with self.subTest(hook=hook, runtime=runtime):
+                self.assertIn("runtime.api_too_old", r.stderr + r.stdout)
+
+    def test_every_hook_names_a_next_action_on_both_hosts(self):
+        for (hook, runtime), r in self._matrix(_manifest(required=HOOK_RUNTIME_API + 1)).items():
+            with self.subTest(hook=hook, runtime=runtime):
+                self.assertIn("Next: ", r.stderr + r.stdout)
+
+    def test_codex_output_stays_on_one_line(self):
+        for (hook, runtime), r in self._matrix(_manifest(required=HOOK_RUNTIME_API + 1)).items():
+            if runtime != "codex" or hook == "stop-compliance-report":
+                continue
+            with self.subTest(hook=hook):
+                self.assertLessEqual(len(r.stderr.strip().splitlines()), 1, r.stderr)
+
+    def test_codex_stop_answers_on_stdout_as_json_with_rc_zero(self):
+        r = self._matrix(_manifest(required=HOOK_RUNTIME_API + 1))[
+            ("stop-compliance-report", "codex")]
+        self.assertEqual(r.returncode, 0, r.stderr)
+        payload = json.loads(r.stdout)
+        self.assertEqual(payload["decision"], "block")
+        self.assertIn("Next: ", payload["reason"])
+
+    def test_enforcing_hooks_block_and_the_rest_pass_on_both_hosts(self):
+        expected = {"pre-implementation-gate": 2, "pre-phase4-checklist-gate": 2,
+                    "generated-artifact-write-guard": 2,
+                    "capture-declared-risk": 0, "post-tool-logger": 0,
+                    "session-start-snapshot": 0, "stop-compliance-report": 2}
+        for (hook, runtime), r in self._matrix(_manifest(required=HOOK_RUNTIME_API + 1)).items():
+            want = 0 if (runtime == "codex" and hook == "stop-compliance-report") \
+                else expected[hook]
+            with self.subTest(hook=hook, runtime=runtime):
+                self.assertEqual(r.returncode, want, r.stderr + r.stdout)
+
+    def test_a_compatible_manifest_lets_every_hook_reach_its_core(self):
+        """호환일 때는 preflight 가 아무 말도 하지 않아야 한다 — 과차단이 없다는 증거다."""
+        for (hook, runtime), r in self._matrix(_manifest(required=HOOK_RUNTIME_API)).items():
+            with self.subTest(hook=hook, runtime=runtime):
+                self.assertNotIn("[sage-runtime-api]", r.stderr)
+                self.assertNotIn("runtime.api_too_old", r.stderr + r.stdout)
+
+class TestDesignScenarioMatrix(unittest.TestCase):
+    """동결 설계 §12.3 의 7 시나리오 × 2 host = 14 case.
+
+    `TestBothHostsAcrossEveryBuiltInHook` 과 다른 것을 본다. 그쪽은 hook **ID** 7종을 한 가지
+    상태로 돌린다. 여기는 **상태** 7가지를 양 host 로 돌린다 — 요구가 시나리오 행렬이므로
+    hook 이름 개수로 대체할 수 없다.
+    """
+
+    HOSTS = ("claude", "codex")
+
+    def _one(self, hook, manifest, runtime, stdin=""):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _project(os.path.join(tmp, "proj"), manifest)
+            return _run(hook, root, _poisoned_core(tmp), runtime=runtime, stdin=stdin)
+
+    # 1. compatible → preflight 가 아무 말도 하지 않고 기존 판정으로 넘어간다
+    def test_scenario_1_compatible_preserves_the_existing_decision(self):
+        for runtime in self.HOSTS:
+            with self.subTest(runtime=runtime):
+                r = self._one("pre-implementation-gate", _manifest(required=HOOK_RUNTIME_API),
+                              runtime)
+                self.assertNotIn("runtime.api_", r.stderr + r.stdout)
+                # poisoned core 까지 실제로 도달했다 = preflight 가 막지 않았다.
+                self.assertIn("core was imported", r.stderr + r.stdout)
+
+    # 2. required API 가 더 큼
+    def test_scenario_2_newer_required_api_blocks_before_the_core(self):
+        for runtime in self.HOSTS:
+            with self.subTest(runtime=runtime):
+                r = self._one("pre-implementation-gate",
+                              _manifest(required=HOOK_RUNTIME_API + 1), runtime)
+                self.assertEqual(r.returncode, 2, r.stderr)
+                self.assertNotIn("core was imported", r.stderr + r.stdout)
+                self.assertNotIn("Traceback", r.stderr)
+                self.assertIn("Next: ", r.stderr + r.stdout)
+
+    # 3. 1.0 인데 marker 없음
+    def test_scenario_3_missing_marker_on_a_1_0_install_blocks(self):
+        for runtime in self.HOSTS:
+            with self.subTest(runtime=runtime):
+                r = self._one("pre-implementation-gate",
+                              _manifest(required=None, generator_version="1.0.0"), runtime)
+                self.assertEqual(r.returncode, 2, r.stderr)
+                self.assertIn("runtime.api_marker_missing", r.stderr + r.stdout)
+
+    # 4. legacy(marker 없는 0.x) → 기존 동작 그대로, WARN 은 SessionStart 에서만
+    def test_scenario_4_legacy_keeps_its_behavior_and_warns_only_at_session_start(self):
+        legacy = _manifest(required=None, generator_version="0.9.84")
+        for runtime in self.HOSTS:
+            with self.subTest(runtime=runtime, half="session start warns"):
+                r = self._one("session-start-snapshot", legacy, runtime)
+                self.assertIn("[sage-runtime-api] WARN", r.stderr)
+                self.assertIn("runtime.api_marker_absent_legacy", r.stderr)
+                # 경고는 표시이지 차단이 아니다 — 기존 경로가 그대로 돌아야 한다.
+                self.assertIn("core was imported", r.stderr + r.stdout)
+            with self.subTest(runtime=runtime, half="other hooks stay quiet"):
+                r = self._one("pre-implementation-gate", legacy, runtime)
+                self.assertNotIn("[sage-runtime-api]", r.stderr)
+                self.assertIn("core was imported", r.stderr + r.stdout)
+
+    # 5. logger/baseline 비호환 → rc 0 + 시끄러운 WARN
+    def test_scenario_5_baseline_warns_loudly_with_rc_zero(self):
+        for runtime in self.HOSTS:
+            for hook in ("post-tool-logger", "capture-declared-risk"):
+                with self.subTest(runtime=runtime, hook=hook):
+                    r = self._one(hook, _manifest(required=HOOK_RUNTIME_API + 1), runtime)
+                    self.assertEqual(r.returncode, 0, r.stderr)
+                    self.assertIn("[sage-runtime-api]", r.stderr)
+                    self.assertIn("Next: ", r.stderr)
+
+    # 6. project 소유 hook 비호환 → rc 2
+    def test_scenario_6_project_hook_blocks(self):
+        manifest = _manifest(required=HOOK_RUNTIME_API + 1)
+        manifest["assets"] = {"hooks/custom-policy": {"conformance": "PASS",
+                                                      "form": "core_adapter",
+                                                      "origin": "project"}}
+        for runtime in self.HOSTS:
+            with self.subTest(runtime=runtime):
+                r = self._one("custom-policy", manifest, runtime)
+                self.assertEqual(r.returncode, 2, r.stderr)
+
+    # 7. Codex Stop → rc 0 + 단일 decision:block JSON / Claude Stop → stderr + 차단 exit
+    def test_scenario_7_stop_follows_each_host_wire_contract(self):
+        manifest = _manifest(required=HOOK_RUNTIME_API + 1)
+        codex = self._one("stop-compliance-report", manifest, "codex", stdin="{}")
+        self.assertEqual(codex.returncode, 0, codex.stderr)
+        payload = json.loads(codex.stdout)
+        self.assertEqual(payload["decision"], "block")
+        self.assertIn("runtime.api_too_old", payload["reason"])
+        self.assertIn("Next: ", payload["reason"])
+
+        claude = self._one("stop-compliance-report", manifest, "claude", stdin="{}")
+        self.assertEqual(claude.returncode, 2, claude.stdout)
+        self.assertEqual(claude.stdout.strip(), "")
+        self.assertIn("Next: ", claude.stderr)
+
+    def test_the_matrix_covers_seven_scenarios_on_two_hosts(self):
+        """행렬의 크기 자체를 고정한다 — 시나리오가 빠지면 여기서 걸린다."""
+        scenarios = [name for name in dir(self)
+                     if name.startswith("test_scenario_")]
+        self.assertEqual(len(scenarios), 7, sorted(scenarios))
+        self.assertEqual(len(self.HOSTS), 2)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

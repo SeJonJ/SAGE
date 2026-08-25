@@ -389,5 +389,9 @@ echo "### 75. sage status / sage explain (읽기 전용 · gate parity · 허용
 python3 "$HERE/test_status_explain.py" || rc=1
 
 echo ""
+echo "### 76. 운영성 재작업 (판정 전 core import · gate readiness · cycle mode · 모든 BLOCK 의 Next · oracle 이빨)"
+python3 "$HERE/test_operability_rework.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

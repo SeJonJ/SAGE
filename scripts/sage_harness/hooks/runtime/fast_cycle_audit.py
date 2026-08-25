@@ -6,6 +6,7 @@ import time
 import uuid
 
 import loop_audit as _chain
+from sage import fast_cycle_contract as _contract
 from sage.fast_cycle_contract import PHASES as SOURCE_PHASES
 
 AUDIT_REL = os.path.join(".sage", "fast_cycle.jsonl")
@@ -113,7 +114,7 @@ def open_fast(root, *, cycle_stem, actual_risk, fast_review_level, reason,
     return rid
 
 
-def convert_fast(root, *, cycle_stem, current_phase, actual_risk, fast_review_level,
+def convert_fast(root, *, profile, cycle_stem, current_phase, actual_risk, fast_review_level,
                  reason, confirmed_by, minimum_rounds, lenses, source_phases,
                  run_id=None, now=None):
     """진행 중 Standard Cycle 을 Fast 계약으로 바꾸는 opener.
@@ -126,6 +127,25 @@ def convert_fast(root, *, cycle_stem, current_phase, actual_risk, fast_review_le
     `actual_risk` 와 `fast_review_level` 은 다른 값이다. 전자는 실제 위험도라 감사에 고정되고,
     후자는 Fast 리뷰 정책 선택일 뿐 실제 risk 를 바꾸지 않는다.
     """
+    # 담보를 append **전에** 검증한다. 기록된 뒤에 잡으면 그 줄은 append-only 라 지울 수 없고,
+    # 감사는 영구히 붉어진다. 그리고 무엇보다, 쓰기가 막지 않으면 읽기가 유일한 방어선이 된다.
+    #
+    # 형식만 보면 `{"path": ".", "sha256": "sha256:<64 hex>", "size": 0}` 이 통과한다. `.` 은
+    # 저장소 상대 문자열이지만 phase 문서가 아니다 — 구조는 "저장소 안의 그 파일" 을 보증하지
+    # 못한다. 그래서 writer 는 **지금 실재하는 문서에서 만든 snapshot 과 대조**한다. 이 검증이
+    # `profile` 을 요구하는 이유이고, CLI 밖의 직접 호출도 같은 문을 지나게 하는 이유다.
+    #
+    # 이 확인은 writer 시점 한 번이다. 감사와 게이트가 나중에 디스크를 재검증하면 전환 뒤의
+    # 정상 개발이 손상으로 오판된다.
+    try:
+        from sage.fast_cycle_sources import SourceProvenanceError, verify_source_phases
+    except Exception as exc:                                    # pragma: no cover
+        raise AuditWriteError(
+            f"source provenance verifier unavailable: {type(exc).__name__}: {exc}") from exc
+    try:
+        verify_source_phases(root, profile, cycle_stem, current_phase, source_phases)
+    except SourceProvenanceError as exc:
+        raise AuditWriteError("converted Fast provenance is invalid: " + str(exc)) from exc
     rid = run_id or new_run_id()
     records, opens, _reviews, terminals = _state(root, rid)
     if records or opens or terminals:
@@ -182,24 +202,12 @@ def _snapshot_delta(before, after):
 
 
 def _review_snapshot_issue(snapshot):
-    """전환 review가 증언하는 최종 00~04 스냅샷의 최소 구조 계약."""
-    if not isinstance(snapshot, dict) or set(snapshot) != set(SOURCE_PHASES):
-        found = sorted(snapshot) if isinstance(snapshot, dict) else snapshot
-        return f"expected phases {list(SOURCE_PHASES)}, found {found!r}"
-    for phase in SOURCE_PHASES:
-        entry = snapshot.get(phase)
-        if not isinstance(entry, dict):
-            return f"phase {phase} entry must be an object"
-        path = entry.get("path")
-        digest = entry.get("sha256")
-        size = entry.get("size")
-        if not isinstance(path, str) or not path.strip():
-            return f"phase {phase} path must be a non-empty string"
-        if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
-            return f"phase {phase} sha256 must be a canonical digest"
-        if type(size) is not int or size < 0:
-            return f"phase {phase} size must be a non-negative integer"
-    return None
+    """전환 review 가 증언하는 최종 00~04 스냅샷. open 쪽과 **같은** 구조 계약을 쓴다.
+
+    이전에는 이 함수만 구조를 봤고 open 쪽은 "빈 dict 가 아닌가" 만 봤다. 같은 모양의 데이터에
+    검사가 둘이면 느슨한 쪽으로 들어온다.
+    """
+    return _contract.source_phase_snapshot_issue(snapshot, SOURCE_PHASES)
 
 
 def record_review(root, run_id, *, loop_run_id, actual_risk, rounds,
@@ -283,8 +291,13 @@ def abort_fast(root, run_id, *, reason, stage, actual_risk, now=None):
     return _append(root, record, validator=validate)
 
 
-def audit_summary(root):
-    records, file_issues = _records(root)
+def summarize_records(records, file_issues):
+    """레코드 목록 하나를 상태로 접는다. 파일도 락도 모르는 순수 함수.
+
+    락을 잡는 `audit_summary` 와 잡지 않는 `snapshot` 이 **같은 이 함수**를 쓴다.
+    접기 로직을 복사하면 감사 형식의 해석기가 둘이 되고, 갈렸을 때 어느 쪽이 옳은지
+    판정할 근거가 없어진다 — 읽기 경로를 새로 낸 이유가 그것을 피하려던 것이다.
+    """
     chain_states = _chain._chain_states(records)
     runs = {}
     seqs = {}
@@ -301,6 +314,11 @@ def audit_summary(root):
         if event in OPENER_EVENTS:
             state["opens"] += 1
             state["entry_mode"] = ENTRY_MODES[event]
+            # `_base` 가 모든 레코드에 싣는 공통 필드다. 상태로 올리지 않으면 opener 완전성
+            # 검사가 볼 수 없고, 이 셋이 없는 기록은 감사가 아니라 손으로 쓴 한 줄이다.
+            state["ts"] = record.get("ts")
+            state["epoch"] = record.get("epoch")
+            state["actor"] = record.get("actor")
             state["current_phase"] = record.get("current_phase")
             state["confirmed_by"] = record.get("confirmed_by")
             state["source_phases_open"] = record.get("source_phases_open")
@@ -341,6 +359,101 @@ def audit_summary(root):
     }
 
 
+def audit_summary(root):
+    return summarize_records(*_records(root))
+
+
+def snapshot(root):
+    """락도 쓰기도 없는 조회용 상태. `audit_summary` 와 같은 접기 함수를 쓴다.
+
+    `status` 는 "지금 이 설치를 쓸 수 있는가" 에 1~2초 안에 답해야 한다. 그 질문에
+    답하려고 감사 락을 잡으면 진행 중인 Fast 전이를 기다리게 되고, 락 파일 자체가
+    읽기 전용 계약을 깬다.
+
+    `status` 키는 absent/valid/damaged 셋이다. damaged 를 valid 로 접지 않는 것이
+    이 API 의 요점이다 — 락이 없으니 append 중간을 볼 수 있고, 그 절반짜리 파일을
+    "기록이 없다" 로 읽으면 진행 중인 run 이 사라진다.
+    """
+    state, records, issues = _chain._read_status_unlocked(audit_path(root))
+    summary = summarize_records(records, issues)
+    summary["status"] = state
+    return summary
+
+
+# opener 가 실제로 담고 있어야 하는 것. 하나라도 없으면 그 run 은 Fast 계약을 세우지 못한
+# 상태다 — 손으로 만든 한 줄이거나 중간에 잘린 기록이다.
+#
+# 두 opener 는 담보가 다르다. 새 Fast run 은 composite 계획의 `profile_hash` 가, 전환 run 은
+# 전환 시점에 실재하던 문서 목록(`source_phases_open`)과 확인자가 담보다. 한 집합으로 묶으면
+# 정상 전환 run 을 손상으로 몰거나, 반대로 빠진 담보를 못 본다.
+# opener 담보 계약의 정본은 `sage.fast_cycle_contract` 에 있다. 이 모듈과 게이트가 **같은**
+# 판정을 써야 하는데, 게이트 core 는 파일을 읽지 않아 이 모듈을 import 할 수 없기 때문이다.
+# 여기 다시 정의하면 해석기가 둘이 되고, 실제로 그렇게 갈렸을 때 같은 감사가 조회에서는 손상,
+# 게이트에서는 정상으로 보였다.
+OPENER_REQUIRED = _contract.OPENER_REQUIRED
+OPENER_REQUIRED_BY_MODE = _contract.OPENER_REQUIRED_BY_MODE
+_absent = _contract.absent
+run_issues = _contract.opener_run_issues
+
+# 사람이 읽는 evidence 문자열. 판정은 하지 않고 code 를 화면용 한 줄로 바꾸기만 한다.
+_ISSUE_TEXT = {
+    "fast_cycle_audit.duplicate_or_orphan": "duplicate or orphan run",
+    "fast_cycle_audit.seq_broken": "sequence broken",
+    "fast_cycle_audit.chain_invalid": "hash chain invalid",
+    "fast_cycle_audit.chain_unverified": "hash chain unverified",
+    "fast_cycle_audit.opener_incomplete": "opener fields missing: {fields}",
+    "fast_cycle_audit.opener_field_invalid": "opener field out of contract: {field}={value}",
+    "fast_cycle_audit.opener_mode_unknown": "unknown opener entry mode: {mode}",
+    "fast_cycle_audit.provenance_invalid": "converted provenance is invalid: {detail}",
+}
+
+
+def opener_issues(state):
+    """`run_issues` 를 사람이 읽는 한 줄 목록으로. 판정은 하지 않는다."""
+    return [_ISSUE_TEXT[code].format(**arguments) for code, arguments in run_issues(state)]
+
+
+def mode_for_stem(root, cycle_stem):
+    """(mode, evidence). mode 는 FAST | STANDARD | UNKNOWN.
+
+    STANDARD 는 **정상적으로 읽은 감사에 이 stem 의 열린 run 이 없다** 는 적극적 사실일
+    때만 낸다. 못 읽었거나 깨졌으면 UNKNOWN 이다 — 부재를 STANDARD 로 접으면 손상된
+    감사가 조용히 "일반 사이클" 로 보이고, 그건 부재를 안전 방향으로 읽는 것이다.
+    """
+    summary = snapshot(root)
+    evidence = {"audit": summary["status"]}
+    if summary["status"] == "absent":
+        return "STANDARD", evidence
+    if summary["status"] != "valid":
+        evidence["issues"] = tuple(summary["file_issues"][:3])
+        return "UNKNOWN", evidence
+
+    # 파일이 잘 읽혔다는 것과 감사가 말이 된다는 것은 다르다. 줄이 전부 유효한 JSON 이어도
+    # 같은 stem 에 열린 run 이 둘이면 그건 Fast CLI 가 애초에 거부하는 상태다 — 그 상태에서
+    # 첫 run 을 골라 FAST 라고 답하면, 답을 만들 수 없는 자리에서 답을 지어내는 것이다.
+    damaged = sorted(run_id for run_id, state in summary["runs"].items()
+                     if opener_issues(state))
+    if damaged:
+        evidence["damaged_runs"] = tuple(damaged)
+        evidence["issues"] = tuple(opener_issues(summary["runs"][damaged[0]])[:3])
+        return "UNKNOWN", evidence
+
+    mine = [run_id for run_id in summary["active"]
+            if cycle_stem is None or summary["runs"].get(run_id, {}).get("cycle_stem") == cycle_stem]
+    if len(mine) > 1:
+        evidence["active_runs"] = tuple(mine)
+        return "UNKNOWN", evidence
+    if not mine:
+        return "STANDARD", evidence
+
+    run_id = mine[0]
+    evidence["run_id"] = run_id
+    # 전환 run 의 entry_mode 는 FAST-CONVERTED 다. 표시 mode 는 FAST 로 정규화하되
+    # 어떻게 들어왔는지는 지운다 — 그 구분은 evidence 가 진다.
+    evidence["entry_mode"] = summary["runs"][run_id].get("entry_mode")
+    return "FAST", evidence
+
+
 def _diagnostic(code, **arguments):
     """언어 중립 진단(code+arguments). 이 모듈은 sage.diagnostics 를 import 할 수 없어
     (엔진 없이 소비 프로젝트에서 단독 실행되어야 하므로) 같은 모양의 plain dict 로 올린다 —
@@ -349,13 +462,10 @@ def _diagnostic(code, **arguments):
 
 
 def integrity_issues(root):
+    """감사의 결함 진단 목록. 판정은 `run_issues` 가 하고 여기는 진단으로 옮기기만 한다."""
     summary = audit_summary(root)
     issues = [_diagnostic("fast_cycle_audit.damaged", detail=item) for item in summary["file_issues"]]
-    for rid, state in summary["runs"].items():
-        if not state["clean"]:
-            issues.append(_diagnostic("fast_cycle_audit.duplicate_or_orphan", run_id=rid))
-        if state["seq_ok"] is False:
-            issues.append(_diagnostic("fast_cycle_audit.seq_broken", run_id=rid))
-        if state["chain_ok"] is False:
-            issues.append(_diagnostic("fast_cycle_audit.chain_invalid", run_id=rid))
+    for rid in sorted(summary["runs"]):
+        for code, arguments in run_issues(summary["runs"][rid]):
+            issues.append(_diagnostic(code, run_id=rid, **arguments))
     return issues

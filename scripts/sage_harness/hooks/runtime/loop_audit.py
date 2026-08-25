@@ -202,6 +202,53 @@ def _open_audit(path, flags):
     return fd
 
 
+# 조회 전용 상한. 감사는 append-only 라 무한히 자랄 수 있고, 조회 명령이 그 크기에
+# 비례해 느려지면 안 된다. 넘치면 잘라 읽어 절반만 판정하지 말고 oversized 로 올린다 —
+# 잘린 꼬리에 terminal 이벤트가 있으면 끝난 run 을 active 로 볼 수 있기 때문이다.
+READ_ONLY_MAX_BYTES = 4 * 1024 * 1024
+
+
+def _read_status_unlocked(path, max_bytes=READ_ONLY_MAX_BYTES):
+    """(status, records, issues). 락을 잡지 않고 아무것도 만들지 않는 조회 전용 경로.
+
+    `_read_status` 와 나뉘어 있는 이유는 순수하게 부작용 때문이다. 락 경로는 `.sage/` 와
+    `.lock` 파일을 **만든다** — 쓰기다. 읽기만 하겠다고 약속한 명령이 그걸 부르면 약속을
+    깨고, 진행 중인 전이와 락 경쟁까지 한다.
+
+    락이 없으므로 동시 append 중간을 볼 수 있다. 그 상태를 정상으로 위장하지 않으려고
+    status 를 함께 돌려준다 — 호출부는 `damaged` 를 안전한 기본값으로 접으면 안 된다.
+    """
+    parent = os.path.dirname(path)
+    if not os.path.isdir(parent):
+        return "absent", [], []
+    if not os.path.lexists(path):
+        return "absent", [], []
+    try:
+        fd = _open_audit(path, os.O_RDONLY)
+    except OSError as exc:
+        # symlink(O_NOFOLLOW)·비정규 파일·권한 — 전부 "읽었는데 비어 있다" 가 아니다.
+        return "damaged", [], [f"audit read refused: {type(exc).__name__}: {exc}"]
+    try:
+        size = os.fstat(fd).st_size
+        if size > max_bytes:
+            return "damaged", [], [f"audit exceeds read-only limit: {size} > {max_bytes} bytes"]
+        os.lseek(fd, 0, os.SEEK_SET)
+        chunks = []
+        remaining = max_bytes
+        while remaining > 0:
+            chunk = os.read(fd, min(65536, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+    except OSError as exc:
+        return "damaged", [], [f"audit read failed: {type(exc).__name__}: {exc}"]
+    finally:
+        os.close(fd)
+    records, issues = _parse_bytes(b"".join(chunks))
+    return ("damaged" if issues else "valid"), records, issues
+
+
 def _read_status(path):
     parent = os.path.dirname(path)
     if not os.path.isdir(parent):

@@ -26,6 +26,19 @@ class VersionAxes:
     runtime: str
 
 
+# 이 모듈이 낼 수 있는 진단과 그 심각도의 **정본**. 아래 생성부는 리터럴 대신 이 표를
+# 조회하고, `sage.diagnostic_contract` 도 자기 표를 여기서 만든다 — 두 곳에 손으로 적으면
+# 새 code 를 한쪽에만 넣어 조용히 INFO 로 떨어지는 일이 생긴다.
+ISSUE_SEVERITY = {
+    "version.sage_section_not_mapping": "FAIL",
+    "version.required_not_semver": "FAIL",
+    "version.required_absent": "INFO",
+    "version.axis_malformed": "WARN",
+    "version.axis_unknown": "WARN",
+    "version.axis_differs": "WARN",
+}
+
+
 @dataclass(frozen=True)
 class VersionContractIssue:
     """version 축 하나의 판정. `message` 는 **언어 중립 진단**이다.
@@ -86,30 +99,33 @@ def _install_command(profile: dict[str, Any] | None,
     return f"sage install --host {host}{scope_arg} --force"
 
 
+def _issue(code, axis, current, required, remediation=None, /, **arguments):
+    """진단 하나. severity 는 `ISSUE_SEVERITY` 에서만 온다 — 호출부가 정하지 않는다.
+
+    앞의 다섯은 위치 전용이다. 진단 인자에도 `axis` 가 있어 이름으로 받으면 충돌한다.
+    """
+    return VersionContractIssue(ISSUE_SEVERITY[code], axis, current, required,
+                                Diagnostic(code, **arguments), remediation)
+
+
 def version_contract_issues(profile: dict[str, Any] | None,
                             manifest: dict[str, Any] | None,
                             runtime_version: Any) -> list[VersionContractIssue]:
     axes = version_axes(profile, manifest, runtime_version)
     sage_section = profile.get("sage") if isinstance(profile, dict) else None
     if sage_section is not None and not isinstance(sage_section, dict):
-        return [VersionContractIssue(
-            "FAIL", "required", axes.required, axes.required,
-            Diagnostic("version.sage_section_not_mapping"),
-        )]
+        return [_issue("version.sage_section_not_mapping", "required",
+                       axes.required, axes.required)]
     required_present = isinstance(sage_section, dict) and "required_version" in sage_section
     required_raw = sage_section.get("required_version") if required_present else None
     if required_present and not version_is_exact(required_raw):
-        return [VersionContractIssue(
-            "FAIL", "required", axes.required, axes.required,
-            Diagnostic("version.required_not_semver", value=repr(required_raw)),
-            Diagnostic("version.required_semver_example"),
-        )]
+        return [_issue("version.required_not_semver", "required",
+                       axes.required, axes.required,
+                       Diagnostic("version.required_semver_example"),
+                       value=repr(required_raw))]
     if axes.required == UNKNOWN:
-        return [VersionContractIssue(
-            "INFO", "required", UNKNOWN, UNKNOWN,
-            Diagnostic("version.required_absent"),
-            Diagnostic("version.set_required"),
-        )]
+        return [_issue("version.required_absent", "required", UNKNOWN, UNKNOWN,
+                       Diagnostic("version.set_required"))]
 
     remediations = {
         "installed": _install_command(profile, manifest),
@@ -136,13 +152,13 @@ def version_contract_issues(profile: dict[str, Any] | None,
         # 상태별로 **완전한 문장**을 고른다. `f"SAGE {axis} 버전 {state}"` 처럼 조각을 이어
         # 붙이면 어순이 다른 언어에서 반드시 깨지고, 깨진 뒤 어느 조각이 원인인지 보이지 않는다.
         if present and not version_is_exact(raw):
-            message = Diagnostic("version.axis_malformed", axis=axis, value=repr(raw))
+            issues.append(_issue("version.axis_malformed", axis, current, axes.required,
+                                 remediations[axis], axis=axis, value=repr(raw)))
         elif current == UNKNOWN:
-            message = Diagnostic("version.axis_unknown", axis=axis)
+            issues.append(_issue("version.axis_unknown", axis, current, axes.required,
+                                 remediations[axis], axis=axis))
         else:
-            message = Diagnostic("version.axis_differs", axis=axis,
-                                 current=current, required=axes.required)
-        issues.append(VersionContractIssue(
-            "WARN", axis, current, axes.required, message, remediations[axis],
-        ))
+            issues.append(_issue("version.axis_differs", axis, current, axes.required,
+                                 remediations[axis], axis=axis,
+                                 current=current, required=axes.required))
     return issues

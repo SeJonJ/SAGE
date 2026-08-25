@@ -194,6 +194,7 @@ FRAGMENTS = {
     "recovery.run_review": "Phase 05 리뷰를 실행해 증거를 남기세요",
     "recovery.fast_open": "Fast Cycle 을 여세요",
     "recovery.fix_document": "지적된 문서 위치를 고치세요.",
+    "recovery.fix_shared_profile": "shared profile 의 해당 항목을 고치세요",
     "recovery.fix_report": "Phase 06 리포트의 누락 항목을 채우세요.",
     "recovery.move_off_desktop": "이 파일을 금지 경로 밖으로 옮긴 뒤 작업하세요.",
     # --- write guard 5 분기 (이전에는 코드가 한국어를 직접 조립했다) ---
@@ -205,6 +206,8 @@ FRAGMENTS = {
     "hook.runtime.api_too_old": "이 프로젝트의 hook 은 SAGE runtime API {required} 를 요구하지만, 이 sage-hook 은 API {current} 를 제공합니다.",
     "hook.runtime.api_marker_missing": "1.0 manifest 인데 runtime_api marker 가 없습니다 — marker 부재는 1.0 이전 설치로 간주되지 않습니다.",
     "hook.runtime.api_marker_damaged": "runtime_api marker 를 해석할 수 없습니다 ({reason}).",
+    "hook.runtime.api_marker_absent_legacy": "이 설치에는 runtime_api marker 가 없습니다 — 1.0 이전 설치로 인정하고 그대로 진행합니다 ({reason}).",
+    "hook.runtime.manifest_unreadable": "설치 manifest 를 읽을 수 없어 runtime 호환성을 판정하지 못했습니다 ({reason}).",
     "hook.runtime.required_sage": "Required SAGE: {version}",
     "hook.entry.profile_missing_damaged": "설치 흔적(manifest)은 있으나 프로필이 없습니다 — 설치가 손상됐습니다. `sage install --force` 로 복구한 뒤 `sage doctor` 로 확인하세요.",
     "hook.entry.not_an_install_target": "설치 흔적(manifest)도 없습니다 — 이 디렉터리는 SAGE 설치 대상이 아닐 수 있습니다. 의도한 설치라면 `sage install` 을, 아니라면 {settings} 의 sage-hook 등록을 제거하세요 (설치 대상이 아닌 곳에 hook 만 남으면 모든 편집이 이렇게 차단됩니다).",

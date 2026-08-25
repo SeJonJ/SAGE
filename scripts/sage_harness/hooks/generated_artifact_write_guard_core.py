@@ -147,7 +147,11 @@ def block_message(path: str, language: str = None) -> str:
     code, arguments = block_reason(path)
     catalog = _hook_catalog()
     if catalog is None:
-        return f"⛔ SAGE write guard [{code}]"
+        # catalog 를 못 읽어도 다음 행동은 남긴다. `Next:` 뒤에 오는 것은 그대로 붙여넣는
+        # 명령이라 번역이 필요 없다 — 문장을 못 만드는 것과 다음 행동을 못 주는 것은 다르다.
+        # 여기서 포기하면 가장 깨진 설치에서 사용자가 가장 적은 정보를 받는다.
+        return "\n".join([f"⛔ SAGE write guard [{code}]",
+                          *_recovery_lines(code, path, None, None)])
     language = language or catalog.DEFAULT_LANGUAGE
     # `frag` 를 쓰는 이유는 이 키들이 `message_key` 가 아니기 때문이다. `MESSAGES` 는 게이트
     # 결정이 싣는 message_key 의 테이블이고, 여기 code 는 그 계약에 속하지 않는다.
@@ -156,18 +160,35 @@ def block_message(path: str, language: str = None) -> str:
         body = template.format(**arguments) if template else f"[SAGE] {code}"
     except (KeyError, IndexError, ValueError):
         body = f"[SAGE] {code}"
-    lines = [f"⛔ SAGE write guard [{code}]", body]
+    return "\n".join([f"⛔ SAGE write guard [{code}]", body,
+                      *_recovery_lines(code, path, catalog, language)])
+
+
+# 복구 표조차 못 읽을 때의 바닥값. 표를 못 읽는다는 이유로 사용자에게 아무 다음 행동도
+# 주지 않는 것이 가장 나쁜 실패다 — 가장 깨진 설치에서 정보가 0이 된다.
+_LAST_RESORT = ["Next: sage status"]
+
+
+def _recovery_lines(code, path, catalog, language):
+    """이 code 의 복구 줄. catalog 가 없으면 번역이 필요 없는 `Next:` 만 남긴다."""
     try:
         from .runtime import recovery as recovery_module
     except Exception:
         try:
             recovery_module = __import__("recovery")
         except Exception:
-            recovery_module = None
-    if recovery_module is not None:
-        lines.extend(recovery_module.render(
-            code, lambda key: catalog.frag(language, key), path=path, host="<host>"))
-    return "\n".join(lines)
+            return list(_LAST_RESORT)
+    try:
+        if catalog is not None:
+            lines = recovery_module.render(code, lambda key: catalog.frag(language, key),
+                                           path=path, host="<host>")
+        else:
+            lines = [line for line in recovery_module.render(code, lambda key: key,
+                                                             path=path, host="<host>")
+                     if line.startswith("Next:")]
+    except Exception:
+        return list(_LAST_RESORT)
+    return lines or list(_LAST_RESORT)
 
 
 def extract_paths(raw_text: str) -> list[str]:

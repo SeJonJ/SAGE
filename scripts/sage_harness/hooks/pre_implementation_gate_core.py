@@ -277,11 +277,22 @@ def _fast_covers_required(fast_state, required):
     전환 run 에는 composite 문서가 없다. 담보는 전환 시점에 실재하던 Standard 문서들이고, 그 목록이
     `source_phases_open` 이다. 이걸 확인하지 않으면 Phase 00 하나만 쓴 상태에서 전환해 계획 00~03
     요구를 통째로 면제받을 수 있다 — 전환이 계획을 건너뛰는 통로가 된다.
+
+    **key 집합만 보지 않는다.** `{"00": {}, "01": {}}` 는 key 는 맞지만 그 문서가 실재했다는
+    어떤 근거도 싣지 않는다. 이 함수는 `_fast_cycle_state` 뒤에만 불리는 것이 아니라 따로도
+    불릴 수 있으므로, 여기서도 계약을 확인한다 — 호출 순서에 기대는 방어는 순서가 바뀌면
+    사라진다.
     """
     if fast_state.get("entry_mode") != CONVERTED_ENTRY_MODE:
         return True
     recorded = fast_state.get("source_phases_open")
     if not isinstance(recorded, dict):
+        return False
+    try:
+        from sage.fast_cycle_contract import converted_provenance_issue
+    except Exception:
+        return False           # 계약을 부르지 못하면 면제하지 않는다
+    if converted_provenance_issue(fast_state.get("current_phase"), recorded):
         return False
     return set(required).issubset(set(recorded))
 
@@ -330,6 +341,69 @@ def _missing_pre_impl_phases(event: dict, profile: dict, snapshot: dict, risk: s
 CONVERTED_ENTRY_MODE = "FAST-CONVERTED"
 
 
+def _opener_contract_issue(state):
+    """이 run 이 Fast 계약을 실제로 세웠는가 — 조회·무결성과 **같은** 판정을 쓴다.
+
+    이전에는 게이트가 `clean`/`chain_ok`/`seq_ok`/`terminal` 네 조건을 직접 세었다. 그 넷은
+    감사 파일이 말이 되는가만 보고 opener 가 담보를 실었는가는 보지 않는다. 그래서 `ts` 를
+    지우고 해시를 다시 계산한 감사가 조회에서는 손상, 게이트에서는 정상 Fast 였고 — 느슨한
+    쪽이 게이트였으므로 그 상태가 Standard 01·02 면제를 받았다.
+
+    계약 모듈을 부르지 못하면 통과시키지 않는다. 판정할 근거가 없는 것은 통과가 아니다.
+    """
+    try:
+        from sage.fast_cycle_contract import opener_run_issues
+    except Exception as exc:
+        return f"Fast opener contract unavailable: {type(exc).__name__}: {exc}"
+    issues = opener_run_issues(state)
+    if not issues:
+        return None
+    detail = "; ".join(f"{code}({', '.join(f'{k}={v}' for k, v in args.items())})" if args
+                       else code for code, args in issues[:3])
+    return "active Fast run opener contract is invalid: " + detail
+
+
+def _fast_policy_floor_issue(policy, state):
+    """감사에 고정된 Fast 계약이 profile 정책의 **하한**을 실제로 만족하는가.
+
+    `open_issues` 는 Fast Plan 문서와 감사 open snapshot 이 **서로** 일치하는지만 본다. 둘이
+    같은 값을 담고 있으면 그 값이 정책 하한 아래여도 통과한다 — 리뷰를 하나도 요구하지 않는
+    0 round Fast 계약이 Standard 01·02 면제를 받는 통로가 여기였다. 문서끼리의 일치와 정책
+    충족은 다른 질문이고, 앞의 것만 물으면 뒤의 것은 아무도 묻지 않는다.
+
+    level 이 정책에 없으면 하한을 알 수 없다 — 그 상태를 통과로 읽지 않는다.
+    """
+    level = state.get("fast_review_level")
+    rounds_by_level = policy.get("minimum_rounds")
+    lenses_by_level = policy.get("minimum_lenses")
+    if not isinstance(rounds_by_level, dict) or not isinstance(lenses_by_level, dict):
+        return "pdca.fast_cycle policy is missing minimum_rounds/minimum_lenses"
+    if level not in rounds_by_level or level not in lenses_by_level:
+        return f"Fast review level {level!r} is not declared in pdca.fast_cycle policy"
+    rounds = state.get("minimum_rounds")
+    if type(rounds) is not int or rounds < rounds_by_level[level]:
+        return (f"Fast run minimum_rounds={rounds!r} is below the policy floor "
+                f"{rounds_by_level[level]!r} for level {level!r}")
+    lenses = state.get("lenses")
+    if not isinstance(lenses, (list, tuple)):
+        return f"Fast run lenses must be a list (found {type(lenses).__name__})"
+    candidates = (policy.get("lenses") or {}).get(level)
+    if not isinstance(candidates, (list, tuple)):
+        return f"pdca.fast_cycle.lenses is missing level {level!r}"
+    # 개수만 세면 `['anything', 'goes']` 나 같은 렌즈를 두 번 적은 기록이 하한을 만족한다.
+    # 하한이 말하는 것은 "서로 다른, 정책이 선언한 렌즈 몇 개로 봤는가" 다. 실제 CLI 는 언제나
+    # `candidates[:n]` 을 싣는다 — 중복도 미선언 렌즈도 만들 수 없다.
+    declared = {lens for lens in lenses if lens in candidates}
+    if len(declared) < lenses_by_level[level]:
+        return (f"Fast run has {len(declared)} distinct declared lenses, below the policy floor "
+                f"{lenses_by_level[level]!r} for level {level!r}")
+    unknown = sorted({str(lens) for lens in lenses if lens not in candidates})
+    if unknown:
+        return (f"Fast run lenses are not declared in pdca.fast_cycle.lenses[{level!r}]: "
+                f"{unknown[:3]}")
+    return None
+
+
 def _converted_fast_state(audit, converted, stem, content, cfg):
     """Standard→Fast 로 전환된 run 의 상태. Fast Plan 문서를 요구하지 않는다.
 
@@ -356,9 +430,11 @@ def _converted_fast_state(audit, converted, stem, content, cfg):
         details = "; ".join(str(item) for item in (audit.get("file_issues") or [])[:3])
         return None, f"Fast audit file integrity failed: {details or 'cause unavailable'}"
     state = (audit.get("runs") or {}).get(converted[0]) or {}
-    if (not state.get("clean") or state.get("chain_ok") is not True
-            or state.get("seq_ok") is False or state.get("terminal")):
+    if state.get("terminal"):
         return None, "active converted Fast run integrity/state is invalid"
+    opener_issue = _opener_contract_issue(state)
+    if opener_issue:
+        return None, opener_issue
     if state.get("cycle_stem") != stem:
         return None, "converted Fast run is bound to another cycle stem"
     declaration = risk_declaration.parse(content)
@@ -368,6 +444,9 @@ def _converted_fast_state(audit, converted, stem, content, cfg):
     if state.get("actual_risk") != declaration.tier:
         return None, (f"actual risk differs between Phase 00 ({declaration.tier}) and the "
                       f"converted audit snapshot ({state.get('actual_risk')})")
+    floor_issue = _fast_policy_floor_issue(policy, state)
+    if floor_issue:
+        return None, floor_issue
     return state, None
 
 
@@ -411,9 +490,11 @@ def _fast_cycle_state(event, profile, snapshot, cfg):
     if len(matching_active) != 1 or matching_active[0] != run_id:
         return None, f"Fast Plan run binding mismatch: plan={run_id!r}, active={matching_active}"
     state = (audit.get("runs") or {}).get(run_id) or {}
-    if (not state.get("clean") or state.get("chain_ok") is not True
-            or state.get("seq_ok") is False or state.get("terminal")):
+    if state.get("terminal"):
         return None, "active Fast run integrity/state is invalid"
+    opener_issue = _opener_contract_issue(state)
+    if opener_issue:
+        return None, opener_issue
     level = state.get("fast_review_level")
     lenses = state.get("lenses") or []
     issues = open_issues(
@@ -422,6 +503,9 @@ def _fast_cycle_state(event, profile, snapshot, cfg):
         lenses=lenses, require_pending_phase4=False)
     if state.get("actual_risk") != plan.metadata.get("Risk Level"):
         issues.append("actual risk differs between Fast Plan and audit open snapshot")
+    floor_issue = _fast_policy_floor_issue(policy, state)
+    if floor_issue:
+        issues.append(floor_issue)
     if issues:
         return None, "; ".join(issues[:5])
     return state, None

@@ -188,6 +188,7 @@ FRAGMENTS = {
     "recovery.run_review": "Run the Phase 05 review so the evidence exists",
     "recovery.fast_open": "Open a Fast Cycle",
     "recovery.fix_document": "Fix the document location that was reported.",
+    "recovery.fix_shared_profile": "Fix the offending entry in the shared profile",
     "recovery.fix_report": "Fill in the missing entries of the Phase 06 report.",
     "recovery.move_off_desktop": "Move this file out of the forbidden path before working on it.",
     # --- write guard, five branches (previously assembled as Korean in code) ---
@@ -199,6 +200,8 @@ FRAGMENTS = {
     "hook.runtime.api_too_old": "This project's hooks require SAGE runtime API {required}, but this sage-hook provides API {current}.",
     "hook.runtime.api_marker_missing": "This is a 1.0 manifest with no runtime_api marker — a missing marker is not treated as a pre-1.0 installation.",
     "hook.runtime.api_marker_damaged": "The runtime_api marker cannot be interpreted ({reason}).",
+    "hook.runtime.api_marker_absent_legacy": "This installation has no runtime_api marker — treated as a pre-1.0 install and allowed to continue ({reason}).",
+    "hook.runtime.manifest_unreadable": "The install manifest is unreadable, so runtime compatibility could not be judged ({reason}).",
     "hook.runtime.required_sage": "Required SAGE: {version}",
     "hook.entry.profile_missing_damaged": "There is an installation record (manifest) but no profile — the installation is damaged. Repair it with `sage install --force`, then confirm with `sage doctor`.",
     "hook.entry.not_an_install_target": "There is no installation record (manifest) either — this directory may not be a SAGE install target. If the install was intended, run `sage install`; otherwise remove the sage-hook registration from {settings} (a hook left behind where nothing is installed blocks every edit like this).",

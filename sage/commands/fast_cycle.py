@@ -219,28 +219,17 @@ def _transition_enabled(fast):
 
 
 def _source_phase_snapshot(root, profile, stem, current_phase):
-    """전환 시점 00~current-phase 의 경로·raw-byte 해시·크기.
+    """전환 provenance. 구현은 `sage.fast_cycle_sources` 하나가 소유한다.
 
-    동결 기준이 아니라 provenance 다 — 전환 뒤 문서가 정상 개발로 바뀌는 것은 허용하고, 어디까지
-    어떤 문서로 Standard 를 진행했는지만 남긴다. 경로 이탈과 symlink 는 여기서 거부한다: 감사가
-    가리키는 대상이 실제 그 파일이라는 보장이 없으면 provenance 가 아니다.
+    이 얇은 껍데기를 남기는 이유는 이 모듈 안에 호출부가 여럿이기 때문이다. 로직을 여기 두면
+    writer(`convert_fast`)가 부를 수 없다 — CLI 모듈이라서다. 그리고 writer 가 부를 수 없으면
+    CLI 밖의 직접 호출이 검증 없이 감사에 쓴다.
     """
-    real_root = os.path.realpath(root)
-    snapshot = {}
-    for phase in CONVERTIBLE_PHASES[:CONVERTIBLE_PHASES.index(current_phase) + 1]:
-        pattern = _phase_glob(profile, phase)
-        candidates = [path for path in glob.glob(os.path.join(root, pattern), recursive=True)
-                      if os.path.basename(path) == f"{stem}.md"]
-        if any(os.path.islink(path) for path in candidates):
-            raise ValueError(f"phase {phase} document for {stem!r} is a symlink")
-        path = _stem_doc(root, profile, phase, stem)
-        payload = Path(path).read_bytes()
-        snapshot[phase] = {
-            "path": os.path.relpath(path, real_root).replace(os.sep, "/"),
-            "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
-            "size": len(payload),
-        }
-    return snapshot
+    from sage.fast_cycle_sources import SourceProvenanceError, source_phase_snapshot
+    try:
+        return source_phase_snapshot(root, profile, stem, current_phase)
+    except SourceProvenanceError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def _completed_cycle_issue(root, profile, stem):
@@ -334,7 +323,8 @@ def _run_convert(args):
             if active:
                 raise ValueError(f"stem {args.stem!r} already has an active Fast run: {active}")
             run_id = audit.convert_fast(
-                root, cycle_stem=args.stem, current_phase=args.current_phase,
+                root, profile=profile,
+                cycle_stem=args.stem, current_phase=args.current_phase,
                 actual_risk=actual_risk, fast_review_level=args.level, reason=args.reason,
                 confirmed_by=args.confirmed_by, minimum_rounds=rounds, lenses=lenses,
                 source_phases=snapshot)

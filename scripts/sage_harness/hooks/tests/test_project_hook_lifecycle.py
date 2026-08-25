@@ -622,7 +622,8 @@ class TestProjectHookRuntime(unittest.TestCase):
                                            self._raw("codex"))
             self.assertEqual(rc, 2)
             self.assertIn("plan_reads must return", err.getvalue())
-            self.assertIn("project hook contract failure", err.getvalue())
+            self.assertIn("runtime.project_hook_contract", err.getvalue())
+            self.assertIn("Next: ", err.getvalue())
             self.assertNotIn("internal dispatch failure", err.getvalue())
             self.assertNotIn("reached decide", err.getvalue())
         finally:

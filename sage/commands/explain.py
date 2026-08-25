@@ -20,8 +20,9 @@ import json
 import os
 import sys
 
-from sage import _resources
-from sage.diagnostic_contract import Finding, order, render_recovery, severity_of, BLOCK
+from sage import _resources, gate_readiness
+from sage.diagnostic_contract import (BLOCK, TOOL_FAILURE, Finding, order,
+                                     render_recovery, severity_of)
 from sage.i18n import language_of, tr
 from sage.diagnostics import render as render_diagnostic
 
@@ -95,48 +96,9 @@ def component_of(relative, profile):
     return None
 
 
-def required_phases(profile, risk):
-    """이 위험도가 구현 전에 요구하는 phase id 목록. pdca 비활성이면 None."""
-    pdca = profile.get("pdca") or {}
-    if not pdca.get("enabled") or not pdca.get("phases"):
-        return None
-    return list((pdca.get("pre_implementation_required") or {}).get(risk) or [])
-
-
-def phase_readiness(root, profile, stem, required):
-    """요구 phase 중 이 stem 으로 결속되는 문서가 있는 것과 없는 것.
-
-    문서 선택은 `cycle_binding.select_document` 를 그대로 쓴다 — 게이트가 결속을 판정하는 함수와
-    같은 것이어야, 여기서 "있다" 고 한 문서를 게이트가 "다른 사이클" 로 거부하는 일이 없다.
-    """
-    if not required:
-        return [], []
-    if not stem:
-        return [], list(required)
-    import glob as globlib
-    cycle_binding = _load("cycle_binding")
-    phases = {str(entry.get("id")): entry for entry in (profile.get("pdca") or {}).get("phases", [])
-              if isinstance(entry, dict)}
-    present, missing = [], []
-    for pid in required:
-        pattern = (phases.get(pid) or {}).get("glob")
-        candidates = []
-        for path in (globlib.glob(os.path.join(root, pattern), recursive=True)
-                     if pattern else []):
-            if not os.path.isfile(path):
-                continue
-            try:
-                with open(path, encoding="utf-8") as handle:
-                    content = handle.read()
-            except OSError:
-                continue
-            # phase 문서의 내용을 읽는 것은 대상 경로의 내용을 읽는 것과 다르다. 결속 판정이
-            # 문서 안의 Cycle-Stem 선언을 요구하고, 게이트도 같은 것을 읽는다.
-            candidates.append({"path": os.path.relpath(path, root).replace(os.sep, "/"),
-                               "content": content})
-        document, error = cycle_binding.select_document(candidates, stem)
-        (missing if (error or not document) else present).append(pid)
-    return present, missing
+# 요구 phase 계산과 결속 판정은 `status` 와 공유한다 — 두 명령이 다른 답을 내면 안 된다.
+required_phases = gate_readiness.required_phases
+phase_readiness = gate_readiness.phase_readiness
 
 
 def collect(root, raw_path, language=None):
@@ -154,15 +116,30 @@ def collect(root, raw_path, language=None):
     guard = _load("generated_artifact_write_guard_core")
     guarded = bool(guard.is_guarded(relative))
 
-    cycle_state = _load("cycle_state")
+    # 경계를 **연산 단위**로 가른다. 예외 class 로 가르면 같은 연산의 실패가 종류에 따라 다른
+    # 축으로 떨어진다 — 실제로 `_load` 의 ImportError 는 도구 실패로, RuntimeError 는 "선언이
+    # 손상됐다" 는 프로젝트 사실로 갈렸다. 모듈을 못 불러온 것은 예외 class 와 무관하게 도구
+    # 실패이고, 선언을 읽어 보니 이상한 것은 무관하게 프로젝트 사실이다.
+    stem, cycle_error, cycle_unavailable = None, None, None
     try:
-        record = cycle_state.read_declaration_record(root)
-        stem, cycle_error = (record.stem or None), record.error
+        cycle_state = _load("cycle_state")
     except Exception as exc:
-        stem, cycle_error = None, type(exc).__name__
+        cycle_unavailable = f"{type(exc).__name__}: {exc}"
+    else:
+        try:
+            record = cycle_state.read_declaration_record(root)
+            stem, cycle_error = (record.stem or None), record.error
+        except Exception as exc:
+            cycle_error = type(exc).__name__
 
     required = required_phases(profile, floor.risk)
-    present, missing = phase_readiness(root, profile, stem, required or [])
+    # 준비 상태를 판정하지 못한 것과 요구가 없는 것은 다르다. 삼키면 `missing` 이 비고,
+    # 그 화면은 "이 경로는 지금 막히지 않는다" 로 읽힌다 — 확인한 적 없는 사실이다.
+    readiness_error, fast_error = None, None
+    try:
+        present, missing, fast_error = phase_readiness(root, profile, stem, required or [])
+    except Exception as exc:
+        present, missing, readiness_error = [], [], f"{type(exc).__name__}: {exc}"
 
     facts = {
         "path": relative,
@@ -174,7 +151,9 @@ def collect(root, raw_path, language=None):
         "cycle": {"stem": stem, "source": None if stem is None else ".sage/cycle.json"},
         "generated_asset": guarded,
         "required_phases": required,
-        "phase_readiness": {"present": present, "missing": missing},
+        "phase_readiness": {"present": present, "missing": missing,
+                            "unavailable": readiness_error,
+                            "fast_cycle_error": fast_error},
         "dynamic_checks": list(DYNAMIC_CHECKS),
     }
 
@@ -182,12 +161,24 @@ def collect(root, raw_path, language=None):
     if guarded:
         findings.append(Finding("guard.generated_asset", evidence={"path": relative},
                                 arguments={"path": relative}))
-    if cycle_error:
+    if cycle_unavailable:
+        findings.append(Finding("cycle.state_unavailable",
+                                evidence={"error": cycle_unavailable[:200]},
+                                arguments={"error": cycle_unavailable[:160]}))
+    elif cycle_error:
         findings.append(Finding("cycle.declaration_damaged",
                                 evidence={"error": str(cycle_error)}))
     elif required and not stem:
         findings.append(Finding("cycle.binding_missing", evidence={"risk": floor.risk}))
-    if missing:
+    if readiness_error:
+        findings.append(Finding("gate.readiness_unavailable",
+                                evidence={"detail": readiness_error[:200]},
+                                arguments={"error": readiness_error[:160]}))
+    if fast_error:
+        findings.append(Finding("gate.fast_cycle_invalid",
+                                evidence={"reason": str(fast_error)[:300]},
+                                arguments={"reason": str(fast_error)[:300]}))
+    if not readiness_error and missing:
         findings.append(Finding("gate.phase_incomplete",
                                 evidence={"missing": list(missing), "risk": floor.risk},
                                 arguments={"miss": ", ".join(missing)}))
@@ -212,9 +203,18 @@ def _print_text(facts, findings, language):
     elif facts["required_phases"]:
         print(say("cli.explain.line_required_phases",
                   phases=", ".join(facts["required_phases"])))
-        missing = facts["phase_readiness"]["missing"]
-        print(say("cli.explain.line_readiness_blocked", missing=", ".join(missing))
-              if missing else say("cli.explain.line_readiness_ok"))
+        readiness = facts["phase_readiness"]
+        if readiness.get("unavailable"):
+            print(say("cli.explain.line_readiness_unavailable"))
+        elif readiness.get("fast_cycle_error"):
+            # 문서 수를 세면 "모두 있습니다" 가 맞지만, 게이트는 그래도 막는다. 여기서 ok 를
+            # 내면 화면이 게이트와 반대되는 말을 한다.
+            print(say("cli.explain.line_readiness_fast_invalid"))
+        elif readiness["missing"]:
+            print(say("cli.explain.line_readiness_blocked",
+                      missing=", ".join(readiness["missing"])))
+        else:
+            print(say("cli.explain.line_readiness_ok"))
     print(say("cli.explain.line_dynamic", checks=", ".join(facts["dynamic_checks"])))
     print()
     # 이 한 줄이 명령 전체의 계약이다. 위 내용은 경로와 현재 저장소 상태만 본 것이고,
@@ -234,7 +234,10 @@ def run(args):
     from sage.commands.status import resolve_root
 
     root = resolve_root(args)
-    if root is None:
+    # `status` 와 같은 판정을 쓴다. 존재하지 않는 root 를 정상 프로젝트처럼 설명하면 사용자는
+    # 그 설명을 자기 저장소의 사실로 읽는다 — 오타 하나가 "이 경로는 아무 요구도 받지 않는다"
+    # 로 보인다. 두 명령이 같은 root 에 다른 답을 내지 않게 여기서도 거부한다.
+    if root is None or not os.path.isdir(root):
         print(tr(language, "cli.status.root_unresolved"), file=sys.stderr)
         return 2
     try:
@@ -242,6 +245,20 @@ def run(args):
     except PathRefused as refusal:
         print(f"[{refusal.code}] "
               + tr(language, f"cli.{refusal.code}", **refusal.evidence), file=sys.stderr)
+        return 2
+    except Exception as exc:
+        # 최후 안전망. 여기까지 온 예외는 설명을 만들지 못한 것이고, traceback 을 그대로
+        # 내보내면 `--json` 계약이 깨져 호출자가 파싱에서 죽는다. 도구 실패 계약(rc 2)으로
+        # 내려앉되 code 는 남긴다.
+        code = "explain.unavailable"
+        detail = f"{type(exc).__name__}: {exc}"[:200]
+        if args.json:
+            print(json.dumps({"schema_version": 1, "path": args.path,
+                              "diagnostics": [Finding(code, evidence={"error": detail},
+                                                      arguments={"error": detail}).to_json()]},
+                             ensure_ascii=False, indent=2, sort_keys=True))
+        else:
+            print(f"[{code}] " + tr(language, f"cli.{code}", error=detail), file=sys.stderr)
         return 2
 
     if args.json:
@@ -252,4 +269,10 @@ def run(args):
         _print_text(facts, findings, language)
     # `explain` 은 설명이지 판정이 아니다. BLOCK 진단이 있어도 exit 1 로 끝내지 않는다 —
     # 그렇게 하면 "이 경로는 못 쓴다" 는 판정으로 읽히고, 그게 바로 이 명령이 하지 않는 말이다.
+    #
+    # 도구 실패는 다르다. 그건 판정이 아니라 "설명하지 못했다" 이고, 미확정 root 가 이미
+    # exit 2 인 것과 같은 성질이다. 설명 실패를 rc 0 으로 내면 호출자는 설명을 받은 것으로
+    # 읽는다.
+    if any(f.code in TOOL_FAILURE for f in findings):
+        return 2
     return 0

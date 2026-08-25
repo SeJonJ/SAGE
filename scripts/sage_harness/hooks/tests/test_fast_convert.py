@@ -99,6 +99,13 @@ def _phase_snapshot(root, phases=("00", "01", "02", "03", "04")):
     return out
 
 
+# 실제 파일 대조가 writer 에 들어왔으므로 profile 이 필요하다 — glob 이 없으면 어느 문서가
+# 근거인지 정할 수 없다.
+_CONVERT_PROFILE = {"pdca": {"enabled": True,
+                             "phases": [{"id": pid, "glob": f"plan_docs/{pid}-x/**/*.md"}
+                                        for pid in ("00", "01", "02", "03", "04")]}}
+
+
 class TestConvertAudit(unittest.TestCase):
     """전환의 정본은 `.sage/fast_cycle.jsonl` 의 `fast_convert` opener 하나다."""
 
@@ -109,7 +116,8 @@ class TestConvertAudit(unittest.TestCase):
         self.sources = _phase_snapshot(self.root)
 
     def _convert(self, **extra):
-        kwargs = dict(cycle_stem="demo", current_phase="04", actual_risk="L3",
+        kwargs = dict(profile=_CONVERT_PROFILE,
+                      cycle_stem="demo", current_phase="04", actual_risk="L3",
                       fast_review_level="L2", reason="긴급 배포", confirmed_by="sejon",
                       minimum_rounds=1, lenses=["correctness", "error_handling"],
                       source_phases=self.sources)
@@ -802,11 +810,24 @@ class TestConvertedRunAtTheGate(unittest.TestCase):
             snapshot["fast_cycle_audit"] = fast_audit
         return snapshot
 
+    @staticmethod
+    def _provenance(*phases):
+        """실제 `_source_phase_snapshot` 이 만드는 모양. path 만 적으면 담보가 아니다."""
+        return {pid: {"path": f"plan_docs/{pid}-x/x.md",
+                      "sha256": "sha256:" + (pid * 32),
+                      "size": 64 + int(pid)}
+                for pid in phases}
+
     def _converted_audit(self, **over):
+        # 실제 `convert_fast` 가 기록하는 필드를 그대로 싣는다. 손으로 줄인 fixture 는 담보가
+        # 빠진 기록을 정상으로 박제하고, 그러면 담보 검사가 이 자리에서 무치가 된다.
         run = {"cycle_stem": self.STEM, "entry_mode": "FAST-CONVERTED", "terminal": False,
                "clean": True, "chain_ok": True, "seq_ok": True, "actual_risk": "L2",
                "fast_review_level": "L2", "minimum_rounds": 1,
-               "lenses": ["correctness", "error_handling"], "current_phase": "04"}
+               "lenses": ["correctness", "error_handling"], "current_phase": "04",
+               "reason": "전환 사유", "confirmed_by": "tester",
+               "source_phases_open": self._provenance("00", "01", "02", "03", "04"),
+               "ts": "2026-08-25T00:00:00Z", "epoch": 1787616000, "actor": "tester"}
         run.update(over)
         return {"active": ["fc-abc"], "runs": {"fc-abc": run}, "file_ok": True,
                 "has_any_records": True}
@@ -881,7 +902,7 @@ class TestConvertedRunAtTheGate(unittest.TestCase):
         전환이 계획을 건너뛰는 통로가 된다.
         """
         audit = self._converted_audit(current_phase="00",
-                                      source_phases_open={"00": {"path": "plan_docs/00-x/x.md"}})
+                                      source_phases_open=self._provenance("00"))
         snapshot = self._snapshot(audit)
         state, detail = self.core._fast_cycle_state(self._event(), self.profile, snapshot,
                                                    self.profile["pdca"])
@@ -895,8 +916,7 @@ class TestConvertedRunAtTheGate(unittest.TestCase):
     def test_converting_late_waives_what_the_standard_cycle_already_produced(self):
         audit = self._converted_audit(
             current_phase="04",
-            source_phases_open={pid: {"path": f"plan_docs/{pid}-x/x.md"}
-                                for pid in ("00", "01", "02", "03", "04")})
+            source_phases_open=self._provenance("00", "01", "02", "03", "04"))
         snapshot = self._snapshot(audit)
         state, _detail = self.core._fast_cycle_state(self._event(), self.profile, snapshot,
                                                     self.profile["pdca"])
@@ -906,7 +926,7 @@ class TestConvertedRunAtTheGate(unittest.TestCase):
     def test_writing_the_missing_phase_documents_stays_possible_after_an_early_conversion(self):
         """면제를 좁히면서 B 가 푼 교착을 되살리면 안 된다."""
         audit = self._converted_audit(current_phase="00",
-                                      source_phases_open={"00": {"path": "plan_docs/00-x/x.md"}})
+                                      source_phases_open=self._provenance("00"))
         event = self._event(path=f"plan_docs/02-x/{self.STEM}.md")
         event["changes"][0]["content"] = f"Cycle-Stem: `{self.STEM}`\n# 02\n"
         decision = self.core.decide(event, self.profile, self._snapshot(audit), None)

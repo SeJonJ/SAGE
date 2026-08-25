@@ -147,25 +147,41 @@ import json, sys
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
 assert payload["schema_version"] == 1, payload
-assert payload["status"] in ("READY", "ATTENTION", "BLOCKED"), payload["status"]
+assert payload["status"] in ("READY", "ATTENTION", "BLOCKED", "ERROR"), payload["status"]
 assert payload["runtime_api"]["current"] >= 1, payload["runtime_api"]
 # marker 는 install/generate 가 스탬프한다 — 이 프로젝트는 방금 둘 다 거쳤다.
 assert payload["runtime_api"]["required"] == payload["runtime_api"]["current"], payload["runtime_api"]
+# 승인 설계가 요구한 수집 영역이 전부 실려야 한다. 하나가 빠지면 그 축은 조용히
+# 판정되지 않은 채 READY 로 보인다.
+assert set(payload) >= {"project", "version", "runtime_api", "profile", "host",
+                        "cycle", "gate"}, sorted(payload)
+assert payload["cycle"]["mode"] in ("STANDARD", "FAST", "UNKNOWN", None), payload["cycle"]
+# 도구가 자기 일을 못 한 상태로 배포본이 나가면 안 된다.
+assert payload["status"] != "ERROR", payload["diagnostics"]
 for entry in payload["diagnostics"]:
     assert set(entry) == {"code", "severity", "evidence", "recovery"}, entry
+    assert entry["severity"] != "BLOCK" or entry["recovery"], entry
     for step in entry["recovery"]:
         assert set(step) == {"id", "command", "mutating"}, step
 CHECKPY
 
 echo "== [9/9] 운영 진단 명령 + runtime API preflight (설치 wheel 단독) =="
 # 설치본에서 실제로 도는지 본다. 엔진 소스 트리에서 도는 것은 배포 증거가 아니다.
+# 조회가 상태를 만들지 않는다. 앞 단계(Fast Cycle open)가 남긴 파일은 정상이므로
+# 존재 여부가 아니라 **조회 전후의 차이**를 본다.
+ls -a "$PROJ/.sage" > "$WORK/sage_before.txt" 2>/dev/null || : > "$WORK/sage_before.txt"
 env -u SAGE_RESOURCE_ROOT "$SAGE" status --root "$PROJ" --json > "$WORK/status.json" || true
+ls -a "$PROJ/.sage" > "$WORK/sage_after.txt" 2>/dev/null || : > "$WORK/sage_after.txt"
+diff "$WORK/sage_before.txt" "$WORK/sage_after.txt" > "$WORK/sage_diff.txt" \
+  || { echo "❌ status 조회가 .sage 를 바꿨다"; cat "$WORK/sage_diff.txt"; exit 1; }
 "$PY" "$WORK/check_status.py" "$WORK/status.json"
 env -u SAGE_RESOURCE_ROOT "$SAGE" explain --path "src/wheel-smoke.py" --root "$PROJ" > "$WORK/explain.txt" || { echo "❌ explain 실패"; cat "$WORK/explain.txt"; exit 1; }
 grep -q "Path risk floor:" "$WORK/explain.txt" || { echo "❌ explain 출력에 위험도 하한 없음"; exit 1; }
 ! grep -q "ALLOW" "$WORK/explain.txt" || { echo "❌ explain 이 허용을 단정함"; exit 1; }
 env -u SAGE_RESOURCE_ROOT "$SAGE" explain --path "../outside.py" --root "$PROJ" > "$WORK/escape.txt" 2>&1 && { echo "❌ root 이탈 경로가 통과함"; exit 1; }
 grep -q "explain.path_outside_root" "$WORK/escape.txt" || { echo "❌ 이탈 거부 code 없음"; exit 1; }
-echo "   operability OK (status schema v1 + explain 비보증 + 경로 봉쇄)"
+env -u SAGE_RESOURCE_ROOT "$SAGE" explain --path "src/x.py" --root "$WORK/no-such-project" >/dev/null 2>&1 \
+  && { echo "❌ 없는 root 를 정상 프로젝트로 설명함"; exit 1; }
+echo "   operability OK (7영역 + explain 비보증 + 경로 봉쇄 + 조회 무변경)"
 
 echo "✅ 순수 wheel 단독배포 게이트 PASS — 번들 리소스만으로 install→generate→validate 폐루프 동작"

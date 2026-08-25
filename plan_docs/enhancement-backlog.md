@@ -3,19 +3,25 @@
 - SAGE 개발 중 확인된 이슈들로 당장 개발해야하는 내용들은 아니지만, 추후 개발 필요시 참고한다.
 - 각 항목 = 배경 · 문제 · 접근 · 규모/위험 · 트리거 · 상태. 즉시 필요 아님 → 트리거 충족 시 착수.
 
-## 전체 현황 (2026-08-12, `v0.9.84` 기준)
+## 전체 현황 (2026-08-25 기준)
 
-**EH-1~EH-19 중 14건 완료 · 1건 일부 완료 · 4건 보류.**
+**EH-1~EH-27 중 14건 완료 · 1건 일부 완료 · 12건 보류.**
 
 | 상태 | 항목 |
 |---|---|
 | ✅ 완료 | EH-1·2(`v0.9.x` 초기) · EH-3(`v0.9.75`) · EH-5(`v0.9.72`) · EH-6(`v0.9.65`) · EH-7(`v0.9.71`) · EH-9(`v0.9.77`) · EH-12(`v0.9.79`) · EH-18·EH-19(`v0.9.84`) · **EH-13·EH-14·EH-15·EH-16(미릴리즈, `sage-gate-diagnostics-batch`)** |
 | 🕗 일부 완료 | EH-11 — 9개 하위 중 8개 완료(J-4·5·6·8·9 = `v0.9.78`, 결속 본체 J-1·2·3 = `v0.9.79`, J-11 기각), **잔여 J-7만 보류** |
-| 🕗 보류 | EH-4 · EH-8 · EH-10 · EH-17 |
+| 🕗 보류 | EH-4 · EH-8 · EH-10 · EH-17 · EH-20 · EH-21 · EH-22 · EH-23 · EH-24 · EH-25 · EH-26 · EH-27 |
 
-보류 4건의 성격: **EH-4·8·10**은 범위 경계로 분리된 독립 L3 설계 대상(각각 retro 게이트 잔여 우회,
-감사 로그 3종 무결성, adapter freshness)이고, **EH-17**은 트리거 대기(오버레이 누적 성장이 실측될 때).
-EH-8·EH-10은 아직 설계 정본이 없어 착수하려면 설계부터다.
+보류의 성격은 셋으로 갈린다.
+
+- **독립 L3 설계 대상**: EH-4·8·10(retro 게이트 잔여 우회, 감사 로그 3종 무결성, adapter
+  freshness) · EH-27(전환 provenance descriptor hardening). EH-8·EH-10은 아직 설계 정본이 없어
+  착수하려면 설계부터다.
+- **트리거 대기**: EH-17(오버레이 누적 성장 실측) · EH-20 · EH-23 · EH-25(1.0 이전 runtime 관찰).
+- **수용된 잔여 위험**: EH-21 · EH-22 · EH-24 · EH-26 · EH-27. 사이클이 범위를 그으며 명시
+  수용하고 이관한 것들이고, **해소가 아니다.** 특히 EH-27은 `sage-operability-diagnostics`
+  Phase 05 P1-02 로 공개된 상태이며 개발자 승인으로 1.0 범위에서 수용했다.
 
 **EH-13~16 배치에서 얻은 것(2026-08-12)**: 넷 다 "원인 규명 끝, 착수만 하면 됨" 상태였는데 실제로
 코드를 열자 **두 건의 서술이 틀렸다** — EH-14의 "12곳"은 실제 1곳이었고(나머지 17곳은 이미 `input=`으로
@@ -710,6 +716,61 @@ stdin이 닫힌다), EH-16의 "재료는 이미 있다"는 L0에만 맞고 pdca 
   한영 동등성을 기계로 보증해야 할 때. 이름: `sage-i18n-debt-scanner-scope`.
 - **상태**: 🕗 보류 — 미착수.
 
+
+## EH-25 — preflight 이전 runtime 이 내는 화면을 이 저장소에서 만들 수 없다
+
+- **배경**: `sage-operability-diagnostics` 의 인수 기준 `OPD-AC80`. runtime API preflight 가
+  없던 시절의 `sage-hook` 이 새 manifest 를 만났을 때 사용자가 무엇을 보는가를 요구한다.
+- **문제**: 그 runtime 은 이 저장소에 존재하지 않는다. 만들 수 있는 증거가 없어 `N/A` 로
+  남겼다 — 그런데 사유 있는 `N/A` 는 요구를 지우는 것이 아니라 **미룬 것**이고, 미룬 것이
+  어디에도 적히지 않으면 사라진다.
+- **접근**: 1.0 이전 wheel 하나를 고정해 받아 두고, 그 runtime 으로 새 manifest 를 읽혀
+  실제 화면을 기록한다. 판정이 아니라 관찰이다.
+- **규모/위험**: 작다. 다만 옛 wheel 을 CI 가 받아오는 통로가 필요하다.
+- **트리거**: 1.0 릴리즈 준비, 또는 rollout 안내 문서를 쓸 때. 이름: `sage-legacy-runtime-observation`.
+- **상태**: 🕗 보류 — 미착수. 출처: `plan_docs/04-analyze/sage-operability-diagnostics.md` §3.3.
+
+## EH-26 — chain 필드 없이 쓰인 옛 Fast 감사의 이행 통로가 없다
+
+- **배경**: 같은 사이클에서 `run_issues` 가 `chain_ok is None`(chain 필드 부재)을 결함으로
+  올리게 했다. 게이트는 이전부터 `is not True` 로 보아 같은 상태를 거부했으므로 **새로 막는
+  것은 아니다** — 그러나 `integrity_issues` 는 그동안 조용했다.
+- **문제**: 그런 감사를 가진 설치가 있다면, 업그레이드 후 `sage cycle`·`sage fast-cycle` 이
+  갑자기 무결성 실패를 낸다. 원인은 정당하지만 안내가 없다. 감사는 append-only 라 고쳐 쓸
+  수 없어서, 사용자가 스스로 할 수 있는 행동이 무엇인지 말해 주어야 한다.
+- **접근**: 진단에 "이 run 은 chain 이전 형식이다" 를 구별해 싣고, 새 stem 으로 다시 열도록
+  안내한다. 옛 파일을 재작성하는 마이그레이션은 만들지 않는다 — 해시 체인을 다시 쓰는 도구는
+  그 자체가 위조 도구다.
+- **규모/위험**: 작다. 위험은 반대 방향이다 — 안내를 만들면서 옛 형식을 통과시키면 이번에
+  닫은 구멍이 열린다.
+- **트리거**: 이 형식의 감사를 가진 설치가 실제로 보고될 때, 또는 1.0 이행 안내를 쓸 때.
+  이름: `sage-fast-audit-legacy-chain-guidance`.
+- **상태**: 🕗 보류 — 미착수. 출처: `plan_docs/00-base_plan/sage-operability-diagnostics.md` §2.
+
+## EH-27 — 전환 provenance reader의 check-to-open 경쟁 제거
+
+- **배경**: `sage-operability-diagnostics` Revision 11은 `FAST-CONVERTED` opener가 호출자가 준
+  provenance를 live phase 문서 snapshot과 대조하도록 만들었다. `.`·임의 hash·size·사전 존재
+  symlink는 append 전에 거부한다.
+- **문제**: `sage/fast_cycle_sources.py`는 leaf symlink와 root containment를 확인한 뒤 일반
+  `open(path, "rb")`으로 path를 다시 연다. 로컬 트리 쓰기 권한을 가진 주체가 두 연산 사이에
+  leaf를 외부 symlink로 교체하면, 기록 path는 저장소 내부인데 hash는 외부 바이트가 되는 경쟁이
+  가능하다. writer·audit·gate는 그 snapshot을 정상 Fast로 읽는다.
+- **분류/수용**: 중요도는 Fast 면제 provenance 계약 위반으로 중상이다. 다만 로컬 쓰기 권한,
+  전환 경로, 정밀한 동시 파일 교체가 모두 필요하고 일반 사용 중 재현 빈도는 매우 낮다. 사용자
+  승인으로 1.0에서는 self-attested local 범위의 **명시적 잔여 위험**으로 수용한다. 이는 해소가
+  아니며 Phase 05 P1-02와 Phase 06에 같은 제한을 기록했다.
+- **접근**: root dirfd부터 경로 성분과 leaf를 `O_NOFOLLOW`로 열고, leaf의 `fstat()`가 regular
+  file임을 확인한 **같은 fd**에서 hash·size를 읽는다. 중간 경로 symlink도 거부한다. 해당 안전
+  원시 연산을 제공하지 않는 플랫폼은 전환을 fail-closed하고, check 직후 symlink 삽입 mutation
+  test로 `AuditWriteError`·audit 파일 미생성을 고정한다.
+- **규모/위험**: 중간~높음. POSIX descriptor API와 Windows fallback 정책, Fast conversion 소비자,
+  테스트 fixture를 함께 다뤄야 한다. 잘못 고치면 전환 기능을 플랫폼별로 과차단하거나 새 TOCTOU를
+  만들 수 있다.
+- **트리거**: 1.0 이후 provenance를 hostile local agent까지 신뢰해야 할 때, 실제 경쟁이 관측될 때,
+  또는 fast audit I/O hardening을 별도 L3 사이클로 열 때. 이름:
+  `sage-fast-provenance-descriptor-hardening`.
+- **상태**: 🕗 보류 — 개발자 승인으로 이관, 미착수.
 
 ---
 

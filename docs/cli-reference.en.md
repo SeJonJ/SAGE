@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:6849931ba234c9fc727f4a2366d8b26e72daf6ce3277a98d5287b67e7d413e35 -->
+<!-- sage-doc-source: cli-reference.md sha256:a9b9b5c8270f84ee7f9c8dc7f1ea3f3c9ee95018a79622639876417668eb1b6a -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -231,7 +231,20 @@ Two commands never answer the same question. Each owns exactly one.
 
 When `sage status` finds a problem it **links** to the detailed command above; it never produces
 that command's result on its behalf. `status` and `explain` are read-only: they change no files and
-no `.sage` audit records, and they never run a recovery command for you.
+no `.sage` audit records, and they never run a recovery command for you. The audit is read without
+taking a lock, so these commands neither wait for nor block an in-flight Fast transition.
+
+`status` covers seven areas — project, version, runtime API, profile, host, cycle, and the readiness
+of the pre-implementation phases. When the cycle mode cannot be determined (a damaged audit, or one
+that grew while being read) it reports `UNKNOWN` rather than downgrading to `STANDARD`: folding the
+unknown into a normal value makes a damaged audit look like an ordinary cycle.
+
+Neither command describes a `--root` that does not exist as if it were a healthy project. Both
+refuse with exit `2`.
+
+The status tokens are `READY`, `ATTENTION`, `BLOCKED`, and `ERROR`. `BLOCKED` means the project
+state really is blocked; `ERROR` means SAGE could not do its own job. They are kept apart because
+only the former gives you something to fix.
 
 `sage explain --path` looks only at the path and the current repository state. The real write may be
 stricter depending on new content, the session risk declaration, and other files changed at the same

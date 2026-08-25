@@ -655,10 +655,15 @@ class TestFastSourceGate(unittest.TestCase):
 
     def _snapshot(self, active=True, chain_ok=True):
         content = TestFastCLI._plan().replace("Fast-Audit-Run: pending", "Fast-Audit-Run: fc-123456789abc")
+        # 실제 `open_fast` 가 기록하는 필드를 그대로 싣는다 — entry_mode 와 담보(hash),
+        # 그리고 모든 레코드가 갖는 ts·epoch·actor 까지.
         state = {"cycle_stem": "hotfix", "terminal": False, "clean": True,
                  "chain_ok": chain_ok, "seq_ok": True, "actual_risk": "L3",
                  "fast_review_level": "L2", "minimum_rounds": 1,
-                 "lenses": ["correctness", "error_handling"], "reason": "production outage"}
+                 "lenses": ["correctness", "error_handling"], "reason": "production outage",
+                 "entry_mode": "FAST", "profile_hash": "sha256:" + "0" * 64,
+                 "plan_hash_open": "sha256:" + "1" * 64,
+                 "ts": "2026-08-25T00:00:00Z", "epoch": 1787616000, "actor": "tester"}
         return {
             "plan_files": [{"path": "plan_docs/00-base_plan/hotfix.md", "content": content}],
             "phase_docs": {"00": [{"path": "plan_docs/00-base_plan/hotfix.md", "content": content}]},

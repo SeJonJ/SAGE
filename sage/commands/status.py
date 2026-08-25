@@ -20,7 +20,8 @@ import os
 import sys
 
 from sage import __version__
-from sage.diagnostic_contract import BLOCK, WARN, Finding, order, render_recovery, severity_of
+from sage.diagnostic_contract import (BLOCK, TOOL_FAILURE, WARN, Finding, order,
+                                     render_recovery, severity_of)
 from sage.diagnostics import render as render_diagnostic
 from sage.i18n import language_of, tr
 from sage import diagnostic_collectors as collectors
@@ -60,7 +61,10 @@ def resolve_root(args):
         found = cycle_state.find_project_root(os.getcwd())
     except Exception:
         found = None
-    return found or os.getcwd()
+    # 못 찾았으면 `None` 이다. cwd 로 대체하면 SAGE 와 무관한 디렉터리를 프로젝트로 삼아
+    # "설치되지 않았다" 같은 사실을 그 디렉터리의 상태인 것처럼 보고한다 — root 미확정은
+    # 판정이 아니라 도구 오류(FR-C09 exit 2)이고, 그 구분이 사라진다.
+    return found
 
 
 def _profile(root):
@@ -69,26 +73,66 @@ def _profile(root):
     return loaded if isinstance(loaded, dict) else {}
 
 
+# 한 영역이 무너져도 나머지 영역의 결과는 살린다. 전체를 감싼 그물 하나만 있으면 예외
+# 하나가 이미 수집한 사실·code·복구를 전부 지우고 예외 class 이름만 남긴다 — 사용자는
+# 무엇이 왜 막혔는지 알 수 없고, 그게 이 명령이 없애려던 상태다.
+_AREA_DEFAULTS = {
+    "project": {"installed": False},
+    "version": {"required": None, "runtime": None, "installed": None, "generated": None},
+    "runtime_api": {"current": None, "required": None, "compatible": None},
+    "profile": {},
+    "host": {"active": None, "configured": ()},
+    "cycle": {"stem": None, "mode": None, "risk": None},
+    "gate": {"required_phases": None, "present": (), "missing": (),
+             "fast_cycle_error": None},
+}
+
+
+def _area(name, call, facts, findings):
+    try:
+        area_facts, area_findings = call()
+    except Exception as exc:
+        facts[name] = dict(_AREA_DEFAULTS[name])
+        findings.append(Finding("status.area_unavailable",
+                                evidence={"area": name, "error": type(exc).__name__},
+                                arguments={"area": name, "error": type(exc).__name__}))
+        return facts[name]
+    facts[name] = area_facts
+    findings.extend(area_findings)
+    return area_facts
+
+
 def collect(root):
     """(facts, findings). 어떤 collector 도 파일을 쓰지 않는다."""
     manifest, manifest_error = collectors.read_manifest(root)
     profile = _profile(root)
 
     facts, findings = {}, []
-    for area, (area_facts, area_findings) in (
-            ("project", collectors.collect_project(root, manifest, manifest_error)),
-            ("version", collectors.collect_version(profile, manifest, __version__)),
-            ("runtime_api", collectors.collect_runtime_api(manifest)),
-            ("profile", collectors.collect_profile(root)),
-            ("host", collectors.collect_host(profile, manifest)),
-            ("cycle", collectors.collect_cycle(root))):
-        facts[area] = area_facts
-        findings.extend(area_findings)
+    _area("project", lambda: collectors.collect_project(root, manifest, manifest_error),
+          facts, findings)
+    _area("version", lambda: collectors.collect_version(profile, manifest, __version__),
+          facts, findings)
+    _area("runtime_api", lambda: collectors.collect_runtime_api(manifest), facts, findings)
+    _area("profile", lambda: collectors.collect_profile(root), facts, findings)
+    _area("host", lambda: collectors.collect_host(profile, manifest), facts, findings)
+    cycle = _area("cycle", lambda: collectors.collect_cycle(root), facts, findings)
+    # gate 는 cycle 의 stem·risk 를 받아야 무엇을 요구하는지 알 수 있으므로 뒤에 선다.
+    _area("gate", lambda: collectors.collect_gate(root, profile, cycle.get("risk"),
+                                                  cycle.get("stem")),
+          facts, findings)
     return facts, tuple(order(findings))
 
 
 def aggregate(findings):
     """(status, exit_code). 부재를 통과로 읽지 않는다."""
+    if any(f.code in TOOL_FAILURE for f in findings):
+        # 도구가 자기 일을 못 한 것이지 프로젝트 정책이 차단한 것이 아니다. 둘을 같은
+        # 토큰으로 내면 사용자는 정책을 고치러 가고, 고칠 것이 없어 되돌아온다.
+        #
+        # 목록을 여기서 손으로 세지 않는다. `status.area_unavailable` 하나만 특례로 적어
+        # 뒀을 때, 나중에 추가한 도구 실패 code 들이 조용히 정책 차단(BLOCKED/rc 1)과
+        # 무경고(ATTENTION/rc 0)로 흘러갔다.
+        return "ERROR", 2
     severities = {severity_of(f.code) for f in findings}
     if BLOCK in severities:
         return "BLOCKED", 1
@@ -107,7 +151,12 @@ def _print_text(status, facts, findings, language):
               configured=", ".join(host["configured"]) or "-"))
     cycle = facts["cycle"]
     print(say("cli.status.line_cycle", stem=cycle.get("stem") or "-",
-              risk=cycle.get("risk") or "-"))
+              mode=cycle.get("mode") or "-", risk=cycle.get("risk") or "-"))
+    gate = facts["gate"]
+    required = gate.get("required_phases")
+    print(say("cli.status.line_gate",
+              required="-" if required is None else (", ".join(required) or "-"),
+              missing=", ".join(gate.get("missing") or ()) or "-"))
     version = facts["version"]
     print(say("cli.status.line_version", required=version["required"],
               runtime=version["runtime"], installed=version["installed"],
