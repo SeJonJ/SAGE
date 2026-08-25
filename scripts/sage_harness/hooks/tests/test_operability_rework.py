@@ -853,10 +853,18 @@ class TestToolFailureIsNotAPolicyBlock(unittest.TestCase):
         self.assertEqual(rc, 2)
 
     def test_error_is_a_declared_status_token(self):
-        with open(os.path.join(REPO, "plan_docs", "01-plan",
-                               "sage-operability-diagnostics.md"),
-                  encoding="utf-8") as handle:
-            self.assertIn("`ERROR`", handle.read())
+        """사용자에게 문서로 선언된 토큰인가 — 한영 양쪽.
+
+        이전 판은 `plan_docs/01-plan/` 을 읽었다. 그 디렉터리는 `.gitignore` 대상이라 CI 와
+        소비 환경에는 없고, 로컬에만 있는 파일을 근거로 삼는 검사였다. 토큰이 실제로 지켜야
+        하는 계약은 **사용자 문서에 선언돼 있는가** 이므로 추적되는 reference 를 본다.
+        """
+        for name in ("cli-reference.md", "cli-reference.en.md"):
+            with self.subTest(document=name):
+                with open(os.path.join(REPO, "docs", name), encoding="utf-8") as handle:
+                    text = handle.read()
+                for token in ("READY", "ATTENTION", "BLOCKED", "ERROR"):
+                    self.assertIn(f"`{token}`", text, f"{name}: {token}")
 
 class TestTheRealParserSeesEveryAcceptanceRow(unittest.TestCase):
     """저장소의 **실제** 파서로 대조한다.
