@@ -1,4 +1,4 @@
-<!-- sage-doc-source: quickstart.md sha256:9971fa2de217f377e21bacc8ff39046d8a05f17d549e04732a0d7ad87f96b7ff -->
+<!-- sage-doc-source: quickstart.md sha256:87495789bd9d76954b962ad3f0fd1f581be34f732e76c644dc1ffd38d61b3973 -->
 # SAGE Quickstart
 
 [한국어](quickstart.md) | [README](../README.en.md)
@@ -93,6 +93,19 @@ sage status
 If anything is blocking, each line is followed by `Next:` commands in the order to run them. To find
 out why one particular file is blocked, run `sage explain --path <path>` to see that path's risk and
 which documents are missing. Neither command changes files or audit records.
+
+Where `status` answers "can I work right now", `sage audit show` answers "what happened". It reads
+gate overrides, acceptance waivers, review loops, and Fast Cycle records on one screen.
+
+```bash
+sage audit show
+```
+
+Each source carries a different integrity guarantee and the screen reports that difference as it is —
+some have a hash chain, some only semantic validation, some none at all. A source without validation
+is never shown as `valid`. The personal working traces `retro` and `feedback` are excluded by default
+and appear only with `--include-local`. This command is read-only too, and does not even create a
+lock file.
 
 ## 5. Start a delivery cycle — when you actually start writing code
 

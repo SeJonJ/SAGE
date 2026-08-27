@@ -211,6 +211,23 @@ SEVERITY = {
     "explain.unavailable": BLOCK,
     "cycle.declaration_unreadable": BLOCK,
     "cycle.declaration_damaged": BLOCK,
+    # --- 감사 조회 ----------------------------------------------------------
+    # `audit show` 는 읽기 전용이라 아무것도 차단하지 않는다. 그래도 BLOCK 인 이유는 이 등급이
+    # exit 집계와 `Next:` 요구를 결정하기 때문이다 — 감사를 읽지 못한 것을 rc 0 으로 내면
+    # "여섯 출처를 확인했다" 가 거짓이 된다.
+    "audit.source.unreadable": BLOCK,
+    "audit.source.malformed": BLOCK,
+    "audit.source.invalid": BLOCK,
+    "audit.source.concurrent_change": BLOCK,
+    # adapter 자체가 터진 것은 프로젝트 상태가 아니라 도구 실패다(아래 TOOL_FAILURE).
+    "audit.source.unavailable": BLOCK,
+    # 보증 필드가 없는 과거 run 은 실패가 아니다. 실패로 올리면 과거 run 을 가진 모든
+    # 저장소가 붉어지고, 사용자는 고칠 수 없는 것을 고치라는 말을 듣는다.
+    "audit.source.legacy": WARN,
+    "audit.source.unknown_event": WARN,
+    "audit.source.redacted": WARN,
+    "audit.selection.redacted": WARN,
+    "audit.source.tracking_policy": WARN,
 }
 
 
@@ -258,6 +275,14 @@ RECOVERY = {
     "status.area_unavailable": (_DOCTOR, _VALIDATE),
     "cycle.mode_unknown": (_FAST_CYCLE_SHOW, _VALIDATE),
     "guard.generated_asset": (_FIX_CANONICAL_SPEC, _REGENERATE, _VALIDATE),
+    # 새 recovery step id 를 만들지 않는다. 만들면 `recovery_issues` 가 CLI↔hook 대칭을
+    # 요구하고, 조회 실패 때문에 hook 쪽에 이 사이클과 무관한 진단을 심게 된다. 감사를 읽지
+    # 못했을 때의 다음 행동은 이미 있는 읽기 전용 확인으로 충분하다.
+    "audit.source.unreadable": (_STATUS, _VALIDATE),
+    "audit.source.malformed": (_STATUS, _VALIDATE),
+    "audit.source.invalid": (_STATUS, _VALIDATE),
+    "audit.source.concurrent_change": (_STATUS, _VALIDATE),
+    "audit.source.unavailable": (_DOCTOR, _VALIDATE),
 }
 
 
@@ -282,6 +307,9 @@ TOOL_FAILURE = frozenset({
     # 고치라고 말하게 된다.
     "cycle.state_unavailable",
     "explain.unavailable",
+    # 감사 adapter 가 터진 것은 감사가 깨진 것이 아니다. 같은 축으로 내면 사용자는 자기
+    # 감사 파일을 의심하게 되고, 실제 원인인 도구 쪽은 보이지 않는다.
+    "audit.source.unavailable",
 })
 
 

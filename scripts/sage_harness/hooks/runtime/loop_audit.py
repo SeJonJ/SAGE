@@ -557,7 +557,16 @@ def audit_summary(root):
     `seq_ok`: 라운드 seq 연속성. `chain_ok`: run별 strict hash-chain(True/False, legacy=None).
     `file_ok`: 손상/비-object 줄 없는 원문 파싱 무결성. `degraded`: 의도한 reviewer(open) ≠ 실제
     reviewer(close) → cross-model 폴백 침묵 차단."""
-    recs, file_issues = _read_status(audit_path(root))
+    return summarize_records(*_read_status(audit_path(root)))
+
+
+def summarize_records(recs, file_issues):
+    """레코드 목록 하나를 요약으로 접는다. 파일도 락도 모르는 순수 함수.
+
+    락을 잡는 `audit_summary` 와 잡지 않는 `snapshot` 이 **같은 이 함수**를 쓴다. 접기 로직을
+    복사하면 감사 형식의 해석기가 둘이 되고, 갈렸을 때 어느 쪽이 옳은지 판정할 근거가 없어진다.
+    `fast_cycle_audit` 이 먼저 같은 모양으로 갈라졌고 여기도 그 모양을 따른다.
+    """
     chain_states = _chain_states(recs)
     summary = {}
     seqs = {}   # rid -> [seq, ...] (append 순, 모든 이벤트 포함 — seq 연속성 검산용)
@@ -636,7 +645,11 @@ def integrity_issues(root):
     검출(codex S3/S4 강화): ① loop_open 없는 round/close(orphan) ② loop_open 중복 ③ loop_close 중복
     ④ loop_close 이후의 round/close(종료 후 활동) ⑤ 손상/비-dict 줄(읽기 시 silent drop → 증거 불완전).
     append 순서를 그대로 따라 한 패스로 판정."""
-    recs, file_issues = _read_status(audit_path(root))
+    return integrity_from_records(*_read_status(audit_path(root)))
+
+
+def integrity_from_records(recs, file_issues):
+    """`integrity_issues` 의 판정부. 파일을 모르는 순수 함수."""
     issues = [_diagnostic("loop_audit.malformed_line", evidence=issue) for issue in file_issues]
     opens, closes = {}, {}
     for r in recs:
@@ -672,3 +685,17 @@ def integrity_issues(root):
         if state is False:
             issues.append(_diagnostic("loop_audit.hash_chain_mismatch", run_id=repr(rid)))
     return issues
+
+
+def snapshot(root):
+    """락도 쓰기도 없는 조회용 요약. `audit_summary` 와 같은 접기 함수를 쓴다.
+
+    `status` 키는 absent/valid/damaged 셋이고, 셋을 하나로 접지 않는 것이 이 API 의 요점이다.
+    락이 없으니 append 중간을 볼 수 있는데 그 절반짜리 파일을 "기록이 없다" 로 읽으면 진행 중인
+    run 이 사라지고, 반대로 부재를 손상으로 올리면 감사를 한 번도 쓰지 않은 정상 프로젝트가
+    붉어진다. 어느 쪽도 호출부가 접어서는 안 되므로 사실 그대로 함께 돌려준다.
+    """
+    state, records, issues = _read_status_unlocked(audit_path(root))
+    summary = summarize_records(records, issues)
+    summary["status"] = state
+    return summary
