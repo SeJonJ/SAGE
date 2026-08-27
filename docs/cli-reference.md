@@ -56,6 +56,9 @@ project core의 `decide(event, profile, snapshot)`에서 `event`는 `hook_id`, `
 | `sage status` | 지금 이 프로젝트에서 SAGE 를 쓸 수 있는지 1~2초 안에 읽기 전용으로 요약 |
 | `sage status --json` | 같은 결과를 기계가 읽는 schema v1 JSON 으로 출력 (locale 무관) |
 | `sage explain --path PATH` | 그 경로의 위험도 하한·매칭 규칙·결속 cycle·빠진 phase 문서를 설명 |
+| `sage audit show` | 여섯 감사 출처를 한 화면에서 읽기 전용으로 조회 (기본은 공유 4종) |
+| `sage audit show --include-local` | 로컬 출처(`retro`·`feedback`)까지 함께 조회 |
+| `sage audit show --json` | 같은 결과를 기계가 읽는 schema v1 JSON 으로 출력 (locale 무관) |
 | `sage doctor` | Python, hook entry, host, reviewer, profile, optional capability 진단 |
 | `sage models --host HOST` | 로컬에서 확인 가능한 model 후보와 검증 수준 표시 |
 | `sage asset-check --gate` | 자산 변경의 auto-approve 가능 여부를 CI exit code로 반환 |
@@ -214,6 +217,7 @@ Phase 00~06 문서를 쓰는 언어는 이것과 **별개 결정**이며 사이�
 |---|---|
 | 지금 SAGE 를 쓸 수 있는가? | `sage status` |
 | 이 경로는 왜 이런 요구를 받는가? | `sage explain --path ...` |
+| 무슨 일이 있었는가 — 누가 무엇을 우회·유예·리뷰했는가? | `sage audit show` |
 | 설치 도구·peer model·optional capability 가 준비됐는가? | `sage doctor` |
 | 전체 자산·schema·hash 가 정확한가? | `sage validate --kind all --check --schema` |
 | 다른 SAGE 버전으로 안전하게 이동할 수 있는가? | `sage upgrade --check` |
@@ -238,6 +242,63 @@ exit `2` 로 거부한다.
 `sage explain --path` 는 경로와 현재 저장소 상태만 본다. 실제 write 는 새 내용, 세션 risk
 선언, 한 번에 변경하는 다른 파일에 따라 더 엄격해질 수 있으므로 이 명령은 허용을 보증하지
 않는다 — 그래서 결과에 `ALLOW` 가 없다.
+
+### `sage audit show` — 보증의 차이를 감추지 않는다
+
+여섯 출처의 무결성 보증은 서로 다르다. 화면은 그 차이를 `method` 와 `status` 두 축으로 낸다.
+
+| 출처 | `method` | 뜻 |
+|---|---|---|
+| `review`·`fast` | `strict_chain` | append 순 hash chain 을 검증한다 |
+| `acceptance` | `semantic` | 레코드 간 의미 규칙만 검증한다. 위변조 내성은 없다 |
+| `retro` | `structural` | 구조 파싱만 한다 |
+| `override`·`feedback` | `none` | 아무 검증도 없다 |
+
+검증이 없는 출처는 어떤 경로로도 `valid` 로 표시되지 않는다. `.sage/override.jsonl` 은
+**추적 사본**이고 집행 정본은 로컬 상태 홈에 있다 — 둘의 불일치는 이 명령이 검출하지 않으며,
+그 사실이 조회할 때마다 함께 표시된다.
+
+보증 필드가 없는 과거 기록은 `legacy` 이고 exit `0` 이다. 손상이 아니라 그 기록에 보증이
+없다는 뜻이라, 실패로 올리면 과거 run 을 가진 저장소가 전부 붉어진다.
+
+읽기 전용이며 **lock 을 만들지도 획득하지도 않는다.** 그래서 진행 중인 append 중간을 볼 수
+있는데, 그 상태는 감춰지지 않고 `audit.source.concurrent_change` 로 표면화된다 — 부분 결과를
+정상으로 표시하는 경로가 없다.
+
+절대경로·HOME·vault 경로는 어떤 출력에도 나오지 않는다. 경로 필드뿐 아니라 `reason` 같은
+자유 문자열까지 값 기준으로 검사해 `<redacted-path>` 로 바꾸고, 바꿨다는 사실을 진단으로
+남긴다.
+
+`--json` 의 최상위 key 는 열둘로 고정이다 — `schema_version`·`ok`·`status`·`exit_code`·
+`ordering`·`selection`·`sources`·`events`·`returned`·`omitted`·`truncated`·`diagnostics`.
+`ok` 는 `exit_code == 0`, `returned` 는 실린 이벤트 수, `omitted` 는 `--limit` 으로 생략된 수,
+`truncated` 는 `omitted > 0` boolean 이다. `truncated` 를 건수로 겸하지 않는 이유는 `0` 이
+"거짓" 과 "0건 생략" 을 동시에 뜻하게 되기 때문이다.
+
+진단의 정본은 `diagnostics` **하나**이고 어느 출처의 문제인지는 `evidence.source` 로 결속한다.
+`sources` 에 사본을 두지 않는다 — 같은 사실이 두 자리에 있으면 갈렸을 때 어느 쪽이 옳은지
+판정할 근거가 없다.
+
+`--limit` 은 기본 100 이고 범위는 1~10000 이다. 범위 밖 값은 조용히 끌어당기지 않고 exit `2`
+로 거절한다 — `0` 은 무제한이 아니다. 끌어당기면 요청한 값과 받은 값이 달라지고, 화면 어디에도
+그 사실이 남지 않는다.
+
+retro 의 노트 경로는 저장소 상대경로로 정상이어도 출력하지 않는다. 조회는 노트가 있었는지
+(`vault_note_present`)와 digest 가 남았는지(`digest_present`)만 답한다 — 가려야 할 이유가
+"경로가 이탈했다" 가 아니라 "그 값 자체" 인 자리이기 때문이다.
+
+출처 상태에는 `policy`(`shared`·`local`)와 `tracking`(실제 Git 상태)이 함께 나온다. 하나로
+접으면 "공유 대상인데 커밋되지 않음" 과 "원래 개인 기록" 이 같은 값이 된다.
+
+출처의 `present` 는 **세 상태**다. 있음·없음 말고, 도구가 그 출처를 읽지 못해 **판정하지
+못한** 상태가 따로 있다. text 는 `present=unknown`, JSON 은 `null` 로 낸다. 둘로 접으면 도구
+실패가 "기록 없음" 으로 읽힌다.
+
+로컬 출처로 가는 관문은 `--include-local` **하나**다. `--source retro` 를 그 관문 없이 주면
+빈 결과가 아니라 exit `2` 다 — 빈 결과는 "그 출처에 기록이 없다" 로 읽힌다.
+
+교차 출처 시간 정렬은 **표시 순서일 뿐** 인과나 권위 순서가 아니며, 출력이 그 사실을 함께
+낸다. 조회 결과는 어떤 게이트의 입력도 되지 않는다.
 
 ## 공통 종료코드
 

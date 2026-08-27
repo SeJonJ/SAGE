@@ -393,5 +393,13 @@ echo "### 76. 운영성 재작업 (판정 전 core import · gate readiness · c
 python3 "$HERE/test_operability_rework.py" || rc=1
 
 echo ""
+echo "### 77. sage audit show (읽기 전용 · lock 비접촉 · 보증 미과장 · 경로 비노출 · locale 독립)"
+python3 "$HERE/test_audit_show.py" || rc=1
+
+echo ""
+echo "### 78. no-vault Golden E2E (격리 HOME·상태홈 · 정상 OFF ↔ 설정 오류 분리 · sentinel 불변)"
+python3 "$HERE/test_no_vault_golden_e2e.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

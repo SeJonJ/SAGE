@@ -132,7 +132,7 @@
   "hook_runtime_hash": {
     "claude": "sha256:2d0318a75804defae4ac5b53e3ea9e4fe5766c21a937c1c091f45bb780be8254",
     "codex": "sha256:3519535630dd81a83cbe191b51fa3668d09ed3a9c46842e5948145a3737c941c",
-    "shared": "sha256:6a39cba94ca7c167b4706470e1541ac801aaa9eb286daba88984b1110c96c8c5"
+    "shared": "sha256:77542800f99d469aeb9404bc8daf2bfdef9b55267af78bd3ab94a969460e7b3e"
   },
   "host_runtime": "claude",
   "runtime_api": {

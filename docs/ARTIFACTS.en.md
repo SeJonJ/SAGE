@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARTIFACTS.md sha256:bc505ffe814aa754f9db14e1477749d9c767875fd2f20767e48068a5ce2730f2 -->
+<!-- sage-doc-source: ARTIFACTS.md sha256:626f2aec1d18045d6e4d22d59191f6defa5d2d6620cda7b193dc3bd16a6fc187 -->
 # SAGE Artifact Map
 
 [한국어](ARTIFACTS.md) | [Documentation index](README.en.md)
@@ -13,8 +13,11 @@ Three principles apply throughout:
   determine artifact *locations* deterministically.
 - **One write path for the vault.** Only `sage knowledge write-back` and related commands write
   Obsidian notes, logs, and indexes.
-- **Use `.sage` without Obsidian; use the vault with Obsidian.** When
-  `knowledge_capture.vault_path` is empty, knowledge notes leave only local traces under `.sage/`.
+- **`.sage` is always the source of truth; the vault is a derived view.** PDCA execution data and
+  audit records live under `.sage/` whether or not Obsidian is in use. An empty
+  `knowledge_capture.vault_path` only means the derived view is not produced — nothing canonical is
+  lost, and deleting the vault leaves the audit intact. Reading this as "the source of truth moves
+  depending on Obsidian" leads people to treat the vault as the thing to back up.
 
 ---
 
@@ -22,7 +25,7 @@ Three principles apply throughout:
 
 | Location | Nature | Representative artifacts | Writer |
 |---|---|---|---|
-| `<root>/.sage/` | Source-of-truth PDCA execution data; only four shared audit files are committed | Committed: `override.jsonl`, `acceptance-waivers.jsonl`, `loop_audit.jsonl`, `fast_cycle.jsonl`; local: `retro_audit.jsonl`, `plan_interview.md`, `knowledge_scan.md`, `tmp/`, `context/` | CLI, skills, hooks |
+| `<root>/.sage/` | Source-of-truth PDCA execution data; only four shared audit files are committed | Committed: `override.jsonl`, `acceptance-waivers.jsonl`, `loop_audit.jsonl`, `fast_cycle.jsonl`; local: `retro_audit.jsonl`, `feedback.jsonl`, `plan_interview.md`, `knowledge_scan.md`, `tmp/`, `context/` | CLI, skills, hooks |
 | `<root>/<host>/logs/` | Per-session hook records | `session-<date>.jsonl`, `compliance-<date>.md`, `declared-risk-<sid>.json` | Hook adapters |
 | Obsidian vault (`vault_path`/folder) | Final knowledge notes | Write-back TECH notes, loop/Fast audit dashboards, retrospective notes, `log.md` | `sage knowledge`, `review-loop`, `fast-cycle`, `retro` |
 | `<root>/sage/asset_overrides/` | CORE overlays, committed but not deployed by install | `agents/<id>.md`, `skills/<id>.md` | Human-authored, with absorb guidance |

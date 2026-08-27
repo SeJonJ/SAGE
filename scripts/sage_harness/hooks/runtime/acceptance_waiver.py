@@ -197,8 +197,21 @@ def _validate_grant(record):
 
 
 def audit_summary(root, now=None):
+    return summarize_records(*_read_lines(root), now=now)
+
+
+def summarize_records(parsed, file_issues, now=None):
+    """`(line_no, record)` 목록 하나를 요약으로 접는다. 파일도 락도 모르는 순수 함수.
+
+    락을 쥐고 읽는 `audit_summary` 와 락 없이 읽는 조회 경로가 **같은 이 함수**를 써야 한다.
+    의미 검증을 두 벌로 만들면 같은 감사가 writer 에게는 정상, 조회에게는 손상으로 보이는
+    상태가 생기고, 그때 어느 쪽이 옳은지 판정할 근거가 없다.
+
+    `file_issues` 는 복사해서 쓴다 — 호출부의 리스트에 판정 결과를 덧붙이면 같은 입력으로
+    두 번 부르는 것만으로 issue 가 불어난다.
+    """
     current = time.time() if now is None else now
-    parsed, issues = _read_lines(root)
+    issues = list(file_issues)
     grants, revoked, revoked_once = {}, set(), set()
     for line_no, record in parsed:
         if not isinstance(record, dict):

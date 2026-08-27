@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:a9b9b5c8270f84ee7f9c8dc7f1ea3f3c9ee95018a79622639876417668eb1b6a -->
+<!-- sage-doc-source: cli-reference.md sha256:b12d60cd5bce8aaaf211a56143f8f6dcf1d56b0f6352cf7262b7d5becf005497 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -58,6 +58,9 @@ symlink leaf matches, and other non-regular paths are contract failures.
 | `sage status` | Read-only summary, in one to two seconds, of whether SAGE is usable in this project |
 | `sage status --json` | The same result as machine-readable schema v1 JSON (locale-independent) |
 | `sage explain --path PATH` | Explain a path's risk floor, matched rule, bound cycle, and missing phase documents |
+| `sage audit show` | Read all six audit sources on one screen, read-only (the four shared ones by default) |
+| `sage audit show --include-local` | Also read the local sources (`retro`, `feedback`) |
+| `sage audit show --json` | Print the same result as machine-readable schema v1 JSON (locale-independent) |
 | `sage doctor` | Diagnose Python, hook entrypoints, hosts, reviewers, profiles, and optional capabilities |
 | `sage models --host HOST` | Show locally discoverable model candidates and their validation level |
 | `sage asset-check --gate` | Return CI exit codes for whether an asset change can be auto-approved |
@@ -225,6 +228,7 @@ Two commands never answer the same question. Each owns exactly one.
 |---|---|
 | Can I use SAGE right now? | `sage status` |
 | Why does this path carry these requirements? | `sage explain --path ...` |
+| What happened — who bypassed, waived, or reviewed what? | `sage audit show` |
 | Are the installed tools, peer models, and optional capabilities ready? | `sage doctor` |
 | Are all assets, schemas, and hashes correct? | `sage validate --kind all --check --schema` |
 | Can I move safely to another SAGE version? | `sage upgrade --check` |
@@ -250,6 +254,69 @@ only the former gives you something to fix.
 stricter depending on new content, the session risk declaration, and other files changed at the same
 time, so this command never guarantees that a write is allowed — which is why its result contains no
 `ALLOW`.
+
+### `sage audit show` — the difference in guarantees is not hidden
+
+The six sources carry different integrity guarantees. The screen reports that difference on two
+axes, `method` and `status`.
+
+| Source | `method` | Meaning |
+|---|---|---|
+| `review`, `fast` | `strict_chain` | An append-ordered hash chain is verified |
+| `acceptance` | `semantic` | Only cross-record semantic rules are checked; there is no tamper resistance |
+| `retro` | `structural` | Structural parsing only |
+| `override`, `feedback` | `none` | No validation at all |
+
+A source without validation is never shown as `valid` by any path. `.sage/override.jsonl` is a
+**tracking copy**; the enforcing record lives in the local state home. Divergence between the two is
+not detected by this command, and that fact is shown every time you read it.
+
+Older records without integrity fields are `legacy` and exit `0`. That means those records carry no
+guarantee, not that they are damaged — treating it as failure would turn every repository with past
+runs red.
+
+The command is read-only and **neither creates nor acquires a lock.** It can therefore observe a
+file mid-append, and that state is surfaced as `audit.source.concurrent_change` rather than hidden —
+there is no path that reports a partial result as normal.
+
+Absolute paths, `HOME`, and vault paths never appear in any output. Path fields and free-text fields
+such as `reason` are both checked by value, replaced with `<redacted-path>`, and the replacement is
+recorded as a diagnostic.
+
+`--json` has exactly twelve top-level keys: `schema_version`, `ok`, `status`, `exit_code`,
+`ordering`, `selection`, `sources`, `events`, `returned`, `omitted`, `truncated`, `diagnostics`.
+`ok` is `exit_code == 0`, `returned` is the number of events actually included, `omitted` is how
+many `--limit` left out, and `truncated` is the boolean `omitted > 0`. `truncated` does not double
+as a count because `0` would then mean both "false" and "nothing omitted".
+
+`diagnostics` is the single home for diagnostics, and which source a diagnostic belongs to is
+carried by `evidence.source`. `sources` holds no copy — when the same fact lives in two places
+there is nothing to decide which one is right once they diverge.
+
+`--limit` defaults to 100 and its range is 1-10000. Values outside the range are rejected with
+exit `2` rather than quietly clamped — `0` does not mean unlimited. Clamping would make the value
+you asked for differ from the value you got, with nothing on screen saying so.
+
+A retro note path is never printed, even when it is a valid repository-relative path. The query
+answers only whether a note existed (`vault_note_present`) and whether a digest was recorded
+(`digest_present`) — this is a place where the reason to hide is not "the path escaped" but the
+value itself.
+
+Each source state carries both `policy` (`shared`/`local`) and `tracking` (the actual Git state).
+Folding them into one value would make "should be committed but isn't" and "personal record by
+design" read the same.
+
+A source's `present` has **three** states. Beyond present and absent, there is the state where
+the tool could not read the source and therefore **could not determine** it: text prints
+`present=unknown` and JSON emits `null`. Folding it into two would make a tool failure read as
+"no records".
+
+There is exactly **one** gate to the local sources: `--include-local`. Passing `--source retro`
+without it exits `2` rather than returning an empty result — an empty result reads as "there are no
+records in that source".
+
+Cross-source time ordering is **display order only**, not causal or authoritative order, and the
+output says so. The result is never an input to any gate.
 
 ## Common exit codes
 

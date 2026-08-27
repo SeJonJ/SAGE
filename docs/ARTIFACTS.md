@@ -10,7 +10,7 @@ SAGE를 돌리면 여러 리소스가 **서로 다른 목적으로 서로 다른
 
 - **판단은 AI(host), 배치·게이트는 결정론 코드** — 산출물의 *위치*는 CLI/hook이 결정론으로 정합니다.
 - **vault 단일 쓰기경로** — Obsidian 노트/log/index는 오직 `sage knowledge write-back`(및 그 계열)만 씁니다.
-- **Obsidian 미사용 시 `.sage`, 사용 시 vault** — `knowledge_capture.vault_path`가 비면 지식노트는 vault 대신 `.sage/` 흔적으로만 남습니다.
+- **정본은 언제나 `.sage`, vault는 파생 뷰** — Obsidian을 쓰든 안 쓰든 PDCA 실행 정본과 감사 기록은 `.sage/`에 있습니다. `knowledge_capture.vault_path`가 비면 파생 뷰만 생기지 않을 뿐 잃는 정본은 없고, vault를 지워도 감사는 그대로입니다. 정본의 위치가 Obsidian 사용 여부에 따라 달라진다고 읽으면, vault를 백업 대상으로 오해하게 됩니다.
 
 ---
 
@@ -18,7 +18,7 @@ SAGE를 돌리면 여러 리소스가 **서로 다른 목적으로 서로 다른
 
 | 위치 | 성격 | 대표 산출물 | 생성 주체 |
 |---|---|---|---|
-| `<root>/.sage/` | PDCA 실행 정본 (공유 감사 4종만 커밋) | 커밋: `override.jsonl` · `acceptance-waivers.jsonl` · `loop_audit.jsonl` · `fast_cycle.jsonl` / 로컬: `retro_audit.jsonl` · `plan_interview.md` · `knowledge_scan.md` · `tmp/` · `context/` | CLI · 스킬 · hook |
+| `<root>/.sage/` | PDCA 실행 정본 (공유 감사 4종만 커밋) | 커밋: `override.jsonl` · `acceptance-waivers.jsonl` · `loop_audit.jsonl` · `fast_cycle.jsonl` / 로컬: `retro_audit.jsonl` · `feedback.jsonl` · `plan_interview.md` · `knowledge_scan.md` · `tmp/` · `context/` | CLI · 스킬 · hook |
 | `<root>/<host>/logs/` | 세션 단위 hook 기록 | `session-<date>.jsonl` · `compliance-<date>.md` · `declared-risk-<sid>.json` | hook 어댑터 |
 | Obsidian vault (`vault_path`/folder) | 최종 지식노트 | write-back TECH 노트 · loop/Fast audit 대시보드 · retro 노트 · `log.md` | `sage knowledge` · `review-loop` · `fast-cycle` · `retro` |
 | `<root>/sage/asset_overrides/` | CORE 오버레이 (커밋 대상, install 미배포) | `agents/<id>.md` · `skills/<id>.md` | 사람 작성 (absorb 안내) |
