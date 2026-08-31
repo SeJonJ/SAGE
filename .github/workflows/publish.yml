@@ -25,6 +25,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      # preflight 는 catalog·localization·upgrade 검사에서 프로젝트 의존성을 import 한다.
+      # 이 단계가 없으면 세 검사가 ModuleNotFoundError 로 떨어지고, 그건 증거 불일치가 아니라
+      # 환경 결손인데 화면에서는 구별되지 않는다. ci.yml 의 release_evidence 와 같은 환경을 만든다.
+      - name: Install (editable + schema extra)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[schema]"
+
       - name: Publish preflight (증거 불일치면 여기서 차단 — publish 는 되돌릴 수 없다)
         run: python scripts/ci/publish_preflight.py --tag "${{ github.ref_name }}"
       - name: Install build tools
