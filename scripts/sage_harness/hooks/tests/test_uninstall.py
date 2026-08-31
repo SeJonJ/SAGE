@@ -2046,6 +2046,35 @@ class SmokeIsolation(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("user-site only", result.stdout)
 
+    def test_the_smoke_summary_survives_a_windows_cp1252_console(self):
+        """Windows 기본 stdout 이 cp1252 여도 성공 요약 때문에 job 이 실패하지 않는다.
+
+        실제 계약 검사를 전부 마친 뒤 마지막 한글 요약에서 `UnicodeEncodeError` 가 나면 CI 는
+        실패하고, AC30w 는 검증된 동작을 갖고도 실행 증거를 만들지 못한다. `run_case` 만 비워
+        외부 작업 없이 **실제 main 출력 경계**를 cp1252 자식 프로세스에서 밟는다.
+        """
+        path = os.path.join(REPO, "scripts", "ci", "uninstall_smoke.py")
+        probe = (
+            "import importlib.util\n"
+            f"path = {path!r}\n"
+            "spec = importlib.util.spec_from_file_location('uninstall_smoke_cp1252', path)\n"
+            "module = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(module)\n"
+            "module.PATH_SHAPES = (('plain', 'proj', 'codex'),)\n"
+            "module.CODEX_MODES = ('custom',)\n"
+            "module.run_case = lambda *args: None\n"
+            "raise SystemExit(module.main())\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", probe],
+            env={**os.environ, "PYTHONIOENCODING": "cp1252"},
+            capture_output=True,
+        )
+        self.assertEqual(
+            result.returncode, 0,
+            result.stderr.decode("utf-8", errors="replace"),
+        )
+
 
 class WriteIntegrity(Base):
     """쓰기가 **끝까지** 됐는지 확인한다 — 잘려 쓰인 공유 파일은 사용자 데이터 손실이다."""

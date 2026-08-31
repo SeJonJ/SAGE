@@ -142,7 +142,7 @@ def main():
             print(f"--- {label} / CODEX_HOME={mode} ---")
             run_case(label, project_name, codex_name, mode)
     print(f"OK  ({sys.platform}, python {sys.version.split()[0]}) "
-          f"— {len(PATH_SHAPES) * len(CODEX_MODES)} path/CODEX_HOME 조합")
+          f"-- {len(PATH_SHAPES) * len(CODEX_MODES)} path/CODEX_HOME combinations")
     return failures
 
 
@@ -223,7 +223,7 @@ def run_case(label, project_name, codex_name, codex_mode):
                 fail("unsafe platform did not refuse to mutate", refusal)
             if tree(project) != before:
                 fail("a refused run still changed the project")
-            print("  refused to mutate on this platform (expected) — "
+            print("  refused to mutate on this platform (expected) -- "
                   "Windows mutation-refusal contract verified")
             return
 
