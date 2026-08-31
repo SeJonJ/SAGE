@@ -3,7 +3,7 @@
 Cycle-Stem: `sage-uninstall`
 Document-Language: ko
 Risk Level: L3
-Done-Criteria-Revision: 10
+Done-Criteria-Revision: 11
 Status: READY
 Phase03-Entry: READY (Phase 02 §10.7 — UD-1~UD-6 확정·R1~R7 대조 완료, 2026-08-27)
 
@@ -440,13 +440,14 @@ SAGE CLI로 사이클을 열지 않으므로 cycle 결속은 문서 규약으로
 - [x] 실패 주입 7지점에서 bytes·mode·symlink·tree가 복원된다.
 - [x] lock 경쟁·권한·광범위 경로·path escape·symlink ancestor·manifest 교체·확인 후 동시 변경이 검증됐다.
 - [x] v0.9.84 소비자를 upgrade 없이 uninstall할 수 있다.
-- [ ] Python 3.10·3.11·3.12에서 통과한다. **Linux·macOS는 실제 실행**이고, **Windows는 계획
+- [x] Python 3.10·3.11·3.12에서 통과한다. **Linux·macOS는 실제 실행**이고, **Windows는 계획
   실행 성공 + mutation 거부(exit 2) + 무변경**이다 — Windows는 상위 디렉터리 교체 경쟁을 막을
   수단(`dir_fd`)이 없어 안전한 제거를 보장할 수 없다. 안전 구현은 EH-30으로 이관했다.
   (사용자 결정 (b), 2026-08-29 Asia/Seoul)
-  **미해결로 두는 이유:** 로컬은 이번 회차에 인터프리터 하나(3.14)로만 돌렸고 다중 버전 매트릭스와
-  Linux·Windows 러너는 원격 CI 몫이다. 정의(`uninstall_matrix` 9조합)는 있으나 **정의가 있다는
-  것이 실행 증거는 아니다** — UNI-AC26·UNI-AC30·UNI-AC30w 는 NOT TESTED 다.
+  **실행 증거:** GitHub Actions run `33357375454`(소스 `142764e`)의
+  `uninstall consumer contract` 9 job이 모두 통과했다. Ubuntu·macOS는 Python
+  3.10·3.11·3.12에서 실제 제거, Windows는 같은 3개 버전에서 계획 성공·mutation
+  거부(exit 2)·무변경을 확인했다.
 - [x] 공백·Unicode 프로젝트 경로에서 통과한다.
 - [x] 기본·사용자 지정 `$CODEX_HOME`에서 통과한다.
 - [x] 모든 로컬 fixture가 `sage_project_worktree` 아래 고유 자식 폴더만 사용했다.
@@ -474,6 +475,13 @@ SAGE CLI로 사이클을 열지 않으므로 cycle 결속은 문서 규약으로
 - [x] 문서 구간에서 코드·테스트·fixture를 만들지 않았다.
 
 ## 6. Done Criteria Revision Log
+
+### Revision 11
+
+- Changed-At: Phase 05
+- Reason: 로컬에서 만들 수 없던 UNI-AC26·UNI-AC30·UNI-AC30w의 원격 OS·Python 증거가 생겼다. 첫 CI에서 Windows cp1252 출력 결함을 실제로 잡아 ASCII 안전 출력으로 수정한 뒤 전체 매트릭스를 재실행했다.
+- Affected-Phases: 01, 02, 03, 04, 05
+- Summary: GitHub Actions run `33357375454`(소스 `142764e`)에서 Ubuntu·macOS·Windows × Python 3.10·3.11·3.12의 `uninstall consumer contract` 9 job이 모두 통과했다. Linux·macOS는 실제 제거, Windows는 계약대로 계획 성공·mutation 안전 거부·무변경을 검증했다. Done Criteria 미해결 1건과 Phase 04 `NOT TESTED` 3건을 실행 증거로 닫고 Phase 05를 `APPROVED`로 판정한다.
 
 ### Revision 3
 
