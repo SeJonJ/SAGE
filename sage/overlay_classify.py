@@ -30,22 +30,12 @@ import os
 
 from sage.diagnostics import Diagnostic
 from sage import overlay_common as _oc
+from sage import managed_assets as _managed
 
-# CORE 자산 정본 roster. install._CORE_AGENTS / _CORE_SKILLS / _CORE_BOOTSTRAP_SKILLS 와
-# 일치해야 한다(test_overlay_classify 가 대조). 여기 두는 이유: install 이 이 모듈을 import
-# 하므로 역참조(circular) 회피.
-CORE_IDS = {
-    "agents": frozenset({
-        "leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker",
-    }),
-    "skills": frozenset({
-        "sage-cycle", "sage-plan", "sage-team", "sage-review", "sage-asset",
-        "sage-profile-modify", "sage-asset-override", "sage-feedback",
-        "sage-cycle-fast", "sage-plan-fast", "sage-team-fast",
-        "sage-init", "sage-init-local",
-    }),
-    "framework": frozenset({"AGENT_GUIDE", "CLAUDE", "CODEX", "AGENTS"}),
-}
+# CORE 자산 roster 는 `sage.managed_assets` 가 소유한다. 여기서는 참조만 한다 — 목록을 두 벌로
+# 두면 검사가 없는 순간 갈라지고, 그 갈라짐은 install 과 uninstall 사이에서 조용히 자산을
+# 남기거나 지운다. `managed_assets` 는 아무것도 import 하지 않으므로 역참조가 생기지 않는다.
+CORE_IDS = _managed.core_ids()
 
 # 물리 합성 허용 자산 (a)/(b). 입증된 비게이트 워커만 연다:
 # implementer-a/-b 는 순수 실행 워커라 어떤 워크플로 게이트도 소유하지 않는다 → 오버레이가

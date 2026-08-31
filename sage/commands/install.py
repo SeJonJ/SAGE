@@ -26,25 +26,23 @@ from sage import _resources   # 번들 리소스 경로 단일 해석(env overri
 from sage.diagnostics import Diagnostic
 from sage.runtime_api import HOOK_RUNTIME_API
 from sage import overlay_common   # 오버레이 관리 블록 프리미티브(base_of 로 렌더 base 대조)
+from sage import manifest_contract as _manifest_contract
 from sage import overlay_materialize   # CORE 렌더 오버레이 물리화 + core_renders 앵커
 from sage import install_transaction as _tx
+from sage import managed_assets as _managed
 from sage.i18n import exception_text, language_of, render_issue, tr
 
 # CORE roster (중립 6인) + CORE hook 7종(form) + CORE skill 13종. 도메인값 아님 = framework 메타.
 # skill 3분할: sage-cycle(00~06 우산) → sage-plan(00~02 기획) → sage-team(03~06 개발).
 # sage-asset-override: CORE 자산 오버레이(sage/asset_overrides/**) 저작 — CORE 렌더 직접수정 대체 경로.
-_CORE_AGENTS = ["leader", "implementer-a", "implementer-b", "qa", "reviewer", "convention-checker"]
-# sage-feedback: 완료 사이클 코드의 개발자 의문 마커(`sage-feedback ::`) 해소 — 사이클 밖 독립 실행.
-_CORE_SKILLS = ["sage-cycle", "sage-plan", "sage-team", "sage-review", "sage-asset", "sage-profile-modify",
-                "sage-asset-override", "sage-feedback",
-                "sage-cycle-fast", "sage-plan-fast", "sage-team-fast"]
-_CORE_BOOTSTRAP_SKILLS = ["sage-init", "sage-init-local"]
-# 은퇴한 CORE skill 이름 — install 시 잔존 사본을 정리(rename 수렴). 이름이 바뀌면 옛 이름을 여기 추가.
-# sage-pdca-start → sage-plan 으로 3분할 rename(옛 이름 잔존 사본 정리). pdca-start 는 그 이전 rename.
-_LEGACY_CORE_SKILLS = ["pdca-start", "sage-pdca-start"]
-# SAGE 가 hand-ship 하는 모든 CORE skill SKILL.md 에 들어있는 마커. 정리 전 SAGE 자산 확인용
-# (codex 전역처럼 공유 공간에서 동명의 사용자 skill 을 오삭제하지 않도록).
-_LEGACY_SKILL_SIGNATURE = "CORE framework bootstrap asset"
+# roster 정본은 `sage.managed_assets` 다. 여기서는 목록을 다시 쓰지 않고 이름만 빌려 온다 —
+# 기존 소비자(`generate`·`validate`·테스트)가 이 이름들을 import 하므로 이름은 유지한다.
+# list() 로 감싸는 것은 기존 호출부가 list 를 기대하기 때문이고, 의미는 바뀌지 않는다.
+_CORE_AGENTS = list(_managed.CORE_AGENTS)
+_CORE_SKILLS = list(_managed.CORE_SKILLS)
+_CORE_BOOTSTRAP_SKILLS = list(_managed.CORE_BOOTSTRAP_SKILLS)
+_LEGACY_CORE_SKILLS = list(_managed.LEGACY_CORE_SKILLS)
+_LEGACY_SKILL_SIGNATURE = _managed.LEGACY_SKILL_SIGNATURE
 _LOCAL_PROFILE_IGNORE_START = "# >>> SAGE LOCAL PROFILE"
 _LOCAL_PROFILE_IGNORE_END = "# <<< SAGE LOCAL PROFILE"
 _LOCAL_PROFILE_IGNORE_ENTRY = "/sage/project-profile.local.yaml"
@@ -59,15 +57,7 @@ _LOCAL_STATE_IGNORE_ENTRIES = (
     "!/.sage/fast_cycle.jsonl",
 )
 _RETRO_AUDIT_REL = os.path.join(".sage", "retro_audit.jsonl")
-_CORE_HOOKS = [
-    ("capture-declared-risk", "core_adapter"),
-    ("post-tool-logger", "core_adapter"),
-    ("pre-implementation-gate", "core_adapter"),
-    ("pre-phase4-checklist-gate", "core_adapter"),
-    ("session-start-snapshot", "core_adapter"),
-    ("stop-compliance-report", "core_adapter"),
-    ("generated-artifact-write-guard", "core_adapter"),
-]
+_CORE_HOOKS = [tuple(entry) for entry in _managed.CORE_HOOKS]
 _SKIP_DIRS = {"tests", "__pycache__"}
 
 
@@ -688,166 +678,47 @@ def _load_manifest(dest):
     return m if isinstance(m, dict) else None
 
 
-_ASSET_FORMS = ("native", "core_adapter", "interpretive", "declarative")
-_CONFORMANCE_VALUES = ("PASS", "FAIL", "STALE", "UNKNOWN")
-_ASSET_KEYS = {
-    "spec_hash", "claims_hash", "canonical_hash", "adapter_hash",
-    "adapter_contract_version", "render_hash", "conformance", "form",
-    "runtime_targets", "test", "safety_degraded", "l3_review_strategy",
-    "risk", "unresolved", "origin",
-}
-_PREFIXED_SHA_RE = re.compile(r"sha256:[0-9a-f]{64}")
-
-
 def _asset_entry_issue(value, language=None):
-    """Validate one asset entry against manifest.schema.json without jsonschema."""
-    if not isinstance(value, dict):
-        return tr(language, "cli.install.asset_not_mapping")
-    unknown = sorted(set(value) - _ASSET_KEYS)
-    if unknown:
-        return tr(language, "cli.install.asset_unknown_fields", fields=", ".join(unknown))
-    if value.get("form") not in _ASSET_FORMS:
-        return tr(language, "cli.install.asset_form_invalid")
-    if value.get("conformance") not in _CONFORMANCE_VALUES:
-        return tr(language, "cli.install.asset_conformance_invalid")
-
-    for key in ("spec_hash", "claims_hash", "canonical_hash"):
-        if key in value and (not isinstance(value[key], str)
-                             or _PREFIXED_SHA_RE.fullmatch(value[key]) is None):
-            return tr(language, "cli.install.asset_hash_format_invalid", field=key)
-
-    for key, allowed in (("adapter_hash", {"claude", "codex"}),
-                         ("render_hash", {"claude", "codex", "native"})):
-        if key not in value:
-            continue
-        hashes = value[key]
-        if not isinstance(hashes, dict) or not hashes:
-            return tr(language, "cli.install.asset_key_not_nonempty_mapping", field=key)
-        unknown_targets = sorted(set(hashes) - allowed)
-        if unknown_targets:
-            return tr(language, "cli.install.asset_key_unknown_targets", field=key,
-                      targets=", ".join(unknown_targets))
-        for target, digest in hashes.items():
-            if (not isinstance(digest, str)
-                    or _PREFIXED_SHA_RE.fullmatch(digest) is None):
-                return tr(language, "cli.install.asset_key_target_hash_invalid", field=key, target=target)
-
-    for key in ("adapter_contract_version", "test", "l3_review_strategy"):
-        if key in value and not isinstance(value[key], str):
-            return tr(language, "cli.install.asset_key_not_string", field=key)
-    if "safety_degraded" in value and not isinstance(value["safety_degraded"], bool):
-        return tr(language, "cli.install.asset_safety_degraded_not_bool")
-    if "runtime_targets" in value:
-        targets = value["runtime_targets"]
-        if (not isinstance(targets, list)
-                or any(target not in ("claude", "codex") for target in targets)):
-            return tr(language, "cli.install.asset_runtime_targets_invalid")
-    if "origin" in value and value["origin"] != "project":
-        return tr(language, "cli.install.asset_origin_invalid")
-    for key in ("risk", "unresolved"):
-        if key in value:
-            items = value[key]
-            if not isinstance(items, list) or any(not isinstance(item, str) for item in items):
-                return tr(language, "cli.install.asset_key_not_string_array", field=key)
-    return None
+    """자산 항목 하나의 문제를 문장으로. 판정은 `manifest_contract` 가 소유한다."""
+    broken = _manifest_contract.asset_entry_violation(value)
+    if broken is None:
+        return None
+    fields = {name: item for name, item in broken.items() if name not in ("kind", "code")}
+    return tr(language, f"cli.install.{broken['code']}", **fields)
 
 
 def _valid_asset_entry(value):
-    return _asset_entry_issue(value) is None
-
-
-# managed framework doc 은 엔진 정본과 설치본이 다른 파일이라, 설치본 해시만으로는 "정본이 바뀌었다"와
-# "설치본이 손댔다"를 구분할 수 없다. 그 둘만 semantic_source 쌍을 함께 기록한다.
-_CORE_RECEIPT_KEYS = {"base_sha256", "sage_version"}
-_CORE_RECEIPT_OPTIONAL = {"semantic_source", "semantic_source_sha256"}
+    return _manifest_contract.asset_entry_violation(value) is None
 
 
 def _valid_core_receipt(receipt):
-    if not isinstance(receipt, dict):
-        return False
-    if not _CORE_RECEIPT_KEYS <= set(receipt) <= (_CORE_RECEIPT_KEYS | _CORE_RECEIPT_OPTIONAL):
-        return False
-    base_sha = receipt.get("base_sha256")
-    if not (isinstance(base_sha, str) and re.fullmatch(r"[0-9a-f]{64}", base_sha) is not None
-            and isinstance(receipt.get("sage_version"), str)):
-        return False
-    # 한쪽만 있으면 정본을 지목하지 못하거나 지목만 하고 대조할 값이 없다 — 둘 다이거나 둘 다 아니어야 한다.
-    present = _CORE_RECEIPT_OPTIONAL & set(receipt)
-    if not present:
-        return True
-    if present != _CORE_RECEIPT_OPTIONAL:
-        return False
-    source_sha = receipt.get("semantic_source_sha256")
-    return (isinstance(receipt.get("semantic_source"), str)
-            and isinstance(source_sha, str)
-            and re.fullmatch(r"[0-9a-f]{64}", source_sha) is not None)
+    return _manifest_contract.core_render_receipt_violation("", receipt) is None
 
 
 def _valid_core_skill_receipt(receipt):
-    return (isinstance(receipt, dict)
-            and set(receipt) == {"scope", "sage_version"}
-            and receipt.get("scope") in ("global", "project-local", "disabled")
-            and isinstance(receipt.get("sage_version"), str))
+    return _manifest_contract.core_skill_receipt_shape(receipt)
 
 
 def _manifest_structure_issue(manifest, language=None):
-    """Return a fail-closed issue for fields install would otherwise normalize or discard."""
-    if not isinstance(manifest.get("sage_version"), str):
-        return tr(language, "cli.install.manifest_sage_version_not_string")
-    if manifest.get("host_runtime") not in ("claude", "codex"):
-        return tr(language, "cli.install.manifest_host_runtime_invalid")
-    assets = manifest.get("assets")
-    if not isinstance(assets, dict):
-        return tr(language, "cli.install.manifest_assets_not_mapping")
-    for key, value in assets.items():
-        if not isinstance(key, str):
-            return tr(language, "cli.install.manifest_assets_entry_invalid", field=repr(key))
-        issue = _asset_entry_issue(value, language)
-        if issue:
-            return f"assets/{key}/{issue}"
+    """Return a fail-closed issue for fields install would otherwise normalize or discard.
 
-    if "installed_hosts" in manifest:
-        hosts = manifest["installed_hosts"]
-        if (not isinstance(hosts, list) or not hosts
-                or any(host not in ("claude", "codex") for host in hosts)
-                or len(hosts) != len(set(hosts))):
-            return tr(language, "cli.install.manifest_installed_hosts_invalid")
-        if manifest["host_runtime"] not in hosts:
-            return tr(language, "cli.install.manifest_installed_hosts_missing_primary")
+    판정은 `manifest_contract` **하나**가 한다. 같은 파일을 uninstall 도 소유권 증거로 읽는데,
+    읽는 쪽마다 기준을 따로 두면 **가장 느슨한 쪽이 실제 기준**이 된다. 실제로 그렇게 갈라진
+    적이 있다 — 여기서는 `core_renders` receipt 의 SHA-256 을 대조했고 uninstall 은 그것이
+    dict 인지만 봤다. 그래서 빈 receipt 를 가진 manifest 가 install 에서는 거부되고 uninstall
+    에서는 소유권 증거로 통과해, 사용자가 자기 내용으로 바꿔 둔 파일이 `DELETE` 됐다.
 
-    if "core_renders" in manifest:
-        renders = manifest["core_renders"]
-        if not isinstance(renders, dict):
-            return tr(language, "cli.install.manifest_core_renders_not_mapping")
-        for key, receipt in renders.items():
-            if not isinstance(key, str) or not isinstance(receipt, dict):
-                return tr(language, "cli.install.manifest_core_renders_entry_invalid", field=repr(key))
-            if not _valid_core_receipt(receipt):
-                unknown = sorted(set(receipt) - _CORE_RECEIPT_KEYS - _CORE_RECEIPT_OPTIONAL)
-                if unknown:
-                    return tr(language, "cli.install.manifest_core_render_unknown_fields",
-                              field=key, fields=", ".join(unknown))
-                partial = _CORE_RECEIPT_OPTIONAL & set(receipt)
-                if partial and partial != _CORE_RECEIPT_OPTIONAL:
-                    missing = sorted(_CORE_RECEIPT_OPTIONAL - partial)
-                    return tr(language, "cli.install.manifest_core_render_semantic_source_incomplete",
-                              field=key, missing=", ".join(missing))
-                base_sha = receipt.get("base_sha256")
-                if isinstance(base_sha, str) and re.fullmatch(r"[0-9a-f]{64}", base_sha):
-                    return tr(language, "cli.install.manifest_core_render_sage_version_invalid", field=key)
-                return tr(language, "cli.install.manifest_core_render_base_sha_invalid", field=key)
-    if "core_skill_receipts" in manifest:
-        receipts = manifest["core_skill_receipts"]
-        if not isinstance(receipts, dict):
-            return tr(language, "cli.install.manifest_core_skill_receipts_not_mapping")
-        for host, receipt in receipts.items():
-            if host not in ("claude", "codex"):
-                return tr(language, "cli.install.manifest_core_skill_receipts_unknown_host", host=repr(host))
-            if not _valid_core_skill_receipt(receipt):
-                return tr(language, "cli.install.manifest_core_skill_receipt_invalid", host=host)
-            if host == "claude" and receipt["scope"] != "project-local":
-                return tr(language, "cli.install.manifest_core_skill_receipt_claude_scope")
-    return None
+    이 함수에 남은 일은 **code 를 문장으로 만드는 것뿐**이다. 판정을 여기 한 줄이라도 남기면
+    그 줄이 다음 갈라짐의 씨앗이 된다.
+    """
+    broken = _manifest_contract.violation(manifest)
+    if broken is None:
+        return None
+    asset = broken.get("asset")
+    fields = {name: value for name, value in broken.items()
+              if name not in ("kind", "code", "asset")}
+    message = tr(language, f"cli.install.{broken['code']}", **fields)
+    return f"assets/{asset}/{message}" if asset is not None else message
 
 
 def _manifest(host, existing=None, core_renders=None, skill_scope=None):
@@ -1415,8 +1286,13 @@ def _run_locked(args) -> int:
     else:
         _copy_file(os.path.join(fw, "scripts", "verify-changes.sh"),
                    verify_dst, args.force, created, skipped, transaction=transaction)
-    _copy_tree(os.path.join(fw, "docs", "agent"), os.path.join(dest, "docs", "agent"), args.force,
-               created, skipped, transaction=transaction)
+    # tree 째 복사하지 않고 정본 목록으로 배치한다. uninstall 이 같은 함수를 보므로, 배치한
+    # 것과 지우는 것이 같은 목록이라는 사실이 코드에서 성립한다 — 대조 테스트가 아니라 구조로.
+    for _agent_doc in _managed.framework_agent_docs(fw):
+        _agent_src = os.path.join(fw, "docs", "agent", _agent_doc)
+        if os.path.isfile(_agent_src):
+            _copy_file(_agent_src, os.path.join(dest, "docs", "agent", _agent_doc), args.force,
+                       created, skipped, transaction=transaction)
 
     # 2b. 대화형 부트스트랩 트리거 — profile 을 대화로 채우는 설계상 진입점(런타임별 발견 메커니즘 상이).
     agents_md_collision = False

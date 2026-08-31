@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:b12d60cd5bce8aaaf211a56143f8f6dcf1d56b0f6352cf7262b7d5becf005497 -->
+<!-- sage-doc-source: cli-reference.md sha256:0c4ce2eee54b3c16b7ad4326ae90fa57e5f042f4db74b104d397cb06f51f1f00 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -45,6 +45,140 @@ declared — both are empty when it is not. `plan_reads()` must return exactly `
 a missing `globs` key is a contract failure.
 Directories matched by recursive globs are skipped; root escapes including symlink ancestors,
 symlink leaf matches, and other non-regular paths are contract failures.
+
+### `sage uninstall [--global|--all]`
+
+Reverses what SAGE installed. **It never removes the package itself** — uninstall the CLI separately
+with `pipx uninstall sage-harness`.
+
+| Scope | Target |
+|---|---|
+| `sage uninstall [--dest PATH]` | SAGE assets in the current (or given) project |
+| `sage uninstall --global` | Codex global SAGE CORE skills under `$CODEX_HOME/skills/` |
+| `sage uninstall --all [--dest PATH]` | Both, as one transaction |
+
+The order is the contract: print an immutable plan (baseline captured) → confirm or `--yes` →
+ordered lock → compare the fingerprint → re-check the boundary → back up → execute → verify →
+commit → cleanup → unlock. `--check` stops after the first step and changes nothing — it does not
+even take the lock. Cancelling ends at `CANCELLED(0)` without a single byte changed.
+
+**The baseline is from the moment the plan was shown to you.** If you edit a target file while the
+confirmation prompt is open, nothing is removed and the run stops with `BLOCKED(2)` — the state you
+agreed to and the disk no longer agree. Directories are compared down to the files inside them.
+
+If another SAGE command is working on the same location, the run is blocked. It takes the **same
+lock** as `install` and `generate`, so one side can never place files while the other removes them.
+The lock is released when the process exits, so there is no lock file for you to clean up.
+
+A cleanup failure is **still a success.** The requested removal already finished; we only report the
+temporary backup paths we could not clear.
+
+**Ownership is never assumed.** Only SAGE-owned directories and assets the manifest recorded are
+removed. `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, and `AGENT_GUIDE.md` cannot be proven to have been
+absent before install, so they are **always preserved** and reported with their paths and reasons. A
+global copy that differs from the project render was edited, so it is left alone. There is no
+`--force` and no ownership override.
+
+Shared files lose only their SAGE parts: the `.gitignore` managed blocks and the SAGE hook
+registrations in host JSON. If the markers are not a well-formed pair, or the JSON cannot be read,
+the **whole file is preserved** — repairing damage on a guess makes user content disappear quietly.
+
+A host settings file resolves to one of three registration states: **present**, **absent**, or
+**unknown**. Broken syntax, non-UTF-8 bytes, and a read that is denied are *unknown*, never absent —
+folding what could not be read into "not there" turns absence into a pass, and a pass leads to
+deletion. Even an unknown file is reported as preserved when the manifest's `installed_hosts` proves
+SAGE installed into that host.
+
+**While an untouched host settings file remains, the install record (`docs/sage_harness`) is kept
+with it.** Discarding the receipt first would leave the next run with no way to prove why that file
+is there. Every run in that state is a `PARTIAL(1)` that changes nothing and repeats the same paths.
+Only once the user repairs the file — so the SAGE registration can actually be removed — is the
+install record deleted, as the last asset. Removing the CLI package while residue remains makes the
+host invoke a missing executable, so that ordering is called out too.
+
+Damage is reported as **coordinates**, not as one flattened sentence: the JSON pointer with expected
+and actual types, the line and column of a syntax error, the byte offset of a UTF-8 error, and the
+errno name of a failed read. Configuration values, command strings, surrounding JSON, and raw OS
+exception text are never included — that content belongs to the user and flows into logs and CI
+output. A JSON key that is not identifier-shaped is redacted from the pointer: losing the coordinate
+costs less than leaking the value.
+
+The default (project) scope **neither reads nor writes** `$CODEX_HOME`. It therefore makes no claim
+about what remains globally; it states that the global scope was not inspected and points at `--all`.
+
+| Status | exit | Meaning |
+|---|---:|---|
+| `COMPLETE` | 0 | Everything planned was removed, nothing needs manual review |
+| `PARTIAL` | 1 | Safe deletions committed, preserved paths remain |
+| `BLOCKED` | 2 | No safe plan could be made, or a rollback was attempted after failure |
+| `CANCELLED` | 0 | The user cancelled before any mutation |
+
+`PARTIAL(1)` is **not a failure**. Preserving the top-level shared documents is the ordinary outcome
+and lands here. If automation needs to read that distinction, use `--json` — there is deliberately no
+`--allow-partial` style flag that changes exit codes. Returning `0` would make "only part of it was
+removed" indistinguishable from success, and that distinction is the point of this command. `--json`
+Host settings are read as standard JSON only. A duplicate key within one object, or `NaN`/`Infinity`,
+is treated as damage — reading leniently would mean the document we read differs from the one the host
+reads, and for a removal command that difference becomes "what we said we removed is not what we
+removed".
+
+Hook handlers have **a different contract per kind**. The `type` is resolved first, then `command`
+requires `command`, `http` requires `url`, `mcp_tool` requires `server` and `tool`, and `prompt` and
+`agent` require `prompt`.
+
+**Which kinds an event accepts also differs**, and we follow the host's published contract: some
+events accept all five kinds, some accept everything except `prompt` and `agent`, and `SessionStart`
+and `Setup` accept only `command` and `mcp_tool`. A handler an event does not accept makes the
+document one we do not understand, so the file is preserved rather than rewritten even when a SAGE
+registration is visible. For a host whose contract table we carry (currently Claude), an
+event missing from that table is likewise not assumed to allow everything — saying we do not know is
+better than guessing. Codex does not share Claude's table; it is tracked as a separate contract and is
+not restricted by kind until its own table is carried. SAGE ownership comparison and removal apply **only to `command` handlers**,
+so a normal `prompt`, `agent`, `http`, or `mcp_tool` hook sitting alongside ours is not reported as
+damage and stays untouched. Another kind that happens to carry a `command` property equal to ours is
+still not ours. An unknown kind, or a missing field required by its kind, preserves the file rather
+than rewriting it.
+
+Global assets come in two families (the CORE id name and the `<prefix>-<aid>` render), so a given
+configuration can make both point at **the same path**. When that happens neither one wins: the whole
+plan ends as `BLOCKED(2)` with `uninstall.action_conflict`. Two pieces of evidence reaching different
+conclusions about one file means we do not know what that file is, and we do not pick an irreversible
+deletion from a state of not knowing.
+
+Strings the user wrote — a damaged manifest's keys, a host name — are never carried into diagnostics
+verbatim. Identifier-shaped names pass through; anything else is redacted and its position is given as
+an `index` instead.
+
+A manifest asset key must be exactly `<kind>s/<id>`. That value is appended to the global skill path
+as **a path fragment**, so a single key like `skills/../../../x` would make the plan point outside the
+project.
+
+`--json` consumes the same plan as the human-readable screen, so the two can never disagree, and it is
+byte-identical in either locale. Executing with `--json` requires `--yes`: the confirmation prompt and
+JSON are never mixed into one stream.
+
+Path display goes through **one function** shared by the screen and `--json`. Project assets appear
+relative to the repository root, global assets as `$CODEX_HOME/skills/...`, and control characters or
+newlines inside file names are escaped — printed raw, one list line becomes two, and a name someone
+else chose gets to forge a line in our output. A path pointing outside the write root is shown only as
+`<outside-project>` — that string was chosen by whatever tried to escape, not by us. That rendering
+is `path`; the old `project_path` field, which appended a relative path to an absolute one, is gone. Every entry also carries the reason code
+(`reason`), the structured damage facts (`detail`), and the registration state
+(`registration_state`).
+
+The install record (manifest) is first checked for **whether it can serve as ownership evidence**.
+Required fields, types, `installed_hosts`, `assets` entries, `core_renders` receipts, and skill
+receipts are validated **all the way down** by the **same contract** install uses, and a violation
+ends the run with `BLOCKED(2)` before any confirmation. An empty receipt means "we do not know what
+was placed", and deleting from a state of not knowing is deleting someone else's file.
+Reading an empty manifest as normal means "the install is proven and nothing was placed", which
+erases the evidence first and then reports nothing left to do. A destination that is the filesystem
+root or one of its direct children (`/usr`, `/opt`, `/Users`) is likewise `BLOCKED(2)` at planning
+time, with zero write targets. Even when planning hits input it cannot read, the result is a
+`BLOCKED(2)` JSON envelope rather than a traceback — for any input, the outcome is one of the four
+states.
+
+`--global` + `--all`, `--check` + `--yes`, and `--global` + `--dest` are usage errors (`2`).
 
 ## Validation and diagnostics
 

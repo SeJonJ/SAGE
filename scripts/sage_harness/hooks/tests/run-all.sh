@@ -401,5 +401,9 @@ echo "### 78. no-vault Golden E2E (격리 HOME·상태홈 · 정상 OFF ↔ 설�
 python3 "$HERE/test_no_vault_golden_e2e.py" || rc=1
 
 echo ""
+echo "### 79. sage uninstall (소유권 증명 · 계획 밖 거부 · scope 격리 · 통합 rollback)"
+python3 "$HERE/test_uninstall.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

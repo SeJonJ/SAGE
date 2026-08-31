@@ -16,11 +16,11 @@ from sage.i18n.parser import LanguageArgumentError, context_for
 from sage.commands import (install, generate, validate, asset_check, review, absorb, doctor, change,
                            override, review_loop, retro, knowledge, sync_overlays, acceptance_waiver,
                            authority, models, context, feedback, cycle, fast_cycle,
-                           upgrade, status, explain, audit)
+                           upgrade, status, explain, audit, uninstall)
 
 _COMMANDS = [install, generate, validate, asset_check, review, absorb, doctor, change, override,
              review_loop, retro, knowledge, sync_overlays, acceptance_waiver, authority, models, context,
-             feedback, cycle, fast_cycle, upgrade, status, explain, audit]
+             feedback, cycle, fast_cycle, upgrade, status, explain, audit, uninstall]
 
 
 # argparse 는 자기 문장을 gettext 로 만들고 그 catalog 는 SAGE 것이 아니다. 그래서 `--lang ko`
