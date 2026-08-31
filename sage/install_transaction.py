@@ -287,7 +287,7 @@ class InstallTransaction:
 
     def _actual(self, path, expected):
         form, _value = expected
-        return tree_fingerprint(path) if form == "tree" else path_fingerprint(path)
+        return self._measure(path, form)
 
     def verify_unconsumed(self):
         findings = []
@@ -334,8 +334,7 @@ class InstallTransaction:
             if output is None:
                 raise InstallDriftError(f"staged path has no recorded installer output: {path}")
             form, expected = output
-            actual = tree_fingerprint(path) if form == "tree" else path_fingerprint(path)
-            if actual != expected:
+            if self._measure(path, form) != expected:
                 raise InstallDriftError(f"staged installer output changed before rewrite: {path}")
             return
         self.verify_unconsumed()
@@ -347,15 +346,15 @@ class InstallTransaction:
         backup = self._backup_path(path) if existed else None
         if backup is not None and os.path.lexists(backup):
             raise FileExistsError(f"transaction backup collision: {backup}")
-        original = ("path", path_fingerprint(path))
+        original = ("path", self._measure(path, "path"))
         entry = (path, backup)
         self._entries.append(entry)
         self._staged[path] = entry
         self._originals[path] = original
         self._expected.pop(path, None)
         if backup is not None:
-            os.replace(path, backup)
-            if path_fingerprint(backup) != original[1]:
+            self._replace(path, backup)
+            if self._measure(backup, "path") != original[1]:
                 raise InstallDriftError(f"install input changed during backup rename: {path}")
 
     def stage_remove_tree(self, path):
@@ -367,14 +366,14 @@ class InstallTransaction:
         backup = self._backup_path(path)
         if os.path.lexists(backup):
             raise FileExistsError(f"transaction backup collision: {backup}")
-        original = ("tree", tree_fingerprint(path))
+        original = ("tree", self._measure(path, "tree"))
         entry = (path, backup)
         self._entries.append(entry)
         self._staged[path] = entry
         self._originals[path] = original
         self._expected.pop(path, None)
-        os.replace(path, backup)
-        if tree_fingerprint(backup) != original[1]:
+        self._replace(path, backup)
+        if self._measure(backup, "tree") != original[1]:
             raise InstallDriftError(f"install input tree changed during backup rename: {path}")
         self._outputs[path] = ("path", ("absent",))
         return True
@@ -394,18 +393,44 @@ class InstallTransaction:
 
     def record_output(self, path, recursive=False):
         path = os.path.abspath(path)
-        self._outputs[path] = (("tree", tree_fingerprint(path)) if recursive
-                               else ("path", path_fingerprint(path)))
+        form = "tree" if recursive else "path"
+        self._outputs[path] = (form, self._measure(path, form))
 
     def verify_outputs(self):
-        findings = verify_captured(self._outputs)
+        findings = []
+        for path, (form, expected) in sorted(self._outputs.items()):
+            try:
+                actual = self._measure(path, form)
+            except (OSError, InstallDriftError) as exc:
+                findings.append(Diagnostic("install.path_unreadable", path=path,
+                                           evidence=str(exc)))
+                continue
+            if actual != expected:
+                findings.append(Diagnostic("install.input_changed_since_preflight", path=path))
         if findings:
             raise InstallDriftError(Diagnostic(
                 "install.outputs_changed_before_commit",
                 evidence="; ".join(str(item) for item in findings)))
 
-    @staticmethod
-    def _remove(path):
+    def _probe(self, path):
+        """`path` 자리에 무언가 있는가. 소비자가 해석 방식을 바꿀 수 있게 seam 으로 둔다."""
+        return os.path.lexists(path)
+
+    def _measure(self, path, form):
+        """`path` 의 지문. `form` 은 `"tree"` 또는 `"path"`."""
+        return tree_fingerprint(path) if form == "tree" else path_fingerprint(path)
+
+    def _replace(self, source, target):
+        """이름 하나를 다른 이름으로 옮긴다.
+
+        여기 seam 이 있는 이유는, 소비자에 따라 **경로가 아니라 열린 부모 handle 기준**으로
+        옮겨야 하기 때문이다. 경로로 옮기면 상위 디렉터리가 그 사이 symlink 로 바뀌었을 때
+        전혀 다른 자리로 옮기게 되고, `O_NOFOLLOW` 는 마지막 성분만 보므로 그것을 막지 못한다.
+        기본 구현은 경로 기준이고 install 의 동작은 그대로다.
+        """
+        os.replace(source, target)
+
+    def _remove(self, path):
         if not os.path.lexists(path):
             return
         if os.path.isdir(path) and not os.path.islink(path):
@@ -418,23 +443,23 @@ class InstallTransaction:
         declared = self._declared_outputs.get(path)
         original = self._originals.get(path)
         backup_required = backup is not None
-        if backup_required and not os.path.lexists(backup):
-            if original is not None and os.path.lexists(path):
+        if backup_required and not self._probe(backup):
+            if original is not None and self._probe(path):
                 form, expected = original
-                actual = tree_fingerprint(path) if form == "tree" else path_fingerprint(path)
+                actual = self._measure(path, form)
                 if actual == expected:
                     return
             raise InstallDriftError(
                 f"transaction backup missing; current path preserved for recovery: {backup}")
 
-        if os.path.lexists(path):
+        if self._probe(path):
             if output is None:
                 if declared is None or not self._matches_declared_file(path, declared):
                     raise InstallDriftError(
                         f"unrecorded/concurrent path preserved; backup not restored: {path}")
             else:
                 form, expected = output
-                actual = tree_fingerprint(path) if form == "tree" else path_fingerprint(path)
+                actual = self._measure(path, form)
                 if actual != expected and (declared is None
                                            or not self._matches_declared_file(path, declared)):
                     raise InstallDriftError(
@@ -442,7 +467,7 @@ class InstallTransaction:
             self._remove(path)
 
         if backup_required:
-            os.replace(backup, path)
+            self._replace(backup, path)
 
     def rollback(self):
         errors = []

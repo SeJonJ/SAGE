@@ -227,6 +227,9 @@ HOOK_ONLY_RECOVERY_IDS = frozenset({
 CLI_ONLY_RECOVERY_IDS = frozenset({
     "doctor", "fast-cycle-show", "fix-required-version", "fix-sage-section",
     "regenerate-hook", "upgrade-check", "upgrade-package",
+    # uninstall 은 CLI 전용 명령이라 hook 쪽에 대응 복구가 없다. 선언은 실제 차집합과 **정확히**
+    # 같아야 하므로, 이 셋이 hook 에도 생기면 여기서 지워야 검사가 통과한다.
+    "uninstall-check", "uninstall-manual", "uninstall-recheck",
 })
 
 NOT_MESSAGE_KEYS = frozenset({"block_message", "block_reason", "block_release", "block_stale"})

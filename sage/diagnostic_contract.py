@@ -118,6 +118,20 @@ _VALIDATE = RecoveryStep(
     "validate", "sage validate --kind all --check --schema", "recovery.validate", mutating=False)
 
 _DOCTOR = RecoveryStep("doctor", "sage doctor", "recovery.doctor", mutating=False)
+# uninstall 의 BLOCK 복구는 파괴적 명령을 내지 않는다. `--check` 는 mutation 없이 같은 계획을
+# 내는 기존 계약이라, 무엇이 남아 있는지 경로로 보여 주는 읽기 전용 수단으로 그대로 쓴다.
+# 새 `--dry-run` 을 만들지 않는 이유는 같은 일을 하는 두 플래그가 갈렸을 때 어느 쪽이 옳은지
+# 판정할 근거가 없기 때문이다.
+_UNINSTALL_CHECK = RecoveryStep("uninstall-check",
+                                "sage uninstall --dest <project> --check --verbose",
+                                "recovery.uninstall_check", mutating=False)
+# 사람이 소유권을 확인하고 직접 정리하는 단계. 명령을 주지 않는 것이 핵심이다 — `rm` 을
+# 제시하는 순간 이 도구가 사용자 파일 삭제를 지시하게 되고, 그 지시는 되돌릴 수 없다.
+_UNINSTALL_MANUAL = RecoveryStep("uninstall-manual", None,
+                                 "recovery.uninstall_manual", mutating=True)
+_UNINSTALL_RECHECK = RecoveryStep("uninstall-recheck",
+                                  "sage uninstall --dest <project> --check --verbose",
+                                  "recovery.uninstall_recheck", mutating=False)
 _CYCLE_SHOW = RecoveryStep("cycle-show", "sage cycle show", "recovery.cycle_show", mutating=False)
 _FAST_CYCLE_SHOW = RecoveryStep("fast-cycle-show", "sage fast-cycle show",
                                 "recovery.fast_cycle_show", mutating=False)
@@ -216,6 +230,30 @@ SEVERITY = {
     # exit 집계와 `Next:` 요구를 결정하기 때문이다 — 감사를 읽지 못한 것을 rc 0 으로 내면
     # "여섯 출처를 확인했다" 가 거짓이 된다.
     "audit.source.unreadable": BLOCK,
+    # --- uninstall ---------------------------------------------------------
+    # 안전한 계획을 만들 수 없는 상태는 전부 BLOCK 이다. "아마 이럴 것이다" 로 지우기 시작하면
+    # 되돌릴 수 없는 쪽으로 틀린다.
+    "uninstall.dest_too_broad": BLOCK,
+    "uninstall.global_root_too_broad": BLOCK,
+    "uninstall.action_conflict": BLOCK,
+    "uninstall.dest_missing": BLOCK,
+    "uninstall.engine_source_tree": BLOCK,
+    "uninstall.symlink_ancestor": BLOCK,
+    "uninstall.manifest_not_regular": BLOCK,
+    "uninstall.manifest_unreadable": BLOCK,
+    "uninstall.manifest_not_object": BLOCK,
+    "uninstall.manifest_contract_violation": BLOCK,
+    "uninstall.manifest_missing_with_traces": BLOCK,
+    "uninstall.confirmation_required": BLOCK,
+    "uninstall.fingerprint_changed": BLOCK,
+    "uninstall.boundary_changed": BLOCK,
+    "uninstall.lock_busy": BLOCK,
+    "uninstall.unsafe_platform": BLOCK,
+    "uninstall.strip_not_applicable": BLOCK,
+    "uninstall.execution_failed": BLOCK,
+    "uninstall.plan_failed": BLOCK,
+    "uninstall.backup_collision": BLOCK,
+    "uninstall.rollback_failed": BLOCK,
     "audit.source.malformed": BLOCK,
     "audit.source.invalid": BLOCK,
     "audit.source.concurrent_change": BLOCK,
@@ -279,6 +317,31 @@ RECOVERY = {
     # 요구하고, 조회 실패 때문에 hook 쪽에 이 사이클과 무관한 진단을 심게 된다. 감사를 읽지
     # 못했을 때의 다음 행동은 이미 있는 읽기 전용 확인으로 충분하다.
     "audit.source.unreadable": (_STATUS, _VALIDATE),
+    # 확인 → 사람이 정리 → 재검증. 세 단계 모두 파괴적 명령을 내지 않는다.
+    "uninstall.manifest_missing_with_traces": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL,
+                                               _UNINSTALL_RECHECK),
+    "uninstall.manifest_not_regular": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL, _UNINSTALL_RECHECK),
+    "uninstall.manifest_unreadable": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL, _UNINSTALL_RECHECK),
+    "uninstall.manifest_not_object": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL, _UNINSTALL_RECHECK),
+    "uninstall.manifest_contract_violation": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL,
+                                              _UNINSTALL_RECHECK),
+    "uninstall.dest_too_broad": (_UNINSTALL_CHECK,),
+    "uninstall.global_root_too_broad": (_UNINSTALL_CHECK,),
+    "uninstall.action_conflict": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL,
+                                  _UNINSTALL_RECHECK),
+    "uninstall.dest_missing": (_UNINSTALL_CHECK,),
+    "uninstall.engine_source_tree": (_UNINSTALL_CHECK,),
+    "uninstall.symlink_ancestor": (_UNINSTALL_CHECK,),
+    "uninstall.confirmation_required": (_UNINSTALL_CHECK,),
+    "uninstall.fingerprint_changed": (_UNINSTALL_CHECK,),
+    "uninstall.boundary_changed": (_UNINSTALL_CHECK,),
+    "uninstall.lock_busy": (_UNINSTALL_CHECK,),
+    "uninstall.unsafe_platform": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL),
+    "uninstall.strip_not_applicable": (_UNINSTALL_CHECK,),
+    "uninstall.execution_failed": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL, _UNINSTALL_RECHECK),
+    "uninstall.plan_failed": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL, _UNINSTALL_RECHECK),
+    "uninstall.backup_collision": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL, _UNINSTALL_RECHECK),
+    "uninstall.rollback_failed": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL, _UNINSTALL_RECHECK),
     "audit.source.malformed": (_STATUS, _VALIDATE),
     "audit.source.invalid": (_STATUS, _VALIDATE),
     "audit.source.concurrent_change": (_STATUS, _VALIDATE),

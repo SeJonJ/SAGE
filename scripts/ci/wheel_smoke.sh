@@ -6,11 +6,30 @@
 # 리소스 번들 회귀(setup.py BundleResources / _resources 번들 감지)를 빌드 단계에서 잡는다.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # repo root
+
+# fixture 를 공유 temp 에 만들지 않는다. `/tmp` 는 누구나 쓸 수 있어 이름을 남이 먼저 만들어
+# 둘 수 있고, macOS 의 `$TMPDIR`(`/var/folders/...`) 는 `/var` → `/private/var` symlink 아래에
+# 있다. symlink 경계를 보는 검사가 이미 symlink 아래에서 돌면, 통과가 경계를 지킨 결과인지
+# 경로가 우연히 접힌 결과인지 구별되지 않는다.
+#
+# `$TMPDIR` 로 내려가는 fallback 을 두지 않는 이유는, 아무도 `SAGE_TEST_TMPDIR` 를 지정하지
+# 않으므로 그 fallback 이 사실상 **유일한 경로**가 되기 때문이다. 규칙이 문서에만 남는다.
+# 지정이 없으면 저장소 옆의 정해진 자리를 쓰고, 안전하게 확보할 수 없으면 여기서 멈춘다.
+FIXTURE_BASE="${SAGE_TEST_TMPDIR:-$(dirname "$HERE")/.sage-fixtures}"
+mkdir -p "$FIXTURE_BASE" || { echo "fixture base 를 만들 수 없습니다: $FIXTURE_BASE" >&2; exit 1; }
+chmod 700 "$FIXTURE_BASE"
+FIXTURE_BASE="$(cd "$FIXTURE_BASE" && pwd -P)"
+SHARED_TMP="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+if [ -z "${SAGE_TEST_TMPDIR:-}" ] && case "$FIXTURE_BASE" in "$SHARED_TMP"|"$SHARED_TMP"/*) true;; *) false;; esac; then
+  echo "기본 fixture base 가 공유 temp 아래입니다: $FIXTURE_BASE" >&2
+  exit 1
+fi
+echo "   fixture base: $FIXTURE_BASE"
 # template 을 준다. BSD mktemp 는 인수 없는 -d 의 위치를 TMPDIR 로 보장하지 않는다.
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/sage-wheel.XXXXXX")"
+WORK="$(cd "$(mktemp -d "$FIXTURE_BASE/sage-wheel.XXXXXX")" && pwd -P)"
 trap 'rm -rf "$WORK" "${ISO:-}"' EXIT
 
-echo "== [1/11] wheel 빌드 (격리 build venv — 시스템 python PEP668 회피) =="
+echo "== [1/12] wheel 빌드 (격리 build venv — 시스템 python PEP668 회피) =="
 python3 -m venv "$WORK/buildenv"
 "$WORK/buildenv/bin/pip" install --quiet build >/dev/null
 ( cd "$HERE" && rm -rf dist build && "$WORK/buildenv/bin/python" -m build --wheel >/dev/null )
@@ -21,13 +40,13 @@ echo "   wheel: $(basename "$WHL")"
 # site-packages wheel 보다 먼저 import 해 번들 검증이 무력화된다. $WORK 엔 sage/ 가 없어 wheel 이 import 됨.
 cd "$WORK"
 
-echo "== [2/11] clean venv 설치 (wheel + jsonschema 만) =="
+echo "== [2/12] clean venv 설치 (wheel + jsonschema 만) =="
 python3 -m venv "$WORK/venv"
 "$WORK/venv/bin/pip" install --quiet "$WHL" jsonschema >/dev/null
 SAGE="$WORK/venv/bin/sage"
 PY="$WORK/venv/bin/python"
 
-echo "== [3/11] sage_root 가 번들(sage/_bundle)로 해석되는지 (repo fallback 아님) =="
+echo "== [3/12] sage_root 가 번들(sage/_bundle)로 해석되는지 (repo fallback 아님) =="
 unset SAGE_RESOURCE_ROOT
 "$PY" - <<'PYEOF'
 import os, sys
@@ -47,7 +66,7 @@ print(f"   sage_root = {root} (번들 OK)")
 PYEOF
 
 PROJ="$WORK/proj"; mkdir -p "$PROJ"
-echo "== [4/11] sage install (번들 → 신규 프로젝트 복사) =="
+echo "== [4/12] sage install (번들 → 신규 프로젝트 복사) =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$PROJ" >/dev/null
 test -f "$PROJ/docs/sage_harness/.manifest.json" || { echo "❌ manifest 미생성"; exit 1; }
 test -f "$PROJ/scripts/sage_harness/hooks/pre_implementation_gate_core.py" || { echo "❌ hook 정본 미복사"; exit 1; }
@@ -60,7 +79,7 @@ test -f "$PROJ/scripts/sage_harness/hooks/runtime/fast_cycle_audit.py" || { echo
 echo "   install OK (manifest + hook/Fast 정본 + profile + CORE Fast 스킬 복사)"
 
 # 강제 게이트 검증: 부트스트랩 전(project.name 빈값)엔 generate 가 BLOCK(exit 2) 돼야 한다.
-echo "== [4b/11] 부트스트랩 게이트 (빈 profile → generate BLOCK 기대) =="
+echo "== [4b/12] 부트스트랩 게이트 (빈 profile → generate BLOCK 기대) =="
 if env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --write --dest "$PROJ" >/dev/null 2>&1; then
   echo "❌ 미부트스트랩 profile 인데 generate 가 통과함 (게이트 미작동)"; exit 1
 fi
@@ -77,12 +96,12 @@ t = t.replace('l2_path_globs: []', 'l2_path_globs: ["src/**"]')
 open(p, "w", encoding="utf-8").write(t)
 PY
 
-echo "== [5/11] sage generate --kind hook --write (등록 산출물 + manifest 스탬프) =="
+echo "== [5/12] sage generate --kind hook --write (등록 산출물 + manifest 스탬프) =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --write --dest "$PROJ" >/dev/null
 test -f "$PROJ/.claude/settings.json" || { echo "❌ generate 가 .claude/settings.json 미생성"; exit 1; }
 echo "   generate OK (.claude/settings.json 등록 산출물)"
 
-echo "== [6/11] 설치 template 기반 project hook 등록 + 양 host 실제 dispatch =="
+echo "== [6/12] 설치 template 기반 project hook 등록 + 양 host 실제 dispatch =="
 "$PY" - "$PROJ" <<'PY'
 import os, sys
 from pathlib import Path
@@ -121,10 +140,10 @@ for HOST in claude codex; do
 done
 echo "   project hook lifecycle OK (template → register → claude/codex dispatch)"
 
-echo "== [7/11] sage validate --check --schema (전체 PASS 기대) =="
+echo "== [7/12] sage validate --check --schema (전체 PASS 기대) =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" validate --check --schema --root "$PROJ"
 
-echo "== [8/11] Fast Cycle wheel 진입점 + strict audit runtime =="
+echo "== [8/12] Fast Cycle wheel 진입점 + strict audit runtime =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" fast-cycle --help | grep -q "open"
 "$PY" - "$PROJ" <<'PY'
 import os, sys
@@ -166,7 +185,7 @@ for entry in payload["diagnostics"]:
         assert set(step) == {"id", "command", "mutating"}, step
 CHECKPY
 
-echo "== [9/11] 운영 진단 명령 + runtime API preflight (설치 wheel 단독) =="
+echo "== [9/12] 운영 진단 명령 + runtime API preflight (설치 wheel 단독) =="
 # 설치본에서 실제로 도는지 본다. 엔진 소스 트리에서 도는 것은 배포 증거가 아니다.
 # 조회가 상태를 만들지 않는다. 앞 단계(Fast Cycle open)가 남긴 파일은 정상이므로
 # 존재 여부가 아니라 **조회 전후의 차이**를 본다.
@@ -245,7 +264,7 @@ for entry in payload["diagnostics"]:
         assert "source" in entry["evidence"], entry
 CHECKPY
 
-echo "== [10/11] 통합 감사 조회 (설치 wheel 단독 · 조회 무변경 · 보증 미과장) =="
+echo "== [10/12] 통합 감사 조회 (설치 wheel 단독 · 조회 무변경 · 보증 미과장) =="
 # 감사 파일을 쓸 수 있는 쪽은 메타 필드에 무엇이든 넣을 수 있다. 소비자 화면에서 그 값이
 # 그대로 나오는지 여기서 본다 — 엔진 단위 검사만으로는 배포본의 화면을 증명하지 못한다.
 LEAK="/Users/wheel-smoke/Obsidian/vault/leak.md"
@@ -374,11 +393,11 @@ cmp -s "$WORK/audit_ko.json" "$WORK/audit_en.json" \
   || { echo "❌ audit show --json 이 언어를 탄다"; exit 1; }
 echo "   audit OK (조회 무변경 + schema v1 계약 + 보증 2축 + 단일 관문 + limit 범위 + locale 독립)"
 
-echo "== [11/11] vault 없이 feedback·knowledge 실행 (설치 wheel 단독) =="
+echo "== [11/12] vault 없이 feedback·knowledge 실행 (설치 wheel 단독) =="
 
 # 격리 경계를 먼저 세운다. 개발자 머신에는 이미 vault 가 있고 HOME 에 상태가 쌓여 있어서,
 # 그 상태에서 통과한 "vault 없이 된다" 는 "내 머신에서 된다" 의 다른 이름이다.
-ISO="$(mktemp -d "${TMPDIR:-/tmp}/sage-wheel-iso.XXXXXX")"
+ISO="$(cd "$(mktemp -d "$FIXTURE_BASE/sage-wheel-iso.XXXXXX")" && pwd -P)"
 ISO_HOME="$ISO/home"; ISO_STATE="$ISO/state"; ISO_CODEX="$ISO/codex"; SENTINEL="$ISO/sentinel"
 mkdir -p "$ISO_HOME" "$ISO_STATE" "$ISO_CODEX" "$SENTINEL/nested"
 printf 'this file must not change\n' > "$SENTINEL/untouched.txt"
@@ -502,5 +521,607 @@ test "$SENTINEL_BEFORE" = "$SENTINEL_AFTER" || {
 }
 echo "   no-vault feedback·knowledge OK (격리 HOME·상태 홈 + 마커 스캔 + 기록 + 조회 + n/a 보고서"
 echo "      + 경계 밖 vault 산출물 0건 + sentinel 무변경)"
+
+echo "== [12/12] uninstall 소비자 계약 (설치 wheel 단독 · 소유권 증명 · 멱등 · 보존) =="
+# 이 명령은 엔진 저장소에서 아예 돌지 않는다(J8). 그래서 소비자 증거가 **유일한** 증거다.
+UPROJ="$WORK/uproj"; mkdir -p "$UPROJ"
+env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$UPROJ" >/dev/null
+
+# 사용자 자산을 심어 둔다. 지우면 안 되는 것이 지워지는지가 이 단계의 본론이다.
+mkdir -p "$UPROJ/plan_docs/00-base_plan" "$UPROJ/src"
+printf 'user plan\n' > "$UPROJ/plan_docs/00-base_plan/keep.md"
+printf 'print("hi")\n' > "$UPROJ/src/app.py"
+printf '# user rule\n*.log\n' >> "$UPROJ/.gitignore"
+USER_BEFORE="$("$PY" - "$UPROJ" <<'UHASH'
+import hashlib, os, sys
+root = sys.argv[1]
+digest = hashlib.sha256()
+for rel in ("plan_docs/00-base_plan/keep.md", "src/app.py"):
+    with open(os.path.join(root, rel), "rb") as handle:
+        digest.update(handle.read())
+print(digest.hexdigest())
+UHASH
+)"
+
+# --check 는 아무것도 바꾸지 않는다.
+BEFORE_LIST="$(ls -A "$UPROJ" | sort)"
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$UPROJ" --check > "$WORK/un_check.txt" 2>&1 || true
+test "$BEFORE_LIST" = "$(ls -A "$UPROJ" | sort)" || { echo "❌ --check 가 상태를 바꿨다"; exit 1; }
+
+# 실행형 --json 에 --yes 가 없으면 stdin 을 기다리지 않고 usage error 다.
+set +e
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$UPROJ" --json < /dev/null > "$WORK/un_bad.txt" 2>&1
+RC=$?
+set -e
+test "$RC" = "2" || { echo "❌ 실행형 --json + --yes 없음이 exit 2 가 아님 (rc=$RC)"; exit 1; }
+test ! -s "$WORK/un_bad.txt" || grep -qv "^{" "$WORK/un_bad.txt" || { echo "❌ usage 오류인데 JSON 이 나갔다"; exit 1; }
+
+# 실행. PARTIAL(1) 은 실패가 아니다 — 최상위 공유 문서를 보존하는 정상 결과다.
+set +e
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$UPROJ" --yes --json > "$WORK/un_run.json" 2>&1
+RC=$?
+set -e
+"$PY" - "$WORK/un_run.json" "$RC" <<'UEOF'
+import json, sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["exit_code"] == int(sys.argv[2]), (payload["exit_code"], sys.argv[2])
+assert payload["status"] in ("COMPLETE", "PARTIAL"), payload["status"]
+assert payload["executed"] is True, payload
+assert payload["deleted"], "아무것도 지우지 않았다"
+# 보존 대상은 write target 으로 나가지 않는다.
+preserved = {item["path"] for item in payload["preserved"]}
+removed = {item["path"] for item in payload["deleted"]}
+assert not (preserved & removed), preserved & removed
+UEOF
+
+test -f "$UPROJ/plan_docs/00-base_plan/keep.md" || { echo "❌ plan_docs 가 지워졌다"; exit 1; }
+test -f "$UPROJ/src/app.py" || { echo "❌ 프로젝트 소스가 지워졌다"; exit 1; }
+test -f "$UPROJ/AGENT_GUIDE.md" || { echo "❌ 소유권 불명 문서가 지워졌다"; exit 1; }
+test ! -d "$UPROJ/docs/sage_harness" || { echo "❌ SAGE 전용 디렉터리가 남았다"; exit 1; }
+grep -q "user rule" "$UPROJ/.gitignore" || { echo "❌ 사용자 gitignore 규칙이 사라졌다"; exit 1; }
+grep -q "SAGE LOCAL" "$UPROJ/.gitignore" && { echo "❌ SAGE managed block 이 남았다"; exit 1; }
+
+USER_AFTER="$("$PY" - "$UPROJ" <<'UHASH2'
+import hashlib, os, sys
+root = sys.argv[1]
+digest = hashlib.sha256()
+for rel in ("plan_docs/00-base_plan/keep.md", "src/app.py"):
+    with open(os.path.join(root, rel), "rb") as handle:
+        digest.update(handle.read())
+print(digest.hexdigest())
+UHASH2
+)"
+test "$USER_BEFORE" = "$USER_AFTER" || { echo "❌ 사용자 파일 내용이 바뀌었다"; exit 1; }
+
+# 두 번째 실행은 no-op 이어야 한다. BLOCKED 가 나오면 멱등 계약이 깨진 것이다.
+set +e
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$UPROJ" --yes > "$WORK/un_again.txt" 2>&1
+RC2=$?
+set -e
+test "$RC2" = "0" || { echo "❌ 두 번째 실행이 no-op 이 아님 (rc=$RC2)"; cat "$WORK/un_again.txt"; exit 1; }
+
+# 제거 후 다시 설치할 수 있어야 한다.
+env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$UPROJ" >/dev/null \
+  || { echo "❌ uninstall 후 재설치 실패"; exit 1; }
+# --- clean-consumer matrix 8종 ---------------------------------------------------
+# 한 조합만 돌고 "소비자에서 된다" 고 말하면, 나머지 일곱은 계약에만 있고 증거가 없다.
+# host 배치와 scope 를 곱해서 실제로 전부 돌린다.
+MATRIX_HOME="$WORK/matrix-codex"; mkdir -p "$MATRIX_HOME"
+matrix_case() {
+  CASE_ID="$1"; HOST="$2"; SCOPE_ARGS="$3"; MODE="$4"
+  MP="$WORK/m-$CASE_ID"; mkdir -p "$MP"
+  if [ "$HOST" = "dual" ]; then
+    env -u SAGE_RESOURCE_ROOT CODEX_HOME="$MATRIX_HOME" "$SAGE" install --host claude --dest "$MP" >/dev/null
+    env -u SAGE_RESOURCE_ROOT CODEX_HOME="$MATRIX_HOME" "$SAGE" install --host codex \
+      --skill-scope project-local --dest "$MP" >/dev/null
+  elif [ "$HOST" = "codex-global" ]; then
+    env -u SAGE_RESOURCE_ROOT CODEX_HOME="$MATRIX_HOME" "$SAGE" install --host codex \
+      --skill-scope global --dest "$MP" >/dev/null
+  elif [ "$HOST" = "codex" ]; then
+    env -u SAGE_RESOURCE_ROOT CODEX_HOME="$MATRIX_HOME" "$SAGE" install --host codex \
+      --skill-scope project-local --dest "$MP" >/dev/null
+  else
+    env -u SAGE_RESOURCE_ROOT CODEX_HOME="$MATRIX_HOME" "$SAGE" install --host claude --dest "$MP" >/dev/null
+  fi
+  printf 'user\n' > "$MP/user-file.txt"
+  BEFORE="$(ls -A "$MP" | sort)"
+
+  set +e
+  case "$MODE" in
+    check)
+      env -u SAGE_RESOURCE_ROOT CODEX_HOME="$MATRIX_HOME" "$SAGE" uninstall --dest "$MP" \
+        $SCOPE_ARGS --check >/dev/null 2>&1 ;;
+    noninteractive)
+      # 파이프는 tty 가 아니다. 동의를 추정하지도, 기다리지도 않고 차단해야 한다.
+      printf 'n\n' | env -u SAGE_RESOURCE_ROOT CODEX_HOME="$MATRIX_HOME" "$SAGE" uninstall \
+        --dest "$MP" $SCOPE_ARGS >/dev/null 2>&1 ;;
+    *)
+      env -u SAGE_RESOURCE_ROOT CODEX_HOME="$MATRIX_HOME" "$SAGE" uninstall --dest "$MP" \
+        $SCOPE_ARGS --yes >/dev/null 2>&1 ;;
+  esac
+  MRC=$?
+  set -e
+  if [ "$MODE" = "noninteractive" ]; then
+    test "$MRC" = "2" || { echo "❌ matrix $CASE_ID 비대화형인데 rc=$MRC (2 기대)"; exit 1; }
+  else
+    test "$MRC" -le 1 || { echo "❌ matrix $CASE_ID rc=$MRC"; exit 1; }
+  fi
+  test -f "$MP/user-file.txt" || { echo "❌ matrix $CASE_ID 가 사용자 파일을 지웠다"; exit 1; }
+
+  if [ "$MODE" = "check" ] || [ "$MODE" = "noninteractive" ]; then
+    test "$BEFORE" = "$(ls -A "$MP" | sort)" \
+      || { echo "❌ matrix $CASE_ID ($MODE) 가 상태를 바꿨다"; exit 1; }
+  fi
+  echo "     - $CASE_ID ($HOST / ${SCOPE_ARGS:-project} / $MODE) rc=$MRC"
+}
+
+# --global 은 --dest 를 받지 않으므로 전역 전용 조합은 별도로 돈다.
+matrix_case c1 claude ""        check
+matrix_case c2 claude ""        noninteractive
+matrix_case c3 claude ""        yes
+matrix_case c4 codex  ""        yes
+matrix_case c5 dual   "--all"   yes
+matrix_case c6 codex-global "--all" yes
+matrix_case c7 claude "--all"   check
+matrix_case c8 codex  ""        check
+
+# --- 공유 파일 충실성 · 손상 내성 (설치 wheel 단독) --------------------------------
+# 소비자에서 실제로 중요한 것은 "지워졌는가" 보다 **남의 파일을 어떻게 다뤘는가** 다.
+# 아래 둘은 단위 검사로도 보지만, 번들만 설치된 환경에서 한 번 더 밟는다.
+FID="$WORK/fidelity"; mkdir -p "$FID"
+env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$FID" >/dev/null
+
+# (1) `.gitignore` 의 관리 구간 밖 바이트는 그대로여야 한다 — 연속 빈 줄까지.
+python3 - "$FID" <<'PYEOF'
+import io, os, sys
+proj = sys.argv[1]
+path = os.path.join(proj, ".gitignore")
+with io.open(path, encoding="utf-8") as handle:
+    installed = handle.read()
+user = "build/\n\n\n# 사용자 규칙\n*.log\n"
+with io.open(path, "w", encoding="utf-8") as handle:
+    handle.write(user + "\n" + installed)
+PYEOF
+GITIGNORE_BEFORE="$(python3 -c "import io,sys;print(io.open(sys.argv[1],encoding='utf-8').read())" "$FID/.gitignore")"
+
+# (2) host JSON 을 손상시켜 둔다 — 계획은 PRESERVE 여야 하고 파일은 byte·mode 그대로여야 한다.
+#     손상 종류마다 프로젝트를 따로 세운다. 한 프로젝트에서 이어 밟으면 앞 실행이 지운 것 때문에
+#     뒤 판정이 달라지고, 그러면 무엇이 무엇을 증명했는지 말할 수 없다.
+seed_damage() {   # $1=프로젝트 $2=structure|syntax
+  python3 - "$1" "$2" "$HERE" <<'PYEOF'
+import json, os, sys
+proj, kind, repo = sys.argv[1], sys.argv[2], sys.argv[3]
+sys.path.insert(0, repo)
+from sage import uninstall_plan
+command = sorted(uninstall_plan.canonical_commands("claude"))[0]
+document = {"hooks": {
+    "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": command}]}],
+}, "mine": True}
+healthy = json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8")
+if kind == "structure":
+    document["hooks"]["PreToolUse"] = "list 가 아니다"
+    payload = json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8")
+else:
+    payload = healthy[:len(healthy) // 2]
+os.makedirs(os.path.join(proj, ".claude"), exist_ok=True)
+with open(os.path.join(proj, ".claude", "settings.json"), "wb") as handle:
+    handle.write(payload)
+with open(os.path.join(proj, ".claude", "settings.healthy"), "wb") as handle:
+    handle.write(healthy)
+PYEOF
+}
+
+seed_damage "$FID" structure
+HOST_BEFORE="$(cat "$FID/.claude/settings.json")"
+HOST_MODE_BEFORE="$(python3 -c "import os,stat,sys;print(oct(stat.S_IMODE(os.lstat(sys.argv[1]).st_mode)))" "$FID/.claude/settings.json")"
+
+set +e
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$FID" --yes > "$WORK/fid.txt" 2>&1
+FID_RC=$?
+set -e
+# 잔재가 남았으므로 결과는 **정확히** PARTIAL(1) 이다. COMPLETE 로 접히면 사용자는 남은 것을 모른다.
+test "$FID_RC" = "1" || { echo "❌ 손상 잔재가 남았는데 rc=$FID_RC (1 이어야 한다)"; cat "$WORK/fid.txt"; exit 1; }
+
+test "$(cat "$FID/.claude/settings.json")" = "$HOST_BEFORE" \
+  || { echo "❌ 손상된 host JSON 을 보존한다고 하고 고쳤다"; exit 1; }
+grep -q "settings.json" "$WORK/fid.txt" || { echo "❌ 보존 사실을 보고하지 않았다"; exit 1; }
+test -f "$FID/docs/sage_harness/.manifest.json" \
+  || { echo "❌ 잔재가 남았는데 설치 기록(manifest)을 지웠다 — 다음 실행이 증거를 잃는다"; exit 1; }
+python3 - "$FID" <<'PYEOF'
+import io, os, sys
+proj = sys.argv[1]
+path = os.path.join(proj, ".gitignore")
+body = io.open(path, encoding="utf-8").read() if os.path.exists(path) else ""
+expected = "build/\n\n\n# 사용자 규칙\n*.log\n"
+if body != expected:
+    print(f"❌ .gitignore 사용자 구간이 바뀌었다\n  기대: {expected!r}\n  실제: {body!r}")
+    raise SystemExit(1)
+PYEOF
+
+# 두 번째 실행: 아무것도 바꾸지 않고 같은 사실을 다시 말해야 한다.
+set +e
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$FID" --yes --json > "$WORK/fid2.json" 2>"$WORK/fid2.err"
+FID_RC2=$?
+set -e
+test "$FID_RC2" = "1" \
+  || { echo "❌ 재실행 rc=$FID_RC2 (1 이어야 한다)"; cat "$WORK/fid2.json" "$WORK/fid2.err"; exit 1; }
+python3 - "$FID" "$WORK/fid2.json" "$HOST_BEFORE" "$HOST_MODE_BEFORE" <<'PYEOF'
+import json, os, stat, sys
+proj, report, before, mode_before = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+payload = json.load(open(report, encoding="utf-8"))
+settings = os.path.join(proj, ".claude", "settings.json")
+
+def fail(message):
+    print(f"❌ {message}")
+    raise SystemExit(1)
+
+if payload["status"] != "PARTIAL":
+    fail(f"재실행 status={payload['status']} (PARTIAL 이어야 한다)")
+if payload["deleted"] or payload["stripped"]:
+    fail("재실행이 무언가를 지우거나 고쳤다 — 잔재가 남은 동안은 mutation 이 없어야 한다")
+preserved = {entry["path"]: entry for entry in payload["preserved"]}
+shown = os.path.join(".claude", "settings.json")
+if shown not in preserved:
+    fail(f"재실행이 남은 경로를 다시 말하지 않았다 (실제: {sorted(preserved)})")
+entry = preserved[shown]
+for field in ("reason", "detail", "registration_state"):
+    if field not in entry:
+        fail(f"보존 항목에 {field} 가 없다")
+if "project_path" in entry:
+    fail("절대 경로에 상대 경로를 덧붙이던 방식이 남아 있다")
+if os.path.isabs(entry["path"]):
+    fail(f"보존 항목이 절대 경로다: {entry['path']}")
+if entry["registration_state"] not in ("present", "unknown"):
+    fail(f"registration_state={entry['registration_state']}")
+if os.path.join("docs", "sage_harness") not in preserved:
+    fail("잔재가 남았는데 설치 기록을 보존 목록에서 빠뜨렸다")
+if not os.path.isfile(os.path.join(proj, "docs", "sage_harness", ".manifest.json")):
+    fail("재실행이 설치 기록을 지웠다")
+if open(settings, encoding="utf-8").read() != before:
+    fail("재실행이 손상 파일의 바이트를 바꿨다")
+if oct(stat.S_IMODE(os.lstat(settings).st_mode)) != mode_before:
+    fail("재실행이 손상 파일의 mode 를 바꿨다")
+PYEOF
+
+# 사용자가 고친 뒤에야 마지막 논리 자산(설치 기록)이 사라진다.
+cp "$FID/.claude/settings.healthy" "$FID/.claude/settings.json"
+rm -f "$FID/.claude/settings.healthy"
+set +e
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$FID" --yes --json > "$WORK/fid3.json" 2>&1
+FID_RC3=$?
+set -e
+test "$FID_RC3" -le 1 || { echo "❌ 복구 후 rc=$FID_RC3"; cat "$WORK/fid3.json"; exit 1; }
+test ! -d "$FID/docs/sage_harness" \
+  || { echo "❌ 잔재가 사라졌는데 설치 기록이 남았다"; exit 1; }
+python3 -c "
+import json,sys
+doc = json.load(open(sys.argv[1], encoding='utf-8'))
+assert any(e['path'].endswith('settings.json') for e in doc['stripped']), '고친 파일에서 SAGE 등록을 빼지 않았다'
+" "$WORK/fid3.json" || exit 1
+
+# 문법이 깨진 JSON 도 같은 계약이다 — 읽지 못한 것을 "등록 없음" 으로 접으면 안 된다.
+FID2="$WORK/fidelity-syntax"; mkdir -p "$FID2"
+env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$FID2" >/dev/null
+seed_damage "$FID2" syntax
+rm -f "$FID2/.claude/settings.healthy"
+SYN_BEFORE="$(cat "$FID2/.claude/settings.json")"
+set +e
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$FID2" --yes >/dev/null 2>&1
+SYN_RC=$?
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$FID2" --yes > "$WORK/syn2.txt" 2>&1
+SYN_RC2=$?
+set -e
+test "$SYN_RC" = "1" -a "$SYN_RC2" = "1" \
+  || { echo "❌ 문법 손상 rc=$SYN_RC/$SYN_RC2 (둘 다 1 이어야 한다)"; cat "$WORK/syn2.txt"; exit 1; }
+test "$(cat "$FID2/.claude/settings.json")" = "$SYN_BEFORE" \
+  || { echo "❌ 문법이 깨진 host JSON 을 고쳤다"; exit 1; }
+test -f "$FID2/docs/sage_harness/.manifest.json" \
+  || { echo "❌ 문법 손상 잔재가 남았는데 설치 기록을 지웠다"; exit 1; }
+grep -q "settings.json" "$WORK/syn2.txt" || { echo "❌ 재실행이 남은 경로를 말하지 않았다"; exit 1; }
+
+# --- 손상 3종 더 · dual-host (같은 계약을 다른 입구로) -------------------------
+# 구조·문법 둘만 밟고 "요청 범위를 채웠다" 고 적으면, 실제로 사용자를 막는 입구 셋 — 비 UTF-8,
+# 읽기 실패, 두 host 동시 — 은 소비자 환경에서 한 번도 밟히지 않은 채 초록이 된다. 여기서
+# 보는 것은 매번 같은 계약이다: rc=1 · 파일 무변경 · 영수증 유지 · **경로 재출력**.
+FID_CHECK() {   # $1=프로젝트 $2=보고 JSON $3..=재출력을 기대하는 상대 경로들
+  python3 - "$@" <<'PYEOF'
+import json, os, sys
+proj, report, expected = sys.argv[1], sys.argv[2], sys.argv[3:]
+payload = json.load(open(report, encoding="utf-8"))
+
+def fail(message):
+    print(f"❌ {message}")
+    raise SystemExit(1)
+
+if payload["status"] != "PARTIAL":
+    fail(f"status={payload['status']} (PARTIAL 이어야 한다)")
+if payload["deleted"] or payload["stripped"]:
+    fail("잔재가 남은 동안 재실행이 무언가를 지우거나 고쳤다")
+preserved = {entry["path"]: entry for entry in payload["preserved"]}
+for path in expected:
+    if path not in preserved:
+        fail(f"남은 경로를 다시 말하지 않았다: {path} (실제: {sorted(preserved)})")
+    entry = preserved[path]
+    for field in ("reason", "detail", "registration_state"):
+        if field not in entry:
+            fail(f"{path} 보존 항목에 {field} 가 없다")
+    if os.path.isabs(entry["path"]):
+        fail(f"보존 항목이 절대 경로다: {entry['path']}")
+    if "project_path" in entry:
+        fail("절대 경로에 상대 경로를 덧붙이던 방식이 남아 있다")
+if os.path.join("docs", "sage_harness") not in preserved:
+    fail("잔재가 남았는데 설치 기록을 보존 목록에서 빠뜨렸다")
+if not os.path.isfile(os.path.join(proj, "docs", "sage_harness", ".manifest.json")):
+    fail("재실행이 설치 기록을 지웠다")
+PYEOF
+}
+
+for KIND in encoding eisdir permission; do
+  if [ "$KIND" = "permission" ] && [ "$(id -u)" = "0" ]; then
+    # skip 은 통과가 아니다. root 로 도는 환경에서는 이 증거를 만들 수 없으므로 그렇게 말한다.
+    echo "❌ root 로 실행 중이라 권한 거부 경로를 증명할 수 없다 — 비특권 사용자로 실행하세요"
+    exit 1
+  fi
+  DP="$WORK/fidelity-$KIND"; mkdir -p "$DP"
+  env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$DP" >/dev/null
+  SET="$DP/.claude/settings.json"
+  mkdir -p "$DP/.claude"
+  case "$KIND" in
+    encoding)   printf '{"hooks": {"x\xff\xfe": []}}' > "$SET" ;;
+    eisdir)     rm -f "$SET"; mkdir -p "$SET" ;;
+    permission) printf '{"hooks": {}}' > "$SET"; chmod 000 "$SET" ;;
+  esac
+  BEFORE="$(python3 -c "
+import hashlib, os, sys
+p = sys.argv[1]
+print('dir' if os.path.isdir(p) else hashlib.sha256(open(p,'rb').read()).hexdigest())
+" "$SET" 2>/dev/null || echo unreadable)"
+
+  set +e
+  env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$DP" --yes > "$WORK/fid-$KIND.txt" 2>&1
+  RC1=$?
+  env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$DP" --yes --json > "$WORK/fid-$KIND.json" 2>"$WORK/fid-$KIND.err"
+  RC2=$?
+  set -e
+  test "$RC1" = "1" -a "$RC2" = "1" \
+    || { echo "❌ $KIND rc=$RC1/$RC2 (둘 다 1 이어야 한다)"; cat "$WORK/fid-$KIND.txt" "$WORK/fid-$KIND.err"; exit 1; }
+  FID_CHECK "$DP" "$WORK/fid-$KIND.json" ".claude/settings.json" || exit 1
+  AFTER="$(python3 -c "
+import hashlib, os, sys
+p = sys.argv[1]
+print('dir' if os.path.isdir(p) else hashlib.sha256(open(p,'rb').read()).hexdigest())
+" "$SET" 2>/dev/null || echo unreadable)"
+  test "$BEFORE" = "$AFTER" || { echo "❌ $KIND: 보존한다고 하고 내용을 바꿨다"; exit 1; }
+  test "$KIND" != "permission" || chmod 600 "$SET"
+  echo "     - 손상 $KIND: rc=1 두 번 · 내용 무변경 · 영수증 유지 · 경로 재출력"
+done
+
+# dual-host: 두 host 가 동시에 손상이면 **둘 다** 보고돼야 한다. 하나만 말하면 사용자는
+# 고칠 것을 절반만 알고, 다음 실행에서 나머지를 처음 보게 된다.
+DUAL="$WORK/fidelity-dual"; mkdir -p "$DUAL"
+env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$DUAL" >/dev/null
+python3 - "$DUAL" "$HERE" <<'PYEOF'
+import json, os, sys
+proj, repo = sys.argv[1], sys.argv[2]
+sys.path.insert(0, repo)
+from sage import uninstall_plan
+for host_dir, name, target in uninstall_plan.HOST_REGISTRATION_FILES:
+    command = sorted(uninstall_plan.canonical_commands(target))[0]
+    # 구조 손상이되 **우리 command 는 보이게** 둔다 — 그래야 두 파일 모두 잔재로 세어진다.
+    document = {"mine": True, "hooks": {
+        "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": command}]}],
+        "PreToolUse": "list 가 아니다"}}
+    os.makedirs(os.path.join(proj, host_dir), exist_ok=True)
+    with open(os.path.join(proj, host_dir, name), "w", encoding="utf-8") as handle:
+        json.dump(document, handle, ensure_ascii=False, indent=2)
+PYEOF
+set +e
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$DUAL" --yes >/dev/null 2>&1
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$DUAL" --yes --json > "$WORK/fid-dual.json" 2>&1
+DUAL_RC=$?
+set -e
+test "$DUAL_RC" = "1" || { echo "❌ dual-host rc=$DUAL_RC"; cat "$WORK/fid-dual.json"; exit 1; }
+FID_CHECK "$DUAL" "$WORK/fid-dual.json" ".claude/settings.json" ".codex/hooks.json" || exit 1
+echo "     - dual-host: 두 host 손상이 모두 재출력 · 영수증 유지"
+
+# --- 자산 key 경로 탈출 · handler 종류 공존 (설치 wheel 단독) -------------------
+# 이 둘은 계획 층에서 갈리는데, 갈리는 자리가 **파괴적 계획**이라 소비자 환경에서 한 번 더 밟는다.
+ESC="$WORK/escape"; mkdir -p "$ESC"
+env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$ESC" >/dev/null
+printf 'root 밖 사용자 파일\n' > "$WORK/victim-sentinel"
+SENTINEL_BEFORE="$(cat "$WORK/victim-sentinel")"
+MAN="$ESC/docs/sage_harness/.manifest.json"
+python3 - "$MAN" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+manifest = json.load(open(path, encoding="utf-8"))
+manifest["assets"]["skills/../../../victim-sentinel"] = {
+    "form": "declarative", "conformance": "PASS"}
+json.dump(manifest, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+PYEOF
+# 기준은 **주입한 뒤** 뜬다. 주입 전 해시와 비교하면 우리가 만든 변경을 명령의 탓으로 읽는다.
+MAN_BEFORE="$(python3 -c "
+import hashlib, sys
+print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" "$MAN")"
+for MODE in --check --yes; do
+  set +e
+  env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$ESC" --all --json $MODE \
+      > "$WORK/escape$MODE.json" 2>&1
+  ERC=$?
+  set -e
+  test "$ERC" = "2" || { echo "❌ 경로 탈출 asset key 가 $MODE 에서 rc=$ERC (2 여야 한다)"; cat "$WORK/escape$MODE.json"; exit 1; }
+  python3 - "$WORK/escape$MODE.json" <<'PYEOF'
+import json, sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+if payload["status"] != "BLOCKED":
+    print(f"❌ status={payload['status']} (BLOCKED 여야 한다)"); raise SystemExit(1)
+if payload["deleted"] or payload["stripped"]:
+    print("❌ 차단인데 처리 대상이 있다"); raise SystemExit(1)
+PYEOF
+done
+test "$(cat "$WORK/victim-sentinel")" = "$SENTINEL_BEFORE" \
+  || { echo "❌ root 밖 sentinel 이 바뀌었다"; exit 1; }
+test "$(python3 -c "
+import hashlib, sys
+print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" "$MAN")" = "$MAN_BEFORE" \
+  || { echo "❌ 차단인데 manifest bytes 가 바뀌었다"; exit 1; }
+echo "     - 자산 key 경로 탈출: --check·--yes 둘 다 rc=2 · 처리 0건 · root 밖 sentinel 무변경"
+
+# 정상 prompt hook 과 SAGE 등록이 함께 있으면 **끝나야** 한다. 손상으로 오판하면 잔재가 남아
+# 영수증이 붙들리고 재실행해도 같은 화면이 반복된다.
+COEX="$WORK/coexist"; mkdir -p "$COEX"
+env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$COEX" >/dev/null
+python3 - "$COEX" "$HERE" <<'PYEOF'
+import json, os, sys
+proj, repo = sys.argv[1], sys.argv[2]
+sys.path.insert(0, repo)
+from sage import uninstall_plan
+command = sorted(uninstall_plan.canonical_commands("claude"))[0]
+user = {"type": "prompt", "prompt": "이 변경을 검토해줘"}
+document = {"mine": True, "hooks": {"PostToolUse": [
+    {"matcher": "*", "hooks": [{"type": "command", "command": command}, user]}]}}
+os.makedirs(os.path.join(proj, ".claude"), exist_ok=True)
+with open(os.path.join(proj, ".claude", "settings.json"), "w", encoding="utf-8") as handle:
+    json.dump(document, handle, ensure_ascii=False, indent=2)
+PYEOF
+set +e
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$COEX" --yes --json > "$WORK/coex1.json" 2>&1
+CRC1=$?
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$COEX" --yes > "$WORK/coex2.txt" 2>&1
+CRC2=$?
+set -e
+test "$CRC1" = "1" || { echo "❌ 공존 1회차 rc=$CRC1 (최상위 문서 보존으로 1 이어야 한다)"; cat "$WORK/coex1.json"; exit 1; }
+test "$CRC2" = "0" || { echo "❌ 공존 2회차 rc=$CRC2 (0 이어야 한다 — 끝나지 않았다)"; cat "$WORK/coex2.txt"; exit 1; }
+python3 - "$COEX" "$WORK/coex1.json" <<'PYEOF'
+import json, os, sys
+proj, report = sys.argv[1], sys.argv[2]
+payload = json.load(open(report, encoding="utf-8"))
+shown = os.path.join(".claude", "settings.json")
+if shown not in [entry["path"] for entry in payload["stripped"]]:
+    print("❌ 정상 prompt hook 때문에 SAGE 등록을 빼지 못했다"); raise SystemExit(1)
+if shown in [entry["path"] for entry in payload["preserved"]]:
+    print("❌ 정상 설정을 손상으로 보고했다"); raise SystemExit(1)
+if os.path.isdir(os.path.join(proj, "docs", "sage_harness")):
+    print("❌ 잔재가 없는데 영수증이 붙들렸다"); raise SystemExit(1)
+left = json.load(open(os.path.join(proj, ".claude", "settings.json"), encoding="utf-8"))
+kept = [entry for blocks in left.get("hooks", {}).values()
+        for block in blocks for entry in block["hooks"]]
+if kept != [{"type": "prompt", "prompt": "이 변경을 검토해줘"}]:
+    print(f"❌ 사용자 hook 이 바뀌거나 사라졌다: {kept}"); raise SystemExit(1)
+PYEOF
+echo "     - handler 종류 공존: SAGE command 만 제거 · prompt hook 무변경 · 영수증 해제 · 2회차 rc=0"
+
+# --- 같은 경로를 두 가족이 주장 (설치 wheel 단독) ------------------------------
+# prefix `sage` + manifest `skills/init` 이면 두 전역 가족이 모두
+# `$CODEX_HOME/skills/sage-init` 을 가리킨다. 예전에는 한 경로에 DELETE 와 PRESERVE 가 함께
+# 생겨, 보존한다고 보고한 사용자 변경본을 지웠다.
+for BODY in drift same; do
+  CF="$WORK/conflict-$BODY"; mkdir -p "$CF"
+  CFHOME="$WORK/conflict-home-$BODY"; mkdir -p "$CFHOME/skills"
+  env -u SAGE_RESOURCE_ROOT CODEX_HOME="$CFHOME" "$SAGE" install --host claude --dest "$CF" >/dev/null
+  python3 - "$CF" "$CFHOME" "$BODY" <<'PYEOF'
+import json, os, sys
+proj, home, body = sys.argv[1], sys.argv[2], sys.argv[3]
+signature = "CORE framework bootstrap asset\n"
+path = os.path.join(proj, "docs", "sage_harness", ".manifest.json")
+manifest = json.load(open(path, encoding="utf-8"))
+manifest["assets"]["skills/init"] = {"form": "declarative", "conformance": "PASS"}
+json.dump(manifest, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+target = os.path.join(home, "skills", "sage-init")
+os.makedirs(target, exist_ok=True)
+open(os.path.join(target, "SKILL.md"), "w", encoding="utf-8").write(signature)
+copy = os.path.join(proj, ".codex", "skills", "init")
+os.makedirs(copy, exist_ok=True)
+open(os.path.join(copy, "SKILL.md"), "w", encoding="utf-8").write(
+    signature if body == "same" else "내가 고친 내용\n")
+PYEOF
+  GLOBAL_BEFORE="$(cat "$CFHOME/skills/sage-init/SKILL.md")"
+  for MODE in --check --yes; do
+    set +e
+    env -u SAGE_RESOURCE_ROOT CODEX_HOME="$CFHOME" "$SAGE" uninstall --dest "$CF" --all \
+        --json $MODE > "$WORK/conflict-$BODY$MODE.json" 2>&1
+    CRC=$?
+    set -e
+    test "$CRC" = "2" || { echo "❌ 경로 충돌($BODY) 이 $MODE 에서 rc=$CRC (2 여야 한다)"; cat "$WORK/conflict-$BODY$MODE.json"; exit 1; }
+    python3 - "$WORK/conflict-$BODY$MODE.json" <<'PYEOF'
+import json, sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+if payload["status"] != "BLOCKED" or payload["blocked_reason"] != "uninstall.action_conflict":
+    print(f"❌ status={payload['status']} reason={payload['blocked_reason']}"); raise SystemExit(1)
+if payload["deleted"] or payload["stripped"] or payload["preserved"]:
+    print("❌ 차단인데 처리 목록이 비어 있지 않다"); raise SystemExit(1)
+PYEOF
+  done
+  test "$(cat "$CFHOME/skills/sage-init/SKILL.md")" = "$GLOBAL_BEFORE" \
+    || { echo "❌ 차단인데 전역 사본이 바뀌었다($BODY)"; exit 1; }
+  test -f "$CF/docs/sage_harness/.manifest.json" \
+    || { echo "❌ 차단인데 설치 기록이 사라졌다($BODY)"; exit 1; }
+  echo "     - 경로 충돌($BODY): --check·--yes 둘 다 rc=2 · 처리 0건 · 전역 사본·설치 기록 무변경"
+done
+
+# --- event 가 받지 않는 handler 종류 (설치 wheel 단독) -------------------------
+# `SessionStart` 는 공식 계약상 `command`·`mcp_tool` 만 받는다. 거기 prompt handler 가 있으면
+# 우리가 이해하지 못하는 문서이므로 SAGE 등록이 보여도 파일을 다시 쓰지 않는다.
+UNS="$WORK/unsupported"; mkdir -p "$UNS"
+env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$UNS" >/dev/null
+python3 - "$UNS" "$HERE" <<'PYEOF'
+import json, os, sys
+proj, repo = sys.argv[1], sys.argv[2]
+sys.path.insert(0, repo)
+from sage import uninstall_plan
+command = sorted(uninstall_plan.canonical_commands("claude"))[0]
+document = {"mine": True, "hooks": {
+    "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": command}]}],
+    "SessionStart": [{"hooks": [{"type": "prompt", "prompt": "세션 시작 검토"}]}]}}
+os.makedirs(os.path.join(proj, ".claude"), exist_ok=True)
+with open(os.path.join(proj, ".claude", "settings.json"), "w", encoding="utf-8") as handle:
+    json.dump(document, handle, ensure_ascii=False, indent=2)
+PYEOF
+UNS_SET="$UNS/.claude/settings.json"
+UNS_BEFORE="$(cat "$UNS_SET")"
+UNS_MODE="$(python3 -c "import os,stat,sys;print(oct(stat.S_IMODE(os.lstat(sys.argv[1]).st_mode)))" "$UNS_SET")"
+set +e
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$UNS" --yes >/dev/null 2>&1
+URC1=$?
+env -u SAGE_RESOURCE_ROOT "$SAGE" uninstall --dest "$UNS" --yes --json > "$WORK/unsupported.json" 2>&1
+URC2=$?
+set -e
+test "$URC1" = "1" -a "$URC2" = "1" \
+  || { echo "❌ 비지원 handler rc=$URC1/$URC2 (둘 다 1 이어야 한다)"; cat "$WORK/unsupported.json"; exit 1; }
+python3 - "$UNS" "$WORK/unsupported.json" <<'PYEOF'
+import json, os, sys
+proj, report = sys.argv[1], sys.argv[2]
+payload = json.load(open(report, encoding="utf-8"))
+shown = os.path.join(".claude", "settings.json")
+if payload["status"] != "PARTIAL":
+    print(f"❌ status={payload['status']}"); raise SystemExit(1)
+if payload["deleted"] or payload["stripped"]:
+    print("❌ 비지원 handler 가 있는데 무언가를 처리했다"); raise SystemExit(1)
+preserved = {entry["path"]: entry for entry in payload["preserved"]}
+if shown not in preserved:
+    print(f"❌ 재실행이 남은 경로를 말하지 않았다: {sorted(preserved)}"); raise SystemExit(1)
+kinds = [item["kind"] for item in preserved[shown]["detail"]]
+if kinds != ["unsupported_kind"]:
+    print(f"❌ 손상 종류가 {kinds}"); raise SystemExit(1)
+if os.path.join("docs", "sage_harness") not in preserved:
+    print("❌ 잔재가 남았는데 영수증을 놓았다"); raise SystemExit(1)
+PYEOF
+test "$(cat "$UNS_SET")" = "$UNS_BEFORE" || { echo "❌ 비지원 handler 문서를 고쳤다"; exit 1; }
+test "$(python3 -c "import os,stat,sys;print(oct(stat.S_IMODE(os.lstat(sys.argv[1]).st_mode)))" "$UNS_SET")" = "$UNS_MODE" \
+  || { echo "❌ mode 가 바뀌었다"; exit 1; }
+echo "     - 비지원 handler(SessionStart+prompt): rc=1 두 번 · bytes·mode 무변경 · 영수증 유지 · 경로 재출력"
+
+echo "     - 공유 파일 충실성: .gitignore 바이트 보존 · 손상 host JSON 5종(구조·문법·비UTF8·EISDIR·권한거부) 보존 · dual-host · 영수증 유지 · 재실행 PARTIAL 경로 재출력 · 복구 후 완료"
+
+set +e
+env -u SAGE_RESOURCE_ROOT CODEX_HOME="$MATRIX_HOME" "$SAGE" uninstall --global --yes >/dev/null 2>&1
+GRC=$?
+set -e
+test "$GRC" -le 1 || { echo "❌ --global 단독 rc=$GRC"; exit 1; }
+echo "     - g1 (codex-global / --global / yes) rc=$GRC"
+
+echo "   uninstall OK (--check 무변경 + 소유권 보존 + 사용자 자산 무변경 + 멱등 + 재설치"
+echo "      + clean-consumer matrix 8종 + --global 단독)"
 
 echo "✅ 순수 wheel 단독배포 게이트 PASS — 번들 리소스만으로 install→generate→validate 폐루프 동작"
