@@ -54,6 +54,31 @@ def main():
     return 0
 
 
+# 실패한 명령과 **같은 프로세스 조건**에서 판정을 다시 낸다. 부모에서 참이 나오는 판정이
+# 자식에서 거짓이면 원인은 경로가 아니라 프로세스에 있다.
+CHILD_PROBE = r"""
+import os, sys
+sys.path.insert(0, os.environ["SAGE_REPO"])
+from sage import uninstall_plan as p, uninstall_fs as f
+project = sys.argv[1]
+plan = p.build(project, p.SCOPE_PROJECT)
+roots = plan.lock_roots()
+print("child plan.status=%r global_root=%r" % (plan.status, plan.global_root))
+print("child lock_roots=%r" % (roots,))
+cap = f.capability(roots)
+print("child capability supported=%s failure_code=%s filesystem=%s local=%s source=%s"
+      % (cap.supported, cap.failure_code, cap.filesystem, cap.local_volume,
+         cap.identity_source))
+print("child primitives=%r" % (cap.primitives,))
+print("child os.name=%r frozen=%r" % (os.name, getattr(sys, "frozen", False)))
+try:
+    f.backend_for(roots).close()
+    print("child backend_for=ok")
+except Exception as exc:
+    print("child backend_for raised %s: %s" % (type(exc).__name__, exc))
+"""
+
+
 def report_root(w, root):
     """root 하나의 관문별 실측값. **실제 실행이 쓰는 바로 그 경로**로도 불러야 한다.
 
@@ -123,6 +148,7 @@ def real_run():
     os.makedirs(codex_home)
     env = os.environ.copy()
     env["CODEX_HOME"] = codex_home
+    env["SAGE_REPO"] = REPO
 
     def sage(*args):
         return subprocess.run([sys.executable, "-m", "sage", *args], cwd=REPO, env=env,
@@ -150,6 +176,18 @@ def real_run():
               f"failure_code={cap.failure_code} filesystem={cap.filesystem} "
               f"local_volume={cap.local_volume} identity_source={cap.identity_source}")
         print(f"      primitives={cap.primitives}")
+
+        # **거부는 `sage` 프로세스 안에서 났다.** 부모 프로세스에서 참이 나오는 판정이
+        # 자식에서 거짓이면, 갈리는 것은 경로가 아니라 그 프로세스의 무엇이다. 그래서
+        # 같은 env·같은 cwd 의 자식에서 똑같은 두 줄을 찍어 본다.
+        probe = subprocess.run(
+            [sys.executable, "-c", CHILD_PROBE, project], cwd=REPO, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        print("      --- same-env child probe")
+        for line in (probe.stdout or "").strip().splitlines():
+            print(f"      {line}")
+        if probe.returncode != 0:
+            print(f"      child rc={probe.returncode} stderr: {probe.stderr[-800:]}")
 
         removed = sage("uninstall", "--dest", project, "--yes", "--json")
         print(f"      uninstall rc={removed.returncode}")
