@@ -102,6 +102,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[schema]"
+      # capability 가 거짓이면 화면에 남는 것은 "안전 거부" 하나뿐이다. 어느 관문에서
+      # 갈렸는지는 그 환경에서만 알 수 있고, 실패한 job 이 그 환경을 들고 있는 유일한
+      # 자리다. 그래서 판정 근거를 **먼저** 찍는다 — 보고만 하므로 job 을 붉히지 않는다.
+      - name: Windows capability diagnostics (판정 근거 — 게이트 아님)
+        if: runner.os == 'Windows'
+        run: python scripts/ci/windows_capability_report.py
+
       # `SAGE_UNINSTALL_REQUIRE_MUTATION` 이 이 job 의 계약이다. 이것이 없으면 지원 범위 밖
       # 판정이 나온 환경에서 **실제 mutation 0건으로 초록**이 되고, 화면에는 "검증했다" 만
       # 남는다. 거부 계약은 smoke 안의 명시 fixture 가 따로 확인하므로, 여기서 거부가
