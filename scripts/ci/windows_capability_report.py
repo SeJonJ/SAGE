@@ -69,13 +69,32 @@ cap = f.capability(roots)
 print("child capability supported=%s failure_code=%s filesystem=%s local=%s source=%s"
       % (cap.supported, cap.failure_code, cap.filesystem, cap.local_volume,
          cap.identity_source))
-print("child primitives=%r" % (cap.primitives,))
 print("child os.name=%r frozen=%r" % (os.name, getattr(sys, "frozen", False)))
 try:
     f.backend_for(roots).close()
     print("child backend_for=ok")
 except Exception as exc:
     print("child backend_for raised %s: %s" % (type(exc).__name__, exc))
+
+# capability 도 backend_for 도 참이면 거부는 **그 뒤 native 호출**에서 났다는 뜻이다.
+# 실행 층은 `MutationBackendError` 를 진단 code 하나로 옮기며 `op:kind:code` 문자열을
+# 버린다 — 그 문자열에는 경로가 없고 API 이름과 정수만 있는데도 어디에도 남지 않는다.
+# 그래서 여기서 가로채 찍는다.
+from sage import uninstall_executor as ex, uninstall_windows_fs as w
+seen = []
+original = w.WindowsMutationError.__init__
+def spy(self, op, code, ntstatus=False):
+    seen.append("%s:%s:%#x" % (op, "nt" if ntstatus else "win32", code))
+    original(self, op, code, ntstatus=ntstatus)
+w.WindowsMutationError.__init__ = spy
+trace = []
+try:
+    result = ex.execute(plan, trace=trace)
+    print("child execute=ok removed=%d" % len(result.processed))
+except BaseException as exc:
+    print("child execute raised %s: %s" % (type(exc).__name__, exc))
+print("child native failures=%r" % (seen,))
+print("child trace=%r" % (trace,))
 """
 
 
@@ -180,15 +199,6 @@ def real_run():
         # **거부는 `sage` 프로세스 안에서 났다.** 부모 프로세스에서 참이 나오는 판정이
         # 자식에서 거짓이면, 갈리는 것은 경로가 아니라 그 프로세스의 무엇이다. 그래서
         # 같은 env·같은 cwd 의 자식에서 똑같은 두 줄을 찍어 본다.
-        probe = subprocess.run(
-            [sys.executable, "-c", CHILD_PROBE, project], cwd=REPO, env=env,
-            capture_output=True, text=True, encoding="utf-8", errors="replace")
-        print("      --- same-env child probe")
-        for line in (probe.stdout or "").strip().splitlines():
-            print(f"      {line}")
-        if probe.returncode != 0:
-            print(f"      child rc={probe.returncode} stderr: {probe.stderr[-800:]}")
-
         removed = sage("uninstall", "--dest", project, "--yes", "--json")
         print(f"      uninstall rc={removed.returncode}")
         try:
@@ -203,6 +213,17 @@ def real_run():
                     "preserved_paths", "leftover_backups"):
             if payload.get(key):
                 print(f"      {key}={json.dumps(payload[key], ensure_ascii=True)[:900]}")
+
+        # 거부는 아무것도 바꾸지 않았으므로 소비자는 그대로다. 같은 fixture 로 실행 층을
+        # 직접 돌려, 진단 code 로 접히기 전의 native 실패를 이름과 정수로 붙잡는다.
+        probe = subprocess.run(
+            [sys.executable, "-c", CHILD_PROBE, project], cwd=REPO, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        print("      --- same-env child probe (executor level)")
+        for line in (probe.stdout or "").strip().splitlines():
+            print(f"      {line}")
+        if probe.returncode != 0:
+            print(f"      child rc={probe.returncode} stderr: {probe.stderr[-1500:]}")
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
