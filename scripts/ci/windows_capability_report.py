@@ -91,7 +91,59 @@ def main():
           f"failure_code={cap.failure_code} filesystem={cap.filesystem} "
           f"local_volume={cap.local_volume} identity_source={cap.identity_source}")
     print(f"  primitives={cap.primitives}")
+    real_run()
     return 0
+
+
+def real_run():
+    """실제 소비자를 하나 만들어 제거까지 돌리고 **기계가 읽는 결과**를 낸다.
+
+    capability 가 참인데도 smoke 가 `BLOCKED` 로 죽으면 원인은 그 뒤에 있다. 사람용 출력은
+    `blocked_reason` 을 문장으로 풀어 쓰므로 어느 코드인지 되짚을 수 없고, Windows 콘솔
+    인코딩까지 겹치면 그마저 읽히지 않는다. `--json` 은 코드를 그대로 들고 있다.
+    """
+    import json
+    import shutil
+    import subprocess
+
+    print("  --- real install/uninstall (json)")
+    base = os.path.join(os.path.dirname(REPO), ".sage-fixtures")
+    os.makedirs(base, exist_ok=True)
+    root = os.path.realpath(tempfile.mkdtemp(prefix="capability-report-", dir=base))
+    project = os.path.join(root, "proj")
+    codex_home = os.path.join(root, "codex")
+    os.makedirs(project)
+    os.makedirs(codex_home)
+    env = os.environ.copy()
+    env["CODEX_HOME"] = codex_home
+
+    def sage(*args):
+        return subprocess.run([sys.executable, "-m", "sage", *args], cwd=REPO, env=env,
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace")
+
+    try:
+        installed = sage("install", "--host", "claude", "--dest", project)
+        print(f"      install rc={installed.returncode}")
+        if installed.returncode != 0:
+            print(f"      install stderr: {installed.stderr[-800:]}")
+            return
+        removed = sage("uninstall", "--dest", project, "--yes", "--json")
+        print(f"      uninstall rc={removed.returncode}")
+        try:
+            payload = json.loads(removed.stdout)
+        except ValueError:
+            print(f"      stdout was not json: {removed.stdout[-1200:]}")
+            print(f"      stderr: {removed.stderr[-800:]}")
+            return
+        for key in ("scope", "status", "exit_code", "executed", "blocked_reason"):
+            print(f"      {key}={payload.get(key)!r}")
+        for key in ("notices", "detail", "manual", "basis", "rollback_reasons",
+                    "preserved_paths", "leftover_backups"):
+            if payload.get(key):
+                print(f"      {key}={json.dumps(payload[key], ensure_ascii=True)[:900]}")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 if __name__ == "__main__":
