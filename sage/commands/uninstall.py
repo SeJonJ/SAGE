@@ -30,6 +30,7 @@ import json
 import os
 import sys
 
+from sage import uninstall_cleanup as _manual
 from sage import uninstall_executor as _exec
 from sage import uninstall_plan as _plan
 from sage.diagnostic_contract import render_recovery
@@ -100,7 +101,8 @@ def run(args):
         return plan.exit_code
 
     if plan.status == _plan.BLOCKED:
-        _render(plan, args, language, executed=False)
+        # 안전한 계획을 만들 수 없었다. 자동 제거는 없으므로 손으로 무엇을 해야 하는지 낸다.
+        _render(plan, args, language, executed=False, basis=_manual.BASIS_VERIFIED)
         return plan.exit_code
 
     if not plan.write_targets():
@@ -128,36 +130,60 @@ def run(args):
     def blocked_plan(code, notices=None):
         return _plan.UninstallPlan(scope, dest, plan.actions, _plan.BLOCKED, code,
                                    plan.notices if notices is None else notices,
-                                   baseline=plan.baseline, global_root=plan.global_root)
+                                   baseline=plan.baseline, global_root=plan.global_root,
+                                   root_baseline=plan.root_baseline)
 
+    # 단계 이름을 받아 두는 이유는 실패한 뒤 **무엇을 손으로 정리해야 하는가** 의 근거가
+    # 달라지기 때문이다. 아무것도 바꾸지 않고 멈춘 실패와, 바꿨다가 되돌린 실패는 사용자가
+    # 보아야 할 목록이 다르다 — 그 둘을 code 이름만으로는 구분할 수 없다.
+    trace = []
     try:
         # 기준은 넘기지 않는다. plan 이 자기 시점의 기준을 들고 있고, 실행 층은 그것만 본다.
-        result = _exec.execute(plan)
+        result = _exec.execute(plan, trace=trace)
     except _exec.RollbackFailed as failure:
         # `--json` 이라도 **여기서 JSON 을 낸다.** 자동화가 가장 알아야 하는 상태가 실패이고,
         # 그 하나만 사람용 문장으로 내보내면 기계는 결과를 읽지 못한 채 exit code 만 본다.
-        blocked = blocked_plan("uninstall.rollback_failed")
+        preserved = _shown(failure.preserved_paths, plan)
+        # 되돌리기까지 실패했다. 다시 읽을 수 있으면 읽되 근거는 언제나 `uncertain` 이다 —
+        # 읽어서 보이는 것이 곧 확정된 상태라는 뜻은 아니다.
+        actions, basis = _after_failure(dest, scope, plan, trace, uncertain=True)
+        blocked = _plan.UninstallPlan(scope, dest, actions, _plan.BLOCKED,
+                                      "uninstall.rollback_failed", plan.notices,
+                                      baseline=plan.baseline, global_root=plan.global_root,
+                                      root_baseline=plan.root_baseline)
         _render(blocked, args, language, executed=False,
-                extra={"preserved_paths": _shown(failure.preserved_paths, blocked),
-                       "rollback_reasons": list(getattr(failure, "reasons", ()))})
+                extra={"preserved_paths": preserved,
+                       "rollback_reasons": list(getattr(failure, "reasons", ()))},
+                basis=basis, unknown=preserved)
         if not args.json:
-            for path in _shown(failure.preserved_paths, blocked):
+            for path in preserved:
                 print(f"  {path}", file=sys.stderr)
         return blocked.exit_code
     except ValueError as exc:
         code = str(exc) if str(exc).startswith("uninstall.") else "uninstall.fingerprint_changed"
-        blocked = blocked_plan(code)
-        _render(blocked, args, language, executed=False)
+        actions, basis = _after_failure(dest, scope, plan, trace)
+        blocked = _plan.UninstallPlan(scope, dest, actions, _plan.BLOCKED, code,
+                                      plan.notices, baseline=plan.baseline,
+                                      global_root=plan.global_root,
+                                      root_baseline=plan.root_baseline)
+        _render(blocked, args, language, executed=False, basis=basis)
         return blocked.exit_code
     except Exception as exc:
         # 여기까지 온 것은 **우리가 이름 붙이지 않은 실패**다. traceback 을 그대로 올리면
         # 사용자는 exit 1 과 스택을 받고, `--json` 소비자는 깨진 출력을 받으며, 계약된 복구
         # 안내도 나오지 않는다. 어떤 실패든 이 명령의 결과는 네 상태 중 하나여야 한다.
-        blocked = blocked_plan("uninstall.execution_failed")
+        # 이름 없는 실패도 **같은 helper 를 지난다.** 여기만 계획을 그대로 쓰면, 가장 알 수
+        # 없는 실패에서 가장 확신에 찬 목록이 나온다.
+        actions, basis = _after_failure(dest, scope, plan, trace)
+        blocked = _plan.UninstallPlan(scope, dest, actions, _plan.BLOCKED,
+                                      "uninstall.execution_failed", plan.notices,
+                                      baseline=plan.baseline, global_root=plan.global_root,
+                                      root_baseline=plan.root_baseline)
         # 예외 **종류**만 싣는다. 메시지에는 경로·설정값·OS 원문이 붙고, 그것은 로그와 CI
         # 출력으로 그대로 흘러간다.
         _render(blocked, args, language, executed=False,
-                extra={"detail": [{"kind": "exception", "type": exc.__class__.__name__}]})
+                extra={"detail": [{"kind": "exception", "type": exc.__class__.__name__}]},
+                basis=basis)
         if not args.json:
             print(f"  {exc.__class__.__name__}", file=sys.stderr)
         return blocked.exit_code
@@ -168,11 +194,15 @@ def run(args):
         plan = _plan.UninstallPlan(plan.scope, plan.dest, plan.actions, plan.status, None,
                                    plan.notices + ("uninstall.notice.backup_left",),
                                    baseline=plan.baseline, global_root=plan.global_root)
+    # **같은 정화 경로 한 벌**을 `leftover_backups` 와 수동 안내가 함께 쓴다. 두 자리에서
+    # 따로 만들면 둘이 다른 말을 하게 되고, 그때 사용자는 어느 쪽을 믿어야 하는지 모른다.
+    shown = _shown(result.leftover_backups, plan) if result.leftover_backups else []
     _render(plan, args, language, executed=True,
-            extra={"leftover_backups": _shown(result.leftover_backups, plan)}
-            if result.leftover_backups else None)
-    if result.leftover_backups and not args.json:
-        for path in _shown(result.leftover_backups, plan):
+            extra={"leftover_backups": shown} if shown else None,
+            basis=_manual.BASIS_COMMITTED if shown else None,
+            leftovers=result.leftover_backups, shown_leftovers=shown)
+    if shown and not args.json:
+        for path in shown:
             print(f"  {path}", file=sys.stderr)
     return plan.exit_code
 
@@ -212,12 +242,41 @@ def _damage_text(entry, language):
 def _shown(paths, plan):
     """계획 밖에서 생긴 경로들(backup·복구 실패 잔여)도 같은 표기로 낸다.
 
-    scope 를 모르는 경로라 project 기준으로 본다 — 이 목록에 오르는 것은 전부 write root
-    아래에 우리가 만든 임시 보관소이기 때문이다(backup 은 원본과 **같은 부모**에 만들어진다).
-    밖이면 `<outside-project>` 로만 보인다.
+    **scope 를 경로마다 고른다.** 전부 project 기준으로 보면 `--global`·`--all` 이 남긴
+    전역 보관소가 `<outside-project>` 하나로 접히고, 사용자는 치워야 할 자리를 잃는다.
+    그 경로들은 write root 아래에 우리가 만든 것이라 어느 root 아래인지 알 수 있다.
     """
-    return [_plan.display_path(path, _plan.SCOPE_PROJECT, plan.dest, plan.global_root)
-            for path in paths]
+    shown = []
+    for path in paths:
+        if plan.global_root and _plan.within_root(plan.global_root, path):
+            scope = _plan.SCOPE_GLOBAL
+        else:
+            scope = _plan.SCOPE_PROJECT
+        shown.append(_plan.display_path(path, scope, plan.dest, plan.global_root))
+    return shown
+
+
+def _after_failure(dest, scope, plan, trace, uncertain=False):
+    """실패 뒤 화면에 쓸 `(actions, basis)`. **의도했던 계획을 남은 목록이라고 부르지 않는다.**
+
+    실행이 중간에 실패했다면 일부 action 은 이미 적용됐다. 그때 계획을 그대로 "남은 것" 이라고
+    내면 이미 지워진 것을 다시 지우라고 말하거나, 되돌아온 것을 아직 남았다고 말한다. 그래서
+    **다시 읽는다.**
+
+    다시 읽지 못하면 확정된 것이 없다. 그때는 순서를 비우고 정화된 경로만 낸다 — 추측을
+    목록으로 파는 것보다 빈 자리를 보이는 편이 정직하다.
+
+    아무것도 바꾸지 않고 멈춘 실패는 다시 읽지 않는다. 방금 만든 계획이 곧 지금 상태이고,
+    거기서 한 번 더 읽으면 그 사이의 변화를 근거로 삼게 된다.
+    """
+    if not uncertain and "rollback" not in trace:
+        return plan.actions, _manual.BASIS_VERIFIED
+    try:
+        reread = _plan.build(dest, scope)
+    except Exception:
+        return (), _manual.BASIS_UNCERTAIN
+    return reread.actions, (_manual.BASIS_UNCERTAIN if uncertain
+                            else _manual.BASIS_POST_ROLLBACK)
 
 
 def _print_recovery(code, language):
@@ -225,10 +284,24 @@ def _print_recovery(code, language):
         print(line, file=sys.stderr)
 
 
-def _render(plan, args, language, executed, extra=None):
+def _render(plan, args, language, executed, extra=None, basis=None, unknown=(),
+            leftovers=(), shown_leftovers=()):
+    """화면과 `--json` 이 **같은 값 한 벌**을 소비한다.
+
+    수동 정리 안내도 같은 규칙을 따른다. `--json` 은 배열을 복제하지 않고 순서·근거만 싣고,
+    화면은 그 순서대로 이미 찍은 구획을 가리킨다 — 두 출력이 서로 다른 목록을 갖는 순간
+    사용자는 어느 쪽을 믿어야 하는지 알 수 없다.
+    """
+    manual = None
+    if basis is not None and _manual.applies(plan, executed, leftovers):
+        manual = _manual.guidance(plan, basis=basis, unknown=unknown,
+                                  leftovers=shown_leftovers)
+
     if args.json:
         payload = plan.as_json()
         payload["executed"] = executed
+        if manual is not None:
+            payload["manual_cleanup"] = manual
         if extra:
             payload.update(extra)
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
@@ -238,7 +311,10 @@ def _render(plan, args, language, executed, extra=None):
     print(tr(language, header, scope=plan.scope, status=plan.status))
     print()
 
-    _section(plan, _plan.DELETE, "cli.uninstall.section_delete", language, args.verbose)
+    # 수동 정리를 안내하는 화면에서는 삭제 목록을 **접지 않는다.** 접힌 목록을 보고 손으로
+    # 정리할 수는 없다.
+    _section(plan, _plan.DELETE, "cli.uninstall.section_delete", language,
+             args.verbose or manual is not None)
     _section(plan, _plan.STRIP, "cli.uninstall.section_strip", language, True)
     # 보존과 차단은 길어도 절대 줄이지 않는다. 줄이는 순간 사용자는 남은 것을 모른 채 끝난다.
     _section(plan, _plan.PRESERVE, "cli.uninstall.section_preserve", language, True)
@@ -251,10 +327,44 @@ def _render(plan, args, language, executed, extra=None):
     for notice in plan.notices:
         print(tr(language, f"cli.{notice}"))
 
+    if manual is not None and manual["available"]:
+        _print_manual(manual, language)
+
     if plan.blocked_reason:
         print()
         print(tr(language, f"cli.{plan.blocked_reason}"), file=sys.stderr)
         _print_recovery(plan.blocked_reason, language)
+
+
+_MANUAL_STEP_KEYS = {
+    _plan.STRIP: "cli.uninstall.manual.step_strip",
+    _plan.DELETE: "cli.uninstall.manual.step_delete",
+    _plan.PRESERVE: "cli.uninstall.manual.step_preserve",
+}
+
+
+def _print_manual(manual, language):
+    """무엇을 어떤 순서로 손대야 하는지. **파괴적 명령은 만들지 않는다.**
+
+    `rm`·`rmdir`·PowerShell recursive delete·wildcard 를 복구 명령으로 주지 않는다. 그 명령
+    하나가 잘못된 디렉터리에서 실행되면 이 명령이 지키려던 모든 것을 한 번에 지운다.
+    """
+    print()
+    print(tr(language, "cli.uninstall.manual.header",
+             basis=tr(language, f"cli.uninstall.manual.basis.{manual['basis']}")))
+    for index, kind in enumerate(manual["order"], start=1):
+        print(f"  {index}. {tr(language, _MANUAL_STEP_KEYS[kind])}")
+    for code in manual["warning_codes"]:
+        print(f"  {tr(language, f'cli.{code}')}")
+    if manual["leftovers"]:
+        print(f"  {tr(language, 'cli.uninstall.manual.leftovers')}")
+        for path in manual["leftovers"]:
+            print(f"    - {path}")
+    if manual["unknown"]:
+        print(f"  {tr(language, 'cli.uninstall.manual.unknown')}")
+        for path in manual["unknown"]:
+            print(f"    - {path}")
+    print(f"  {tr(language, 'cli.uninstall.manual.recheck')}")
 
 
 def _section(plan, kind, title_key, language, expand):

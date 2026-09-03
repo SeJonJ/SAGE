@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """`sage uninstall` 소비자 계약을 **세 OS · 세 Python** 에서 검증하는 smoke.
 
-## 검사 내용은 OS 마다 다르다
+## 검사 내용은 **환경**마다 다르다 — OS 이름으로 갈리지 않는다
 
-Linux·macOS 는 실제로 설치하고 제거한다. Windows 는 상위 디렉터리 교체 경쟁을 막을 수단
-(`dir_fd`)이 없어 제품이 mutation 을 **거부**하므로, 거기서는 계획이 도는 것과 실행이 거부되고
-아무것도 바뀌지 않는 것을 검사한다.
+Linux·macOS 와 Windows 10/11 로컬 NTFS 는 실제로 설치하고 제거한다. 지원 범위 밖(네트워크
+드라이브·NTFS 아닌 볼륨·필요한 native 기능 부재)에서는 제품이 mutation 을 **거부**하므로,
+거기서는 계획이 도는 것과 실행이 거부되고 아무것도 바뀌지 않는 것을 검사한다.
 
-"세 OS 에서 같은 검사를 돌린다" 고 적으면 Windows 에서 제거가 검증된 것처럼 읽힌다. 검사가
-무엇을 증명했는지를 정확히 적는 것이 이 스크립트가 지는 책임의 절반이다. 안전 구현은 EH-30 이다.
+갈림의 기준을 OS 이름이 아니라 **제품이 스스로 판정한 capability** 로 두는 것이 요점이다.
+OS 이름으로 가르면 지원 범위가 바뀔 때마다 이 파일이 사실과 어긋나고, 그 어긋남은 "검사했다"
+로 읽힌다. 검사가 무엇을 증명했는지 정확히 적는 것이 이 스크립트가 지는 책임의 절반이다.
 
 ## 왜 bash 를 쓰지 않는가
 
@@ -31,9 +32,21 @@ import tempfile
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, REPO)
 
-# 이 플랫폼에서 안전한 mutation 이 가능한가. 불가능하면 제품이 **실행을 거부**하는 것이
+# 이 **환경**에서 안전한 mutation 이 가능한가. 불가능하면 제품이 실행을 거부하는 것이
 # 정상이고, smoke 는 그 거부를 검사한다 — 거부를 실패로 세면 올바른 동작이 빨간불이 된다.
-from sage.uninstall_executor import _PINNING as SAFE_MUTATION  # noqa: E402
+#
+# 판정은 root 에 달려 있다(볼륨·파일시스템). 그래서 모듈 수준 상수가 아니라 fixture 를 만든
+# 뒤에 묻는다 — 같은 머신에서도 프로젝트와 `$CODEX_HOME` 이 다른 볼륨일 수 있다.
+from sage import uninstall_fs as _fs  # noqa: E402
+
+
+def safe_mutation(*roots):
+    return _fs.capability([r for r in roots if r]).supported
+
+
+# 이 값이 참이면 "지원 범위 밖이라 실제 제거를 하지 않았다" 는 **실패**다. 이것이 없으면
+# 실제 mutation 0건인 job 이 초록으로 끝나고, 화면에는 "검증했다" 만 남는다.
+REQUIRE_MUTATION = bool(os.environ.get("SAGE_UNINSTALL_REQUIRE_MUTATION"))
 
 
 def inherited_import_paths():
@@ -135,15 +148,264 @@ PATH_SHAPES = (
 CODEX_MODES = ("custom", "default")
 
 
+# 실제 제거를 세 범위 모두에서 한 번씩 돌린다. project 만 돌리면 `--global` 과 `--all` 의
+# 두 root 통합 경로는 소비자 환경에서 한 번도 실행되지 않는다.
+REMOVAL_SCOPES = ("project", "global", "all")
+
+
 def main():
     failures = 0
+    mutated = 0
     for label, project_name, codex_name in PATH_SHAPES:
         for mode in CODEX_MODES:
             print(f"--- {label} / CODEX_HOME={mode} ---")
-            run_case(label, project_name, codex_name, mode)
+            mutated += 1 if run_case(label, project_name, codex_name, mode) else 0
+    for scope in REMOVAL_SCOPES:
+        print(f"--- scope={scope} ---")
+        mutated += 1 if scope_case(scope) else 0
+    # 거부 계약은 **별도의 명시 fixture** 로 확인한다. 지원 환경에서도 돌아야 하므로 실행
+    # 여부가 환경에 달려 있지 않다 — 환경에 달려 있으면 그 검사는 필요한 날 돌지 않는다.
+    print("--- refusal contract (real capability probe) ---")
+    refusal_case()
+    print("--- native failure surface (text + JSON) ---")
+    native_failure_case()
+    if REQUIRE_MUTATION and mutated == 0:
+        fail("SAGE_UNINSTALL_REQUIRE_MUTATION is set but no case performed real removal")
     print(f"OK  ({sys.platform}, python {sys.version.split()[0]}) "
-          f"-- {len(PATH_SHAPES) * len(CODEX_MODES)} path/CODEX_HOME combinations")
+          f"-- {len(PATH_SHAPES) * len(CODEX_MODES)} path/CODEX_HOME combinations, "
+          f"{len(REMOVAL_SCOPES)} removal scopes, {mutated} real removals")
     return failures
+
+
+def scope_case(scope):
+    """`--global`·`--all` 실제 제거. 두 root 를 하나의 transaction 으로 다루는 경로다.
+
+    `--host codex --skill-scope global` 이 `$CODEX_HOME/skills` 를 두 번째 write root 로
+    만든다. 그 root 가 없으면 global·all 은 대상이 없어 조용히 통과한다 — 통과처럼 보이는
+    미실행이 이 명령에서 가장 비싼 오해다.
+    """
+    root = os.path.realpath(tempfile.mkdtemp(prefix=f"uninstall-scope-{scope}-",
+                                             dir=fixture_base()))
+    project = os.path.join(root, "proj")
+    codex_home = os.path.join(root, "codex")
+    os.makedirs(project)
+    os.makedirs(codex_home)
+    env = dict(os.environ, CODEX_HOME=codex_home)
+    try:
+        installed = run("install", "--host", "codex", "--skill-scope", "global",
+                        "--dest", project, env=env)
+        if installed.returncode != 0:
+            fail(f"{scope}: install failed", installed)
+        global_root = os.path.join(codex_home, "skills")
+        if not os.path.isdir(global_root) or not os.listdir(global_root):
+            fail(f"{scope}: the global skill root was never populated")
+        args = {"project": ["--dest", project],
+                "global": ["--global"],
+                "all": ["--all", "--dest", project]}[scope]
+        # 다른 scope 가 그대로인지 보려면 **실행 전 상태**를 들고 있어야 한다.
+        project_before = tree(project)
+        global_before = tree(global_root)
+        planned = run("uninstall", *args, "--check", "--json", env=env)
+        if planned.returncode not in (0, 1):
+            fail(f"{scope}: --check failed", planned)
+        plan = json.loads(planned.stdout)
+        targets = len(plan["deleted"]) + len(plan["stripped"])
+        if targets == 0:
+            fail(f"{scope}: nothing to remove — the fixture does not exercise this scope",
+                 planned)
+        if not safe_mutation(project, codex_home):
+            if REQUIRE_MUTATION:
+                fail(f"{scope}: mutation refused but this job requires real removal", planned)
+            print(f"  out of supported range -- {scope} refusal only")
+            return False
+        removed = run("uninstall", *args, "--yes", env=env)
+        if removed.returncode not in (0, 1):
+            fail(f"{scope}: uninstall failed", removed)
+        if scope in ("global", "all") and os.path.isdir(global_root):
+            left = sorted(os.listdir(global_root))
+            if left:
+                fail(f"{scope}: global skills survived: {left}", removed)
+        if scope in ("project", "all"):
+            if os.path.isdir(os.path.join(project, "sage")):
+                fail(f"{scope}: project assets survived", removed)
+        # **범위 격리를 명시로 단언한다.** "지웠다" 만 보면 한 scope 가 다른 scope 를
+        # 함께 지운 경우가 통과한다 — project 를 정리하려고 전역을 건드리지 않는다는 것이
+        # 이 명령의 계약이고, 계약은 검사가 있을 때만 계약이다.
+        if scope == "project" and tree(global_root) != global_before:
+            fail(f"{scope}: a project-only run changed the global scope", removed)
+        if scope == "global":
+            survivors = tree(project)
+            if survivors != project_before:
+                lost = sorted(project_before - survivors)
+                fail(f"{scope}: a global-only run changed the project: {lost[:8]}", removed)
+        print(f"  removed {targets} targets in scope={scope}")
+        return True
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def unsupported_probe_script():
+    """지원 범위 밖을 **실제 판정 경로로** 만든다.
+
+    최상위 `capability()` 를 갈아 끼우면 `probe_capability` 도 `local_ntfs` 도 돌지 않는다.
+    그러면 거부 화면은 확인되지만 **거부를 만들어 내는 코드는 한 줄도 실행되지 않는다** —
+    그 검사가 지키는 것은 화면 문구뿐이다.
+
+    그래서 가장 아래 primitive 를 갈아 끼운다. Windows 는 볼륨 조회가 확정에 실패한 것처럼,
+    POSIX 는 결속 기능이 없는 것처럼 만든다. 위쪽 판정은 전부 실제로 돈다.
+    """
+    if os.name == "nt":
+        return ("from sage import uninstall_windows_fs as w",
+                "w._volume_facts = lambda handle: (None, None)")
+    return ("from sage import uninstall_posix_fs as p",
+            "p._pinning_support = lambda: False")
+
+
+def refusal_case():
+    """지원 범위 밖의 **거부 계약**을 명시 fixture 로 확인한다.
+
+    환경이 우연히 지원 범위 밖이기를 기다리지 않는다. 기다리면 이 검사는 지원 환경에서
+    영원히 돌지 않고, 돌지 않은 검사는 통과가 아니다.
+    """
+    root = os.path.realpath(tempfile.mkdtemp(prefix="uninstall-refusal-",
+                                             dir=fixture_base()))
+    project = os.path.join(root, "proj")
+    codex_home = os.path.join(root, "codex")
+    os.makedirs(project)
+    os.makedirs(codex_home)
+    env = dict(os.environ, CODEX_HOME=codex_home)
+    try:
+        installed = run("install", "--host", "claude", "--dest", project, env=env)
+        if installed.returncode != 0:
+            fail("refusal: install failed", installed)
+        before = tree(project)
+        script = "\n".join([
+            "import sys",
+            f"sys.path.insert(0, {REPO!r})",
+            *unsupported_probe_script(),
+            "from sage import uninstall_fs as f",
+            f"cap = f.capability([{project!r}])",
+            "assert not cap.supported, 'the probe still reports this environment supported'",
+            "assert cap.failure_code == 'uninstall.unsafe_platform', cap.failure_code",
+            "from sage.cli import main",
+            f"sys.argv = ['sage', 'uninstall', '--dest', {project!r}, '--yes', '--json']",
+            "sys.exit(main())",
+        ])
+        refused = subprocess.run([sys.executable, "-c", script], cwd=REPO, env=env,
+                                 capture_output=True, text=True)
+        if refused.returncode != 2:
+            fail("refusal: an unsupported environment did not block", refused)
+        if tree(project) != before:
+            fail("refusal: a refused run still changed the project", refused)
+        try:
+            payload = json.loads(refused.stdout)
+        except ValueError:
+            fail("refusal: --json did not emit JSON", refused)
+        guide = payload.get("manual_cleanup")
+        if not guide or not guide.get("available"):
+            fail("refusal: no manual cleanup guidance was offered", refused)
+        if guide.get("basis") != "verified_plan":
+            fail(f"refusal: unexpected basis {guide.get('basis')}", refused)
+        if guide.get("order")[:1] != ["STRIP"]:
+            fail(f"refusal: partial removal is not first: {guide.get('order')}", refused)
+        print("  refusal contract verified through the real capability probe")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def native_failure_case():
+    """backend 의 native 실패가 **CLI text·JSON 에 같은 code 로** 도착하는지 본다.
+
+    변환 함수가 있어도 소비자 화면까지 그 이름이 오지 않으면, 사용자가 보는 것은
+    "실행 실패" 하나다. 그 화면에서는 보관소 이름 충돌과 경계 변화가 구별되지 않고,
+    복구 안내도 갈라지지 않는다.
+    """
+    root = os.path.realpath(tempfile.mkdtemp(prefix="uninstall-native-",
+                                             dir=fixture_base()))
+    project = os.path.join(root, "proj")
+    codex_home = os.path.join(root, "codex")
+    os.makedirs(project)
+    os.makedirs(codex_home)
+    env = dict(os.environ, CODEX_HOME=codex_home)
+    try:
+        installed = run("install", "--host", "claude", "--dest", project, env=env)
+        if installed.returncode != 0:
+            fail("native: install failed", installed)
+        before = tree(project)
+        for code in ("uninstall.backup_collision", "uninstall.boundary_changed"):
+            script = "\n".join([
+                "import sys",
+                f"sys.path.insert(0, {REPO!r})",
+                "from sage import uninstall_fs as f",
+                "real = f.backend_for",
+                "fired = []",
+                "def wrapped(roots):",
+                "    backend = real(roots)",
+                "    original = backend.replace",
+                "    def refuse(source, target):",
+                "        if not fired:",
+                "            fired.append(True)",
+                f"            raise f.MutationBackendError('op:nt:0x1', {code!r})",
+                "        return original(source, target)",
+                # 되돌리기까지 같은 실패를 내면 판정이 `rollback_failed` 로 덮인다.
+                # 우리가 보려는 것은 **첫 실패의 이름이 화면까지 오는가** 다.
+                "    backend.replace = refuse",
+                "    return backend",
+                "f.backend_for = wrapped",
+                "from sage import uninstall_executor as e",
+                "e._fs.backend_for = wrapped",
+                "from sage.cli import main",
+                f"sys.argv = ['sage', 'uninstall', '--dest', {project!r},"
+                " '--yes', '--json']",
+                "sys.exit(main())",
+            ])
+            done = subprocess.run([sys.executable, "-c", script], cwd=REPO, env=env,
+                                  capture_output=True, text=True)
+            if done.returncode != 2:
+                fail(f"native: {code} did not surface as BLOCKED(2)", done)
+            try:
+                payload = json.loads(done.stdout)
+            except ValueError:
+                fail(f"native: {code} produced no JSON", done)
+            if payload.get("blocked_reason") != code:
+                fail(f"native: JSON reported {payload.get('blocked_reason')}, not {code}",
+                     done)
+            if tree(project) != before:
+                fail(f"native: {code} left the project changed", done)
+            text = "\n".join([
+                "import sys",
+                f"sys.path.insert(0, {REPO!r})",
+                "from sage import uninstall_fs as f",
+                "real = f.backend_for",
+                "fired = []",
+                "def wrapped(roots):",
+                "    backend = real(roots)",
+                "    original = backend.replace",
+                "    def refuse(source, target):",
+                "        if not fired:",
+                "            fired.append(True)",
+                f"            raise f.MutationBackendError('op:nt:0x1', {code!r})",
+                "        return original(source, target)",
+                "    backend.replace = refuse",
+                "    return backend",
+                "f.backend_for = wrapped",
+                "from sage import uninstall_executor as e",
+                "e._fs.backend_for = wrapped",
+                "from sage.cli import main",
+                f"sys.argv = ['sage', 'uninstall', '--dest', {project!r}, '--yes']",
+                "sys.exit(main())",
+            ])
+            human = subprocess.run([sys.executable, "-c", text], cwd=REPO,
+                                   env=dict(env, SAGE_LANG="en"),
+                                   capture_output=True, text=True)
+            if human.returncode != 2:
+                fail(f"native: {code} text surface did not block", human)
+            # 화면에도 **같은 판정**이 와야 한다. 그 근거는 code 별 복구 안내가 다르다는 것이다.
+            if "uninstall" not in (human.stdout + human.stderr):
+                fail(f"native: {code} text surface carried no diagnostic", human)
+        print("  native failures reach text and JSON with the contract code")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def run_case(label, project_name, codex_name, codex_mode):
@@ -167,8 +429,9 @@ def run_case(label, project_name, codex_name, codex_mode):
             existing = [p for p in env.get("PYTHONPATH", "").split(os.pathsep) if p]
             env["PYTHONPATH"] = os.pathsep.join(
                 existing + [p for p in IMPORT_PATHS if p not in existing])
+    scoped = safe_mutation(project, codex_home if codex_mode == "custom" else None)
     steps = 0
-    total = 8 if SAFE_MUTATION else 4
+    total = 8 if scoped else 4
 
     def step(label_text):
         nonlocal steps
@@ -215,17 +478,19 @@ def run_case(label, project_name, codex_name, codex_mode):
         if tree(project) != before:
             fail("blocked run still changed the project")
 
-        if not SAFE_MUTATION:
-            # 이 플랫폼은 상위 디렉터리 교체 경쟁을 막을 수단이 없다. 실행은 **거부**되어야
+        if not scoped:
+            # 이 환경은 상위 디렉터리 교체 경쟁을 막을 수단이 없다. 실행은 **거부**되어야
             # 하고, 거부는 아무것도 바꾸지 않아야 한다. 계획은 읽기라 위에서 이미 확인했다.
+            if REQUIRE_MUTATION:
+                fail("mutation refused but this job requires real removal")
             refusal = run("uninstall", "--dest", project, "--yes", env=env)
             if refusal.returncode != 2:
                 fail("unsafe platform did not refuse to mutate", refusal)
             if tree(project) != before:
                 fail("a refused run still changed the project")
-            print("  refused to mutate on this platform (expected) -- "
-                  "Windows mutation-refusal contract verified")
-            return
+            print("  out of supported range -- refusal contract verified "
+                  "(no mutation attempted)")
+            return False
 
         step("a held lock blocks the run")
         # install·generate 와 **같은** lock 권위를 쓴다. 다른 lock 이면 두 명령이 서로를
@@ -276,7 +541,7 @@ def run_case(label, project_name, codex_name, codex_mode):
         again = run("uninstall", "--dest", project, "--yes", env=env)
         if again.returncode not in (0, 1):
             fail("second run was not idempotent", again)
-
+        return True
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

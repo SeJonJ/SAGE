@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:0c4ce2eee54b3c16b7ad4326ae90fa57e5f042f4db74b104d397cb06f51f1f00 -->
+<!-- sage-doc-source: cli-reference.md sha256:bf56b13f14ad70e813a92e42b2b002130c1f1443f77926cf7ea7d84c31eaa9af -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -72,6 +72,20 @@ The lock is released when the process exits, so there is no lock file for you to
 
 A cleanup failure is **still a success.** The requested removal already finished; we only report the
 temporary backup paths we could not clear.
+
+**Actual removal is supported on POSIX and on Windows 10/11 local NTFS.** The safety of this command
+comes from opening and holding the target's parent directory before the first change — after that,
+whatever happens to the ancestor path names, the work still lands in the original directory. Where
+that binding cannot be established (network/UNC paths, non-NTFS volumes, missing native primitives)
+the command refuses with `uninstall.unsafe_platform` **before the first change**. The test is
+whether the binding actually holds in this environment, not which operating system it is. Planning
+(`--check`) is read-only and works everywhere. Running anyway could create files outside the
+project, and for an irreversible command that risk cannot be replaced by a warning in the docs.
+
+When the command refuses or fails, it also tells you **what to clean up by hand**. The order is
+partial removal → delete → preserve, and a partial-removal entry is never a whole-file delete. If
+rollback also failed and the remaining state could not be determined, no path is reported as safe to
+delete. Destructive shell commands are never generated.
 
 **Ownership is never assumed.** Only SAGE-owned directories and assets the manifest recorded are
 removed. `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, and `AGENT_GUIDE.md` cannot be proven to have been
