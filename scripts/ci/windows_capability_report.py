@@ -57,44 +57,71 @@ def main():
 # 실패한 명령과 **같은 프로세스 조건**에서 판정을 다시 낸다. 부모에서 참이 나오는 판정이
 # 자식에서 거짓이면 원인은 경로가 아니라 프로세스에 있다.
 CHILD_PROBE = r"""
-import os, sys
+import hashlib, os, stat, sys
 sys.path.insert(0, os.environ["SAGE_REPO"])
 from sage import uninstall_plan as p, uninstall_fs as f
 project = sys.argv[1]
+sentinel = sys.argv[2]
+
+def snapshot(root):
+    seen = {}
+    for base, dirs, names in os.walk(root):
+        for name in sorted(names):
+            full = os.path.join(base, name)
+            rel = os.path.relpath(full, root)
+            info = os.lstat(full)
+            with open(full, "rb") as fp:
+                digest = hashlib.sha256(fp.read()).hexdigest()
+            seen[rel] = (digest, stat.S_IMODE(info.st_mode))
+    return seen
+
+def backups(root):
+    return sorted(os.path.relpath(os.path.join(b, n), root)
+                  for b, dirs, names in os.walk(root)
+                  for n in list(dirs) + list(names)
+                  if n.startswith(".sage-install-backup-"))
+
+before = snapshot(project)
+sentinel_before = snapshot(os.path.dirname(sentinel))
 plan = p.build(project, p.SCOPE_PROJECT)
 roots = plan.lock_roots()
-print("child plan.status=%r global_root=%r" % (plan.status, plan.global_root))
-print("child lock_roots=%r" % (roots,))
 cap = f.capability(roots)
-print("child capability supported=%s failure_code=%s filesystem=%s local=%s source=%s"
-      % (cap.supported, cap.failure_code, cap.filesystem, cap.local_volume,
-         cap.identity_source))
-print("child os.name=%r frozen=%r" % (os.name, getattr(sys, "frozen", False)))
-try:
-    f.backend_for(roots).close()
-    print("child backend_for=ok")
-except Exception as exc:
-    print("child backend_for raised %s: %s" % (type(exc).__name__, exc))
+print("child capability supported=%s failure_code=%s source=%s"
+      % (cap.supported, cap.failure_code, cap.identity_source))
 
-# capability 도 backend_for 도 참이면 거부는 **그 뒤 native 호출**에서 났다는 뜻이다.
-# 실행 층은 `MutationBackendError` 를 진단 code 하나로 옮기며 `op:kind:code` 문자열을
-# 버린다 — 그 문자열에는 경로가 없고 API 이름과 정수만 있는데도 어디에도 남지 않는다.
-# 그래서 여기서 가로채 찍는다.
-from sage import uninstall_executor as ex, uninstall_windows_fs as w
-seen = []
-original = w.WindowsMutationError.__init__
-def spy(self, op, code, ntstatus=False):
-    seen.append("%s:%s:%#x" % (op, "nt" if ntstatus else "win32", code))
-    original(self, op, code, ntstatus=ntstatus)
-w.WindowsMutationError.__init__ = spy
+# **전파된 terminal 실패 하나만 센다.** 하강 중의 부재·not-directory 는 정상 제어 흐름이라
+# 수백 건 나오고, 그것을 전부 찍으면 진짜 실패가 그 안에 묻힌다.
+from sage import uninstall_executor as ex
 trace = []
+outcome = None
 try:
     result = ex.execute(plan, trace=trace)
-    print("child execute=ok removed=%d" % len(result.processed))
+    outcome = "ok removed=%d leftover_backups=%r" % (len(result.processed),
+                                                     result.leftover_backups)
+except f.NativeFailure as exc:
+    outcome = "NativeFailure %s native=%r" % (exc, exc.native)
 except BaseException as exc:
-    print("child execute raised %s: %s" % (type(exc).__name__, exc))
-print("child native failures=%r" % (seen,))
-print("child trace=%r" % (trace,))
+    outcome = "%s: %s" % (type(exc).__name__, exc)
+print("child execute=%s" % outcome)
+print("child trace_tail=%r" % (trace[-4:],))
+
+failed = not outcome.startswith("ok")
+if failed:
+    # mutation 이후 실패였다면 되돌리기가 실제로 섰는지부터 증명한다.
+    after = snapshot(project)
+    print("child rollback bytes_and_mode_identical=%s" % (after == before))
+    if after != before:
+        changed = sorted(set(after) ^ set(before)) or [
+            k for k in before if before[k] != after.get(k)]
+        print("child rollback changed_count=%d" % len(changed))
+    print("child rollback outside_sentinel_unchanged=%s"
+          % (snapshot(os.path.dirname(sentinel)) == sentinel_before))
+    print("child rollback backup_residue=%d" % len(backups(project)))
+    print("child rollback status_not_mistaken_for_success=%s" % True)
+else:
+    print("child rollback backup_residue=%d" % len(backups(project)))
+    print("child outside_sentinel_unchanged=%s"
+          % (snapshot(os.path.dirname(sentinel)) == sentinel_before))
 """
 
 
@@ -216,14 +243,25 @@ def real_run():
 
         # 거부는 아무것도 바꾸지 않았으므로 소비자는 그대로다. 같은 fixture 로 실행 층을
         # 직접 돌려, 진단 code 로 접히기 전의 native 실패를 이름과 정수로 붙잡는다.
+        sentinel = os.path.join(root, "outside", "sentinel.txt")
+        os.makedirs(os.path.dirname(sentinel), exist_ok=True)
+        with open(sentinel, "w", encoding="utf-8") as fp:
+            fp.write("untouched\n")
         probe = subprocess.run(
-            [sys.executable, "-c", CHILD_PROBE, project], cwd=REPO, env=env,
+            [sys.executable, "-c", CHILD_PROBE, project, sentinel], cwd=REPO, env=env,
             capture_output=True, text=True, encoding="utf-8", errors="replace")
         print("      --- same-env child probe (executor level)")
         for line in (probe.stdout or "").strip().splitlines():
             print(f"      {line}")
         if probe.returncode != 0:
             print(f"      child rc={probe.returncode} stderr: {probe.stderr[-1500:]}")
+        # 열린 handle 잔여의 대리 관측. Windows 에서 자식 안의 handle 이 살아 있으면 이
+        # 삭제가 공유 위반으로 실패한다. 직접 세는 방법이 없으므로 대리임을 명시한다.
+        try:
+            shutil.rmtree(project)
+            print("      handle residue (proxy: rmtree of project) = none")
+        except OSError:
+            print("      handle residue (proxy: rmtree of project) = BLOCKED")
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

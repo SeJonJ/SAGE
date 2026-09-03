@@ -164,6 +164,10 @@ FileFullDirectoryInfo = 14
 FileFullDirectoryRestartInfo = 15
 FileIdInfo = 18
 
+# **NT 쪽 class 번호는 Win32 와 다르다.** 같은 이름의 두 번호를 한자리에 두지 않으면 언젠가
+# 한쪽 번호가 다른 쪽 API 로 간다.
+FileRenameInformation = 10
+
 STATUS_SUCCESS = 0x00000000
 STATUS_OBJECT_NAME_NOT_FOUND = 0xC0000034
 STATUS_OBJECT_NAME_COLLISION = 0xC0000035
@@ -202,7 +206,9 @@ IO_REPARSE_TAG_SYMLINK = 0xA000000C
 _ABSENT_STATUS = (STATUS_OBJECT_NAME_NOT_FOUND, STATUS_OBJECT_PATH_NOT_FOUND,
                   STATUS_DELETE_PENDING)
 _COLLISION_STATUS = (STATUS_OBJECT_NAME_COLLISION,)
-_UNSUPPORTED_STATUS = (STATUS_NOT_SUPPORTED, STATUS_INVALID_PARAMETER)
+# **`unsafe_platform` 으로 옮기는 status 집합은 없다.** capability 판정을 통과한 뒤의
+# native 실패는 환경이 아니라 구현의 문제이고, 그 둘을 한 이름으로 접으면 고칠 수 있는
+# 결함이 고칠 수 없는 한계처럼 보인다. 그 접힘이 이 사이클에서 실제로 일어났다.
 
 _RESERVED_NAMES = frozenset(
     ["con", "prn", "aux", "nul"]
@@ -215,20 +221,27 @@ def to_diagnostic(error):
 
     새 code 를 만들면 `diagnostic_contract`·i18n·복구 안내가 함께 늘고, 사용자는 OS 마다
     다른 이름의 같은 실패를 배우게 된다.
+
+    ## `unsafe_platform` 은 여기서 나오지 않는다
+
+    이 함수는 **capability 판정을 이미 통과한 뒤** 실행 중에 난 실패만 옮긴다. 그 실패를
+    "이 플랫폼은 지원되지 않는다" 로 옮기면 구현 결함이 환경 한계의 옷을 입는다 — 사용자는
+    고칠 수 있는 버그를 자기 환경 탓으로 읽고, 개발자는 초록이 아닌 화면을 환경 문제로
+    넘긴다. 실제로 그 일이 일어났다. `INVALID_PARAMETER` 는 환경이 아니라 **호출자**가 틀린
+    것이고, `NOT_SUPPORTED` 도 지원 판정 이후라면 같은 성격이다.
+
+    `unsafe_platform` 은 `probe_capability` 가 **첫 mutation 전에** 환경 미지원을 확정한
+    경우에만 쓴다. 그 경계는 지금 이 파일에서 딱 두 자리다 — probe 와 `nt_path()`.
     """
     code = error.code
     if error.ntstatus:
         if code in _COLLISION_STATUS:
             return "uninstall.backup_collision"
-        if code in _UNSUPPORTED_STATUS:
-            return "uninstall.unsafe_platform"
         if code in (STATUS_NOT_A_DIRECTORY, STATUS_FILE_IS_A_DIRECTORY):
             return "uninstall.boundary_changed"
         return "uninstall.execution_failed"
     if code in (ERROR_ALREADY_EXISTS, ERROR_FILE_EXISTS):
         return "uninstall.backup_collision"
-    if code in (ERROR_NOT_SUPPORTED, ERROR_INVALID_PARAMETER):
-        return "uninstall.unsafe_platform"
     return "uninstall.execution_failed"
 
 
@@ -309,6 +322,12 @@ class _Api:
                                       ctypes.POINTER(IO_STATUS_BLOCK),
                                       ctypes.POINTER(LARGE_INTEGER), ULONG, ULONG,
                                       ULONG, ULONG, PVOID, ULONG]
+        self.NtSetInformationFile = self.ntdll.NtSetInformationFile
+        self.NtSetInformationFile.restype = NTSTATUS
+        self.NtSetInformationFile.argtypes = [HANDLE,
+                                              ctypes.POINTER(IO_STATUS_BLOCK),
+                                              PVOID, ULONG, ctypes.c_int]
+
         self.CloseHandle = self.kernel32.CloseHandle
         self.CloseHandle.argtypes = [HANDLE]
         self.CloseHandle.restype = ctypes.c_int
@@ -569,20 +588,38 @@ def _write_all(handle, payload):
 
 
 def _rename_in(parent, handle, new_name):
-    """열린 핸들을 **같은 부모 아래** 다른 이름으로 옮긴다. 덮어쓰지 않는다."""
+    """열린 핸들을 **같은 부모 아래** 다른 이름으로 옮긴다. 덮어쓰지 않는다.
+
+    ## 왜 Win32 가 아니라 NT 진입점인가
+
+    `SetFileInformationByHandle(FileRenameInfo)` 는 **비-NULL `RootDirectory` 를 받지 않는다.**
+    구조체 배치도, 버퍼 크기도, 포인터 전달 방식도 맞는데 `ERROR_INVALID_PARAMETER` 만 낸다 —
+    Windows runner 에서 요인을 하나씩 분리해 확인했다(`scripts/ci/windows_rename_probe.py`).
+    같은 구조체·같은 부모 핸들·같은 버퍼를 `NtSetInformationFile` 에 넘기면 파일과 디렉터리
+    모두 성공한다.
+
+    `RootDirectory` 를 비우고 절대 경로로 물러서는 길은 **택하지 않는다.** 그러면 rename 이
+    이름 기준이 되어, 상위가 그 사이 바뀌면 우리가 붙든 것이 아닌 다른 자리로 간다 — 이
+    사이클이 닫으려는 위험 자체다. 진입점을 바꾸는 것이 결속을 지키는 유일한 방향이다.
+    """
     validate_component(new_name)
     encoded = new_name.encode("utf-16-le")
     header = FILE_RENAME_INFO.FileName.offset
-    size = header + len(encoded) + 2
+    # 문서가 쓰는 크기다. 구조체 뒤 정렬 패딩까지 포함하므로 `header + n + 2` 보다 넉넉하다.
+    size = ctypes.sizeof(FILE_RENAME_INFO) + len(encoded)
     buffer = ctypes.create_string_buffer(size)
     info = FILE_RENAME_INFO.from_buffer(buffer)
     info.Flags = 0                      # ReplaceIfExists = FALSE — 충돌은 덮어쓰지 않는다
     info.RootDirectory = HANDLE(parent)
     info.FileNameLength = len(encoded)
     buffer[header:header + len(encoded)] = encoded
-    ok = _Api.get().SetFileInformationByHandle(HANDLE(handle), FileRenameInfo,
-                                               ctypes.byref(buffer), size)
-    _check(ok, "SetFileInformationByHandle/FileRenameInfo")
+    iosb = IO_STATUS_BLOCK()
+    status = _Api.get().NtSetInformationFile(HANDLE(handle), ctypes.byref(iosb),
+                                             ctypes.byref(buffer), size,
+                                             FileRenameInformation)
+    if status != STATUS_SUCCESS:
+        raise WindowsMutationError("NtSetInformationFile/FileRenameInformation",
+                                   status & 0xFFFFFFFF, ntstatus=True)
 
 
 def _dispose(handle):

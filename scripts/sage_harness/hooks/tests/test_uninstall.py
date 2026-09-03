@@ -4344,8 +4344,6 @@ class WindowsBackendContract(unittest.TestCase):
         cases = [
             (w.WindowsMutationError("NtCreateFile", w.STATUS_OBJECT_NAME_COLLISION,
                                     ntstatus=True), "uninstall.backup_collision"),
-            (w.WindowsMutationError("NtCreateFile", w.STATUS_NOT_SUPPORTED,
-                                    ntstatus=True), "uninstall.unsafe_platform"),
             (w.WindowsMutationError("NtCreateFile", w.STATUS_NOT_A_DIRECTORY,
                                     ntstatus=True), "uninstall.boundary_changed"),
             (w.WindowsMutationError("WriteFile", w.ERROR_ALREADY_EXISTS),
@@ -4358,6 +4356,72 @@ class WindowsBackendContract(unittest.TestCase):
                 code = w.to_diagnostic(error)
                 self.assertEqual(code, expected)
                 self.assertIn(code, SEVERITY, "계약에 없는 code 를 만들었다")
+
+    def test_a_mutation_failure_never_claims_the_platform_is_unsupported(self):
+        """**실행 중 실패는 환경 미지원이 아니다.**
+
+        `to_diagnostic` 은 capability 판정을 **통과한 뒤**의 실패만 옮긴다. 그 실패를
+        `unsafe_platform` 으로 접으면 고칠 수 있는 구현 결함이 고칠 수 없는 환경 한계처럼
+        보이고, 사용자는 자기 환경을 탓하고 개발자는 붉은 화면을 환경 문제로 넘긴다.
+
+        실제로 그 일이 일어났다. `SetFileInformationByHandle(FileRenameInfo)` 가
+        `ERROR_INVALID_PARAMETER` 를 냈고, 화면에는 "이 플랫폼은 지원되지 않는다" 만 남았다.
+        """
+        w = uninstall_windows_fs
+        invalid = [
+            w.WindowsMutationError("NtSetInformationFile/FileRenameInformation",
+                                   w.STATUS_INVALID_PARAMETER, ntstatus=True),
+            w.WindowsMutationError("NtCreateFile", w.STATUS_NOT_SUPPORTED, ntstatus=True),
+            w.WindowsMutationError("SetFileInformationByHandle/FileRenameInfo",
+                                   w.ERROR_INVALID_PARAMETER),
+            w.WindowsMutationError("SetFileInformationByHandle/FileBasicInfo",
+                                   w.ERROR_NOT_SUPPORTED),
+        ]
+        for error in invalid:
+            with self.subTest(op=error.op, code=error.code):
+                self.assertEqual(w.to_diagnostic(error), "uninstall.execution_failed")
+
+    def test_the_native_facts_survive_the_translation(self):
+        """진단으로 옮기면서 **API 이름과 code 를 버리지 않는다.**
+
+        진단 하나만 남으면 원격에서만 나는 실패의 원인이 그 머신 안에 갇힌다. 싣는 것은
+        경로도 OS 원문도 아닌 API 이름·종류·정수뿐이다.
+        """
+        error = uninstall_windows_fs.WindowsMutationError(
+            "NtSetInformationFile/FileRenameInformation", 0xC000000D, ntstatus=True)
+        self.assertEqual(error.native, {
+            "operation": "NtSetInformationFile/FileRenameInformation",
+            "error_kind": "nt", "error_code": 0xC000000D})
+        carried = uninstall_fs.NativeFailure("uninstall.execution_failed", error.native)
+        self.assertEqual(str(carried), "uninstall.execution_failed")
+        self.assertEqual(carried.native["operation"],
+                         "NtSetInformationFile/FileRenameInformation")
+        for value in carried.native.values():
+            self.assertNotIn("\\", str(value), "경로가 섞여 나갔다")
+
+    def test_the_rename_keeps_the_parent_handle_binding(self):
+        """rename 진입점이 바뀌어도 **부모 handle 상대**여야 한다.
+
+        `RootDirectory` 를 비우고 절대 경로로 물러서면 rename 이 이름 기준이 되고, 상위가
+        그 사이 바뀌면 우리가 붙든 것이 아닌 자리로 간다 — 이 사이클이 닫으려는 위험이다.
+        Windows runner 에서 Win32 진입점이 `RootDirectory` 를 받지 않는다는 것이 확인됐으므로
+        NT 진입점을 쓰되, 결속 자체는 그대로다.
+        """
+        source = self.body("uninstall_windows_fs.py", "_rename_in")
+        self.assertIn("info.RootDirectory = HANDLE(parent)", source,
+                      "부모 handle 상대 rename 이 아니다")
+        self.assertIn("NtSetInformationFile", source)
+        self.assertNotIn("SetFileInformationByHandle", source,
+                         "RootDirectory 를 받지 않는 진입점으로 되돌아갔다")
+
+    @staticmethod
+    def body(module, name):
+        with open(os.path.join(REPO, "sage", module), encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        target = next(n for n in tree.body
+                      if isinstance(n, ast.FunctionDef) and n.name == name)
+        body = target.body[1:] if ast.get_docstring(target) else target.body
+        return "\n".join(ast.unparse(node) for node in body)
 
     def test_native_errors_never_carry_the_operating_system_message(self):
         """원문 Windows 메시지에는 절대 경로가 붙는다. 그것을 실어 나르지 않는다."""

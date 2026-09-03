@@ -166,7 +166,12 @@ def run(args):
                                       plan.notices, baseline=plan.baseline,
                                       global_root=plan.global_root,
                                       root_baseline=plan.root_baseline)
-        _render(blocked, args, language, executed=False, basis=basis)
+        # native 실패였다면 **어느 호출이 어떤 code 로** 실패했는지 함께 낸다. 진단 이름
+        # 하나만 남으면 원격에서만 나는 실패의 원인이 그 머신 안에 갇힌다. 싣는 것은 API
+        # 이름과 정수뿐이라 경로도 OS 원문도 새지 않는다.
+        native = getattr(exc, "native", None)
+        _render(blocked, args, language, executed=False, basis=basis,
+                extra={"native": native} if native else None)
         return blocked.exit_code
     except Exception as exc:
         # 여기까지 온 것은 **우리가 이름 붙이지 않은 실패**다. traceback 을 그대로 올리면
@@ -323,6 +328,14 @@ def _render(plan, args, language, executed, extra=None, basis=None, unknown=(),
     if extra and isinstance(extra.get("detail"), list):
         for entry in extra["detail"]:
             print(f"  {_damage_text(entry, language)}", file=sys.stderr)
+
+    if extra and isinstance(extra.get("native"), dict):
+        native = extra["native"]
+        code = native.get("error_code")
+        print(tr(language, "cli.uninstall.native_failure",
+                 operation=native.get("operation"), kind=native.get("error_kind"),
+                 code=f"{code:#x}" if isinstance(code, int) else code),
+              file=sys.stderr)
 
     for notice in plan.notices:
         print(tr(language, f"cli.{notice}"))

@@ -1250,6 +1250,7 @@ MESSAGES = {
     "cli.uninstall.err_global_dest": "--global 은 프로젝트 경로를 받지 않습니다.",
     "cli.uninstall.err_json_needs_yes": "실행형 --json 에는 --yes 가 필요합니다. 확인 질문과 JSON 을 같은 출력에 섞지 않습니다.",
     "cli.uninstall.header_plan": "SAGE uninstall 계획: scope={scope} 예상={status}",
+    "cli.uninstall.native_failure": "native 실패: {operation} ({kind}:{code}) — 경로와 OS 원문은 싣지 않습니다.",
     "cli.uninstall.header_result": "SAGE uninstall 결과: scope={scope} 상태={status}",
     "cli.uninstall.section_delete": "삭제: {count}건",
     "cli.uninstall.section_strip": "부분 제거: {count}건",

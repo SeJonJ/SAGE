@@ -33,6 +33,21 @@ PRIMITIVES = ("relative_open", "reparse_no_follow", "handle_rename", "handle_del
               "directory_enumeration", "identity_match")
 
 
+class NativeFailure(ValueError):
+    """실행 층이 올리는 계약 진단 + **그 진단이 접어 버린 native 사실**.
+
+    진단 하나만 올리면 어느 API 가 어떤 code 로 실패했는지가 사라진다. 그 정보는 예외가
+    이미 들고 있고 경로도 OS 원문도 없는데, 옮기는 자리에서 버려져 왔다 — 그래서 CI 로그에
+    "지원되지 않는 플랫폼" 만 남고 원인은 원격 머신 안에 갇혔다.
+
+    싣는 것은 API 이름·code 종류·정수 code 뿐이다. 경로와 OS 메시지는 여기에도 오지 않는다.
+    """
+
+    def __init__(self, diagnostic, native=None):
+        super().__init__(diagnostic)
+        self.native = native
+
+
 class MutationBackendError(OSError):
     """backend 가 낸 실패 하나. `diagnostic` 에 **기존 uninstall code** 를 들고 다닌다.
 
@@ -46,6 +61,14 @@ class MutationBackendError(OSError):
     것은 journal 의 rollback 이 `OSError` 를 모아 보고하기 때문이다 — 되돌리는 중의 실패가
     이름 없는 예외로 새면 rollback 루프가 거기서 끊긴다.
     """
+
+    @property
+    def native(self):
+        """경로 없는 사실만. `operation` 은 API 이름, `error_code` 는 정수다."""
+        return {"operation": getattr(self, "op", None),
+                "error_kind": "nt" if getattr(self, "ntstatus", False) else "win32",
+                "error_code": getattr(self, "code", None)}
+
 
     def __init__(self, message, diagnostic):
         super().__init__(message)

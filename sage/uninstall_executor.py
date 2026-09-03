@@ -284,7 +284,11 @@ def execute(plan, environ=None, trace=None):
         # **native 실패를 계약된 이름으로 옮기는 단 하나의 자리.** 여기가 없으면 backup 이름
         # 충돌도 경계 변화도 화면에서는 "실행 실패" 하나로 접힌다. 이름은 예외가 이미 들고
         # 있으므로 이 층은 OS 를 알 필요가 없다.
-        raise ValueError(exc.diagnostic) from None
+        #
+        # **옮기되 버리지 않는다.** 진단만 올리면 어느 API 가 어떤 code 로 실패했는지가
+        # 사라지고, 그 정보 없이는 원격에서만 나는 실패를 고칠 수 없다. 예외가 들고 있는
+        # 것은 API 이름과 정수뿐이라 경로도 OS 원문도 새지 않는다.
+        raise _fs.NativeFailure(exc.diagnostic, exc.native) from None
     finally:
         step("unlock")
         for lock in reversed(locks):
