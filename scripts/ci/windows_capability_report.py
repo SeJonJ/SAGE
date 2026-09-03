@@ -42,48 +42,7 @@ def main():
 
     roots = [os.path.join(REPO, "."), tempfile.gettempdir()]
     for root in roots:
-        root = os.path.abspath(root)
-        print(f"  --- root {root}")
-        try:
-            handle = w._open_root(root)
-        except Exception as exc:                               # noqa: BLE001
-            print(f"      _open_root raised: {type(exc).__name__}: {exc}")
-            continue
-        try:
-            try:
-                ok, filesystem, local = w.local_ntfs(handle)
-                print(f"      local_ntfs ok={ok} filesystem={filesystem!r} local={local}")
-            except Exception as exc:                           # noqa: BLE001
-                print(f"      local_ntfs raised: {type(exc).__name__}: {exc}")
-            try:
-                attributes, tag = w._tag_info(handle)
-                print(f"      attributes=0x{attributes:08x} reparse_tag=0x{tag:08x} "
-                      f"is_reparse={bool(attributes & w.FILE_ATTRIBUTE_REPARSE_POINT)}")
-            except Exception as exc:                           # noqa: BLE001
-                print(f"      _tag_info raised: {type(exc).__name__}: {exc}")
-                attributes = None
-            info = os.stat(root)
-            print(f"      os.stat mode=0o{w._stat_mode(info):o} "
-                  f"st_dev={info.st_dev} st_ino={info.st_ino}")
-            # **여기가 가장 자주 갈리는 자리다.** 어느 source 도 `os.stat` 과 맞지 않으면
-            # 지원 환경이 거부로 떨어진다. 맞는 것이 없을 때 무엇이 얼마나 달랐는지가
-            # 보이지 않으면 다음 수정은 추측이 된다.
-            for source in w.IDENTITY_SOURCES:
-                try:
-                    derived = w.identity(handle, source=source)
-                    mode = w._mode_of(attributes) if attributes is not None else None
-                    anchor = (w._stat_mode(info), info.st_dev, info.st_ino)
-                    print(f"      identity[{source}] = {(mode,) + derived} "
-                          f"anchor = {anchor} match={((mode,) + derived) == anchor}")
-                except Exception as exc:                       # noqa: BLE001
-                    print(f"      identity[{source}] raised: {type(exc).__name__}: {exc}")
-            try:
-                names = w._entries(handle)
-                print(f"      _entries ok, {len(names)} names")
-            except Exception as exc:                           # noqa: BLE001
-                print(f"      _entries raised: {type(exc).__name__}: {exc}")
-        finally:
-            w._close(handle)
+        report_root(w, os.path.abspath(root))
 
     from sage import uninstall_fs as _fs
     cap = _fs.capability(tuple(os.path.abspath(r) for r in roots))
@@ -93,6 +52,54 @@ def main():
     print(f"  primitives={cap.primitives}")
     real_run()
     return 0
+
+
+def report_root(w, root):
+    """root 하나의 관문별 실측값. **실제 실행이 쓰는 바로 그 경로**로도 불러야 한다.
+
+    임의의 디렉터리로만 확인하면 "이 머신은 지원된다" 까지만 알 수 있다. 거부가 난 자리는
+    그 머신의 **그 경로**이고, 둘이 다를 수 있다는 것이 이번에 실제로 드러난 사실이다.
+    """
+    print(f"  --- root {root}")
+    try:
+        handle = w._open_root(root)
+    except Exception as exc:                                   # noqa: BLE001
+        print(f"      _open_root raised: {type(exc).__name__}: {exc}")
+        return
+    try:
+        try:
+            ok, filesystem, local = w.local_ntfs(handle)
+            print(f"      local_ntfs ok={ok} filesystem={filesystem!r} local={local}")
+        except Exception as exc:                               # noqa: BLE001
+            print(f"      local_ntfs raised: {type(exc).__name__}: {exc}")
+        try:
+            attributes, tag = w._tag_info(handle)
+            print(f"      attributes=0x{attributes:08x} reparse_tag=0x{tag:08x} "
+                  f"is_reparse={bool(attributes & w.FILE_ATTRIBUTE_REPARSE_POINT)}")
+        except Exception as exc:                               # noqa: BLE001
+            print(f"      _tag_info raised: {type(exc).__name__}: {exc}")
+            attributes = None
+        info = os.stat(root)
+        print(f"      os.stat mode=0o{w._stat_mode(info):o} "
+              f"st_dev={info.st_dev} st_ino={info.st_ino}")
+        # **여기가 가장 자주 갈리는 자리다.** 어느 source 도 `os.stat` 과 맞지 않으면
+        # 지원 환경이 거부로 떨어지고, 그 어긋남은 안전하지만 원인이 보이지 않는다.
+        for source in w.IDENTITY_SOURCES:
+            try:
+                derived = w.identity(handle, source=source)
+                mode = w._mode_of(attributes) if attributes is not None else None
+                anchor = (w._stat_mode(info), info.st_dev, info.st_ino)
+                print(f"      identity[{source}] = {(mode,) + derived} "
+                      f"anchor = {anchor} match={((mode,) + derived) == anchor}")
+            except Exception as exc:                           # noqa: BLE001
+                print(f"      identity[{source}] raised: {type(exc).__name__}: {exc}")
+        try:
+            names = w._entries(handle)
+            print(f"      _entries ok, {len(names)} names")
+        except Exception as exc:                               # noqa: BLE001
+            print(f"      _entries raised: {type(exc).__name__}: {exc}")
+    finally:
+        w._close(handle)
 
 
 def real_run():
@@ -128,6 +135,22 @@ def real_run():
         if installed.returncode != 0:
             print(f"      install stderr: {installed.stderr[-800:]}")
             return
+        # **실행이 실제로 쓰는 root 로 다시 판정한다.** 위의 임의 디렉터리 판정이 참이어도
+        # 이 경로에서 거짓이면 거부가 난다 — 그 둘을 같은 것으로 보면 원인이 보이지 않는다.
+        from sage import uninstall_fs as _fs
+        from sage import uninstall_plan as _plan
+        from sage import uninstall_windows_fs as w
+        plan = _plan.build(project, _plan.SCOPE_PROJECT)
+        lock_roots = plan.lock_roots()
+        print(f"      plan.status={plan.status!r} lock_roots={lock_roots}")
+        for root in lock_roots:
+            report_root(w, os.path.abspath(root))
+        cap = _fs.capability(lock_roots)
+        print(f"      capability(lock_roots) supported={cap.supported} "
+              f"failure_code={cap.failure_code} filesystem={cap.filesystem} "
+              f"local_volume={cap.local_volume} identity_source={cap.identity_source}")
+        print(f"      primitives={cap.primitives}")
+
         removed = sage("uninstall", "--dest", project, "--yes", "--json")
         print(f"      uninstall rc={removed.returncode}")
         try:
