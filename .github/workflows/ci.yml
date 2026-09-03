@@ -105,6 +105,14 @@ jobs:
       # capability 가 거짓이면 화면에 남는 것은 "안전 거부" 하나뿐이다. 어느 관문에서
       # 갈렸는지는 그 환경에서만 알 수 있고, 실패한 job 이 그 환경을 들고 있는 유일한
       # 자리다. 그래서 판정 근거를 **먼저** 찍는다 — 보고만 하므로 job 을 붉히지 않는다.
+      # 실패한 native 호출의 **요인을 분리한다.** 소스만 읽어서는 여럿이 다 맞아 보이고,
+      # 그중 하나가 틀렸을 때 어느 것인지 알 방법이 없다. 한 번에 한 요인만 바꿔 부른다.
+      - name: Windows rename probe (요인 분리 — 게이트 아님)
+        if: runner.os == 'Windows'
+        env:
+          PYTHONUTF8: "1"
+        run: python scripts/ci/windows_rename_probe.py
+
       - name: Windows capability diagnostics (판정 근거 — 게이트 아님)
         if: runner.os == 'Windows'
         env:
