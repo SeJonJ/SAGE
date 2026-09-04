@@ -158,14 +158,21 @@ def run_plan(plan, trace=None):
     try:
         _exec.execute(plan, trace=trace)
     except ValueError as exc:
+        run_plan.failure = exc
         return str(exc)
     except _exec.RollbackFailed as exc:
+        run_plan.failure = exc
         return f"uninstall.rollback_failed:{exc}"
     except KeyboardInterrupt:
         return "KeyboardInterrupt"
     except Exception as exc:
+        run_plan.failure = exc
         return f"unnamed:{exc.__class__.__name__}"
+    run_plan.failure = None
     return None
+
+
+run_plan.failure = None
 
 
 class patched:
@@ -215,6 +222,81 @@ class backend_patched:
         _fs.backend_for = self.original
         _exec._fs.backend_for = self.original
         return False
+
+
+def sanitize(text, marks):
+    """절대 경로를 **상대 식별자**로 바꾼다.
+
+    진단을 CI 로그에 내려면 경로가 그대로 나가면 안 된다. 그렇다고 전부 지우면 어느 대상에서
+    갈렸는지 알 수 없다. 그래서 알고 있는 root 들을 이름표로 바꾸고, 그 어느 것 아래도 아니면
+    `<outside>` 로 접는다. OS 원문 메시지는 애초에 backend 가 만들지 않는다.
+    """
+    value = str(text)
+    for prefix, label in sorted(marks, key=lambda item: len(item[0]), reverse=True):
+        value = value.replace(prefix, label)
+    return value
+
+
+class RollbackWatch:
+    """되돌리기 **직전**의 상태를 정화해서 붙잡는다.
+
+    `RollbackFailed` 는 무엇을 되돌리지 못했는지 말하지만, 그때 우리가 무엇을 붙들고 있었는지는
+    말하지 않는다. 원격에서만 나는 실패는 그 두 번째가 없으면 고칠 수 없다 — 실제로 네 번
+    추측하고 네 번 빗나갔다. 그래서 추측하기 전에 적는다.
+    """
+
+    def __init__(self, marks):
+        self.marks = marks
+        self.entries = []
+        self.parents = []
+        self.physical = []
+        self.released = []
+        self.fired = False
+
+    def __enter__(self):
+        original = _exec._PinnedTransaction.rollback
+        watch = self
+
+        def rollback(journal):
+            watch.fired = True
+            watch.entries = [
+                (sanitize(path, watch.marks),
+                 sanitize(backup, watch.marks) if backup else None)
+                for path, backup in journal._entries]
+            backend = journal.backend
+            watch.parents = sorted(sanitize(k, watch.marks)
+                                   for k in getattr(backend, "parents", {}))
+            watch.physical = sorted(
+                f"{sanitize(k, watch.marks)} -> {sanitize(v, watch.marks)}"
+                for k, v in getattr(backend, "_physical", {}).items())
+            watch.released = sorted(sanitize(k, watch.marks)
+                                    for k in getattr(backend, "_released", ()))
+            return original(journal)
+
+        self._original = original
+        _exec._PinnedTransaction.rollback = rollback
+        return self
+
+    def __exit__(self, *_exc):
+        _exec._PinnedTransaction.rollback = self._original
+        return False
+
+    def report(self, label, failure, trace):
+        """정화된 사실만 낸다. 경로도 OS 원문도 나가지 않는다."""
+        print(f"  -- {label}: rollback diagnostics")
+        original = getattr(failure, "original", None) if failure else None
+        if original:
+            print(f"     original.diagnostic={original.get('diagnostic')}")
+            print(f"     original.native={original.get('native')}")
+        for reason in getattr(failure, "reasons", ()):
+            print(f"     reason: {sanitize(reason, self.marks)}")
+        print(f"     rollback reached={self.fired}")
+        for path, backup in self.entries:
+            print(f"     entry: {path} backup={backup}")
+        print(f"     parents={self.parents}")
+        print(f"     physical={self.physical}")
+        print(f"     released={self.released}")
+        print(f"     trace={list(trace)[-8:]}")
 
 
 class StepHook(list):
@@ -415,7 +497,17 @@ def _ancestor_swap_case(consumer, label, at, occurrence=1):
         consumer.unapproved(moved)
 
     hook = StepHook(at, swap, occurrence=occurrence)
-    outcome = run_plan(plan, trace=hook)
+    # root 이름표. 절대 경로 대신 이것으로 바꿔 찍는다.
+    marks = [(os.path.abspath(moved), "<real-claude>"),
+             (os.path.abspath(claude), "<claude>"),
+             (os.path.abspath(consumer.project), "<project>"),
+             (os.path.abspath(outside), "<outside>"),
+             (os.path.abspath(consumer.root), "<root>")]
+    with RollbackWatch(marks) as watch:
+        outcome = run_plan(plan, trace=hook)
+    if outcome is not None:
+        # **추측하기 전에 적는다.** 원격에서만 나는 실패는 그때의 상태가 없으면 고칠 수 없다.
+        watch.report(label, run_plan.failure, hook)
     if not check(hook.fired, f"{label}: 주입 자리({at})에 도달하지 못했다"):
         return
     if not check(linked and linked[0], f"{label}: 디렉터리 링크를 만들지 못했다"):
