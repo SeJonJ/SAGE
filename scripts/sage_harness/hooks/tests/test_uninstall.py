@@ -4603,8 +4603,16 @@ class WindowsBackendContract(unittest.TestCase):
         self.assertNotIn("\\", str(error))
 
     def test_network_and_non_drive_roots_are_refused_before_anything_opens(self):
-        """UNC·네트워크 경로는 NT 경로로 옮기는 자리에서 이미 거부된다."""
-        for path in ("\\\\server\\share\\project", "//server/share", "relative/path"):
+        """UNC·네트워크 경로는 NT 경로로 옮기는 자리에서 이미 거부된다.
+
+        상대 경로는 **Windows 에서 비드라이브 경로가 아니다** — `abspath` 가 현재 드라이브
+        아래 절대 경로로 만든다. 그것을 거부하리라 기대하는 것은 제품이 아니라 POSIX 습관에
+        대한 기대다.
+        """
+        refused = ["\\\\server\\share\\project", "//server/share"]
+        if os.name != "nt":
+            refused.append("relative/path")
+        for path in refused:
             with self.subTest(path=path):
                 with self.assertRaises(ValueError):
                     uninstall_windows_fs.nt_path(path)
@@ -4709,7 +4717,8 @@ class ManualCleanupGuidance(Base):
         self.assertEqual(result.returncode, 2, combined)
         self.assertIn("수동 정리 안내", combined)
         self.assertIn("파일 전체를 삭제하지 말고", combined)
-        self.assertIn(".claude/skills/sage-plan", combined, "삭제 목록이 접힌 채 안내만 나왔다")
+        self.assertIn(os.path.join(".claude", "skills", "sage-plan"), combined,
+                      "삭제 목록이 접힌 채 안내만 나왔다")
         self.assertIn(".gitignore", combined)
 
     def test_the_guide_never_writes_a_destructive_shell_command(self):
@@ -4828,10 +4837,15 @@ class RootBinding(Base):
             backend.pin(REPO, os.path.join(REPO, "sage", "cli.py"))
 
     def test_pin_leaves_no_open_handle_behind_when_the_descent_fails(self):
-        """하강 중 실패하면 이미 연 중간 handle 을 **역순으로 전부** 닫는다."""
+        """하강 중 실패하면 이미 연 중간 handle 을 **역순으로 전부** 닫는다.
+
+        backend 를 이름으로 고르지 않고 **이 환경이 실제로 쓰는 것**을 가져온다. POSIX
+        backend 를 Windows 에서 만들면 `os.O_DIRECTORY` 가 없어 검사가 제품이 아니라 자기
+        가정 때문에 죽고, 그 자리에서 Windows 하강 정리는 한 번도 확인되지 않는다.
+        """
         consumer = self.fresh()
         plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
-        backend = uninstall_posix_fs.PosixBackend()
+        backend = uninstall_fs.backend_for(plan.lock_roots())
         backend.open_roots(plan.root_baseline)
         opened = self.open_handles()
         missing = os.path.join(consumer.project, "no", "such", "dir", "leaf.txt")
@@ -5245,6 +5259,110 @@ class LocalizationInventory(unittest.TestCase):
         en_keys = {k for k in en.MESSAGES if k.startswith("cli.uninstall.")}
         self.assertTrue(ko_keys)
         self.assertEqual(ko_keys, en_keys)
+
+
+class RaceRunnerContract(unittest.TestCase):
+    """race runner **자신이** 조용히 약해지는 것을 잡는다.
+
+    이 runner 는 "몇 건 돌았다" 를 출력하는데, 그 숫자가 무엇을 세는지 아무도 검사하지 않으면
+    숫자만 남고 보장은 사라진다. 실제로 그랬다 — 아무 상태도 바꾸지 못한 case 가 조용히
+    반환해도 실행으로 셌고, Windows 커널이 막은 주입이 `14 injections executed` 안에 들어갔다.
+
+    아래는 runner 를 일부러 약하게 만들었을 때 CI 가 **실패하는지** 본다.
+    """
+
+    def runner(self):
+        import importlib.util
+        path = os.path.join(REPO, "scripts", "ci", "uninstall_race_smoke.py")
+        spec = importlib.util.spec_from_file_location("sage_race_runner", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def verdict(self, module, outcomes):
+        """대조만 돌린다 — 실제 주입 없이 회계 규칙을 본다."""
+        module.FAILURES.clear()
+        module.OUTCOMES.clear()
+        module.OUTCOMES.update(outcomes)
+        for case_id, expected in sorted(module.REQUIRED_CASES.items()):
+            actual = module.OUTCOMES.get(case_id)
+            if actual is None:
+                module.FAILURES.append(f"missing:{case_id}")
+            elif actual == module.FAILED:
+                module.FAILURES.append(f"failed:{case_id}")
+            elif actual != expected:
+                module.FAILURES.append(f"kind:{case_id}")
+        unknown = sorted(set(module.OUTCOMES) - set(module.REQUIRED_CASES))
+        if unknown:
+            module.FAILURES.append(f"unknown:{unknown}")
+        return list(module.FAILURES)
+
+    def healthy(self, module):
+        return dict(module.REQUIRED_CASES)
+
+    def test_every_declared_case_is_required_and_unique(self):
+        module = self.runner()
+        ids = [case_id for case_id, *_rest in module.CASES]
+        self.assertEqual(len(ids), len(set(ids)), "같은 id 를 두 번 등록했다")
+        self.assertEqual(sorted(ids), sorted(module.REQUIRED_CASES),
+                         "선언한 case 와 요구 목록이 다르다")
+        self.assertEqual(len(module.REQUIRED_CASES), 14)
+
+    def test_a_healthy_run_passes_the_ledger(self):
+        module = self.runner()
+        self.assertEqual(self.verdict(module, self.healthy(module)), [])
+
+    def test_a_case_that_changes_nothing_fails(self):
+        """무동작 case. 예전에는 이것이 실행으로 집계됐다."""
+        module = self.runner()
+        outcomes = self.healthy(module)
+        outcomes["strip-leaf-replaced-by-link:project"] = module.FAILED
+        self.assertTrue(self.verdict(module, outcomes))
+
+    def test_a_prevented_case_is_not_counted_as_executed(self):
+        """OS 가 막은 것은 해낸 것이 아니다. 같은 숫자에 넣으면 계약이 조용히 충족된다."""
+        module = self.runner()
+        outcomes = self.healthy(module)
+        outcomes["ancestor-swap-after-first-backup:project"] = module.PREVENTED_BY_OS
+        problems = self.verdict(module, outcomes)
+        self.assertTrue(any("kind:" in note for note in problems),
+                        f"막힌 주입을 실행으로 셌다: {problems}")
+
+    def test_a_missing_scope_fails(self):
+        """root 교체 세 scope 중 하나가 빠지는 경우. 이름만 세면 나머지가 채워 준다."""
+        module = self.runner()
+        outcomes = self.healthy(module)
+        del outcomes["root-swap-after-fingerprint:global"]
+        problems = self.verdict(module, outcomes)
+        self.assertTrue(any("root-swap-after-fingerprint:global" in n for n in problems),
+                        f"빠진 scope 를 잡지 못했다: {problems}")
+
+    def test_a_synthetic_injection_cannot_satisfy_a_real_seam(self):
+        """monkeypatch 주입이 실제 경쟁 자리를 대신할 수 없다."""
+        module = self.runner()
+        outcomes = self.healthy(module)
+        outcomes["root-swap-after-fingerprint:project"] = module.SYNTHETIC
+        self.assertTrue(self.verdict(module, outcomes))
+
+    def test_the_runner_never_falls_back_to_a_copying_move(self):
+        """`shutil.move` 재도입을 막는다.
+
+        그것은 rename 이 실패하면 복사 후 삭제로 떨어진다. 그러면 주입한 것은 이름 교체가
+        아니라 "복사해 두고 원본 삭제" 이고, 붙든 객체는 사라진 원본 쪽이다 — 전혀 다른
+        상황을 같은 이름으로 검사하게 된다. 실제로 Windows 에서 그렇게 되어 있었다.
+        """
+        path = os.path.join(REPO, "scripts", "ci", "uninstall_race_smoke.py")
+        with open(path, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        # **본문만 본다.** 설명문에는 왜 그것을 쓰지 않는지가 적혀 있고, 그것을 금지 문자열로
+        # 세면 설명을 지워야 통과하는 검사가 된다.
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef,
+                                 ast.ClassDef)) and ast.get_docstring(node):
+                node.body = node.body[1:]
+        code = ast.unparse(tree)
+        self.assertNotIn("shutil.move", code, "복사로 물러서는 이동이 되살아났다")
+        self.assertIn("os.rename", code, "엄격한 rename 이 사라졌다")
 
 
 class CoreSelectorContract(unittest.TestCase):

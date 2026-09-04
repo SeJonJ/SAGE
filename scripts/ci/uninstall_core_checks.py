@@ -46,6 +46,7 @@ CORE_CLASSES = (
     "PostFailureGuidance",
     "ManualCleanupGuidance",
     "CoreSelectorContract",
+    "RaceRunnerContract",
 )
 
 # 클래스째 넣을 수 없지만 **반드시 Windows 에서 돌아야 하는** 검사들.
