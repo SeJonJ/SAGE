@@ -4421,10 +4421,37 @@ class WindowsBackendContract(unittest.TestCase):
         backend.parents[target] = 4242
         backend._owned.append(4242)
 
-        backend._release_parent(target)
+        self.assertEqual(backend._detach_parent(target), target)
         self.assertEqual(closed, [4242], "붙든 handle 을 놓지 않았다")
         self.assertNotIn(target, backend.parents)
         self.assertNotIn(4242, backend._owned)
+
+    def test_moving_a_held_directory_takes_the_hold_back_afterwards(self):
+        """놓기만 하면 **되돌리기가 그 아래를 못 만진다.**
+
+        되돌리기는 역순으로 돌면서 옮겨 둔 자식을 제자리에 놓는다. 그때 이 부모가 필요하다.
+        놓기만 했더니 rollback 이 `parent handle was released` 로 실패해 보관소가 통째로
+        남았다 — 고치려던 것보다 나쁜 상태였다.
+        """
+        w = uninstall_windows_fs
+        source = self.body("uninstall_windows_fs.py", "replace", "WindowsBackend")
+        self.assertIn("_detach_parent(source)", source)
+        self.assertIn("_attach_parent(detached, parent, os.path.basename(target))",
+                      source, "옮긴 뒤 다시 붙들지 않는다")
+        self.assertIn("_attach_parent(detached, parent, os.path.basename(source))",
+                      source, "옮기지 못했을 때 원래 이름으로 되돌려 붙들지 않는다")
+
+    @staticmethod
+    def body(module, name, owner=None):
+        with open(os.path.join(REPO, "sage", module), encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        nodes = tree.body
+        if owner is not None:
+            nodes = next(n for n in tree.body
+                         if isinstance(n, ast.ClassDef) and n.name == owner).body
+        target = next(n for n in nodes if isinstance(n, ast.FunctionDef) and n.name == name)
+        body = target.body[1:] if ast.get_docstring(target) else target.body
+        return "\n".join(ast.unparse(node) for node in body)
 
     def test_a_released_parent_never_falls_back_to_paths(self):
         """놓은 뒤 그 아래를 다시 쓰려 하면 **멈춘다.**
@@ -4459,14 +4486,6 @@ class WindowsBackendContract(unittest.TestCase):
         self.assertNotIn("SetFileInformationByHandle", source,
                          "RootDirectory 를 받지 않는 진입점으로 되돌아갔다")
 
-    @staticmethod
-    def body(module, name):
-        with open(os.path.join(REPO, "sage", module), encoding="utf-8") as handle:
-            tree = ast.parse(handle.read())
-        target = next(n for n in tree.body
-                      if isinstance(n, ast.FunctionDef) and n.name == name)
-        body = target.body[1:] if ast.get_docstring(target) else target.body
-        return "\n".join(ast.unparse(node) for node in body)
 
     def test_native_errors_never_carry_the_operating_system_message(self):
         """원문 Windows 메시지에는 절대 경로가 붙는다. 그것을 실어 나르지 않는다."""
