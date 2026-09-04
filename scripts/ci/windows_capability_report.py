@@ -97,17 +97,31 @@ from sage import uninstall_executor as ex
 # 실행만 실패하므로, 실패한 시도의 성격(몇 번째인지·깊이·디렉터리인지·이름 길이)이 남은
 # 유일한 판별축이다. 이름 자체는 싣지 않는다.
 attempts = []
+failures = []
 original_replace = ex._PinnedTransaction._replace
 def counted(self, source, target):
     rel = os.path.relpath(source, project)
+    parents = getattr(self.backend, "parents", {})
     shape = {"n": len(attempts) + 1,
              "depth": len(rel.split(os.sep)),
              "is_dir": os.path.isdir(source),
              "name_len": len(os.path.basename(source)),
              "backup_len": len(os.path.basename(target)),
-             "hidden": os.path.basename(source).startswith(".")}
+             "hidden": os.path.basename(source).startswith("."),
+             # 이 대상 자체를 우리가 **부모로 붙들고 있는가.** 붙든 디렉터리를 옮기는 것과
+             # 그렇지 않은 것은 Windows 에서 다른 조작이다.
+             "is_pinned_parent": os.path.abspath(source) in parents,
+             # 되돌리는 방향인가. backup 이름이 원래 이름보다 짧으면 복원 쪽이다.
+             "restoring": os.path.basename(source).startswith(".sage-install-backup-")}
     attempts.append(shape)
-    return original_replace(self, source, target)
+    try:
+        return original_replace(self, source, target)
+    except BaseException as exc:
+        shape["failed"] = getattr(exc, "diagnostic", None) or type(exc).__name__
+        shape["native"] = getattr(exc, "native", None) or {
+            "operation": getattr(exc, "op", None), "error_code": getattr(exc, "code", None)}
+        failures.append(shape)
+        raise
 ex._PinnedTransaction._replace = counted
 
 trace = []
@@ -122,9 +136,12 @@ except BaseException as exc:
     outcome = "%s: %s" % (type(exc).__name__, exc)
 print("child execute=%s" % outcome)
 print("child trace_tail=%r" % (trace[-4:],))
-print("child rename_attempts=%d last=%r" % (len(attempts), attempts[-1] if attempts else None))
-if len(attempts) > 1:
-    print("child rename_first=%r" % (attempts[0],))
+print("child rename_attempts=%d failures=%d" % (len(attempts), len(failures)))
+for shape in failures:
+    print("child rename_FAILED=%r" % (shape,))
+forward = [a for a in attempts if not a["restoring"]]
+print("child rename_forward_ok=%d of %d" % (
+    len([a for a in forward if "failed" not in a]), len(forward)))
 
 failed = not outcome.startswith("ok")
 if failed:
