@@ -26,6 +26,10 @@ sys.path.insert(0, REPO)
 
 FileRenameInformation = 10          # NT 쪽 class 번호. Win32 의 3 과 다르다.
 
+# 디렉터리에 항목을 만들 권한. 이름이 데이터 권한과 같은 비트라 헷갈리기 쉬워 여기 적어 둔다.
+FILE_ADD_FILE = 0x0002              # = FILE_WRITE_DATA
+FILE_ADD_SUBDIRECTORY = 0x0004      # = FILE_APPEND_DATA
+
 
 def main():
     print("== windows rename probe ==")
@@ -36,129 +40,101 @@ def main():
     from sage import uninstall_windows_fs as w
 
     api = w._Api.get()
-    nt_set = api.ntdll.NtSetInformationFile
-    nt_set.restype = w.NTSTATUS
-    nt_set.argtypes = [w.HANDLE, ctypes.POINTER(w.IO_STATUS_BLOCK), w.PVOID,
-                       w.ULONG, ctypes.c_int]
-
     info = w.FILE_RENAME_INFO
     print(f"  struct sizeof={ctypes.sizeof(info)} "
           f"Flags={info.Flags.offset} RootDirectory={info.RootDirectory.offset} "
           f"FileNameLength={info.FileNameLength.offset} FileName={info.FileName.offset}")
-    print(f"  pointer_size={ctypes.sizeof(ctypes.c_void_p)}")
+
+    # 부모 handle 의 권한. 현재 구현은 읽기·순회만 갖는다. rename 은 **대상 디렉터리에
+    # 항목을 만드는** 조작이므로 그 권한이 필요할 수 있다 — 있어야 하는지 여기서 가른다.
+    parent_modes = [
+        ("list+traverse (current)",
+         w.FILE_LIST_DIRECTORY | w.FILE_TRAVERSE),
+        ("list+traverse+add",
+         w.FILE_LIST_DIRECTORY | w.FILE_TRAVERSE | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY),
+    ]
+    # 대상의 성격. 실제 소비자에는 중첩 경로·비어 있지 않은 디렉터리가 섞여 있고, probe 가
+    # 평평한 빈 fixture 만 보면 그 차이가 원격에서 처음 드러난다.
+    kinds = ["file", "dir", "nonempty-dir", "readonly-file", "nested-file"]
 
     base = os.path.realpath(tempfile.mkdtemp(prefix="rename-probe-"))
     try:
-        for kind in ("file", "dir"):
-            print(f"  --- target kind={kind}")
-            for label, attempt in variants(w, nt_set):
-                code = run_one(w, base, kind, attempt)
-                print(f"      {label:44} {code}")
+        for parent_label, parent_access in parent_modes:
+            print(f"  --- parent handle: {parent_label}")
+            for kind in kinds:
+                code = run_one(w, base, kind, parent_access)
+                print(f"      {kind:16} nt FileRenameInformation  {code}")
     finally:
         shutil.rmtree(base, ignore_errors=True)
     return 0
 
 
-def variants(w, nt_set):
-    """(이름, 시도) 목록. **한 번에 한 요인만 바꾼다.**"""
-    def header_plus_two(parent, handle, name):
-        # 현재 구현과 같다. 버퍼는 `FileName` offset + 이름 + null 종단.
-        return win32_rename(w, parent, handle, name,
-                            size=lambda header, n: header + n + 2)
-
-    def sizeof_plus_name(parent, handle, name):
-        # MSDN 예제가 쓰는 크기. `sizeof(FILE_RENAME_INFO) + FileNameLength` 다 —
-        # 구조체 뒤 정렬 패딩이 포함되므로 위보다 크다.
-        return win32_rename(w, parent, handle, name,
-                            size=lambda header, n: ctypes.sizeof(w.FILE_RENAME_INFO) + n)
-
-    def by_value_buffer(parent, handle, name):
-        # `byref(buffer)` 대신 배열 자체를 넘긴다. argtype 이 `PVOID` 라 둘 다 통과하지만
-        # 실제로 커널에 가는 값이 같은지는 불러 봐야 안다.
-        return win32_rename(w, parent, handle, name,
-                            size=lambda header, n: header + n + 2, byref=False)
-
-    def no_root_directory(parent, handle, name):
-        # **관측 전용.** 채택 후보가 아니다 — 절대 경로 rename 은 결속을 버린다.
-        return win32_rename(w, parent, handle, name,
-                            size=lambda header, n: ctypes.sizeof(w.FILE_RENAME_INFO) + n,
-                            root=None)
-
-    def nt_header_plus_two(parent, handle, name):
-        return nt_rename(w, nt_set, parent, handle, name,
-                         size=lambda header, n: header + n + 2)
-
-    def nt_sizeof_plus_name(parent, handle, name):
-        return nt_rename(w, nt_set, parent, handle, name,
-                         size=lambda header, n: ctypes.sizeof(w.FILE_RENAME_INFO) + n)
-
-    return [
-        ("win32 FileRenameInfo, header+n+2 (current)", header_plus_two),
-        ("win32 FileRenameInfo, sizeof+n", sizeof_plus_name),
-        ("win32 FileRenameInfo, buffer by value", by_value_buffer),
-        ("win32 FileRenameInfo, RootDirectory=NULL (observe)", no_root_directory),
-        ("nt   FileRenameInformation, header+n+2", nt_header_plus_two),
-        ("nt   FileRenameInformation, sizeof+n", nt_sizeof_plus_name),
-    ]
-
-
-def build(w, name, size, root):
+def nt_rename(w, parent, handle, name):
     encoded = name.encode("utf-16-le")
     header = w.FILE_RENAME_INFO.FileName.offset
-    total = size(header, len(encoded))
-    buffer = ctypes.create_string_buffer(total)
+    size = ctypes.sizeof(w.FILE_RENAME_INFO) + len(encoded)
+    buffer = ctypes.create_string_buffer(size)
     info = w.FILE_RENAME_INFO.from_buffer(buffer)
     info.Flags = 0
-    info.RootDirectory = root
+    info.RootDirectory = w.HANDLE(parent)
     info.FileNameLength = len(encoded)
     buffer[header:header + len(encoded)] = encoded
-    return buffer, total
-
-
-def win32_rename(w, parent, handle, name, *, size, root=True, byref=True):
-    buffer, total = build(w, name, size, w.HANDLE(parent) if root else None)
-    pointer = ctypes.byref(buffer) if byref else buffer
-    ok = w._Api.get().SetFileInformationByHandle(
-        w.HANDLE(handle), w.FileRenameInfo, pointer, total)
-    if ok:
-        return "ok"
-    return f"win32:{ctypes.get_last_error():#x}"
-
-
-def nt_rename(w, nt_set, parent, handle, name, *, size):
-    buffer, total = build(w, name, size, w.HANDLE(parent))
     iosb = w.IO_STATUS_BLOCK()
-    status = nt_set(w.HANDLE(handle), ctypes.byref(iosb), ctypes.byref(buffer),
-                    total, FileRenameInformation) & 0xFFFFFFFF
-    if status == w.STATUS_SUCCESS:
-        return "ok"
-    return f"nt:{status:#x}"
+    status = w._Api.get().NtSetInformationFile(
+        w.HANDLE(handle), ctypes.byref(iosb), ctypes.byref(buffer), size,
+        FileRenameInformation) & 0xFFFFFFFF
+    return "ok" if status == w.STATUS_SUCCESS else f"nt:{status:#x}"
 
 
-def run_one(w, base, kind, attempt):
+def build_target(room, kind):
+    """대상 하나를 만들고 (부모 상대 경로 성분, leaf 이름) 을 돌려준다."""
+    if kind == "nested-file":
+        os.makedirs(os.path.join(room, "nested"))
+        with open(os.path.join(room, "nested", "target"), "w", encoding="utf-8") as fp:
+            fp.write("x")
+        return ["nested"], "target"
+    if kind == "dir":
+        os.mkdir(os.path.join(room, "target"))
+    elif kind == "nonempty-dir":
+        os.makedirs(os.path.join(room, "target", "inner"))
+        with open(os.path.join(room, "target", "inner", "leaf"), "w",
+                  encoding="utf-8") as fp:
+            fp.write("x")
+    else:
+        with open(os.path.join(room, "target"), "w", encoding="utf-8") as fp:
+            fp.write("x")
+        if kind == "readonly-file":
+            os.chmod(os.path.join(room, "target"), 0o444)
+    return [], "target"
+
+
+def run_one(w, base, kind, parent_access):
     """매 시도마다 **새 fixture** 를 만든다. 앞 시도의 성공이 다음 시도를 가리지 않게."""
     room = tempfile.mkdtemp(dir=base)
-    parent = None
-    handle = None
+    opened = []
     try:
-        if kind == "dir":
-            os.mkdir(os.path.join(room, "target"))
-        else:
-            with open(os.path.join(room, "target"), "w", encoding="utf-8") as fp:
-                fp.write("x")
+        parts, leaf = build_target(room, kind)
         parent = w._open_root(room)
-        handle, _is_dir = w._open_any(parent, "target", access=w.DELETE,
-                                      allow_reparse=True)
-        return attempt(parent, handle, ".sage-install-backup-probe-target")
+        opened.append(parent)
+        for part in parts:
+            parent = w._open_child(parent, part, directory=True, access=parent_access)
+            opened.append(parent)
+        handle, _is_dir = w._open_any(parent, leaf, access=w.DELETE, allow_reparse=True)
+        opened.append(handle)
+        return nt_rename(w, parent, handle, ".sage-install-backup-probe-target")
     except w.WindowsMutationError as exc:
         return f"setup {exc.op}:{'nt' if exc.ntstatus else 'win32'}:{exc.code:#x}"
     except Exception as exc:                                   # noqa: BLE001
         return f"setup {type(exc).__name__}"
     finally:
-        if handle:
+        for handle in reversed(opened):
             w._close(handle)
-        if parent:
-            w._close(parent)
+        for base_dir, dirs, names in os.walk(room):
+            for name in names:
+                try:
+                    os.chmod(os.path.join(base_dir, name), 0o666)
+                except OSError:
+                    pass
         shutil.rmtree(room, ignore_errors=True)
 
 
