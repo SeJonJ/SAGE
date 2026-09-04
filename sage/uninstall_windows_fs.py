@@ -968,6 +968,9 @@ class WindowsBackend(_fs.MutationBackend):
         self.roots = {}
         self.parents = {}
         self._owned = []
+        # 우리가 스스로 놓은 부모. 놓은 뒤 그 아래를 다시 쓰려 하면 경로로 떨어지지
+        # 않고 멈추기 위해 기억한다.
+        self._released = set()
 
     # -- 결속 ------------------------------------------------------------------
 
@@ -1040,7 +1043,37 @@ class WindowsBackend(_fs.MutationBackend):
             self._owned.append(owned[-1])
 
     def pinned(self, path):
-        return os.path.dirname(os.path.abspath(path)) in self.parents
+        parent = os.path.dirname(os.path.abspath(path))
+        if parent in self._released:
+            # 우리가 스스로 놓은 디렉터리다. `False` 를 돌려주면 상위 층이 **경로 기반
+            # 구현으로 조용히 떨어진다** — 결속이 사라진 사실이 결과에 드러나지 않는다.
+            # 이 사이클이 반복해서 만난 모양이라 여기서는 소리를 낸다.
+            raise _tx.InstallDriftError(f"parent handle was released: {parent}")
+        return parent in self.parents
+
+    def _release_parent(self, path):
+        """**우리가 붙든 디렉터리 자신을 옮기기 직전에** 그 handle 을 놓는다.
+
+        Windows 는 열린 handle 이 남아 있는 디렉터리의 이름을 바꾸지 못한다. 파일은
+        `FILE_SHARE_DELETE` 로 열려 있으면 되지만 디렉터리는 그렇지 않다 — 29건이 성공한 뒤
+        우리가 부모로 붙들고 있던 `.claude` 하나에서만 `STATUS_ACCESS_DENIED` 가 났다.
+
+        **결속은 약해지지 않는다.** 이 rename 을 묶어 주는 것은 옮겨지는 디렉터리의 handle 이
+        아니라 **그 부모의** handle 이고, 그것은 그대로 열려 있다. 놓는 것은 우리가 그 아래로
+        내려가기 위해 들고 있던 handle 뿐이며, 그 아래 대상은 이 시점에 전부 처리됐다 —
+        빈 부모 정리는 자식보다 나중에 온다.
+
+        놓은 뒤에 그 아래를 다시 쓰려 하면 `pinned()` 가 예외를 낸다. 조용히 경로로
+        떨어지는 것보다 멈추는 것이 옳다.
+        """
+        target = os.path.abspath(path)
+        handle = self.parents.pop(target, None)
+        if handle is None:
+            return
+        self._released.add(target)
+        if handle in self._owned:
+            self._owned.remove(handle)
+        _close(handle)
 
     def close(self):
         """몇 번 불려도 안전해야 한다. 어떤 실패 경로에서도 반드시 불린다.
@@ -1052,6 +1085,7 @@ class WindowsBackend(_fs.MutationBackend):
             _close(handle)
         self._owned.clear()
         self.parents.clear()
+        self._released.clear()
         for handle in self.roots.values():
             _close(handle)
         self.roots.clear()
@@ -1065,6 +1099,8 @@ class WindowsBackend(_fs.MutationBackend):
     # -- 조작 ------------------------------------------------------------------
 
     def replace(self, source, target):
+        # 옮기려는 것이 **우리가 부모로 붙든 디렉터리 자신**이면 그 handle 을 먼저 놓는다.
+        self._release_parent(source)
         parent = self._parent_of(source)
         if self.parents.get(os.path.dirname(os.path.abspath(target))) != parent:
             # 경로 기준으로 되돌아가지 않는다. 그 길을 남겨 두면 조건 하나가 어긋나는 날
@@ -1078,6 +1114,9 @@ class WindowsBackend(_fs.MutationBackend):
             _close(handle)
 
     def remove_tree(self, path):
+        # 지우려는 것이 우리가 붙든 디렉터리 자신이어도 같다. 열린 handle 이 남으면 삭제도
+        # 서지 않는다.
+        self._release_parent(path)
         _rmtree_at(self._parent_of(path), os.path.basename(path))
         return None
 

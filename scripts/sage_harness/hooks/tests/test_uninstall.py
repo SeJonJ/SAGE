@@ -25,6 +25,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -4398,6 +4399,50 @@ class WindowsBackendContract(unittest.TestCase):
                          "NtSetInformationFile/FileRenameInformation")
         for value in carried.native.values():
             self.assertNotIn("\\", str(value), "경로가 섞여 나갔다")
+
+    def test_moving_a_directory_we_hold_releases_our_own_handle_first(self):
+        """**Windows 는 열린 handle 이 남은 디렉터리의 이름을 바꾸지 못한다.**
+
+        파일은 `FILE_SHARE_DELETE` 로 열려 있으면 되지만 디렉터리는 그렇지 않다. 실제로
+        29건이 성공한 뒤, 우리가 부모로 붙들고 있던 디렉터리 하나에서만
+        `STATUS_ACCESS_DENIED` 가 났다 — 우리 자신이 만든 장애였다.
+
+        결속은 약해지지 않는다. 그 rename 을 묶는 것은 옮겨지는 디렉터리의 handle 이 아니라
+        **부모의** handle 이고 그것은 그대로다.
+        """
+        w = uninstall_windows_fs
+        closed = []
+        saved = w._close
+        w._close = closed.append
+        self.addCleanup(lambda: setattr(w, "_close", saved))
+
+        backend = w.WindowsBackend(types.SimpleNamespace(identity_source="id"))
+        target = os.path.abspath(os.path.join("nowhere", "held"))
+        backend.parents[target] = 4242
+        backend._owned.append(4242)
+
+        backend._release_parent(target)
+        self.assertEqual(closed, [4242], "붙든 handle 을 놓지 않았다")
+        self.assertNotIn(target, backend.parents)
+        self.assertNotIn(4242, backend._owned)
+
+    def test_a_released_parent_never_falls_back_to_paths(self):
+        """놓은 뒤 그 아래를 다시 쓰려 하면 **멈춘다.**
+
+        `pinned()` 가 거짓을 돌려주면 상위 층은 경로 기반 구현으로 조용히 떨어지고, 결속이
+        사라진 사실이 결과 어디에도 드러나지 않는다. 이 사이클이 반복해서 만난 모양이다.
+        """
+        w = uninstall_windows_fs
+        saved = w._close
+        w._close = lambda handle: None
+        self.addCleanup(lambda: setattr(w, "_close", saved))
+
+        backend = w.WindowsBackend(types.SimpleNamespace(identity_source="id"))
+        held = os.path.abspath(os.path.join("nowhere", "held"))
+        backend.parents[held] = 4242
+        backend._release_parent(held)
+        with self.assertRaises(install_transaction.InstallDriftError):
+            backend.pinned(os.path.join(held, "child.json"))
 
     def test_the_rename_keeps_the_parent_handle_binding(self):
         """rename 진입점이 바뀌어도 **부모 handle 상대**여야 한다.
