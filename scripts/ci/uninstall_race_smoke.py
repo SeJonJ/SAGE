@@ -491,8 +491,19 @@ def _ancestor_swap_case(consumer, label, at, occurrence=1):
         original_bytes = handle.read()
     original_mode = stat.S_IMODE(os.lstat(settings).st_mode)
 
+    renamed = []
+
     def swap():
-        shutil.move(claude, moved)
+        # **`shutil.move` 를 쓰지 않는다.** 그것은 `os.rename` 이 실패하면 복사 후 삭제로
+        # 물러선다. 그러면 주입한 것은 "상위 이름 교체" 가 아니라 "원본을 복사해 두고 지움"
+        # 이 되고, 우리가 붙든 객체는 사라진 원본 쪽이다 — 전혀 다른 상황을 같은 이름으로
+        # 검사하게 된다. 이름 교체가 성립하는지 자체가 관측 대상이므로 그대로 부른다.
+        try:
+            os.rename(claude, moved)
+        except OSError as exc:
+            renamed.append(getattr(exc, "winerror", None) or exc.errno)
+            return
+        renamed.append(True)
         linked.append(link_directory(claude, outside))
         consumer.unapproved(moved)
 
@@ -509,6 +520,16 @@ def _ancestor_swap_case(consumer, label, at, occurrence=1):
         # **추측하기 전에 적는다.** 원격에서만 나는 실패는 그때의 상태가 없으면 고칠 수 없다.
         watch.report(label, run_plan.failure, hook)
     if not check(hook.fired, f"{label}: 주입 자리({at})에 도달하지 못했다"):
+        return
+    if renamed and renamed[0] is not True:
+        # **이름 교체 자체가 거부됐다.** 우리가 그 디렉터리를 붙들고 있기 때문이다. 그러면
+        # 이 주입이 노리는 상황은 성립하지 않는다 — 막지 못한 것이 아니라 **일어날 수 없는
+        # 것**이고, 그것은 더 강한 보장이다. 성립하지 않은 주입을 실패로 세지도, 조용히
+        # 통과로 세지도 않는다: 무엇이 관측됐는지 적고 나머지 계약만 확인한다.
+        print(f"  -- {label}: ancestor rename refused while pinned (code={renamed[0]})")
+        assert_outside_untouched(label, outside)
+        check(backups_left(consumer.project) == [],
+              f"{label}: 보관소가 남았다: {backups_left(consumer.project)}")
         return
     if not check(linked and linked[0], f"{label}: 디렉터리 링크를 만들지 못했다"):
         return
