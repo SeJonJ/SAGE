@@ -971,6 +971,13 @@ class WindowsBackend(_fs.MutationBackend):
         # 우리가 스스로 놓은 부모. 놓은 뒤 그 아래를 다시 쓰려 하면 경로로 떨어지지
         # 않고 멈추기 위해 기억한다.
         self._released = set()
+        # **붙든 부모가 지금 실제로 어디에 있는가.** `parents` 의 key 는 호출자가 쓰는
+        # 논리 경로이고 끝까지 바뀌지 않는다 — 그래야 `_parent_of` 가 늘 같은 이름으로 찾는다.
+        # 그런데 디렉터리를 보관소 이름으로 옮기면 그 아래 것들의 **물리 위치**가 통째로
+        # 움직인다. 둘을 같은 dict 하나로 다루면 옮긴 뒤 그 handle 을 이름으로 찾지 못하고,
+        # 되돌릴 때 놓아야 할 handle 을 놓지 못한 채 rename 이 거부된다. 실제로 그렇게
+        # rollback 이 통째로 실패했다. 그래서 **논리 이름과 물리 위치를 따로 적는다.**
+        self._physical = {}
 
     # -- 결속 ------------------------------------------------------------------
 
@@ -1036,6 +1043,7 @@ class WindowsBackend(_fs.MutationBackend):
                     _close(extra)
                 raise
         self.parents[parent] = handle
+        self._physical[parent] = parent
         # root handle 은 `roots` 가 소유한다. 중간 핸들은 마지막 것만 남기고 닫는다.
         for extra in owned[:-1]:
             _close(extra)
@@ -1051,42 +1059,53 @@ class WindowsBackend(_fs.MutationBackend):
             raise _tx.InstallDriftError(f"parent handle was released: {parent}")
         return parent in self.parents
 
-    def _detach_subtree(self, path):
-        """옮기려는 디렉터리와 **그 아래에서 붙들고 있는 부모들까지** 전부 놓는다.
+    def _detach_subtree(self, physical):
+        """지금 **그 자리에 물리적으로 있는** 붙든 부모들을 전부 놓는다.
 
         Windows 는 자기 handle 이 열려 있는 디렉터리도, **하위에 열린 handle 이 남은**
-        디렉터리도 이름을 바꾸지 못한다. 앞 수정은 앞의 것만 놓았고, 옮긴 자식들을 다시
-        붙들어 두었기 때문에 뒤의 것에 그대로 걸렸다 — 자기 자신만 놓아서는 부족하다.
+        디렉터리도 이름을 바꾸지 못한다. 그래서 옮기기 전에 그 아래 전부를 놓아야 한다.
 
-        돌려주는 것은 `(원래 key, 옮기는 디렉터리 기준 상대 경로)` 목록이다. 디렉터리는
-        통째로 움직이므로 그 상대 구조는 옮긴 뒤에도 같다.
+        **찾는 기준이 물리 위치인 것이 요점이다.** 논리 이름으로 찾으면, 이미 한 번 옮겨진
+        디렉터리를 되돌릴 때 그 handle 을 찾지 못한다 — 그 key 는 여전히 원래 이름이고
+        지금 그 이름의 자리에는 아무것도 없다. 실제로 그래서 되돌리기가 통째로 실패했다.
+
+        돌려주는 것은 `(논리 key, 옮기는 자리 기준 상대 경로)` 목록이다. 디렉터리는 통째로
+        움직이므로 그 상대 구조는 옮긴 뒤에도 같다.
         """
-        target = os.path.abspath(path)
-        prefix = target + os.sep
-        held = [key for key in self.parents if key == target or key.startswith(prefix)]
+        base = os.path.abspath(physical)
+        prefix = base + os.sep
+        held = [(key, where) for key, where in self._physical.items()
+                if where == base or where.startswith(prefix)]
         detached = []
-        # 깊은 것부터 놓는다. 얕은 것을 먼저 놓아도 되지만, 순서를 정해 두면 실패했을 때
-        # 어디까지 놓았는지가 결정적이다.
-        for key in sorted(held, key=len, reverse=True):
-            handle = self.parents.pop(key)
+        # 깊은 것부터 놓는다. 순서를 정해 두면 실패했을 때 어디까지 놓았는지가 결정적이다.
+        for key, where in sorted(held, key=lambda item: len(item[1]), reverse=True):
+            handle = self.parents.pop(key, None)
+            self._physical.pop(key, None)
+            if handle is None:
+                continue
             if handle in self._owned:
                 self._owned.remove(handle)
             _close(handle)
-            detached.append((key, os.path.relpath(key, target)))
+            detached.append((key, os.path.relpath(where, base)))
         return detached
 
-    def _attach_subtree(self, detached, parent, name):
-        """옮겨진 자리에서 **같은 구조를 다시 붙든다.**
+    def _attach_subtree(self, detached, parent, name, physical):
+        """옮겨진 자리에서 **같은 구조를 다시 붙들고, 새 물리 위치를 적는다.**
 
         이름으로 다시 여는 것이지만 경로로 되돌아가는 것이 아니다 — 여는 자리는 언제나 이미
         붙든 handle 아래이고, 첫 성분은 방금 우리가 옮긴 그 객체다.
+
+        논리 key 는 그대로 두고 물리 위치만 갱신한다. 그 둘을 하나로 합치는 순간, 호출자가
+        쓰는 이름과 실제 자리가 어긋난 상태를 표현할 방법이 없어진다.
         """
+        base_physical = os.path.abspath(physical)
         base = _open_child(parent, name, directory=True,
                            access=FILE_LIST_DIRECTORY | FILE_TRAVERSE)
         attached = False
         for key, relative in sorted(detached, key=lambda item: len(item[1])):
             if relative == os.curdir:
                 self.parents[key] = base
+                self._physical[key] = base_physical
                 self._owned.append(base)
                 attached = True
                 continue
@@ -1100,17 +1119,18 @@ class WindowsBackend(_fs.MutationBackend):
             for extra in owned[:-1]:
                 _close(extra)
             self.parents[key] = handle
+            self._physical[key] = os.path.join(base_physical, relative)
             self._owned.append(handle)
         if not attached:
             _close(base)
 
-    def _release_parent(self, path):
+    def _release_parent(self, physical):
         """다시 붙들지 **않고** 놓는다. 사라질 디렉터리에만 쓴다.
 
         놓은 뒤 그 아래를 다시 쓰려 하면 `pinned()` 가 예외를 낸다. 거짓을 돌려주면 상위
         층이 경로 기반 구현으로 조용히 떨어지고, 결속이 사라진 사실이 결과에 드러나지 않는다.
         """
-        for key, _relative in self._detach_subtree(path):
+        for key, _relative in self._detach_subtree(physical):
             self._released.add(key)
 
     def close(self):
@@ -1123,6 +1143,7 @@ class WindowsBackend(_fs.MutationBackend):
             _close(handle)
         self._owned.clear()
         self.parents.clear()
+        self._physical.clear()
         self._released.clear()
         for handle in self.roots.values():
             _close(handle)
@@ -1152,14 +1173,14 @@ class WindowsBackend(_fs.MutationBackend):
             _rename_in(parent, handle, os.path.basename(target))
         except BaseException:
             if detached:
-                # 옮기지 못했으므로 원래 이름 그대로 다시 붙든다. 놓은 채 올라가면 되돌리기가
+                # 옮기지 못했으므로 원래 자리 그대로 다시 붙든다. 놓은 채 올라가면 되돌리기가
                 # 그 아래를 못 만진다.
-                self._attach_subtree(detached, parent, os.path.basename(source))
+                self._attach_subtree(detached, parent, os.path.basename(source), source)
             raise
         finally:
             _close(handle)
         if detached:
-            self._attach_subtree(detached, parent, os.path.basename(target))
+            self._attach_subtree(detached, parent, os.path.basename(target), target)
 
     def remove_tree(self, path):
         # 지우려는 것이 우리가 붙든 디렉터리 자신이어도 같다. 열린 handle 이 남으면 삭제도

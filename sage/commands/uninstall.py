@@ -151,9 +151,14 @@ def run(args):
                                       "uninstall.rollback_failed", plan.notices,
                                       baseline=plan.baseline, global_root=plan.global_root,
                                       root_baseline=plan.root_baseline)
-        _render(blocked, args, language, executed=False,
-                extra={"preserved_paths": preserved,
-                       "rollback_reasons": list(getattr(failure, "reasons", ()))},
+        extra = {"preserved_paths": preserved,
+                 "rollback_reasons": list(getattr(failure, "reasons", ()))}
+        # 되돌리기 실패가 **최초 실패를 덮지 않도록** 둘 다 낸다. 왜 되돌려야 했는지는
+        # 앞의 실패만 알고, 그것이 사라지면 원인은 어디에도 남지 않는다.
+        original = getattr(failure, "original", None)
+        if original:
+            extra["original_failure"] = original
+        _render(blocked, args, language, executed=False, extra=extra,
                 basis=basis, unknown=preserved)
         if not args.json:
             for path in preserved:
@@ -328,6 +333,13 @@ def _render(plan, args, language, executed, extra=None, basis=None, unknown=(),
     if extra and isinstance(extra.get("detail"), list):
         for entry in extra["detail"]:
             print(f"  {_damage_text(entry, language)}", file=sys.stderr)
+
+    if extra and isinstance(extra.get("original_failure"), dict):
+        first = extra["original_failure"]
+        print(tr(language, "cli.uninstall.original_failure",
+                 diagnostic=first.get("diagnostic")), file=sys.stderr)
+        if isinstance(first.get("native"), dict):
+            extra = dict(extra, native=first["native"])
 
     if extra and isinstance(extra.get("native"), dict):
         native = extra["native"]

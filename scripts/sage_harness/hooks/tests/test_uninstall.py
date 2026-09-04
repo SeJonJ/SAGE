@@ -4419,11 +4419,13 @@ class WindowsBackendContract(unittest.TestCase):
         backend = w.WindowsBackend(types.SimpleNamespace(identity_source="id"))
         target = os.path.abspath(os.path.join("nowhere", "held"))
         backend.parents[target] = 4242
+        backend._physical[target] = target
         backend._owned.append(4242)
 
         # 자기 자신뿐 아니라 **그 아래에서 붙들고 있는 것까지** 놓아야 한다.
         child = os.path.join(target, "inner")
         backend.parents[child] = 4343
+        backend._physical[child] = child
         backend._owned.append(4343)
 
         detached = backend._detach_subtree(target)
@@ -4442,10 +4444,10 @@ class WindowsBackendContract(unittest.TestCase):
         w = uninstall_windows_fs
         source = self.body("uninstall_windows_fs.py", "replace", "WindowsBackend")
         self.assertIn("_detach_subtree(source)", source)
-        self.assertIn("_attach_subtree(detached, parent, os.path.basename(target))",
-                      source, "옮긴 뒤 다시 붙들지 않는다")
-        self.assertIn("_attach_subtree(detached, parent, os.path.basename(source))",
-                      source, "옮기지 못했을 때 원래 이름으로 되돌려 붙들지 않는다")
+        self.assertIn("_attach_subtree(detached, parent, os.path.basename(target), target)",
+                      source, "옮긴 뒤 새 자리로 다시 붙들지 않는다")
+        self.assertIn("_attach_subtree(detached, parent, os.path.basename(source), source)",
+                      source, "옮기지 못했을 때 원래 자리로 되돌려 붙들지 않는다")
 
     @staticmethod
     def body(module, name, owner=None):
@@ -4458,6 +4460,58 @@ class WindowsBackendContract(unittest.TestCase):
         target = next(n for n in nodes if isinstance(n, ast.FunctionDef) and n.name == name)
         body = target.body[1:] if ast.get_docstring(target) else target.body
         return "\n".join(ast.unparse(node) for node in body)
+
+    def test_the_registry_tracks_where_a_moved_directory_actually_is(self):
+        """**논리 이름과 물리 위치가 갈라지는 것**이 되돌리기를 깨뜨린 결함이었다.
+
+        `parents` 의 key 는 호출자가 쓰는 이름이라 끝까지 바뀌지 않는다. 그런데 디렉터리를
+        보관소 이름으로 옮기면 그 아래 것들의 실제 자리가 통째로 움직인다. 놓을 것을
+        **논리 이름으로** 찾으면, 이미 옮겨진 디렉터리를 되돌릴 때 그 handle 을 찾지 못한다 —
+        그 이름의 자리에는 아무것도 없기 때문이다. 그래서 되돌리기가 통째로 실패했다.
+        """
+        w = uninstall_windows_fs
+        saved = w._close
+        w._close = lambda handle: None
+        self.addCleanup(lambda: setattr(w, "_close", saved))
+
+        backend = w.WindowsBackend(types.SimpleNamespace(identity_source="id"))
+        root = os.path.abspath(os.sep + "root")
+        held = os.path.join(root, "held")
+        child = os.path.join(held, "inner")
+        moved = os.path.join(root, ".sage-install-backup-t-held")
+
+        backend.parents[held] = 1
+        backend.parents[child] = 2
+        backend._physical[held] = held
+        backend._physical[child] = child
+
+        # 옮긴 자리를 적어 둔다. 논리 이름은 그대로다.
+        backend._physical[held] = moved
+        backend._physical[child] = os.path.join(moved, "inner")
+
+        # **옮겨진 자리로** 찾으면 둘 다 나온다.
+        found = dict(backend._detach_subtree(moved))
+        self.assertEqual(found, {held: os.curdir, child: "inner"},
+                         "옮겨진 자리에 있는 handle 을 찾지 못했다")
+        self.assertEqual(backend.parents, {})
+        self.assertEqual(backend._physical, {})
+
+    def test_the_old_logical_name_no_longer_finds_a_moved_directory(self):
+        """옮겨진 뒤 **원래 이름으로는 찾히지 않는다.** 그 자리에는 아무것도 없다."""
+        w = uninstall_windows_fs
+        saved = w._close
+        w._close = lambda handle: None
+        self.addCleanup(lambda: setattr(w, "_close", saved))
+
+        backend = w.WindowsBackend(types.SimpleNamespace(identity_source="id"))
+        root = os.path.abspath(os.sep + "root")
+        held = os.path.join(root, "held")
+        backend.parents[held] = 1
+        backend._physical[held] = os.path.join(root, ".sage-install-backup-t-held")
+
+        self.assertEqual(backend._detach_subtree(held), [],
+                         "옮겨진 디렉터리를 옛 이름으로 찾았다")
+        self.assertIn(held, backend.parents, "찾지도 못했으면서 등록을 지웠다")
 
     def test_a_released_parent_never_falls_back_to_paths(self):
         """놓은 뒤 그 아래를 다시 쓰려 하면 **멈춘다.**
@@ -4473,6 +4527,7 @@ class WindowsBackendContract(unittest.TestCase):
         backend = w.WindowsBackend(types.SimpleNamespace(identity_source="id"))
         held = os.path.abspath(os.path.join("nowhere", "held"))
         backend.parents[held] = 4242
+        backend._physical[held] = held
         backend._release_parent(held)   # 사라질 디렉터리 — 다시 붙들지 않는다
         with self.assertRaises(install_transaction.InstallDriftError):
             backend.pinned(os.path.join(held, "child.json"))

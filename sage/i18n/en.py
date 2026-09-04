@@ -1233,6 +1233,7 @@ MESSAGES = {
     "cli.uninstall.err_global_dest": "--global does not take a project path.",
     "cli.uninstall.err_json_needs_yes": "Executing with --json requires --yes. The confirmation prompt and JSON are never mixed into one stream.",
     "cli.uninstall.header_plan": "SAGE uninstall plan: scope={scope} expected={status}",
+    "cli.uninstall.original_failure": "failure that triggered the rollback: {diagnostic}",
     "cli.uninstall.native_failure": "native failure: {operation} ({kind}:{code}) -- paths and OS text are not included.",
     "cli.uninstall.header_result": "SAGE uninstall result: scope={scope} status={status}",
     "cli.uninstall.section_delete": "Delete: {count}",

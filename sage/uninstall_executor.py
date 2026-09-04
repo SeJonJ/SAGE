@@ -57,6 +57,7 @@ lock 을 잡는 것은 **쓰기**다. `--check` 가 잠그면 읽기 전용 계�
 """
 import os
 import stat
+import sys
 
 from sage import install_transaction as _tx
 from sage import uninstall_fs as _fs
@@ -68,15 +69,33 @@ from sage import uninstall_shared as _shared
 fingerprint = _plan.fingerprint
 
 
+def _sanitized(exc):
+    """되돌리기 전의 실패를 **경로 없이** 한 벌로 만든다.
+
+    원문 예외를 그대로 들고 다니면 그 안의 경로와 OS 메시지가 함께 나간다. 여기서 남기는
+    것은 계약된 진단 이름과, backend 가 이미 정화해 둔 API 이름·정수뿐이다.
+    """
+    if exc is None:
+        return None
+    name = str(exc)
+    return {"diagnostic": name if name.startswith("uninstall.") else exc.__class__.__name__,
+            "native": getattr(exc, "native", None)}
+
+
 class RollbackFailed(Exception):
     """되돌리기까지 실패했다. 보존한 경로를 사용자에게 넘겨야 하는 유일한 경우."""
 
-    def __init__(self, message, preserved_paths, reasons=()):
+    def __init__(self, message, preserved_paths, reasons=(), original=None):
         super().__init__(message)
         self.preserved_paths = tuple(preserved_paths)
         # 왜 되돌리지 못했는지도 함께 든다. 경로만 주고 이유를 감추면, 사용자는 무엇을 어떻게
         # 수습해야 하는지 모른 채 디렉터리 하나를 받는다.
         self.reasons = tuple(reasons)
+        # **되돌리기 실패가 최초 실패를 덮으면 안 된다.** 사용자가 보는 상태는 되돌리기
+        # 실패지만, 왜 되돌려야 했는지는 그 앞의 실패만 안다. 그것을 잃으면 남는 것은
+        # "되돌리지 못했다" 뿐이고 원인은 어디에도 없다 — 실제로 그래서 최초 실패가
+        # 사라졌다. 싣는 것은 정화된 진단 이름과 API 이름·정수뿐이다.
+        self.original = original
 
 
 class ExecutionResult:
@@ -459,11 +478,12 @@ def _execute_locked(plan, step, backend):
         if committed:
             raise
         step("rollback")
+        original = _sanitized(sys.exc_info()[1])
         errors = journal.rollback()
         if errors:
             raise RollbackFailed("uninstall.rollback_failed",
                                  [journal._backup_path(a.path) for a in pending],
-                                 errors) from None
+                                 errors, original=original) from None
         raise
     except BaseException:
         journal.close()
