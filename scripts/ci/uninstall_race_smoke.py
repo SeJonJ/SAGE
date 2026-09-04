@@ -402,6 +402,12 @@ def _ancestor_swap_case(consumer, label, at, occurrence=1):
     claude = os.path.dirname(settings)
     moved = os.path.join(consumer.root, "real-claude")
     linked = []
+    # **실행 전 원본을 그대로 떠 둔다.** "보관소가 남지 않았다" 만 보면 cleanup 이 보관소를
+    # 지우기만 해도 통과한다. 우리가 확인해야 하는 것은 원본이 **제자리에 되돌아왔는가** 다.
+    name = os.path.basename(settings)
+    with open(settings, "rb") as handle:
+        original_bytes = handle.read()
+    original_mode = stat.S_IMODE(os.lstat(settings).st_mode)
 
     def swap():
         shutil.move(claude, moved)
@@ -418,7 +424,32 @@ def _ancestor_swap_case(consumer, label, at, occurrence=1):
     assert_outside_untouched(label, outside)
     check(os.path.isfile(os.path.join(moved, "not-in-plan.txt")),
           f"{label}: 계획에 없던 파일을 지웠다")
-    check(backups_left(moved) == [], f"{label}: 보관소가 남았다: {backups_left(moved)}")
+    # 옮겨진 **실제 원본 디렉터리**에서 결과를 본다. 무엇을 단언할지는 **판정에 달려 있다** —
+    # 이 주입은 멈추게 하지 않는다. 결속이 감지를 대체하므로 이름이 바뀌어도 작업은 승인
+    # 시점에 확인한 그 객체 위에서 끝까지 간다. 그래서 성공이 정상이고, 그때 확인할 것은
+    # "원본이 그대로인가" 가 아니라 **"승인한 그 변경이 그 객체에 정확히 적용됐는가"** 다.
+    #
+    # 둘을 구별하지 않고 "원본 복원" 만 단언하면 성공한 실행을 결함으로 읽는다. 반대로
+    # 보관소 유무만 보면 원본이 어떻게 됐는지는 아무도 보지 않는다 — 둘 다 필요하다.
+    target = os.path.join(moved, name)
+    if not check(os.path.isfile(target), f"{label}: 대상이 제자리에 없다"):
+        return
+    with open(target, "rb") as handle:
+        body = handle.read()
+    mode = stat.S_IMODE(os.lstat(target).st_mode)
+    if outcome is None:
+        # 성공했다. 등록은 빠지고 사용자 것은 남아야 한다.
+        check(b"PostToolUse" not in body, f"{label}: 성공했는데 등록이 남았다")
+        check(b'"mine"' in body, f"{label}: 사용자 설정을 잃었다")
+    else:
+        # 멈췄다. 그러면 손댄 것이 하나도 남지 않아야 한다.
+        check(body == original_bytes, f"{label}: 멈췄는데 원본 bytes 가 다르다")
+        check(mode == original_mode, f"{label}: 멈췄는데 원본 mode 가 다르다")
+    # 어느 쪽이든 우리가 만든 보관소는 남지 않는다. **결과를 판정으로 읽지 말고 그 자리를
+    # 직접 본다** — commit 뒤의 잔여 목록은 논리 경로로 묻는데, 상위가 바뀐 뒤 그 경로는
+    # 다른 자리를 가리키므로 남은 것이 화면에 나타나지 않는다.
+    left = backups_left(moved)
+    check(left == [], f"{label}: 보관소가 남았다(outcome={outcome}): {left}")
 
 
 def case_ancestor_after_root_pin(consumer):

@@ -4428,11 +4428,19 @@ class WindowsBackendContract(unittest.TestCase):
         backend._physical[child] = child
         backend._owned.append(4343)
 
+        saved_identity = w.identity
+        w.identity = lambda handle, source="id": ("mark", handle)
+        self.addCleanup(lambda: setattr(w, "identity", saved_identity))
+
         detached = backend._detach_subtree(target)
         self.assertEqual(sorted(closed), [4242, 4343], "하위 handle 을 남겼다")
         self.assertEqual(backend.parents, {})
         self.assertEqual(backend._owned, [])
-        self.assertEqual(dict(detached), {target: os.curdir, child: "inner"})
+        self.assertEqual({key: rel for key, rel, _mark in detached},
+                         {target: os.curdir, child: "inner"})
+        self.assertEqual({key: mark for key, _rel, mark in detached},
+                         {target: ("mark", 4242), child: ("mark", 4343)},
+                         "놓기 전에 지문을 뜨지 않았다")
 
     def test_moving_a_held_directory_takes_the_hold_back_afterwards(self):
         """놓기만 하면 **되돌리기가 그 아래를 못 만진다.**
@@ -4490,7 +4498,11 @@ class WindowsBackendContract(unittest.TestCase):
         backend._physical[child] = os.path.join(moved, "inner")
 
         # **옮겨진 자리로** 찾으면 둘 다 나온다.
-        found = dict(backend._detach_subtree(moved))
+        saved_identity = w.identity
+        w.identity = lambda handle, source="id": ("mark", handle)
+        self.addCleanup(lambda: setattr(w, "identity", saved_identity))
+
+        found = {key: rel for key, rel, _mark in backend._detach_subtree(moved)}
         self.assertEqual(found, {held: os.curdir, child: "inner"},
                          "옮겨진 자리에 있는 handle 을 찾지 못했다")
         self.assertEqual(backend.parents, {})
@@ -4509,9 +4521,41 @@ class WindowsBackendContract(unittest.TestCase):
         backend.parents[held] = 1
         backend._physical[held] = os.path.join(root, ".sage-install-backup-t-held")
 
+        saved_identity = w.identity
+        w.identity = lambda handle, source="id": ("mark", handle)
+        self.addCleanup(lambda: setattr(w, "identity", saved_identity))
         self.assertEqual(backend._detach_subtree(held), [],
                          "옮겨진 디렉터리를 옛 이름으로 찾았다")
         self.assertIn(held, backend.parents, "찾지도 못했으면서 등록을 지웠다")
+
+    def test_reopening_by_name_must_prove_it_is_the_same_object(self):
+        """이름으로 다시 여는 자리는 **전부 지문 검사를 지난다.**
+
+        지나지 않으면 "붙들었다" 가 "그 이름을 열었다" 로 조용히 바뀐다. 상위가 그 사이
+        바뀌면 같은 이름이 다른 객체를 가리키고, 우리는 남의 디렉터리를 붙든 채 되돌리기를
+        돌게 된다 — 그러면 우리 보관소는 영영 제자리로 돌아가지 못한다. 실제로 상위 교체
+        반례에서 보관소 하나가 그렇게 남았다.
+        """
+        w = uninstall_windows_fs
+        saved = w.identity
+        w.identity = lambda handle, source="id": ("other",)
+        self.addCleanup(lambda: setattr(w, "identity", saved))
+        with self.assertRaises(ValueError) as caught:
+            w._same_object(1, ("mine",), "id")
+        self.assertEqual(str(caught.exception), "uninstall.boundary_changed")
+        w.identity = lambda handle, source="id": ("mine",)
+        w._same_object(1, ("mine",), "id")     # 같은 객체면 조용히 지난다
+
+    def test_the_rename_checks_identity_before_letting_go(self):
+        """지문 검사가 **놓기 전에** 와야 한다.
+
+        놓은 뒤에 확인하면, 어긋난 것을 알았을 때는 이미 handle 을 닫은 뒤다. 되돌리기가
+        그 아래를 만질 방법이 사라진다.
+        """
+        source = self.body("uninstall_windows_fs.py", "replace", "WindowsBackend")
+        check = source.index("_same_object(handle, identity(held")
+        detach = source.index("_detach_subtree(source)")
+        self.assertLess(check, detach, "놓은 뒤에 확인한다")
 
     def test_a_released_parent_never_falls_back_to_paths(self):
         """놓은 뒤 그 아래를 다시 쓰려 하면 **멈춘다.**
@@ -4526,6 +4570,9 @@ class WindowsBackendContract(unittest.TestCase):
 
         backend = w.WindowsBackend(types.SimpleNamespace(identity_source="id"))
         held = os.path.abspath(os.path.join("nowhere", "held"))
+        saved_identity = w.identity
+        w.identity = lambda handle, source="id": ("mark", handle)
+        self.addCleanup(lambda: setattr(w, "identity", saved_identity))
         backend.parents[held] = 4242
         backend._physical[held] = held
         backend._release_parent(held)   # 사라질 디렉터리 — 다시 붙들지 않는다
