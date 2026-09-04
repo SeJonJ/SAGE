@@ -76,22 +76,34 @@ FAILED = "FAILED"                # 단언이 깨졌다
 #
 # 값은 그 자리에서 **무엇이 나와야 하는가** 다. 실제 경쟁을 요구하는 자리에 monkeypatch
 # 주입이 들어오면 그것은 충족이 아니라 대체이고, 대체를 통과로 세면 계약이 조용히 약해진다.
+# **첫 backup 뒤의 상위 교체는 Windows 에서 일어날 수 없다.** 우리가 그 디렉터리를 붙들고
+# 있으면 커널이 일반 rename 도 handle 기반 rename 도 `ACCESS_DENIED` 로 거부한다. 그 자리에서
+# "실제 교체" 를 요구하면 **OS 가 먼저 막아 준 상황을 실패로 세게 된다.**
+#
+# 그렇다고 아무 거부나 받아들이면 안 된다. 열기 실패도, 잘못된 인자도, 미지원도 거부처럼
+# 보이지만 그것들은 우리 구현이 틀렸다는 뜻이다. 계약한 거부 코드만 통과시킨다.
+_AFTER_BACKUP = (PREVENTED_BY_OS,) if os.name == "nt" else (REAL,)
+
 REQUIRED_CASES = {
-    "root-swap-after-fingerprint:project": REAL,        # P0 회귀
-    "root-swap-after-fingerprint:global": REAL,
-    "root-swap-after-fingerprint:all": REAL,
-    "ancestor-swap-before-execution:project": REAL,     # §9.2-1
-    "ancestor-swap-after-root-pin:project": REAL,       # §9.2-2
-    "ancestor-swap-after-first-backup:project": REAL,   # §9.2-3
-    "strip-leaf-replaced-by-link:project": REAL,        # §9.2-4
-    "backup-name-collision:project": REAL,              # §9.2-5
-    "partial-write-then-io-failure:truncated": SYNTHETIC,   # §9.2-6
-    "partial-write-then-io-failure:partial": SYNTHETIC,
-    "base-exception-during-mutation:project": SYNTHETIC,    # §9.2-7
-    "global-fails-after-project:all": SYNTHETIC,            # §9.2-8
-    "output-verification-failure:project": SYNTHETIC,       # §9.2-9
-    "cleanup-failure-after-commit:project": SYNTHETIC,      # §9.2-10
+    "root-swap-after-fingerprint:project": (REAL,),        # P0 회귀
+    "root-swap-after-fingerprint:global": (REAL,),
+    "root-swap-after-fingerprint:all": (REAL,),
+    "ancestor-swap-before-execution:project": (REAL,),     # §9.2-1
+    "ancestor-swap-after-root-pin:project": (REAL,),       # §9.2-2
+    "ancestor-swap-after-first-backup:project": _AFTER_BACKUP,   # §9.2-3
+    "strip-leaf-replaced-by-link:project": (REAL,),        # §9.2-4
+    "backup-name-collision:project": (REAL,),              # §9.2-5
+    "partial-write-then-io-failure:truncated": (SYNTHETIC,),   # §9.2-6
+    "partial-write-then-io-failure:partial": (SYNTHETIC,),
+    "base-exception-during-mutation:project": (SYNTHETIC,),    # §9.2-7
+    "global-fails-after-project:all": (SYNTHETIC,),            # §9.2-8
+    "output-verification-failure:project": (SYNTHETIC,),       # §9.2-9
+    "cleanup-failure-after-commit:project": (SYNTHETIC,),      # §9.2-10
 }
+
+# 계약한 거부. `ERROR_ACCESS_DENIED` 와 `STATUS_ACCESS_DENIED` 는 "권한이 없어서 못 한다" 는
+# 같은 말의 두 표기다. 그 밖의 코드는 차단이 아니라 우리 쪽 결함이다.
+ACCESS_DENIED_CODES = frozenset({5, 0xC0000022})
 
 FAILURES = []
 OUTCOMES = {}
@@ -124,39 +136,83 @@ def link_file(link, target):
         return False
 
 
+# **공격은 별도 프로세스에서, 제품 helper 를 쓰지 않고 한다.**
+#
+# 제품과 검사가 같은 helper 를 나눠 쓰면 그 helper 하나가 틀렸을 때 둘 다 같은 방식으로 틀린다 —
+# "공격이 막혔다" 와 "우리 helper 가 못 불렀다" 가 같은 화면이 된다. 그래서 kernel32 를 직접
+# 부르는 독립 구현을 자식 프로세스에서 돌린다. 부모의 열린 handle 도 함께 배제된다.
+NATIVE_ATTACK = r"""
+import ctypes, sys
+from ctypes import wintypes
+
+source, target = sys.argv[1], sys.argv[2]
+GENERIC_DELETE = 0x00010000                     # DELETE
+SHARE_ALL = 0x00000001 | 0x00000002 | 0x00000004
+OPEN_EXISTING = 3
+BACKUP_SEMANTICS = 0x02000000
+OPEN_REPARSE_POINT = 0x00200000
+FileRenameInfo = 3
+
+k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+k32.CreateFileW.restype = wintypes.HANDLE
+k32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                            ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+                            wintypes.HANDLE]
+k32.SetFileInformationByHandle.restype = wintypes.BOOL
+k32.SetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                           ctypes.c_void_p, wintypes.DWORD]
+
+handle = k32.CreateFileW(source, GENERIC_DELETE, SHARE_ALL, None, OPEN_EXISTING,
+                         BACKUP_SEMANTICS | OPEN_REPARSE_POINT, None)
+if handle == ctypes.c_void_p(-1).value or handle is None:
+    print("open:%d" % ctypes.get_last_error())
+    raise SystemExit(0)
+
+
+class RENAME(ctypes.Structure):
+    _fields_ = [("Flags", ctypes.c_uint32), ("RootDirectory", ctypes.c_void_p),
+                ("FileNameLength", ctypes.c_uint32), ("FileName", ctypes.c_uint16 * 1)]
+
+
+encoded = target.encode("utf-16-le")
+size = ctypes.sizeof(RENAME) + len(encoded)
+buffer = ctypes.create_string_buffer(size)
+info = RENAME.from_buffer(buffer)
+info.Flags = 0
+info.RootDirectory = None
+info.FileNameLength = len(encoded)
+head = RENAME.FileName.offset
+buffer[head:head + len(encoded)] = encoded
+ok = k32.SetFileInformationByHandle(wintypes.HANDLE(handle), FileRenameInfo,
+                                    ctypes.byref(buffer), size)
+code = 0 if ok else ctypes.get_last_error()
+k32.CloseHandle(wintypes.HANDLE(handle))
+print("ok" if ok else "rename:%d" % code)
+"""
+
+
 def native_rename(source, target):
-    """Windows 의 **handle 기반** rename 으로 한 번 더 시도한다.
+    """Windows 의 **handle 기반** rename 을 별도 프로세스에서 시도한다.
 
     `os.rename` 이 거부됐다는 것만으로 "모든 교체 방식이 불가능하다" 고 말할 수 없다.
-    Windows 는 `SetFileInformationByHandle(FileRenameInfo)` / `NtSetInformationFile
-    (FileRenameInformation)` 로 열린 handle 을 기준으로 이름을 바꾸는 길을 따로 제공한다.
-    위협 모델의 공격자는 그 길도 쓸 수 있으므로, 그쪽으로도 막히는지 확인해야 "OS 가
-    막는다" 가 참이 된다.
+    Windows 는 열린 handle 을 기준으로 이름을 바꾸는 길을 따로 제공하고, 위협 모델의 공격자는
+    그 길도 쓴다. 그쪽으로도 막혀야 "OS 가 막는다" 가 참이 된다.
 
-    돌려주는 것은 `(성공 여부, 코드 또는 None)`.
+    돌려주는 것은 `(성공 여부, 코드)` 이고 코드는 정수이거나 실패 사유 문자열이다.
     """
     if os.name != "nt":
         return False, "not-windows"
-    from sage import uninstall_windows_fs as w
-    parent = os.path.dirname(os.path.abspath(source))
-    try:
-        parent_handle = w._open_root(parent)
-    except Exception as exc:                                   # noqa: BLE001
-        return False, f"open-parent:{type(exc).__name__}"
-    handle = None
-    try:
-        handle, _is_dir = w._open_any(parent_handle, os.path.basename(source),
-                                      access=w.DELETE, allow_reparse=True)
-        w._rename_in(parent_handle, handle, os.path.basename(target))
+    done = subprocess.run([sys.executable, "-c", NATIVE_ATTACK, source, target],
+                          capture_output=True, text=True)
+    line = (done.stdout or "").strip().splitlines()
+    answer = line[-1] if line else f"child-rc:{done.returncode}"
+    if answer == "ok":
         return True, None
-    except w.WindowsMutationError as exc:
-        return False, f"{exc.op}:{'nt' if exc.ntstatus else 'win32'}:{exc.code:#x}"
-    except Exception as exc:                                   # noqa: BLE001
-        return False, type(exc).__name__
-    finally:
-        if handle:
-            w._close(handle)
-        w._close(parent_handle)
+    kind, _sep, value = answer.partition(":")
+    if kind == "rename" and value.isdigit():
+        return False, int(value)
+    # 열기 실패는 차단이 아니다. 우리가 못 부른 것이다.
+    return False, answer
 
 
 def file_identity(path):
@@ -616,6 +672,7 @@ def _ancestor_swap_case(consumer, label, at, occurrence=1):
                 renamed.append(("prevented", code, native_code))
                 return
             code = None
+            moved_ok = assert_moved(label, claude, moved, mark)
         renamed.append(("moved", moved_ok, code))
         linked.append(link_directory(claude, outside))
         consumer.unapproved(moved)
@@ -642,10 +699,31 @@ def _ancestor_swap_case(consumer, label, at, occurrence=1):
         _kind, os_code, native_code = renamed[0]
         print(f"  -- {label}: ancestor rename prevented while pinned "
               f"(os_rename={os_code}, handle_rename={native_code})")
+        # **아무 거부나 받지 않는다.** 열기 실패도, 잘못된 인자도, 미지원도 거부처럼 보이지만
+        # 그것들은 차단이 아니라 우리 쪽 결함이다. 계약한 코드만 통과시킨다.
+        ok = check(os_code in ACCESS_DENIED_CODES,
+                   f"{label}: os.rename 거부가 계약한 코드가 아니다: {os_code}")
+        ok = check(native_code in ACCESS_DENIED_CODES,
+                   f"{label}: handle rename 거부가 계약한 코드가 아니다: "
+                   f"{native_code}") and ok
+        # 교체가 없었으므로 대상은 제자리에 그대로 있어야 하고, 실행은 **정상적으로 끝나야**
+        # 한다. 차단만 확인하고 뒷일을 보지 않으면 "막혔다" 로 실패를 덮게 된다.
+        ok = check(outcome is None,
+                   f"{label}: 차단 뒤 제거가 정상적으로 끝나지 않았다: {outcome}") and ok
+        if os.path.isfile(settings):
+            with open(settings, "rb") as handle:
+                body = handle.read()
+            check(b"PostToolUse" not in body, f"{label}: 차단 뒤 등록이 남았다")
+            check(b'"mine"' in body, f"{label}: 차단 뒤 사용자 설정을 잃었다")
+            check(stat.S_IMODE(os.lstat(settings).st_mode) == original_mode,
+                  f"{label}: 차단 뒤 mode 가 달라졌다")
+        else:
+            check(False, f"{label}: 차단 뒤 대상이 사라졌다")
         assert_outside_untouched(label, outside)
         check(backups_left(consumer.project) == [],
               f"{label}: 보관소가 남았다: {backups_left(consumer.project)}")
-        return PREVENTED_BY_OS
+        check(not os.path.lexists(moved), f"{label}: 옮겨지지 않았다는데 그 자리가 생겼다")
+        return PREVENTED_BY_OS if ok else FAILED
     if renamed and not renamed[0][1]:
         return FAILED
     if not check(linked and linked[0], f"{label}: 디렉터리 링크를 만들지 못했다"):
@@ -1061,7 +1139,7 @@ def main():
             FAILURES.append(f"요구된 주입이 돌지 않았다: {case_id}")
         elif actual == FAILED:
             FAILURES.append(f"요구된 주입이 실패했다: {case_id}")
-        elif actual != expected:
+        elif actual not in expected:
             FAILURES.append(
                 f"요구된 주입의 성격이 다르다: {case_id} 기대={expected} 실제={actual}")
     unknown = sorted(set(OUTCOMES) - set(REQUIRED_CASES))

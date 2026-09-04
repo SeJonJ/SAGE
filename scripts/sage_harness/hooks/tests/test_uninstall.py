@@ -5290,7 +5290,7 @@ class RaceRunnerContract(unittest.TestCase):
                 module.FAILURES.append(f"missing:{case_id}")
             elif actual == module.FAILED:
                 module.FAILURES.append(f"failed:{case_id}")
-            elif actual != expected:
+            elif actual not in expected:
                 module.FAILURES.append(f"kind:{case_id}")
         unknown = sorted(set(module.OUTCOMES) - set(module.REQUIRED_CASES))
         if unknown:
@@ -5298,7 +5298,8 @@ class RaceRunnerContract(unittest.TestCase):
         return list(module.FAILURES)
 
     def healthy(self, module):
-        return dict(module.REQUIRED_CASES)
+        return {case_id: allowed[0]
+                for case_id, allowed in module.REQUIRED_CASES.items()}
 
     def test_every_declared_case_is_required_and_unique(self):
         module = self.runner()
@@ -5320,13 +5321,41 @@ class RaceRunnerContract(unittest.TestCase):
         self.assertTrue(self.verdict(module, outcomes))
 
     def test_a_prevented_case_is_not_counted_as_executed(self):
-        """OS 가 막은 것은 해낸 것이 아니다. 같은 숫자에 넣으면 계약이 조용히 충족된다."""
+        """OS 가 막은 것은 해낸 것이 아니다. 같은 숫자에 넣으면 계약이 조용히 충족된다.
+
+        **실제 교체가 가능한 자리**에서만 그렇다. 커널이 그 교체를 아예 막는 자리는 요구
+        자체가 `PREVENTED_BY_OS` 이고, 거기서 실제 교체를 요구하면 OS 가 먼저 막아 준 상황을
+        실패로 세게 된다.
+        """
         module = self.runner()
         outcomes = self.healthy(module)
-        outcomes["ancestor-swap-after-first-backup:project"] = module.PREVENTED_BY_OS
+        outcomes["root-swap-after-fingerprint:project"] = module.PREVENTED_BY_OS
         problems = self.verdict(module, outcomes)
         self.assertTrue(any("kind:" in note for note in problems),
                         f"막힌 주입을 실행으로 셌다: {problems}")
+
+    def test_only_contracted_refusal_codes_count_as_prevention(self):
+        """아무 거부나 차단으로 세지 않는다.
+
+        열기 실패도, 잘못된 인자도, 미지원도 거부처럼 보이지만 그것들은 차단이 아니라 우리
+        구현이 틀렸다는 뜻이다. `ACCESS_DENIED` 두 표기만 계약이다.
+        """
+        module = self.runner()
+        self.assertEqual(module.ACCESS_DENIED_CODES, frozenset({5, 0xC0000022}))
+        for wrong in (0x57, 0x32, "open:5", None):
+            self.assertNotIn(wrong, module.ACCESS_DENIED_CODES)
+
+    def test_the_native_attack_runs_outside_the_product_helpers(self):
+        """공격은 **별도 프로세스**에서, 제품 helper 없이 한다.
+
+        제품과 검사가 같은 helper 를 나눠 쓰면 그 helper 하나가 틀렸을 때 둘 다 같은 방식으로
+        틀린다 — "공격이 막혔다" 와 "우리가 못 불렀다" 가 같은 화면이 된다.
+        """
+        module = self.runner()
+        self.assertIn("CreateFileW", module.NATIVE_ATTACK)
+        self.assertIn("SetFileInformationByHandle", module.NATIVE_ATTACK)
+        self.assertNotIn("uninstall_windows_fs", module.NATIVE_ATTACK,
+                         "공격이 제품 helper 를 쓴다")
 
     def test_a_missing_scope_fails(self):
         """root 교체 세 scope 중 하나가 빠지는 경우. 이름만 세면 나머지가 채워 준다."""

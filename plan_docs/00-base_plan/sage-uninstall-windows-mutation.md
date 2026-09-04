@@ -3,8 +3,8 @@
 Cycle-Stem: `sage-uninstall-windows-mutation`
 Document-Language: ko
 Risk Level: L3
-Done-Criteria-Revision: 5
-Status: REWORK 5 — Phase 05 재검토 BLOCKED(2026-09-03) 지적 반영
+Done-Criteria-Revision: 6
+Status: REWORK 6 — Phase 05 재검토 BLOCKED(2026-09-04) 지적 반영
 
 ## 이 사이클의 성격
 
@@ -99,7 +99,7 @@ Windows 사용자는 `sage uninstall`을 다른 OS와 **같은 문장**으로 �
 ## 5. Done Criteria
 
 - [ ] Windows 10/11 로컬 NTFS에서 project·global·all 실제 제거가 원격 runner에서 통과한다
-- [ ] 상위 경로 교체를 실제로 주입한 모든 지점에서 프로젝트·global root 밖 변경이 0건이다
+- [ ] 상위 경로 교체를 요구한 모든 지점에서 **실제 교체가 일어났거나, 두 독립 rename 경로가 OS 에 의해 사전 차단**되었고, 어느 쪽이든 프로젝트·global root 밖 변경이 0건이다 (차단은 실제 교체로 세지 않는다)
 - [x] backend 경계 추출 이후 POSIX uninstall 결과와 rollback 계약에 회귀가 없다
 - [x] capability·파일시스템·root identity 중 하나라도 확정되지 않으면 첫 mutation 전에 `uninstall.unsafe_platform`이다
 - [x] Windows backend에 경로 기반 write fallback이 존재하지 않는다(소스 검사로 단언)
@@ -125,6 +125,12 @@ Windows 사용자는 `sage uninstall`을 다른 OS와 **같은 문장**으로 �
 ## 6. Done Criteria Revision Log
 
 Initial revision 1. No replanning record.
+
+### Revision 6
+- Changed-At: Phase 05
+- Reason: race runner 가 **"돌았다" 를 잘못 세고 있었다.** case 가 아무 상태도 바꾸지 못하고 반환해도 실행으로 셌고, 그래서 Windows 커널이 상위 교체를 막았는데도 `14 injections executed` 가 찍혔다 — 막힌 것과 해낸 것이 같은 숫자에 들어갔다. 그리고 요구 목록이 이름 11개라 root 교체 세 scope 중 하나가 빠져도 나머지가 그 이름을 채웠다. 첫 backup 뒤의 상위 교체는 Windows 에서 **일어날 수 없다** — 우리가 그 디렉터리를 붙들고 있으면 일반 rename 도 handle 기반 rename 도 `ACCESS_DENIED` 다. 그 자리에서 "실제 교체" 를 요구하면 OS 가 먼저 막아 준 상황을 실패로 세게 된다.
+- Affected-Phases: 01, 03, 04
+- Summary: 각 반례가 `REAL`·`PREVENTED_BY_OS`·`SYNTHETIC`·`FAILED` 중 하나를 말하게 하고, 요구 목록을 scope 포함 고유 id 14건으로 바꿔 성격까지 대조한다. 상위 교체 계약을 "실제 교체" 에서 **"실제 교체 또는 두 독립 rename 경로의 OS 사전 차단"** 으로 넓히되, 차단은 실행으로 세지 않는다. 차단은 계약한 `ACCESS_DENIED` 두 표기로만 인정하고, 차단 뒤에도 정상 완료·사용자 bytes/mode 보존·등록 제거·보관소 0·외부 무변경을 각각 단언한다. 공격은 제품 helper 를 쓰지 않는 별도 프로세스에서 한다.
 
 ### Revision 5
 - Changed-At: Phase 05
