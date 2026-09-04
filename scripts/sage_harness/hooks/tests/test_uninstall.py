@@ -4421,10 +4421,16 @@ class WindowsBackendContract(unittest.TestCase):
         backend.parents[target] = 4242
         backend._owned.append(4242)
 
-        self.assertEqual(backend._detach_parent(target), target)
-        self.assertEqual(closed, [4242], "붙든 handle 을 놓지 않았다")
-        self.assertNotIn(target, backend.parents)
-        self.assertNotIn(4242, backend._owned)
+        # 자기 자신뿐 아니라 **그 아래에서 붙들고 있는 것까지** 놓아야 한다.
+        child = os.path.join(target, "inner")
+        backend.parents[child] = 4343
+        backend._owned.append(4343)
+
+        detached = backend._detach_subtree(target)
+        self.assertEqual(sorted(closed), [4242, 4343], "하위 handle 을 남겼다")
+        self.assertEqual(backend.parents, {})
+        self.assertEqual(backend._owned, [])
+        self.assertEqual(dict(detached), {target: os.curdir, child: "inner"})
 
     def test_moving_a_held_directory_takes_the_hold_back_afterwards(self):
         """놓기만 하면 **되돌리기가 그 아래를 못 만진다.**
@@ -4435,10 +4441,10 @@ class WindowsBackendContract(unittest.TestCase):
         """
         w = uninstall_windows_fs
         source = self.body("uninstall_windows_fs.py", "replace", "WindowsBackend")
-        self.assertIn("_detach_parent(source)", source)
-        self.assertIn("_attach_parent(detached, parent, os.path.basename(target))",
+        self.assertIn("_detach_subtree(source)", source)
+        self.assertIn("_attach_subtree(detached, parent, os.path.basename(target))",
                       source, "옮긴 뒤 다시 붙들지 않는다")
-        self.assertIn("_attach_parent(detached, parent, os.path.basename(source))",
+        self.assertIn("_attach_subtree(detached, parent, os.path.basename(source))",
                       source, "옮기지 못했을 때 원래 이름으로 되돌려 붙들지 않는다")
 
     @staticmethod
@@ -4467,7 +4473,7 @@ class WindowsBackendContract(unittest.TestCase):
         backend = w.WindowsBackend(types.SimpleNamespace(identity_source="id"))
         held = os.path.abspath(os.path.join("nowhere", "held"))
         backend.parents[held] = 4242
-        backend._release_parent(held)
+        backend._release_parent(held)   # 사라질 디렉터리 — 다시 붙들지 않는다
         with self.assertRaises(install_transaction.InstallDriftError):
             backend.pinned(os.path.join(held, "child.json"))
 
