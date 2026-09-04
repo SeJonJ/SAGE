@@ -92,6 +92,24 @@ print("child capability supported=%s failure_code=%s source=%s"
 # **전파된 terminal 실패 하나만 센다.** 하강 중의 부재·not-directory 는 정상 제어 흐름이라
 # 수백 건 나오고, 그것을 전부 찍으면 진짜 실패가 그 안에 묻힌다.
 from sage import uninstall_executor as ex
+
+# 어느 rename 에서 갈리는지 **경로 없이** 센다. fixture 로는 열 칸이 다 통과하는데 실제
+# 실행만 실패하므로, 실패한 시도의 성격(몇 번째인지·깊이·디렉터리인지·이름 길이)이 남은
+# 유일한 판별축이다. 이름 자체는 싣지 않는다.
+attempts = []
+original_replace = ex._PinnedTransaction._replace
+def counted(self, source, target):
+    rel = os.path.relpath(source, project)
+    shape = {"n": len(attempts) + 1,
+             "depth": len(rel.split(os.sep)),
+             "is_dir": os.path.isdir(source),
+             "name_len": len(os.path.basename(source)),
+             "backup_len": len(os.path.basename(target)),
+             "hidden": os.path.basename(source).startswith(".")}
+    attempts.append(shape)
+    return original_replace(self, source, target)
+ex._PinnedTransaction._replace = counted
+
 trace = []
 outcome = None
 try:
@@ -104,6 +122,9 @@ except BaseException as exc:
     outcome = "%s: %s" % (type(exc).__name__, exc)
 print("child execute=%s" % outcome)
 print("child trace_tail=%r" % (trace[-4:],))
+print("child rename_attempts=%d last=%r" % (len(attempts), attempts[-1] if attempts else None))
+if len(attempts) > 1:
+    print("child rename_first=%r" % (attempts[0],))
 
 failed = not outcome.startswith("ok")
 if failed:
