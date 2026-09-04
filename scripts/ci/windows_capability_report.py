@@ -279,14 +279,19 @@ def real_run():
             if payload.get(key):
                 print(f"      {key}={json.dumps(payload[key], ensure_ascii=True)[:900]}")
 
-        # 거부는 아무것도 바꾸지 않았으므로 소비자는 그대로다. 같은 fixture 로 실행 층을
-        # 직접 돌려, 진단 code 로 접히기 전의 native 실패를 이름과 정수로 붙잡는다.
+        # **새 소비자에서 돌린다.** 앞의 제거가 실패했으면 그 fixture 는 이미 손상돼 있고,
+        # 손상된 자리에서 남은 몇 개를 처리한 성공은 "깨끗한 제거가 된다" 는 증거가 아니다.
+        # 실제로 그렇게 읽어서 한 번 잘못 판단했다.
         sentinel = os.path.join(root, "outside", "sentinel.txt")
         os.makedirs(os.path.dirname(sentinel), exist_ok=True)
         with open(sentinel, "w", encoding="utf-8") as fp:
             fp.write("untouched\n")
+        second = os.path.join(root, "proj2")
+        os.makedirs(second)
+        again = sage("install", "--host", "claude", "--dest", second)
+        print(f"      second install rc={again.returncode}")
         probe = subprocess.run(
-            [sys.executable, "-c", CHILD_PROBE, project, sentinel], cwd=REPO, env=env,
+            [sys.executable, "-c", CHILD_PROBE, second, sentinel], cwd=REPO, env=env,
             capture_output=True, text=True, encoding="utf-8", errors="replace")
         print("      --- same-env child probe (executor level)")
         for line in (probe.stdout or "").strip().splitlines():
@@ -296,7 +301,7 @@ def real_run():
         # 열린 handle 잔여의 대리 관측. Windows 에서 자식 안의 handle 이 살아 있으면 이
         # 삭제가 공유 위반으로 실패한다. 직접 세는 방법이 없으므로 대리임을 명시한다.
         try:
-            shutil.rmtree(project)
+            shutil.rmtree(second)
             print("      handle residue (proxy: rmtree of project) = none")
         except OSError:
             print("      handle residue (proxy: rmtree of project) = BLOCKED")
