@@ -810,6 +810,39 @@ stdin이 닫힌다), EH-16의 "재료는 이미 있다"는 L0에만 맞고 pdca 
 
 ---
 
+## (미등재) Windows 10 데스크톱 자동 제거
+
+> **ID 미부여.** backlog ID 는 이 파일을 소유한 자리에서 부여한다. 여기서는 항목의 내용만 적는다.
+
+- **배경**: `sage-uninstall-windows-mutation` 사이클이 handle 결속 mutation backend 를 완성했고, 사용자 결정(2026-09-05)으로 정식 자동 제거 범위는 **Windows 11 데스크톱 로컬 NTFS** 로 확정됐다.
+- **문제**: Windows 10 데스크톱은 **지원 정책의 범위 밖**이라 자동 제거를 하지 않는다. 그 판정은 SKU 와 build 만 보고 capability 를 재지 않으므로, 그 환경에서 실제로 동작하는지는 **측정한 적이 없고 여기서도 단정하지 않는다.** 참고로 문서상 최소 요구는 낮다(`NtCreateFile`·`NtSetInformationFile` 은 NT 계열, `GetFileInformationByHandleEx` 의 `FileIdInfo` 는 Windows 8). 그러나 문서가 말하는 하한과 그 SKU 에서 실제로 돌았다는 것은 다른 말이고, 이 항목이 요구하는 것은 후자다.
+- **현재 동작**: 제거 대상이 있으면 `--check`·`--yes` 모두 `uninstall.windows_10_manual_only` 로 확인 prompt 이전에 멈추고, 삭제·부분 제거·보존·차단 네 목록과 처리 순서를 접지 않고 낸다. mutation 0건이다. 대상이 없으면 `COMPLETE`(0).
+- **막고 있는 것**: GitHub Actions 에 Windows 10 러너가 없다. `windows-2019/2022/2025` 는 전부 Server SKU 다. 증거를 만들려면 self-hosted Windows 10 러너이거나, 데스크톱에서 `SAGE_UNINSTALL_REQUIRE_MUTATION=1` 로 한 번 돌린 로그(edition·build·product type·filesystem·process bitness 포함)다.
+- **비용 예상**: 코드 변경은 관문 상수 하나(`WINDOWS_11_MIN_BUILD`)와 그 판정표뿐일 가능성이 높다. 비용의 대부분은 검증 환경이다.
+- **트리거**: Windows 10 소비자의 제거 요구가 실제로 들어오거나, 그 SKU 를 도는 검증 환경이 갖춰질 때. **Windows 10 은 2025-10-14 에 지원이 종료됐다** — 그 사실이 이 항목의 우선순위를 낮게 유지하는 근거다.
+- **상태**: 🕗 보류(2026-09-05 등재, 사용자 결정으로 후속 개발 이관). severity P3 — 잘못 지우는 방향의 위험은 **거부로 0** 이고, 못 지우는 방향으로만 남으며 그 자리에는 수동 안내가 있다.
+
+---
+
+## (미등재) Windows Server·도메인 컨트롤러, 32-bit Python, ARM64 자동 제거
+
+> **ID 미부여.** backlog ID 는 이 파일을 소유한 자리에서 부여한다.
+
+- **결정(2026-09-05)**: 둘 다 **현재 지원 범위 제외**다. 이 사이클에서 그 환경을 위한 추가 native 구현은 하지 않는다 — 검증할 수 없는 플랫폼 전용 코드는 막으려는 위험보다 나쁘다는 것이 이 사이클의 전제이고, 그 전제는 범위를 넓힐 때도 같다.
+- **현재 동작(server·도메인 컨트롤러)**: 정책 판정으로 `uninstall.windows_sku_not_supported`. 제거 대상이 있으면 `--check`·`--yes` 모두 확인 prompt 이전에 `BLOCKED`(2) 이고, 검증된 계획 기반 수동 목록과 처리 순서를 낸다. mutation 0건.
+- **현재 동작(32-bit Python)**: capability 판정으로 `uninstall.unsafe_platform`. 이쪽은 정책이 아니라 **실제로 잰 축**이라 `--check` 는 계획을 그대로 보여 주고 거부는 mutation 요청에만 걸린다.
+- **32-bit 가 막힌 이유**: 이 명령의 native 구조체 offset 은 Win64 ABI 하나로 계산된다. 32-bit 프로세스에서는 `RootDirectory`·`ObjectName` 이 다른 자리로 가고, **검증하지 않은 ABI 배치라 native 호출의 결과를 신뢰할 수 없다.** `native_floor` 가 포인터 폭 ≠ 8 을 첫 mutation 전에 막는다.
+- **server 가 막힌 이유**: 이 명령이 검증한 것은 데스크톱 워크플로다. GitHub `windows-latest`(Server 2025)에서 backend·race 검사가 도는 것은 사실이지만, 그것은 **backend 회귀 증거**이지 그 SKU 의 소비자 제거 계약 증거가 아니다.
+- **현재 동작(ARM64)**: capability 판정으로 `uninstall.unsafe_platform`. `native_floor` 가 폭 다음에 아키텍처를 보고 x64 가 아니면 첫 mutation 전에 막는다. `--check` 는 계획을 그대로 보여 주고 거부는 mutation 요청에만 걸린다.
+- **ARM64 판정이 제품으로 온 경위(2026-09-05, rework 13)**: rework 12 까지 ARM64 를 막는 것은 **CI 게이트뿐이었다.** 폭도 SKU 도 build 도 조건을 만족하므로 제품은 실제로 제거를 수행했고, 그것은 판정 권위를 제품과 CI 로 갈라놓은 상태다 — 갈린 뒤에는 어느 쪽이 옳은지 물을 자리가 없다. native 구현을 더하지 않고 관문 한 줄만 `native_floor` 에 넣어 해소했다.
+- **거부 범위(ARM64, 2026-09-05 rework 14 에서 좁힘)**: **native ARM64 Python 프로세스**는 거부한다. **x64 에뮬레이션 구성**은 아키텍처 보고 결과가 `platform.machine()` 의 Windows 판정 경로에 달려 있고 그 경로는 Python 버전·실행 환경에 따라 달라질 수 있어 단정하지 않는다 — 그 구성이 x64 프로세스 ABI 관문을 통과할 수는 있으나 **ARM64 하드웨어 지원을 보장하지 않는다.** 정식 지원 범위·acceptance 증거 범위 모두 제외이고, 실제 수요가 생기면 별도 후속 개발에서 검증한다.
+- **native 하드웨어 판정을 더하지 않는 이유**: 하드웨어를 따로 묻는 호출 자체가 검증할 수 없는 플랫폼 전용 코드를 하나 늘리는 일이다.
+- **잃은 회귀(2026-09-05 CI 재구성)**: hosted matrix 에서 `windows-latest` 를 빼면서 **Server SKU 정책 거부 계약과 Windows 커널 위의 backend·race·core 회귀가 상시 CI 에서 사라졌다.** 그 계약들은 로컬 검사와 Server SKU 흉내 실행으로 지켜지지만 실제 커널 위에서 상시로 도는 것과 같지 않다. 이후 Windows 커널 회귀는 `run-win11-uninstall` 라벨이 붙은 PR 에서만 확인된다 — Windows 를 건드리는 변경에는 라벨을 붙여야 한다.
+- **트리거**: 실제 수요가 들어올 때. 그 전에는 우선순위를 올리지 않는다.
+- **상태**: 🕗 보류(2026-09-05 등재, 사용자 결정으로 범위 제외). severity P3 — 잘못 지우는 방향의 위험은 **거부로 0** 이고, 못 지우는 방향으로만 남는다. server 쪽에는 수동 안내가 있다.
+
+---
+
 ## (참고) 보류 — 자산 사이클 내 기록
 - F5(클린 업그레이드)는 하드닝에서 해소(profile create-only). F1/F3/F7/malformed 동일.
 - 진행 로그: vault `TECH - SAGE 구현 진행 로그.md`

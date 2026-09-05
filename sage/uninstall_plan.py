@@ -103,10 +103,10 @@ class UninstallPlan:
     """
 
     __slots__ = ("scope", "dest", "actions", "status", "blocked_reason", "notices", "baseline",
-                 "global_root")
+                 "global_root", "root_baseline")
 
     def __init__(self, scope, dest, actions, status, blocked_reason=None, notices=(),
-                 baseline=None, global_root=None):
+                 baseline=None, global_root=None, root_baseline=None):
         self.scope = scope
         self.dest = dest
         self.actions = tuple(actions)
@@ -119,6 +119,13 @@ class UninstallPlan:
         # 전역 skill root. **global 을 포함한 범위에서만** 채워진다 — project 범위에서 이 값이
         # None 이 아니면 그것 자체가 scope 격리 위반의 증거다.
         self.global_root = global_root
+        # write root 자체의 기준. 대상의 기준만 뜨면 **root 가 통째로 바뀐 경우**를 볼 수
+        # 없다 — 바꿔치기된 root 아래에서는 상대 경로가 전부 새 root 안에서 성립하므로 대상
+        # 지문은 "없음" 이 되고, 없음은 계획 밖으로 조용히 빠져나간다. root 를 여는 쪽이 이
+        # 값과 대조해야 승인된 자리에서 여는지 확인할 수 있다.
+        self.root_baseline = (dict(root_baseline) if root_baseline is not None
+                              else {root: root_fingerprint(root)
+                                    for root in self.lock_roots()})
 
     @property
     def exit_code(self):
@@ -175,6 +182,28 @@ class UninstallPlan:
 
 
 # --- 상태 기준 ---------------------------------------------------------------
+
+def root_fingerprint(path):
+    """write root **하나**의 기준. 이름이 아니라 그 이름이 가리키는 디렉터리를 본다.
+
+    ## 왜 대상 지문만으로는 부족한가
+
+    대상의 지문은 root 아래 상대 경로에 붙는다. root 자체가 junction 이나 rename 으로 통째로
+    바뀌면 그 상대 경로들은 **새 root 안에서 다시 성립하거나 전부 없어진다.** 없어진 것은
+    계획에서 조용히 빠지고, 성립한 것은 남의 디렉터리에서 지워진다. 어느 쪽도 대상 지문
+    대조로는 보이지 않는다 — 그 대조는 이미 바뀐 root 를 기준으로 도니까.
+
+    ## 왜 `lstat` 이 아니라 `stat` 인가
+
+    root 를 여는 쪽은 이름을 따라가서 연다(`O_DIRECTORY` · `NtCreateFile`). 기준을 `lstat` 으로
+    뜨면 symlink 로 걸린 정상적인 프로젝트 경로가 언제나 어긋난 것으로 보인다. 우리가 묻는
+    것은 "이 이름이 링크인가" 가 아니라 **"이 이름이 아까 그 디렉터리를 가리키는가"** 다.
+    """
+    info = os.stat(path)
+    if not stat.S_ISDIR(info.st_mode):
+        raise ValueError("uninstall.boundary_changed")
+    return (_tx._kind(info.st_mode), stat.S_IMODE(info.st_mode), info.st_dev, info.st_ino)
+
 
 def fingerprint(paths):
     """확인 시점과 실행 직전의 상태가 같은지 볼 기준.

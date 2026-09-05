@@ -979,6 +979,30 @@ def _acceptance_matrix(content):
             "duplicates": duplicates, "invalid": invalid_ids}
 
 
+def requirement_id_duplicates(content):
+    """01 문서의 요구사항 ID 중복. **acceptance 와 같은 자리에서 fail-closed 다.**
+
+    acceptance parser 는 `A-ID` 만 본다. 그래서 `FR-*` 를 두 번 적어도 아무도 잡지 못하고,
+    두 행은 서로 다른 요구를 같은 이름으로 갖게 된다 — 04 가 그 이름 하나를 근거로 대면
+    어느 요구를 덮었는지 판정할 수 없다. 실제로 rework 하나가 기존 번호를 다시 써서 세 건이
+    중복됐고, 검사가 없어 통과했다.
+
+    표 행의 첫 칸만 본다 — 본문에서 다른 요구를 인용하는 것은 중복이 아니다.
+    """
+    seen = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if not cells:
+            continue
+        match = re.fullmatch(r"(?:\*\*)?([A-Z]{2,4}-[A-Z]?\d+)(?:\*\*)?", cells[0])
+        if match:
+            seen.append(match.group(1))
+    return sorted({rid for rid in seen if seen.count(rid) > 1})
+
+
 def _acceptance_matrix_ids(content):
     return _acceptance_matrix(content)["required"]
 
@@ -1083,6 +1107,12 @@ def acceptance_findings(plan_content, report_content, policy, *, plan_path, repo
         return [f"선택된 01 문서({plan_path})에 invalid acceptance ID: {matrix['invalid']}"], []
     if matrix["duplicates"]:
         return [f"선택된 01 문서({plan_path})에 duplicate acceptance ID: {matrix['duplicates']}"], []
+    requirement_duplicates = requirement_id_duplicates(plan_content)
+    if requirement_duplicates:
+        # 같은 이름을 가진 두 요구사항은 04 가 근거를 대는 순간 어느 쪽을 덮었는지 알 수
+        # 없게 만든다. A-ID 만 보던 검사가 놓쳐 온 자리다.
+        return [f"선택된 01 문서({plan_path})에 duplicate requirement ID: "
+                f"{requirement_duplicates}"], []
     if not matrix["all"]:
         return [f"선택된 01 문서({plan_path or '미선택'})에 acceptance matrix ID 없음"], []
     if not evidence_rows:

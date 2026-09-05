@@ -15,7 +15,10 @@ marker 가 있는 공유 파일, 계획에 없는 경로, 다른 scope 의 자�
 """
 import ast
 import contextlib
+import ctypes
 import errno
+import hashlib
+import inspect
 import io
 import json
 import os
@@ -24,14 +27,18 @@ import stat
 import subprocess
 import sys
 import tempfile
+import textwrap
+import types
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(HERE))))
 sys.path.insert(0, REPO)
 
+from sage import diagnostic_contract, i18n  # noqa: E402
 from sage import install_transaction  # noqa: E402
 from sage import managed_assets, manifest_contract, uninstall_executor, uninstall_plan, uninstall_shared  # noqa: E402,F401
+from sage import uninstall_cleanup, uninstall_fs, uninstall_posix_fs, uninstall_windows_fs  # noqa: E402,F401
 from sage.commands import install as install_cmd  # noqa: E402
 from sage.commands import uninstall as uninstall_cmd  # noqa: E402
 from sage import overlay_classify  # noqa: E402
@@ -87,6 +94,20 @@ def fixture_root(label):
     return root
 
 
+def snapshot_tree(root):
+    """경로 → 내용 해시. 크기만 보면 **같은 크기의 다른 내용**이 통과한다."""
+    found = {}
+    for folder, _dirs, files in os.walk(root):
+        for name in sorted(files):
+            path = os.path.join(folder, name)
+            try:
+                with open(path, "rb") as handle:
+                    found[os.path.relpath(path, root)] = hashlib.sha256(handle.read()).hexdigest()
+            except OSError:
+                found[os.path.relpath(path, root)] = "unreadable"
+    return found
+
+
 class patched:
     """`InstallTransaction` 메서드 하나를 잠깐 바꾼다.
 
@@ -107,6 +128,21 @@ class patched:
     def __exit__(self, *_exc):
         setattr(self.owner, self.name, self.original)
         return False
+
+
+def link_directory(link, target):
+    """디렉터리 링크 하나. **세 OS 어디서나 만든다.**
+
+    `os.symlink` 만 쓰면 Windows 에서 권한 때문에 실패하고, 그러면 경계 검사가 그 환경에서만
+    조용히 못 도는 검사가 된다. junction 은 권한 상승 없이 만들 수 있다.
+    """
+    if os.name == "nt":
+        done = subprocess.run(["cmd", "/c", "mklink", "/J", link, target],
+                              capture_output=True, text=True)
+        if done.returncode != 0:
+            raise OSError(f"mklink /J failed: {done.stdout}{done.stderr}")
+        return
+    os.symlink(target, link)
 
 
 def sage(*args, cwd=None, env=None):
@@ -1083,8 +1119,8 @@ class SymlinkBoundary(Base):
 class StepOrder(Base):
     """종료 계약 단계는 순서대로 수행되고 건너뛰지 않는다."""
 
-    STAGES = ("lock", "fingerprint", "prepare", "recheck", "backup", "verify",
-              "commit", "cleanup", "unlock")
+    STAGES = ("capability", "lock", "fingerprint", "roots", "prepare", "recheck", "backup",
+              "verify", "commit", "cleanup", "unlock")
 
     def test_the_stage_order_is_fixed(self):
         consumer = self.fresh()
@@ -1095,7 +1131,8 @@ class StepOrder(Base):
                      if index == 0 or trace[index - 1] != name]
         # 이름을 하나씩 세지 않고 **정의된 순서와 대조**한다. 단계가 늘 때 검사가 따라오지
         # 않으면, 새 단계는 순서 계약 밖에서 아무 데나 놓일 수 있다.
-        self.assertEqual([name for name in collapsed if name in self.STAGES][:1], ["lock"])
+        self.assertEqual([name for name in collapsed if name in self.STAGES][:2],
+                         ["capability", "lock"])
         self.assertEqual(collapsed[-1], "unlock")
         for earlier, later in zip(self.STAGES, self.STAGES[1:]):
             self.assertIn(earlier, collapsed, f"{earlier} 단계가 없다")
@@ -1684,28 +1721,35 @@ class ReviewReproductions(Base):
         return path
 
     def test_an_ancestor_swapped_after_backup_never_reaches_outside(self):
-        """`stage_write` 직후 상위 디렉터리를 바깥 symlink 로 바꿔도 안전해야 한다.
+        """`stage_write` 직후 상위 디렉터리를 바깥 링크로 바꿔도 안전해야 한다.
 
         `O_NOFOLLOW` 는 **마지막 성분만** 본다. 상위가 바뀌는 것은 막지 못하고, 경로를 다시
         검사해도 검사와 작업 사이 창이 남는다. 그래서 부모를 **fd 로 붙든다** — 붙든 뒤에는
         이름이 어떻게 바뀌든 작업이 원래 디렉터리로 간다.
 
-        두 가지를 함께 단언한다. 바깥에 파일이 생기지 않을 것, 그리고 실패했을 때 우리가 바꾼
-        것이 **전부** 원래대로 돌아올 것.
+        ## 계약이 바뀐 자리다
+
+        예전에는 이 주입을 탐지해 `boundary_changed` 로 멈추고 전부 되돌렸다. 그 탐지는 경로로
+        조상을 훑는 것이었고, 붙든 뒤의 그 물음은 이미 다른 디렉터리에 대한 물음이다. 지금은
+        멈추지 않고 **원래 객체에 대해 계속 진행한다** — 그것이 결속이 하기로 한 일이다.
+
+        단언은 그래서 셋이다. 바깥에 아무것도 만들거나 고치지 않을 것, 승인되지 않은 파일이
+        살아남을 것, 그리고 승인한 변경이 원래 객체에 정확히 적용될 것.
         """
-        self.assertTrue(uninstall_executor._PINNING,
+        self.assertTrue(uninstall_posix_fs.probe_capability().supported,
                         "지원 플랫폼인데 부모 fd 결속이 꺼져 있다")
         consumer = self.fresh()
         settings = self.seed_host_registration(consumer)
         with open(settings, "rb") as handle:
             before_bytes = handle.read()
-        before_mode = stat.S_IMODE(os.lstat(settings).st_mode)
 
         plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
         self.assertIn(settings, plan.write_targets(), "STRIP 대상이 잡히지 않았다")
 
         outside = os.path.join(consumer.root, "outside")
         os.makedirs(outside)
+        with open(os.path.join(outside, "victim.txt"), "w", encoding="utf-8") as handle:
+            handle.write("someone else's file\n")
         claude = os.path.join(consumer.project, ".claude")
         moved = os.path.join(consumer.root, "real-claude")
         swapped = []
@@ -1717,31 +1761,38 @@ class ReviewReproductions(Base):
                     swapped.append(True)
                     shutil.move(claude, moved)
                     os.symlink(outside, claude)
+                    with open(os.path.join(moved, "not-in-plan.txt"), "w",
+                              encoding="utf-8") as extra:
+                        extra.write("untouched\n")
                 return result
             return hook
 
         opened_before = len(os.listdir("/dev/fd")) if os.path.isdir("/dev/fd") else None
         with patched("stage_write", swap_ancestor):
-            # 정확히 이 판정이어야 한다. `RollbackFailed` 는 "되돌리지도 못했다" 는 뜻이라
-            # 둘을 함께 허용하면 검사가 실패한 복구까지 통과로 센다.
-            with self.assertRaises(ValueError) as caught:
+            try:
                 uninstall_executor.execute(plan)
-        self.assertEqual(str(caught.exception), "uninstall.boundary_changed")
+            except uninstall_executor.RollbackFailed as failure:
+                self.fail(f"되돌리기까지 실패했다: {failure}")
         self.assertTrue(swapped, "주입이 성립하지 않았다")
         if opened_before is not None:
             self.assertLessEqual(len(os.listdir("/dev/fd")), opened_before + 1,
                                  "부모 fd 가 새고 있다")
 
-        # 1) 프로젝트 밖에 아무것도 만들거나 고치지 않았다.
-        self.assertEqual(os.listdir(outside), [], f"바깥에 파일이 생겼다: {os.listdir(outside)}")
+        # 1) 링크를 따라가지 않았다.
+        self.assertEqual(sorted(os.listdir(outside)), ["victim.txt"],
+                         "링크를 따라가 남의 디렉터리를 건드렸다")
 
-        # 2) 우리가 바꾼 것은 전부 원래대로다 — 내용·권한·보관소 잔여까지.
-        restored = os.path.join(moved, "settings.json")
-        self.assertTrue(os.path.isfile(restored), "원본이 복구되지 않았다")
-        with open(restored, "rb") as handle:
-            self.assertEqual(handle.read(), before_bytes, "복구된 내용이 다르다")
-        self.assertEqual(stat.S_IMODE(os.lstat(restored).st_mode), before_mode,
-                         "복구된 권한이 다르다")
+        # 2) 승인되지 않은 파일은 살아남았다.
+        self.assertTrue(os.path.isfile(os.path.join(moved, "not-in-plan.txt")),
+                        "계획에 없던 파일을 지웠다")
+
+        # 3) 승인한 변경이 **원래 객체**에 적용됐다 — 사용자 내용은 남고 SAGE 등록만 빠졌다.
+        written = os.path.join(moved, "settings.json")
+        self.assertTrue(os.path.isfile(written), "원본이 사라졌다")
+        with open(written, "rb") as handle:
+            after_bytes = handle.read()
+        self.assertNotEqual(after_bytes, before_bytes, "STRIP 이 적용되지 않았다")
+        self.assertIn(b"mine", after_bytes, "사용자 내용을 잃었다")
         leftovers = [n for n in os.listdir(moved) if n.startswith(".sage-install-backup-")]
         self.assertEqual(leftovers, [], f"보관소가 남았다: {leftovers}")
 
@@ -1753,7 +1804,7 @@ class ReviewReproductions(Base):
         """
         if os.name != "posix":
             self.skipTest("POSIX 전용 계약")
-        self.assertTrue(uninstall_executor._PINNING,
+        self.assertTrue(uninstall_posix_fs.probe_capability().supported,
                         f"{sys.platform} 에서 부모 fd 결속이 꺼졌다 — capability 판정을 보라")
 
     def test_capability_is_asked_per_function_not_by_lstat_membership(self):
@@ -1762,7 +1813,7 @@ class ReviewReproductions(Base):
         **본문(코드)만** 본다. 문서에는 왜 그렇게 하면 안 되는지가 적혀 있고, 그 설명을 금지
         문자열로 세면 설명을 지워야 통과하는 검사가 된다.
         """
-        with open(os.path.join(REPO, "sage", "uninstall_executor.py"), encoding="utf-8") as h:
+        with open(os.path.join(REPO, "sage", "uninstall_posix_fs.py"), encoding="utf-8") as h:
             tree = ast.parse(h.read())
         gate = next(n for n in tree.body
                     if isinstance(n, ast.FunctionDef) and n.name == "_pinning_support")
@@ -1794,13 +1845,18 @@ class ReviewReproductions(Base):
         consumer = self.fresh()
         before = sorted(os.listdir(consumer.project))
         plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
-        saved = uninstall_executor._PINNING
-        uninstall_executor._PINNING = False
+        saved = uninstall_fs.capability
+
+        def unsupported(roots=()):
+            return uninstall_fs.MutationCapability(
+                uninstall_fs.BACKEND_NONE, failure_code="uninstall.unsafe_platform")
+
+        uninstall_fs.capability = unsupported
         try:
             with self.assertRaises(ValueError) as caught:
                 uninstall_executor.execute(plan)
         finally:
-            uninstall_executor._PINNING = saved
+            uninstall_fs.capability = saved
         self.assertEqual(str(caught.exception), "uninstall.unsafe_platform")
         self.assertEqual(before, sorted(os.listdir(consumer.project)),
                          "거부했는데 무언가 바뀌었다")
@@ -1818,8 +1874,12 @@ class ReviewReproductions(Base):
         script = (
             "import sys;"
             "sys.path.insert(0, %r);"
-            "import sage.uninstall_executor as e;"
-            "e._PINNING = False;"
+            "import sage.uninstall_fs as f;"
+            # 지원 정책은 이 자식에서만 통과시킨다 — 범위 밖 SKU 에서는 정책이 먼저 걸려
+            # capability 거부가 한 줄도 실행되지 않는데 화면은 같은 code 를 낸다.
+            "f.support_policy = lambda: None;"
+            "f.capability = lambda roots=(): f.MutationCapability("
+            "f.BACKEND_NONE, failure_code='uninstall.unsafe_platform');"
             "from sage.cli import main;"
             "sys.argv = ['sage', 'uninstall', '--dest', %r, '--yes'];"
             "sys.exit(main())" % (REPO, consumer.project))
@@ -1850,11 +1910,27 @@ class ReviewReproductions(Base):
 
         재검사만으로는 TOCTOU 창이 남는다. 구현이 조용히 그쪽으로 돌아가면 이 검사가 잡는다.
         """
-        with open(os.path.join(REPO, "sage", "uninstall_executor.py"), encoding="utf-8") as h:
+        with open(os.path.join(REPO, "sage", "uninstall_posix_fs.py"), encoding="utf-8") as h:
             source = h.read()
         self.assertIn("dir_fd=handle", source)
         self.assertIn("src_dir_fd=handle", source)
         self.assertIn("O_DIRECTORY | os.O_NOFOLLOW", source)
+
+    def test_the_executor_no_longer_knows_any_operating_system(self):
+        """단계 순서 층에 OS 분기가 남지 않았는지 본다.
+
+        분기가 남아 있으면 두 번째 OS 를 더할 때마다 늘고, 늘어난 분기 중 하나가 빠진 자리가
+        곧 경로 기반 fallback 이 된다. **본문(코드)만** 본다 — 문서에는 왜 그런지가 적혀 있고,
+        그 설명을 금지 문자열로 세면 설명을 지워야 통과하는 검사가 된다.
+        """
+        with open(os.path.join(REPO, "sage", "uninstall_executor.py"), encoding="utf-8") as h:
+            tree = ast.parse(h.read())
+        body = [n for n in tree.body if not (isinstance(n, ast.Expr)
+                                             and isinstance(n.value, ast.Constant))]
+        code = "\n".join(ast.unparse(node) for node in body)
+        for banned in ("dir_fd", "O_NOFOLLOW", "O_DIRECTORY", "os.name", "sys.platform",
+                       "ctypes", "WinDLL"):
+            self.assertNotIn(banned, code, f"실행 층이 아직 OS 를 알고 있다: {banned}")
 
     def test_writing_refuses_a_path_that_is_not_empty(self):
         """치운 자리에 무엇이 나타나면 따라가지 않고 멈춘다."""
@@ -1866,18 +1942,43 @@ class ReviewReproductions(Base):
         link = os.path.join(root, "link")
         os.symlink(outside, link)
         with self.assertRaises(OSError):
-            uninstall_executor._write_new_file(link, "overwritten\n", 0o644)
+            uninstall_posix_fs.write_new_file(link, "overwritten\n", 0o644)
         with open(outside, encoding="utf-8") as handle:
             self.assertEqual(handle.read(), "untouched\n")
+
+
+# A24 가 서려면 Windows 에서 **반드시 실행돼야 하는** 검사들. 이 tuple 이 그 목록의 정본이고,
+# `scripts/ci/uninstall_core_checks.py` 의 `CORE_SELECTORS` 는 그것을 실행하는 쪽이다.
+#
+# **두 곳에 두는 것이 요점이다.** 실행 목록만 있으면 거기서 한 줄을 지우는 것이 곧 요구가
+# 줄어드는 것이 된다 — 남은 것들은 여전히 통과하고, 화면은 초록이고, 무엇이 사라졌는지는
+# 아무 데도 적히지 않는다. 요구를 실행과 다른 파일에 두면 그 축소가 **대조에서 걸린다.**
+A24_REQUIRED_SELECTORS = (
+    "BoundaryRace.test_no_absolute_path_judgement_survives_after_the_pin",
+    "BoundaryRace.test_no_absolute_path_judgement_survives_through_the_rollback",
+    "BoundaryRace.test_the_cleanup_allowance_is_only_the_backup_lexists",
+    "BoundaryRace.test_a_backup_path_probe_before_the_commit_is_caught",
+)
 
 
 class BoundaryRace(Base):
     """계획과 쓰기 사이에 경계가 바뀌면 쓰지 않는다."""
 
-    def test_a_component_swapped_after_planning_stops_the_run(self):
-        """계획 뒤 중간 성분이 symlink 로 바뀌는 경쟁을 실제로 주입한다.
+    def test_a_component_swapped_after_planning_never_redirects_the_work(self):
+        """계획 뒤 중간 성분이 링크로 바뀌는 경쟁을 실제로 주입한다.
 
-        정적 검사만으로는 이 창을 못 본다 — 계획 시점에는 정상이었기 때문이다.
+        ## 계약이 바뀐 자리다
+
+        예전에는 이 주입을 **탐지해서** `boundary_changed` 로 멈췄다. 그 탐지는 경로로 조상을
+        훑는 것이었고, 부모를 이미 붙든 뒤에 경로로 묻는 것은 그 자체가 위험하다 — 상위가
+        바뀐 순간 그 답은 이미 다른 디렉터리에 대한 답이다.
+
+        지금은 탐지하지 않는다. 대신 **결속이 그 질문을 무의미하게 만든다.** 이름이 어떻게
+        바뀌든 우리가 여는 것은 승인 시점에 확인한 그 객체이고, 공격자가 바꿔 놓은 이름이
+        가리키는 곳은 열리지 않는다. 공격자가 얻을 수 있는 것은 "우리가 이미 승인한 객체를
+        옮겨 두는 것" 뿐이고, 그 객체는 사용자가 지우기로 한 바로 그것이다.
+
+        그래서 단언도 바뀐다 — "멈췄는가" 가 아니라 **"엉뚱한 것을 건드렸는가"** 를 본다.
         """
         consumer = self.fresh()
         plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
@@ -1885,9 +1986,12 @@ class BoundaryRace(Base):
         if not os.path.isdir(target):
             self.skipTest("이 host 배치에는 .claude/skills 가 없다")
         moved = os.path.join(consumer.root, "elsewhere-skills")
-
-        # 내용은 그대로 두고 **중간 성분만** 링크로 바꾼다. tree 를 부수면 지문 불일치나
-        # FileNotFound 로 먼저 걸려, 경계 재확인이 한 일이 무엇인지 말할 수 없게 된다.
+        # 링크가 가리키는 곳을 **원본이 아닌 다른 곳**으로 둔다. 원본을 가리키게 하면
+        # "따라갔다" 와 "붙든 것을 썼다" 가 구별되지 않아 이 검사가 아무것도 말하지 못한다.
+        outside = os.path.join(consumer.root, "outside-skills")
+        os.makedirs(outside)
+        with open(os.path.join(outside, "victim.txt"), "w", encoding="utf-8") as handle:
+            handle.write("someone else's file\n")
         swapped = []
 
         def swap_then_remove(original):
@@ -1896,23 +2000,280 @@ class BoundaryRace(Base):
                 if not swapped:
                     swapped.append(True)
                     shutil.move(target, moved)
-                    os.symlink(moved, target)
+                    os.symlink(outside, target)
+                    # 승인되지 않은 파일을 원본 안에 놓는다. 이것이 살아남아야 "승인한
+                    # 것만 지웠다" 가 증명된다.
+                    with open(os.path.join(moved, "not-in-plan.txt"), "w",
+                              encoding="utf-8") as extra:
+                        extra.write("untouched\n")
                 return result
             return hook
 
         with patched("stage_remove_tree", swap_then_remove):
-            with self.assertRaises(ValueError) as caught:
+            try:
                 uninstall_executor.execute(plan)
-        self.assertEqual(str(caught.exception), "uninstall.boundary_changed")
+            except uninstall_executor.RollbackFailed as failure:
+                self.fail(f"되돌리기까지 실패했다: {failure}")
+        self.assertTrue(swapped, "주입이 성립하지 않았다")
         self.assertTrue(os.path.islink(target), "주입이 성립하지 않았다")
-        # 링크를 따라갔다면 바깥 tree 의 내용이 사라졌을 것이다.
-        self.assertTrue(os.listdir(moved), "링크를 따라가 바깥을 건드렸다")
 
-    def test_the_recheck_uses_the_same_gate_as_planning(self):
-        """재확인이 계획과 **같은 관문**을 부르는지 본다. 두 벌이면 언젠가 갈라진다."""
-        with open(os.path.join(REPO, "sage", "uninstall_executor.py"), encoding="utf-8") as handle:
-            source = handle.read()
-        self.assertIn("_plan.candidate_block(plan.root_for(action)", source)
+        # 1) 링크를 따라가지 않았다 — 남의 디렉터리는 그대로다.
+        self.assertEqual(sorted(os.listdir(outside)), ["victim.txt"],
+                         "링크를 따라가 남의 디렉터리를 건드렸다")
+
+        # 2) 승인되지 않은 파일은 살아남았다 — 붙든 디렉터리 안에서도 계획만 지운다.
+        self.assertTrue(os.path.isfile(os.path.join(moved, "not-in-plan.txt")),
+                        "계획에 없던 파일을 지웠다")
+
+        # 3) 승인된 자산은 실제로 사라졌다 — 결속이 작업을 원래 객체로 보냈다.
+        approved = [os.path.basename(a.path) for a in plan.of_kind(uninstall_plan.DELETE)
+                    if os.path.dirname(a.path) == target]
+        self.assertTrue(approved, "이 fixture 에는 검사할 승인 자산이 없다")
+        for name in approved:
+            self.assertFalse(os.path.exists(os.path.join(moved, name)),
+                             f"승인된 자산이 남았다: {name}")
+
+    def test_the_recheck_splits_membership_from_the_boundary(self):
+        """소속은 **문자열로**, 경계는 **결속된 지문으로** 묻는지 본다.
+
+        둘을 한 관문에 묶어 두면 그 관문이 경로로 파일시스템을 읽고, 붙든 뒤의 그 읽기가
+        정확히 이 사이클이 없애려는 것이다. **본문(코드)만** 본다.
+        """
+        with open(os.path.join(REPO, "sage", "uninstall_executor.py"), encoding="utf-8") as h:
+            tree = ast.parse(h.read())
+        target = next(n for n in tree.body
+                      if isinstance(n, ast.FunctionDef) and n.name == "_execute_locked")
+        body = target.body[1:] if ast.get_docstring(target) else target.body
+        code = "\n".join(ast.unparse(node) for node in body)
+        self.assertIn("_plan.within_root(plan.root_for(action)", code,
+                      "소속 판정이 사라졌다")
+        self.assertNotIn("candidate_block", code,
+                         "붙든 뒤에 경로로 조상·leaf 를 훑는 관문을 부른다")
+        self.assertIn("journal._measure(action.path, 'path')", code)
+
+    # 붙든 뒤에 경로로 물을 수 있는 것 전부. **읽는 것과 만드는 것을 함께 센다** —
+    # `os.mkdir` 은 상위가 바뀐 뒤 프로젝트 밖에 디렉터리를 만드는 자리이고, 읽기만 세면
+    # 그 자리는 감시 밖에 남는다. `os.makedirs` 는 같은 일을 하는 다른 이름이라 함께 건다.
+    PATH_PRIMITIVES = ((os, "lstat"), (os, "stat"), (os, "readlink"),
+                       (os, "mkdir"), (os, "makedirs"),
+                       (os.path, "lexists"), (os.path, "islink"), (os.path, "isdir"))
+
+    # commit 뒤 `_cleanup()` 에 허용된 **유일한** 호출. 경로도 제한된다 — journal 이 만든
+    # backup 뿐이다. 이것 하나만 예외인 이유는 그 질문이 "붙든 객체가 아직 있는가" 가 아니라
+    # "사용자가 갈 자리에 아직 무언가 보이는가" 여서다. 다른 primitive 나 다른 경로는 그
+    # 질문이 아니므로 예외가 아니다.
+    CLEANUP_ALLOWED = (os.path, "lexists")
+
+    def pin_window(self, plan, project):
+        """`recheck` 부터 `unlock` 까지 경로 판정을 가로챈다.
+
+        **창은 한 번만 닫힌다 — `unlock` 에서.** 성공 경로든 실패 경로든 그 전에는 닫지 않는다.
+        `cleanup` 에서 닫으면 `_cleanup()` 안에서 무엇을 하든 아무도 보지 않게 되고, 그러면
+        "예외는 읽기 전용 `lexists` 하나" 라는 계약을 검사가 아니라 문서만 말하게 된다.
+
+        대신 단계를 추적해서 `cleanup` 동안만 **정규화된 backup 경로에 대한 `os.path.lexists`**
+        를 통과시킨다. 다른 primitive 도, 다른 경로도 offender 다.
+
+        **범위는 action 목록이 아니라 write root 아래 전부다.** backup 은 대상의 형제라
+        action 과 그 조상만 세면 `.sage-install-backup-...` 조회가 감시 밖으로 빠진다 —
+        되돌리기가 가장 믿어야 하는 경로가 하필 안 보이는 자리에 있게 된다.
+
+        `dir_fd` 를 쓴 호출은 결속된 호출이므로 세지 않는다. 허용된 호출 **안에서** 다시
+        도는 호출도 세지 않는다(`os.path.lexists` 는 안에서 `os.lstat` 을 부른다) — 그것은
+        같은 한 번의 조회이지 두 번이 아니다.
+        """
+        roots = tuple(os.path.abspath(root) for root in plan.lock_roots())
+        journals = []
+        original_journal = uninstall_executor._PinnedTransaction
+
+        class Recorded(original_journal):
+            def __init__(inner, *args, **kwargs):
+                original_journal.__init__(inner, *args, **kwargs)
+                journals.append(inner)
+
+        state = {"phase": None, "depth": 0}
+        offenders = []
+        saved = {}
+
+        def under_root(candidate):
+            target = os.path.abspath(candidate)
+            return any(target == root or target.startswith(root + os.sep) for root in roots)
+
+        def backups():
+            return {os.path.abspath(backup) for journal in journals
+                    for _path, backup in journal._entries if backup is not None}
+
+        def permitted(module, name, candidate):
+            if state["phase"] != "cleanup":
+                return False
+            if (module, name) != self.CLEANUP_ALLOWED:
+                return False
+            return os.path.abspath(candidate) in backups()
+
+        def spy(module, name, original):
+            def probe(*args, **kwargs):
+                counted = (state["depth"] == 0 and kwargs.get("dir_fd") is None and args
+                           and isinstance(args[0], str) and under_root(args[0])
+                           and not permitted(module, name, args[0]))
+                if counted:
+                    offenders.append(f"{state['phase']}: {name}({args[0]})")
+                state["depth"] += 1
+                try:
+                    return original(*args, **kwargs)
+                finally:
+                    state["depth"] -= 1
+            return probe
+
+        def install():
+            # capability 판정이 끝난 **뒤에** 건다. `_pinning_support` 는 `os.stat` 을
+            # **이름이 아니라 객체로** 대조하므로, 먼저 갈아 끼우면 지원 환경이 미지원으로
+            # 보이고 이 검사는 자기 도구 때문에 죽는다.
+            for module, name in self.PATH_PRIMITIVES:
+                if (module, name) in saved:
+                    continue
+                saved[(module, name)] = getattr(module, name)
+                setattr(module, name, spy(module, name, getattr(module, name)))
+
+        def remove():
+            for (module, name), original in list(saved.items()):
+                setattr(module, name, original)
+            saved.clear()
+            uninstall_executor._PinnedTransaction = original_journal
+
+        class Window(list):
+            def append(inner, name):
+                list.append(inner, name)
+                state["phase"] = name
+                if name == "recheck":
+                    install()
+                elif name == "unlock":
+                    remove()
+
+        uninstall_executor._PinnedTransaction = Recorded
+        return Window(), offenders, remove
+
+    def strippable_project(self):
+        consumer = self.fresh()
+        settings = os.path.join(consumer.project, ".claude", "settings.json")
+        os.makedirs(os.path.dirname(settings), exist_ok=True)
+        command = sorted(uninstall_plan.canonical_commands("claude"))[0]
+        with open(settings, "w", encoding="utf-8") as handle:
+            json.dump({"hooks": {"PostToolUse": [{"matcher": "*", "hooks": [
+                {"type": "command", "command": command}]}]}, "mine": True}, handle)
+        return consumer
+
+    def test_no_absolute_path_judgement_survives_after_the_pin(self):
+        """**간접 호출까지** 사라졌는지 실제 실행으로 본다.
+
+        소스 문자열 검사는 직접 호출만 잡는다. `_guard_path` 처럼 상속으로 들어오는 판정은
+        실행 층 어디에도 이름이 없고, 그래서 문자열 검사를 통과한 채로 남아 있었다.
+
+        그래서 `recheck` 이후 write root 아래 경로에 대한 파일시스템 호출을 **전부 가로채고**,
+        허용된 하나를 뺀 나머지가 하나라도 있으면 실패로 센다.
+        """
+        consumer = self.strippable_project()
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        window, offenders, remove = self.pin_window(plan, consumer.project)
+        try:
+            uninstall_executor.execute(plan, trace=window)
+        finally:
+            remove()
+        self.assertIn("cleanup", window, "성공 경로가 cleanup 까지 가지 않았다")
+        self.assertEqual(window[-1], "unlock", "창이 unlock 까지 가지 않았다")
+        self.assertEqual(offenders, [],
+                         f"붙든 뒤에 경로로 다시 물었다: {sorted(set(offenders))[:8]}")
+
+    def test_no_absolute_path_judgement_survives_through_the_rollback(self):
+        """되돌리는 동안에도 경로로 묻지 않는다.
+
+        위 검사는 성공 경로만 본다. 되돌리기는 실패한 뒤에야 도는 코드라, 그 구간만 경로
+        판정을 그대로 두고도 성공 경로 검사는 초록으로 남는다.
+        """
+        consumer = self.strippable_project()
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        window, offenders, remove = self.pin_window(plan, consumer.project)
+
+        def boom(original):
+            def hook(journal):
+                raise OSError("injected")
+            return hook
+
+        try:
+            with patched("verify_outputs", boom):
+                with self.assertRaises(OSError):
+                    uninstall_executor.execute(plan, trace=window)
+        finally:
+            remove()
+        self.assertIn("rollback", window, "되돌리기가 돌지 않아 아무것도 확인하지 못했다")
+        self.assertEqual(window[-1], "unlock", "창이 unlock 까지 가지 않았다")
+        self.assertEqual(offenders, [],
+                         f"되돌리는 동안 경로로 물었다: {sorted(set(offenders))[:8]}")
+
+    def test_the_cleanup_allowance_is_only_the_backup_lexists(self):
+        """cleanup 예외가 **정말로 그 하나뿐인지** 주입으로 본다.
+
+        예외를 단계로만 열면 그 단계 전체가 통과한다 — 그러면 계약은 "cleanup 은 무엇이든
+        해도 된다" 가 되고, 문서만 `lexists` 하나라고 말한다. 그래서 허용되지 않은 조회를
+        `_cleanup()` 안에 넣고 창이 그것을 잡는지 확인한다.
+        """
+        consumer = self.strippable_project()
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        window, offenders, remove = self.pin_window(plan, consumer.project)
+        original = uninstall_executor._cleanup
+        target = os.path.join(consumer.project, ".claude")
+
+        def nosy(journal):
+            # 계약이 허용하지 않은 조회. 경로는 허용 목록 밖이고 primitive 도 다르다.
+            os.stat(target)
+            return original(journal)
+
+        uninstall_executor._cleanup = nosy
+        try:
+            uninstall_executor.execute(plan, trace=window)
+        finally:
+            uninstall_executor._cleanup = original
+            remove()
+        self.assertTrue([note for note in offenders if note.startswith("cleanup: stat(")],
+                        f"cleanup 안의 허용되지 않은 조회를 놓쳤다: {offenders}")
+
+    def test_a_backup_path_probe_before_the_commit_is_caught(self):
+        """backup 절대 경로 조회도 잡는가.
+
+        backup 은 대상의 **형제**다. action 과 그 조상만 세면 되돌리기가 가장 믿어야 하는
+        경로가 감시 밖에 남는다 — 그 자리에 경로 판정이 되살아나도 아무도 모른다.
+        """
+        consumer = self.strippable_project()
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        window, offenders, remove = self.pin_window(plan, consumer.project)
+
+        def peek(original):
+            def hook(journal):
+                for _path, backup in journal._entries:
+                    if backup is not None:
+                        os.path.lexists(backup)
+                return original(journal)
+            return hook
+
+        try:
+            with patched("verify_outputs", peek):
+                uninstall_executor.execute(plan, trace=window)
+        finally:
+            remove()
+        self.assertTrue([note for note in offenders if ".sage-install-backup-" in note],
+                        f"backup 절대 경로 조회를 놓쳤다: {offenders}")
+
+    @staticmethod
+    def self_and_ancestors(path, root):
+        seen = []
+        cursor = os.path.abspath(path)
+        root = os.path.abspath(root)
+        while cursor.startswith(root):
+            seen.append(cursor)
+            parent = os.path.dirname(cursor)
+            if parent == cursor:
+                break
+            cursor = parent
+        return seen
 
 
 class CommitSemantics(Base):
@@ -2062,7 +2423,11 @@ class SmokeIsolation(unittest.TestCase):
             "spec.loader.exec_module(module)\n"
             "module.PATH_SHAPES = (('plain', 'proj', 'codex'),)\n"
             "module.CODEX_MODES = ('custom',)\n"
-            "module.run_case = lambda *args: None\n"
+            # 외부 작업을 하는 자리는 **전부** 비운다. 하나라도 남으면 이 검사는 인코딩
+            # 경계가 아니라 자식 프로세스의 출력 인코딩에서 죽는다. 이름을 손으로 적으면
+            # 다음에 추가되는 case 가 조용히 빠지므로 **규칙으로 고른다.**
+            "for _name in [n for n in vars(module) if n.endswith('_case')]:\n"
+            "    setattr(module, _name, lambda *a, **k: None)\n"
             "raise SystemExit(module.main())\n"
         )
         result = subprocess.run(
@@ -2125,10 +2490,10 @@ class WriteIntegrity(Base):
 
     def test_the_writer_loops_until_everything_is_written(self):
         """구현이 반환값을 버리는 형태로 되돌아가지 않았는지 코드로 본다."""
-        with open(os.path.join(REPO, "sage", "uninstall_executor.py"), encoding="utf-8") as h:
+        with open(os.path.join(REPO, "sage", "uninstall_posix_fs.py"), encoding="utf-8") as h:
             tree = ast.parse(h.read())
         writer = next(n for n in tree.body
-                      if isinstance(n, ast.FunctionDef) and n.name == "_write_new_file")
+                      if isinstance(n, ast.FunctionDef) and n.name == "write_new_file")
         body = writer.body[1:] if ast.get_docstring(writer) else writer.body
         code = "\n".join(ast.unparse(node) for node in body)
         self.assertIn("while written <", code, "쓰기가 반복되지 않는다")
@@ -3875,6 +4240,1042 @@ class FixtureHygiene(unittest.TestCase):
         self.assertEqual(offenders, [], "fixture 가 공유 temp 에 직접 만들어진다")
 
 
+
+class WindowsBackendContract(unittest.TestCase):
+    """Windows 결속 구현의 계약. **개발 머신이 macOS 라 여기서 잡지 못하면 아무도 못 잡는다.**
+
+    이 검사들이 확인하는 것은 "Windows 에서 동작한다" 가 아니다 — 그것은 원격 runner 만
+    증명할 수 있다. 여기서 보는 것은 구조체 배치·이름 검증·fallback 부재처럼 **환경과 무관하게
+    참이어야 하는 것**이다. 이것들이 틀리면 원격에서도 틀리고, 원격에서만 보이는 실패는
+    비싸다.
+    """
+
+    def test_struct_layout_matches_the_win64_contract(self):
+        """구조체 offset·크기는 Win64 ABI 가 정한 값이다. 하나 밀리면 조용히 틀린다.
+
+        `ctypes` 가 계산한 값을 쓰되, 그 계산 결과가 맞는지는 여기서 고정한다. 손으로 적은
+        offset 이 없다는 것과 계산된 offset 이 옳다는 것은 다른 이야기다.
+        """
+        w = uninstall_windows_fs
+        for struct_type, size in ((w.UNICODE_STRING, 16), (w.OBJECT_ATTRIBUTES, 48),
+                                  (w.IO_STATUS_BLOCK, 16),
+                                  (w.BY_HANDLE_FILE_INFORMATION, 52), (w.FILE_ID_INFO, 24),
+                                  (w.FILE_ATTRIBUTE_TAG_INFO, 8), (w.FILE_BASIC_INFO, 40),
+                                  (w.FILE_FULL_DIR_INFO, 72)):
+            self.assertEqual(ctypes.sizeof(struct_type), size,
+                             f"{struct_type.__name__} 크기가 Win64 계약과 다르다")
+        self.assertEqual(w.OBJECT_ATTRIBUTES.RootDirectory.offset, 8)
+        self.assertEqual(w.OBJECT_ATTRIBUTES.ObjectName.offset, 16)
+        self.assertEqual(w.FILE_RENAME_INFO.RootDirectory.offset, 8)
+        self.assertEqual(w.FILE_RENAME_INFO.FileNameLength.offset, 16)
+        self.assertEqual(w.FILE_RENAME_INFO.FileName.offset, 20)
+        self.assertEqual(w.FILE_FULL_DIR_INFO.FileName.offset, 68)
+        # `WCHAR` 를 `ctypes.c_wchar` 로 두면 이 크기가 플랫폼마다 달라지고(Windows 2, 그 외 4)
+        # 배치가 검사 환경에서만 맞는다.
+        self.assertEqual(ctypes.sizeof(w.WCHAR), 2)
+        self.assertEqual(ctypes.sizeof(w.NTSTATUS), 4)
+
+    def test_relative_components_that_are_not_components_are_refused(self):
+        """성분이 아닌 것을 성분으로 받지 않는다. 이 값이 커널에 가는 마지막 자리다."""
+        for name in ("..", ".", "", "a/b", "a\\b", "a:b", "C:", "a\x00b", "nul", "NUL.txt",
+                     "com1", "LPT9.log", "trailing ", "trailing.", None, 3):
+            with self.subTest(name=name):
+                with self.assertRaises(ValueError):
+                    uninstall_windows_fs.validate_component(name)
+        for name in ("settings.json", ".gitignore", "한글 이름", "a.b.c",
+                     ".sage-install-backup-abc-x", "connect.txt", "communication"):
+            with self.subTest(name=name):
+                self.assertEqual(uninstall_windows_fs.validate_component(name), name)
+
+    def test_the_windows_backend_has_no_path_based_write_fallback(self):
+        """경로로 되돌아가는 길이 **없어야 한다.** 있으면 조건 하나가 어긋나는 날 그리로 간다.
+
+        읽기 전용 조사(`os.lstat`·`os.path`)는 허용한다 — 그것으로는 파일이 만들어지지 않는다.
+        금지하는 것은 경로를 받아 **쓰는** 호출이다.
+        """
+        path = os.path.join(REPO, "sage", "uninstall_windows_fs.py")
+        with open(path, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        # 경로를 받아 **쓰는** 호출만 센다. `str.replace` 같은 동명 메서드를 세면 검사가
+        # 잡아야 할 것이 아니라 이름을 잡는다.
+        module_writes = {"remove", "unlink", "rmdir", "rename", "replace", "makedirs",
+                         "mkdir", "chmod", "rmtree", "copy", "copy2", "copytree", "move",
+                         "truncate", "symlink", "link", "write_text", "write_bytes"}
+        path_apis = {"CreateFileW", "MoveFileExW", "DeleteFileW", "RemoveDirectoryW",
+                     "SetFileAttributesW", "CreateDirectoryW", "ReplaceFileW"}
+        found = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                target = node.func
+                if isinstance(target, ast.Attribute):
+                    owner = target.value
+                    base = getattr(owner, "id", None)
+                    if base in ("os", "shutil", "pathlib") and target.attr in module_writes:
+                        found.append(f"{base}.{target.attr}")
+                    if target.attr in path_apis:
+                        found.append(target.attr)
+                elif getattr(target, "id", None) in {"open"} | path_apis:
+                    found.append(target.id)
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    self.assertNotEqual(alias.name, "shutil",
+                                        "경로 기반 대량 조작 모듈을 들였다")
+        self.assertEqual(found, [], f"경로 기반 쓰기 경로가 남아 있다: {sorted(set(found))}")
+
+    def test_every_capability_primitive_is_load_bearing(self):
+        """항목 **하나만** 거짓이어도 지원하지 않는다고 답해야 한다.
+
+        하나가 빠져도 지원한다고 답하면, 그 하나가 하는 일만 조용히 실패한다. 이 명령에서
+        조용한 실패는 되돌릴 수 없는 실패다.
+        """
+        for missing in uninstall_fs.PRIMITIVES:
+            with self.subTest(missing=missing):
+                primitives = {name: name != missing for name in uninstall_fs.PRIMITIVES}
+                cap = uninstall_fs.MutationCapability(uninstall_fs.BACKEND_WINDOWS,
+                                                      primitives=primitives)
+                self.assertFalse(cap.supported, f"{missing} 없이 지원한다고 답했다")
+        whole = uninstall_fs.MutationCapability(
+            uninstall_fs.BACKEND_WINDOWS,
+            primitives={name: True for name in uninstall_fs.PRIMITIVES})
+        self.assertTrue(whole.supported)
+        for field in ("os_supported", "local_volume"):
+            with self.subTest(field=field):
+                cap = uninstall_fs.MutationCapability(
+                    uninstall_fs.BACKEND_WINDOWS,
+                    primitives={name: True for name in uninstall_fs.PRIMITIVES},
+                    **{field: False})
+                self.assertFalse(cap.supported)
+
+    def test_backend_selection_refuses_with_a_contract_code(self):
+        """지원 불가는 **기존 진단 어휘**로 나온다. Windows 전용 code 를 만들지 않는다."""
+        saved = uninstall_fs.capability
+        uninstall_fs.capability = lambda roots=(): uninstall_fs.MutationCapability(
+            uninstall_fs.BACKEND_NONE, failure_code="uninstall.unsafe_platform")
+        try:
+            with self.assertRaises(ValueError) as caught:
+                uninstall_fs.backend_for(("/nowhere",))
+        finally:
+            uninstall_fs.capability = saved
+        self.assertEqual(str(caught.exception), "uninstall.unsafe_platform")
+
+    def test_native_failures_map_onto_the_existing_vocabulary(self):
+        """native 오류가 새 code 를 만들지 않고 기존 어휘로 수렴하는지 본다."""
+        from sage.diagnostic_contract import SEVERITY
+        w = uninstall_windows_fs
+        cases = [
+            (w.WindowsMutationError("NtCreateFile", w.STATUS_OBJECT_NAME_COLLISION,
+                                    ntstatus=True), "uninstall.backup_collision"),
+            (w.WindowsMutationError("NtCreateFile", w.STATUS_NOT_A_DIRECTORY,
+                                    ntstatus=True), "uninstall.boundary_changed"),
+            (w.WindowsMutationError("WriteFile", w.ERROR_ALREADY_EXISTS),
+             "uninstall.backup_collision"),
+            (w.WindowsMutationError("WriteFile", w.ERROR_ACCESS_DENIED),
+             "uninstall.execution_failed"),
+        ]
+        for error, expected in cases:
+            with self.subTest(op=error.op, code=error.code):
+                code = w.to_diagnostic(error)
+                self.assertEqual(code, expected)
+                self.assertIn(code, SEVERITY, "계약에 없는 code 를 만들었다")
+
+    def test_a_mutation_failure_never_claims_the_platform_is_unsupported(self):
+        """**실행 중 실패는 환경 미지원이 아니다.**
+
+        `to_diagnostic` 은 capability 판정을 **통과한 뒤**의 실패만 옮긴다. 그 실패를
+        `unsafe_platform` 으로 접으면 고칠 수 있는 구현 결함이 고칠 수 없는 환경 한계처럼
+        보이고, 사용자는 자기 환경을 탓하고 개발자는 붉은 화면을 환경 문제로 넘긴다.
+
+        실제로 그 일이 일어났다. `SetFileInformationByHandle(FileRenameInfo)` 가
+        `ERROR_INVALID_PARAMETER` 를 냈고, 화면에는 "이 플랫폼은 지원되지 않는다" 만 남았다.
+        """
+        w = uninstall_windows_fs
+        invalid = [
+            w.WindowsMutationError("NtSetInformationFile/FileRenameInformation",
+                                   w.STATUS_INVALID_PARAMETER, ntstatus=True),
+            w.WindowsMutationError("NtCreateFile", w.STATUS_NOT_SUPPORTED, ntstatus=True),
+            w.WindowsMutationError("SetFileInformationByHandle/FileRenameInfo",
+                                   w.ERROR_INVALID_PARAMETER),
+            w.WindowsMutationError("SetFileInformationByHandle/FileBasicInfo",
+                                   w.ERROR_NOT_SUPPORTED),
+        ]
+        for error in invalid:
+            with self.subTest(op=error.op, code=error.code):
+                self.assertEqual(w.to_diagnostic(error), "uninstall.execution_failed")
+
+    def test_the_native_facts_survive_the_translation(self):
+        """진단으로 옮기면서 **API 이름과 code 를 버리지 않는다.**
+
+        진단 하나만 남으면 원격에서만 나는 실패의 원인이 그 머신 안에 갇힌다. 싣는 것은
+        경로도 OS 원문도 아닌 API 이름·종류·정수뿐이다.
+        """
+        error = uninstall_windows_fs.WindowsMutationError(
+            "NtSetInformationFile/FileRenameInformation", 0xC000000D, ntstatus=True)
+        self.assertEqual(error.native, {
+            "operation": "NtSetInformationFile/FileRenameInformation",
+            "error_kind": "nt", "error_code": 0xC000000D})
+        carried = uninstall_fs.NativeFailure("uninstall.execution_failed", error.native)
+        self.assertEqual(str(carried), "uninstall.execution_failed")
+        self.assertEqual(carried.native["operation"],
+                         "NtSetInformationFile/FileRenameInformation")
+        for value in carried.native.values():
+            self.assertNotIn("\\", str(value), "경로가 섞여 나갔다")
+
+    def test_moving_a_directory_we_hold_releases_our_own_handle_first(self):
+        """**Windows 는 열린 handle 이 남은 디렉터리의 이름을 바꾸지 못한다.**
+
+        파일은 `FILE_SHARE_DELETE` 로 열려 있으면 되지만 디렉터리는 그렇지 않다. 실제로
+        29건이 성공한 뒤, 우리가 부모로 붙들고 있던 디렉터리 하나에서만
+        `STATUS_ACCESS_DENIED` 가 났다 — 우리 자신이 만든 장애였다.
+
+        결속은 약해지지 않는다. 그 rename 을 묶는 것은 옮겨지는 디렉터리의 handle 이 아니라
+        **부모의** handle 이고 그것은 그대로다.
+        """
+        w = uninstall_windows_fs
+        closed = []
+        saved = w._close
+        w._close = closed.append
+        self.addCleanup(lambda: setattr(w, "_close", saved))
+
+        backend = w.WindowsBackend(types.SimpleNamespace(identity_source="id"))
+        target = os.path.abspath(os.path.join("nowhere", "held"))
+        backend.parents[target] = 4242
+        backend._physical[target] = target
+        backend._owned.append(4242)
+
+        # 자기 자신뿐 아니라 **그 아래에서 붙들고 있는 것까지** 놓아야 한다.
+        child = os.path.join(target, "inner")
+        backend.parents[child] = 4343
+        backend._physical[child] = child
+        backend._owned.append(4343)
+
+        saved_identity = w.identity
+        w.identity = lambda handle, source="id": ("mark", handle)
+        self.addCleanup(lambda: setattr(w, "identity", saved_identity))
+
+        detached = backend._detach_subtree(target)
+        self.assertEqual(sorted(closed), [4242, 4343], "하위 handle 을 남겼다")
+        self.assertEqual(backend.parents, {})
+        self.assertEqual(backend._owned, [])
+        self.assertEqual({key: rel for key, rel, _mark in detached},
+                         {target: os.curdir, child: "inner"})
+        self.assertEqual({key: mark for key, _rel, mark in detached},
+                         {target: ("mark", 4242), child: ("mark", 4343)},
+                         "놓기 전에 지문을 뜨지 않았다")
+
+    def test_moving_a_held_directory_takes_the_hold_back_afterwards(self):
+        """놓기만 하면 **되돌리기가 그 아래를 못 만진다.**
+
+        되돌리기는 역순으로 돌면서 옮겨 둔 자식을 제자리에 놓는다. 그때 이 부모가 필요하다.
+        놓기만 했더니 rollback 이 `parent handle was released` 로 실패해 보관소가 통째로
+        남았다 — 고치려던 것보다 나쁜 상태였다.
+        """
+        w = uninstall_windows_fs
+        source = self.body("uninstall_windows_fs.py", "replace", "WindowsBackend")
+        self.assertIn("_detach_subtree(source)", source)
+        self.assertIn("_attach_subtree(detached, parent, os.path.basename(target), target)",
+                      source, "옮긴 뒤 새 자리로 다시 붙들지 않는다")
+        self.assertIn("_attach_subtree(detached, parent, os.path.basename(source), source)",
+                      source, "옮기지 못했을 때 원래 자리로 되돌려 붙들지 않는다")
+
+    @staticmethod
+    def body(module, name, owner=None):
+        with open(os.path.join(REPO, "sage", module), encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        nodes = tree.body
+        if owner is not None:
+            nodes = next(n for n in tree.body
+                         if isinstance(n, ast.ClassDef) and n.name == owner).body
+        target = next(n for n in nodes if isinstance(n, ast.FunctionDef) and n.name == name)
+        body = target.body[1:] if ast.get_docstring(target) else target.body
+        return "\n".join(ast.unparse(node) for node in body)
+
+    def test_the_registry_tracks_where_a_moved_directory_actually_is(self):
+        """**논리 이름과 물리 위치가 갈라지는 것**이 되돌리기를 깨뜨린 결함이었다.
+
+        `parents` 의 key 는 호출자가 쓰는 이름이라 끝까지 바뀌지 않는다. 그런데 디렉터리를
+        보관소 이름으로 옮기면 그 아래 것들의 실제 자리가 통째로 움직인다. 놓을 것을
+        **논리 이름으로** 찾으면, 이미 옮겨진 디렉터리를 되돌릴 때 그 handle 을 찾지 못한다 —
+        그 이름의 자리에는 아무것도 없기 때문이다. 그래서 되돌리기가 통째로 실패했다.
+        """
+        w = uninstall_windows_fs
+        saved = w._close
+        w._close = lambda handle: None
+        self.addCleanup(lambda: setattr(w, "_close", saved))
+
+        backend = w.WindowsBackend(types.SimpleNamespace(identity_source="id"))
+        root = os.path.abspath(os.sep + "root")
+        held = os.path.join(root, "held")
+        child = os.path.join(held, "inner")
+        moved = os.path.join(root, ".sage-install-backup-t-held")
+
+        backend.parents[held] = 1
+        backend.parents[child] = 2
+        backend._physical[held] = held
+        backend._physical[child] = child
+
+        # 옮긴 자리를 적어 둔다. 논리 이름은 그대로다.
+        backend._physical[held] = moved
+        backend._physical[child] = os.path.join(moved, "inner")
+
+        # **옮겨진 자리로** 찾으면 둘 다 나온다.
+        saved_identity = w.identity
+        w.identity = lambda handle, source="id": ("mark", handle)
+        self.addCleanup(lambda: setattr(w, "identity", saved_identity))
+
+        found = {key: rel for key, rel, _mark in backend._detach_subtree(moved)}
+        self.assertEqual(found, {held: os.curdir, child: "inner"},
+                         "옮겨진 자리에 있는 handle 을 찾지 못했다")
+        self.assertEqual(backend.parents, {})
+        self.assertEqual(backend._physical, {})
+
+    def test_the_old_logical_name_no_longer_finds_a_moved_directory(self):
+        """옮겨진 뒤 **원래 이름으로는 찾히지 않는다.** 그 자리에는 아무것도 없다."""
+        w = uninstall_windows_fs
+        saved = w._close
+        w._close = lambda handle: None
+        self.addCleanup(lambda: setattr(w, "_close", saved))
+
+        backend = w.WindowsBackend(types.SimpleNamespace(identity_source="id"))
+        root = os.path.abspath(os.sep + "root")
+        held = os.path.join(root, "held")
+        backend.parents[held] = 1
+        backend._physical[held] = os.path.join(root, ".sage-install-backup-t-held")
+
+        saved_identity = w.identity
+        w.identity = lambda handle, source="id": ("mark", handle)
+        self.addCleanup(lambda: setattr(w, "identity", saved_identity))
+        self.assertEqual(backend._detach_subtree(held), [],
+                         "옮겨진 디렉터리를 옛 이름으로 찾았다")
+        self.assertIn(held, backend.parents, "찾지도 못했으면서 등록을 지웠다")
+
+    def test_reopening_by_name_must_prove_it_is_the_same_object(self):
+        """이름으로 다시 여는 자리는 **전부 지문 검사를 지난다.**
+
+        지나지 않으면 "붙들었다" 가 "그 이름을 열었다" 로 조용히 바뀐다. 상위가 그 사이
+        바뀌면 같은 이름이 다른 객체를 가리키고, 우리는 남의 디렉터리를 붙든 채 되돌리기를
+        돌게 된다 — 그러면 우리 보관소는 영영 제자리로 돌아가지 못한다. 실제로 상위 교체
+        반례에서 보관소 하나가 그렇게 남았다.
+        """
+        w = uninstall_windows_fs
+        saved = w.identity
+        w.identity = lambda handle, source="id": ("other",)
+        self.addCleanup(lambda: setattr(w, "identity", saved))
+        with self.assertRaises(ValueError) as caught:
+            w._same_object(1, ("mine",), "id")
+        self.assertEqual(str(caught.exception), "uninstall.boundary_changed")
+        w.identity = lambda handle, source="id": ("mine",)
+        w._same_object(1, ("mine",), "id")     # 같은 객체면 조용히 지난다
+
+    def test_the_rename_checks_identity_before_letting_go(self):
+        """지문 검사가 **놓기 전에** 와야 한다.
+
+        놓은 뒤에 확인하면, 어긋난 것을 알았을 때는 이미 handle 을 닫은 뒤다. 되돌리기가
+        그 아래를 만질 방법이 사라진다.
+        """
+        source = self.body("uninstall_windows_fs.py", "replace", "WindowsBackend")
+        check = source.index("_same_object(handle, identity(held")
+        detach = source.index("_detach_subtree(source)")
+        self.assertLess(check, detach, "놓은 뒤에 확인한다")
+
+    def test_a_released_parent_never_falls_back_to_paths(self):
+        """놓은 뒤 그 아래를 다시 쓰려 하면 **멈춘다.**
+
+        `pinned()` 가 거짓을 돌려주면 상위 층은 경로 기반 구현으로 조용히 떨어지고, 결속이
+        사라진 사실이 결과 어디에도 드러나지 않는다. 이 사이클이 반복해서 만난 모양이다.
+        """
+        w = uninstall_windows_fs
+        saved = w._close
+        w._close = lambda handle: None
+        self.addCleanup(lambda: setattr(w, "_close", saved))
+
+        backend = w.WindowsBackend(types.SimpleNamespace(identity_source="id"))
+        held = os.path.abspath(os.path.join("nowhere", "held"))
+        saved_identity = w.identity
+        w.identity = lambda handle, source="id": ("mark", handle)
+        self.addCleanup(lambda: setattr(w, "identity", saved_identity))
+        backend.parents[held] = 4242
+        backend._physical[held] = held
+        backend._release_parent(held)   # 사라질 디렉터리 — 다시 붙들지 않는다
+        with self.assertRaises(install_transaction.InstallDriftError):
+            backend.pinned(os.path.join(held, "child.json"))
+
+    def test_the_rename_keeps_the_parent_handle_binding(self):
+        """rename 진입점이 바뀌어도 **부모 handle 상대**여야 한다.
+
+        `RootDirectory` 를 비우고 절대 경로로 물러서면 rename 이 이름 기준이 되고, 상위가
+        그 사이 바뀌면 우리가 붙든 것이 아닌 자리로 간다 — 이 사이클이 닫으려는 위험이다.
+        Windows runner 에서 Win32 진입점이 `RootDirectory` 를 받지 않는다는 것이 확인됐으므로
+        NT 진입점을 쓰되, 결속 자체는 그대로다.
+        """
+        source = self.body("uninstall_windows_fs.py", "_rename_in")
+        self.assertIn("info.RootDirectory = HANDLE(parent)", source,
+                      "부모 handle 상대 rename 이 아니다")
+        self.assertIn("NtSetInformationFile", source)
+        self.assertNotIn("SetFileInformationByHandle", source,
+                         "RootDirectory 를 받지 않는 진입점으로 되돌아갔다")
+
+
+    def test_native_errors_never_carry_the_operating_system_message(self):
+        """원문 Windows 메시지에는 절대 경로가 붙는다. 그것을 실어 나르지 않는다."""
+        error = uninstall_windows_fs.WindowsMutationError("NtCreateFile", 0xC0000034,
+                                                          ntstatus=True)
+        self.assertEqual(str(error), "NtCreateFile:nt:0xc0000034")
+        self.assertNotIn("\\", str(error))
+
+    def test_network_and_non_drive_roots_are_refused_before_anything_opens(self):
+        """UNC·네트워크 경로는 NT 경로로 옮기는 자리에서 이미 거부된다.
+
+        상대 경로는 **Windows 에서 비드라이브 경로가 아니다** — `abspath` 가 현재 드라이브
+        아래 절대 경로로 만든다. 그것을 거부하리라 기대하는 것은 제품이 아니라 POSIX 습관에
+        대한 기대다.
+        """
+        refused = ["\\\\server\\share\\project", "//server/share"]
+        if os.name != "nt":
+            refused.append("relative/path")
+        for path in refused:
+            with self.subTest(path=path):
+                with self.assertRaises(ValueError):
+                    uninstall_windows_fs.nt_path(path)
+
+
+class ManualCleanupGuidance(Base):
+    """자동 제거가 불가능하거나 실패했을 때의 안내. **네 의미를 접지 않는다.**"""
+
+    def blocked(self, consumer, code="uninstall.unsafe_platform"):
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        return uninstall_plan.UninstallPlan(
+            plan.scope, plan.dest, plan.actions, uninstall_plan.BLOCKED, code,
+            plan.notices, baseline=plan.baseline, global_root=plan.global_root)
+
+    def test_the_order_puts_partial_removal_before_deletion(self):
+        """등록을 먼저 치우지 않고 실행 파일을 지우면 host 가 없는 command 를 부른다."""
+        plan = self.blocked(self.fresh())
+        guide = uninstall_cleanup.guidance(plan, basis=uninstall_cleanup.BASIS_VERIFIED)
+        self.assertTrue(guide["available"])
+        self.assertEqual(guide["order"][0], uninstall_plan.STRIP)
+        self.assertIn(uninstall_plan.DELETE, guide["order"])
+        self.assertLess(guide["order"].index(uninstall_plan.STRIP),
+                        guide["order"].index(uninstall_plan.DELETE))
+        self.assertIn(uninstall_cleanup.REGISTRATION_FIRST, guide["warning_codes"])
+
+    def test_blocked_entries_are_never_offered_as_something_to_clean(self):
+        """`BLOCK` 은 손댈 대상이 아니라 먼저 고쳐야 하는 상태다."""
+        plan = self.blocked(self.fresh())
+        guide = uninstall_cleanup.guidance(plan, basis=uninstall_cleanup.BASIS_VERIFIED)
+        self.assertNotIn(uninstall_plan.BLOCK, guide["order"])
+
+    def test_an_uncertain_state_never_claims_anything_is_safe_to_delete(self):
+        """되돌리기까지 실패했으면 "지워도 된다" 고 말하지 않는다 — 되돌릴 수 없는 조언이다."""
+        plan = self.blocked(self.fresh(), "uninstall.rollback_failed")
+        guide = uninstall_cleanup.guidance(plan, basis=uninstall_cleanup.BASIS_UNCERTAIN,
+                                           unknown=[".sage-install-backup-x"])
+        self.assertNotIn(uninstall_plan.DELETE, guide["order"])
+        self.assertIn(uninstall_cleanup.NO_DELETE_CLAIM, guide["warning_codes"])
+        self.assertEqual(guide["unknown"], [".sage-install-backup-x"])
+
+    def test_a_committed_leftover_is_named_in_the_guide(self):
+        """뒷정리가 실패했으면 **무엇을 치울지** 말해야 한다.
+
+        `leftover_backups` 만 따로 내고 안내는 `available: false` 로 두면, 화면은 "치울 것이
+        있다" 고 말하면서 무엇을 치울지는 말하지 않는 상태가 된다 — 두 출력이 서로 다른
+        의미를 낸다.
+        """
+        plan = uninstall_plan.build(self.fresh().project, uninstall_plan.SCOPE_PROJECT)
+        guide = uninstall_cleanup.guidance(
+            plan, basis=uninstall_cleanup.BASIS_COMMITTED,
+            leftovers=[".sage-install-backup-abc-settings.json"])
+        self.assertTrue(guide["available"])
+        self.assertEqual(guide["basis"], "committed_with_leftovers")
+        self.assertEqual(guide["order"], [], "끝난 제거를 다시 안내한다")
+        self.assertEqual(guide["leftovers"], [".sage-install-backup-abc-settings.json"])
+
+    def test_the_cli_agrees_with_itself_when_cleanup_fails(self):
+        """`leftover_backups` 와 수동 안내가 **같은 정화 경로 한 벌**을 쓴다."""
+        consumer = self.fresh()
+        script = "\n".join([
+            "import sys",
+            f"sys.path.insert(0, {REPO!r})",
+            # 이 검사가 보려는 것은 **뒷정리 실패 뒤 두 목록이 같은 경로를 쓰는가** 다.
+            # 지원 범위 밖 SKU 에서는 정책 관문이 먼저 걸려 제거가 시작조차 안 되고,
+            # 그러면 이 계약은 그 runner 에서 영원히 확인되지 않는다.
+            "from sage import uninstall_fs as _policy_fs",
+            "_policy_fs.support_policy = lambda: None",
+            "from sage import install_transaction as tx",
+            "def refuse(self):",
+            "    self._committed = True",
+            "    return [f'{p}: injected' for p, b in self._entries if b]",
+            "tx.InstallTransaction.commit = refuse",
+            "from sage.cli import main",
+            f"sys.argv = ['sage', 'uninstall', '--dest', {consumer.project!r},"
+            " '--yes', '--json']",
+            "sys.exit(main())",
+        ])
+        result = subprocess.run([sys.executable, "-c", script], cwd=REPO, env=consumer.env,
+                                capture_output=True, text=True)
+        self.assertIn(result.returncode, (0, 1), result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["leftover_backups"], "치우지 못한 보관소를 보고하지 않았다")
+        guide = payload["manual_cleanup"]
+        self.assertTrue(guide["available"], "치울 것이 있는데 안내가 없다")
+        self.assertEqual(guide["basis"], "committed_with_leftovers")
+        self.assertEqual(guide["leftovers"], payload["leftover_backups"],
+                         "두 목록이 다른 말을 한다")
+        for path in guide["leftovers"]:
+            self.assertFalse(os.path.isabs(path), f"정화되지 않은 경로: {path}")
+
+    def test_guidance_is_not_offered_for_a_successful_run(self):
+        """자동으로 끝난 실행에 수동 안내를 붙이면 안 해도 되는 삭제로 이끈다."""
+        plan = uninstall_plan.build(self.fresh().project, uninstall_plan.SCOPE_PROJECT)
+        self.assertFalse(uninstall_cleanup.applies(plan, executed=True))
+        self.assertFalse(uninstall_cleanup.applies(plan, executed=False))
+
+    def test_an_unknown_basis_is_a_programming_error_not_a_silent_default(self):
+        plan = self.blocked(self.fresh())
+        with self.assertRaises(ValueError):
+            uninstall_cleanup.guidance(plan, basis="probably_fine")
+
+    def test_the_cli_shows_the_guide_and_never_collapses_the_delete_list(self):
+        """접힌 목록을 보고 손으로 정리할 수는 없다."""
+        consumer = self.fresh()
+        result = self.refused(consumer)
+        combined = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 2, combined)
+        self.assertIn("수동 정리 안내", combined)
+        self.assertIn("파일 전체를 삭제하지 말고", combined)
+        self.assertIn(os.path.join(".claude", "skills", "sage-plan"), combined,
+                      "삭제 목록이 접힌 채 안내만 나왔다")
+        self.assertIn(".gitignore", combined)
+
+    def test_the_guide_never_writes_a_destructive_shell_command(self):
+        """`rm`·`rmdir`·recursive delete 를 복구 명령으로 주지 않는다.
+
+        그 명령 하나가 잘못된 디렉터리에서 실행되면 이 명령이 지키려던 모든 것을 한 번에
+        지운다. 목록을 주는 것과 명령을 주는 것은 다른 일이다.
+        """
+        consumer = self.fresh()
+        combined = self.refused(consumer)
+        text = combined.stdout + combined.stderr
+        for banned in ("rm -", "rm -rf", "rmdir", "Remove-Item", "del /s", "rd /s",
+                       "shutil.rmtree", "find . -delete"):
+            self.assertNotIn(banned, text, f"파괴적 명령을 안내했다: {banned}")
+
+    def test_text_and_json_agree_on_basis_and_order(self):
+        """두 출력이 다른 말을 하면 사용자는 어느 쪽을 믿어야 하는지 알 수 없다."""
+        consumer = self.fresh()
+        payload = json.loads(self.refused(consumer, json_mode=True).stdout)
+        guide = payload["manual_cleanup"]
+        self.assertEqual(guide["basis"], "verified_plan")
+        self.assertEqual(guide["order"][0], "STRIP")
+        # 배열을 복제하지 않는다 — 정본은 기존 네 배열이다.
+        self.assertNotIn("paths", guide)
+        stripped = {entry["path"] for entry in payload["stripped"]}
+        self.assertIn(".gitignore", stripped)
+
+    def test_existing_json_keys_are_unchanged(self):
+        """`manual_cleanup` 을 몰라도 지금과 똑같이 읽혀야 한다."""
+        consumer = self.fresh()
+        payload = json.loads(self.refused(consumer, json_mode=True).stdout)
+        for key in ("scope", "status", "exit_code", "blocked_reason", "deleted", "stripped",
+                    "preserved", "blocked", "notices", "executed"):
+            self.assertIn(key, payload, f"기존 소비자가 읽던 키가 사라졌다: {key}")
+
+    def refused(self, consumer, json_mode=False):
+        """capability 를 자식 안에서 꺼서 안전 거부 경로를 밟는다.
+
+        지원 정책은 **이 자식에서만** 통과시킨다. 범위 밖 SKU(server·Windows 10)에서는 정책이
+        먼저 걸려 capability 거부가 한 줄도 실행되지 않고, 그래도 화면은 같은 code 를 내므로
+        통과처럼 보인다 — 두 축을 하나의 fixture 로 덮으면 그 순간 둘 다 미검증이다.
+        """
+        argv = ["sage", "uninstall", "--dest", consumer.project, "--yes"]
+        if json_mode:
+            argv.append("--json")
+        script = (
+            "import sys;"
+            "sys.path.insert(0, %r);"
+            "import sage.uninstall_fs as f;"
+            "f.support_policy = lambda: None;"
+            "f.capability = lambda roots=(): f.MutationCapability("
+            "f.BACKEND_NONE, failure_code='uninstall.unsafe_platform');"
+            "from sage.cli import main;"
+            "sys.argv = %r;"
+            "sys.exit(main())" % (REPO, argv))
+        return subprocess.run([sys.executable, "-c", script], cwd=REPO, env=consumer.env,
+                              capture_output=True, text=True)
+
+
+
+class RootBinding(Base):
+    """확인한 root 와 **쓰는 root** 가 같은 handle 인가.
+
+    capability probe 가 연 핸들은 조사용이고 곧 닫힌다. 그 조사 결과를 결속으로 쓰면 조사와
+    첫 변경 사이가 그대로 경쟁 구간이다 — root 이름이 링크로 바뀌면 확인은 옛 디렉터리에,
+    변경은 새 디렉터리에서 일어난다.
+    """
+
+    def test_the_plan_records_a_baseline_for_every_write_root(self):
+        consumer = self.fresh()
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        self.assertEqual(sorted(plan.root_baseline), sorted(plan.lock_roots()))
+        for root, mark in plan.root_baseline.items():
+            self.assertEqual(mark, uninstall_plan.root_fingerprint(root))
+            self.assertEqual(mark[0], "dir")
+
+    def test_a_root_swapped_after_the_fingerprint_step_stops_the_run(self):
+        """지문 대조가 **끝난 뒤** root 를 바꿔치기해도 아무것도 바뀌지 않아야 한다.
+
+        이 자리가 위험한 이유는 대상 지문이 이미 통과했기 때문이다. 바꿔치기된 root 아래에서
+        상대 경로는 새 디렉터리 안에서 다시 성립하거나 전부 없어지고, 어느 쪽도 대상 지문으로는
+        보이지 않는다. root 를 여는 쪽이 계획의 기준과 대조해야만 잡힌다.
+        """
+        consumer = self.fresh()
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        outside = os.path.join(consumer.root, "outside")
+        os.makedirs(outside)
+        moved = os.path.join(consumer.root, "real-project")
+
+        class SwapAtRoots(list):
+            def append(inner, name):
+                list.append(inner, name)
+                if name == "roots" and not getattr(inner, "fired", False):
+                    inner.fired = True
+                    shutil.move(consumer.project, moved)
+                    link_directory(consumer.project, outside)
+
+        trace = SwapAtRoots()
+        with self.assertRaises(ValueError) as caught:
+            uninstall_executor.execute(plan, trace=trace)
+        self.assertTrue(getattr(trace, "fired", False), "주입이 성립하지 않았다")
+        self.assertEqual(str(caught.exception), "uninstall.boundary_changed")
+        self.assertEqual(os.listdir(outside), [], "바꿔치기된 root 아래에서 변경이 일어났다")
+        self.assertTrue(os.listdir(moved), "원래 root 가 비었다")
+        self.assertEqual([n for n in os.listdir(moved)
+                          if n.startswith(".sage-install-backup-")], [])
+
+    def test_the_root_is_opened_after_the_lock_and_before_any_pin(self):
+        """순서가 계약이다 — 잠그기 전에 root 를 붙들면 확인과 변경 사이가 다시 열린다."""
+        consumer = self.fresh()
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        trace = []
+        uninstall_executor.execute(plan, trace=trace)
+        self.assertLess(trace.index("lock"), trace.index("roots"))
+        self.assertLess(trace.index("fingerprint"), trace.index("roots"))
+        self.assertLess(trace.index("roots"), trace.index("prepare"))
+
+    def test_a_backend_refuses_to_open_a_root_it_was_never_given(self):
+        """root 를 조작 중에 새로 여는 길이 없어야 한다. 열면 확인하지 않은 root 를 쓴다."""
+        backend = uninstall_posix_fs.PosixBackend()
+        with self.assertRaises(install_transaction.InstallDriftError):
+            backend.pin(REPO, os.path.join(REPO, "sage", "cli.py"))
+
+    def test_pin_leaves_no_open_handle_behind_when_the_descent_fails(self):
+        """하강 중 실패하면 이미 연 중간 handle 을 **역순으로 전부** 닫는다.
+
+        backend 를 이름으로 고르지 않고 **이 환경이 실제로 쓰는 것**을 가져온다. POSIX
+        backend 를 Windows 에서 만들면 `os.O_DIRECTORY` 가 없어 검사가 제품이 아니라 자기
+        가정 때문에 죽고, 그 자리에서 Windows 하강 정리는 한 번도 확인되지 않는다.
+        """
+        consumer = self.fresh()
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        backend = uninstall_fs.backend_for(plan.lock_roots())
+        backend.open_roots(plan.root_baseline)
+        opened = self.open_handles()
+        missing = os.path.join(consumer.project, "no", "such", "dir", "leaf.txt")
+        for _attempt in range(20):
+            with self.assertRaises(OSError):
+                backend.pin(consumer.project, missing)
+        after = self.open_handles()
+        backend.close()
+        if opened is not None:
+            self.assertLessEqual(after, opened + 2, "하강 실패마다 fd 가 샌다")
+
+    def open_handles(self):
+        return len(os.listdir("/dev/fd")) if os.path.isdir("/dev/fd") else None
+
+
+class PinnedProbes(unittest.TestCase):
+    """붙든 뒤에는 **절대 경로로 다시 묻지 않는다.**
+
+    경로로 물으면 상위가 바뀐 순간 "있다/없다" 가 다른 디렉터리에 대해 답해진다. 그 답으로
+    지우면 남의 파일을 지우고, 그 답으로 넘기면 지워야 할 것을 남긴 채 성공으로 끝난다.
+    """
+
+    def body(self, module, name, owner=None):
+        with open(os.path.join(REPO, "sage", module), encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        nodes = tree.body
+        if owner is not None:
+            nodes = next(n for n in tree.body
+                         if isinstance(n, ast.ClassDef) and n.name == owner).body
+        target = next(n for n in nodes if isinstance(n, ast.FunctionDef) and n.name == name)
+        body = target.body[1:] if ast.get_docstring(target) else target.body
+        return "\n".join(ast.unparse(node) for node in body)
+
+    def test_staging_asks_the_seam_not_the_absolute_path(self):
+        for name in ("stage_write", "stage_remove_tree"):
+            with self.subTest(name=name):
+                code = self.body("install_transaction.py", name, "InstallTransaction")
+                for banned in ("os.path.lexists", "os.lstat"):
+                    self.assertNotIn(banned, code,
+                                     f"{name} 이 붙든 대상을 경로로 다시 묻는다: {banned}")
+                self.assertIn("self._probe", code)
+
+    def test_the_executor_verifies_results_through_the_journal(self):
+        code = self.body("uninstall_executor.py", "_execute_locked")
+        for banned in ("os.path.lexists", "os.lstat", "os.path.isdir", "os.path.islink"):
+            self.assertNotIn(banned, code, f"실행 층이 경로로 결과를 판정한다: {banned}")
+        self.assertIn("journal._probe", code)
+        self.assertIn('journal._measure(action.path, \'path\')', code)
+
+    def test_emptiness_is_measured_through_the_journal(self):
+        code = self.body("uninstall_executor.py", "_effectively_empty")
+        for banned in ("os.path.isdir", "os.path.islink"):
+            self.assertNotIn(banned, code)
+        self.assertIn("journal._measure", code)
+
+    def test_removal_never_creates_a_parent_directory(self):
+        """`_ensure_parents` 는 install 의 것이다. 제거가 경로로 `mkdir` 하면 밖에 만들 수 있다."""
+        code = self.body("uninstall_executor.py", "_ensure_parents", "_PinnedTransaction")
+        self.assertIn("self.backend.pinned", code)
+        self.assertIn("return", code)
+
+    def test_the_mkdir_seam_is_closed_under_the_pin(self):
+        """부모가 **없어도** 만들지 않는다. 소스가 아니라 호출로 본다.
+
+        실행 창의 `os.mkdir` 감시는 실행이 실제로 지나는 자리만 본다 — 제거 대상의 부모는 늘
+        있으므로 `_ensure_parents` 는 `os.mkdir` 까지 가지 않는다. 그래서 그 자리를 직접
+        부른다. install 의 구현이 다시 살아나면 여기서 경로로 `mkdir` 하고, 상위가 그 사이
+        바뀌었으면 그 디렉터리는 프로젝트 밖에 생긴다.
+        """
+        class Pinned:
+            def pinned(self, path):
+                return True
+
+        root = fixture_root("mkdir-seam")
+        self.addCleanup(shutil.rmtree, root, True)
+        journal = uninstall_executor._PinnedTransaction(
+            expected={}, write_roots=(), backend=Pinned())
+        made = []
+        original = os.mkdir
+
+        def watched(*args, **kwargs):
+            made.append(args[0] if args else kwargs.get("path"))
+            return original(*args, **kwargs)
+
+        os.mkdir = watched
+        try:
+            journal._ensure_parents(os.path.join(root, "missing", "deep", "settings.json"))
+        finally:
+            os.mkdir = original
+        self.assertEqual(made, [], f"붙든 뒤에 부모를 만들었다: {made}")
+        self.assertFalse(os.path.lexists(os.path.join(root, "missing")),
+                         "제거 경로가 디렉터리를 만들었다")
+
+
+class WindowsCapabilityWiring(unittest.TestCase):
+    """probe 가 **돌려주는 값**이 실제로 바뀌는가.
+
+    지역 dict 를 고치고 생성자가 만든 사본을 그대로 돌려주면, capability 는 어떤 환경에서도
+    거짓이고 Windows mutation 은 100% 거부된다. 기능이 통째로 죽는데 화면에는 "안전 거부" 로만
+    보인다 — 원격 runner 없이 이 배선을 확인할 수 있어야 한다.
+    """
+
+    def fake_windows(self, root):
+        w = uninstall_windows_fs
+        info = os.stat(root)
+        saved = {name: getattr(w, name) for name in
+                 ("_is_windows", "native_floor", "_open_root", "local_ntfs",
+                  "_tag_info", "identity", "_entries", "_close", "_mode_of")}
+
+        class Api:
+            SetFileInformationByHandle = object()
+
+        saved["_Api_get"] = w._Api.get
+        w._is_windows = lambda: True
+        w.native_floor = lambda: True
+        w._open_root = lambda path: 1234
+        w.local_ntfs = lambda handle: (True, "NTFS", True)
+        w._tag_info = lambda handle: (w.FILE_ATTRIBUTE_DIRECTORY, 0)
+        w.identity = lambda handle, source="id": (info.st_dev, info.st_ino)
+        w._entries = lambda handle: []
+        w._close = lambda handle: None
+        w._mode_of = lambda attributes: stat.S_IMODE(info.st_mode)
+        w._Api.get = classmethod(lambda cls: Api())
+
+        def restore():
+            for name, value in saved.items():
+                if name == "_Api_get":
+                    w._Api.get = value
+                else:
+                    setattr(w, name, value)
+
+        self.addCleanup(restore)
+
+    def test_a_supported_environment_actually_reports_supported(self):
+        root = fixture_root("capability-wiring")
+        self.addCleanup(shutil.rmtree, root, True)
+        self.fake_windows(root)
+        cap = uninstall_windows_fs.probe_capability((root,))
+        self.assertIsNone(cap.failure_code, cap.as_json())
+        self.assertTrue(cap.supported, cap.as_json())
+        for name in uninstall_fs.PRIMITIVES:
+            self.assertTrue(cap.primitives[name], f"{name} 이 참으로 돌아오지 않았다")
+        self.assertIn(cap.identity_source, ("id", "handle"))
+        self.assertEqual(cap.filesystem, "NTFS")
+
+    def test_a_volume_that_cannot_be_confirmed_local_is_refused(self):
+        root = fixture_root("capability-nonlocal")
+        self.addCleanup(shutil.rmtree, root, True)
+        self.fake_windows(root)
+        uninstall_windows_fs.local_ntfs = lambda handle: (False, "NTFS", False)
+        cap = uninstall_windows_fs.probe_capability((root,))
+        self.assertFalse(cap.supported)
+        self.assertEqual(cap.failure_code, "uninstall.unsafe_platform")
+        self.assertFalse(cap.local_volume)
+
+    def test_a_reparse_root_is_refused(self):
+        root = fixture_root("capability-reparse")
+        self.addCleanup(shutil.rmtree, root, True)
+        self.fake_windows(root)
+        uninstall_windows_fs._tag_info = lambda handle: (
+            uninstall_windows_fs.FILE_ATTRIBUTE_DIRECTORY
+            | uninstall_windows_fs.FILE_ATTRIBUTE_REPARSE_POINT,
+            uninstall_windows_fs.IO_REPARSE_TAG_MOUNT_POINT)
+        cap = uninstall_windows_fs.probe_capability((root,))
+        self.assertFalse(cap.supported)
+        self.assertEqual(cap.failure_code, "uninstall.unsafe_platform")
+
+    def test_an_identity_mapping_that_does_not_match_lstat_is_refused(self):
+        root = fixture_root("capability-identity")
+        self.addCleanup(shutil.rmtree, root, True)
+        self.fake_windows(root)
+        uninstall_windows_fs.identity = lambda handle, source="id": (0, 0)
+        cap = uninstall_windows_fs.probe_capability((root,))
+        self.assertFalse(cap.supported)
+        self.assertFalse(cap.primitives["identity_match"])
+
+    def multi_root(self, roots, matches):
+        """root 마다 다른 identity 결과를 주는 fake. `matches` 는 `{root: {source, ...}}`."""
+        w = uninstall_windows_fs
+        handles = {root: 1000 + index for index, root in enumerate(roots)}
+        by_handle = {handle: root for root, handle in handles.items()}
+        saved = {name: getattr(w, name) for name in
+                 ("_is_windows", "native_floor", "_open_root", "local_ntfs",
+                  "_tag_info", "identity", "_entries", "_close", "_mode_of")}
+        saved["_Api_get"] = w._Api.get
+
+        class Api:
+            SetFileInformationByHandle = object()
+
+        w._is_windows = lambda: True
+        w.native_floor = lambda: True
+        w._open_root = lambda path: handles[os.path.abspath(path)]
+        w.local_ntfs = lambda handle: (True, "NTFS", True)
+        w._tag_info = lambda handle: (w.FILE_ATTRIBUTE_DIRECTORY, 0)
+        w._entries = lambda handle: []
+        w._close = lambda handle: None
+        w._mode_of = lambda attributes: stat.S_IMODE(os.stat(by_handle[1000]).st_mode)
+        w._Api.get = classmethod(lambda cls: Api())
+
+        def identity(handle, source="id"):
+            root = by_handle[handle]
+            info = os.stat(root)
+            if source in matches.get(root, set()):
+                return (info.st_dev, info.st_ino)
+            return (0, 0)
+
+        w.identity = identity
+
+        def restore():
+            for name, value in saved.items():
+                if name == "_Api_get":
+                    w._Api.get = value
+                else:
+                    setattr(w, name, value)
+
+        self.addCleanup(restore)
+        return handles
+
+    def two_roots(self, label):
+        base = fixture_root(label)
+        self.addCleanup(shutil.rmtree, base, True)
+        first = os.path.join(base, "proj")
+        second = os.path.join(base, "codex")
+        os.makedirs(first)
+        os.makedirs(second)
+        return os.path.abspath(first), os.path.abspath(second)
+
+    def test_a_second_root_that_matches_nothing_is_not_carried_by_the_first(self):
+        """첫 root 가 맞았다는 사실이 두 번째 root 의 판정을 대신하지 않는다.
+
+        공용 불리언 하나로 두면 첫 root 에서 켜진 참이 그대로 남고, 두 번째 root 가 어느
+        유도에도 맞지 않아도 `supported=True` 가 나온다. project 는 맞고 `$CODEX_HOME` 은
+        다른 볼륨이라 어긋나는 배치가 정확히 그 모양이다.
+        """
+        first, second = self.two_roots("identity-carry")
+        self.multi_root((first, second), {first: {"id", "handle"}, second: set()})
+        cap = uninstall_windows_fs.probe_capability((first, second))
+        self.assertFalse(cap.supported, cap.as_json())
+        self.assertEqual(cap.failure_code, "uninstall.unsafe_platform")
+        self.assertFalse(cap.primitives["identity_match"])
+        self.assertIsNone(cap.identity_source)
+
+    def test_roots_that_need_different_sources_are_refused(self):
+        """한 실행은 유도 하나만 쓴다. 공통 source 가 없으면 지원하지 않는다."""
+        first, second = self.two_roots("identity-split")
+        self.multi_root((first, second), {first: {"id"}, second: {"handle"}})
+        cap = uninstall_windows_fs.probe_capability((first, second))
+        self.assertFalse(cap.supported)
+        self.assertEqual(cap.failure_code, "uninstall.unsafe_platform")
+
+    def test_a_common_source_across_roots_is_chosen_deterministically(self):
+        first, second = self.two_roots("identity-common")
+        self.multi_root((first, second), {first: {"id", "handle"}, second: {"handle"}})
+        cap = uninstall_windows_fs.probe_capability((first, second))
+        self.assertTrue(cap.supported, cap.as_json())
+        self.assertEqual(cap.identity_source, "handle")
+        self.assertTrue(cap.primitives["identity_match"])
+
+    def test_opening_a_child_closes_the_handle_when_the_tag_read_fails(self):
+        """연 뒤의 어떤 실패에서도 handle 을 놓치지 않는다.
+
+        Windows 에서 handle 누수는 그 디렉터리를 다른 프로세스가 만지지 못하게 만든다 —
+        POSIX 의 fd 누수보다 사용자에게 더 직접적으로 보인다.
+        """
+        w = uninstall_windows_fs
+        closed = []
+        saved = {name: getattr(w, name) for name in ("_open", "_tag_info", "_close")}
+        self.addCleanup(lambda: [setattr(w, name, value) for name, value in saved.items()])
+
+        def boom(handle):
+            raise w.WindowsMutationError("GetFileInformationByHandleEx", 5)
+
+        w._open = lambda *args, **kwargs: 4242
+        w._tag_info = boom
+        w._close = closed.append
+        with self.assertRaises(w.WindowsMutationError):
+            w._open_child(1, "child", directory=True)
+        self.assertEqual(closed, [4242], "실패한 열기의 handle 을 닫지 않았다")
+
+        closed.clear()
+        w._tag_info = lambda handle: (w.FILE_ATTRIBUTE_DIRECTORY
+                                      | w.FILE_ATTRIBUTE_REPARSE_POINT,
+                                      w.IO_REPARSE_TAG_MOUNT_POINT)
+        with self.assertRaises(ValueError):
+            w._open_child(1, "child", directory=True)
+        self.assertEqual(closed, [4242], "reparse 거부에서 handle 을 닫지 않았다")
+
+    def test_an_unconfirmed_final_path_is_never_read_as_local(self):
+        """`GetFinalPathNameByHandleW` 실패는 반환값 0 이다. 그 0 을 "UNC 아님" 으로 읽지 않는다."""
+        w = uninstall_windows_fs
+        saved = w._volume_facts
+        self.addCleanup(lambda: setattr(w, "_volume_facts", saved))
+        w._volume_facts = lambda handle: ("NTFS", None)
+        ok, filesystem, local = w.local_ntfs(9999)
+        self.assertFalse(ok)
+        self.assertFalse(local)
+        self.assertIsNone(w._drive_type(None))
+        self.assertIsNone(w._drive_type(""))
+
+    def test_only_confirmed_local_drive_types_are_accepted(self):
+        w = uninstall_windows_fs
+        self.assertIn(w.DRIVE_FIXED, w.LOCAL_DRIVE_TYPES)
+        for kind in (w.DRIVE_UNKNOWN, w.DRIVE_NO_ROOT_DIR, w.DRIVE_REMOTE):
+            self.assertNotIn(kind, w.LOCAL_DRIVE_TYPES, f"{kind} 를 로컬로 셌다")
+
+
+class NativeErrorSurface(Base):
+    """native 실패가 **계약된 이름**으로 화면까지 오는가.
+
+    변환 함수가 있어도 그것을 부르는 자리가 검사뿐이면, 실제 실패는 전부 `execution_failed`
+    하나로 접힌다. 그 화면에서는 backup 이름 충돌과 경계 변화가 구별되지 않는다.
+    """
+
+    def test_a_backend_failure_carries_its_diagnostic(self):
+        error = uninstall_windows_fs.WindowsMutationError(
+            "NtCreateFile", uninstall_windows_fs.STATUS_OBJECT_NAME_COLLISION, ntstatus=True)
+        self.assertIsInstance(error, uninstall_fs.MutationBackendError)
+        self.assertIsInstance(error, OSError)
+        self.assertEqual(error.diagnostic, "uninstall.backup_collision")
+
+    def test_the_executor_translates_a_backend_failure_at_one_place(self):
+        consumer = self.fresh()
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+
+        def explode(original):
+            def hook(journal, path):
+                raise uninstall_fs.MutationBackendError(
+                    "op:nt:0xc0000035", "uninstall.backup_collision")
+            return hook
+
+        with patched("stage_remove_tree", explode):
+            with self.assertRaises(ValueError) as caught:
+                uninstall_executor.execute(plan)
+        self.assertEqual(str(caught.exception), "uninstall.backup_collision")
+
+    def test_the_cli_shows_the_translated_code_in_text_and_json(self):
+        from sage.diagnostic_contract import SEVERITY
+        self.assertIn("uninstall.backup_collision", SEVERITY)
+        self.assertIn("uninstall.boundary_changed", SEVERITY)
+
+
+class PostFailureGuidance(Base):
+    """실패한 뒤의 목록은 **다시 읽은 상태**다. 의도했던 계획이 아니다."""
+
+    def test_a_run_that_changed_nothing_keeps_the_plan_it_showed(self):
+        consumer = self.fresh()
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        actions, basis = uninstall_cmd._after_failure(
+            consumer.project, uninstall_plan.SCOPE_PROJECT, plan, [])
+        self.assertEqual(basis, uninstall_cleanup.BASIS_VERIFIED)
+        self.assertEqual(actions, plan.actions)
+
+    def test_a_rolled_back_run_reads_the_state_again(self):
+        consumer = self.fresh()
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        actions, basis = uninstall_cmd._after_failure(
+            consumer.project, uninstall_plan.SCOPE_PROJECT, plan, ["backup", "rollback"])
+        self.assertEqual(basis, uninstall_cleanup.BASIS_POST_ROLLBACK)
+        self.assertTrue(actions)
+
+    def test_a_state_that_cannot_be_read_again_offers_no_actionable_order(self):
+        """다시 읽지 못하면 순서를 비운다 — 추측을 목록으로 팔지 않는다."""
+        consumer = self.fresh()
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        saved = uninstall_cmd._plan.build
+
+        def refuse(*args, **kwargs):
+            raise RuntimeError("cannot re-read")
+
+        uninstall_cmd._plan.build = refuse
+        try:
+            actions, basis = uninstall_cmd._after_failure(
+                consumer.project, uninstall_plan.SCOPE_PROJECT, plan, ["rollback"])
+        finally:
+            uninstall_cmd._plan.build = saved
+        self.assertEqual(basis, uninstall_cleanup.BASIS_UNCERTAIN)
+        self.assertEqual(actions, ())
+        empty = uninstall_plan.UninstallPlan(
+            plan.scope, plan.dest, actions, uninstall_plan.BLOCKED,
+            "uninstall.rollback_failed", plan.notices, baseline=plan.baseline,
+            global_root=plan.global_root, root_baseline=plan.root_baseline)
+        guide = uninstall_cleanup.guidance(empty, basis=basis, unknown=["backup-x"])
+        self.assertEqual(guide["order"], [])
+        self.assertEqual(guide["unknown"], ["backup-x"])
+        self.assertTrue(guide["available"])
+
+    def test_global_residue_is_shown_under_the_global_root(self):
+        """전역 잔여가 `<outside-project>` 로 접히면 사용자는 치울 자리를 잃는다."""
+        consumer = self.fresh("codex")
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_ALL,
+                                    environ={"CODEX_HOME": consumer.codex_home})
+        residue = os.path.join(consumer.codex_home, "skills", ".sage-install-backup-x")
+        project_residue = os.path.join(consumer.project, ".sage-install-backup-y")
+        shown = uninstall_cmd._shown([residue, project_residue], plan)
+        self.assertTrue(shown[0].startswith("$CODEX_HOME/"), shown)
+        self.assertNotIn(uninstall_plan.OUTSIDE_PROJECT, shown)
+        self.assertEqual(shown[1], ".sage-install-backup-y")
+
+
 class LocalizationInventory(unittest.TestCase):
     """한영 catalog 에 빠진 것이 없다."""
 
@@ -3889,6 +5290,1221 @@ class LocalizationInventory(unittest.TestCase):
         en_keys = {k for k in en.MESSAGES if k.startswith("cli.uninstall.")}
         self.assertTrue(ko_keys)
         self.assertEqual(ko_keys, en_keys)
+
+
+class RaceRunnerContract(unittest.TestCase):
+    """race runner **자신이** 조용히 약해지는 것을 잡는다.
+
+    이 runner 는 "몇 건 돌았다" 를 출력하는데, 그 숫자가 무엇을 세는지 아무도 검사하지 않으면
+    숫자만 남고 보장은 사라진다. 실제로 그랬다 — 아무 상태도 바꾸지 못한 case 가 조용히
+    반환해도 실행으로 셌고, Windows 커널이 막은 주입이 `14 injections executed` 안에 들어갔다.
+
+    아래는 runner 를 일부러 약하게 만들었을 때 CI 가 **실패하는지** 본다.
+    """
+
+    def runner(self):
+        import importlib.util
+        path = os.path.join(REPO, "scripts", "ci", "uninstall_race_smoke.py")
+        spec = importlib.util.spec_from_file_location("sage_race_runner", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def verdict(self, module, outcomes):
+        """대조만 돌린다 — 실제 주입 없이 회계 규칙을 본다."""
+        module.FAILURES.clear()
+        module.OUTCOMES.clear()
+        module.OUTCOMES.update(outcomes)
+        for case_id, expected in sorted(module.REQUIRED_CASES.items()):
+            actual = module.OUTCOMES.get(case_id)
+            if actual is None:
+                module.FAILURES.append(f"missing:{case_id}")
+            elif actual == module.FAILED:
+                module.FAILURES.append(f"failed:{case_id}")
+            elif actual not in expected:
+                module.FAILURES.append(f"kind:{case_id}")
+        unknown = sorted(set(module.OUTCOMES) - set(module.REQUIRED_CASES))
+        if unknown:
+            module.FAILURES.append(f"unknown:{unknown}")
+        return list(module.FAILURES)
+
+    def healthy(self, module):
+        return {case_id: allowed[0]
+                for case_id, allowed in module.REQUIRED_CASES.items()}
+
+    def test_every_declared_case_is_required_and_unique(self):
+        module = self.runner()
+        ids = [case_id for case_id, *_rest in module.CASES]
+        self.assertEqual(len(ids), len(set(ids)), "같은 id 를 두 번 등록했다")
+        self.assertEqual(sorted(ids), sorted(module.REQUIRED_CASES),
+                         "선언한 case 와 요구 목록이 다르다")
+        self.assertEqual(len(module.REQUIRED_CASES), 14)
+
+    def test_a_healthy_run_passes_the_ledger(self):
+        module = self.runner()
+        self.assertEqual(self.verdict(module, self.healthy(module)), [])
+
+    def test_a_case_that_changes_nothing_fails(self):
+        """무동작 case. 예전에는 이것이 실행으로 집계됐다."""
+        module = self.runner()
+        outcomes = self.healthy(module)
+        outcomes["strip-leaf-replaced-by-link:project"] = module.FAILED
+        self.assertTrue(self.verdict(module, outcomes))
+
+    def test_a_prevented_case_is_not_counted_as_executed(self):
+        """OS 가 막은 것은 해낸 것이 아니다. 같은 숫자에 넣으면 계약이 조용히 충족된다.
+
+        **실제 교체가 가능한 자리**에서만 그렇다. 커널이 그 교체를 아예 막는 자리는 요구
+        자체가 `PREVENTED_BY_OS` 이고, 거기서 실제 교체를 요구하면 OS 가 먼저 막아 준 상황을
+        실패로 세게 된다.
+        """
+        module = self.runner()
+        outcomes = self.healthy(module)
+        outcomes["root-swap-after-fingerprint:project"] = module.PREVENTED_BY_OS
+        problems = self.verdict(module, outcomes)
+        self.assertTrue(any("kind:" in note for note in problems),
+                        f"막힌 주입을 실행으로 셌다: {problems}")
+
+    def test_only_contracted_refusal_codes_count_as_prevention(self):
+        """아무 거부나 차단으로 세지 않는다.
+
+        열기 실패도, 잘못된 인자도, 미지원도 거부처럼 보이지만 그것들은 차단이 아니라 우리
+        구현이 틀렸다는 뜻이다. `ACCESS_DENIED` 두 표기만 계약이다.
+        """
+        module = self.runner()
+        self.assertEqual(module.ACCESS_DENIED_CODES, frozenset({5, 0xC0000022}))
+        for wrong in (0x57, 0x32, "open:5", None):
+            self.assertNotIn(wrong, module.ACCESS_DENIED_CODES)
+
+    def test_the_native_attack_runs_outside_the_product_helpers(self):
+        """공격은 **별도 프로세스**에서, 제품 helper 없이 한다.
+
+        제품과 검사가 같은 helper 를 나눠 쓰면 그 helper 하나가 틀렸을 때 둘 다 같은 방식으로
+        틀린다 — "공격이 막혔다" 와 "우리가 못 불렀다" 가 같은 화면이 된다.
+        """
+        module = self.runner()
+        self.assertIn("CreateFileW", module.NATIVE_ATTACK)
+        self.assertIn("SetFileInformationByHandle", module.NATIVE_ATTACK)
+        self.assertNotIn("uninstall_windows_fs", module.NATIVE_ATTACK,
+                         "공격이 제품 helper 를 쓴다")
+
+    def test_a_missing_scope_fails(self):
+        """root 교체 세 scope 중 하나가 빠지는 경우. 이름만 세면 나머지가 채워 준다."""
+        module = self.runner()
+        outcomes = self.healthy(module)
+        del outcomes["root-swap-after-fingerprint:global"]
+        problems = self.verdict(module, outcomes)
+        self.assertTrue(any("root-swap-after-fingerprint:global" in n for n in problems),
+                        f"빠진 scope 를 잡지 못했다: {problems}")
+
+    def test_a_synthetic_injection_cannot_satisfy_a_real_seam(self):
+        """monkeypatch 주입이 실제 경쟁 자리를 대신할 수 없다."""
+        module = self.runner()
+        outcomes = self.healthy(module)
+        outcomes["root-swap-after-fingerprint:project"] = module.SYNTHETIC
+        self.assertTrue(self.verdict(module, outcomes))
+
+    def test_the_runner_never_falls_back_to_a_copying_move(self):
+        """`shutil.move` 재도입을 막는다.
+
+        그것은 rename 이 실패하면 복사 후 삭제로 떨어진다. 그러면 주입한 것은 이름 교체가
+        아니라 "복사해 두고 원본 삭제" 이고, 붙든 객체는 사라진 원본 쪽이다 — 전혀 다른
+        상황을 같은 이름으로 검사하게 된다. 실제로 Windows 에서 그렇게 되어 있었다.
+        """
+        path = os.path.join(REPO, "scripts", "ci", "uninstall_race_smoke.py")
+        with open(path, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        # **본문만 본다.** 설명문에는 왜 그것을 쓰지 않는지가 적혀 있고, 그것을 금지 문자열로
+        # 세면 설명을 지워야 통과하는 검사가 된다.
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef,
+                                 ast.ClassDef)) and ast.get_docstring(node):
+                node.body = node.body[1:]
+        code = ast.unparse(tree)
+        self.assertNotIn("shutil.move", code, "복사로 물러서는 이동이 되살아났다")
+        self.assertIn("os.rename", code, "엄격한 rename 이 사라졌다")
+
+
+class CoreSelectorContract(unittest.TestCase):
+    """Windows core runner 의 **지목 목록이 줄어드는 것**을 잡는다.
+
+    `CORE_SELECTORS` 에서 한 줄을 지우면 그 검사는 Windows 에서 돌지 않는다. 그런데 남은
+    지목들은 전부 해석되고, 나머지 검사는 전부 통과하고, `skipped=0` 이다 — 요구가 줄어든
+    사실이 화면 어디에도 나타나지 않는다. **없는 것과 통과한 것이 같은 화면이 되는** 자리이고,
+    이 사이클이 같은 모양의 결함을 반복해서 만난 자리이기도 하다.
+
+    그래서 요구 목록(`A24_REQUIRED_SELECTORS`)을 실행 목록과 **다른 파일에** 두고, runner 가
+    둘을 대조한다. 아래 검사들은 그 대조가 실제로 무엇을 잡는지 확인한다.
+    """
+
+    def runner(self):
+        import importlib.util
+        path = os.path.join(REPO, "scripts", "ci", "uninstall_core_checks.py")
+        spec = importlib.util.spec_from_file_location("sage_uninstall_core_runner", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_every_required_selector_names_a_real_check(self):
+        """요구 목록이 실제 검사를 가리키는가. 이름이 바뀌면 여기서 먼저 걸린다."""
+        self.assertEqual(len(A24_REQUIRED_SELECTORS), len(set(A24_REQUIRED_SELECTORS)))
+        for selector in A24_REQUIRED_SELECTORS:
+            owner, name = selector.split(".")
+            case = globals().get(owner)
+            self.assertTrue(case is not None and issubclass(case, unittest.TestCase),
+                            f"요구 목록이 없는 클래스를 가리킨다: {selector}")
+            self.assertTrue(callable(getattr(case, name, None)),
+                            f"요구 목록이 없는 검사를 가리킨다: {selector}")
+
+    def test_the_runner_lists_every_required_selector(self):
+        runner = self.runner()
+        for selector in A24_REQUIRED_SELECTORS:
+            self.assertIn(selector, runner.CORE_SELECTORS,
+                          f"runner 가 요구된 검사를 돌리지 않는다: {selector}")
+
+    def test_an_empty_selector_list_is_a_failure(self):
+        """전부 지우는 것이 가장 조용한 축소다 — `selectors=0` 으로 초록이 되면 안 된다."""
+        runner = self.runner()
+        problems = runner.missing_required(A24_REQUIRED_SELECTORS, ())
+        self.assertEqual(len(problems), len(A24_REQUIRED_SELECTORS), problems)
+
+    def test_deleting_one_required_selector_is_a_failure(self):
+        runner = self.runner()
+        for dropped in A24_REQUIRED_SELECTORS:
+            with self.subTest(dropped=dropped):
+                shrunk = tuple(s for s in runner.CORE_SELECTORS if s != dropped)
+                problems = runner.missing_required(A24_REQUIRED_SELECTORS, shrunk)
+                self.assertTrue(any(dropped in note for note in problems),
+                                f"지운 요구가 대조에서 걸리지 않았다: {dropped}")
+
+    def test_substituting_another_healthy_check_is_a_failure(self):
+        """멀쩡한 다른 검사로 바꿔 놓아도 통과하면 안 된다.
+
+        건수는 그대로이고 지목은 전부 해석되며 그 검사도 초록이다. 바뀐 것은 **무엇을
+        보장하는가** 뿐이라, 건수만 세는 대조는 이것을 잡지 못한다.
+        """
+        runner = self.runner()
+        stand_in = "PinnedProbes.test_the_mkdir_seam_is_closed_under_the_pin"
+        dropped = A24_REQUIRED_SELECTORS[0]
+        swapped = tuple(stand_in if s == dropped else s for s in runner.CORE_SELECTORS)
+        self.assertEqual(len(swapped), len(runner.CORE_SELECTORS))
+        problems = runner.missing_required(A24_REQUIRED_SELECTORS, swapped)
+        self.assertTrue(any(dropped in note for note in problems),
+                        f"치환이 대조에서 걸리지 않았다: {problems}")
+
+    def test_a_missing_oracle_is_a_failure(self):
+        """요구 목록 자체가 사라지는 경우. 대조할 것이 없으면 대조는 통과가 아니다."""
+        runner = self.runner()
+
+        class Empty:
+            pass
+
+        self.assertIsNone(runner.required_selectors(Empty()))
+        holder = Empty()
+        holder.A24_REQUIRED_SELECTORS = ()
+        self.assertIsNone(runner.required_selectors(holder))
+
+
+
+class WindowsSupportPolicy(unittest.TestCase):
+    """자동 제거를 **지원한다고 말한 범위**의 판정. capability 와 다른 축이다.
+
+    ## 왜 build 값을 검사가 들고 있어야 하는가
+
+    Windows 11 은 자기 major 를 10 으로 보고한다. 그래서 세대를 가르는 값은 build 하나뿐이고,
+    그 값 하나가 19045(Windows 10 22H2)와 22000(Windows 11) 사이 어디에 놓이는지가 곧 지원
+    범위다. GitHub 에 Windows 10 러너는 없으므로 이 판정은 **어느 OS 에서든 돌 수 있어야**
+    한다 — 그렇지 않으면 지원 범위 문구를 지키는 검사가 영원히 돌지 않는다.
+    """
+
+    WORKSTATION = uninstall_windows_fs.VER_NT_WORKSTATION
+    SERVER = 3
+    DOMAIN_CONTROLLER = 2
+    MANUAL = uninstall_fs.WINDOWS_10_MANUAL_ONLY
+    SKU = uninstall_fs.WINDOWS_SKU_NOT_SUPPORTED
+    UNSAFE = "uninstall.unsafe_platform"
+
+    # (major, build, product_type) -> 기대 판정. **표를 검사가 들고 있다.**
+    ORACLE = (
+        # Windows 11 데스크톱. 유일하게 자동 제거가 도는 자리다.
+        ((10, 22000, WORKSTATION), None),
+        ((10, 22631, WORKSTATION), None),
+        ((10, 26100, WORKSTATION), None),
+        ((11, 30000, WORKSTATION), None),
+        # Windows 10 데스크톱. 안내는 하되 실행하지 않는다.
+        ((10, 19045, WORKSTATION), MANUAL),
+        ((10, 10240, WORKSTATION), MANUAL),
+        ((10, 21999, WORKSTATION), MANUAL),
+        # Windows 10 미만 데스크톱. **정책은 막지 않는다** — 볼륨·native 기능·포인터 폭은
+        # 재 본 적이 없으므로 여기서 결론을 내지 않고 capability 로 넘긴다. 그쪽이
+        # fail-closed 라 결론은 같고, 진단은 실제로 측정한 층에서 나온다.
+        ((6, 9600, WORKSTATION), None),
+        # server·domain controller SKU. build 가 아무리 높아도 데스크톱이 아니다.
+        ((10, 26100, SERVER), SKU),
+        ((10, 20348, SERVER), SKU),
+        ((10, 19045, SERVER), SKU),
+        ((10, 22631, DOMAIN_CONTROLLER), SKU),
+        ((6, 9600, SERVER), SKU),
+    )
+
+    def policy_for(self, major, build, product_type, source=None):
+        """`support_policy` 를 **원본 소스 그대로** 준비된 값 위에서 돌린다."""
+        release = (major, build, product_type == self.WORKSTATION)
+        body = textwrap.dedent(inspect.getsource(uninstall_windows_fs.support_policy))
+        if source is not None:
+            body = source(body)
+        namespace = {
+            "windows_release": lambda: release,
+            "WINDOWS_11_MIN_BUILD": uninstall_windows_fs.WINDOWS_11_MIN_BUILD,
+            "WINDOWS_10_MIN_BUILD": uninstall_windows_fs.WINDOWS_10_MIN_BUILD,
+            "_fs": uninstall_fs,
+        }
+        exec(compile(body, "<support_policy>", "exec"), namespace)
+        return namespace["support_policy"]()
+
+    def test_the_build_number_decides_and_the_table_says_how(self):
+        for (major, build, kind), expected in self.ORACLE:
+            with self.subTest(major=major, build=build, product_type=kind):
+                self.assertEqual(self.policy_for(major, build, kind), expected)
+
+    def test_windows_10_never_collapses_into_the_capability_refusal(self):
+        """`unsafe_platform` 으로 접으면 고칠 수 없는 것을 고치라는 안내가 된다.
+
+        사용자는 없는 native 기능을 찾아 나서고, 실제로 할 수 있는 일(무엇을 어떤 순서로
+        손으로 치울지)은 화면에 나오지 않는다.
+        """
+        self.assertEqual(self.policy_for(10, 19045, self.WORKSTATION), self.MANUAL)
+        self.assertNotEqual(self.MANUAL, self.UNSAFE)
+        self.assertIn(self.MANUAL, diagnostic_contract.SEVERITY)
+        self.assertEqual(diagnostic_contract.SEVERITY[self.MANUAL], diagnostic_contract.BLOCK)
+        self.assertIn(self.MANUAL, diagnostic_contract.RECOVERY)
+        for language in ("ko", "en"):
+            self.assertTrue(i18n.tr(language, f"cli.{self.MANUAL}").strip(),
+                            f"{language} 문장이 없다")
+
+    def test_lowering_the_windows_11_floor_breaks_the_table(self):
+        """상수를 낮추면 build 19045 가 조용히 지원 대상이 된다. **mutation 검사다.**
+
+        값이 코드에 있고 기대가 검사에 있으면, 둘이 갈라지는 순간을 잡을 수 있다. 같은 파일의
+        상수를 읽어 대조하면 그 대조는 무엇도 증명하지 않는다.
+        """
+        self.assertEqual(uninstall_windows_fs.WINDOWS_11_MIN_BUILD, 22000)
+        self.assertEqual(uninstall_windows_fs.WINDOWS_10_MIN_BUILD, 10240)
+        lowered = self.policy_for(
+            10, 19045, self.WORKSTATION,
+            source=lambda body: body.replace("WINDOWS_11_MIN_BUILD", "WINDOWS_10_MIN_BUILD"))
+        self.assertIsNone(lowered, "관문을 낮췄는데 판정이 그대로다 — 상수가 놀고 있다")
+
+    def test_dropping_the_workstation_test_lets_a_server_through(self):
+        """SKU 판정을 빼면 Server 2025 가 데스크톱 지원 증거로 둔갑한다."""
+        loosened = self.policy_for(
+            10, 26100, self.SERVER,
+            source=lambda body: body.replace("if not workstation:", "if False:"))
+        self.assertIsNone(loosened, "workstation 검사가 판정에 관여하지 않는다")
+        self.assertEqual(self.policy_for(10, 26100, self.SERVER), self.SKU)
+
+    def test_a_policy_refusal_never_asserts_a_capability_it_did_not_measure(self):
+        """정책 관문은 SKU 와 build 만 안다. **어느 쪽으로도 단정하지 않는다.**
+
+        "기능이 없다" 도 "기능은 있다" 도 이 자리에서는 근거가 없다 — 볼륨도 native 기능도
+        포인터 폭도 재지 않았기 때문이다. 한쪽으로 단정하면 사용자는 측정한 적 없는 사실을
+        근거로 다음 행동을 정하게 된다. 이 사이클이 반복해서 막아 온 모양이 문구 층에서 나는
+        자리이고, 실제로 직전 rework 가 반대 방향(“기능은 있다”)으로 한 번 틀렸다.
+        """
+        for code in (self.SKU, self.MANUAL):
+            self.assertNotEqual(code, self.UNSAFE)
+            self.assertEqual(diagnostic_contract.SEVERITY[code], diagnostic_contract.BLOCK)
+            self.assertIn(code, diagnostic_contract.RECOVERY)
+        # 재지 않은 것을 말하는 두 방향 전부를 막는다.
+        forbidden = {
+            "ko": ("상위 디렉터리 교체", "native 기능이 없", "수단이 없",
+                   "native 기능은 이 환경에도 있", "기능이 없어서가 아니", "실제로 동작"),
+            "en": ("parent-directory swap race", "missing native", "lacks the means",
+                   "primitives are present", "not because the capability is missing",
+                   "capability is there"),
+        }
+        required = {"ko": ("범위 밖", "capability 를 판정하지 않았"),
+                    "en": ("outside the current automatic-removal support policy",
+                           "was not evaluated at this stage")}
+        scope = {"ko": ("Windows 11 데스크톱", "64-bit Python", "로컬 NTFS"),
+                 "en": ("Windows 11 desktop", "64-bit Python", "local NTFS")}
+        for code in (self.SKU, self.MANUAL):
+            for language in ("ko", "en"):
+                text = i18n.tr(language, f"cli.{code}")
+                self.assertTrue(text.strip(), f"{language} {code} 문장이 없다")
+                for phrase in forbidden[language]:
+                    self.assertNotIn(phrase, text,
+                                     f"{language} {code} 가 재지 않은 것을 단정한다: {phrase}")
+                for phrase in required[language] + scope[language]:
+                    self.assertIn(phrase, text,
+                                  f"{language} {code} 에 {phrase!r} 가 없다")
+
+    def test_the_policy_gate_never_emits_a_capability_diagnostic(self):
+        """`unsafe_platform` 은 **실제로 잰 층**에서만 나온다.
+
+        정책이 그 code 를 내면 `--check` 가 `BLOCKED` 가 되어, 계획만 보려던 사용자가 볼륨을
+        바꾸거나 root 를 옮겨도 화면이 달라지지 않는다 — 고칠 수 있는 것을 고칠 수 없는 것처럼
+        보여 주는 자리다.
+        """
+        emitted = {expected for _release, expected in self.ORACLE}
+        self.assertNotIn(self.UNSAFE, emitted,
+                         "정책 관문이 capability 진단을 낸다")
+        self.assertEqual(emitted, {None, self.MANUAL, self.SKU})
+        tree = ast.parse(textwrap.dedent(
+            inspect.getsource(uninstall_windows_fs.support_policy)))
+        literals = {node.value for node in ast.walk(tree)
+                    if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+        self.assertNotIn(self.UNSAFE, literals,
+                         "정책 관문 본문이 capability code 를 글자로 들고 있다")
+
+    def test_the_win64_pointer_width_is_a_gate_not_an_assumption(self):
+        """구조체 offset 은 Win64 ABI 하나로 계산된다. 32-bit 에서는 **배치가 다르다.**
+
+        `RootDirectory` 도 `ObjectName` 도 다른 자리로 가고, 그 배치로 커널을 부르는 것은
+        검증하지 않은 메모리를 넘기는 일이다. 되돌릴 수 없는 쪽으로 틀리는 명령에서 그것은
+        "알려진 한계" 로 넘길 성질이 아니다.
+        """
+        w = uninstall_windows_fs
+        self.assertEqual(w.WIN64_POINTER_SIZE, 8)
+        self.assertEqual(w.process_bits(), ctypes.sizeof(ctypes.c_void_p) * 8)
+        # `ULONG_PTR` 은 이름 그대로 포인터 폭이어야 한다. 64 로 못 박으면 32-bit 에서
+        # `IO_STATUS_BLOCK` 의 크기가 그 ABI 가 정한 값과 어긋난다 — 검증하지 않은 배치라
+        # native 호출의 결과를 신뢰할 수 없다.
+        self.assertEqual(ctypes.sizeof(w.ULONG_PTR), ctypes.sizeof(ctypes.c_void_p))
+        saved = w.WIN64_POINTER_SIZE
+        w.WIN64_POINTER_SIZE = ctypes.sizeof(ctypes.c_void_p) + 1
+        try:
+            self.assertFalse(w.native_floor(),
+                             "포인터 폭이 어긋나는데 기술 바닥이 참이다")
+        finally:
+            w.WIN64_POINTER_SIZE = saved
+
+    def test_the_verified_architecture_is_a_gate_not_an_assumption(self):
+        """폭만 보면 **ARM64 가 그대로 통과한다** — 폭도 SKU 도 build 도 맞기 때문이다.
+
+        그 환경에서 이 명령이 돈 적은 한 번도 없다. 되돌릴 수 없는 명령에서 "아마 될 것이다"
+        는 실행할 이유가 아니다. 그리고 판정 자리는 **제품 한 곳**이어야 한다 — CI 만 막고
+        제품이 막지 않으면 제품이 실행하는 환경과 CI 가 증거를 만드는 환경이 갈린다.
+        """
+        w = uninstall_windows_fs
+        self.assertEqual(w.WIN64_ARCHITECTURE, "AMD64")
+        saved_arch = w.process_architecture
+        saved_release = w.windows_release
+        w.windows_release = lambda: (10, 22000, True)
+        try:
+            for machine in ("ARM64", "arm64", "X86", "", "IA64"):
+                with self.subTest(machine=machine):
+                    w.process_architecture = lambda m=machine: m
+                    self.assertFalse(w.native_floor(),
+                                     f"{machine!r} 인데 기술 바닥이 참이다")
+            # 대문자로 정규화된 검증 아키텍처만 통과한다. 폭이 맞는 환경에서만 의미가 있다.
+            w.process_architecture = lambda: "AMD64"
+            self.assertEqual(w.native_floor(),
+                             ctypes.sizeof(ctypes.c_void_p) == w.WIN64_POINTER_SIZE)
+        finally:
+            w.process_architecture = saved_arch
+            w.windows_release = saved_release
+
+    def test_an_unreadable_architecture_is_refused_not_assumed(self):
+        """읽지 못한 것을 통과로 세면 **부재가 안전 방향**이 된다 — 이 사이클이 세 번 틀린 자리."""
+        w = uninstall_windows_fs
+        saved = w.platform
+        w.platform = types.SimpleNamespace(
+            machine=lambda: (_ for _ in ()).throw(OSError("no")))
+        try:
+            self.assertEqual(w.process_architecture(), "")
+            self.assertFalse(w.native_floor())
+        finally:
+            w.platform = saved
+
+    def test_removing_the_architecture_check_lets_an_arm64_process_through(self):
+        """**mutation 검사.** 관문을 지우면 ARM64 가 조용히 통과한다."""
+        body = textwrap.dedent(inspect.getsource(uninstall_windows_fs.native_floor))
+        mutated = body.replace("if process_architecture() != WIN64_ARCHITECTURE:", "if False:")
+        self.assertNotEqual(mutated, body, "관문 문장을 찾지 못했다 — 검사가 낡았다")
+        namespace = {"ctypes": ctypes, "WIN64_POINTER_SIZE": 8,
+                     "WIN64_ARCHITECTURE": "AMD64",
+                     "process_architecture": lambda: "ARM64",
+                     "windows_release": lambda: (10, 22000, True),
+                     "WINDOWS_10_MIN_BUILD": uninstall_windows_fs.WINDOWS_10_MIN_BUILD}
+        exec(compile(mutated, "<native_floor>", "exec"), namespace)
+        loosened = namespace["native_floor"]
+        namespace["ctypes"] = types.SimpleNamespace(sizeof=lambda _t: 8, c_void_p=object())
+        self.assertTrue(loosened(), "관문을 지웠는데도 막힌다 — 상수가 놀고 있다")
+
+        # 관문이 살아 있는 원본은 같은 조건에서 거부한다.
+        intact = dict(namespace)
+        intact["ctypes"] = types.SimpleNamespace(sizeof=lambda _t: 8, c_void_p=object())
+        exec(compile(body, "<native_floor>", "exec"), intact)
+        self.assertFalse(intact["native_floor"](), "원본이 ARM64 를 막지 않는다")
+
+    def test_removing_the_pointer_width_check_lets_a_32bit_process_through(self):
+        """**mutation 검사.** 관문을 지우면 32-bit 에서 조용히 통과한다."""
+        body = textwrap.dedent(inspect.getsource(uninstall_windows_fs.native_floor))
+        mutated = body.replace("if ctypes.sizeof(ctypes.c_void_p) != WIN64_POINTER_SIZE:",
+                               "if False:")
+        self.assertNotEqual(mutated, body, "관문 문장을 찾지 못했다 — 검사가 낡았다")
+        namespace = {"ctypes": ctypes, "WIN64_POINTER_SIZE": 8,
+                     "WIN64_ARCHITECTURE": "AMD64",
+                     "process_architecture": lambda: "AMD64",
+                     "windows_release": lambda: (10, 22000, True),
+                     "WINDOWS_10_MIN_BUILD": uninstall_windows_fs.WINDOWS_10_MIN_BUILD}
+        exec(compile(mutated, "<native_floor>", "exec"), namespace)
+        loosened = namespace["native_floor"]
+        # 32-bit 를 흉내 낸다 — `sizeof` 가 4 를 답하게 한다.
+        namespace["ctypes"] = types.SimpleNamespace(sizeof=lambda _t: 4, c_void_p=object())
+        self.assertTrue(loosened(), "관문을 지웠는데도 막힌다 — 상수가 놀고 있다")
+        self.assertTrue(uninstall_windows_fs.native_floor() or os.name != "nt")
+
+    def test_an_unreadable_release_falls_through_to_the_layer_that_measures(self):
+        """판정하지 못한 것을 **정책이 결론짓지 않는다.** 결론은 재는 층에서 난다.
+
+        정책이 여기서 거부하면 그 진단은 "SKU 를 못 읽었다" 인데 화면에는 capability 이름이
+        찍힌다 — 사용자는 볼륨을 확인하러 가고, 원인은 다른 곳에 있다. `native_floor` 가
+        fail-closed 라 결론은 어차피 같고, 다른 것은 **어느 층이 그 말을 하는가** 뿐이다.
+        """
+        saved = uninstall_windows_fs.windows_release
+        uninstall_windows_fs.windows_release = lambda: None
+        try:
+            self.assertIsNone(uninstall_windows_fs.support_policy())
+            self.assertFalse(uninstall_windows_fs.native_floor(),
+                             "재는 층까지 fail-closed 가 아니면 미판정이 통과가 된다")
+        finally:
+            uninstall_windows_fs.windows_release = saved
+
+    def test_the_technical_floor_stays_a_separate_question(self):
+        """`probe_capability` 는 정책을 묻지 않는다.
+
+        두 축을 한 함수로 접으면 지원 범위 문구를 좁히는 일이 곧 backend 회귀 검사를 잃는
+        일이 된다 — Server 러너에서 도는 검사가 통째로 죽고, 그러면 범위를 좁힐수록 아는
+        것이 줄어든다.
+        """
+        tree = ast.parse(textwrap.dedent(
+            inspect.getsource(uninstall_windows_fs.probe_capability)))
+        # **주석이 아니라 호출을 본다.** 문자열로 세면 "정책은 여기서 묻지 않는다" 고 적은
+        # 주석이 위반으로 잡히고, 반대로 주석을 지우는 것만으로 통과하게 된다.
+        called = {node.func.id for node in ast.walk(tree)
+                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
+        self.assertNotIn("support_policy", called,
+                         "capability 판정이 지원 정책을 함께 물고 있다")
+        self.assertIn("native_floor", called)
+
+    def test_only_windows_has_a_support_policy(self):
+        """정책은 Windows 만의 것이다. POSIX 에 걸면 지원하던 환경이 조용히 막힌다.
+
+        **어느 OS 에서든 돈다.** 조건부 skip 으로 두면 이 계약은 Windows runner 에서만
+        확인되고, 그 runner 에서는 반대 분기가 영원히 실행되지 않는다.
+        """
+        saved = uninstall_fs.os
+        uninstall_fs.os = types.SimpleNamespace(name="posix")
+        try:
+            self.assertIsNone(uninstall_fs.support_policy())
+            uninstall_fs.os = types.SimpleNamespace(name="nt")
+            # Windows 쪽으로 갈 때는 **windows 모듈의 답을 그대로** 낸다. 여기서 한 번 더
+            # 가공하면 두 층이 다른 판정을 갖게 되고, 그 차이는 그 OS 에서만 드러난다.
+            self.assertEqual(uninstall_fs.support_policy(),
+                             uninstall_windows_fs.support_policy())
+        finally:
+            uninstall_fs.os = saved
+
+
+class WindowsTenManualOnly(Base):
+    """Windows 10 안내 화면의 소비자 계약. **판정 하나만 합성하고 나머지는 실제로 돈다.**
+
+    Windows 10 러너가 없다는 사실이 이 화면을 미검증으로 두는 이유가 되면, 첫 사용자가
+    검사자가 된다. 그래서 `support_policy` 의 답만 갈아 끼우고 계획·표시·JSON·수동 안내·
+    mutation 0 건은 어느 OS 에서나 실제 경로로 확인한다. build 19045 를 Windows 10 으로
+    읽는 규칙은 `WindowsSupportPolicy` 가 따로 증명한다.
+    """
+
+    CODE = uninstall_fs.WINDOWS_10_MANUAL_ONLY
+
+    def child(self, consumer, *argv, code=None):
+        script = "\n".join([
+            "import sys",
+            f"sys.path.insert(0, {REPO!r})",
+            "from sage import uninstall_fs as f",
+            f"f.support_policy = lambda: {(code or self.CODE)!r}",
+            "from sage.cli import main",
+            f"sys.argv = ['sage', 'uninstall', *{list(argv)!r}]",
+            "sys.exit(main())",
+        ])
+        return subprocess.run([sys.executable, "-c", script], cwd=REPO, env=consumer.env,
+                              capture_output=True, text=True)
+
+    def payload(self, consumer, *argv):
+        result = self.child(consumer, *argv, "--json")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        return json.loads(result.stdout), result
+
+    def global_consumer(self):
+        """전역 skill root 를 실제로 채운 소비자. `--global`·`--all` 이 그 root 를 쓴다."""
+        root = fixture_root("win10-global")
+        self.addCleanup(shutil.rmtree, root, True)
+        project = os.path.join(root, "proj")
+        codex_home = os.path.join(root, "codex")
+        os.makedirs(project)
+        os.makedirs(codex_home)
+        env = dict(os.environ, PYTHONPATH=REPO, CODEX_HOME=codex_home)
+        installed = sage("install", "--host", "codex", "--skill-scope", "global",
+                         "--dest", project, env=env)
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        global_root = os.path.join(codex_home, "skills")
+        self.assertTrue(os.listdir(global_root), "전역 root 가 비어 이 범위를 밟지 못한다")
+
+        class Fixture:
+            pass
+
+        fixture = Fixture()
+        fixture.project = project
+        fixture.env = env
+        fixture.global_root = global_root
+        return fixture
+
+    def test_both_check_and_yes_block_with_the_same_diagnostic(self):
+        """미리보기만 막고 실행을 통과시키면 두 화면이 다른 지원 범위를 말한다."""
+        consumer = self.fresh()
+        checked, _ = self.payload(consumer, "--dest", consumer.project, "--check")
+        executed, _ = self.payload(consumer, "--dest", consumer.project, "--yes")
+        for body, mode in ((checked, "--check"), (executed, "--yes")):
+            self.assertEqual(body["status"], "BLOCKED", mode)
+            self.assertEqual(body["exit_code"], 2, mode)
+            self.assertEqual(body["blocked_reason"], self.CODE, mode)
+            self.assertIs(body["executed"], False, mode)
+        for key in ("deleted", "stripped", "preserved", "blocked", "notices"):
+            self.assertEqual(checked[key], executed[key], f"{key} 가 두 화면에서 다르다")
+
+    def test_nothing_changes_and_no_backup_is_ever_created(self):
+        """이 관문의 값 전부가 여기에 달려 있다 — 확인 prompt 보다 앞이라는 것."""
+        consumer = self.fresh()
+        before = snapshot_tree(consumer.project)
+        for argv in (("--check",), ("--yes",), ("--check", "--json"), ("--yes", "--json")):
+            self.child(consumer, "--dest", consumer.project, *argv)
+        after = snapshot_tree(consumer.project)
+        self.assertEqual(before, after, "거부한 실행이 프로젝트를 바꿨다")
+        self.assertFalse([n for n in after if ".sage-install-backup-" in n],
+                         "거부한 실행이 보관소를 만들었다")
+
+    def test_a_repeated_run_refuses_the_same_way(self):
+        """처음만 막고 두 번째가 통과하면 그 통과가 실제 제거다."""
+        consumer = self.fresh()
+        before = snapshot_tree(consumer.project)
+        first, _ = self.payload(consumer, "--dest", consumer.project, "--yes")
+        second, _ = self.payload(consumer, "--dest", consumer.project, "--yes")
+        self.assertEqual(first["blocked_reason"], second["blocked_reason"])
+        self.assertEqual(first["deleted"], second["deleted"])
+        self.assertEqual(snapshot_tree(consumer.project), before)
+
+    def test_every_scope_passes_the_same_gate(self):
+        """project 만 막고 global·all 이 통과하면 지원 범위 문구가 절반만 참이 된다."""
+        fixture = self.global_consumer()
+        before = snapshot_tree(fixture.project) | snapshot_tree(fixture.global_root)
+        for scope, argv in (("project", ["--dest", fixture.project]),
+                            ("global", ["--global"]),
+                            ("all", ["--all", "--dest", fixture.project])):
+            with self.subTest(scope=scope):
+                body, result = self.payload(fixture, *argv, "--yes")
+                self.assertEqual(body["scope"], scope)
+                self.assertEqual(body["blocked_reason"], self.CODE, result.stderr)
+                self.assertTrue(body["deleted"] or body["stripped"],
+                                "대상이 없어 이 범위를 밟지 못했다")
+        self.assertEqual(snapshot_tree(fixture.project) | snapshot_tree(fixture.global_root),
+                         before, "거부한 실행이 어느 범위든 바꿨다")
+
+    def test_a_project_with_nothing_to_remove_is_complete_not_blocked(self):
+        """지울 것이 없는 프로젝트에 "지원하지 않는다" 를 내면 깨끗한 상태가 차단으로 보인다."""
+        root = fixture_root("win10-empty")
+        self.addCleanup(shutil.rmtree, root, True)
+        project = os.path.join(root, "proj")
+        os.makedirs(project)
+
+        class Fixture:
+            pass
+
+        fixture = Fixture()
+        fixture.env = dict(os.environ, PYTHONPATH=REPO, CODEX_HOME=os.path.join(root, "codex"))
+        result = self.child(fixture, "--dest", project, "--check", "--json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        body = json.loads(result.stdout)
+        self.assertEqual(body["status"], "COMPLETE")
+        self.assertIsNone(body["blocked_reason"])
+
+    def test_a_shared_file_is_never_offered_for_deletion(self):
+        """공유 파일을 삭제 목록으로 주면 사용자는 자기 설정을 통째로 지운다.
+
+        `.gitignore` 처럼 SAGE 가 **일부만** 쓴 파일이 그 자리다. 자동 실행에서 지키던
+        `STRIP` 의 의미가 수동 안내에서 풀리면, 조심의 이유가 사라진 것이 아니라 책임만
+        사용자에게 넘어간 것이다.
+        """
+        consumer = self.fresh()
+        body, result = self.payload(consumer, "--dest", consumer.project, "--yes")
+        stripped = {entry["path"] for entry in body["stripped"]}
+        deleted = {entry["path"] for entry in body["deleted"]}
+        self.assertTrue(stripped, "부분 제거 대상이 없어 이 계약을 밟지 못했다")
+        self.assertEqual(stripped & deleted, set(), "같은 파일이 두 의미를 갖는다")
+        guide = body["manual_cleanup"]
+        self.assertEqual(guide["order"][0], uninstall_plan.STRIP,
+                         "등록을 치우기 전에 파일을 지우라고 안내한다")
+        self.assertIn(uninstall_cleanup.REGISTRATION_FIRST, guide["warning_codes"])
+        text = self.child(consumer, "--dest", consumer.project, "--yes")
+        self.assertIn(i18n.tr("ko", "cli.uninstall.manual.step_strip"), text.stdout,
+                      "화면이 '파일 전체를 삭제하지 말라' 는 순서를 말하지 않는다")
+        for entry in body["stripped"]:
+            self.assertIn(entry["path"], text.stdout, f"부분 제거 대상이 화면에 없다: {entry}")
+
+    def test_a_damaged_registration_is_preserved_and_never_listed_to_delete(self):
+        """손상·소유권 불명 항목에는 삭제를 지시하지 않는다."""
+        consumer = self.fresh()
+        settings = os.path.join(consumer.project, ".claude", "settings.json")
+        with open(settings, "w", encoding="utf-8") as handle:
+            handle.write("{ this is not json")
+        body, result = self.payload(consumer, "--dest", consumer.project, "--yes")
+        listed = {entry["path"] for entry in body["preserved"] + body["blocked"]}
+        rel = os.path.join(".claude", "settings.json")
+        self.assertIn(rel, listed, f"손상된 등록이 보존·차단 어디에도 없다: {result.stdout}")
+        self.assertNotIn(rel, {entry["path"] for entry in body["deleted"]})
+        self.assertNotIn(rel, {entry["path"] for entry in body["stripped"]})
+        self.assertNotIn(uninstall_plan.BLOCK, body["manual_cleanup"]["order"],
+                         "고쳐야 할 상태를 손댈 대상으로 안내한다")
+
+    def test_the_text_screen_shows_every_path_the_json_carries(self):
+        """text 와 JSON 이 **같은 값 한 벌**을 소비한다. 갈라지면 어느 쪽도 믿을 수 없다."""
+        consumer = self.fresh()
+        body, _ = self.payload(consumer, "--dest", consumer.project, "--check")
+        text = self.child(consumer, "--dest", consumer.project, "--check")
+        self.assertEqual(text.returncode, 2)
+        combined = text.stdout + text.stderr
+        for key in ("deleted", "stripped", "preserved", "blocked"):
+            for entry in body[key]:
+                self.assertIn(entry["path"], combined,
+                              f"{key} 의 {entry['path']} 가 화면에서 접혔다")
+        self.assertIn(i18n.tr("ko", f"cli.{self.CODE}"), combined,
+                      "거부 이유가 화면에 없다")
+        self.assertIn("수동 정리 안내", combined)
+
+    def test_the_guide_never_hands_out_a_destructive_command(self):
+        """목록을 주는 것과 명령을 주는 것은 다른 일이다."""
+        consumer = self.fresh()
+        text = self.child(consumer, "--dest", consumer.project, "--yes")
+        combined = text.stdout + text.stderr
+        for forbidden in ("rm -rf", "rmdir /s", "Remove-Item", "del /f", "rm -r"):
+            self.assertNotIn(forbidden, combined, f"파괴적 명령을 안내했다: {forbidden}")
+
+    def test_a_server_sku_gets_the_same_verified_manual_list(self):
+        """**명시한 결정이다.** server SKU 도 검증된 계획 기반 수동 목록을 받는다.
+
+        받지 못하면 그 사용자는 "지원하지 않는다" 만 듣고 아무 길도 없이 끝난다. 목록의
+        근거는 Windows 10 과 똑같다 — 방금 실제 상태를 읽어 만들었고 아무것도 바뀌지 않았다.
+        지원 범위와 안내 제공은 다른 질문이고, 여기서는 다르게 답한다.
+        """
+        consumer = self.fresh()
+        code = uninstall_fs.WINDOWS_SKU_NOT_SUPPORTED
+        body, result = None, None
+        for mode in ("--check", "--yes"):
+            result = self.child(consumer, "--dest", consumer.project, mode, "--json", code=code)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            body = json.loads(result.stdout)
+            self.assertEqual(body["blocked_reason"], code, mode)
+            guide = body["manual_cleanup"]
+            self.assertTrue(guide["available"], f"{mode}: server 에 안내가 없다")
+            self.assertEqual(guide["basis"], "verified_plan", mode)
+            self.assertEqual(guide["order"][0], uninstall_plan.STRIP, mode)
+            self.assertNotIn(uninstall_plan.BLOCK, guide["order"], mode)
+        text = self.child(consumer, "--dest", consumer.project, "--yes", code=code)
+        self.assertIn(i18n.tr("ko", f"cli.{code}"), text.stdout + text.stderr)
+        for entry in body["deleted"] + body["stripped"] + body["preserved"]:
+            self.assertIn(entry["path"], text.stdout, f"화면이 {entry['path']} 를 접었다")
+
+    def test_a_preserve_only_rerun_is_partial_not_blocked_and_not_complete(self):
+        """손으로 안전 항목을 치운 뒤의 재실행. **의미를 접지 않는다.**
+
+        write target 은 0 건이지만 보존 잔재와 영수증이 남아 있다. 이것을 `BLOCKED`(2) 로
+        올리면 사용자는 자기가 할 수 있는 일이 없는데 차단을 받고, `COMPLETE`(0) 으로 접으면
+        손상된 host 설정이 남았다는 사실이 화면에서 사라진다. 둘 다 사실과 다르다.
+
+        그래서 정책 관문의 조건은 `plan.actions` 가 아니라 **`plan.write_targets()`** 다.
+        """
+        consumer = self.fresh()
+        settings = os.path.join(consumer.project, ".claude", "settings.json")
+        with open(settings, "w", encoding="utf-8") as handle:
+            handle.write("{ this is not json")
+        damaged = snapshot_tree(consumer.project)[os.path.join(".claude", "settings.json")]
+        mode = stat.S_IMODE(os.stat(settings).st_mode)
+
+        first, _ = self.payload(consumer, "--dest", consumer.project, "--yes")
+        self.assertEqual(first["blocked_reason"], self.CODE)
+
+        # 사용자가 안내대로 손으로 처리한다 — 보존 항목은 건드리지 않는다.
+        for entry in first["deleted"]:
+            target = os.path.join(consumer.project, entry["path"])
+            if os.path.isdir(target):
+                shutil.rmtree(target, ignore_errors=True)
+            elif os.path.lexists(target):
+                os.remove(target)
+        for entry in first["stripped"]:
+            # `STRIP` 은 파일 전체 삭제가 아니다. SAGE 부분만 비운다.
+            with open(os.path.join(consumer.project, entry["path"]), "w",
+                      encoding="utf-8") as handle:
+                handle.write("")
+
+        before = snapshot_tree(consumer.project)
+        again = self.child(consumer, "--dest", consumer.project, "--yes", "--json")
+        self.assertEqual(again.returncode, 1, again.stdout + again.stderr)
+        body = json.loads(again.stdout)
+        self.assertEqual(body["status"], "PARTIAL", body)
+        self.assertEqual(body["exit_code"], 1)
+        self.assertIsNone(body["blocked_reason"], "잔재만 남았는데 차단으로 올렸다")
+        self.assertEqual(body["deleted"], [])
+        self.assertEqual(body["stripped"], [])
+        self.assertTrue(body["preserved"], "보존 잔재를 다시 내지 않았다")
+        reasons = {e["path"]: e["reason"] for e in body["preserved"]}
+        self.assertIn(os.path.join(".claude", "settings.json"), reasons)
+        self.assertIn(os.path.join("docs", "sage_harness"), reasons,
+                      "영수증이 유지되지 않았다")
+        # 손상 파일은 bytes 도 mode 도 그대로여야 한다.
+        self.assertEqual(snapshot_tree(consumer.project)[
+            os.path.join(".claude", "settings.json")], damaged, "손상 파일 bytes 가 바뀌었다")
+        self.assertEqual(stat.S_IMODE(os.stat(settings).st_mode), mode, "mode 가 바뀌었다")
+        self.assertEqual(snapshot_tree(consumer.project), before, "재실행이 트리를 바꿨다")
+        self.assertFalse([n for n in before if ".sage-install-backup-" in n],
+                         "재실행이 보관소를 남겼다")
+
+    def test_an_arm64_process_is_refused_by_the_product_not_only_by_ci(self):
+        """ARM64 는 **제품이 막는다.** CI 게이트만 막으면 판정 권위가 둘로 갈린다.
+
+        갈린 뒤에는 어느 쪽이 옳은지 물을 자리가 없다 — 제품이 실행하는 환경과 CI 가 증거를
+        만드는 환경이 다르고, 그 차이는 사고가 난 뒤에야 보인다. 실제로 그 상태였다.
+
+        **주입은 OS 분기 하나뿐이다.** `capability` 를 손으로 만든 답으로 갈아 끼우면 이
+        검사는 스텁을 검사하게 되고, 관문을 지워도 통과한다. 그래서 답을 실제
+        `native_floor()` 에서 끌어온다 — 관문이 사라지면 이 검사는 "제거가 일어났다" 로
+        뒤집힌다.
+        """
+        consumer = self.fresh()
+
+        def child(machine, *argv):
+            script = "\n".join([
+                "import sys",
+                f"sys.path.insert(0, {REPO!r})",
+                "from sage import uninstall_fs as f",
+                "from sage import uninstall_windows_fs as w",
+                f"w.process_architecture = lambda: {machine!r}",
+                "w.windows_release = lambda: (10, 22000, True)",
+                "f.support_policy = lambda: None",
+                # OS 분기만 건넌다. 판정은 **제품의 native_floor** 가 낸다.
+                "def bridged(roots=()):",
+                "    if w.native_floor():",
+                "        return f.MutationCapability(f.BACKEND_POSIX,",
+                "                                    primitives={n: True for n in f.PRIMITIVES})",
+                "    return f.MutationCapability(",
+                "        f.BACKEND_NONE, failure_code='uninstall.unsafe_platform')",
+                "f.capability = bridged",
+                "from sage.cli import main",
+                f"sys.argv = ['sage', 'uninstall', *{list(argv)!r}]",
+                "sys.exit(main())",
+            ])
+            return subprocess.run([sys.executable, "-c", script], cwd=REPO,
+                                  env=consumer.env, capture_output=True, text=True)
+
+        def backups(root):
+            return sorted(os.path.relpath(os.path.join(base, name), root)
+                          for base, dirs, names in os.walk(root)
+                          for name in list(dirs) + list(names)
+                          if name.startswith(".sage-install-backup-"))
+
+        before = snapshot_tree(consumer.project)
+        self.assertEqual(backups(consumer.project), [], "시작부터 보관소가 있다")
+
+        # (1) `--check` 는 계획을 그대로 낸다. capability 축이므로 정책 거부와 화면이 다르다.
+        planned = child("ARM64", "--dest", consumer.project, "--check", "--json")
+        self.assertIn(planned.returncode, (0, 1),
+                      f"capability 제한이 계획까지 막았다: {planned.stdout}{planned.stderr}")
+        plan = json.loads(planned.stdout)
+        self.assertNotEqual(plan["status"], "BLOCKED")
+        self.assertIsNone(plan["blocked_reason"])
+        self.assertTrue(plan["deleted"], "계획이 비어 이 대비를 밟지 못한다")
+
+        # (2) `--yes` 는 `unsafe_platform`(2) 로 거부하고 아무것도 바꾸지 않는다.
+        executed = child("ARM64", "--dest", consumer.project, "--yes", "--json")
+        self.assertEqual(executed.returncode, 2, executed.stdout + executed.stderr)
+        body = json.loads(executed.stdout)
+        self.assertEqual(body["status"], "BLOCKED")
+        self.assertEqual(body["blocked_reason"], "uninstall.unsafe_platform",
+                         "ARM64 거부가 capability 진단으로 오지 않았다")
+        self.assertIs(body["executed"], False)
+        self.assertEqual(snapshot_tree(consumer.project), before,
+                         "거부했는데 트리가 바뀌었다")
+        self.assertEqual(backups(consumer.project), [],
+                         "거부했는데 보관소가 남았다 — mutation 이 시작됐다는 뜻이다")
+
+        # (3) **같은 배선에서 x64 는 실제로 제거한다.** 이것이 없으면 위 두 단언은 "아무것도
+        # 하지 않는 배선" 에서도 통과한다.
+        removed = child("AMD64", "--dest", consumer.project, "--yes", "--json")
+        self.assertIn(removed.returncode, (0, 1), removed.stdout + removed.stderr)
+        self.assertNotEqual(snapshot_tree(consumer.project), before,
+                            "x64 에서도 아무것도 지우지 않았다 — 배선이 죽어 있다")
+
+    def test_a_capability_limit_still_shows_the_plan_on_check(self):
+        """**두 거부는 다른 화면이다.** 정책은 계획 단계에서 결론이 났고, capability 는 아니다.
+
+    - 정책 거부(Win10·server): `--check` 도 `--yes` 도 `BLOCKED` — 자동 제거가 이 환경에서
+      결코 일어나지 않으므로, 계획만 보여 주면 사용자는 돌 것처럼 보이는 화면을 읽는다.
+    - capability 제한(32-bit·비 NTFS·network): `--check` 는 계획을 그대로 낸다 — 볼륨을
+      바꾸거나 다른 root 를 고르면 참이 될 수 있는 조건이라, 계획을 막으면 고칠 수 있는 것을
+      고칠 수 없는 것처럼 보여 준다. 거부는 **mutation 요청에만** 걸린다.
+
+        두 화면을 같게 만들면 그 구분이 사라지고, 사라진 구분은 사용자가 다음에 무엇을 할지
+        를 바꾼다.
+        """
+        consumer = self.fresh()
+
+        def child(*argv):
+            script = "\n".join([
+                "import sys",
+                f"sys.path.insert(0, {REPO!r})",
+                "from sage import uninstall_fs as f",
+                # 정책은 통과시키고 **capability 만** 끈다. 32-bit·비 NTFS 가 그 모양이다.
+                "f.support_policy = lambda: None",
+                "f.capability = lambda roots=(): f.MutationCapability("
+                "f.BACKEND_NONE, failure_code='uninstall.unsafe_platform')",
+                "from sage.cli import main",
+                f"sys.argv = ['sage', 'uninstall', *{list(argv)!r}]",
+                "sys.exit(main())",
+            ])
+            return subprocess.run([sys.executable, "-c", script], cwd=REPO,
+                                  env=consumer.env, capture_output=True, text=True)
+
+        before = snapshot_tree(consumer.project)
+        planned = child("--dest", consumer.project, "--check", "--json")
+        self.assertIn(planned.returncode, (0, 1),
+                      f"capability 제한이 계획까지 막았다: {planned.stdout}{planned.stderr}")
+        plan = json.loads(planned.stdout)
+        self.assertNotEqual(plan["status"], "BLOCKED", "계획 화면이 차단으로 바뀌었다")
+        self.assertIsNone(plan["blocked_reason"])
+        self.assertTrue(plan["deleted"], "계획이 비어 이 대비를 밟지 못한다")
+
+        executed = child("--dest", consumer.project, "--yes", "--json")
+        self.assertEqual(executed.returncode, 2, executed.stdout + executed.stderr)
+        body = json.loads(executed.stdout)
+        self.assertEqual(body["status"], "BLOCKED")
+        self.assertEqual(body["blocked_reason"], "uninstall.unsafe_platform",
+                         "mutation 거부가 capability 진단으로 오지 않았다")
+        self.assertEqual(snapshot_tree(consumer.project), before,
+                         "거부한 실행이 프로젝트를 바꿨다")
+
+    def test_a_completely_clean_project_is_the_only_complete(self):
+        """`COMPLETE`(0) 은 **action 도 보존 잔재도 없는** 상태에서만 나온다."""
+        root = fixture_root("win10-clean")
+        self.addCleanup(shutil.rmtree, root, True)
+        project = os.path.join(root, "proj")
+        os.makedirs(project)
+
+        class Fixture:
+            pass
+
+        fixture = Fixture()
+        fixture.env = dict(os.environ, PYTHONPATH=REPO, CODEX_HOME=os.path.join(root, "codex"))
+        result = self.child(fixture, "--dest", project, "--yes", "--json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        body = json.loads(result.stdout)
+        self.assertEqual(body["status"], "COMPLETE")
+        for key in ("deleted", "stripped", "preserved", "blocked"):
+            self.assertEqual(body[key], [], f"깨끗한데 {key} 가 비어 있지 않다")
+
+
+class StrictProductSupportMode(unittest.TestCase):
+    """Windows 11 전용 job 의 엄격 모드 — **갈음을 허용하지 않는 요구**.
+
+    `SAGE_UNINSTALL_REQUIRE_MUTATION` 은 "고칠 수 있는 이유로 제거를 하지 않았는가" 를 묻고,
+    정책이 막는 환경에서는 거부 계약 단언으로 갈음한다. 그 갈음은 hosted 러너에서 옳다 —
+    거기서 실제 제거를 요구하는 것은 제품이 지원하지 않겠다고 말한 일을 하라는 요구다.
+
+    Windows 11 전용 job 에서는 정확히 그 갈음이 위험이다. 러너가 잘못 배정되거나 이미지가
+    바뀌어 정책이 막기 시작하면, 이 job 은 **실제 제거를 한 번도 하지 않은 채** A7 증거를
+    만들었다고 말한다. 그래서 여기서는 거부 1건도, 제거 0건도, 미실행 scope 하나도 실패다.
+
+    판정 자체를 순수 함수로 꺼내 두고 값을 주입해 확인한다 — 그리고 그 함수가 `main` 에
+    **실제로 배선돼 있는지**를 따로 본다. 배선 없는 순수 함수는 언제나 초록이다.
+    """
+
+    def smoke(self):
+        import importlib.util
+        path = os.path.join(REPO, "scripts", "ci", "uninstall_smoke.py")
+        spec = importlib.util.spec_from_file_location("uninstall_smoke_strict", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def core(self):
+        import importlib.util
+        path = os.path.join(REPO, "scripts", "ci", "uninstall_core_checks.py")
+        spec = importlib.util.spec_from_file_location("uninstall_core_strict", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    ALL_SCOPES = {"project": True, "global": True, "all": True}
+
+    def test_a_fully_supported_run_raises_no_objection(self):
+        judge = self.smoke().product_support_problems
+        self.assertEqual(judge(None, 0, 11, dict(self.ALL_SCOPES)), [])
+
+    def test_a_single_policy_refusal_fails_the_strict_mode(self):
+        judge = self.smoke().product_support_problems
+        problems = judge(None, 1, 10, dict(self.ALL_SCOPES))
+        self.assertTrue(problems)
+        self.assertIn("policy refusal", " ".join(problems))
+
+    def test_a_policy_that_blocks_this_runner_fails_before_counting_anything(self):
+        """러너가 범위 밖이면 **거부 건수와 무관하게** 실패다. 그 초록은 데스크톱 증거가 아니다."""
+        judge = self.smoke().product_support_problems
+        problems = judge("uninstall.windows_sku_not_supported", 0, 11, dict(self.ALL_SCOPES))
+        self.assertTrue(problems)
+        self.assertIn("outside the declared", " ".join(problems))
+
+    def test_zero_real_removals_fails_the_strict_mode(self):
+        judge = self.smoke().product_support_problems
+        problems = judge(None, 0, 0, {"project": False, "global": False, "all": False})
+        self.assertIn("no case performed a real removal", " ".join(problems))
+
+    def test_one_missing_scope_fails_even_when_the_others_removed(self):
+        """project 만 돌고 global·all 이 조용히 비면 지원 범위 문구가 **절반만 참**이 된다."""
+        judge = self.smoke().product_support_problems
+        for missing in ("project", "global", "all"):
+            with self.subTest(missing=missing):
+                scopes = dict(self.ALL_SCOPES, **{missing: False})
+                problems = judge(None, 0, 2, scopes)
+                self.assertTrue(problems, f"{missing} 이 빠졌는데 통과했다")
+                self.assertIn(missing, " ".join(problems))
+
+    def test_the_strict_mode_implies_the_weaker_mutation_requirement(self):
+        """둘을 workflow 에서 따로 켜게 두면 하나만 켠 job 이 생기는 날이 온다."""
+        saved = dict(os.environ)
+        try:
+            os.environ.pop("SAGE_UNINSTALL_REQUIRE_MUTATION", None)
+            os.environ["SAGE_UNINSTALL_REQUIRE_PRODUCT_SUPPORT"] = "1"
+            module = self.smoke()
+            self.assertTrue(module.REQUIRE_PRODUCT_SUPPORT)
+            self.assertTrue(module.REQUIRE_MUTATION)
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+
+    def _drive_main(self, module, *, policy, case_result, scope_results):
+        """`main()` 을 실제로 돌린다 — 판정이 **배선돼 있는가**를 보는 유일한 방법이다.
+
+        실제 설치·제거는 하지 않는다. 여기서 보는 것은 제품 동작이 아니라 이 스크립트가
+        자기 실행 결과를 어떻게 판정하는가이고, fixture 를 만들면 그 판정이 환경에 갈린다.
+        """
+        module.POLICY = policy
+        module.REQUIRE_PRODUCT_SUPPORT = True
+        module.REQUIRE_MUTATION = True
+        module.run_case = lambda *a, **k: case_result
+        module.scope_case = lambda scope: scope_results[scope]
+        module.refusal_case = lambda: None
+        module.policy_guidance_case = lambda code, label: None
+        module.preserve_only_rerun_case = lambda: None
+        module.native_failure_case = lambda: None
+        # 이 검사의 관심은 **판정**이지 진행 로그가 아니다. 그대로 두면 회귀 출력에서 진짜
+        # 실패가 이 소음 뒤에 묻힌다 — 이 저장소에서 정확히 그렇게 한 번 놓쳤다.
+        with contextlib.redirect_stdout(io.StringIO()):
+            return module.main()
+
+    def test_main_exits_non_zero_when_a_policy_refusal_is_injected(self):
+        module = self.smoke()
+        with self.assertRaises(SystemExit) as caught:
+            self._drive_main(module, policy="uninstall.windows_10_manual_only",
+                             case_result=False,
+                             scope_results={"project": False, "global": False, "all": False})
+        self.assertNotEqual(caught.exception.code, 0)
+
+    def test_main_exits_non_zero_when_no_removal_happened(self):
+        module = self.smoke()
+        with self.assertRaises(SystemExit) as caught:
+            self._drive_main(module, policy=None, case_result=False,
+                             scope_results={"project": False, "global": False, "all": False})
+        self.assertNotEqual(caught.exception.code, 0)
+
+    def test_main_exits_non_zero_when_one_scope_never_ran(self):
+        module = self.smoke()
+        with self.assertRaises(SystemExit) as caught:
+            self._drive_main(module, policy=None, case_result=True,
+                             scope_results={"project": True, "global": False, "all": True})
+        self.assertNotEqual(caught.exception.code, 0)
+
+    def test_main_returns_zero_when_every_scope_really_removed(self):
+        """거부 검사가 정상 통과까지 막으면 이 job 은 영원히 붉고, 아무도 그것을 읽지 않는다."""
+        module = self.smoke()
+        self.assertEqual(self._drive_main(module, policy=None, case_result=True,
+                                          scope_results=dict(self.ALL_SCOPES)), 0)
+
+    def test_the_core_checks_strict_mode_refuses_a_runner_outside_the_scope(self):
+        judge = self.core().product_support_problems
+        self.assertEqual(judge(None, 0, set()), [])
+        self.assertIn("outside the declared",
+                      " ".join(judge("uninstall.windows_sku_not_supported", 0, set())))
+        self.assertIn("skipped", " ".join(judge(None, 1, set())))
+        self.assertIn("did not run", " ".join(judge(None, 0, {"BoundaryRace.test_x"})))
+
+    def test_the_core_checks_strict_judgement_is_wired_into_main(self):
+        """배선 없는 순수 함수는 언제나 초록이다 — 실제로 그렇게 한 번 속을 뻔했다."""
+        path = os.path.join(REPO, "scripts", "ci", "uninstall_core_checks.py")
+        with open(path, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        main = next(node for node in tree.body
+                    if isinstance(node, ast.FunctionDef) and node.name == "main")
+        called = {node.func.id for node in ast.walk(main)
+                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
+        self.assertIn("product_support_problems", called)
+        names = {node.id for node in ast.walk(main) if isinstance(node, ast.Name)}
+        self.assertIn("REQUIRE_PRODUCT_SUPPORT", names)
+
+    def test_the_product_support_gate_does_not_inherit_the_report_exit_code(self):
+        """게이트와 보고는 **다른 일**이다. 보고는 언제나 0 이고, 게이트는 판정한다.
+
+        `skipTest` 를 쓰지 않는다 — Windows 에서 조용히 건너뛰면 이 계약은 정작 그것이
+        필요한 유일한 OS 에서 한 번도 확인되지 않는다. 대신 두 OS 모두에서 성립하는 것을
+        단언한다: 보고는 0, 게이트는 **이 환경의 판정 결과**를 그대로 낸다.
+        """
+        report = os.path.join(REPO, "scripts", "ci", "windows_capability_report.py")
+        gated = subprocess.run([sys.executable, report, "--require-product-support"],
+                               cwd=REPO, capture_output=True, text=True)
+        plain = subprocess.run([sys.executable, report], cwd=REPO,
+                               capture_output=True, text=True)
+        self.assertEqual(plain.returncode, 0, plain.stdout)
+        self.assertIn("product-support gate", gated.stdout)
+
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("windows_gate_probe", report)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        problems, _evidence = module.product_support_gate()
+        self.assertEqual(gated.returncode, 1 if problems else 0,
+                         f"게이트 판정 {problems} 와 exit {gated.returncode} 가 어긋난다\n"
+                         + gated.stdout)
+
+    def report(self):
+        import importlib.util
+        path = os.path.join(REPO, "scripts", "ci", "windows_capability_report.py")
+        spec = importlib.util.spec_from_file_location("windows_report_probe", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_the_gate_measures_exactly_the_volume_the_checks_will_mutate(self):
+        """다른 볼륨을 재고 통과한 게이트는 **아무것도 말하지 않는다.**
+
+        실제로 한 칸 어긋나 있었다 — 보고 스크립트의 `REPO` 가 저장소가 아니라
+        `<repo>/scripts` 로 계산돼, 게이트는 `<repo>/.sage-fixtures` 를 재고 smoke 는
+        `<repo-parent>/.sage-fixtures` 를 썼다. 두 자리가 다른 볼륨일 수 있고, 그러면
+        게이트의 초록은 검사가 실제로 건드릴 볼륨에 대해 아무 말도 하지 않는다.
+        """
+        report = self.report()
+        smoke = self.smoke()
+        self.assertEqual(report.REPO, smoke.REPO,
+                         "두 스크립트가 저장소 위치를 다르게 계산한다")
+        self.assertEqual(report.gate_roots(), [smoke.fixture_base()],
+                         "게이트가 재는 자리와 smoke 가 쓰는 자리가 다르다")
+
+    def test_the_old_broken_calculation_would_now_be_caught(self):
+        """**mutation 증거.** 지적된 그 계산을 되살리면 두 자리가 갈린다.
+
+        갈리는 것을 보여야 위 검사가 무언가를 지킨다고 말할 수 있다. 같은 값이 우연히
+        나오는 환경이라면 위 검사는 통과하면서 아무것도 확인하지 않는 것이다.
+        """
+        report = self.report()
+        authority = self.smoke().fixture_base()
+        wrong_repo = os.path.dirname(os.path.dirname(os.path.abspath(report.__file__)))
+        wrong_base = os.path.realpath(
+            os.path.join(os.path.dirname(wrong_repo), ".sage-fixtures"))
+        self.assertNotEqual(wrong_base, authority,
+                            "잘못된 계산과 권위가 같은 값이라 이 대비가 성립하지 않는다")
+        self.assertNotIn(wrong_base, report.gate_roots(),
+                         "게이트가 아직 잘못된 자리를 재고 있다")
+
+    def test_every_ci_script_takes_its_fixture_base_from_one_authority(self):
+        """규칙을 두 군데 적으면 한쪽만 고쳐지는 날이 온다 — 어긋난 쪽이 게이트면 치명적이다."""
+        smoke = self.smoke()
+        for name in ("uninstall_race_smoke.py", "uninstall_core_checks.py",
+                     "windows_capability_report.py"):
+            with self.subTest(script=name):
+                with open(os.path.join(REPO, "scripts", "ci", name),
+                          encoding="utf-8") as handle:
+                    source = handle.read()
+                self.assertIn("from uninstall_smoke import fixture_base", source,
+                              f"{name} 이 권위를 가져다 쓰지 않는다")
+                self.assertNotIn('".sage-fixtures"', source,
+                                 f"{name} 이 fixture base 를 스스로 계산한다")
+        # 그리고 그 권위는 하나의 환경 변수를 따른다 — 셋이 같은 함수를 부르므로 자동이다.
+        saved = os.environ.get("SAGE_TEST_TMPDIR")
+        moved = os.path.join(fixture_root("fixture-base-authority"), "moved")
+        os.makedirs(moved, exist_ok=True)
+        self.addCleanup(shutil.rmtree, os.path.dirname(moved), True)
+        try:
+            os.environ["SAGE_TEST_TMPDIR"] = moved
+            self.assertEqual(self.report().gate_roots(), [smoke.fixture_base()])
+            self.assertEqual(smoke.fixture_base(), os.path.realpath(moved))
+        finally:
+            if saved is None:
+                os.environ.pop("SAGE_TEST_TMPDIR", None)
+            else:
+                os.environ["SAGE_TEST_TMPDIR"] = saved
+
+    def test_the_report_never_mutates_before_the_gate_has_passed(self):
+        """`real_run()` 은 이름과 달리 **실제 install·uninstall 을 돈다.**
+
+        보고 스크립트 안에 있다는 이유로 무해해 보이지만 여기서 일어나는 것은 native
+        mutation 이다. 게이트보다 먼저 돌면, 막으려던 mutation 이 진단을 찍는 과정에서
+        그대로 일어난다.
+        """
+        path = os.path.join(REPO, "scripts", "ci", "windows_capability_report.py")
+        with open(path, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        real_run = next(node for node in tree.body
+                        if isinstance(node, ast.FunctionDef) and node.name == "real_run")
+        called = {node.func.id for node in ast.walk(real_run)
+                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
+        self.assertIn("product_support_gate", called,
+                      "real_run 이 지원 범위를 묻지 않고 mutation 을 시작한다")
+        # 물어 보기만 하고 돌아가지 않으면 의미가 없다 — 이른 return 이 있어야 한다.
+        guarded = [node for node in ast.walk(real_run) if isinstance(node, ast.Return)]
+        self.assertTrue(guarded, "real_run 이 지원 범위 밖에서 빠져나가지 않는다")
+
+    def test_the_workflow_gate_runs_before_every_other_windows_step(self):
+        """게이트 뒤에 두면 진단 단계의 native 호출이 게이트보다 먼저 일어난다."""
+        import yaml
+        with open(os.path.join(REPO, ".github", "workflows", "ci.yml"),
+                  encoding="utf-8") as handle:
+            job = yaml.safe_load(handle)["jobs"]["windows11_uninstall"]
+        runs = [step.get("run") or "" for step in job["steps"]]
+        gate = next(i for i, run in enumerate(runs) if "--require-product-support" in run)
+        for i, run in enumerate(runs):
+            if "scripts/ci/" in run and i != gate:
+                self.assertGreater(i, gate,
+                                   f"게이트보다 먼저 도는 검사 스크립트가 있다: {run.strip()}")
+
+    def test_the_gate_reads_the_product_constants_not_a_ci_table(self):
+        """CI 안에 판정표가 하나 더 생기면, 지원 범위를 옮기는 날 한쪽만 옮겨진다."""
+        path = os.path.join(REPO, "scripts", "ci", "windows_capability_report.py")
+        with open(path, encoding="utf-8") as handle:
+            source = handle.read()
+        gate = source.split("def product_support_gate", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("w.WINDOWS_11_MIN_BUILD", gate)
+        self.assertIn("w.VER_NT_WORKSTATION", gate)
+        self.assertIn("w.WIN64_POINTER_SIZE", gate)
+        # 아키텍처 판정은 **제품 한 곳**이다. CI 가 직접 비교하면 권위가 둘로 갈린다.
+        self.assertIn("w.process_architecture()", gate)
+        self.assertIn("w.native_floor()", gate)
+        self.assertNotIn("platform.machine()", gate)
+        self.assertNotIn('"AMD64"', gate)
+        self.assertNotIn("'AMD64'", gate)
+        self.assertIn("_fs.support_policy()", gate)
+        self.assertIn("_fs.capability(", gate)
+        # 파일시스템 이름 목록을 여기서 다시 들지 않는다 — 제품의 `local_ntfs` 가 이미 판정한다.
+        self.assertNotIn('"NTFS"', gate)
+        self.assertNotIn("'NTFS'", gate)
+        for hardcoded in ("22000", "19045", "10240"):
+            self.assertNotIn(hardcoded, gate, f"게이트가 build {hardcoded} 를 직접 적었다")
 
 
 if __name__ == "__main__":
