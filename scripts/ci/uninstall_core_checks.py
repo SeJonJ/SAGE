@@ -45,6 +45,8 @@ CORE_CLASSES = (
     "NativeErrorSurface",
     "PostFailureGuidance",
     "ManualCleanupGuidance",
+    "WindowsSupportPolicy",
+    "WindowsTenManualOnly",
     "CoreSelectorContract",
     "RaceRunnerContract",
 )
@@ -65,6 +67,27 @@ CORE_SELECTORS = (
     "BoundaryRace.test_the_cleanup_allowance_is_only_the_backup_lexists",
     "BoundaryRace.test_a_backup_path_probe_before_the_commit_is_caught",
 )
+
+
+# Windows 11 전용 job 의 엄격 모드. skip 0 과 selector 해석은 이미 무조건 hard failure 라
+# 이 값이 바꾸는 것은 하나다 — **이 러너가 지원 범위 안인가.** 정책이 막는 러너에서 core
+# 검사는 여전히 전부 통과한다(거부 경로를 검사하는 것도 이 검사들의 일이다). 그래서 그
+# 통과를 Windows 11 데스크톱 증거로 읽는 실수가 가능하고, 실제로 한 번 그럴 뻔했다.
+REQUIRE_PRODUCT_SUPPORT = bool(os.environ.get("SAGE_UNINSTALL_REQUIRE_PRODUCT_SUPPORT"))
+
+
+def product_support_problems(policy, skipped, missing_selectors):
+    """엄격 모드의 판정. 세 입력 모두 **실행 결과 구조**이지 출력 문자열이 아니다."""
+    problems = []
+    if policy:
+        problems.append(
+            f"support_policy() returned {policy}: this runner is outside the declared "
+            "automatic-removal scope, so its green core checks are not desktop evidence")
+    if skipped:
+        problems.append(f"{skipped} core check(s) were skipped")
+    if missing_selectors:
+        problems.append(f"required selectors did not run: {sorted(missing_selectors)}")
+    return problems
 
 
 def required_selectors(module):
@@ -245,17 +268,37 @@ def main():
         if notes:
             problems.append("windows capability integration: " + "; ".join(notes))
         else:
+            # **세 로그가 각각 자기 완결이어야 한다.** A7 증거는 smoke → race smoke →
+            # core checks 세 로그로 서는데, 어느 하나만 남았을 때 "어떤 Windows 였나" 를
+            # 되짚을 수 없으면 그 로그는 증거로 쓸 수 없다.
+            import ctypes as _ctypes
+            import platform as _platform
+            info = sys.getwindowsversion()
+            kinds = {1: "workstation", 2: "domain-controller", 3: "server"}
             print(f"  windows capability: supported filesystem={cap.filesystem} "
-                  f"identity_source={cap.identity_source}")
+                  f"identity_source={cap.identity_source} "
+                  f"edition={_platform.win32_edition()} "
+                  f"build={info.major}.{info.minor}.{info.build} "
+                  f"product_type={kinds.get(getattr(info, 'product_type', 0), 'unknown')} "
+                  f"process_bits={_ctypes.sizeof(_ctypes.c_void_p) * 8}")
     else:
         print("  windows capability integration: not applicable on this platform")
+
+    if REQUIRE_PRODUCT_SUPPORT:
+        # 필수 selector 가 **돌았는가.** 해석되지 않은 것은 위에서 이미 막았고, 여기서
+        # 남는 구멍은 해석된 뒤 skip 된 경우다 — 그것은 `skipped` 와 별도로 이름을 남긴다.
+        skipped_ids = {t.id().split(".", 1)[-1] for t, _r in result.skipped}
+        problems += product_support_problems(
+            _fs.support_policy(), skipped,
+            (set(oracle) - selected_ids) | (set(oracle) & skipped_ids))
 
     if problems:
         print()
         for note in problems:
             print(f"  - {note}")
         return 1
-    print("  core checks passed with 0 skips")
+    print("  core checks passed with 0 skips"
+          + (" (strict product-support mode)" if REQUIRE_PRODUCT_SUPPORT else ""))
     return 0
 
 

@@ -35,6 +35,7 @@ POSIX 에서는 부모를 `dir_fd` 로 붙들면 이후 누가 상위 이름을 
 import ctypes
 import hashlib
 import os
+import platform
 import stat
 import sys
 
@@ -55,10 +56,54 @@ DWORD = ctypes.c_uint32
 NTSTATUS = ctypes.c_int32
 LARGE_INTEGER = ctypes.c_int64
 ULONGLONG = ctypes.c_uint64
-ULONG_PTR = ctypes.c_uint64
+# `ULONG_PTR` 은 이름 그대로 **포인터 폭**이다. 64 로 못 박아 두면 32-bit 프로세스에서
+# `IO_STATUS_BLOCK` 의 크기가 그 ABI 가 정한 값과 어긋난다 — 검증하지 않은 배치로 커널을
+# 부르는 것이라 결과를 신뢰할 수 없다. 폭을 환경에서 읽되, 그 환경이 우리가 검증한 폭인지는
+# `native_floor` 가 따로 막는다.
+ULONG_PTR = ctypes.c_size_t
 WCHAR = ctypes.c_uint16
 
+# 이 모듈의 구조체 배치는 **Win64 ABI 하나**를 전제로 계산되고, 검사도 그 값으로 고정돼 있다.
+# 32-bit 프로세스에서는 `HANDLE`·`PVOID` 가 4바이트가 되어 `OBJECT_ATTRIBUTES.ObjectName` 도
+# `FILE_RENAME_INFO.RootDirectory` 도 다른 자리로 간다. 그 배치는 **검증한 적이 없다.**
+WIN64_POINTER_SIZE = 8
+
+# 검증한 아키텍처는 하나다. **폭만으로는 부족하다** — native ARM64 Python 은 폭이 64 이고
+# SKU 도 build 도 조건을 만족하므로, 폭만 보는 관문은 그 프로세스를 그대로 통과시킨다.
+# 그런데 이 명령이 실제로 돈 적이 있는 아키텍처는 x64 하나뿐이다.
+#
+# **아키텍처 판정의 권위는 여기 한 곳이다.** CI 가 자기 판정표를 따로 들면 제품이 실행하는
+# 환경과 CI 가 증거를 만드는 환경이 갈리고, 갈린 뒤에는 어느 쪽이 옳은지 물을 자리가 없다 —
+# 실제로 그 상태였고 그것이 이 관문이 생긴 이유다.
+WIN64_ARCHITECTURE = "AMD64"
+
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+
+def process_bits():
+    """이 프로세스의 포인터 폭(비트). 진단과 로그가 같은 값을 쓰도록 한 자리에 둔다."""
+    return ctypes.sizeof(ctypes.c_void_p) * 8
+
+
+def process_architecture():
+    """이 프로세스의 아키텍처. **읽지 못하면 빈 문자열** — 판정은 부르는 쪽에서 fail-closed 다.
+
+    이 값은 **프로세스가 보는 아키텍처**이지 하드웨어가 아니다. native ARM64 Python 프로세스는
+    여기서 `AMD64` 가 아닌 값을 답하므로 자동 제거가 거부된다.
+
+    ARM64 Windows 에서 **x64 에뮬레이션으로 실행되는 경우** 이 값이 무엇이 되는지는
+    `platform.machine()` 의 Windows 판정 경로에 달려 있고, 그 경로는 Python 버전과 실행 환경에
+    따라 달라질 수 있다 — 그래서 여기서 단정하지 않는다. 그 구성이 이 관문을 통과할 수는
+    있지만, 통과가 **ARM64 하드웨어 지원을 보장한다는 뜻은 아니다.** 정식 지원 범위에도
+    acceptance 증거 범위에도 포함하지 않으며, 실제 수요가 생기면 별도 후속 개발에서 검증한다.
+
+    하드웨어를 따로 묻는 native 호출을 더하지 않는 이유는, 그 호출 자체가 이 사이클이 늘리지
+    않기로 한 검증 불가능한 플랫폼 전용 코드이기 때문이다.
+    """
+    try:
+        return (platform.machine() or "").upper()
+    except Exception:                                          # noqa: BLE001
+        return ""
 
 
 class FILETIME(ctypes.Structure):
@@ -736,13 +781,90 @@ def _is_windows():
     return os.name == "nt"
 
 
-def _windows_10_or_later():
-    """Windows 10 이상인가. 그 아래는 이 사이클이 계약을 증명하지 않았다."""
+# 자동 제거를 정식으로 지원하는 최소 build. Windows 11 도 major 를 10 으로 보고하므로
+# 세대를 가르는 값은 build 뿐이다 — 22000 이 Windows 11 의 첫 소매 build 다.
+WINDOWS_11_MIN_BUILD = 22000
+# Windows 10 RTM. 이 아래는 이 사이클이 어떤 계약도 증명하지 않았고, native 진입점 자체가
+# 같은 모양이라고 말할 근거도 없다.
+WINDOWS_10_MIN_BUILD = 10240
+# `sys.getwindowsversion().product_type` 의 workstation 값. server·domain controller 는
+# 데스크톱 워크플로를 검증한 적이 없으므로 이 값이 아니면 정식 지원이 아니다.
+VER_NT_WORKSTATION = 1
+
+
+def windows_release():
+    """`(major, build, workstation)`. 판정할 수 없으면 `None`.
+
+    **검사가 갈아 끼울 수 있는 자리로 둔다.** 개발 머신에서는 이 파일의 어떤 분기도 실제
+    Windows 값으로 돌지 않는다. 판정을 이 한 함수에 모아 두면, build 19045 와 22000 을
+    가르는 계약을 어느 OS 에서나 검사할 수 있다.
+    """
     version = getattr(sys, "getwindowsversion", None)
     if version is None:
-        return False
+        return None
     info = version()
-    return info.major > 10 or (info.major == 10 and info.build >= 10240)
+    return (info.major, info.build,
+            getattr(info, "product_type", None) == VER_NT_WORKSTATION)
+
+
+def native_floor():
+    """native 진입점이 이 사이클의 모양과 같다고 말할 수 있는 최소 OS 인가.
+
+    **정책이 아니라 기술 바닥이다.** `probe_capability` 가 묻는 것은 "여기서 안전하게 할 수
+    있는가" 이고, "여기를 지원한다고 말했는가" 는 `support_policy` 가 따로 답한다. 둘을 한
+    함수로 접으면 backend 회귀 검사가 지원 범위 문구를 좁힐 때마다 함께 죽는다 — 그러면
+    범위를 좁히는 일이 검증을 잃는 일과 같아진다.
+    """
+    # **포인터 폭이 먼저다.** 이 모듈의 모든 구조체 offset 은 Win64 ABI 하나로 계산되고,
+    # 32-bit 프로세스에서는 `RootDirectory` 도 `ObjectName` 도 다른 자리로 간다. **검증하지
+    # 않은 ABI 배치라 native 호출의 결과를 신뢰할 수 없다** — 되돌릴 수 없는 명령에서
+    # 신뢰할 수 없는 결과는 실행하지 않을 이유로 충분하다. probe 는 lock 보다도 앞이라,
+    # 여기서 막으면 첫 mutation 전에 막힌다.
+    if ctypes.sizeof(ctypes.c_void_p) != WIN64_POINTER_SIZE:
+        return False
+    # **폭 다음은 아키텍처다.** 폭만 보면 ARM64 가 그대로 통과한다 — 폭도 SKU 도 build 도
+    # 맞기 때문이다. 그 환경에서 이 명령이 돈 적은 한 번도 없고, 되돌릴 수 없는 명령에서
+    # "아마 될 것이다" 는 실행할 이유가 되지 않는다. 읽지 못한 경우도 거부 쪽이다 — 판정하지
+    # 못한 것을 통과로 세면 부재가 안전 방향이 된다.
+    if process_architecture() != WIN64_ARCHITECTURE:
+        return False
+    release = windows_release()
+    if release is None:
+        return False
+    major, build, _workstation = release
+    return major > 10 or (major == 10 and build >= WINDOWS_10_MIN_BUILD)
+
+
+def support_policy():
+    """자동 제거를 **정책으로** 허용하는가. 허용하면 `None`, 아니면 진단 code.
+
+    ## 이 함수는 capability 를 **재지 않는다**
+
+    여기서 아는 것은 SKU 와 build 뿐이다. 볼륨도 native 기능도 포인터 폭도 이 단계에서는
+    측정하지 않았고, 그래서 **어느 쪽으로도 단정하지 않는다** — "기능이 없다" 도 "기능은
+    있다" 도 이 자리에서는 근거가 없는 말이다. 낼 수 있는 사실은 하나다: 지원 정책의 범위
+    밖이다.
+
+    정책이 막지 않으면 `None` 을 돌려주고, 그 뒤 capability 가 실제로 재서 판정한다. 그래서
+    두 거부의 화면이 다르다 — 정책 거부는 계획 단계에서 이미 결론이 나므로 `--check` 도
+    `BLOCKED` 이고, capability 거부는 mutation 요청에만 걸리므로 `--check` 는 계획을 그대로
+    보여 준다.
+    """
+    release = windows_release()
+    if release is None:
+        # 판정할 수 없다. **정책으로 막지 않고 capability 로 넘긴다** — 그쪽이 fail-closed 라
+        # 결론은 같고, 진단은 실제로 측정한 층에서 나온다.
+        return None
+    major, build, workstation = release
+    if not workstation:
+        # server·domain controller SKU. 지원 정책의 범위 밖이라는 것만 말한다.
+        return _fs.WINDOWS_SKU_NOT_SUPPORTED
+    if major == 10 and WINDOWS_10_MIN_BUILD <= build < WINDOWS_11_MIN_BUILD:
+        return _fs.WINDOWS_10_MANUAL_ONLY
+    # 그 밖(Windows 11 이상, Windows 10 미만 데스크톱)은 정책이 막지 않는다. 볼륨·native
+    # 기능·포인터 폭은 capability 가 **실제로 재서** 판정하고, 그 거부는 mutation 요청에만
+    # 걸린다. 계획(`--check`)은 읽기라 그대로 보여 준다.
+    return None
 
 
 def probe_capability(roots=()):
@@ -767,7 +889,10 @@ def probe_capability(roots=()):
         cap.os_supported = False
         cap.failure_code = "uninstall.unsafe_platform"
         return cap
-    cap.os_supported = _windows_10_or_later()
+    # **기술 바닥만 본다.** 지원 범위 문구(Windows 11 데스크톱)는 `support_policy` 가 따로
+    # 판정하고 CLI 가 첫 mutation 전에 건다. 여기서 함께 접으면 backend 회귀 검사가 도는
+    # 환경까지 미지원이 되고, 그러면 범위를 좁히는 일이 검증을 잃는 일과 같아진다.
+    cap.os_supported = native_floor()
     if not cap.os_supported:
         cap.failure_code = "uninstall.unsafe_platform"
         return cap

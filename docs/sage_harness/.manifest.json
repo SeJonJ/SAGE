@@ -60,7 +60,7 @@
         "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
         "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
       },
-      "canonical_hash": "sha256:401436d702b62fadd1ade00496f5f73fcfe250a6300a1fb8b47b27c030f2fce2",
+      "canonical_hash": "sha256:29d10178656db032adbb9080c4f671a4430105c0d7d83b3885fa4b1693aa15d7",
       "conformance": "PASS",
       "form": "core_adapter",
       "l3_review_strategy": "codex_feature_signal",

@@ -225,6 +225,32 @@ def capability(roots=()):
     return _posix_module().probe_capability(roots)
 
 
+# Windows 10 데스크톱은 **지원 정책의 범위 밖**이라 자동 제거를 하지 않는다. 이 판정은
+# capability 를 재지 않으므로 그 환경이 기술적으로 가능한지는 말하지 않는다. `unsafe_platform`
+# 으로 접으면 재 본 적 없는 원인이 화면에 찍히고, 실제로 할 수 있는 일(무엇을 어떤 순서로
+# 손으로 치울지)은 나오지 않는다.
+WINDOWS_10_MANUAL_ONLY = "uninstall.windows_10_manual_only"
+# server·domain controller SKU 도 자동 제거 범위 밖이지만 **판정 축이 다르다.**
+# `unsafe_platform` 은 볼륨·native 기능을 실제로 잰 뒤의 결론이고, 이 code 는 재기 전에
+# 나오는 정책 판정이다. 같은 code 를 쓰면 재 본 적 없는 원인이 대상 있는 모든 실행에서
+# 화면에 찍힌다.
+WINDOWS_SKU_NOT_SUPPORTED = "uninstall.windows_sku_not_supported"
+
+
+def support_policy():
+    """자동 제거를 정책으로 허용하는가. 허용하면 `None`, 아니면 진단 code.
+
+    **capability 와 별개 축이다.** capability 는 "이 환경에서 안전하게 할 수 있는가" 이고
+    이것은 "이 환경을 지원한다고 말했는가" 다. 둘 다 통과해야 자동 제거가 일어난다.
+
+    이 층에 두는 이유는 선택이 **한 곳**이어야 하기 때문이다 — `capability` 와 같은 자리에
+    두면 호출자가 OS 를 스스로 묻기 시작하는 일을 여기서 한 번에 막는다.
+    """
+    if os.name == "nt":
+        return _windows_module().support_policy()
+    return None
+
+
 def backend_for(roots):
     """write root 묶음에 대한 backend 를 만든다. 지원 불가면 진단 code 로 올린다.
 

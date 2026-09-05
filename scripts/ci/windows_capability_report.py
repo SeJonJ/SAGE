@@ -10,17 +10,131 @@
 하므로 **항상 exit 0** 이다 — 이 스크립트가 job 을 붉게 만들면 진짜 실패가 가려진다.
 
 출력은 ASCII 만 쓴다. Windows 러너 콘솔은 cp1252/cp949 로 열려 한글이 물음표로 뭉개진다.
+
+## `--require-product-support` — 보고와 **다른 일**
+
+보고만 하는 스크립트를 게이트로 쓰면 게이트가 없는 것과 같다. exit 0 은 "지원 범위 안이다" 가
+아니라 "찍었다" 이고, 둘은 화면에서 구별되지 않는다. Windows 11 전용 job 은 배정된 러너가
+정말 그 환경인지를 **제거를 시작하기 전에** 확정해야 하므로, 이 플래그가 같은 판정을 한 번 더
+읽어 fail-closed 로 막는다. 근거는 제품이 스스로 내리는 값(`support_policy` · `capability`)이고,
+CI 전용 버전·build·filesystem 판정표를 여기에 새로 만들지 않는다 — 표가 둘이 되는 순간 제품이
+거부하는 환경에서 CI 만 통과하는 자리가 생긴다.
 """
 import os
 import platform
 import sys
 import tempfile
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# 이 파일은 `<repo>/scripts/ci/` 에 있다. `dirname` 을 **두 번**만 하면 `<repo>/scripts` 가
+# 나오고, 그 값으로 계산한 fixture base 는 실제 검사가 쓰는 자리와 한 칸 어긋난다 — 게이트가
+# 엉뚱한 볼륨을 재고 통과하면 그 통과는 아무것도 말하지 않는다. 실제로 그렇게 어긋나 있었다.
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, REPO)
+sys.path.insert(0, HERE)
 
 
-def main():
+def gate_roots():
+    """게이트가 재는 자리는 **검사가 실제로 건드릴 자리**여야 한다.
+
+    그래서 자리를 여기서 다시 계산하지 않고 `uninstall_smoke.fixture_base()` 를 그대로
+    부른다. 규칙을 두 군데 적으면 한쪽만 고쳐지는 날이 오고, 어긋난 쪽이 게이트라면 그
+    게이트는 통과하면서 아무것도 지키지 않는다.
+
+    저장소·temp 는 재지 않는다. 실제 mutation 은 fixture base 아래에서만 일어나므로, 다른
+    자리를 함께 재면 게이트가 무엇을 보장했는지가 흐려진다.
+    """
+    from uninstall_smoke import fixture_base
+    return [fixture_base()]
+
+
+def product_support_gate():
+    """지원 범위 안인가를 **제품의 판정으로** 확정한다. `(problems, evidence)`.
+
+    여기서 하나라도 어긋나면 uninstall 검사를 돌리지 않는다. 범위 밖 러너에서 나온 초록은
+    Windows 11 데스크톱 증거가 아닌데, 로그만 보면 같은 초록이다.
+    """
+    evidence = {}
+    if os.name != "nt":
+        return ["this gate only runs on Windows"], evidence
+
+    from sage import uninstall_fs as _fs
+    from sage import uninstall_windows_fs as w
+
+    problems = []
+    info = sys.getwindowsversion()
+    kinds = {1: "workstation", 2: "domain-controller", 3: "server"}
+    product_type = getattr(info, "product_type", 0)
+    evidence["edition"] = platform.win32_edition()
+    evidence["build"] = f"{info.major}.{info.minor}.{info.build}"
+    evidence["product_type"] = kinds.get(product_type, "unknown")
+    # **아키텍처 판정은 제품의 것이다.** CI 가 자기 비교를 하나 더 들면 제품이 실행하는
+    # 환경과 CI 가 증거를 만드는 환경이 갈리고, 갈린 뒤에는 어느 쪽이 옳은지 물을 자리가
+    # 없다. 값은 증거로 남기되 **판정은 `native_floor` 와 `capability.supported` 가 낸다.**
+    evidence["machine"] = w.process_architecture()
+    evidence["process_bits"] = w.process_bits()
+    evidence["native_floor"] = w.native_floor()
+
+    # SKU·build 판정의 상수는 **제품의 것**을 읽는다. 여기에 숫자를 다시 적으면 지원 범위를
+    # 옮기는 날 한쪽만 옮겨지고, 어긋난 쪽이 CI 라면 아무도 모른다.
+    if product_type != w.VER_NT_WORKSTATION:
+        problems.append(f"product_type={evidence['product_type']} (want workstation)")
+    if info.build < w.WINDOWS_11_MIN_BUILD:
+        problems.append(f"build={info.build} is below the Windows 11 floor "
+                        f"{w.WINDOWS_11_MIN_BUILD}")
+    # 폭과 아키텍처는 **제품의 `native_floor` 가 이미 fail-closed 로 막는다.** 여기서는 그
+    # 결과를 읽고, 어긋났을 때 사람이 원인을 되짚을 수 있도록 두 값을 함께 적는다.
+    if not evidence["native_floor"]:
+        problems.append(
+            f"native_floor()=False (process_bits={evidence['process_bits']} want "
+            f"{w.WIN64_POINTER_SIZE * 8}, machine={evidence['machine']!r} want "
+            f"{w.WIN64_ARCHITECTURE!r}, build={evidence['build']})")
+
+    policy = _fs.support_policy()
+    evidence["support_policy"] = policy
+    if policy:
+        problems.append(f"support_policy()={policy} (want None)")
+
+    # 로컬 NTFS 판정은 **제품이 이미 내린다** — `capability()` 안의 `local_ntfs` 가 볼륨과
+    # 파일시스템을 함께 확정하고, 확정 실패는 언제나 거짓 쪽이다. 그래서 여기서 파일시스템
+    # 이름 목록을 새로 들지 않고 그 결과를 읽는다. 이름은 증거로 남긴다.
+    roots = gate_roots()
+    evidence["gate_roots"] = roots
+    cap = _fs.capability(tuple(roots))
+    evidence["filesystem"] = cap.filesystem
+    evidence["local_volume"] = cap.local_volume
+    evidence["capability_supported"] = cap.supported
+    evidence["capability_failure_code"] = cap.failure_code
+    if not cap.local_volume:
+        problems.append("capability.local_volume is not True (want a local volume)")
+    if cap.supported is not True:
+        problems.append(f"capability.supported={cap.supported} "
+                        f"failure_code={cap.failure_code} (want True)")
+    return problems, evidence
+
+
+def require_product_support():
+    print("== windows product-support gate (fail-closed) ==")
+    problems, evidence = product_support_gate()
+    for key in ("edition", "build", "product_type", "machine", "process_bits",
+                "native_floor", "filesystem", "local_volume", "support_policy",
+                "capability_supported", "capability_failure_code", "gate_roots"):
+        if key in evidence:
+            print(f"  {key}={evidence[key]}")
+    if problems:
+        for note in problems:
+            print(f"  - {note}")
+        print(f"FAIL: {len(problems)} product-support condition(s) not met -- "
+              "uninstall checks must not run here")
+        return 1
+    print("  gate passed: this runner is inside the declared automatic-removal scope")
+    return 0
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if "--require-product-support" in argv:
+        return require_product_support()
     print("== windows capability diagnostics ==")
     print(f"  platform={sys.platform} python={sys.version.split()[0]}")
     if os.name != "nt":
@@ -30,7 +144,16 @@ def main():
     from sage import uninstall_windows_fs as w
 
     print(f"  is_windows={w._is_windows()}")
-    print(f"  windows_10_or_later={w._windows_10_or_later()}")
+    # 두 축을 **따로** 낸다. `native_floor` 는 기술 바닥(이 진입점이 같은 모양인가),
+    # `support_policy` 는 지원 범위 문구(이 SKU 를 지원한다고 말했는가)다. 하나로 접으면
+    # 서버에서 backend 가 도는 사실과 제품이 실행을 거부하는 사실이 같은 줄에 뭉개진다.
+    # **process bitness 를 함께 남긴다.** 구조체 배치가 Win64 ABI 하나를 전제하므로, 어떤
+    # 폭에서 돌았는지가 로그에 없으면 "Windows 에서 통과했다" 가 어떤 Windows 인지 되짚을 수
+    # 없다 — SKU 에서 한 번 겪은 일이 폭에서 반복된다.
+    print(f"  process_bits={w.process_bits()} (win64 contract={w.WIN64_POINTER_SIZE * 8})")
+    print(f"  native_floor={w.native_floor()}")
+    print(f"  windows_release={w.windows_release()}")
+    print(f"  support_policy={w.support_policy() or 'automatic removal supported'}")
     # **edition·build·filesystem 을 함께 남긴다.** 어느 SKU 에서 돌았는지가 로그에 없으면
     # "Windows 에서 통과했다" 가 어떤 Windows 인지 아무도 되짚을 수 없다. 실제로 Server 2025
     # 증거를 데스크톱 증거로 읽을 뻔했다.
@@ -234,8 +357,17 @@ def real_run():
     import subprocess
 
     print("  --- real install/uninstall (json)")
-    base = os.path.join(os.path.dirname(REPO), ".sage-fixtures")
-    os.makedirs(base, exist_ok=True)
+    # **이 함수는 실제로 설치하고 제거한다.** 보고 스크립트 안에 있다는 이유로 무해해 보이지만
+    # 여기서 일어나는 것은 native mutation 이다. 그래서 제품이 이 환경을 실행 대상으로 인정할
+    # 때만 돈다 — 잘못 배정된 러너에서 게이트보다 먼저 이 함수가 돌면, 막으려던 mutation 이
+    # 진단을 찍는 과정에서 그대로 일어난다.
+    problems, _evidence = product_support_gate()
+    if problems:
+        print("      skipped: this environment is outside the declared support scope")
+        for note in problems:
+            print(f"      - {note}")
+        return
+    base = gate_roots()[0]
     root = os.path.realpath(tempfile.mkdtemp(prefix="capability-report-", dir=base))
     project = os.path.join(root, "proj")
     codex_home = os.path.join(root, "codex")

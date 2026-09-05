@@ -1096,6 +1096,17 @@ def main():
         probe.cleanup()
 
     print("== uninstall race smoke ==")
+    if os.name == "nt":
+        # 세 로그가 각각 자기 완결이어야 A7 증거로 쓸 수 있다 — 어느 하나만 남았을 때
+        # "어떤 Windows 였나" 를 되짚지 못하면 그 로그는 증거가 아니다.
+        import ctypes as _ctypes
+        import platform as _platform
+        _info = sys.getwindowsversion()
+        _kinds = {1: "workstation", 2: "domain-controller", 3: "server"}
+        print(f"  windows edition={_platform.win32_edition()} "
+              f"build={_info.major}.{_info.minor}.{_info.build} "
+              f"product_type={_kinds.get(getattr(_info, 'product_type', 0), 'unknown')} "
+              f"process_bits={_ctypes.sizeof(_ctypes.c_void_p) * 8}")
     if not supported:
         # 지원 범위 밖이다. 주입할 자리가 없으므로 돌지 않았다고 **적는다** — 돌지 않은
         # 검사를 통과로 세면 그 방어는 있다고 말할 수 없다.

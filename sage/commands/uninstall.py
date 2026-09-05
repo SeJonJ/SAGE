@@ -32,6 +32,7 @@ import sys
 
 from sage import uninstall_cleanup as _manual
 from sage import uninstall_executor as _exec
+from sage import uninstall_fs as _fs
 from sage import uninstall_plan as _plan
 from sage.diagnostic_contract import render_recovery
 from sage.i18n import language_of, tr
@@ -95,6 +96,26 @@ def run(args):
         if not args.json:
             print(f"  {exc.__class__.__name__}", file=sys.stderr)
         return blocked.exit_code
+
+    # **지원 정책은 확인 prompt 보다 앞이다.** 이 관문 뒤에는 lock 도 backup 도 없다 —
+    # 자동 제거가 결코 일어나지 않을 환경에서 "계속하시겠습니까" 를 묻는 것은, 사용자가
+    # 동의할 수 있는 일이 없는데 동의를 받는 것이다.
+    #
+    # `--check` 와 `--yes` 가 **같은 자리**를 지난다. 미리보기만 막고 실행을 통과시키면 두
+    # 화면이 다른 지원 범위를 말하게 되고, 반대로 실행만 막으면 사용자는 계획을 본 뒤에야
+    # 그 계획이 절대 돌지 않는다는 것을 안다.
+    policy = _fs.support_policy()
+    if policy and plan.status != _plan.BLOCKED and plan.write_targets():
+        # 대상이 하나도 없으면 걸지 않는다. 지울 것이 없는 프로젝트에 "지원하지 않는다" 를
+        # 내면, 이미 깨끗한 상태가 차단으로 보인다.
+        refused = _plan.UninstallPlan(scope, dest, plan.actions, _plan.BLOCKED, policy,
+                                      plan.notices, baseline=plan.baseline,
+                                      global_root=plan.global_root,
+                                      root_baseline=plan.root_baseline)
+        # 근거는 `verified_plan` 이다 — 방금 실제 상태를 읽어 만든 계획이고, 아무것도
+        # 바뀌지 않았으므로 그 목록이 곧 지금 상태다.
+        _render(refused, args, language, executed=False, basis=_manual.BASIS_VERIFIED)
+        return refused.exit_code
 
     if args.check:
         _render(plan, args, language, executed=False)

@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:bf56b13f14ad70e813a92e42b2b002130c1f1443f77926cf7ea7d84c31eaa9af -->
+<!-- sage-doc-source: cli-reference.md sha256:c1880b8590b55d8418994f1ae0d17cc07ffc5990b317cbd84e7362bb1855f3c1 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
@@ -73,14 +73,55 @@ The lock is released when the process exits, so there is no lock file for you to
 A cleanup failure is **still a success.** The requested removal already finished; we only report the
 temporary backup paths we could not clear.
 
-**Actual removal is supported on POSIX and on Windows 10/11 local NTFS.** The safety of this command
-comes from opening and holding the target's parent directory before the first change — after that,
-whatever happens to the ancestor path names, the work still lands in the original directory. Where
-that binding cannot be established (network/UNC paths, non-NTFS volumes, missing native primitives)
-the command refuses with `uninstall.unsafe_platform` **before the first change**. The test is
-whether the binding actually holds in this environment, not which operating system it is. Planning
-(`--check`) is read-only and works everywhere. Running anyway could create files outside the
-project, and for an irreversible command that risk cannot be replaced by a warning in the docs.
+**Actual removal is supported on POSIX and on Windows 11 desktop workstation, x64, 64-bit Python, local NTFS.** The
+safety of this command comes from opening and holding the target's parent directory before the first
+change — after that, whatever happens to the ancestor path names, the work still lands in the
+original directory. Where that binding cannot be established (network/UNC paths, non-NTFS volumes,
+missing native primitives, **32-bit Python**, **a non-x64 architecture**) the command refuses with
+`uninstall.unsafe_platform` **before the first change**. Running anyway could create files outside the project, and for an
+irreversible command that risk cannot be replaced by a warning in the docs.
+
+32-bit Python is on that list because this command's native struct layout is computed for the Win64
+ABI alone. In a 32-bit process the layout differs, and **an unverified ABI layout means the native
+call's result cannot be trusted.** If real demand appears it becomes follow-up work.
+
+**A native ARM64 Python process is refused.** The pointer width, the SKU, and the build all satisfy
+their gates, so a width-only check would let it straight through. But x64 is the only architecture
+this command has ever actually run on, and for an irreversible command "it will probably work" is not
+a reason to run. If real demand appears it is verified in separate follow-up work.
+
+**Running under x64 emulation on ARM64 Windows may go either way.** What the architecture reports
+there depends on the Python version and the execution environment, so we do not state it as a fact.
+That configuration may pass the x64 process-ABI gate, but **passing does not mean ARM64 hardware is
+supported.** It is in neither the supported scope nor the acceptance-evidence scope.
+
+**There are two kinds of out-of-scope, and they look different.** Folding them into one leaves what
+you can fix and what you cannot on the same screen.
+
+**(1) Outside the support policy** — this judgement looks only at the SKU and build. Capability
+(volume, native primitives) is **not evaluated at this stage.**
+
+| Environment | Diagnostic |
+|---|---|
+| Windows 10 desktop | `uninstall.windows_10_manual_only` (automatic removal is deferred) |
+| Windows Server / domain controller | `uninstall.windows_sku_not_supported` |
+
+If anything is left to remove, both `--check` and `--yes` stop at `BLOCKED` (2) **before a single
+file changes** — you are not even asked to confirm, because automatic removal will never happen here
+and a plain plan would read as something about to run. That screen shows all four lists (delete,
+partial removal, preserve, blocked) uncollapsed, together with the order to clean them up by hand;
+following it reaches the same result as an automatic run.
+
+**(2) Capability limits** — network/UNC paths, non-NTFS volumes, 32-bit Python, ARM64, missing native
+primitives. That is `uninstall.unsafe_platform`, and here **`--check` still shows the plan.** These
+are conditions that can become true by switching volumes or choosing a different root, so blocking
+the plan too would present something fixable as unfixable. The refusal applies to an actual mutation
+request only.
+
+`COMPLETE` (0) is reserved for a **completely clean state — nothing to remove and no preserved
+residue**. Once you have cleaned up by hand and only preserved entries remain (a damaged host
+settings file, say), the next run is `PARTIAL` (1) and re-reports those paths and reasons: exiting 0
+while something remains would erase that fact from the screen.
 
 When the command refuses or fails, it also tells you **what to clean up by hand**. The order is
 partial removal → delete → preserve, and a partial-removal entry is never a whole-file delete. If
