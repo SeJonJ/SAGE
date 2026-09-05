@@ -12,6 +12,7 @@
 출력은 ASCII 만 쓴다. Windows 러너 콘솔은 cp1252/cp949 로 열려 한글이 물음표로 뭉개진다.
 """
 import os
+import platform
 import sys
 import tempfile
 
@@ -30,8 +31,18 @@ def main():
 
     print(f"  is_windows={w._is_windows()}")
     print(f"  windows_10_or_later={w._windows_10_or_later()}")
+    # **edition·build·filesystem 을 함께 남긴다.** 어느 SKU 에서 돌았는지가 로그에 없으면
+    # "Windows 에서 통과했다" 가 어떤 Windows 인지 아무도 되짚을 수 없다. 실제로 Server 2025
+    # 증거를 데스크톱 증거로 읽을 뻔했다.
     try:
-        print(f"  getwindowsversion={tuple(sys.getwindowsversion())}")
+        info = sys.getwindowsversion()
+        kinds = {1: "workstation", 2: "domain-controller", 3: "server"}
+        print(f"  getwindowsversion={tuple(info)}")
+        print(f"  build={info.major}.{info.minor}.{info.build} "
+              f"product_type={kinds.get(getattr(info, 'product_type', 0), 'unknown')} "
+              f"service_pack={info.service_pack!r}")
+        print(f"  edition={platform.win32_edition()} "
+              f"is_iot={platform.win32_is_iot()} release={platform.release()}")
     except Exception as exc:                                   # noqa: BLE001
         print(f"  getwindowsversion raised: {exc!r}")
 

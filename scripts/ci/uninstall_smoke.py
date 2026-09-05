@@ -171,6 +171,15 @@ def main():
     native_failure_case()
     if REQUIRE_MUTATION and mutated == 0:
         fail("SAGE_UNINSTALL_REQUIRE_MUTATION is set but no case performed real removal")
+    # **어느 SKU 에서 돌았는지 요약 줄에 남긴다.** 없으면 "Windows 에서 통과했다" 가 어떤
+    # Windows 인지 되짚을 수 없고, Server 증거를 데스크톱 증거로 읽게 된다.
+    if os.name == "nt":
+        import platform
+        info = sys.getwindowsversion()
+        kinds = {1: "workstation", 2: "domain-controller", 3: "server"}
+        print(f"  windows edition={platform.win32_edition()} "
+              f"build={info.major}.{info.minor}.{info.build} "
+              f"product_type={kinds.get(getattr(info, 'product_type', 0), 'unknown')}")
     print(f"OK  ({sys.platform}, python {sys.version.split()[0]}) "
           f"-- {len(PATH_SHAPES) * len(CODEX_MODES)} path/CODEX_HOME combinations, "
           f"{len(REMOVAL_SCOPES)} removal scopes, {mutated} real removals")

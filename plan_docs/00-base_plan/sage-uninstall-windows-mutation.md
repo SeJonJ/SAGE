@@ -3,8 +3,8 @@
 Cycle-Stem: `sage-uninstall-windows-mutation`
 Document-Language: ko
 Risk Level: L3
-Done-Criteria-Revision: 6
-Status: REWORK 6 — Phase 05 재검토 BLOCKED(2026-09-04) 지적 반영
+Done-Criteria-Revision: 7
+Status: REWORK 7 — Phase 05 재검토(2026-09-05) 지적 반영 — 데스크톱 증거 대기
 
 ## 이 사이클의 성격
 
@@ -98,33 +98,39 @@ Windows 사용자는 `sage uninstall`을 다른 OS와 **같은 문장**으로 �
 
 ## 5. Done Criteria
 
-- [ ] Windows 10/11 로컬 NTFS에서 project·global·all 실제 제거가 원격 runner에서 통과한다
-- [ ] 상위 경로 교체를 요구한 모든 지점에서 **실제 교체가 일어났거나, 두 독립 rename 경로가 OS 에 의해 사전 차단**되었고, 어느 쪽이든 프로젝트·global root 밖 변경이 0건이다 (차단은 실제 교체로 세지 않는다)
+- [ ] Windows 10/11 **데스크톱** 로컬 NTFS에서 project·global·all 실제 제거가 통과한다 (현재 증거는 Windows Server 2025 build 26100 뿐이다 — 같은 커널 계열이지만 SKU 가 다르고, 제품이 말하는 범위는 데스크톱이다. edition·build·filesystem 을 함께 기록해야 닫힌다)
+- [x] 상위 경로 교체를 요구한 모든 지점에서 **실제 교체가 일어났거나, 두 독립 rename 경로가 OS 에 의해 사전 차단**되었고, 어느 쪽이든 프로젝트·global root 밖 변경이 0건이다 (차단은 실제 교체로 세지 않는다)
 - [x] backend 경계 추출 이후 POSIX uninstall 결과와 rollback 계약에 회귀가 없다
 - [x] capability·파일시스템·root identity 중 하나라도 확정되지 않으면 첫 mutation 전에 `uninstall.unsafe_platform`이다
 - [x] Windows backend에 경로 기반 write fallback이 존재하지 않는다(소스 검사로 단언)
 - [x] 자동 제거 불가·실패 시 수동 정리 목록이 text와 `--json`에서 같은 근거·같은 표시 경로로 나온다
 - [x] `STRIP`·`PRESERVE`·`BLOCK` 항목이 삭제 가능 목록에 오르지 않는다
 - [x] rollback 실패 상태에서 삭제 가능 주장이 나오지 않는다
-- [ ] Windows 핵심 안전 검사의 skip이 0건이다
-- [x] CLI·문서·CI 주석이 실제 지원 범위(Windows 10/11 로컬 NTFS)와 일치한다
+- [x] Windows 핵심 안전 검사의 skip이 0건이다
+- [ ] CLI·문서·CI 주석이 **직접 검증한 범위**와 일치한다 (지금은 문구가 Windows 10/11 데스크톱을 말하는데 검증된 것은 Server 2025 뿐이다)
 - [x] **lock 뒤 `open_roots()` 가 검증한 동일 handle 을 mutation·rollback 종료까지 유지한다** (capability probe 의 handle 은 조사용이며 닫힌다)
 - [x] 지원 범위 판정이 **확정 실패에서도 거부** 쪽이다 — 최종 경로·드라이브 종류를 확정하지 못하면 로컬로 세지 않는다
 - [x] `recheck` 부터 `unlock` 까지 **write root 아래 절대 경로 filesystem 판정이 없다** — mutation·결과 검증·rollback·cleanup 을 전부 포함한다. 예외는 단 하나, cleanup 에서 journal 이 만든 backup 경로에 대한 읽기 전용 `os.path.lexists` 다
 - [x] native 실패가 계약된 진단 code 로 CLI text·`--json` 까지 도달한다
 - [x] 실행 실패 뒤의 목록은 다시 읽은 상태이며, 다시 읽지 못하면 실행 가능한 순서를 비운다
 - [x] 전역 잔여 경로가 `$CODEX_HOME/...` 로 표시된다
-- [ ] Windows job 이 실제 mutation 0건이면 **실패한다**
+- [x] Windows job 이 실제 mutation 0건이면 **실패한다**
 - [x] root 가 여럿일 때 identity 유도는 **모든 root 에 공통인 것**만 고른다. 공통이 없으면 거부한다
 - [x] 설계가 요구한 주입 자리 목록과 실행 목록이 **한 권위**로 대조된다
 - [x] 열기 이후의 어떤 실패에서도 native handle 을 놓치지 않는다
 - [x] commit 후 뒷정리가 실패하면 무엇을 치울지 text·`--json` 이 같은 근거·같은 경로로 말한다
-- [ ] Windows matrix 에서 핵심 계약 검사가 돌고 skip 이 0건이다
+- [x] Windows matrix 에서 핵심 계약 검사가 돌고 skip 이 0건이다
 - [x] Windows 에서 반드시 돌아야 하는 검사 목록이 **줄어들면 실패한다** — 요구 정본과 실행 목록을 다른 파일에 두고 이름으로 대조한다
 
 ## 6. Done Criteria Revision Log
 
 Initial revision 1. No replanning record.
+
+### Revision 7
+- Changed-At: Phase 05
+- Reason: `run 33881276239` 의 Windows 증거는 유효하지만 **runner 의 실체가 Windows Server 2025 build 26100** 이다. 제품이 공개적으로 말하는 범위는 "Windows 10/11 로컬 NTFS" 이고 그것은 데스크톱 SKU 를 가리킨다. 커널 계약(handle 결속, rename 거부)이 같은 계열이라는 것과 그 SKU 에서 실제로 돌았다는 것은 다른 말이며, 후자를 증거 없이 참으로 두면 이 사이클이 반복해서 막아 온 모양 — "돌지 않은 것과 통과한 것이 같은 화면" — 이 문구 층에서 한 번 더 난다.
+- Affected-Phases: 01, 03, 04
+- Summary: 원격 로그로 증명된 네 기준(상위 교체 계약, 핵심 검사 skip 0, mutation 0 실패, matrix 계약 검사)을 닫았다. 실제 제거 기준은 **데스크톱 증거 전까지 열어 두고**, 무엇이 있어야 닫히는지(edition·build·filesystem 기록)를 그 자리에 적었다. 지원 범위 문구 기준은 "직접 검증한 범위와 일치한다" 로 다시 열었다 — Windows 10 증거가 없으면 범위를 Windows 11 로 좁히고 Windows 10 을 후속 항목으로 분리한다. A7·A19 는 `NOT TESTED` 로 되돌린다.
 
 ### Revision 6
 - Changed-At: Phase 05
