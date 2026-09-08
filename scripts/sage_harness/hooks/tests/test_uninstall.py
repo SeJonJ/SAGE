@@ -6084,6 +6084,7 @@ class WindowsTenManualOnly(Base):
 
         def child(machine, *argv):
             script = "\n".join([
+                "import os",
                 "import sys",
                 f"sys.path.insert(0, {REPO!r})",
                 "from sage import uninstall_fs as f",
@@ -6091,10 +6092,14 @@ class WindowsTenManualOnly(Base):
                 f"w.process_architecture = lambda: {machine!r}",
                 "w.windows_release = lambda: (10, 22000, True)",
                 "f.support_policy = lambda: None",
-                # OS 분기만 건넌다. 판정은 **제품의 native_floor** 가 낸다.
+                # 아키텍처 판정은 **제품의 native_floor** 가 낸다. 다만 capability 가
+                # 반환하는 backend 는 실제 실행 OS 와 같아야 한다. Windows 에서 POSIX
+                # backend 를 강제로 주면 x64 대조군이 Windows 에 없는 dir_fd primitive 를
+                # 호출해, ARM64 관문과 무관하게 실패한다.
                 "def bridged(roots=()):",
                 "    if w.native_floor():",
-                "        return f.MutationCapability(f.BACKEND_POSIX,",
+                "        backend = f.BACKEND_WINDOWS if os.name == 'nt' else f.BACKEND_POSIX",
+                "        return f.MutationCapability(backend,",
                 "                                    primitives={n: True for n in f.PRIMITIVES})",
                 "    return f.MutationCapability(",
                 "        f.BACKEND_NONE, failure_code='uninstall.unsafe_platform')",
