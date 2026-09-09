@@ -1,6 +1,6 @@
 [project]
 name = "sage-harness"
-version = "0.9.90"
+version = "1.0.0"
 description = "Governance harness for AI coding agents — spec-SSOT closed loop for Claude Code and Codex"
 readme = "README.md"
 license = "Apache-2.0"
@@ -12,7 +12,7 @@ keywords = [
   "hooks", "spec", "ssot", "llm", "automation",
 ]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",

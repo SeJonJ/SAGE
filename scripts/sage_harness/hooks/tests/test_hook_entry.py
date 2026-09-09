@@ -23,6 +23,7 @@ from sage import hook_entry  # noqa: E402
 from sage import overlay_common  # noqa: E402
 from sage import __version__  # noqa: E402
 from sage.profile_compile import materialize_profile  # noqa: E402
+from sage.runtime_api import HOOK_RUNTIME_API  # noqa: E402
 
 CORE = os.path.join(REPO, "scripts", "sage_harness", "hooks")
 
@@ -318,7 +319,10 @@ class TestDispatchIntegration(unittest.TestCase):
             os.makedirs(os.path.join(root, "docs", "sage_harness"), exist_ok=True)
             with open(os.path.join(root, "docs", "sage_harness", ".manifest.json"),
                       "w", encoding="utf-8") as fh:
-                json.dump({"generator_version": __version__}, fh)
+                # 실제 설치본은 marker 를 갖는다. 빼면 manifest 자체가 손상이라
+                # 이 검사가 보려는 "프로필만 없는 설치" 가 아니게 된다.
+                json.dump({"generator_version": __version__,
+                           "runtime_api": {"required": HOOK_RUNTIME_API}}, fh)
             r = self._run("pre-implementation-gate", stdin="{}", root=root)
             self.assertEqual(r.returncode, 2)
             self.assertIn("entry.profile_missing_damaged", _codes(r.stderr))
@@ -406,6 +410,7 @@ class TestDispatchIntegration(unittest.TestCase):
                 json.dump({
                     "sage_version": "9.9.7",
                     "generator_version": "9.9.8",
+                    "runtime_api": {"required": HOOK_RUNTIME_API},
                     "host_runtime": "claude",
                     "assets": {},
                 }, fh)
@@ -428,6 +433,7 @@ class TestDispatchIntegration(unittest.TestCase):
                 json.dump({
                     "sage_version": __version__,
                     "generator_version": __version__,
+                    "runtime_api": {"required": HOOK_RUNTIME_API},
                     "host_runtime": "claude",
                     "assets": {},
                 }, fh)
@@ -448,7 +454,8 @@ class TestDispatchIntegration(unittest.TestCase):
                 manifest_dir = os.path.join(root, "docs", "sage_harness")
                 os.makedirs(manifest_dir, exist_ok=True)
                 with open(os.path.join(manifest_dir, ".manifest.json"), "w", encoding="utf-8") as fh:
-                    json.dump({"sage_version": __version__, "generator_version": __version__, "assets": {}}, fh)
+                    json.dump({"sage_version": __version__, "generator_version": __version__,
+                               "runtime_api": {"required": HOOK_RUNTIME_API}, "assets": {}}, fh)
                 target_dir = os.path.join(root, directory)
                 os.makedirs(target_dir, exist_ok=True)
                 with open(os.path.join(target_dir, filename), "w", encoding="utf-8") as fh:
