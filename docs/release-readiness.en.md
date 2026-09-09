@@ -1,4 +1,4 @@
-<!-- sage-doc-source: release-readiness.md sha256:474a97e8228ad27fb0d618b6889163daca4465019115018dd0f9cce7eb874ac7 -->
+<!-- sage-doc-source: release-readiness.md sha256:ac434cdb886d73b6c1493d2b31e23ad07933aef515b5c18823bafe280daecae8 -->
 # Release readiness
 
 This document records **how readiness is decided**, not what it currently is. The current answer changes every cycle, and a value written into a document becomes false the moment it changes. Ask `python scripts/ci/publish_preflight.py` for the present state.
@@ -28,12 +28,14 @@ Every check in `publish_preflight.py` is independent and all of them run. Stoppi
 | `inventory` | The inventory must match the code and contain zero user-visible literals pending catalog migration. A current list is not completion |
 | `upgrade` | A real v0.9.84 consumer must receive each new managed CORE file and its receipt together. Command and test registration alone are insufficient |
 | `mutation` | A repository that changed during release preparation means a version was raised without approval |
+| Windows desktop evidence | `publish_preflight` does not count this for you. Without a record of a real run on that SKU, automatic removal is unverified and the documented support scope diverges from the verified scope |
 
 `publish` cannot be undone. PyPI will not accept the same version twice, and a tag has already spread to other clones. So this check asks not "does it build" but **"does the artifact claim the same thing the repository claims"**.
 
 ## Platform contract
 
-`scripts/ci/platform_smoke.py` verifies the same items on Linux, macOS and Windows.
+`scripts/ci/platform_smoke.py` verifies the same items on Linux, macOS and Windows 11 desktop.
+The two POSIX platforms run in the hosted matrix on every PR; Windows runs in the **self-hosted job** described below.
 
 - Installation
 - Korean and English help produce different screens
@@ -46,6 +48,28 @@ Every check in `publish_preflight.py` is independent and all of them run. Stoppi
 The script **does not use bash**. Whether things work without bash is precisely what is under test, so a checking tool that requires bash would leave that environment permanently unverified.
 
 A failing platform stays a failure, never a skip. A silent skip counts as a pass and ships a release with one platform unverified.
+
+## Hosted runners cannot produce the Windows evidence
+
+GitHub-hosted `windows-latest` is really **Windows Server 2025**. Green there is valid backend regression evidence but **not desktop SKU evidence.**
+
+**The logs now do tell them apart.** The capability report, smoke, race smoke, and core checks each print edition, build, product type, filesystem, and process bitness. Windows was still removed from the hosted matrix, for a different reason: reading those values stays a **human step**. The green itself looks identical on both SKUs, and the distinction only holds if someone goes back to the summary line. In this cycle a Server runner's green was nearly read as desktop evidence, and what prevented it was a comment.
+
+So rather than requiring people to read correctly every time, **the place where an out-of-scope runner could be read as desktop evidence was removed outright.** Inside CI, the one place that produces this evidence is the `windows11_uninstall` self-hosted job.
+
+| Item | Value |
+|---|---|
+| Runner | `[self-hosted, windows, x64, win11, sage-uninstall]` |
+| Runs when | a `run-win11-uninstall` label is **added** (`labeled`) to a same-repository PR |
+| Never runs on | fork PRs, `synchronize`, `opened`, `reopened`, push |
+| Gate before anything native | `windows_capability_report.py --require-product-support` |
+| Steps | rename probe, capability report, platform smoke (3.12), uninstall smoke, race smoke, core checks (py 3.10, 3.11, 3.12) |
+
+The label is an **approval event, not a state**. A standing label does not carry approval to a new commit, so verifying the next commit means removing the label and adding it again. Checkout is pinned to `head.sha` and the evidence step compares the actual tree against it, so **evidence and commit are bound one to one**.
+
+The removal checks run under `SAGE_UNINSTALL_REQUIRE_PRODUCT_SUPPORT=1`. One policy refusal, zero real removals, or any of the three scopes not actually running is a non-zero exit — substituting refusal-contract assertions for real removal is **itself a failure**. If that substitution were allowed, the job could report evidence without ever having removed anything.
+
+**The evidence is a record of a real run on that SKU.** The required items are edition, build, product type, filesystem, process bitness, real removal count, policy refusal count, and the commit under verification; this job is the place that makes such a record **repeatable**. A directly recorded run on a Windows 11 desktop counts as the same evidence when it records the same items and the same commit — what cannot be substituted is the SKU, not the way it was run. Without a record of either kind, automatic removal on that platform is unverified.
 
 ## Building a release candidate
 

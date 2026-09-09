@@ -134,9 +134,11 @@ jobs:
         run: python scripts/ci/uninstall_core_checks.py
 
   windows11_uninstall:
-    # **A7·A19 증거를 만드는 유일한 자리.** 정식 자동 제거 지원 범위는 Windows 11 데스크톱
-    # workstation · x64 · 64-bit Python · 로컬 NTFS 이고, GitHub-hosted 러너에는 그 환경이 없다.
-    # 그래서 self-hosted 전용 job 으로 둔다.
+    # **CI 안에서 Windows 데스크톱 제거 증거를 만드는 자리.** 정식 자동 제거 지원 범위는
+    # Windows 11 데스크톱 workstation · x64 · 64-bit Python · 로컬 NTFS 이고, GitHub-hosted
+    # 러너에는 그 환경이 없다. 그래서 self-hosted 전용 job 으로 둔다. 이 job 이 유일한 것은
+    # 아니다 — 같은 항목·같은 커밋을 남긴 데스크톱 직접 실행도 같은 증거로 센다. 대체할 수
+    # 없는 것은 SKU 이지 실행 방식이 아니고, 이 job 은 그 기록을 반복 가능하게 만드는 자리다.
     #
     # **왜 라벨 제한인가.** self-hosted 러너는 남의 코드를 자기 머신에서 실행한다. fork PR 이
     # 여기에 닿으면 그 PR 의 workflow 가 러너를 그대로 가져간다. 그래서 조건은 같은 저장소의

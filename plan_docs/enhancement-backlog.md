@@ -3,15 +3,15 @@
 - SAGE 개발 중 확인된 이슈들로 당장 개발해야하는 내용들은 아니지만, 추후 개발 필요시 참고한다.
 - 각 항목 = 배경 · 문제 · 접근 · 규모/위험 · 트리거 · 상태. 즉시 필요 아님 → 트리거 충족 시 착수.
 
-## 전체 현황 (2026-08-31 기준)
+## 전체 현황 (2026-09-09 기준)
 
-**EH-1~EH-27 + EH-29·EH-30 중 14건 완료 · 1건 일부 완료 · 14건 보류.** (EH-28은 아래 단서 참조)
+**EH-1~EH-27 + EH-29·EH-30 중 15건 완료 · 1건 일부 완료 · 13건 보류.** (EH-28은 아래 단서 참조)
 
 | 상태 | 항목 |
 |---|---|
-| ✅ 완료 | EH-1·2(`v0.9.x` 초기) · EH-3(`v0.9.75`) · EH-5(`v0.9.72`) · EH-6(`v0.9.65`) · EH-7(`v0.9.71`) · EH-9(`v0.9.77`) · EH-12(`v0.9.79`) · EH-18·EH-19(`v0.9.84`) · **EH-13·EH-14·EH-15·EH-16(미릴리즈, `sage-gate-diagnostics-batch`)** |
+| ✅ 완료 | EH-1·2(`v0.9.x` 초기) · EH-3(`v0.9.75`) · EH-5(`v0.9.72`) · EH-6(`v0.9.65`) · EH-7(`v0.9.71`) · EH-9(`v0.9.77`) · EH-12(`v0.9.79`) · EH-18·EH-19(`v0.9.84`) · **EH-13·EH-14·EH-15·EH-16(미릴리즈, `sage-gate-diagnostics-batch`)** · **EH-30(미릴리즈, `sage-uninstall-windows-mutation`)** |
 | 🕗 일부 완료 | EH-11 — 9개 하위 중 8개 완료(J-4·5·6·8·9 = `v0.9.78`, 결속 본체 J-1·2·3 = `v0.9.79`, J-11 기각), **잔여 J-7만 보류** |
-| 🕗 보류 | EH-4 · EH-8 · EH-10 · EH-17 · EH-20 · EH-21 · EH-22 · EH-23 · EH-24 · EH-25 · EH-26 · EH-27 · EH-29 · EH-30 |
+| 🕗 보류 | EH-4 · EH-8 · EH-10 · EH-17 · EH-20 · EH-21 · EH-22 · EH-23 · EH-24 · EH-25 · EH-26 · EH-27 · EH-29 |
 
 보류의 성격은 셋으로 갈린다.
 
@@ -19,13 +19,16 @@
   freshness) · EH-27(전환 provenance descriptor hardening). EH-8·EH-10은 아직 설계 정본이 없어
   착수하려면 설계부터다.
 - **트리거 대기**: EH-17(오버레이 누적 성장 실측) · EH-20 · EH-23 · EH-25(1.0 이전 runtime 관찰).
-- **수용된 잔여 위험**: EH-21 · EH-22 · EH-24 · EH-26 · EH-27 · EH-29 · EH-30. 사이클이 범위를 그으며 명시
+- **수용된 잔여 위험**: EH-21 · EH-22 · EH-24 · EH-26 · EH-27 · EH-29. 사이클이 범위를 그으며 명시
   수용하고 이관한 것들이고, **해소가 아니다.** 특히 EH-27은 `sage-operability-diagnostics`
   Phase 05 P1-02 로 공개된 상태이며 개발자 승인으로 1.0 범위에서 수용했다.
 
 **EH-29·EH-30은 `sage-uninstall` 사이클이 등재했고 그 사이클은 2026-08-31에 Phase 05 `APPROVED`로
-닫혔다.** 즉 두 항목은 진행 중 미결이 아니라 **닫힌 사이클이 남긴 확정 잔여 위험**이다. 사이클이
-끝났다는 것과 위험이 해소됐다는 것은 다르다 — 착수하려면 각 항목의 트리거를 다시 봐야 한다.
+닫혔다.** 그중 **EH-30은 후속 사이클 `sage-uninstall-windows-mutation`이 2026-09-09에 해소했다** —
+handle 결속 backend 를 구현하고 Windows 11 데스크톱 실환경에서 실제 제거를 실증했다. 정식 자동
+제거 범위는 그 SKU 로 좁혀 선언했고, 범위 밖 환경은 계획만 보여 주고 첫 mutation 전에 막는다.
+**EH-29는 그대로 확정 잔여 위험이다** — 사이클이 끝났다는 것과 위험이 해소됐다는 것은 다르고,
+착수하려면 그 항목의 트리거를 다시 봐야 한다.
 
 **이 파일이 EH 전부는 아니다.** `sage-audit-visibility-no-vault`에서 수용한 P1 잔여 위험은
 **EH-28**이고, 사용자 결정에 따라 여기 항목으로 두지 않고 Obsidian 정본
@@ -806,7 +809,11 @@ stdin이 닫힌다), EH-16의 "재료는 이미 있다"는 L0에만 맞고 pdca 
 - **현재 거부 계약의 실행 증거**: GitHub Actions run `33357375454`(소스 `142764e`)의 Windows × Python 3.10·3.11·3.12 3개 job에서 계획(`--check`) 성공 · mutation `uninstall.unsafe_platform` 거부(exit 2) · 파일 무변경을 확인했다. **거부가 실제로 동작한다는 것은 검증됐다.** 검증되지 않은 것은 handle 기반 제거 구현이고, 그것이 이 항목이다.
 - **트리거**: Windows 소비자의 제거 요구가 실제로 들어오거나, Windows 러너에서 handle 기반 구현을 검증할 수 있는 환경이 갖춰질 때. **CI에 Windows 러너가 생긴 것만으로는 트리거가 아니다** — `uninstall_matrix`는 거부 계약을 확인할 뿐 ancestor 교체 경쟁을 주입하지 않는다. 러너의 존재를 검증 환경으로 읽지 않도록 아래 재검토 조건을 함께 본다.
 - **재검토 조건**: (1) Windows CI 러너에서 ancestor 교체 경쟁을 **실제로 주입**해 바깥 파일 0건을 보이는 검사가 가능해질 때, (2) 그 검사가 POSIX와 같은 계약(정확히 `boundary_changed`·완전 복구·보관소 잔여 0)을 만족할 때. 둘 중 하나만으로는 열지 않는다.
-- **상태**: 🕗 **보류(2026-08-29 등재, 2026-08-31 `sage-uninstall` Phase 05 `APPROVED`에서 잔여 위험으로 확정 · 사용자 결정 (b))**. severity P1 — 잘못 지우는 방향의 위험은 **거부로 0**이고, 못 지우는 방향으로만 남는다. 수용이며 해소가 아니다. owner: uninstall maintainer. 승인자: 사용자(SeJon), 2026-08-29 (Asia/Seoul).
+- **해소(2026-09-09, `sage-uninstall-windows-mutation`)**: handle 결속 mutation backend 를 구현했다. `NtCreateFile` 의 `OBJECT_ATTRIBUTES.RootDirectory` 로 부모 handle 에 결속해 열고, `SetFileInformationByHandle`(`FILE_RENAME_INFO`)로 handle 기준 rename·delete 를 한다. 경로 재검사로 대체하지 않았다. 실행 층에는 OS 분기가 남지 않고, capability·파일시스템·root identity 중 하나라도 확정되지 않으면 첫 mutation 전에 `uninstall.unsafe_platform` 이다.
+- **재검토 조건 충족**: (1) ancestor·root 교체를 **실제로 주입**하는 race smoke 가 Windows 에서 돌았고 프로젝트 밖 변경 0건이다. (2) POSIX 와 같은 계약(`boundary_changed`·완전 복구·보관소 잔여 0)을 만족한다. 둘 다 섰다.
+- **증거**: `SAGE-Windows11-verification-FINAL-2026-09-09.md` — Windows 11 Pro 25H2 build 26200.9168 · workstation · AMD64 · 64-bit Python · 로컬 NTFS, 커밋 `237d278`, Python 3.10·3.11·3.12 각각 smoke 11 real removals/0 policy refusals · race 14/14 · core 103/0/0 · selectors 4. GitHub-hosted Server 2025 결과는 backend 회귀 증거이지 이 항목의 데스크톱 증거가 아니다.
+- **남는 것**: 정식 자동 제거 범위는 **Windows 11 데스크톱 workstation · x64 · 64-bit Python · 로컬 NTFS** 다. Windows 10 · Server/DC · 32-bit · native ARM64 · 비 NTFS·network/UNC 는 아래 두 미등재 항목이 소유한다 — 그 환경들은 자동 제거를 하지 않고 계획과 수동 정리 목록만 낸다.
+- **상태**: ✅ **완료(2026-09-09, `sage-uninstall-windows-mutation` Phase 05 `APPROVED`)**. 미릴리즈. 2026-08-29 등재 · 2026-08-31 `sage-uninstall` Phase 05 에서 잔여 위험으로 확정됐던 항목이며, 그때의 수용은 이 사이클의 실증으로 대체됐다. owner: uninstall maintainer.
 
 ---
 

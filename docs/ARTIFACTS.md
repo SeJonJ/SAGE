@@ -197,3 +197,34 @@ CORE 부트스트랩 자산(6 에이전트·13 스킬)은 `sage install`이 손�
 - **`docs/sage_harness/.manifest.json`** — 생성 산출물의 hash 스탬프 정본. `sage validate`가 이 스탬프와 실제 파일을 대조해 drift·staleness를 적발하고, write-guard가 직접수정을 차단하는 근거 (`sage/commands/generate.py:305, :412`).
 
 이 경로들은 **spec→생성→검증→차단 폐루프**의 산출측이며, spec 자체(`docs/sage_harness/{hooks,agents,skills,mcps}/{id}.md`)는 생성물이 아니라 사람이 쓰는 SSOT입니다. 자세한 게이트·신뢰 경계는 [ARCHITECTURE.md](ARCHITECTURE.md) 참조.
+
+---
+
+## 6. 지울 때 — 소유권이 곧 분류다
+
+`sage uninstall`은 위 산출물을 네 갈래로 나눕니다. 기준은 **SAGE가 만들었다는 증거**이지 내용이
+현재 번들과 같은지가 아닙니다 — 같은 내용을 사용자가 직접 만들었을 수도 있고, 그 둘을 구별할 수
+없다는 사실이 이 명령이 조심하는 이유입니다 (`sage/uninstall_plan.py:12`).
+
+| 분류 | 붙는 조건 | 대표 대상 |
+|---|---|---|
+| `DELETE` | 증거 셋 중 하나 — SAGE 전용 namespace 안 · manifest가 배치를 기록 · 파일 자체에 SAGE marker | `sage/` · `.sage/` · `docs/sage_harness/` · `scripts/sage_harness/` · manifest가 기록한 framework 배포본 |
+| `STRIP` | 공유 파일이라 SAGE 블록만 걷어냄 | `settings.json` · `hooks.json` · `.gitignore` |
+| `PRESERVE` | 소유권을 증명하지 못하거나 사용자가 고친 사본 | 드리프트한 전역 skill 사본 · 내용이 번들과 다른 배포본 |
+| `BLOCK` | 읽거나 판정할 수 없어 손대지 않음 | 손상된 설정 · 소유권 불명 경로 |
+
+`PRESERVE`와 `BLOCK`은 **write target 목록에 절대 들어가지 않습니다** — 실행 층이 열어도 되는
+경로는 `DELETE`와 `STRIP` 뿐입니다 (`uninstall_plan.py:137`).
+
+**`.sage/`는 통째로 `DELETE`입니다.** 커밋 대상인 감사 4종(`override.jsonl` ·
+`acceptance-waivers.jsonl` · `loop_audit.jsonl` · `fast_cycle.jsonl`)도 작업 트리에서 사라지고,
+남는 것은 Git 이력뿐입니다. 감사 기록을 보존해야 한다면 제거 전에 커밋되어 있어야 합니다.
+
+**예외 하나 — 영수증은 잔재보다 오래 삽니다.** 손대지 못한 host 설정이 남아 있으면
+`docs/sage_harness/`는 `uninstall.receipt_retained_for_residual`로 보존됩니다. manifest는 무엇이
+설치됐는지에 대한 유일한 증거이고, 잔재를 남긴 채 그것을 지우면 다음 실행이 그 파일이 왜 거기
+있는지 증명할 방법을 잃습니다 (`uninstall_plan.py:815`).
+
+실제 목록은 host·scope·프로젝트 위치·`CODEX_HOME`에 따라 달라지므로 `sage uninstall --check`가
+내는 목록이 정본입니다. 자동 제거 지원 범위와 두 종류의 거부 화면은
+[CLI 레퍼런스](cli-reference.md)에 있습니다.

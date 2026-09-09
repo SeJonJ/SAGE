@@ -4,7 +4,7 @@ Cycle-Stem: `sage-uninstall-windows-mutation`
 Document-Language: ko
 Risk Level: L3
 Done-Criteria-Revision: 14
-Status: REWORK 15 — 증거 커밋 계약 정정(merge 커밋은 참고값, head.sha 대조 fail-closed) — 유일 blocker 는 A7 (self-hosted 실행 로그 대기)
+Status: COMPLETE — Windows 11 데스크톱 실환경 증거로 A7·A19를 종료; self-hosted Actions 실행은 비차단 운영 후속 항목
 
 ## 이 사이클의 성격
 
@@ -30,7 +30,7 @@ Status: REWORK 15 — 증거 커밋 계약 정정(merge 커밋은 참고값, hea
 | CI 실측 (rework 12 이후) | `.github/workflows/ci.yml` `uninstall_matrix` · `windows11_uninstall` | hosted matrix 는 **ubuntu·macOS 2 OS × 3 Python = 6 job** 이다. Windows 는 hosted 에서 빠지고 self-hosted 전용 job 하나로 옮겼다 — GitHub-hosted Windows 는 Server 2025 이고 범위 밖 러너의 초록은 데스크톱 증거가 아닌데 로그에서는 같은 초록으로 보이기 때문이다. |
 | 소비자 smoke 실측 | `scripts/ci/uninstall_smoke.py` | 갈림의 기준은 OS 이름이 아니라 제품이 스스로 내리는 판정이다. 지원 범위에서는 실제 설치·제거, 범위 밖에서는 거부 계약을 검사한다. `SAGE_UNINSTALL_REQUIRE_PRODUCT_SUPPORT=1` 엄격 모드에서는 **거부로 갈음하는 것 자체가 실패**다. |
 | 진단 어휘 실측 | `sage/diagnostic_contract.py:236-256` | uninstall BLOCK code 21개가 이미 있다. 이 사이클은 기존 어휘로 수렴하되 **하나를 더한다** — `uninstall.windows_10_manual_only`. 지원 범위 결정(아래)이 "고칠 수 없는 환경 한계" 와 "검증 범위 밖" 을 다른 화면으로 요구하기 때문이다. |
-| 검증 환경 한계 | 개발 머신 = macOS (darwin 25.6.0) | Windows 실제 실행 증거는 **로컬에서 만들 수 없다.** 그리고 GitHub-hosted `windows-latest` 로도 만들 수 없다 — 그 실체는 Server 2025 다. A7·A19 증거를 만들 수 있는 자리는 **Windows 11 데스크톱 self-hosted 러너 하나뿐**이고, 그 러너가 없으면 두 항목은 `NOT TESTED` 로 남는다. |
+| Windows 실환경 증거 | `SAGE-Windows11-verification-FINAL-2026-09-09.md` | Windows 11 Pro 25H2 workstation·AMD64·64-bit Python·D: 로컬 NTFS에서 커밋 `237d278`을 직접 실행했다. Python 3.10·3.11·3.12 모두 strict smoke·race·core checks를 통과했다. self-hosted Actions job 실행은 이 제품 증거와 별개인 운영 후속 항목이다. |
 | 작업공간 정책 | 사용자 지시 | worktree·임시 소비 프로젝트·fixture는 `/Users/sejon/project/sage_project_worktree/` 아래에만 만든다. |
 
 ## 1. 요약 (목표와 범위)
@@ -123,7 +123,7 @@ Windows 사용자는 `sage uninstall`을 다른 OS와 **같은 문장**으로 �
 
 ## 5. Done Criteria
 
-- [ ] Windows 11 **데스크톱 workstation · x64 · 64-bit Python** 로컬 NTFS에서 project·global·all 실제 제거가 통과한다 (현재 증거는 Windows Server 2025 build 26100 뿐이다 — 같은 커널 계열이지만 SKU 가 다르고, 제품이 말하는 범위는 데스크톱이다. 증거는 `windows11_uninstall` self-hosted job 의 세 로그이고 edition·build·product type·filesystem·**process bitness** 와 **실제 removal 수·policy refusal 수**, 그리고 **그 증거를 만든 커밋**을 함께 기록해야 닫힌다 — 검증 대상은 승인 당시의 `pull_request.head.sha` 하나이고, 증거 단계가 `git rev-parse HEAD` 와 그 값의 일치를 확인해 어긋나면 실패한다. `GITHUB_SHA` 는 `pull_request` 에서 merge 커밋일 수 있으므로 참고값으로만 남기고 일치를 요구하지 않는다)
+- [x] Windows 11 **데스크톱 workstation · x64 · 64-bit Python** 로컬 NTFS에서 project·global·all 실제 제거가 통과한다 (`SAGE-Windows11-verification-FINAL-2026-09-09.md`: Windows 11 Pro 25H2 build 26200.9168·AMD64·D: NTFS·커밋 `237d278`; Python 3.10·3.11·3.12에서 smoke 11 real removals/0 policy refusals, race 14/14·외부 mutation 0, core 103/0/0·selectors 4. self-hosted job의 커밋 결속 계약은 구현·로컬 회귀로 확인됐고, 해당 Actions job의 실제 dispatch는 비차단 운영 후속 항목이다)
 - [x] 상위 경로 교체를 요구한 모든 지점에서 **실제 교체가 일어났거나, 두 독립 rename 경로가 OS 에 의해 사전 차단**되었고, 어느 쪽이든 프로젝트·global root 밖 변경이 0건이다 (차단은 실제 교체로 세지 않는다)
 - [x] backend 경계 추출 이후 POSIX uninstall 결과와 rollback 계약에 회귀가 없다
 - [x] capability·파일시스템·root identity 중 하나라도 확정되지 않으면 첫 mutation 전에 `uninstall.unsafe_platform`이다
@@ -132,7 +132,7 @@ Windows 사용자는 `sage uninstall`을 다른 OS와 **같은 문장**으로 �
 - [x] `STRIP`·`PRESERVE`·`BLOCK` 항목이 삭제 가능 목록에 오르지 않는다
 - [x] rollback 실패 상태에서 삭제 가능 주장이 나오지 않는다
 - [x] Windows 핵심 안전 검사의 skip이 0건이다
-- [ ] CLI·문서·CI 주석이 **직접 검증한 범위**와 일치한다 (문구는 Windows 11 데스크톱 workstation · x64 · 64-bit Python · 로컬 NTFS 로 좁혔고 hosted matrix 에서 Windows 를 뺐다. 그 SKU 의 실제 제거 증거가 서면 닫힌다 — Server 2025 증거는 backend 회귀이지 데스크톱 증거가 아니다)
+- [x] CLI·문서·CI 주석이 **직접 검증한 범위**와 일치한다 (공개 자동 제거 범위인 Windows 11 데스크톱 workstation · x64 · 64-bit Python · 로컬 NTFS에서 위 A7 실증을 확보했다. Windows 10은 자동 제거 없이 계획 기반 수동 정리, Server/DC·32-bit·ARM64는 범위 밖이라는 문구와도 일치한다)
 - [x] 자동 제거 지원 판정이 **Windows 11 workstation 여부와 최소 build** 로 갈리고, 기존 로컬 NTFS·native primitive·root handle capability 검사가 그 위에 그대로 적용된다
 - [x] Windows 10 데스크톱은 capability 실패와 **다른 진단**(`uninstall.windows_10_manual_only`)으로 구분되고, 제거 대상이 있으면 **확인 prompt 이전에** 막히며 mutation 0건이다
 - [x] Windows 10 의 `--check` 와 `--yes` 가 `DELETE`·`STRIP`·`PRESERVE`·`BLOCK` 네 목록을 하나도 접지 않고 같은 진단·같은 경로로 내고, `manual_cleanup` 에 근거와 처리 순서를 싣는다 (text·`--json` 동일)
