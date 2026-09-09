@@ -255,21 +255,36 @@ class InstallTransaction:
         return self._committed
 
     def _guard_path(self, path):
-        """Reject writes that escape a declared root or traverse a symlink ancestor."""
+        """Reject writes that escape a declared root or traverse a symlink ancestor.
+
+        **두 검사는 성격이 다르다.** 소속 판정은 문자열만 보고, 조상 판정은 파일시스템을
+        읽는다. 부모를 이미 붙든 소비자에게는 두 번째가 계약 위반이다 — 붙든 대상을 절대
+        경로로 다시 물으면, 상위가 바뀐 순간 그 답이 다른 디렉터리에 대해 나온다. 그래서
+        나눠 두고, 조상 판정만 갈아 끼울 수 있게 한다.
+        """
+        root = self._guard_root_membership(path)
+        if root is not None:
+            self._guard_ancestors(root, path)
+
+    def _guard_root_membership(self, path):
+        """선언한 root 안인가. **문자열만 본다** — 파일시스템을 읽지 않는다."""
         if not self._write_roots:
-            return
+            return None
         target = os.path.abspath(path)
-        root = None
         for candidate in self._write_roots:
             try:
                 if os.path.commonpath((candidate, target)) == candidate:
-                    root = candidate
-                    break
+                    return candidate
             except ValueError:
                 continue
-        if root is None:
-            raise InstallDriftError(f"install write path is outside declared roots: {target}")
+        raise InstallDriftError(f"install write path is outside declared roots: {target}")
 
+    def _guard_ancestors(self, root, path):
+        """조상이 symlink 가 아니고 디렉터리인가. **파일시스템을 읽는다.**
+
+        경로 기준이라, 부모를 붙든 소비자는 이 판정을 결속된 seam 으로 갈아 끼운다.
+        """
+        target = os.path.abspath(path)
         cursor = root
         parent = os.path.dirname(target)
         rel_parent = os.path.relpath(parent, root)
@@ -340,13 +355,16 @@ class InstallTransaction:
         self.verify_unconsumed()
         self._guard_path(path)
         self._ensure_parents(path)
-        existed = os.path.lexists(path)
-        if existed and stat.S_ISDIR(os.lstat(path).st_mode):
+        # 존재 여부와 종류를 **지문 하나에서** 읽는다. `os.path.lexists` 와 `os.lstat` 은
+        # 절대 경로를 다시 조회하므로, 부모를 붙든 소비자에서도 그 두 줄만 결속 밖으로
+        # 빠져나간다 — 상위가 바뀐 뒤에는 다른 디렉터리에 대해 "있다/없다" 를 답한다.
+        original = ("path", self._measure(path, "path"))
+        existed = original[1][0] != "absent"
+        if existed and original[1][0] == "dir":
             raise IsADirectoryError(path)
         backup = self._backup_path(path) if existed else None
-        if backup is not None and os.path.lexists(backup):
+        if backup is not None and self._probe(backup):
             raise FileExistsError(f"transaction backup collision: {backup}")
-        original = ("path", self._measure(path, "path"))
         entry = (path, backup)
         self._entries.append(entry)
         self._staged[path] = entry
@@ -359,12 +377,14 @@ class InstallTransaction:
 
     def stage_remove_tree(self, path):
         path = os.path.abspath(path)
-        if path in self._staged or not os.path.lexists(path):
+        # `_probe` 로 묻는다. 절대 경로로 물으면 붙든 대상이 멀쩡히 있는데도 상위가 바뀐
+        # 것만으로 "없다" 가 나오고, 그러면 지워야 할 것을 지우지 않은 채 성공으로 끝난다.
+        if path in self._staged or not self._probe(path):
             return False
         self.verify_unconsumed()
         self._guard_path(path)
         backup = self._backup_path(path)
-        if os.path.lexists(backup):
+        if self._probe(backup):
             raise FileExistsError(f"transaction backup collision: {backup}")
         original = ("tree", self._measure(path, "tree"))
         entry = (path, backup)

@@ -249,6 +249,12 @@ SEVERITY = {
     "uninstall.boundary_changed": BLOCK,
     "uninstall.lock_busy": BLOCK,
     "uninstall.unsafe_platform": BLOCK,
+    # 환경 미지원이 아니라 **지원 범위 밖**이다. 같은 code 로 접으면 고칠 수 없는 것을
+    # 고치라는 안내가 되고, 실제로 할 수 있는 수동 정리는 화면에서 사라진다.
+    "uninstall.windows_10_manual_only": BLOCK,
+    # server SKU 는 **지원 정책의 범위 밖**이라 제외다. 이 판정은 SKU 와 build 만 보고
+    # capability 를 재지 않으므로, 그 환경의 기술적 가능 여부는 어느 쪽으로도 말하지 않는다.
+    "uninstall.windows_sku_not_supported": BLOCK,
     "uninstall.strip_not_applicable": BLOCK,
     "uninstall.execution_failed": BLOCK,
     "uninstall.plan_failed": BLOCK,
@@ -337,6 +343,10 @@ RECOVERY = {
     "uninstall.boundary_changed": (_UNINSTALL_CHECK,),
     "uninstall.lock_busy": (_UNINSTALL_CHECK,),
     "uninstall.unsafe_platform": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL),
+    # `unsafe_platform` 과 같은 두 단계다. 세 번째(recheck)를 붙이면 첫 단계와 **같은 명령**이
+    # 한 번 더 찍히고, 확인 단계는 수동 안내가 이미 마지막 줄로 낸다.
+    "uninstall.windows_10_manual_only": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL),
+    "uninstall.windows_sku_not_supported": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL),
     "uninstall.strip_not_applicable": (_UNINSTALL_CHECK,),
     "uninstall.execution_failed": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL, _UNINSTALL_RECHECK),
     "uninstall.plan_failed": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL, _UNINSTALL_RECHECK),

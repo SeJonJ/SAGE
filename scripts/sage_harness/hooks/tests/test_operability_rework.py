@@ -947,6 +947,76 @@ class TestTheRealParserSeesEveryAcceptanceRow(unittest.TestCase):
         self.assertNotIn("중복", " ".join(str(item) for item in found))
 
 
+class TestRequirementIdDuplicatesAreFailClosed(unittest.TestCase):
+    """요구사항 ID 중복은 **구조 오류**다. acceptance parser 는 A-ID 만 봐 왔다.
+
+    그래서 rework 하나가 기존 `FR-*` 번호를 다시 써도 아무도 잡지 못했고, 두 행이 서로 다른
+    요구를 같은 이름으로 갖게 됐다. 04 가 그 이름 하나를 근거로 대면 어느 요구를 덮었는지
+    판정할 수 없다 — "돌지 않은 것과 통과한 것이 같은 화면" 이 ID 층에서 나는 자리다.
+    """
+
+    PLAN = """## 요구사항
+
+| ID | 내용 | 출처 |
+|---|---|---|
+| FR-A1 | 첫째 | x |
+| FR-A2 | 둘째 | x |
+
+## 인수 매트릭스
+
+| ID | 요구 | 증거 | 담당 | 필수? |
+|---|---|---|---|---|
+| A1 | 하나 | 검사 | qa | yes |
+"""
+    REPORT = """## 인수 증거 검토
+
+| 인수 ID | 요구 | 상태 | 근거 | 비고 |
+|---|---|---|---|---|
+| A1 | 하나 | PASS | 검사 | |
+"""
+    POLICY = {"statuses": ("PASS", "FAIL", "NOT TESTED", "N/A"),
+              "unresolved": ("FAIL", "NOT TESTED")}
+
+    def test_a_clean_plan_has_no_duplicate_requirement_ids(self):
+        gate = _load_gate()
+        self.assertEqual(gate.requirement_id_duplicates(self.PLAN), [])
+
+    def test_a_repeated_requirement_id_is_reported(self):
+        gate = _load_gate()
+        doubled = self.PLAN.replace("| FR-A2 | 둘째 | x |",
+                                    "| FR-A2 | 둘째 | x |\n| FR-A1 | 다른 요구, 같은 이름 | y |")
+        self.assertEqual(gate.requirement_id_duplicates(doubled), ["FR-A1"])
+
+    def test_the_gate_refuses_a_plan_with_duplicate_requirement_ids(self):
+        """단순 helper 가 아니라 **게이트가** 막는지 본다."""
+        gate = _load_gate()
+        doubled = self.PLAN.replace("| FR-A2 | 둘째 | x |",
+                                    "| FR-A2 | 둘째 | x |\n| FR-A1 | 다른 요구, 같은 이름 | y |")
+        clean, _ = gate.acceptance_findings(self.PLAN, self.REPORT, self.POLICY,
+                                            plan_path="01", report_path="04")
+        self.assertEqual(clean, [], "멀쩡한 문서가 막혔다")
+        structural, unresolved = gate.acceptance_findings(
+            doubled, self.REPORT, self.POLICY, plan_path="01", report_path="04")
+        self.assertTrue(any("duplicate requirement ID" in item for item in structural),
+                        structural)
+        self.assertEqual(unresolved, [], "구조 오류는 미해결 행으로 새지 않는다")
+
+    def test_a_prose_citation_of_another_requirement_is_not_a_duplicate(self):
+        """본문에서 다른 요구를 인용하는 것은 중복이 아니다. 표 첫 칸만 본다."""
+        gate = _load_gate()
+        cited = self.PLAN + "\n`FR-A1` 은 아래 표의 FR-A2 와 함께 읽는다.\n"
+        self.assertEqual(gate.requirement_id_duplicates(cited), [])
+
+    def test_the_live_plan_document_has_no_duplicates(self):
+        path = os.path.join(REPO, "plan_docs", "01-plan",
+                            "sage-uninstall-windows-mutation.md")
+        if not os.path.exists(path):
+            self.skipTest("phase 문서는 .gitignore 대상이라 소비 환경에는 없다")
+        gate = _load_gate()
+        with open(path, encoding="utf-8") as fh:
+            self.assertEqual(gate.requirement_id_duplicates(fh.read()), [])
+
+
 class TestRootResolutionIsTheSameForBothCommands(unittest.TestCase):
     """root 미확정은 판정이 아니라 도구 오류다."""
 

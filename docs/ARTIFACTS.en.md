@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARTIFACTS.md sha256:626f2aec1d18045d6e4d22d59191f6defa5d2d6620cda7b193dc3bd16a6fc187 -->
+<!-- sage-doc-source: ARTIFACTS.md sha256:919a7e83aab21469f8ceb712f3372fe3325b625cf5eea79d4c6cfa3467eea69c -->
 # SAGE Artifact Map
 
 [한국어](ARTIFACTS.md) | [Documentation index](README.en.md)
@@ -233,3 +233,35 @@ These are the output side of the **spec -> generate -> validate -> block closed 
 themselves, at `docs/sage_harness/{hooks,agents,skills,mcps}/{id}.md`, are human-authored sources of
 truth rather than generated artifacts. See [ARCHITECTURE.en.md](ARCHITECTURE.en.md) for gate and
 trust-boundary details.
+
+---
+
+## 6. Removal — ownership is the classification
+
+`sage uninstall` sorts the artifacts above into four kinds. The criterion is **evidence that SAGE
+created it**, not whether the content matches the current bundle — a user could have written the
+same content by hand, and the impossibility of telling those apart is exactly why this command is
+careful (`sage/uninstall_plan.py:12`).
+
+| Kind | Condition | Typical targets |
+|---|---|---|
+| `DELETE` | One of three proofs — inside a SAGE-only namespace, recorded as placed by the manifest, or carrying a SAGE marker | `sage/`, `.sage/`, `docs/sage_harness/`, `scripts/sage_harness/`, manifest-recorded framework files |
+| `STRIP` | A shared file, so only the SAGE block is removed | `settings.json`, `hooks.json`, `.gitignore` |
+| `PRESERVE` | Ownership cannot be proven, or the copy was edited by the user | Drifted global skill copies, deployed files whose content differs from the bundle |
+| `BLOCK` | Cannot be read or judged, so it is left alone | Damaged settings, paths of unknown ownership |
+
+`PRESERVE` and `BLOCK` **never enter the write-target list** — the only paths the execution layer
+may open are `DELETE` and `STRIP` (`uninstall_plan.py:137`).
+
+**`.sage/` is deleted as a whole tree.** The four committed audit files (`override.jsonl`,
+`acceptance-waivers.jsonl`, `loop_audit.jsonl`, `fast_cycle.jsonl`) disappear from the working tree
+too; only Git history keeps them. If you need those records, commit them before removing.
+
+**One exception — the receipt outlives the residue.** If host settings remain that SAGE could not
+touch, `docs/sage_harness/` is preserved with `uninstall.receipt_retained_for_residual`. The
+manifest is the only evidence of what was installed, and deleting it while residue remains would
+leave the next run unable to prove why those files are there (`uninstall_plan.py:815`).
+
+The actual list varies by host, scope, project location, and `CODEX_HOME`, so the list printed by
+`sage uninstall --check` is authoritative. For the automatic-removal scope and the two refusal
+screens see the [CLI reference](cli-reference.en.md).

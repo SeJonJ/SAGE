@@ -28,7 +28,7 @@ AI 에이전트에게 "먼저 계획을 세우고, 위험한 파일은 조심히
 
 ## 빠른 시작
 
-요구사항은 Python 3.10+와 Git입니다. 설치 hook은 Windows에서도 bash 없이 동작합니다.
+요구사항은 Python 3.10+와 Git입니다.
 
 먼저 SAGE 자체를 설치합니다.
 
@@ -71,10 +71,45 @@ sage validate --kind all
 더 자세한 단계는 [퀵스타트](docs/quickstart.md), 설치 중 오류는 [문제 해결](docs/troubleshooting.md)을
 참조하세요.
 
-## Windows
+## SAGE 1.0의 주요 기능
 
-`sage-hook.exe`가 7개 설치 hook을 Python으로 실행하므로 hook 실행에는 Git Bash나 WSL이 필요하지
-않습니다.
+| 하고 싶은 일 | 명령 또는 기능 |
+|---|---|
+| 지금 프로젝트에서 SAGE를 쓸 수 있는지 확인 | `sage status` |
+| 특정 경로가 왜 차단되는지 확인 | `sage explain --path PATH` |
+| 리뷰·우회·유예 감사 기록 조회 | `sage audit show` |
+| 정의와 생성 자산의 무결성 검사 | `sage validate --kind all` |
+| 다른 SAGE 버전으로 안전하게 이동 | `sage upgrade --check` → `sage upgrade --apply` |
+| 설치한 프로젝트·전역 자산 제거 | `sage uninstall --check` → `sage uninstall --yes` |
+| 계획·구현·독립 리뷰·완료 증거 결속 | 표준 PDCA, Fast Cycle, Done Criteria |
+
+`status`, `explain`, `audit show`, `upgrade --check`, `uninstall --check`는 읽기 전용 진단입니다.
+자동화용 `--json`, 전체 옵션과 종료 코드는 [CLI 레퍼런스](docs/cli-reference.md)를 참조하세요.
+
+## 지원 환경
+
+SAGE의 일반 CLI와 설치 hook은 Python 3.10+에서 동작하며 Windows에서도 bash가 필요 없습니다. 다만
+표준 L2/L3 전달 흐름의 `scripts/verify-changes.sh`와 사용자 정의 `.sh` 테스트에는 Git Bash가 필요합니다.
+
+`sage uninstall`의 **자동 제거 지원 범위**는 더 좁습니다. 파일을 지우는 기능이므로 검증되지 않은
+환경에서는 추측해서 실행하지 않고 첫 변경 전에 멈춥니다.
+
+| 환경 | 일반 CLI·hook | `sage uninstall` |
+|---|:---:|---|
+| Linux | 지원 | 자동 제거 지원 |
+| macOS | 지원 | 자동 제거 지원 |
+| Windows 11 데스크톱 workstation, x64, 64-bit Python, 로컬 NTFS | 지원 | 자동 제거 지원 |
+| Windows 10 데스크톱 | 지원 | 자동 제거 후순위; 현재는 검증된 계획과 수동 정리 목록 제공 |
+| Windows Server·도메인 컨트롤러 | 정식 지원 범위 밖 (직접 검증하지 않음) | 자동 제거 미지원; 계획 기반 수동 목록 제공 |
+| 32-bit Python, native ARM64 Python, 비 NTFS·네트워크·UNC 경로 | 환경별 제한 | 자동 제거하지 않음; `--check`로 계획 확인 가능 |
+
+NTFS는 일반적인 Windows 로컬 디스크의 기본 파일 시스템입니다. **동작할 수 있다는 것과 정식으로
+지원한다는 것은 다릅니다** — 범위 밖 환경에서 일반 CLI가 도는 경우가 있어도 그 동작을 약속하지
+않고, 직접 검증하지도 않습니다. Windows 11 데스크톱의 자동 제거는 그 SKU에서 **실제로 실행해
+검증했습니다** — Windows Server 결과로 갈음하지 않았습니다. 두 종류의 거부 화면과 자세한 판정은
+[CLI 레퍼런스](docs/cli-reference.md)와 [문제 해결](docs/troubleshooting.md)에 있습니다.
+
+Windows 설치 예시입니다. `sage-hook.exe`가 hook을 실행하므로 Git Bash나 WSL은 필요 없습니다.
 
 ```powershell
 py -m pip install --user pipx
@@ -83,8 +118,35 @@ pipx install "sage-harness[schema]"
 sage doctor
 ```
 
-표준 L2/L3 전달 흐름의 `scripts/verify-changes.sh`와 사용자 정의 `.sh` 회귀 테스트에는 Git Bash가
-필요합니다. Windows에서 후자를 실행할 때는 `SAGE_BASH`로 인터프리터를 명시합니다.
+Windows에서 `.sh` 테스트를 실행할 때는 `SAGE_BASH`로 Git Bash 경로를 명시합니다.
+
+## 1.0으로 업그레이드
+
+0.9.x에서 1.0으로 이동할 때는 패키지를 먼저 올린 뒤 프로젝트 자산을 점검·적용합니다.
+
+```bash
+pipx upgrade sage-harness
+sage upgrade --check
+sage upgrade --apply
+sage status
+```
+
+`--check`는 계획만 보여 줍니다. `--apply`는 transaction이라 실패하면 되돌리고, 자동 downgrade는 없습니다.
+
+## 안전하게 제거
+
+먼저 실제 프로젝트별 계획을 확인한 뒤 제거합니다. 패키지 자체는 별도로 지웁니다.
+
+```bash
+sage uninstall --check
+sage uninstall --yes
+pipx uninstall sage-harness
+```
+
+자동 제거가 지원되지 않는 환경에서도 두 명령은 실제 경로를 `STRIP`(공유 파일에서 SAGE 부분만
+제거) · `DELETE` · `PRESERVE` · `BLOCK`으로 나눠 보여 줍니다. 대상은 host·scope·프로젝트 위치·
+`CODEX_HOME`에 따라 달라지므로 고정 목록을 여기 싣지 않습니다. 출력된 목록을 따르되 `PRESERVE`와
+`BLOCK`은 지우지 마세요 — 손 대는 법은 [문제 해결](docs/troubleshooting.md)에 있습니다.
 
 ## 어떻게 동작하는가
 
@@ -106,22 +168,13 @@ hook / agent / skill spec    <------------------>   .claude / .codex
 판단이 필요한 코드 작성과 리뷰는 AI가 담당하고, 무결성·단계·승인 경계는 SAGE가 코드로 검사합니다.
 더 자세한 신뢰 경계와 실패 정책은 [Architecture](docs/ARCHITECTURE.md)에 있습니다.
 
-## 더 알아보기
+## 개발 절차
 
-SAGE에는 이 외에도 알아두면 좋은 것들이 있습니다. 처음부터 다 알 필요는 없으니, 실제로 써보면서
-필요할 때 아래 문서에서 찾아보세요.
-
-- **PDCA 절차** — 계획 → 구현 → 리뷰 → 완료보고로 이어지는 개발 사이클.
-- **완료 기준(Done Criteria)** — 무엇이 끝나야 "완료"인지 계획 단계에 미리 적어두고, 구현·검증
-  증거가 생길 때마다 상태를 갱신합니다. 기준이 바뀌면 영향받는 단계와 리뷰를 다시 수행하므로,
-  오래된 승인으로 완료를 보고하는 일을 막습니다.
-- **profile** — 팀이 공유하는 정책과 내 컴퓨터에만 해당하는 설정을 나눠서 관리합니다.
-- **Fast Cycle** — 급한 작업을 위해 문서 수를 줄인 축약 절차(명시적으로 켠 경우에만 동작).
-  이미 시작한 표준 사이클도 명시적 확인을 거쳐 이 절차로 전환할 수 있습니다. 전환은 기존 문서를
-  고치지 않고, 어떻게 전환했는지는 감사 기록에 남습니다.
-- **조기 완료 승인** — 리뷰 루프가 수렴하기 전에 남은 위험을 사용자가 명시적으로 인수하고 닫는
-  경로(명시적으로 켠 경우에만 동작). 무엇이 남은 채로 닫혔는지가 승인 문서와 감사에 함께 남아,
-  나중에 읽는 사람이 일반 승인과 구분할 수 있습니다.
+- **PDCA** — 계획 → 구현 → 독립 리뷰 → 완료보고를 결속합니다.
+- **완료 기준(Done Criteria)** — 요구별 증거를 추적하고, 기준이 바뀌면 영향받은 단계를 다시 검증합니다.
+- **profile** — 팀 공유 정책과 개인 환경 설정을 분리합니다.
+- **Fast Cycle** — 명시적으로 켠 경우 문서 수를 줄이되 전환 과정을 감사 기록에 남깁니다.
+- **조기 완료 승인** — 사용자가 남은 위험을 명시적으로 인수했을 때만 일반 승인과 구분해 기록합니다.
 
 ## 문서
 

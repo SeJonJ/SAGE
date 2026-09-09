@@ -225,11 +225,27 @@ class TestPlatformSmokeContract(unittest.TestCase):
         registered = {check.__name__ for check in module.CHECKS}
         self.assertEqual(defined, registered, f"등록 안 된 검사: {sorted(defined - registered)}")
 
-    def test_the_ci_workflow_runs_it_on_three_operating_systems(self):
-        workflow = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-        self.assertIn("platform_smoke.py", workflow)
-        for runner in ("ubuntu-latest", "macos-latest", "windows-latest"):
-            self.assertIn(runner, workflow)
+    def test_the_ci_workflow_runs_it_on_every_supported_platform(self):
+        """POSIX 둘은 hosted matrix, Windows 는 self-hosted 전용 job 이다.
+
+        Windows 를 hosted matrix 에서 뺀 것은 축소가 아니라 **증거의 종류를 바로잡은 것**이다.
+        GitHub-hosted Windows 는 Server 2025 이고 server SKU 는 지원 범위 밖이라, 거기서 나온
+        초록은 데스크톱 증거가 될 수 없는데 로그에서는 같은 초록으로 보인다. 그래서 세는 것은
+        러너 이름이 아니라 **platform smoke 가 실제로 실행되는 자리**다.
+        """
+        workflow = _ci_workflow()
+        ran_on = set()
+        for job in workflow["jobs"].values():
+            for step in job.get("steps", []):
+                if "platform_smoke.py" in (step.get("run") or ""):
+                    runs_on = job["runs-on"]
+                    if isinstance(runs_on, list):
+                        ran_on.add("self-hosted-windows-11")
+                    else:
+                        ran_on.update(job.get("strategy", {}).get("matrix", {}).get("os")
+                                      or [runs_on])
+        self.assertEqual(ran_on, {"ubuntu-latest", "macos-latest", "self-hosted-windows-11"},
+                         f"platform smoke 가 도는 자리: {sorted(ran_on)}")
 
     def test_the_publish_workflow_blocks_on_preflight(self):
         """릴리스 당일에만 도는 검사는 릴리스 당일에 처음 실패한다 — CI 에도 같은 것이 있어야 한다."""
@@ -264,6 +280,437 @@ class TestPlatformSmokeContract(unittest.TestCase):
         self.assertIn("fetch-depth: 0", release_job)
         publish = (REPO / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
         self.assertIn("fetch-depth: 0", publish)
+
+
+def _ci_workflow():
+    import yaml
+    return yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"))
+
+
+def _workflow_triggers(workflow):
+    """`on:` 은 YAML 에서 **불리언 True 로 파싱된다.** 문자열 키로 찾으면 언제나 빈손이다."""
+    return workflow.get("on", workflow.get(True))
+
+
+# GitHub `if:` 식의 **좁은 부분집합**을 실제로 계산한다.
+#
+# 왜 문자열 포함 검사로 끝내지 않는가: 조건이 어긋나는 방식은 대개 문자열이 없어지는 것이
+# 아니라 **뜻이 바뀌는 것**이다(`&&` 가 `||` 가 되거나, 비교 대상이 base 로 바뀌거나).
+# 포함 검사는 그 전부를 통과시킨다. 그래서 fork PR·라벨 없음·push 를 실제 event 로 넣어
+# 계산한다.
+#
+# 모르는 토큰은 **해석하지 않고 던진다.** 조건이 이 문법 밖으로 나가는 날 검사가 조용히
+# 통과하면, 그때부터 이 검사는 아무것도 지키지 않으면서 지키는 것처럼 보인다.
+_LITERAL = re.compile(r"^'([^']*)'$")
+_CONTAINS = re.compile(r"^contains\(\s*([A-Za-z0-9_.*]+)\s*,\s*('[^']*')\s*\)$")
+
+
+class UnsupportedCondition(Exception):
+    """이 평가기가 모르는 문법. 통과가 아니라 실패로 떨어뜨리기 위한 것."""
+
+
+def _lookup(path, context):
+    value = context
+    for part in path.split("."):
+        if part == "*":
+            return [item for item in value]
+        # **null 속성은 오류가 아니다.** GitHub 에서 `github.event.label` 은 라벨과 무관한
+        # 이벤트에서 null 이고, `null.name` 은 다시 null 이다(비교는 거짓이 된다). 그것을
+        # 오류로 다루면 `synchronize` 반례가 "문법을 모른다" 로 떨어져, 실제로 무엇이 막는지를
+        # 확인하지 못한 채 통과한다.
+        if value is None:
+            return None
+        if not isinstance(value, dict) or part not in value:
+            raise UnsupportedCondition(f"unknown context path: {path}")
+        value = value[part]
+    return value
+
+
+def _operand(token, context):
+    literal = _LITERAL.match(token)
+    if literal:
+        return literal.group(1)
+    return _lookup(token, context)
+
+
+def evaluate_condition(expression, context):
+    terms = [term.strip() for term in re.split(r"&&", " ".join(expression.split()))]
+    if any("||" in term for term in terms):
+        raise UnsupportedCondition("this evaluator does not implement ||")
+    for term in terms:
+        found = _CONTAINS.match(term)
+        if found:
+            path, needle = found.groups()
+            head, _, field = path.partition(".*.")
+            haystack = _lookup(head, context)
+            values = [item.get(field) for item in haystack] if field else haystack
+            if _operand(needle, context) not in values:
+                return False
+            continue
+        left, op, right = term.partition("==")
+        if op != "==":
+            raise UnsupportedCondition(f"unsupported term: {term}")
+        if _operand(left.strip(), context) != _operand(right.strip(), context):
+            return False
+    return True
+
+
+def _pull_request_event(*, repo="SeJonJ/SAGE", labels=(), event_name="pull_request",
+                        action="labeled", label="run-win11-uninstall"):
+    """GitHub 이 실제로 싣는 모양으로 만든다.
+
+    `label` 은 **그 이벤트가 나른 라벨**이다 — `labeled`·`unlabeled` 에서만 값이 있고 나머지
+    에서는 null 이다. `labels` 는 그 순간 PR 에 붙어 있는 라벨 전부다. 둘을 구별하지 않으면
+    "지금 승인했다" 와 "전에 승인한 적이 있다" 가 같은 값이 되고, 이 job 의 계약은 정확히 그
+    구별 위에 서 있다.
+    """
+    return {
+        "github": None,
+        "event_name": event_name,
+        "repository": "SeJonJ/SAGE",
+        "event": {
+            "action": action,
+            "label": {"name": label} if label else None,
+            "pull_request": {"head": {"repo": {"full_name": repo}},
+                             "labels": [{"name": name} for name in labels]},
+        },
+    }
+
+
+APPROVAL_LABEL = "run-win11-uninstall"
+
+
+def evidence_contract_problems(script):
+    """증거 단계가 **실제로 대조하고 실패하는가**. 문제 목록을 돌려준다.
+
+    문자열 존재만 보면 세 값을 찍기만 하고 넘어가는 단계도 통과한다 — 그 단계는 어긋난
+    트리에서 증거를 만들었다고 말하면서 초록으로 끝난다. 그래서 보는 것은 셋이다: 실제
+    트리를 읽었는가, 승인된 head 와 대조했는가, 어긋나면 실패하는가.
+
+    `pwsh` 로 실행해 확인하지 않는 이유는, 그 인터프리터가 없는 머신에서 이 검사가 조용히
+    건너뛰기 때문이다. 건너뛴 검사는 통과로 세어지고, 그것이 이 저장소가 반복해서 겪은
+    실패 방식이다. 그래서 스크립트를 구조로 읽는다 — 그리고 이 읽기 자체가 무언가를
+    지키는지는 mutation 으로 따로 확인한다.
+    """
+    problems = []
+    lines = [line.strip() for line in script.splitlines() if line.strip()]
+
+    def assigned_from(needle):
+        for line in lines:
+            if "=" in line and needle in line.split("=", 1)[1]:
+                name = line.split("=", 1)[0].strip()
+                if name.startswith("$"):
+                    return name
+        return None
+
+    checked_out = assigned_from("git rev-parse HEAD")
+    approved = assigned_from("github.event.pull_request.head.sha")
+    if checked_out is None:
+        problems.append("the checked-out commit is never read (git rev-parse HEAD)")
+    if approved is None:
+        problems.append("the approved head.sha is never captured")
+    if checked_out and approved:
+        guard = [line for line in lines
+                 if line.startswith("if") and checked_out in line and approved in line]
+        if not guard:
+            problems.append("the two commits are never compared")
+        elif not any("-ne" in line for line in guard):
+            problems.append("the comparison does not fail on a mismatch")
+        else:
+            # 대조만 하고 넘어가면 어긋난 트리에서도 초록이다. 실패로 끝나야 한다.
+            body = script.split(guard[0], 1)[1].split("}", 1)[0]
+            if "throw" not in body and "exit 1" not in body:
+                problems.append("a mismatch does not end the step non-zero")
+    # `GITHUB_SHA` 는 merge 커밋일 수 있으므로 **일치를 요구하면 안 된다.**
+    for line in lines:
+        if line.startswith("if") and "GITHUB_SHA" in line and approved and approved in line:
+            problems.append("GITHUB_SHA is required to equal head.sha, which is not true "
+                            "for a pull_request event")
+    return problems
+
+class TestTheWindowsEvidenceJobIsFencedIn(unittest.TestCase):
+    """self-hosted 러너는 **남의 코드를 내 머신에서 실행한다.**
+
+    fork PR 이 여기 닿으면 그 PR 의 workflow 가 러너를 그대로 가져간다. 그리고 승인이 지속
+    상태이면, 한 번 승인한 뒤 밀어 넣은 **검토하지 않은 커밋**이 자동으로 실행된다. 둘 다
+    검사 하나가 빠지는 것과는 다른 종류의 사고다.
+    """
+
+    def setUp(self):
+        self.workflow = _ci_workflow()
+        self.job = self.workflow["jobs"]["windows11_uninstall"]
+        # 평가기가 계산한 값이 아니라 **워크플로에 적힌 식**을 그대로 쓴다.
+        self.condition = self.job["if"]
+
+    def decide(self, condition=None, **event):
+        return evaluate_condition(condition or self.condition,
+                                  {"github": _pull_request_event(**event)})
+
+    # ---- 문법 자체 ----
+
+    def test_the_condition_is_written_in_the_grammar_this_test_can_check(self):
+        """평가기가 모르는 문법으로 바뀌면 **통과가 아니라 실패**여야 한다."""
+        with self.assertRaises(UnsupportedCondition):
+            evaluate_condition("github.actor == 'x' || true", {"github": {"actor": "x"}})
+
+    def test_the_condition_names_the_same_repository_comparison_explicitly(self):
+        self.assertIn("github.event.pull_request.head.repo.full_name == github.repository",
+                      " ".join(self.condition.split()))
+
+    # ---- 필수 회귀 1~5 ----
+
+    def test_only_a_labeled_event_with_this_label_runs(self):
+        """1. 같은 저장소 PR 의 `run-win11-uninstall` **labeled 이벤트만** 실행."""
+        self.assertTrue(self.decide(action="labeled", label=APPROVAL_LABEL))
+
+    def test_a_new_commit_does_not_reuse_a_standing_label(self):
+        """2. **이 rework 의 핵심.** 라벨이 남아 있어도 `synchronize` 는 실행하지 않는다.
+
+        지속 상태로 보면 한 번의 승인이 이후 커밋 전부에 적용된다 — 검토한 커밋에 라벨을 붙여
+        돌린 뒤 새 커밋을 밀면, 검토하지 않은 코드가 자기 머신에서 자동 실행된다. 그것은
+        승인이 아니라 승인의 재사용이다.
+        """
+        self.assertFalse(self.decide(action="synchronize", label=None,
+                                     labels=(APPROVAL_LABEL,)))
+
+    def test_opening_or_reopening_a_labelled_pull_request_does_not_run(self):
+        """3. `opened`·`reopened` 만으로는 실행하지 않는다 — 라벨이 이미 붙어 있어도."""
+        for action in ("opened", "reopened"):
+            with self.subTest(action=action):
+                self.assertFalse(self.decide(action=action, label=None,
+                                             labels=(APPROVAL_LABEL,)))
+
+    def test_a_fork_pull_request_never_runs_even_when_labelled(self):
+        """4. fork PR 은 라벨을 붙여도 실행하지 않는다. 라벨은 fork 쪽에서도 붙을 수 있다."""
+        self.assertFalse(self.decide(repo="someone-else/SAGE",
+                                     action="labeled", label=APPROVAL_LABEL))
+
+    def test_removing_and_reattaching_the_label_runs_the_current_commit(self):
+        """5. 라벨을 떼었다가 **현재 커밋에** 다시 붙이면 실행된다.
+
+        떼는 사건(`unlabeled`)은 실행하지 않는다 — 그렇지 않으면 승인을 취소하는 행위가
+        실행을 부른다.
+        """
+        self.assertFalse(self.decide(action="unlabeled", label=APPROVAL_LABEL))
+        self.assertTrue(self.decide(action="labeled", label=APPROVAL_LABEL))
+
+    def test_a_different_label_on_an_already_labelled_pull_request_does_not_run(self):
+        """다른 라벨을 하나 더 붙이는 것으로 열리면, 승인은 다시 지속 상태가 된다."""
+        self.assertFalse(self.decide(action="labeled", label="documentation",
+                                     labels=(APPROVAL_LABEL, "documentation")))
+
+    def test_a_push_to_main_does_not_run(self):
+        """push 마다 열리면 이 머신은 실제 제거를 상시로 도는 자리가 된다."""
+        self.assertFalse(self.decide(event_name="push", action="labeled",
+                                     label=APPROVAL_LABEL))
+
+    # ---- 필수 회귀 6~8: mutation ----
+    #
+    # 반례가 통과하는 것만으로는 그 반례가 무언가를 지킨다는 증거가 되지 않는다. 지키는 문장을
+    # 하나씩 지우고, 지운 쪽이 **실제로 열리는지** 본다.
+
+    def test_dropping_the_action_check_opens_the_unlabelled_event(self):
+        """6. `event.action` 검사를 지우면 **라벨을 떼는 행위가 실행을 부른다.**
+
+        `unlabeled` 이벤트도 `github.event.label` 에 그 라벨을 싣기 때문이다. 지금은
+        `types` 에 `unlabeled` 가 없어 run 이 만들어지지 않지만, 방어를 trigger 목록 하나에만
+        걸어 두면 그 목록이 늘어나는 날 조용히 열린다.
+        """
+        mutated = " ".join(self.condition.split()).replace(
+            "github.event.action == 'labeled' && ", "")
+        self.assertNotEqual(mutated, " ".join(self.condition.split()),
+                            "지울 문장을 찾지 못했다 — 검사가 낡았다")
+        self.assertTrue(evaluate_condition(
+            mutated, {"github": _pull_request_event(action="unlabeled",
+                                                    label=APPROVAL_LABEL)}),
+            "관문을 지웠는데도 막힌다 — 이 대비가 성립하지 않는다")
+        self.assertFalse(self.decide(action="unlabeled", label=APPROVAL_LABEL))
+        types = _workflow_triggers(self.workflow)["pull_request"]["types"]
+        self.assertNotIn("unlabeled", types, "두 번째 방어선도 열려 있다")
+
+    def test_reverting_to_a_standing_label_check_reopens_the_reuse_hole(self):
+        """7. `event.label.name` 을 `contains(labels)` 로 되돌리면 **지적된 구멍이 그대로 난다.**"""
+        mutated = (" ".join(self.condition.split())
+                   .replace("github.event.action == 'labeled' && ", "")
+                   .replace(f"github.event.label.name == '{APPROVAL_LABEL}'",
+                            f"contains(github.event.pull_request.labels.*.name, "
+                            f"'{APPROVAL_LABEL}')"))
+        self.assertIn("contains(", mutated, "되돌릴 문장을 찾지 못했다 — 검사가 낡았다")
+        standing = {"github": _pull_request_event(action="synchronize", label=None,
+                                                  labels=(APPROVAL_LABEL,))}
+        self.assertTrue(evaluate_condition(mutated, standing),
+                        "되돌렸는데도 막힌다 — 이 대비가 성립하지 않는다")
+        self.assertFalse(evaluate_condition(self.condition, standing))
+
+    def test_dropping_the_same_repository_check_opens_fork_pull_requests(self):
+        """8. 저장소 대조를 지우면 fork PR 이 자기 머신에서 돈다."""
+        one_line = " ".join(self.condition.split())
+        mutated = one_line.replace(
+            " && github.event.pull_request.head.repo.full_name == github.repository", "")
+        self.assertNotEqual(mutated, one_line, "지울 문장을 찾지 못했다 — 검사가 낡았다")
+        fork = {"github": _pull_request_event(repo="someone-else/SAGE",
+                                              action="labeled", label=APPROVAL_LABEL)}
+        self.assertTrue(evaluate_condition(mutated, fork),
+                        "관문을 지웠는데도 막힌다 — 이 대비가 성립하지 않는다")
+        self.assertFalse(evaluate_condition(self.condition, fork))
+
+    # ---- trigger·권한·증거 ----
+
+    def test_labelling_a_pull_request_starts_the_workflow(self):
+        """`labeled` 가 없으면 라벨을 붙여도 run 이 생기지 않는다 — 조건만 참인 채 아무 일도
+        일어나지 않고, 사용자는 빈 커밋을 밀어야 한다."""
+        triggers = _workflow_triggers(self.workflow)
+        types = triggers["pull_request"]["types"]
+        for kind in ("opened", "synchronize", "reopened", "labeled"):
+            self.assertIn(kind, types, f"pull_request types 에 {kind} 가 없다")
+
+    def test_the_job_holds_no_write_permission(self):
+        """self-hosted 러너에서 쓰기 토큰을 들고 도는 것은, 실행되는 코드가 러너 머신뿐 아니라
+        저장소까지 건드릴 수 있다는 뜻이다."""
+        self.assertEqual(self.job.get("permissions"), {"contents": "read"})
+
+    def test_the_checkout_pins_the_approved_commit_and_drops_credentials(self):
+        """승인한 커밋을 그대로 받아야 증거가 어느 트리에서 나왔는지 말할 수 있다."""
+        checkout = next(step for step in self.job["steps"]
+                        if str(step.get("uses", "")).startswith("actions/checkout"))
+        options = checkout.get("with") or {}
+        self.assertEqual(options.get("ref"),
+                         "${{ github.event.pull_request.head.sha }}",
+                         "기본 checkout 은 base 와 합친 merge 커밋이다")
+        self.assertIs(options.get("persist-credentials"), False)
+
+    def evidence_step(self):
+        return next(step for step in self.job["steps"]
+                    if "Evidence commit" in (step.get("name") or ""))
+
+    def test_the_evidence_step_fails_when_the_tree_is_not_the_approved_commit(self):
+        """A7·A19 는 **어느 커밋에서 돌았는가** 가 곧 증거의 내용이다.
+
+        세 값을 찍기만 하고 넘어가면, 어긋난 트리에서 만든 로그가 증거라고 말하면서 초록으로
+        끝난다. 대조하고 실패해야 그 로그가 자기가 무엇을 검증했는지 말할 수 있다.
+        """
+        step = self.evidence_step()
+        self.assertEqual(step.get("shell"), "pwsh")
+        self.assertEqual(evidence_contract_problems(step["run"]), [])
+
+    def test_the_evidence_step_does_not_require_github_sha_to_match(self):
+        """`pull_request` 에서 `GITHUB_SHA` 는 **merge 커밋**일 수 있다.
+
+        이 job 은 승인한 `head.sha` 를 일부러 checkout 하므로 두 값은 정상적으로 다르다.
+        일치를 요구하면 정상 실행이 붉어지고, 로그를 읽는 사람은 정상 차이를 결함으로 읽는다.
+        """
+        run = self.evidence_step()["run"]
+        self.assertIn("GITHUB_SHA", run, "참고값조차 남기지 않으면 되짚을 실마리가 없다")
+        guards = [line.strip() for line in run.splitlines()
+                  if line.strip().startswith("if")]
+        for line in guards:
+            self.assertNotIn("GITHUB_SHA", line,
+                             "정상적으로 다를 수 있는 두 값의 일치를 요구한다")
+
+    def test_the_evidence_contract_check_actually_catches_a_broken_step(self):
+        """**mutation.** 검사기가 무엇을 지키는지 확인한다 — 구조로 읽는 검사일수록 필요하다."""
+        intact = self.evidence_step()["run"]
+        self.assertEqual(evidence_contract_problems(intact), [])
+        mutations = {
+            "대조 제거": lambda t: "\n".join(
+                line for line in t.splitlines()
+                if not line.strip().startswith("if") and "throw" not in line
+                and not line.strip() == "}"),
+            "실패 제거": lambda t: t.replace("throw ", "echo "),
+            "비교 뒤집기": lambda t: t.replace("-ne", "-eq"),
+            "트리를 읽지 않음": lambda t: t.replace("git rev-parse HEAD", '"unknown"'),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(mutation=label):
+                broken = mutate(intact)
+                self.assertNotEqual(broken, intact, f"{label}: 바꿀 자리를 찾지 못했다")
+                self.assertTrue(evidence_contract_problems(broken),
+                                f"{label}: 부순 단계를 통과시킨다")
+
+    # ---- 러너·단계 ----
+
+    def test_the_runner_is_pinned_to_the_supported_environment(self):
+        self.assertEqual(self.job["runs-on"],
+                         ["self-hosted", "windows", "x64", "win11", "sage-uninstall"])
+
+    def test_the_fail_closed_gate_runs_before_every_other_script(self):
+        """게이트는 **맨 앞**이어야 한다 — 제거 검사보다 앞이면 충분하지 않다.
+
+        진단 단계들은 "보고만 한다" 고 적혀 있지만 실제로는 native 호출을 하고, capability
+        report 의 `real_run()` 은 실제 install·uninstall 까지 돈다. 게이트를 그 뒤에 두면
+        잘못 배정된 러너에서 **막으려던 mutation 이 진단을 찍는 과정에서 그대로 일어난다.**
+        """
+        runs = [step.get("run") or "" for step in self.job["steps"]]
+        gate = next(i for i, run in enumerate(runs) if "--require-product-support" in run)
+        for i, run in enumerate(runs):
+            if "scripts/ci/" in run and i != gate:
+                self.assertGreater(i, gate,
+                                   f"게이트보다 먼저 도는 검사 스크립트가 있다: {run.strip()}")
+
+    def test_every_required_windows_check_runs_in_this_job(self):
+        runs = " ".join(step.get("run") or "" for step in self.job["steps"])
+        for script in ("windows_rename_probe.py", "windows_capability_report.py",
+                       "platform_smoke.py", "uninstall_smoke.py",
+                       "uninstall_race_smoke.py", "uninstall_core_checks.py"):
+            self.assertIn(script, runs)
+
+    def test_the_uninstall_checks_run_on_three_pythons_and_platform_smoke_on_one(self):
+        versions = self.job["strategy"]["matrix"]["python-version"]
+        self.assertEqual(versions, ["3.10", "3.11", "3.12"])
+        smoke = next(step for step in self.job["steps"]
+                     if "platform_smoke.py" in (step.get("run") or ""))
+        self.assertEqual(smoke.get("if"), "matrix.python-version == '3.12'")
+        for step in self.job["steps"]:
+            if "uninstall_" in (step.get("run") or ""):
+                self.assertIsNone(step.get("if"),
+                                  f"uninstall 검사가 Python 하나로 좁혀졌다: {step.get('name')}")
+
+    def test_the_strict_mode_is_actually_set_on_the_removal_evidence(self):
+        """엄격 모드가 없으면 정책이 막는 러너에서도 이 job 이 초록으로 끝난다."""
+        for step in self.job["steps"]:
+            run = step.get("run") or ""
+            if "uninstall_smoke.py" in run or "uninstall_core_checks.py" in run:
+                self.assertEqual(step.get("env", {})
+                                 .get("SAGE_UNINSTALL_REQUIRE_PRODUCT_SUPPORT"), "1",
+                                 f"{step.get('name')} 에 엄격 모드가 없다")
+
+    def test_the_workflow_does_not_grep_stdout_to_decide(self):
+        """어긋난 grep 은 **항상 통과**한다 — 없는 문자열을 못 찾은 것과 문제가 없는 것이
+        같은 결과로 떨어지기 때문이다. 판정은 스크립트가 자기 실행 결과로 내린다."""
+        for step in self.job["steps"]:
+            run = step.get("run") or ""
+            for banned in ("grep", "Select-String", "findstr"):
+                self.assertNotIn(banned, run, f"{step.get('name')} 이 출력 문자열로 판정한다")
+
+
+class TestTheHostedMatricesKeepTheirPosixCoverage(unittest.TestCase):
+    """Windows 를 옮기면서 **기존 두 OS 를 같이 잃는** 것이 가장 흔한 사고다."""
+
+    def setUp(self):
+        self.jobs = _ci_workflow()["jobs"]
+
+    def test_the_platform_matrix_still_covers_ubuntu_and_macos(self):
+        matrix = self.jobs["platform"]["strategy"]["matrix"]
+        self.assertEqual(matrix["os"], ["ubuntu-latest", "macos-latest"])
+
+    def test_the_uninstall_matrix_still_covers_ubuntu_and_macos_on_three_pythons(self):
+        matrix = self.jobs["uninstall_matrix"]["strategy"]["matrix"]
+        self.assertEqual(matrix["os"], ["ubuntu-latest", "macos-latest"])
+        self.assertEqual(matrix["python-version"], ["3.10", "3.11", "3.12"])
+
+    def test_the_hosted_matrices_no_longer_claim_windows_evidence(self):
+        """server SKU 러너의 초록을 데스크톱 증거로 읽는 자리를 아예 없앤다."""
+        for name in ("platform", "uninstall_matrix"):
+            matrix = self.jobs[name]["strategy"]["matrix"]
+            self.assertNotIn("windows-latest", matrix["os"])
+
+    def test_the_hook_regression_and_release_jobs_are_untouched(self):
+        self.assertEqual(self.jobs["test"]["runs-on"], "ubuntu-latest")
+        self.assertEqual(self.jobs["test"]["strategy"]["matrix"]["python-version"],
+                         ["3.10", "3.11", "3.12"])
+        self.assertEqual(self.jobs["release_evidence"]["runs-on"], "ubuntu-latest")
+        self.assertEqual(self.jobs["packaging"]["runs-on"], "ubuntu-latest")
 
 
 class TestTheEngineIsNotStaleAgainstItself(unittest.TestCase):

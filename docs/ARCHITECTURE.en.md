@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARCHITECTURE.md sha256:9fd2fe9bb2c900c713844e26e8cea31dbc3243e58dbcc6b34409009d8bf40c05 -->
+<!-- sage-doc-source: ARCHITECTURE.md sha256:1429e34b68e7b3dfdac2c6c6f2c7e5beb75db79926f8a50847f51e0e6325f1e6 -->
 # SAGE Architecture
 
 [한국어](ARCHITECTURE.md) | [Documentation index](README.en.md)
@@ -58,11 +58,58 @@ In Claude Code the events whose exit-0 plain stdout is promoted to context are
 log only. Message text is owned solely by `runtime/messages.py`; `io_claude` and `io_codex` decide
 only the channel.
 
+## OS boundary and the two judgement axes (`sage uninstall`)
+
+This is the one command that errs in an irreversible direction, so it gets its own boundary. The
+principle is unchanged — **one place decides, and each layer speaks only to what it knows.**
+
+| Layer | Role | Location |
+|---|---|---|
+| Plan and execution order | Step order, rollback, verification. **No OS branching** | `sage/uninstall_executor.py`, `uninstall_plan.py` |
+| Backend seam | Protocol and backend selection. Decides nothing about which assets to handle | `sage/uninstall_fs.py` |
+| POSIX backend | `dir_fd` binding | `sage/uninstall_posix_fs.py` |
+| Windows backend | `NtCreateFile` with `OBJECT_ATTRIBUTES.RootDirectory` handle binding. **Only this file knows Windows** | `sage/uninstall_windows_fs.py` |
+
+Safety comes from opening and **holding the target's parent directory** before the first change.
+After that, whatever happens to the ancestor path names, the work still lands in the original
+directory. What POSIX gets from `dir_fd`, Windows gets from the parent handle. There is no
+path-string write fallback, and a source check asserts its absence.
+
+### Support policy and capability are different questions
+
+Folding them into one value makes "did we say we support this environment" indistinguishable from
+"can this be done safely here". Then narrowing the documented scope also means losing backend
+regression coverage, and the narrower the scope the less you know.
+
+| Axis | What it looks at | Where it is enforced | Screen |
+|---|---|---|---|
+| **Policy** (`support_policy`) | SKU and build only | One place in the CLI, after planning and before the confirmation prompt | `BLOCKED` (2) on both `--check` and `--yes` |
+| **Capability** (`probe_capability`) | Volume, filesystem, native primitives, pointer width, architecture | The execution layer | `--check` shows the plan; only a mutation request is refused |
+
+**The policy asserts nothing about capability in either direction.** All it knows there is the SKU
+and the build, so "the primitives are missing" and "the primitives are present" are both claims it
+never measured. The one fact a policy refusal can state is this: the environment is outside the
+support scope, and capability was not evaluated at this stage.
+
+The screens differ because what the user should do next differs. A policy refusal means automatic
+removal will never happen here, so a plain plan would read as something about to run. A capability
+limit can become true by switching volumes or choosing a different root, so blocking the plan too
+would present something fixable as unfixable.
+
+Authority for the architecture and pointer-width judgement lives in **one place in the product**
+(`native_floor`). If CI carried its own table, the environment the product executes in and the
+environment CI produces evidence from could diverge, with no place left to ask which one is right.
+The CI gate only consumes that result.
+
 ## Trust boundary: what SAGE blocks and does not block
 
 **SAGE blocks**
 
 - Drift: `sage validate` detects mismatches between specs and generated assets.
+- Destructive execution in an unverified environment: `sage uninstall` asks both axes — support
+  policy and capability — **before the first mutation**, and refuses when either is unconfirmed.
+  What could not be determined counts as a refusal, not a pass: treating absence as the safe
+  direction is exactly how an unverified environment ends up running silently.
 - Direct edits: the write guard blocks edits to generated assets and redirects changes to specs.
 - Single-model bias: cross-model review uses the opposite runtime for independent review.
 - Silent gate disablement: `sage validate` fails closed on profile typos and unknown keys that could

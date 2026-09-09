@@ -320,6 +320,64 @@ SAGE 가 내는 모든 사용자 노출 차단에는 최소 한 줄의 `Next:` �
 직접 만든 project hook 이 낸 메시지에는 SAGE 가 복구 명령을 추측해 붙이지 않으며, 대신
 `Next: sage status` 만 보장한다.
 
+## `sage uninstall`이 자동 제거를 하지 않고 목록만 보여 줌
+
+지원 범위 밖입니다. **화면은 두 종류이고 뜻이 다릅니다.**
+
+| 진단 code | 뜻 | `--check` | `--yes` |
+|---|---|---|---|
+| `uninstall.windows_10_manual_only` | Windows 10 데스크톱 — 자동 제거 후순위 | `BLOCKED`(2) | `BLOCKED`(2) |
+| `uninstall.windows_sku_not_supported` | Windows Server·도메인 컨트롤러 | `BLOCKED`(2) | `BLOCKED`(2) |
+| `uninstall.unsafe_platform` | 32-bit Python · native ARM64 · 비 NTFS · 네트워크/UNC | 계획의 상태 그대로 | `BLOCKED`(2) |
+
+앞의 둘은 **지원 정책**이 SKU와 build만 보고 내리는 판정이라 계획 단계에서 결론이 납니다. 그래서
+`--check`도 `BLOCKED`입니다 — 자동 제거가 이 환경에서 결코 일어나지 않는데 계획만 보여 주면 곧
+실행될 것처럼 읽히기 때문입니다. 이 판정은 볼륨이나 native 기능을 **재지 않으므로**, 이 환경이
+기술적으로 가능한지 여부는 말하지 않습니다.
+
+마지막 하나는 **capability**를 실제로 잰 결과입니다. 볼륨을 바꾸거나 다른 root를 고르면 참이 될 수
+있는 조건이라 계획은 그대로 보여 주고, 거부는 실제 mutation 요청에만 걸립니다.
+
+이때 `--check`는 **capability를 재지 않습니다.** 계획을 세워 그 상태를 그대로 낼 뿐이라, 종료 코드는
+계획이 어떻게 나왔는지에 달려 있습니다 — 대개 `COMPLETE`(0)이나 `PARTIAL`(1)이지만, manifest 손상처럼
+**계획 자체가 막히는 사유**가 있으면 `--check`도 `BLOCKED`(2)입니다(예: `uninstall.plan_failed`).
+`unsafe_platform`은 그 경우의 사유가 아닙니다.
+
+어느 쪽이든 **파일은 하나도 바뀌지 않습니다.** 화면이 주는 네 목록을 그대로 따르면 자동 제거와
+같은 결과가 됩니다.
+
+```bash
+sage uninstall --check --json
+```
+
+`STRIP`은 공유 파일에서 SAGE 등록만 빼라는 뜻입니다 — 파일 전체를 지우면 host 설정을 잃습니다.
+`DELETE`는 통째로 지워도 되는 항목입니다. `PRESERVE`와 `BLOCK`은 **지우지 마세요**: 소유권이
+불명하거나 손상된 항목이라 SAGE가 판단을 보류한 자리입니다. 처리 순서는 `STRIP` → `DELETE`이고
+`manual_cleanup.order`에 같은 값이 실려 나옵니다.
+
+## `sage uninstall`이 `PARTIAL`(1)로 끝나고 같은 목록을 다시 냄
+
+정상입니다. `COMPLETE`(0)은 **지울 것도 보존 잔재도 없는 완전히 깨끗한 상태**에서만 나옵니다.
+
+손으로 정리한 뒤 손상된 host 설정 같은 보존 항목만 남아 있으면 그다음 실행은 `PARTIAL`(1)이고
+남은 경로와 사유를 다시 보고합니다. 남은 것이 있는데 0으로 끝나면 그 사실이 화면에서 사라지므로
+그렇게 하지 않습니다. 그 실행도 아무것도 바꾸지 않고 보관소를 만들지 않습니다.
+
+## `sage uninstall`이 확인 prompt 뒤에 `BLOCKED`(2)로 멈춤
+
+계획을 보여 준 시점과 지금의 디스크가 다릅니다. 기준선은 **계획을 화면에 낸 순간**의 상태이고,
+prompt가 열려 있는 동안 대상 파일을 고치면 합의한 상태와 실제가 어긋납니다. 디렉터리는 그 안의
+파일까지 비교합니다.
+
+다시 `sage uninstall --check`로 현재 계획을 확인한 뒤 실행하세요. 다른 SAGE 명령이 같은 위치에서
+작업 중이어도 막힙니다 — `install`·`generate`와 **같은 lock**을 쓰므로 한쪽이 파일을 놓는 동안
+다른 쪽이 지우는 일이 없습니다. lock은 프로세스가 끝나면 풀리며 치울 lock 파일은 없습니다.
+
+## `sage uninstall` 뒤에 임시 보관소가 남음
+
+**명령은 성공입니다.** 요청한 제거는 이미 끝났고, 치우지 못한 `.sage-install-backup-` 경로만
+알려 드립니다. 그 목록은 text와 `--json`이 같은 근거로 냅니다. 지우려면 알려 준 경로만 지우세요.
+
 ## Cross-model 리뷰가 BLOCKED
 
 `sage doctor`로 반대 runtime CLI와 model 설정을 확인합니다. required 정책에서는 peer runtime에

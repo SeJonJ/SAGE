@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:91bd2618ea4a8cb8944c7c4a8ac864352a8607f387c5578f01553d0e5df5a91a -->
+<!-- sage-doc-source: troubleshooting.md sha256:9fda0bbc5c6d43cf695ab82f5a3eca9f0096d528282d3a9fb57ef982c7eb70f0 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -345,6 +345,69 @@ searchable on screen and collectable from logs. The diagnostic code in brackets
 If you meet a block with no `Next:` at all, that is a defect; report it together with the code. For
 messages produced by a project hook you wrote yourself, SAGE does not guess a recovery command and
 guarantees only `Next: sage status`.
+
+## `sage uninstall` shows a list instead of removing anything
+
+The environment is outside the supported scope. **There are two kinds of screen and they mean
+different things.**
+
+| Diagnostic code | Meaning | `--check` | `--yes` |
+|---|---|---|---|
+| `uninstall.windows_10_manual_only` | Windows 10 desktop — automatic removal deferred | `BLOCKED` (2) | `BLOCKED` (2) |
+| `uninstall.windows_sku_not_supported` | Windows Server / domain controller | `BLOCKED` (2) | `BLOCKED` (2) |
+| `uninstall.unsafe_platform` | 32-bit Python, native ARM64, non-NTFS, network/UNC | The plan's own status | `BLOCKED` (2) |
+
+The first two come from the **support policy**, which looks only at the SKU and build, so the answer
+is settled at planning time. That is why `--check` is also `BLOCKED`: automatic removal will never
+happen here, and a plain plan would read as something about to run. This judgement does **not**
+measure the volume or the native primitives, so it says nothing about whether the environment is
+technically capable.
+
+The last one is a **capability** measurement. It can become true by switching volumes or choosing a
+different root, so the plan is still shown and the refusal applies to an actual mutation request only.
+
+Here `--check` does **not** measure capability at all. It builds the plan and reports that plan's own
+status, so the exit code depends on how the plan came out — usually `COMPLETE` (0) or `PARTIAL` (1),
+but a **plan-level blocker** such as a damaged manifest makes even `--check` return `BLOCKED` (2)
+(for example `uninstall.plan_failed`). `unsafe_platform` is not the reason in that case.
+
+Either way **not a single file changes.** Following the four lists on screen reaches the same result
+as an automatic run.
+
+```bash
+sage uninstall --check --json
+```
+
+`STRIP` means remove only the SAGE registration from a shared file — deleting the whole file loses
+your host settings. `DELETE` items can be removed outright. Do **not** delete `PRESERVE` and `BLOCK`
+entries: those are items of unclear ownership or damaged content where SAGE deliberately withheld
+judgement. The order is `STRIP` then `DELETE`, and the same value ships in `manual_cleanup.order`.
+
+## `sage uninstall` ends with `PARTIAL` (1) and repeats the same list
+
+That is correct. `COMPLETE` (0) is reserved for a **completely clean state — nothing to remove and no
+preserved residue**.
+
+Once you have cleaned up by hand and only preserved entries remain (a damaged host settings file,
+say), the next run is `PARTIAL` (1) and re-reports those paths and reasons. Exiting 0 would make that
+residue disappear from the screen. That run also changes nothing and creates no backups.
+
+## `sage uninstall` stops with `BLOCKED` (2) after the confirmation prompt
+
+The disk no longer matches the plan you were shown. The baseline is the state **at the moment the
+plan was printed**, so editing a target file while the prompt is open makes the state you agreed to
+and the state on disk disagree. Directories are compared down to the files inside them.
+
+Run `sage uninstall --check` again to see the current plan, then execute. The run is also blocked
+when another SAGE command is working on the same location — it takes the **same lock** as `install`
+and `generate`, so one side can never place files while the other removes them. The lock is released
+when the process exits; there is no lock file for you to clean up.
+
+## Temporary backups are left behind after `sage uninstall`
+
+**The command succeeded.** The requested removal already finished; we only report the
+`.sage-install-backup-` paths we could not clear. That list comes from the same source in text and
+`--json`. Delete only the paths it names.
 
 ## Cross-model review is BLOCKED
 
