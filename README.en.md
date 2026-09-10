@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:5b94a7674e3d4aa7d0f17793904378ee93b8830c9160c4b8eade3cc927abae91 -->
+<!-- sage-doc-source: README.md sha256:caecd4aa4e31ce1193a7d8be2ed6562ee3b3a56e556220a650eb5c937e6cd2a3 -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)
@@ -21,6 +21,7 @@ to forget or skip. SAGE turns those reminders into automatic checks (hooks) a hu
 - **The AI edits an auto-generated config file directly?** SAGE redirects it to the source
   definition (a direct edit is overwritten on the next generation anyway).
 - **One model reviewing its own code?** SAGE hands it to the opposite model (Claude ↔ Codex).
+- **Cross-review and review loops raise token usage as much as you use them.**
 
 These checks are not the AI's "judgment" — they are code that decides **deterministically**. The
 same situation always produces the same result, so nobody has to re-explain the rules.
@@ -174,8 +175,7 @@ fail-open/fail-closed policy.
 - **completion criteria (Done Criteria)** track evidence and revalidate affected phases on change.
 - **Profile** separates team policy from machine-local settings.
 - **Fast Cycle** reduces document count only when enabled and records the transition in the audit.
-- **Early completion** records explicit user acceptance of residual risk, separate from normal
-  approval.
+- **Early completion** logs explicit user acceptance of residual risk, apart from normal approval.
 
 ## Documentation
 
