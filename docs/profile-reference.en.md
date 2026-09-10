@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:772256c0e00168a010298cea0ef9bac4b6a82c12da0b294bd79f12fe11f81ce2 -->
+<!-- sage-doc-source: profile-reference.md sha256:33a99e7c729a9d8a0fa191607767f9aed48d4672c916f13374034a098e03a2c7 -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -24,12 +24,12 @@ interface:
   language: en      # absent means ko; only ko | en are accepted
 ```
 
-It never reaches the shared profile, the compiled `project-profile.json`, a manifest, or the
-profile hash — a language preference behaves like a machine capability and stays local. For a
-single run, put the global `--lang` before the subcommand (`sage --lang en validate`).
-Resolution order is `--lang` → local profile → `ko`; hooks take no `--lang` and follow the
-local profile and the default only. An invalid value falls back to `ko` and `sage validate`
-reports it as a configuration failure, but no gate verdict or exit code changes.
+It never reaches the shared profile, the compiled `project-profile.json`, a manifest, or the profile
+hash — a language preference behaves like a machine capability and stays local. For a single run,
+put the global `--lang` before the subcommand (`sage --lang en validate`). Resolution order is
+`--lang` → local profile → `ko`; hooks take no `--lang` and follow the local profile and the default
+only. An invalid value falls back to `ko` and `sage validate` reports it as a configuration failure,
+but no gate verdict or exit code changes.
 
 ## Minimal workflow
 
@@ -121,8 +121,8 @@ criteria, invalid revisions, stale affected phases, and stale Phase 05 approval 
 `enforce` blocks those conditions at phase transitions, APPROVED, and Phase 06. Normal unresolved
 `[ ]` items remain allowed during Phases 01-04. A new Phase 00 starts with
 `Done-Criteria-Revision: 1`; changing criterion text or scope records a new revision, reason, and
-affected phases. `sage-init` and `sage-profile-modify` collect this shared policy;
-`sage-init-local` does not modify it.
+affected phases. `sage-init` and `sage-profile-modify` collect this shared policy; `sage-init-local`
+does not modify it.
 
 ### Review loop (Phase 05)
 
@@ -148,9 +148,8 @@ The Phase 05 find→refute→triage→rework adversarial loop. Disabled by defau
 perspectives each round searches from, `refuters` is how many reviewers challenge each finding,
 `max_iterations` caps the rounds, and `dry_rounds` is how many consecutive rounds with zero new
 findings count as convergence. `termination_enforce`/`report_gate_enforce` are
-`off | advisory | enforce`; `enforce` actually blocks writing Phase 06. This is the standard
-cycle's full procedure — the compressed variant for explicitly allowed L2/L3 work is Fast Cycle,
-below.
+`off | advisory | enforce`; `enforce` actually blocks writing Phase 06. This is the standard cycle's
+full procedure — the compressed variant for explicitly allowed L2/L3 work is Fast Cycle, below.
 
 `early_completion` is the opt-in that lets an explicit user authorization close the loop before
 convergence; it is off by default, and an absent block reads as off. `minimum_completed_rounds` has
@@ -179,10 +178,10 @@ pdca:
 
 Fast Cycle is a separate compressed L2/L3 protocol, not a generic override. `enabled` is shared
 policy and defaults to false. `reason_required` is fixed at true. Minimum rounds must be at least
-one, minimum lenses at least two, and each candidate list must satisfy its floor. The operator enters
-Fast level, lens count, and a one-line reason through `sage-cycle-fast`. Actual Risk Level remains in
-the composite Phase 00 and cannot be lowered by Fast level. `sage-init` and `sage-profile-modify`
-collect this shared policy conversationally.
+one, minimum lenses at least two, and each candidate list must satisfy its floor. The operator
+enters Fast level, lens count, and a one-line reason through `sage-cycle-fast`. Actual Risk Level
+remains in the composite Phase 00 and cannot be lowered by Fast level. `sage-init` and
+`sage-profile-modify` collect this shared policy conversationally.
 
 `standard_transition` is a separate opt-in that lets a Standard Cycle already in progress move to
 the Fast contract through `sage fast-cycle convert`; it is off by default, and an absent block reads
@@ -203,8 +202,8 @@ components:
     paths: ["frontend/**"]
 ```
 
-Components drive the implementer roster and ownership routing. `sage generate --kind roster`
-creates an `implementer-<component>` spec for each component.
+Components drive the implementer roster and ownership routing. `sage generate --kind roster` creates
+an `implementer-<component>` spec for each component.
 
 ### Phase 04 checklist scanning
 
@@ -220,8 +219,8 @@ checklist_scan_targets:
 Each item requires a `label` and a project-relative `glob`; `is_impl` is an optional boolean.
 Absolute, UNC/rooted, Windows drive-relative (`C:private/*.md`), `..` segment, and control-character
 paths are rejected. Runtime also checks every match by realpath, so a symlink cannot read a document
-outside the repository. If an older release silently ignored a malformed item, the new `sage
-generate` preserves existing outputs and fails. Correct the profile and generate again.
+outside the repository. If an older release silently ignored a malformed item, the new
+`sage generate` preserves existing outputs and fails. Correct the profile and generate again.
 
 ### Team runtime
 
@@ -268,10 +267,9 @@ knowledge_capture:
 
 Vault features are disabled when `vault_path` is empty. Write-back depth follows the Phase 00 risk
 tier. L2 and L3 require a detailed note covering background, design decisions, changes,
-verification, and recurrence prevention.
-With `fast_cycle_dashboard: true`, terminal Fast runs update a project dashboard in the vault. The
-source of truth remains `.sage/fast_cycle.jsonl`; dashboard failure does not roll back an audit event
-that was already recorded.
+verification, and recurrence prevention. With `fast_cycle_dashboard: true`, terminal Fast runs
+update a project dashboard in the vault. The source of truth remains `.sage/fast_cycle.jsonl`;
+dashboard failure does not roll back an audit event that was already recorded.
 
 ### Feedback
 
@@ -306,13 +304,13 @@ verification:
 The project owns its verification commands. SAGE connects commands and evidence declared in the
 profile and phase documents, but does not guess the project's build system.
 
-`acceptance` is the per-requirement evidence matrix. It rests on the premise that a passing build and
-test suite is not the same claim as "the feature the user asked for actually works." With the default
-`enabled: true`, any risk tier listed in `require_for_risk` must record `PASS/FAIL/NOT TESTED/N/A`
-for every requirement in Phase 04. `report_gate_by_risk` decides whether an `unresolved_statuses`
-entry (FAIL or NOT TESTED by default) blocks writing Phase 06 — **L3 cannot be lowered to advisory
-from the profile alone.** An exception requires an explicit CLI-issued waiver matched exactly to the
-cycle and requirement ID; there is no silent pass.
+`acceptance` is the per-requirement evidence matrix. It rests on the premise that a passing build
+and test suite is not the same claim as "the feature the user asked for actually works." With the
+default `enabled: true`, any risk tier listed in `require_for_risk` must record
+`PASS/FAIL/NOT TESTED/N/A` for every requirement in Phase 04. `report_gate_by_risk` decides whether
+an `unresolved_statuses` entry (FAIL or NOT TESTED by default) blocks writing Phase 06 — **L3 cannot
+be lowered to advisory from the profile alone.** An exception requires an explicit CLI-issued waiver
+matched exactly to the cycle and requirement ID; there is no silent pass.
 
 ### Other gate toggles
 

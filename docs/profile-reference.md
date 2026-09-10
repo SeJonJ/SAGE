@@ -8,12 +8,13 @@
 - `sage/project-profile.local.yaml`: Git에서 제외되는 현재 머신 capability
 - `sage/project-profile.json`: generate가 만든 병합·정규화 결과
 
-로컬 profile은 host/model/vault 경로처럼 머신마다 다른 capability만 소유합니다. risk, PDCA, review처럼
-게이트를 완화할 수 있는 공유 정책은 로컬에서 덮어쓸 수 없습니다.
+로컬 profile은 host/model/vault 경로처럼 머신마다 다른 capability만 소유합니다. risk, PDCA,
+review처럼 게이트를 완화할 수 있는 공유 정책은 로컬에서 덮어쓸 수 없습니다.
 
-generate는 compiled profile을 `0600`으로 수렴시킵니다. 이전 버전이 만든 `0644` 파일도 다음 generate에서
-소유자 전용으로 강화됩니다. hook 프로세스가 다른 UID로 실행되는 CI/컨테이너에서는 같은 UID로 실행하거나
-명시적인 파일 전달 방식을 구성해야 하며, 권한을 넓혀 공유하는 방식은 지원 계약이 아닙니다.
+generate는 compiled profile을 `0600`으로 수렴시킵니다. 이전 버전이 만든 `0644` 파일도 다음
+generate에서 소유자 전용으로 강화됩니다. hook 프로세스가 다른 UID로 실행되는 CI/컨테이너에서는 같은
+UID로 실행하거나 명시적인 파일 전달 방식을 구성해야 하며, 권한을 넓혀 공유하는 방식은 지원 계약이
+아닙니다.
 
 로컬 profile은 표시 언어도 소유합니다.
 
@@ -23,11 +24,10 @@ interface:
 ```
 
 이 값은 공유 profile·compiled `project-profile.json`·manifest·profile hash 어디에도 들어가지
-않습니다. 언어는 머신 capability와 같은 성격이라 로컬에만 남습니다. 한 번만 다르게 실행하려면
-하위 명령 앞에 전역 `--lang`을 붙입니다(`sage --lang en validate`). 우선순위는 `--lang` →
-local profile → `ko`이며, hook은 `--lang`을 받지 않아 local profile과 기본값만 따릅니다.
-잘못된 값은 `ko`로 되돌리고 `sage validate`가 설정 실패로 보고하지만, 게이트 판정과 종료코드는
-바뀌지 않습니다.
+않습니다. 언어는 머신 capability와 같은 성격이라 로컬에만 남습니다. 한 번만 다르게 실행하려면 하위
+명령 앞에 전역 `--lang`을 붙입니다(`sage --lang en validate`). 우선순위는 `--lang` → local profile →
+`ko`이며, hook은 `--lang`을 받지 않아 local profile과 기본값만 따릅니다. 잘못된 값은 `ko`로 되돌리고
+`sage validate`가 설정 실패로 보고하지만, 게이트 판정과 종료코드는 바뀌지 않습니다.
 
 ## 최소 흐름
 
@@ -53,8 +53,8 @@ project:
   prefix: "weatherapp"
 ```
 
-`required_version`은 프로젝트 자산을 해석해야 하는 exact SAGE 버전입니다. installed/generated/runtime
-버전과 다르면 doctor, validate, SessionStart가 진단합니다.
+`required_version`은 프로젝트 자산을 해석해야 하는 exact SAGE 버전입니다.
+installed/generated/runtime 버전과 다르면 doctor, validate, SessionStart가 진단합니다.
 
 ### Runtime과 cross-model
 
@@ -71,8 +71,8 @@ cross_model:
   effort: xhigh
 ```
 
-`active_host: auto`는 현재 실행 환경에서 host를 감지합니다. Phase 05 cross-model review는 실제 active
-host를 제외한 runtime을 선택합니다. peer CLI에 도달하지 못하면 required 정책은 BLOCKED입니다.
+`active_host: auto`는 현재 실행 환경에서 host를 감지합니다. Phase 05 cross-model review는 실제
+active host를 제외한 runtime을 선택합니다. peer CLI에 도달하지 못하면 required 정책은 BLOCKED입니다.
 
 `cross_model.policy`는 `required | recommended | off`입니다. `required`는 로컬 profile에서
 `cross_model.enabled: false`로 완화할 수 없습니다(local이 공유 정책을 완화 불가). `on_unavailable`은
@@ -93,9 +93,9 @@ risk:
   l3_review_strategy: "claude_grep_first"
 ```
 
-경로, 파일명, 내용, 사용자 선언 중 가장 높은 tier가 effective risk입니다. Governed cycle은 같은 stem의
-Phase 00에 정확히 하나의 `Risk Level: L1`, `L2`, `L3` 선언이 필요하며 현재 변경보다 낮으면 먼저
-Phase 00을 상향해야 합니다.
+경로, 파일명, 내용, 사용자 선언 중 가장 높은 tier가 effective risk입니다. Governed cycle은 같은
+stem의 Phase 00에 정확히 하나의 `Risk Level: L1`, `L2`, `L3` 선언이 필요하며 현재 변경보다 낮으면
+먼저 Phase 00을 상향해야 합니다.
 
 `l3_review_strategy`는 **L3가 리뷰 가능해지기 위한 필수 값**입니다(`claude_grep_first` |
 `codex_feature_signal` | 프로젝트 커스텀 모듈명). 비어 있으면 L3 독립 리뷰가 안전하게 BLOCK되므로,
@@ -109,12 +109,12 @@ pdca:
     done_criteria_gate: advisory  # off | advisory | enforce
 ```
 
-키 부재나 `off`는 기존 동작을 유지합니다. `advisory`는 Phase 00의 완료 기준 구조, 3상태 항목,
-재계획 revision, 영향 phase 재실행, 최신 Phase 05 승인 결속 문제를 경고하되 진행을 허용합니다.
-`enforce`는 같은 문제를 phase 전환·APPROVED·Phase 06 경계에서 차단합니다. 정상적인 01~04의
-미완료 `[ ]`는 차단하지 않습니다. 신규 Phase 00은 `Done-Criteria-Revision: 1`에서 시작하며,
-기준 문구나 범위가 바뀌면 revision과 사유·영향 phase를 기록합니다. 이 shared 정책은
-`sage-init`과 `sage-profile-modify`가 수집하고 `sage-init-local`은 수정하지 않습니다.
+키 부재나 `off`는 기존 동작을 유지합니다. `advisory`는 Phase 00의 완료 기준 구조, 3상태 항목, 재계획
+revision, 영향 phase 재실행, 최신 Phase 05 승인 결속 문제를 경고하되 진행을 허용합니다. `enforce`는
+같은 문제를 phase 전환·APPROVED·Phase 06 경계에서 차단합니다. 정상적인 01~04의 미완료 `[ ]`는
+차단하지 않습니다. 신규 Phase 00은 `Done-Criteria-Revision: 1`에서 시작하며, 기준 문구나 범위가
+바뀌면 revision과 사유·영향 phase를 기록합니다. 이 shared 정책은 `sage-init`과
+`sage-profile-modify`가 수집하고 `sage-init-local`은 수정하지 않습니다.
 
 ### Review loop (Phase 05)
 
@@ -138,17 +138,18 @@ pdca:
 
 Phase 05의 find→refute→triage→rework 적대적 반복 루프입니다. 기본은 꺼져 있습니다. `lenses`가 각
 라운드에서 찾을 관점, `refuters`가 finding당 반박자 수, `max_iterations`가 라운드 상한,
-`dry_rounds`가 "신규 발견 0"이 몇 라운드 연속이면 수렴으로 볼지입니다. `termination_enforce`/
-`report_gate_enforce`는 `off | advisory | enforce`이며, `enforce`는 06 작성을 실제로 차단합니다.
-표준 사이클의 정식 절차이고, 명시적으로 허용된 L2/L3에서만 쓰는 축약판은 아래 Fast Cycle입니다.
+`dry_rounds`가 "신규 발견 0"이 몇 라운드 연속이면 수렴으로 볼지입니다.
+`termination_enforce`/`report_gate_enforce`는 `off | advisory | enforce`이며, `enforce`는 06 작성을
+실제로 차단합니다. 표준 사이클의 정식 절차이고, 명시적으로 허용된 L2/L3에서만 쓰는 축약판은 아래
+Fast Cycle입니다.
 
 `early_completion`은 사용자의 명시적 승인으로 수렴 전에 루프를 닫을 수 있게 하는 옵트인이며 기본은
 꺼짐입니다. 블록 자체가 없으면 꺼진 것으로 읽습니다. `minimum_completed_rounds`는 엔진 하한이 1이고
-프로젝트가 올릴 수만 있습니다 — 0을 허용하면 "리뷰 0라운드 승인"이 설정 한 줄로 열립니다. 이 옵트인은
-게이트를 **느슨하게** 하는 방향이라, 판정 토큰은 `APPROVED`를 유지하되 Phase 05가
+프로젝트가 올릴 수만 있습니다 — 0을 허용하면 "리뷰 0라운드 승인"이 설정 한 줄로 열립니다. 이
+옵트인은 게이트를 **느슨하게** 하는 방향이라, 판정 토큰은 `APPROVED`를 유지하되 Phase 05가
 `Review-Assurance: REDUCED_BY_USER_AUTHORIZATION`을 함께 적어 나중에 읽는 사람과 CI 권위가 수렴
-승인과 구분할 수 있게 합니다. **설정을 켠 것은 개별 실행의 승인이 아닙니다** — 사유·승인자·확인 토큰은
-close 시점에 사용자가 직접 줍니다.
+승인과 구분할 수 있게 합니다. **설정을 켠 것은 개별 실행의 승인이 아닙니다** — 사유·승인자·확인
+토큰은 close 시점에 사용자가 직접 줍니다.
 
 ### Fast Cycle
 
@@ -167,17 +168,18 @@ pdca:
 ```
 
 Fast Cycle은 L2/L3의 별도 축약 절차이며 일반 override가 아닙니다. `enabled`는 공유 정책이고 기본값은
-false입니다. `reason_required`는 true로 고정되며 완화할 수 없습니다. 최소 라운드는 1 이상, 최소 렌즈는
-2 이상이어야 하고 각 후보 목록은 최소 수 이상이어야 합니다. 실행자는 `sage-cycle-fast`에서 Fast
-level·렌즈 수·한 줄 사유를 모두 입력합니다. 실제 Risk Level은 composite 00에 별도로 남고 Fast level이
-이를 낮추지 않습니다. `sage-init`과 `sage-profile-modify`가 이 공유 설정을 대화로 수집합니다.
+false입니다. `reason_required`는 true로 고정되며 완화할 수 없습니다. 최소 라운드는 1 이상, 최소
+렌즈는 2 이상이어야 하고 각 후보 목록은 최소 수 이상이어야 합니다. 실행자는 `sage-cycle-fast`에서
+Fast level·렌즈 수·한 줄 사유를 모두 입력합니다. 실제 Risk Level은 composite 00에 별도로 남고 Fast
+level이 이를 낮추지 않습니다. `sage-init`과 `sage-profile-modify`가 이 공유 설정을 대화로
+수집합니다.
 
-`standard_transition`은 이미 진행 중인 Standard Cycle을 `sage fast-cycle convert`로 Fast 계약에
-넘길 수 있게 하는 별도 옵트인이며 기본은 꺼짐입니다. 블록이 없으면 꺼진 것으로 읽습니다. 켜면
-composite 계획 없이도 Fast 리뷰 최소치에 도달할 수 있으므로, 문서가 아니라 감사 레코드가 그 run이
-어떻게 Fast로 들어왔는지에 대한 유일한 증거가 됩니다. 전환은 문서를 쓰지 않고, 전환된 run은 감사에
-남은 phase 목록이 담고 있는 pre-implementation phase만 면제받습니다. **설정을 켠 것은 개별 전환의
-확인이 아닙니다** — `--confirm FAST-CONVERTED`·사유·승인자는 전환 시점에 사용자가 직접 줍니다.
+`standard_transition`은 이미 진행 중인 Standard Cycle을 `sage fast-cycle convert`로 Fast 계약에 넘길
+수 있게 하는 별도 옵트인이며 기본은 꺼짐입니다. 블록이 없으면 꺼진 것으로 읽습니다. 켜면 composite
+계획 없이도 Fast 리뷰 최소치에 도달할 수 있으므로, 문서가 아니라 감사 레코드가 그 run이 어떻게
+Fast로 들어왔는지에 대한 유일한 증거가 됩니다. 전환은 문서를 쓰지 않고, 전환된 run은 감사에 남은
+phase 목록이 담고 있는 pre-implementation phase만 면제받습니다. **설정을 켠 것은 개별 전환의 확인이
+아닙니다** — `--confirm FAST-CONVERTED`·사유·승인자는 전환 시점에 사용자가 직접 줍니다.
 
 ### Components
 
@@ -235,8 +237,8 @@ governance_docs:
   - { doc: ".github/SECURITY.md", label: "보안 정책" }
 ```
 
-각 항목은 프로젝트 상대경로와 80자 이하 한 줄 label입니다. 경로 포인터만 `AGENT_GUIDE.md`의 관리 블록에
-렌더되며 risk trigger는 포함하지 않습니다. 변경 후 `sage sync-overlays`를 실행합니다.
+각 항목은 프로젝트 상대경로와 80자 이하 한 줄 label입니다. 경로 포인터만 `AGENT_GUIDE.md`의 관리
+블록에 렌더되며 risk trigger는 포함하지 않습니다. 변경 후 `sage sync-overlays`를 실행합니다.
 
 ### 지식 캡처
 
@@ -254,8 +256,9 @@ knowledge_capture:
 
 `vault_path`가 비면 vault 기능은 비활성입니다. write-back 깊이는 Phase 00 risk tier를 따르며 L2/L3는
 배경, 설계결정, 변경, 검증, 재발방지를 포함하는 심층 노트를 요구합니다.
-`fast_cycle_dashboard: true`이면 Fast run 종료·중단 뒤 vault에 프로젝트별 파생 dashboard를 갱신합니다.
-감사 정본은 항상 `.sage/fast_cycle.jsonl`이며 dashboard 실패는 이미 기록된 종료를 되돌리지 않습니다.
+`fast_cycle_dashboard: true`이면 Fast run 종료·중단 뒤 vault에 프로젝트별 파생 dashboard를
+갱신합니다. 감사 정본은 항상 `.sage/fast_cycle.jsonl`이며 dashboard 실패는 이미 기록된 종료를
+되돌리지 않습니다.
 
 ### Feedback
 
@@ -291,11 +294,12 @@ verification:
 프로젝트별 build system을 추측하지 않습니다.
 
 `acceptance`는 요구사항별 수용 증거 매트릭스입니다. 빌드·테스트가 통과해도 "사용자가 요청한 기능이
-실제로 동작한다"는 별개로 증명해야 한다는 전제 위에 있습니다. 기본 `enabled: true`이고 `require_for_risk`에
-포함된 위험도는 Phase 04에서 각 요구사항에 `PASS/FAIL/NOT TESTED/N/A`를 기록해야 합니다.
-`report_gate_by_risk`는 `unresolved_statuses`(기본 FAIL·NOT TESTED)가 남아있을 때 06 작성을 막을지
-결정하며, **L3는 profile만으로 advisory로 낮출 수 없습니다.** 예외가 필요하면 `waiver`로 사이클·요구사항
-ID가 정확히 일치하는 명시적 CLI grant만 사용합니다 — 조용한 통과는 없습니다.
+실제로 동작한다"는 별개로 증명해야 한다는 전제 위에 있습니다. 기본 `enabled: true`이고
+`require_for_risk`에 포함된 위험도는 Phase 04에서 각 요구사항에 `PASS/FAIL/NOT TESTED/N/A`를
+기록해야 합니다. `report_gate_by_risk`는 `unresolved_statuses`(기본 FAIL·NOT TESTED)가 남아있을 때
+06 작성을 막을지 결정하며, **L3는 profile만으로 advisory로 낮출 수 없습니다.** 예외가 필요하면
+`waiver`로 사이클·요구사항 ID가 정확히 일치하는 명시적 CLI grant만 사용합니다 — 조용한 통과는
+없습니다.
 
 ### 기타 게이트 토글
 

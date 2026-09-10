@@ -9,8 +9,8 @@ pipx install "sage-harness[schema]"
 pipx ensurepath
 ```
 
-새 터미널을 연 뒤 `sage --version`을 확인합니다. pip user 설치를 사용했다면
-`python3 -m sage --help` 또는 Windows의 `py -m sage --help`로 실행할 수 있습니다.
+새 터미널을 연 뒤 `sage --version`을 확인합니다. pip user 설치를 사용했다면 `python3 -m sage --help`
+또는 Windows의 `py -m sage --help`로 실행할 수 있습니다.
 
 ## Windows에서 hook이 실행되지 않음
 
@@ -22,7 +22,8 @@ sage doctor
 ```
 
 진입점이 없으면 같은 Python 환경에 `sage-harness`를 다시 설치합니다. 선택적 `.sh` 개발자 회귀를
-실행할 때만 `SAGE_BASH`에 Git Bash의 절대경로를 지정합니다. WSL launcher를 암묵적으로 선택하지 않습니다.
+실행할 때만 `SAGE_BASH`에 Git Bash의 절대경로를 지정합니다. WSL launcher를 암묵적으로 선택하지
+않습니다.
 
 ## `--host`, `--kind`, `--skill-scope` 누락
 
@@ -43,8 +44,8 @@ sage generate --kind hook --write
 sage validate
 ```
 
-설치 직후에는 CORE hook이 미스탬프 상태일 수 있으므로 generate를 한 번 실행합니다. 파일을 직접 수정해
-hash만 맞추지 마세요.
+설치 직후에는 CORE hook이 미스탬프 상태일 수 있으므로 generate를 한 번 실행합니다. 파일을 직접
+수정해 hash만 맞추지 마세요.
 
 ## Write guard가 편집을 차단
 
@@ -60,23 +61,23 @@ sage generate --kind agent --write
 
 ## 세션 위험도 선언이 잘못 잡혀 편집이 막힘
 
-게이트가 Phase 00보다 높은 위험도를 요구하는데 그 위험도가 **이번 세션 선언**에서 왔다면,
-Phase 00을 올리지 마세요 — 실제보다 높은 위험도를 기록하게 됩니다. 선언을 지우면 됩니다.
+게이트가 Phase 00보다 높은 위험도를 요구하는데 그 위험도가 **이번 세션 선언**에서 왔다면, Phase 00을
+올리지 마세요 — 실제보다 높은 위험도를 기록하게 됩니다. 선언을 지우면 됩니다.
 
 ```
 위험도 선언 해제
 ```
 
-프롬프트로 그대로 입력하면 이번 세션의 선언이 삭제되고, 이후 판정은 경로·내용 계산만 씁니다.
-차단 메시지가 선언 출처를 알려주므로 어느 쪽인지는 안내를 보고 판단하면 됩니다.
+프롬프트로 그대로 입력하면 이번 세션의 선언이 삭제되고, 이후 판정은 경로·내용 계산만 씁니다. 차단
+메시지가 선언 출처를 알려주므로 어느 쪽인지는 안내를 보고 판단하면 됩니다.
 
-선언은 레벨 하나를 평서문으로 적을 때만 잡히고, 잡히지 않은 경우에는 그 사실을 알려줍니다.
-쓰이지 않은 선언은 2일 뒤 만료됩니다.
+선언은 레벨 하나를 평서문으로 적을 때만 잡히고, 잡히지 않은 경우에는 그 사실을 알려줍니다. 쓰이지
+않은 선언은 2일 뒤 만료됩니다.
 
 ## 문서가 다 있는데 "의무 PDCA phase 미작성"으로 막힘
 
-phase 문서를 고칠 때 게이트는 파일명에서 사이클을 알아냅니다. 소스 편집에는 그런 단서가 없어서
-**git 브랜치 이름의 마지막 조각**에서 추론합니다. 사이클마다 브랜치를 따면 맞고, 브랜치 하나로 여러
+phase 문서를 고칠 때 게이트는 파일명에서 사이클을 알아냅니다. 소스 편집에는 그런 단서가 없어서 **git
+브랜치 이름의 마지막 조각**에서 추론합니다. 사이클마다 브랜치를 따면 맞고, 브랜치 하나로 여러
 사이클을 돌면 영영 맞지 않습니다 — 00~03을 다 써도 "미작성"으로 막힙니다.
 
 브랜치 이름을 바꾸지 말고 사이클을 선언하세요.
@@ -91,9 +92,9 @@ sage cycle show                      # 무엇이 선언됐고 어디서 읽었�
 요구는 그 stem에 그대로 적용됩니다. 세션의 첫 사용은 `.sage/override.jsonl`에 기록됩니다.
 
 `sage cycle set`은 자기가 쓴 절대경로와 git 무시 여부, 게이트가 읽는 profile 쌍의 존재를 함께
-출력합니다. 선언했는데 안 먹는다면 그 출력부터 보세요.
-기존 Phase 00과 충돌하면 아무것도 덮지 않고 충돌 경로와 사용 가능한 stem 후보 3개를 출력합니다.
-커스텀 Phase 00 glob 때문에 위치를 유도할 수 없을 때만 root 상대 디렉터리를 `--path DIR`로 지정하세요.
+출력합니다. 선언했는데 안 먹는다면 그 출력부터 보세요. 기존 Phase 00과 충돌하면 아무것도 덮지 않고
+충돌 경로와 사용 가능한 stem 후보 3개를 출력합니다. 커스텀 Phase 00 glob 때문에 위치를 유도할 수
+없을 때만 root 상대 디렉터리를 `--path DIR`로 지정하세요.
 
 `--create`는 Phase 00만 만듭니다. profile이 01~03을 요구하면 작성 전까지 소스 편집은 계속
 차단됩니다. 긴급 작업에서 면제 가능한 phase 결핍만 열려면
@@ -102,17 +103,17 @@ override로 면제되지 않습니다.
 
 `sage-cycle` 우산은 직접 `set`/`clear`하지 않습니다. `sage-plan`이 stem 검증 뒤 선언하고,
 `sage-team`이 재개 시 `show`로 대조한 뒤 write-back·retro·snapshot과 종료 게이트까지 완료하면
-해제합니다. `BLOCKED`/`FAIL`에서는 재개를 위해 선언을 남깁니다.
-`set B`는 포인터만 바꾸므로 A의 문서·증거·감사는 그대로 남고, `set A`로 돌아가면 판정도 복원됩니다.
+해제합니다. `BLOCKED`/`FAIL`에서는 재개를 위해 선언을 남깁니다. `set B`는 포인터만 바꾸므로 A의
+문서·증거·감사는 그대로 남고, `set A`로 돌아가면 판정도 복원됩니다.
 
 ## Done Criteria 또는 stale Phase 05 승인으로 차단됨
 
-같은 stem의 Phase 00만 먼저 수정하세요. 정확한 `## 5. Done Criteria`, 양의
-`Done-Criteria-Revision`, `[ ]`·`[x]`·사유 있는 `[~]` 형식을 복구합니다. 기준 문구나 범위가
-바뀌었다면 revision을 올리고 Changed-At·Reason·Affected-Phases·Summary를 기록한 뒤 영향 phase를
-순서대로 재실행합니다. 기존 Phase 05 승인은 재사용하지 말고 새 review loop를 `--cycle-stem`과
-함께 수행한 뒤, APPROVED close가 출력한 `Phase00-Hash`와 새 `Loop-Run`을 Phase 05에 기록하세요.
-Phase 00과 후속 phase를 한 번에 수정하면 pre-write 상태를 검증할 수 없어 차단되므로 나눠서 씁니다.
+같은 stem의 Phase 00만 먼저 수정하세요. 정확한 `## 5. Done Criteria`, 양의 `Done-Criteria-Revision`,
+`[ ]`·`[x]`·사유 있는 `[~]` 형식을 복구합니다. 기준 문구나 범위가 바뀌었다면 revision을 올리고
+Changed-At·Reason·Affected-Phases·Summary를 기록한 뒤 영향 phase를 순서대로 재실행합니다. 기존 Phase
+05 승인은 재사용하지 말고 새 review loop를 `--cycle-stem`과 함께 수행한 뒤, APPROVED close가 출력한
+`Phase00-Hash`와 새 `Loop-Run`을 Phase 05에 기록하세요. Phase 00과 후속 phase를 한 번에 수정하면
+pre-write 상태를 검증할 수 없어 차단되므로 나눠서 씁니다.
 
 ## 사이클을 끝냈는데 다음 작업이 "이미 완결된 사이클"로 막힘
 
@@ -124,13 +125,14 @@ sage cycle clear                     # 파일 선언 해제
 unset SAGE_CYCLE_STEM                # env로 선언했다면
 ```
 
-차단 메시지가 결속을 **선언된**으로 읽었는지 **브랜치에서 추론한**으로 읽었는지 알려주므로, 어느 쪽을
-지워야 하는지는 안내를 보고 판단하면 됩니다.
+차단 메시지가 결속을 **선언된**으로 읽었는지 **브랜치에서 추론한**으로 읽었는지 알려주므로, 어느
+쪽을 지워야 하는지는 안내를 보고 판단하면 됩니다.
 
 ## `sage install`이 "SAGE source resources changed"로 실패
 
 설치 도중 SAGE 엔진 소스가 바뀌면 반쯤 섞인 산출물이 나오므로 install이 스스로 중단하고 롤백합니다.
-검사는 정상 동작이고, 대부분 원인은 **테스트나 리뷰 도구가 저장소 파일을 잠깐 고쳤다 되돌리는 것**입니다.
+검사는 정상 동작이고, 대부분 원인은 **테스트나 리뷰 도구가 저장소 파일을 잠깐 고쳤다 되돌리는
+것**입니다.
 
 메시지가 어떤 논리경로가 달라졌는지 함께 알려줍니다.
 
@@ -160,7 +162,8 @@ Fast Cycle은 시작 시점에 공유 정책이 허용한 최소 조건을 전�
 sage fast-cycle open --stem <stem> --level L2 --lens-count 2 --reason "짧은 사유"
 ```
 
-`reason_required`는 profile에서 완화할 수 없으므로, 값을 채워 다시 시도하는 것 외에 우회 경로는 없습니다.
+`reason_required`는 profile에서 완화할 수 없으므로, 값을 채워 다시 시도하는 것 외에 우회 경로는
+없습니다.
 
 ## `sage fast-cycle convert`가 거부됨
 
@@ -180,8 +183,8 @@ sage fast-cycle convert --stem <stem> --current-phase 04 --level L2 \
   --lens-count 2 --reason "짧은 사유" --confirmed-by <승인자> --confirm FAST-CONVERTED
 ```
 
-전환한 뒤에도 소스 편집이 `block_phase_incomplete`로 막힌다면, 전환 시점에 존재하던 phase 목록이
-그 위험도의 `pre_implementation_required`를 다 담지 못한 것입니다. 전환은 **가진 것만** 면제하므로
+전환한 뒤에도 소스 편집이 `block_phase_incomplete`로 막힌다면, 전환 시점에 존재하던 phase 목록이 그
+위험도의 `pre_implementation_required`를 다 담지 못한 것입니다. 전환은 **가진 것만** 면제하므로
 Phase 00에서 전환했다면 01~03을 그대로 작성해야 합니다. 전환된 run은 문서에 `Fast-Audit-Run` 줄을
 갖지 않는 것이 정상이며, 그 줄이 없다고 손으로 추가하면 안 됩니다.
 
@@ -198,11 +201,12 @@ Phase 00에서 전환했다면 01~03을 그대로 작성해야 합니다. 전환
 `P0=0`만 적어 차단 finding을 숨기는 것을 막는 검사라 우회 경로가 없습니다.
 
 승인으로도 엔진 차단을 통과하지 않는 것들이 있습니다: 라운드 0건, `severity_block` 심각도의 미해결
-finding, architecture escalation, Done Criteria 미해결, acceptance `FAIL`, 감사 손상.
-이 중 하나로 막혔다면 그 원인을 실제로 해소해야 합니다.
+finding, architecture escalation, Done Criteria 미해결, acceptance `FAIL`, 감사 손상. 이 중 하나로
+막혔다면 그 원인을 실제로 해소해야 합니다.
 
 필수 build/test/lint 실패도 조기 완료해서는 안 되지만, 그 결과는 Phase 03 산문에만 있어 엔진이 직접
-읽지 못합니다. 이 항목은 에이전트가 사용자에게 그대로 알리고 close를 진행하지 않아야 하는 의무입니다.
+읽지 못합니다. 이 항목은 에이전트가 사용자에게 그대로 알리고 close를 진행하지 않아야 하는
+의무입니다.
 
 ## Phase 05가 "보증 저하 표기" 때문에 막힘
 
@@ -226,13 +230,14 @@ run이라면 그 두 값을 적지 않습니다. `Review-Rounds: 3` 같은 중�
 
 선택된 Phase 04에 acceptance `FAIL`이나 exact waiver 없는 필수 `NOT TESTED`가 남아 있습니다. 조기
 완료는 리뷰가 남긴 finding을 인수하는 절차이지 미검증 요구사항을 넘기는 절차가 아니라, 이 상태는
-사용자 확인으로도 통과하지 않습니다. 04 증거를 `PASS`로 채우거나, L3에서 `sage acceptance-waiver
-grant`로 해당 ID를 명시 승인한 뒤 다시 실행하십시오. 판정은 Phase 06 리포트 게이트와 같은 정책을
-쓰므로, 여기서 통과시켜도 06에서 같은 이유로 막힙니다.
+사용자 확인으로도 통과하지 않습니다. 04 증거를 `PASS`로 채우거나, L3에서
+`sage acceptance-waiver grant`로 해당 ID를 명시 승인한 뒤 다시 실행하십시오. 판정은 Phase 06 리포트
+게이트와 같은 정책을 쓰므로, 여기서 통과시켜도 06에서 같은 이유로 막힙니다.
 
 ## `sage cycle clear`가 활성 Fast run 때문에 막힘
 
-Fast 감사가 열린 상태에서 선언부터 지우면 이후 증거가 다른 stem에 결속될 수 있어 fail-closed로 막습니다.
+Fast 감사가 열린 상태에서 선언부터 지우면 이후 증거가 다른 stem에 결속될 수 있어 fail-closed로
+막습니다.
 
 ```bash
 sage fast-cycle show
@@ -244,15 +249,16 @@ sage fast-cycle abort --run-id <fc-id> --reason "중단 사유"
 sage cycle clear
 ```
 
-`close`가 거부되면 00이 최신 Fast review 뒤 바뀌었는지, 05/06의 `Fast-Run`·`Loop-Run`·
-`Final Status: APPROVED`가 같은 run을 가리키는지 확인합니다. 감사 원문이 손상됐으면 임의 삭제하거나
-새 run으로 덮지 말고 복구 가능한 Git 이력과 `.sage/fast_cycle.jsonl`을 함께 검토해야 합니다.
+`close`가 거부되면 00이 최신 Fast review 뒤 바뀌었는지, 05/06의
+`Fast-Run`·`Loop-Run`·`Final Status: APPROVED`가 같은 run을 가리키는지 확인합니다. 감사 원문이
+손상됐으면 임의 삭제하거나 새 run으로 덮지 말고 복구 가능한 Git 이력과 `.sage/fast_cycle.jsonl`을
+함께 검토해야 합니다.
 
 ## 선언 파일을 편집 도구로 쓰려다 write guard에 막힘
 
-`.sage/cycle.json`은 게이트가 "이 편집이 어느 사이클인가"를 읽는 자리입니다. 직접 쓰면 완결된 사이클을
-지목해 게이트를 통과시킬 수 있어서 차단합니다. `sage cycle set|show|clear`를 쓰세요 — CLI는 편집 도구를
-거치지 않으므로 가드에 걸리지 않습니다.
+`.sage/cycle.json`은 게이트가 "이 편집이 어느 사이클인가"를 읽는 자리입니다. 직접 쓰면 완결된
+사이클을 지목해 게이트를 통과시킬 수 있어서 차단합니다. `sage cycle set|show|clear`를 쓰세요 — CLI는
+편집 도구를 거치지 않으므로 가드에 걸리지 않습니다.
 
 `[사이클 선언 무시됨]` 알림이 뜬다면 파일이 있는데 읽지 못한 것입니다. 게이트는 선언 없음으로
 진행하니 `sage cycle set <stem>`으로 다시 쓰거나 `sage cycle clear`로 지우세요.
@@ -294,31 +300,30 @@ Next: sage upgrade --check
 Next: pipx upgrade sage-harness
 ```
 
-프로젝트에 설치된 hook 은 그 저장소에 설치된 SAGE 가 만들었고, 그걸 실행하는 `sage-hook` 은
-머신에 설치된 package 가 준다. 둘의 나이가 다르면 새 hook 이 아직 없는 module 을 import 하고,
-그 실패는 host 에 따라 그냥 "hook 이 죽었다" 로 처리된다 — 정책을 실행해야 할 게이트가 조용히
-빠지는 경로다. 그래서 이 판정은 **project core 를 import 하기 전에** 정수 비교 하나로 닫는다.
+프로젝트에 설치된 hook 은 그 저장소에 설치된 SAGE 가 만들었고, 그걸 실행하는 `sage-hook`은 머신에
+설치된 package 가 준다. 둘의 나이가 다르면 새 hook 이 아직 없는 module 을 import 하고, 그 실패는
+host 에 따라 그냥 "hook 이 죽었다" 로 처리된다 — 정책을 실행해야 할 게이트가 조용히 빠지는 경로다.
+그래서 이 판정은 **project core 를 import 하기 전에** 정수 비교 하나로 닫는다.
 
 화면의 `Next:` 순서를 그대로 따르면 된다. package 를 먼저 올리고, 설치 자산을 재생성한 뒤,
-`sage status` 로 확인한다.
+`sage status`로 확인한다.
 
-`runtime_api marker 가 없습니다` 로 막혔다면 manifest 가 1.0 형식인데 marker 만 없는 상태다.
-이때 **marker 부재는 "1.0 이전 설치" 로 인정되지 않는다.** 인정하면 marker 와 version 을 함께
-지운 downgrade 가 통과하기 때문이다. `sage install --host <host> --force --dest .` 로 다시
-스탬프한다.
+`runtime_api marker 가 없습니다`로 막혔다면 manifest 가 1.0 형식인데 marker 만 없는 상태다. 이때
+**marker 부재는 "1.0 이전 설치" 로 인정되지 않는다.** 인정하면 marker 와 version 을 함께 지운
+downgrade 가 통과하기 때문이다. `sage install --host <host> --force --dest .`로 다시 스탬프한다.
 
 ## 차단 메시지에 `Next:`가 없음
 
-SAGE 가 내는 모든 사용자 노출 차단에는 최소 한 줄의 `Next:` 가 있고, 그중 최소 하나는 그대로
-붙여넣어 실행할 수 있는 명령이다. 사람이 직접 해야 하는 일은 `Next:` 가 아니라 `Action:` 으로
-나온다 — 붙여넣을 수 없는 문장을 `Next:` 로 내면 그 토큰이 "다음에 칠 것" 이라는 뜻을 잃는다.
+SAGE 가 내는 모든 사용자 노출 차단에는 최소 한 줄의 `Next:`가 있고, 그중 최소 하나는 그대로 붙여넣어
+실행할 수 있는 명령이다. 사람이 직접 해야 하는 일은 `Next:`가 아니라 `Action:`으로 나온다 — 붙여넣을
+수 없는 문장을 `Next:`로 내면 그 토큰이 "다음에 칠 것" 이라는 뜻을 잃는다.
 
-`Next:` 와 `Action:` 토큰은 한국어·영어에서 동일하다. 화면에서 검색하거나 로그에서 모아야
-하기 때문이다. 대괄호 안의 진단 code(`[gate.phase_incomplete]`)도 같은 이유로 번역하지 않는다.
+`Next:`와 `Action:` 토큰은 한국어·영어에서 동일하다. 화면에서 검색하거나 로그에서 모아야 하기
+때문이다. 대괄호 안의 진단 code(`[gate.phase_incomplete]`)도 같은 이유로 번역하지 않는다.
 
-`Next:` 가 하나도 없는 차단을 만났다면 그건 결함이다. 그 code 와 함께 보고하면 된다.
-직접 만든 project hook 이 낸 메시지에는 SAGE 가 복구 명령을 추측해 붙이지 않으며, 대신
-`Next: sage status` 만 보장한다.
+`Next:`가 하나도 없는 차단을 만났다면 그건 결함이다. 그 code 와 함께 보고하면 된다. 직접 만든
+project hook 이 낸 메시지에는 SAGE 가 복구 명령을 추측해 붙이지 않으며, 대신 `Next: sage status`만
+보장한다.
 
 ## `sage uninstall`이 자동 제거를 하지 않고 목록만 보여 줌
 
@@ -328,7 +333,7 @@ SAGE 가 내는 모든 사용자 노출 차단에는 최소 한 줄의 `Next:` �
 |---|---|---|---|
 | `uninstall.windows_10_manual_only` | Windows 10 데스크톱 — 자동 제거 후순위 | `BLOCKED`(2) | `BLOCKED`(2) |
 | `uninstall.windows_sku_not_supported` | Windows Server·도메인 컨트롤러 | `BLOCKED`(2) | `BLOCKED`(2) |
-| `uninstall.unsafe_platform` | 32-bit Python · native ARM64 · 비 NTFS · 네트워크/UNC | 계획의 상태 그대로 | `BLOCKED`(2) |
+| `uninstall.unsafe_platform` | 32-bit Python·native ARM64·비 NTFS·네트워크/UNC | 계획의 상태 그대로 | `BLOCKED`(2) |
 
 앞의 둘은 **지원 정책**이 SKU와 build만 보고 내리는 판정이라 계획 단계에서 결론이 납니다. 그래서
 `--check`도 `BLOCKED`입니다 — 자동 제거가 이 환경에서 결코 일어나지 않는데 계획만 보여 주면 곧
@@ -339,12 +344,12 @@ SAGE 가 내는 모든 사용자 노출 차단에는 최소 한 줄의 `Next:` �
 있는 조건이라 계획은 그대로 보여 주고, 거부는 실제 mutation 요청에만 걸립니다.
 
 이때 `--check`는 **capability를 재지 않습니다.** 계획을 세워 그 상태를 그대로 낼 뿐이라, 종료 코드는
-계획이 어떻게 나왔는지에 달려 있습니다 — 대개 `COMPLETE`(0)이나 `PARTIAL`(1)이지만, manifest 손상처럼
-**계획 자체가 막히는 사유**가 있으면 `--check`도 `BLOCKED`(2)입니다(예: `uninstall.plan_failed`).
-`unsafe_platform`은 그 경우의 사유가 아닙니다.
+계획이 어떻게 나왔는지에 달려 있습니다 — 대개 `COMPLETE`(0)이나 `PARTIAL`(1)이지만, manifest
+손상처럼 **계획 자체가 막히는 사유**가 있으면 `--check`도 `BLOCKED`(2)입니다(예:
+`uninstall.plan_failed`). `unsafe_platform`은 그 경우의 사유가 아닙니다.
 
-어느 쪽이든 **파일은 하나도 바뀌지 않습니다.** 화면이 주는 네 목록을 그대로 따르면 자동 제거와
-같은 결과가 됩니다.
+어느 쪽이든 **파일은 하나도 바뀌지 않습니다.** 화면이 주는 네 목록을 그대로 따르면 자동 제거와 같은
+결과가 됩니다.
 
 ```bash
 sage uninstall --check --json
@@ -359,9 +364,9 @@ sage uninstall --check --json
 
 정상입니다. `COMPLETE`(0)은 **지울 것도 보존 잔재도 없는 완전히 깨끗한 상태**에서만 나옵니다.
 
-손으로 정리한 뒤 손상된 host 설정 같은 보존 항목만 남아 있으면 그다음 실행은 `PARTIAL`(1)이고
-남은 경로와 사유를 다시 보고합니다. 남은 것이 있는데 0으로 끝나면 그 사실이 화면에서 사라지므로
-그렇게 하지 않습니다. 그 실행도 아무것도 바꾸지 않고 보관소를 만들지 않습니다.
+손으로 정리한 뒤 손상된 host 설정 같은 보존 항목만 남아 있으면 그다음 실행은 `PARTIAL`(1)이고 남은
+경로와 사유를 다시 보고합니다. 남은 것이 있는데 0으로 끝나면 그 사실이 화면에서 사라지므로 그렇게
+하지 않습니다. 그 실행도 아무것도 바꾸지 않고 보관소를 만들지 않습니다.
 
 ## `sage uninstall`이 확인 prompt 뒤에 `BLOCKED`(2)로 멈춤
 
@@ -370,13 +375,13 @@ prompt가 열려 있는 동안 대상 파일을 고치면 합의한 상태와 �
 파일까지 비교합니다.
 
 다시 `sage uninstall --check`로 현재 계획을 확인한 뒤 실행하세요. 다른 SAGE 명령이 같은 위치에서
-작업 중이어도 막힙니다 — `install`·`generate`와 **같은 lock**을 쓰므로 한쪽이 파일을 놓는 동안
-다른 쪽이 지우는 일이 없습니다. lock은 프로세스가 끝나면 풀리며 치울 lock 파일은 없습니다.
+작업 중이어도 막힙니다 — `install`·`generate`와 **같은 lock**을 쓰므로 한쪽이 파일을 놓는 동안 다른
+쪽이 지우는 일이 없습니다. lock은 프로세스가 끝나면 풀리며 치울 lock 파일은 없습니다.
 
 ## `sage uninstall` 뒤에 임시 보관소가 남음
 
-**명령은 성공입니다.** 요청한 제거는 이미 끝났고, 치우지 못한 `.sage-install-backup-` 경로만
-알려 드립니다. 그 목록은 text와 `--json`이 같은 근거로 냅니다. 지우려면 알려 준 경로만 지우세요.
+**명령은 성공입니다.** 요청한 제거는 이미 끝났고, 치우지 못한 `.sage-install-backup-` 경로만 알려
+드립니다. 그 목록은 text와 `--json`이 같은 근거로 냅니다. 지우려면 알려 준 경로만 지우세요.
 
 ## Cross-model 리뷰가 BLOCKED
 

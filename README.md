@@ -12,9 +12,8 @@
 
 ## 왜 필요한가
 
-AI 에이전트에게 "먼저 계획을 세우고, 위험한 파일은 조심히 다루고, 꼭 리뷰를 받아라"라고 매번 말해줘도
-그 지시는 결국 잊히거나 생략되기 쉽습니다. SAGE는 이런 규칙을 사람이 반복해서 말하는 대신, 자동으로
-확인하는 장치(hook)로 만듭니다.
+AI 에이전트에게 "계획부터 세우고, 위험한 파일은 조심히 다루고, 꼭 리뷰를 받아라"라고 매번 말해도 그
+지시는 잊히거나 생략됩니다. SAGE는 그 규칙을 자동으로 확인하는 장치(hook)로 만듭니다.
 
 - **계획 없이 위험한 파일을 고치려 하면** → 먼저 계획 문서를 쓰라고 막습니다.
 - **리뷰 없이 "완료됐다"고 보고하면** → 승인된 리뷰가 있는지 확인하고 없으면 막습니다.
@@ -67,9 +66,8 @@ sage generate --kind hook --write --target claude
 sage validate --kind all
 ```
 
-공유 profile이 이미 있는 프로젝트에 합류했다면 `sage-init` 대신 `sage-init-local`만 실행합니다.
-더 자세한 단계는 [퀵스타트](docs/quickstart.md), 설치 중 오류는 [문제 해결](docs/troubleshooting.md)을
-참조하세요.
+공유 profile이 있는 프로젝트에 합류했다면 `sage-init` 대신 `sage-init-local`만 실행합니다. 자세한
+단계는 [퀵스타트](docs/quickstart.md), 오류는 [문제 해결](docs/troubleshooting.md)에 있습니다.
 
 ## SAGE 1.0의 주요 기능
 
@@ -89,7 +87,7 @@ sage validate --kind all
 ## 지원 환경
 
 SAGE의 일반 CLI와 설치 hook은 Python 3.10+에서 동작하며 Windows에서도 bash가 필요 없습니다. 다만
-표준 L2/L3 전달 흐름의 `scripts/verify-changes.sh`와 사용자 정의 `.sh` 테스트에는 Git Bash가 필요합니다.
+`scripts/verify-changes.sh`와 사용자 정의 `.sh` 테스트에는 Git Bash가 필요합니다.
 
 `sage uninstall`의 **자동 제거 지원 범위**는 더 좁습니다. 파일을 지우는 기능이므로 검증되지 않은
 환경에서는 추측해서 실행하지 않고 첫 변경 전에 멈춥니다.
@@ -104,8 +102,8 @@ SAGE의 일반 CLI와 설치 hook은 Python 3.10+에서 동작하며 Windows에�
 | 32-bit Python, native ARM64 Python, 비 NTFS·네트워크·UNC 경로 | 환경별 제한 | 자동 제거하지 않음; `--check`로 계획 확인 가능 |
 
 NTFS는 일반적인 Windows 로컬 디스크의 기본 파일 시스템입니다. **동작할 수 있다는 것과 정식으로
-지원한다는 것은 다릅니다** — 범위 밖 환경에서 일반 CLI가 도는 경우가 있어도 그 동작을 약속하지
-않고, 직접 검증하지도 않습니다. Windows 11 데스크톱의 자동 제거는 그 SKU에서 **실제로 실행해
+지원한다는 것은 다릅니다** — 범위 밖 환경에서 일반 CLI가 도는 경우가 있어도 그 동작을 약속하지 않고,
+직접 검증하지도 않습니다. Windows 11 데스크톱의 자동 제거는 그 SKU에서 **실제로 실행해
 검증했습니다** — Windows Server 결과로 갈음하지 않았습니다. 두 종류의 거부 화면과 자세한 판정은
 [CLI 레퍼런스](docs/cli-reference.md)와 [문제 해결](docs/troubleshooting.md)에 있습니다.
 
@@ -131,7 +129,8 @@ sage upgrade --apply
 sage status
 ```
 
-`--check`는 계획만 보여 줍니다. `--apply`는 transaction이라 실패하면 되돌리고, 자동 downgrade는 없습니다.
+`--check`는 계획만 보여 줍니다. `--apply`는 transaction이라 실패하면 되돌리고 자동 downgrade는
+없습니다.
 
 ## 안전하게 제거
 
@@ -144,34 +143,35 @@ pipx uninstall sage-harness
 ```
 
 자동 제거가 지원되지 않는 환경에서도 두 명령은 실제 경로를 `STRIP`(공유 파일에서 SAGE 부분만
-제거) · `DELETE` · `PRESERVE` · `BLOCK`으로 나눠 보여 줍니다. 대상은 host·scope·프로젝트 위치·
-`CODEX_HOME`에 따라 달라지므로 고정 목록을 여기 싣지 않습니다. 출력된 목록을 따르되 `PRESERVE`와
-`BLOCK`은 지우지 마세요 — 손 대는 법은 [문제 해결](docs/troubleshooting.md)에 있습니다.
+제거)·`DELETE`·`PRESERVE`·`BLOCK`으로 나눠 보여 줍니다. 대상은 host·scope·프로젝트
+위치·`CODEX_HOME`에 따라 달라지므로 고정 목록을 여기 싣지 않습니다. 출력된 목록을 따르되
+`PRESERVE`와 `BLOCK`은 지우지 마세요 — 손 대는 법은 [문제 해결](docs/troubleshooting.md)에 있습니다.
 
 ## 어떻게 동작하는가
 
-SAGE는 두 종류의 파일을 나눠서 관리합니다 — **사람이 고치는 정의 파일**과, 그로부터 자동으로 만들어져
-**AI가 실제로 읽는 실행 파일**입니다.
+SAGE는 두 종류의 파일을 나눠서 관리합니다 — **사람이 고치는 정의 파일**과, 그로부터 자동으로
+만들어져 **AI가 실제로 읽는 실행 파일**입니다.
 
 ```
-정의 파일 (사람이 고침)          sage generate        실행 파일 (AI가 읽음)
+정의 파일 (사람이 고침)         sage generate       실행 파일 (AI가 읽음)
 hook / agent / skill spec    <------------------>   .claude / .codex
-          |                                                |
-          +---- 확인 --- sage validate ---------------------+
-          +---- 직접 고치려 하면 ----> 정의 파일을 고치라고 안내
+            |                                                 |
+            +---- 확인 --- sage validate ---------------------+
+            +---- 직접 고치려 하면 ----> 정의 파일을 고치라고 안내
 ```
 
-정의 파일을 고치고 `sage generate`를 실행하면 실제 AI가 읽는 실행 파일이 자동으로 갱신됩니다. 두 파일이
-어긋나면(직접 고쳤거나 갱신을 깜빡했으면) `sage validate`가 잡아냅니다. AI가 실행 파일을 직접 고치려
-하면 SAGE가 막고, 대신 정의 파일을 고치도록 안내합니다.
+정의 파일을 고치고 `sage generate`를 실행하면 실제 AI가 읽는 실행 파일이 자동으로 갱신됩니다. 두
+파일이 어긋나면(직접 고쳤거나 갱신을 깜빡했으면) `sage validate`가 잡아냅니다. AI가 실행 파일을 직접
+고치려 하면 SAGE가 막고, 대신 정의 파일을 고치도록 안내합니다.
 
-판단이 필요한 코드 작성과 리뷰는 AI가 담당하고, 무결성·단계·승인 경계는 SAGE가 코드로 검사합니다.
-더 자세한 신뢰 경계와 실패 정책은 [Architecture](docs/ARCHITECTURE.md)에 있습니다.
+판단이 필요한 코드 작성과 리뷰는 AI가 담당하고, 무결성·단계·승인 경계는 SAGE가 코드로 검사합니다. 더
+자세한 신뢰 경계와 실패 정책은 [Architecture](docs/ARCHITECTURE.md)에 있습니다.
 
 ## 개발 절차
 
 - **PDCA** — 계획 → 구현 → 독립 리뷰 → 완료보고를 결속합니다.
-- **완료 기준(Done Criteria)** — 요구별 증거를 추적하고, 기준이 바뀌면 영향받은 단계를 다시 검증합니다.
+- **완료 기준(Done Criteria)** — 요구별 증거를 추적하고, 기준이 바뀌면 영향받은 단계를 다시
+  검증합니다.
 - **profile** — 팀 공유 정책과 개인 환경 설정을 분리합니다.
 - **Fast Cycle** — 명시적으로 켠 경우 문서 수를 줄이되 전환 과정을 감사 기록에 남깁니다.
 - **조기 완료 승인** — 사용자가 남은 위험을 명시적으로 인수했을 때만 일반 승인과 구분해 기록합니다.

@@ -1,7 +1,8 @@
-<!-- sage-doc-source: cli-reference.md sha256:c1880b8590b55d8418994f1ae0d17cc07ffc5990b317cbd84e7362bb1855f3c1 -->
+<!-- sage-doc-source: cli-reference.md sha256:ee65f82587c6228db00d25253a9fa6ea466d615b930b1c1a5107064498364199 -->
 # SAGE CLI Reference
 
-[한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for the exact options available in your environment
+[한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for
+the exact options available in your environment
 
 ## Installation and generation
 
@@ -37,14 +38,15 @@ run `sage generate --kind hook --write --target both` after registration or prof
 
 For `decide(event, profile, snapshot)`, `event` provides `hook_id`, `hook_event_name`
 (`PreToolUse`), `runtime`, `session_id`, and `changes`. `changes` is a possibly empty list of
-`{path, op}` objects extracted from the host input. `op` is `write` on claude and `add`/`update`/`move`
-on codex, where `move` carries only the `apply_patch` move destination — the origin path is not a
-place where a document materializes, so it is excluded. Deletions are also excluded. Globs returned by optional `plan_reads()` read only regular files inside the project
-root. `snapshot` always has the shape `{glob_results, files}` whether or not `plan_reads()` is
-declared — both are empty when it is not. `plan_reads()` must return exactly `{'globs': [...]}`;
-a missing `globs` key is a contract failure.
-Directories matched by recursive globs are skipped; root escapes including symlink ancestors,
-symlink leaf matches, and other non-regular paths are contract failures.
+`{path, op}` objects extracted from the host input. `op` is `write` on claude and
+`add`/`update`/`move` on codex, where `move` carries only the `apply_patch` move destination — the
+origin path is not a place where a document materializes, so it is excluded. Deletions are also
+excluded. Globs returned by optional `plan_reads()` read only regular files inside the project root.
+`snapshot` always has the shape `{glob_results, files}` whether or not `plan_reads()` is declared —
+both are empty when it is not. `plan_reads()` must return exactly `{'globs': [...]}`; a missing
+`globs` key is a contract failure. Directories matched by recursive globs are skipped; root escapes
+including symlink ancestors, symlink leaf matches, and other non-regular paths are contract
+failures.
 
 ### `sage uninstall [--global|--all]`
 
@@ -58,9 +60,9 @@ with `pipx uninstall sage-harness`.
 | `sage uninstall --all [--dest PATH]` | Both, as one transaction |
 
 The order is the contract: print an immutable plan (baseline captured) → confirm or `--yes` →
-ordered lock → compare the fingerprint → re-check the boundary → back up → execute → verify →
-commit → cleanup → unlock. `--check` stops after the first step and changes nothing — it does not
-even take the lock. Cancelling ends at `CANCELLED(0)` without a single byte changed.
+ordered lock → compare the fingerprint → re-check the boundary → back up → execute → verify → commit
+→ cleanup → unlock. `--check` stops after the first step and changes nothing — it does not even take
+the lock. Cancelling ends at `CANCELLED(0)` without a single byte changed.
 
 **The baseline is from the moment the plan was shown to you.** If you edit a target file while the
 confirmation prompt is open, nothing is removed and the run stops with `BLOCKED(2)` — the state you
@@ -73,13 +75,14 @@ The lock is released when the process exits, so there is no lock file for you to
 A cleanup failure is **still a success.** The requested removal already finished; we only report the
 temporary backup paths we could not clear.
 
-**Actual removal is supported on POSIX and on Windows 11 desktop workstation, x64, 64-bit Python, local NTFS.** The
-safety of this command comes from opening and holding the target's parent directory before the first
-change — after that, whatever happens to the ancestor path names, the work still lands in the
-original directory. Where that binding cannot be established (network/UNC paths, non-NTFS volumes,
-missing native primitives, **32-bit Python**, **a non-x64 architecture**) the command refuses with
-`uninstall.unsafe_platform` **before the first change**. Running anyway could create files outside the project, and for an
-irreversible command that risk cannot be replaced by a warning in the docs.
+**Actual removal is supported on POSIX and on Windows 11 desktop workstation, x64, 64-bit Python,
+local NTFS.** The safety of this command comes from opening and holding the target's parent
+directory before the first change — after that, whatever happens to the ancestor path names, the
+work still lands in the original directory. Where that binding cannot be established (network/UNC
+paths, non-NTFS volumes, missing native primitives, **32-bit Python**, **a non-x64 architecture**)
+the command refuses with `uninstall.unsafe_platform` **before the first change**. Running anyway
+could create files outside the project, and for an irreversible command that risk cannot be replaced
+by a warning in the docs.
 
 32-bit Python is on that list because this command's native struct layout is computed for the Win64
 ABI alone. In a 32-bit process the layout differs, and **an unverified ABI layout means the native
@@ -87,8 +90,8 @@ call's result cannot be trusted.** If real demand appears it becomes follow-up w
 
 **A native ARM64 Python process is refused.** The pointer width, the SKU, and the build all satisfy
 their gates, so a width-only check would let it straight through. But x64 is the only architecture
-this command has ever actually run on, and for an irreversible command "it will probably work" is not
-a reason to run. If real demand appears it is verified in separate follow-up work.
+this command has ever actually run on, and for an irreversible command "it will probably work" is
+not a reason to run. If real demand appears it is verified in separate follow-up work.
 
 **Running under x64 emulation on ARM64 Windows may go either way.** What the architecture reports
 there depends on the Python version and the execution environment, so we do not state it as a fact.
@@ -112,11 +115,11 @@ and a plain plan would read as something about to run. That screen shows all fou
 partial removal, preserve, blocked) uncollapsed, together with the order to clean them up by hand;
 following it reaches the same result as an automatic run.
 
-**(2) Capability limits** — network/UNC paths, non-NTFS volumes, 32-bit Python, ARM64, missing native
-primitives. That is `uninstall.unsafe_platform`, and here **`--check` still shows the plan.** These
-are conditions that can become true by switching volumes or choosing a different root, so blocking
-the plan too would present something fixable as unfixable. The refusal applies to an actual mutation
-request only.
+**(2) Capability limits** — network/UNC paths, non-NTFS volumes, 32-bit Python, ARM64, missing
+native primitives. That is `uninstall.unsafe_platform`, and here **`--check` still shows the plan.**
+These are conditions that can become true by switching volumes or choosing a different root, so
+blocking the plan too would present something fixable as unfixable. The refusal applies to an actual
+mutation request only.
 
 `COMPLETE` (0) is reserved for a **completely clean state — nothing to remove and no preserved
 residue**. Once you have cleaned up by hand and only preserved entries remain (a damaged host
@@ -159,7 +162,8 @@ output. A JSON key that is not identifier-shaped is redacted from the pointer: l
 costs less than leaking the value.
 
 The default (project) scope **neither reads nor writes** `$CODEX_HOME`. It therefore makes no claim
-about what remains globally; it states that the global scope was not inspected and points at `--all`.
+about what remains globally; it states that the global scope was not inspected and points at
+`--all`.
 
 | Status | exit | Meaning |
 |---|---:|---|
@@ -169,13 +173,14 @@ about what remains globally; it states that the global scope was not inspected a
 | `CANCELLED` | 0 | The user cancelled before any mutation |
 
 `PARTIAL(1)` is **not a failure**. Preserving the top-level shared documents is the ordinary outcome
-and lands here. If automation needs to read that distinction, use `--json` — there is deliberately no
-`--allow-partial` style flag that changes exit codes. Returning `0` would make "only part of it was
-removed" indistinguishable from success, and that distinction is the point of this command. `--json`
-Host settings are read as standard JSON only. A duplicate key within one object, or `NaN`/`Infinity`,
-is treated as damage — reading leniently would mean the document we read differs from the one the host
-reads, and for a removal command that difference becomes "what we said we removed is not what we
-removed".
+and lands here. If automation needs to read that distinction, use `--json` — there is deliberately
+no `--allow-partial` style flag that changes exit codes. Returning `0` would make "only part of it
+was removed" indistinguishable from success, and that distinction is the point of this command.
+
+Host settings are read as standard JSON only. A duplicate key within one object, or
+`NaN`/`Infinity`, is treated as damage — reading leniently would mean the document we read differs
+from the one the host reads, and for a removal command that difference becomes "what we said we
+removed is not what we removed".
 
 Hook handlers have **a different contract per kind**. The `type` is resolved first, then `command`
 requires `command`, `http` requires `url`, `mcp_tool` requires `server` and `tool`, and `prompt` and
@@ -185,53 +190,52 @@ requires `command`, `http` requires `url`, `mcp_tool` requires `server` and `too
 events accept all five kinds, some accept everything except `prompt` and `agent`, and `SessionStart`
 and `Setup` accept only `command` and `mcp_tool`. A handler an event does not accept makes the
 document one we do not understand, so the file is preserved rather than rewritten even when a SAGE
-registration is visible. For a host whose contract table we carry (currently Claude), an
-event missing from that table is likewise not assumed to allow everything — saying we do not know is
-better than guessing. Codex does not share Claude's table; it is tracked as a separate contract and is
-not restricted by kind until its own table is carried. SAGE ownership comparison and removal apply **only to `command` handlers**,
-so a normal `prompt`, `agent`, `http`, or `mcp_tool` hook sitting alongside ours is not reported as
-damage and stays untouched. Another kind that happens to carry a `command` property equal to ours is
-still not ours. An unknown kind, or a missing field required by its kind, preserves the file rather
-than rewriting it.
+registration is visible. For a host whose contract table we carry (currently Claude), an event
+missing from that table is likewise not assumed to allow everything — saying we do not know is
+better than guessing. Codex does not share Claude's table; it is tracked as a separate contract and
+is not restricted by kind until its own table is carried. SAGE ownership comparison and removal
+apply **only to `command` handlers**, so a normal `prompt`, `agent`, `http`, or `mcp_tool` hook
+sitting alongside ours is not reported as damage and stays untouched. Another kind that happens to
+carry a `command` property equal to ours is still not ours. An unknown kind, or a missing field
+required by its kind, preserves the file rather than rewriting it.
 
 Global assets come in two families (the CORE id name and the `<prefix>-<aid>` render), so a given
-configuration can make both point at **the same path**. When that happens neither one wins: the whole
-plan ends as `BLOCKED(2)` with `uninstall.action_conflict`. Two pieces of evidence reaching different
-conclusions about one file means we do not know what that file is, and we do not pick an irreversible
-deletion from a state of not knowing.
+configuration can make both point at **the same path**. When that happens neither one wins: the
+whole plan ends as `BLOCKED(2)` with `uninstall.action_conflict`. Two pieces of evidence reaching
+different conclusions about one file means we do not know what that file is, and we do not pick an
+irreversible deletion from a state of not knowing.
 
 Strings the user wrote — a damaged manifest's keys, a host name — are never carried into diagnostics
-verbatim. Identifier-shaped names pass through; anything else is redacted and its position is given as
-an `index` instead.
+verbatim. Identifier-shaped names pass through; anything else is redacted and its position is given
+as an `index` instead.
 
 A manifest asset key must be exactly `<kind>s/<id>`. That value is appended to the global skill path
-as **a path fragment**, so a single key like `skills/../../../x` would make the plan point outside the
-project.
+as **a path fragment**, so a single key like `skills/../../../x` would make the plan point outside
+the project.
 
-`--json` consumes the same plan as the human-readable screen, so the two can never disagree, and it is
-byte-identical in either locale. Executing with `--json` requires `--yes`: the confirmation prompt and
-JSON are never mixed into one stream.
+`--json` consumes the same plan as the human-readable screen, so the two can never disagree, and it
+is byte-identical in either locale. Executing with `--json` requires `--yes`: the confirmation
+prompt and JSON are never mixed into one stream.
 
 Path display goes through **one function** shared by the screen and `--json`. Project assets appear
-relative to the repository root, global assets as `$CODEX_HOME/skills/...`, and control characters or
-newlines inside file names are escaped — printed raw, one list line becomes two, and a name someone
-else chose gets to forge a line in our output. A path pointing outside the write root is shown only as
-`<outside-project>` — that string was chosen by whatever tried to escape, not by us. That rendering
-is `path`; the old `project_path` field, which appended a relative path to an absolute one, is gone. Every entry also carries the reason code
-(`reason`), the structured damage facts (`detail`), and the registration state
-(`registration_state`).
+relative to the repository root, global assets as `$CODEX_HOME/skills/...`, and control characters
+or newlines inside file names are escaped — printed raw, one list line becomes two, and a name
+someone else chose gets to forge a line in our output. A path pointing outside the write root is
+shown only as `<outside-project>` — that string was chosen by whatever tried to escape, not by us.
+That rendering is `path`; the old `project_path` field, which appended a relative path to an
+absolute one, is gone. Every entry also carries the reason code (`reason`), the structured damage
+facts (`detail`), and the registration state (`registration_state`).
 
 The install record (manifest) is first checked for **whether it can serve as ownership evidence**.
 Required fields, types, `installed_hosts`, `assets` entries, `core_renders` receipts, and skill
 receipts are validated **all the way down** by the **same contract** install uses, and a violation
 ends the run with `BLOCKED(2)` before any confirmation. An empty receipt means "we do not know what
-was placed", and deleting from a state of not knowing is deleting someone else's file.
-Reading an empty manifest as normal means "the install is proven and nothing was placed", which
-erases the evidence first and then reports nothing left to do. A destination that is the filesystem
-root or one of its direct children (`/usr`, `/opt`, `/Users`) is likewise `BLOCKED(2)` at planning
-time, with zero write targets. Even when planning hits input it cannot read, the result is a
-`BLOCKED(2)` JSON envelope rather than a traceback — for any input, the outcome is one of the four
-states.
+was placed", and deleting from a state of not knowing is deleting someone else's file. Reading an
+empty manifest as normal means "the install is proven and nothing was placed", which erases the
+evidence first and then reports nothing left to do. A destination that is the filesystem root or one
+of its direct children (`/usr`, `/opt`, `/Users`) is likewise `BLOCKED(2)` at planning time, with
+zero write targets. Even when planning hits input it cannot read, the result is a `BLOCKED(2)` JSON
+envelope rather than a traceback — for any input, the outcome is one of the four states.
 
 `--global` + `--all`, `--check` + `--yes`, and `--global` + `--dest` are usage errors (`2`).
 
@@ -276,30 +280,31 @@ states.
 | `sage fast-cycle abort --run-id F --reason R` | Abort an active Fast run with an audited reason |
 | `sage fast-cycle show [--run-id F] [--vault [PATH]]` | Show audit state and optionally render the Obsidian dashboard |
 
-The `sage-cycle` umbrella does not run `set` or `clear` directly. `sage-plan` declares
-the verified stem, while `sage-team` reconciles it with `show` on resume and clears it
-after write-back, retro, snapshots, and closing gates. `BLOCKED` and `FAIL` retain the
-declaration. Use `sage cycle show` to inspect the effective source and the shadowed file;
-when the environment wins, release it with `unset SAGE_CYCLE_STEM`.
+The `sage-cycle` umbrella does not run `set` or `clear` directly. `sage-plan` declares the verified
+stem, while `sage-team` reconciles it with `show` on resume and clears it after write-back, retro,
+snapshots, and closing gates. `BLOCKED` and `FAIL` retain the declaration. Use `sage cycle show` to
+inspect the effective source and the shadowed file; when the environment wins, release it with
+`unset SAGE_CYCLE_STEM`.
 
-`set B` switches only the pointer and does not modify cycle A's phase documents,
-evidence, or audits; `set A` restores A's evaluation. `--create` creates only Phase 00,
-so write any required Phases 01-03 before governed source edits. For an urgent,
-waivable phase gap, use a short TTL such as `sage override --reason R --ttl 1h`.
-Phase 00 risk declaration and reconciliation blocks are never waivable by override.
+`set B` switches only the pointer and does not modify cycle A's phase documents, evidence, or
+audits; `set A` restores A's evaluation. `--create` creates only Phase 00, so write any required
+Phases 01-03 before governed source edits. For an urgent, waivable phase gap, use a short TTL such
+as `sage override --reason R --ttl 1h`. Phase 00 risk declaration and reconciliation blocks are
+never waivable by override.
 
-`convert` additionally requires `pdca.fast_cycle.standard_transition.enabled: true`. It is the
-path for a cycle already past Phase 00 to adopt the Fast contract without authoring a composite
-plan. The conversion **writes no document**: existing Phases 00–04 are not deleted, moved, merged,
-or rewritten, and no conversion metadata is inserted into them. The record of authority is the
-single `fast_convert` entry in `.sage/fast_cycle.jsonl`, which lists the phases that existed at
-conversion time. A converted run waives **only the pre-implementation phases that list can show** —
-convert at Phase 00 and 01–03 are still required before source edits. Without all of `--confirm
-FAST-CONVERTED`, `--reason`, and `--confirmed-by`, the command exits without writing anything. A
-converted run carries no `Fast-Audit-Run` line in its document and binds by stem instead.
+`convert` additionally requires `pdca.fast_cycle.standard_transition.enabled: true`. It is the path
+for a cycle already past Phase 00 to adopt the Fast contract without authoring a composite plan. The
+conversion **writes no document**: existing Phases 00–04 are not deleted, moved, merged, or
+rewritten, and no conversion metadata is inserted into them. The record of authority is the single
+`fast_convert` entry in `.sage/fast_cycle.jsonl`, which lists the phases that existed at conversion
+time. A converted run waives **only the pre-implementation phases that list can show** — convert at
+Phase 00 and 01–03 are still required before source edits. Without all of
+`--confirm FAST-CONVERTED`, `--reason`, and `--confirmed-by`, the command exits without writing
+anything. A converted run carries no `Fast-Audit-Run` line in its document and binds by stem
+instead.
 
-`show` and the dashboard label every run with a single `entry=` value, because which contract
-opened the run is what later verdicts turn on.
+`show` and the dashboard label every run with a single `entry=` value, because which contract opened
+the run is what later verdicts turn on.
 
 | `entry` | Meaning | Where it comes from |
 |---|---|---|
@@ -334,10 +339,9 @@ Early completion requires `pdca.review_loop.early_completion.enabled: true` and 
 while `sage review-loop next` still recommends `CONTINUE`. It is not an iteration waiver but an
 explicit user acceptance of residual non-blocking risk, so an authorization does not carry any of
 these past the gate: zero completed rounds or fewer than `minimum_completed_rounds`, unresolved
-findings at a `severity_block` severity, architecture escalation or `BLOCKED_ARCH`, unresolved
-Done Criteria or a missing revision rerun, acceptance `FAIL`, a required
-`NOT TESTED` without an active waiver, audit damage or chain/sequence failure, and a binding
-mismatch.
+findings at a `severity_block` severity, architecture escalation or `BLOCKED_ARCH`, unresolved Done
+Criteria or a missing revision rerun, acceptance `FAIL`, a required `NOT TESTED` without an active
+waiver, audit damage or chain/sequence failure, and a binding mismatch.
 
 The verdict token stays `APPROVED` for compatibility, so the Phase 05 document records how it was
 reached. What decides a block is **the value, not the presence** of a marker. Writing either
@@ -346,11 +350,11 @@ counts as claiming reduced assurance. Once claimed — or once the audit itself 
 four markers (`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`, `Residual-Findings`) must
 appear exactly once each outside fenced code blocks, with values matching the audit record. A
 normally closed run that claims reduced assurance is blocked, and so is an early-closed run that
-omits the markers — the server authority applies the same rule to that second case. A single
-neutral line such as `Review-Rounds: 3` is not blocked. The `(configured max: <max>)` part of
+omits the markers — the server authority applies the same rule to that second case. A single neutral
+line such as `Review-Rounds: 3` is not blocked. The `(configured max: <max>)` part of
 `Review-Rounds` is matched too — it is the denominator that says how much review was skipped, so
-inflating or lowering it changes how the document reads. A project with no ceiling configured
-writes `unbounded`, the same word the audit records. The `--survived-by-severity` total must equal
+inflating or lowering it changes how the document reads. A project with no ceiling configured writes
+`unbounded`, the same word the audit records. The `--survived-by-severity` total must equal
 `--survived` exactly — that is what stops a `P0=0`-only receipt from hiding a blocking finding.
 
 What an early completion accepts is residual review findings, not unverified requirements. If the
@@ -358,8 +362,8 @@ selected Phase 04 still carries an acceptance `FAIL`, or a required `NOT TESTED`
 exact waiver, the early close is refused and nothing is appended. That judgment uses **the same
 policy and the same parser** as the Phase 06 report gate, so a project that does not use
 `verification.acceptance` gains no new gate here. Build/test/lint results, though, live only in
-Phase 03 prose where no gate can read them: an early close over a failing required check is a
-state the engine cannot stop, so a person has to.
+Phase 03 prose where no gate can read them: an early close over a failing required check is a state
+the engine cannot stop, so a person has to.
 
 ## Knowledge and context
 
@@ -380,8 +384,8 @@ state the engine cannot stop, so a person has to.
 
 ## Interface language
 
-The global `--lang` goes **before the subcommand**. Put it anywhere else and the command
-fails — `sage doctor --lang en` is not a supported form.
+The global `--lang` goes **before the subcommand**. Put it anywhere else and the command fails —
+`sage doctor --lang en` is not a supported form.
 
 ```text
 sage [--lang {ko,en}] <command> [command options]
@@ -398,15 +402,15 @@ interface:
   language: en      # absent means ko
 ```
 
-Resolution order is `--lang` → local profile → `ko`. Hooks take no `--lang`, so they follow
-the local profile and the default only. This setting never appears in the shared profile,
-`project-profile.json`, a manifest, or the profile hash — a language preference is a property
-of the person at the keyboard, not of the project's governance. **Language never changes a
-verdict**: for the same input, `ko` and `en` produce the same status, exit code, and
-`message_key`; only the human-readable sentence differs.
+Resolution order is `--lang` → local profile → `ko`. Hooks take no `--lang`, so they follow the
+local profile and the default only. This setting never appears in the shared profile,
+`project-profile.json`, a manifest, or the profile hash — a language preference is a property of the
+person at the keyboard, not of the project's governance. **Language never changes a verdict**: for
+the same input, `ko` and `en` produce the same status, exit code, and `message_key`; only the
+human-readable sentence differs.
 
-The language Phase 00–06 documents are *written* in is a **separate** decision, fixed once per
-cycle with `Document-Language:`. Full rules live in
+The language Phase 00–06 documents are *written* in is a **separate** decision, fixed once per cycle
+with `Document-Language:`. Full rules live in
 `templates/core/framework/docs/agent/language-policy.md`.
 
 ## Which command answers which question
@@ -479,12 +483,12 @@ many `--limit` left out, and `truncated` is the boolean `omitted > 0`. `truncate
 as a count because `0` would then mean both "false" and "nothing omitted".
 
 `diagnostics` is the single home for diagnostics, and which source a diagnostic belongs to is
-carried by `evidence.source`. `sources` holds no copy — when the same fact lives in two places
-there is nothing to decide which one is right once they diverge.
+carried by `evidence.source`. `sources` holds no copy — when the same fact lives in two places there
+is nothing to decide which one is right once they diverge.
 
-`--limit` defaults to 100 and its range is 1-10000. Values outside the range are rejected with
-exit `2` rather than quietly clamped — `0` does not mean unlimited. Clamping would make the value
-you asked for differ from the value you got, with nothing on screen saying so.
+`--limit` defaults to 100 and its range is 1-10000. Values outside the range are rejected with exit
+`2` rather than quietly clamped — `0` does not mean unlimited. Clamping would make the value you
+asked for differ from the value you got, with nothing on screen saying so.
 
 A retro note path is never printed, even when it is a valid repository-relative path. The query
 answers only whether a note existed (`vault_note_present`) and whether a digest was recorded
@@ -495,10 +499,10 @@ Each source state carries both `policy` (`shared`/`local`) and `tracking` (the a
 Folding them into one value would make "should be committed but isn't" and "personal record by
 design" read the same.
 
-A source's `present` has **three** states. Beyond present and absent, there is the state where
-the tool could not read the source and therefore **could not determine** it: text prints
-`present=unknown` and JSON emits `null`. Folding it into two would make a tool failure read as
-"no records".
+A source's `present` has **three** states. Beyond present and absent, there is the state where the
+tool could not read the source and therefore **could not determine** it: text prints
+`present=unknown` and JSON emits `null`. Folding it into two would make a tool failure read as "no
+records".
 
 There is exactly **one** gate to the local sources: `--include-local`. Passing `--source retro`
 without it exits `2` rather than returning an empty result — an empty result reads as "there are no
@@ -510,5 +514,5 @@ output says so. The result is never an input to any gate.
 ## Common exit codes
 
 Command-specific `--help` and output take precedence. In general, `0` means PASS, `1` means
-validation FAIL, `2` means a tool or gate error or BLOCK, and `3` means STALE. For hooks, `0`
-allows the operation and `2` blocks it.
+validation FAIL, `2` means a tool or gate error or BLOCK, and `3` means STALE. For hooks, `0` allows
+the operation and `2` blocks it.

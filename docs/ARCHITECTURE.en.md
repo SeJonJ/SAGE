@@ -1,12 +1,12 @@
-<!-- sage-doc-source: ARCHITECTURE.md sha256:1429e34b68e7b3dfdac2c6c6f2c7e5beb75db79926f8a50847f51e0e6325f1e6 -->
+<!-- sage-doc-source: ARCHITECTURE.md sha256:d3fac3bd378d2ee81580475e62045a8acdbdb8e942b52cca3f2831f844a925f5 -->
 # SAGE Architecture
 
 [한국어](ARCHITECTURE.md) | [Documentation index](README.en.md)
 
-SAGE is a governance harness built on the principle that **AI owns judgment while deterministic
-code owns boundaries**. This document consolidates the **two-layer invariant**, **failure policy**,
-and **trust boundary** that define that separation. It promotes contracts previously scattered
-across code comments into a single reference.
+SAGE is a governance harness built on the principle that **AI owns judgment while deterministic code
+owns boundaries**. This document consolidates the **two-layer invariant**, **failure policy**, and
+**trust boundary** that define that separation. It promotes contracts previously scattered across
+code comments into a single reference.
 
 ## Two-layer invariant
 
@@ -53,10 +53,9 @@ by runtime and event together.
 | UserPromptSubmit (exit 0) | plain stdout — becomes context directly | `hookSpecificOutput` |
 | Stop block | exit 2 with stderr | exit 0 with `decision: block` |
 
-In Claude Code the events whose exit-0 plain stdout is promoted to context are
-`UserPromptSubmit`, `UserPromptExpansion`, and `SessionStart`; every other event writes to the debug
-log only. Message text is owned solely by `runtime/messages.py`; `io_claude` and `io_codex` decide
-only the channel.
+In Claude Code the events whose exit-0 plain stdout is promoted to context are `UserPromptSubmit`,
+`UserPromptExpansion`, and `SessionStart`; every other event writes to the debug log only. Message
+text is owned solely by `runtime/messages.py`; `io_claude` and `io_codex` decide only the channel.
 
 ## OS boundary and the two judgement axes (`sage uninstall`)
 
@@ -120,10 +119,9 @@ The CI gate only consumes that result.
   report gate validates per-run strict hash chains, record self-hashes, and file parse integrity.
 - Missing or bypassed local hooks: local hooks only work if the contributor's machine has SAGE
   installed. SD-9/Fast Cycle add a server-side authority (`sage/ci_authority.py`, pure and
-  git-independent) that independently re-verifies the strict hash chains of
-  `.sage/fast_cycle.jsonl` and `loop_audit.jsonl` in CI, so a PR from a contributor without hooks —
-  or one who bypassed them — is still caught by the required check. The local gate is not the only
-  line of defense.
+  git-independent) that independently re-verifies the strict hash chains of `.sage/fast_cycle.jsonl`
+  and `loop_audit.jsonl` in CI, so a PR from a contributor without hooks — or one who bypassed them
+  — is still caught by the required check. The local gate is not the only line of defense.
 
 **SAGE does not block by design**
 
@@ -133,10 +131,10 @@ The CI gate only consumes that result.
   uses canonical SHA-256 with fixed key ordering and Unicode representation to self-verify each
   record and its immediate predecessor. While any v1 chain field remains in a run, it detects
   mutation, insertion, non-tail deletion, and reordering when hashes are not recomputed. It does not
-  authenticate the file against an attacker who can recalculate the chain. Legacy compatibility
-  also accepts a run with no chain fields as `chain_ok=None`, so removing all three chain fields
-  from every record in a run is indistinguishable from legitimate legacy data. Without a secret
-  key, signed head, a tip in another artifact, a Git baseline, or an external witness, this is
+  authenticate the file against an attacker who can recalculate the chain. Legacy compatibility also
+  accepts a run with no chain fields as `chain_ok=None`, so removing all three chain fields from
+  every record in a run is indistinguishable from legitimate legacy data. Without a secret key,
+  signed head, a tip in another artifact, a Git baseline, or an external witness, this is
   **self-verification**, not standalone tamper resistance. A tip edit is detected by the record
   self-hash, deletion of the final close is rejected by the report gate's `closed` invariant, and
   Git history plus code review remain the external anchor for fully recomputed or downgraded

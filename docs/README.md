@@ -17,8 +17,8 @@
 ## 거버넌스 하네스
 
 `docs/sage_harness/`는 설치되는 hook·agent·skill·MCP spec과 manifest의 정본입니다. 일반 사용자
-설명서가 아니라 SAGE 엔진과 생성기가 소비하는 자산이므로 직접 구조를 바꿀 때는
-`sage generate`와 `sage validate`를 함께 실행해야 합니다.
+설명서가 아니라 SAGE 엔진과 생성기가 소비하는 자산이므로 직접 구조를 바꿀 때는 `sage generate`와
+`sage validate`를 함께 실행해야 합니다.
 
 ## 에이전트 프레임워크
 

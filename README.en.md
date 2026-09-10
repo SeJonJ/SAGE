@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:c3255b426588d501a61e9398147317142292c4b1d21e694d01291011244054bb -->
+<!-- sage-doc-source: README.md sha256:5b94a7674e3d4aa7d0f17793904378ee93b8830c9160c4b8eade3cc927abae91 -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)
@@ -13,17 +13,17 @@ risky code without a plan, or reporting "done" without a review.**
 
 ## Why you need this
 
-Telling an agent "plan first, be careful with risky files, always get a review" every time is easy to
-forget or skip. SAGE turns those reminders into automatic checks (hooks) a human need not repeat.
+Telling an agent "plan first, be careful with risky files, always get a review" every time is easy
+to forget or skip. SAGE turns those reminders into automatic checks (hooks) a human need not repeat.
 
 - **Edits a risky file without a plan?** SAGE blocks it until a plan document exists.
 - **Reports "done" without a review?** SAGE checks for an approved review and blocks without one.
-- **The AI edits an auto-generated config file directly?** SAGE redirects it to the source definition
-  (a direct edit is overwritten on the next generation anyway).
+- **The AI edits an auto-generated config file directly?** SAGE redirects it to the source
+  definition (a direct edit is overwritten on the next generation anyway).
 - **One model reviewing its own code?** SAGE hands it to the opposite model (Claude ↔ Codex).
 
-These checks are not the AI's "judgment" — they are code that decides **deterministically**. The same
-situation always produces the same result, so nobody has to re-explain the rules.
+These checks are not the AI's "judgment" — they are code that decides **deterministically**. The
+same situation always produces the same result, so nobody has to re-explain the rules.
 
 ## Quickstart
 
@@ -44,8 +44,8 @@ Then follow **only the path that matches the AI tool you use** — you do not ne
 sage install --host codex --skill-scope project-local
 ```
 
-Once installed, run `$sage-init` **inside Codex** to fill in this project's configuration
-(profile) through conversation. Then come back to the terminal to finish:
+Once installed, run `$sage-init` **inside Codex** to fill in this project's configuration (profile)
+through conversation. Then come back to the terminal to finish:
 
 ```bash
 sage generate --kind hook --write --target codex
@@ -90,7 +90,7 @@ When joining a repository that already has a shared profile, run `sage-init-loca
 The general CLI and hooks run on Python 3.10+ with no bash on Windows; only `verify-changes.sh` and
 custom `.sh` tests need Git Bash.
 
-The **automatic removal scope** is narrower. SAGE stops before mutation in an unverified environment.
+The **automatic removal scope** is narrower. SAGE stops before mutation in unverified environments.
 
 | Environment | General CLI and hooks | `sage uninstall` |
 |---|:---:|---|
@@ -102,11 +102,11 @@ The **automatic removal scope** is narrower. SAGE stops before mutation in an un
 | 32-bit Python, native ARM64 Python, non-NTFS, network, or UNC paths | Environment-specific limits | No automatic removal; inspect the plan with `--check` |
 
 NTFS is the default filesystem on typical local Windows disks. **Being able to run and being
-formally supported are different things** — the general CLI may work outside the supported scope, but
-that behaviour is neither promised nor directly verified. Automatic removal on Windows 11 desktop
-was **verified by actually running it on that SKU** — no Windows Server result was substituted for
-it. For the two refusal screens see the [CLI reference](docs/cli-reference.en.md) and
-[troubleshooting](docs/troubleshooting.en.md).
+formally supported are different things** — the general CLI may work outside the supported scope,
+but that behaviour is neither promised nor directly verified. Automatic removal on Windows 11
+desktop was **verified by actually running it on that SKU** — no Windows Server result was
+substituted for it. For the two refusal screens see the [CLI reference](docs/cli-reference.en.md)
+and [troubleshooting](docs/troubleshooting.en.md).
 
 On Windows, `sage-hook.exe` runs hooks, so Git Bash and WSL are not required:
 
@@ -130,7 +130,7 @@ sage upgrade --apply
 sage status
 ```
 
-`--check` only shows the plan. `--apply` is transactional, rolls back on failure, and never downgrades.
+`--check` only shows the plan. `--apply` is transactional, rolls back on failure, never downgrades.
 
 ## Remove SAGE safely
 
@@ -143,8 +143,9 @@ pipx uninstall sage-harness
 ```
 
 Even where automatic removal is unsupported, both commands list actual paths as `STRIP` (remove only
-SAGE content from a shared file), `DELETE`, `PRESERVE`, and `BLOCK`. Targets vary by host, scope, and
-`CODEX_HOME`; never delete `PRESERVE` or `BLOCK` — see [troubleshooting](docs/troubleshooting.en.md).
+SAGE content from a shared file), `DELETE`, `PRESERVE`, and `BLOCK`. Targets vary by host, scope,
+and `CODEX_HOME`; never delete `PRESERVE` or `BLOCK` — see
+[troubleshooting](docs/troubleshooting.en.md).
 
 ## How it works
 
@@ -152,29 +153,28 @@ SAGE separates two kinds of files — **definitions that a human edits**, and th
 AI actually reads**, generated automatically from those definitions.
 
 ```
-definitions (human-edited)        sage generate       runtime files (AI-read)
+definitions (human-edited)       sage generate       runtime files (AI-read)
 hook / agent / skill spec     <------------------>   .claude / .codex
-          |                                                |
-          +---- check --- sage validate ---------------------+
-          +---- direct edit attempt ----> redirected to the definition
+             |                                                  |
+             +---- check --- sage validate ---------------------+
+             +---- direct edit attempt ----> back to the definition
 ```
 
 Editing a definition and running `sage generate` automatically refreshes the runtime files the AI
 reads. If the two drift apart — a direct edit, or a forgotten regeneration — `sage validate` catches
-it. If an AI tries to edit a runtime file directly, SAGE blocks it and points back to the
-definition.
+it. If an AI edits a runtime file directly, SAGE blocks it and points to the definition.
 
 Agents own judgment — writing code, reviewing it. SAGE owns deterministic boundaries — integrity,
-phase, and approval. See [Architecture](docs/ARCHITECTURE.en.md) for the full trust boundary and
+phase, approval. See [Architecture](docs/ARCHITECTURE.en.md) for the trust boundary and the
 fail-open/fail-closed policy.
 
 ## Development workflow
 
 - **PDCA** binds planning → implementation → independent review → completion reporting.
-- **completion criteria (Done Criteria)** track evidence and revalidate affected phases after changes.
+- **completion criteria (Done Criteria)** track evidence and revalidate affected phases on change.
 - **Profile** separates team policy from machine-local settings.
 - **Fast Cycle** reduces document count only when enabled and records the transition in the audit.
-- **Early completion** records explicit user acceptance of residual risk separately from a normal
+- **Early completion** records explicit user acceptance of residual risk, separate from normal
   approval.
 
 ## Documentation
@@ -192,9 +192,9 @@ fail-open/fail-closed policy.
 ## Who it is for
 
 SAGE is for teams changing production repositories with Claude Code or Codex that need enforceable,
-reviewable policy rather than prompt-only guidance. It may be excessive for prompt snippets alone.
+reviewable policy rather than prompt-only guidance — and excessive for prompt snippets alone.
 
 ## License
 
-Apache License 2.0. Distributions must include [LICENSE](LICENSE) and [NOTICE](NOTICE).
-Releases before `v0.9.71` used CC BY-NC-SA 4.0.
+Apache License 2.0. Distributions must include [LICENSE](LICENSE) and [NOTICE](NOTICE). Releases
+before `v0.9.71` used CC BY-NC-SA 4.0.

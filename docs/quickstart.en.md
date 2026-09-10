@@ -1,4 +1,4 @@
-<!-- sage-doc-source: quickstart.md sha256:87495789bd9d76954b962ad3f0fd1f581be34f732e76c644dc1ffd38d61b3973 -->
+<!-- sage-doc-source: quickstart.md sha256:33c2bdfdc0334cb9b11885bbbf8e8cb3b7c4f40d679a9032e066c8ecc281cb53 -->
 # SAGE Quickstart
 
 [한국어](quickstart.md) | [README](../README.en.md)
@@ -51,8 +51,8 @@ host you just installed for**.
 The first init separates shared policy in `sage/project-profile.yaml` from Git-ignored machine
 capabilities in `sage/project-profile.local.yaml`.
 
-This is where you choose the language SAGE talks to you in. The init conversation asks, and
-you can change it later by editing `sage/project-profile.local.yaml`, which Git ignores.
+This is where you choose the language SAGE talks to you in. The init conversation asks, and you can
+change it later by editing `sage/project-profile.local.yaml`, which Git ignores.
 
 ```yaml
 interface:
@@ -60,10 +60,9 @@ interface:
 ```
 
 For a single run in another language, put the global `--lang` **before** the subcommand:
-`sage --lang en doctor`. Language never changes a verdict — the status and exit code stay the
-same and only the sentence you read differs. The language Phase 00–06 documents are *written*
-in is a separate decision, fixed once when the cycle starts. See the
-[CLI reference](cli-reference.en.md).
+`sage --lang en doctor`. Language never changes a verdict — the status and exit code stay the same
+and only the sentence you read differs. The language Phase 00–06 documents are *written* in is a
+separate decision, fixed once when the cycle starts. See the [CLI reference](cli-reference.en.md).
 
 ## 4. Generate and validate hooks — turn the profile into runtime files
 
@@ -82,9 +81,9 @@ When validation reports STALE (the definition changed but the runtime file has n
 yet), regenerate the kind named in the output. FAIL indicates a real contract violation such as a
 missing file, schema error, or failed execution smoke — resolve the cause first, then retry.
 
-Where `sage doctor` diagnoses the environment in depth, `sage status` answers "can I start
-working in this project right now" on a single screen. It is read-only and finishes in one to two
-seconds, which makes it the first command to run whenever something blocks you.
+Where `sage doctor` diagnoses the environment in depth, `sage status` answers "can I start working
+in this project right now" on a single screen. It is read-only and finishes in one to two seconds,
+which makes it the first command to run whenever something blocks you.
 
 ```bash
 sage status
@@ -101,11 +100,11 @@ gate overrides, acceptance waivers, review loops, and Fast Cycle records on one 
 sage audit show
 ```
 
-Each source carries a different integrity guarantee and the screen reports that difference as it is —
-some have a hash chain, some only semantic validation, some none at all. A source without validation
-is never shown as `valid`. The personal working traces `retro` and `feedback` are excluded by default
-and appear only with `--include-local`. This command is read-only too, and does not even create a
-lock file.
+Each source carries a different integrity guarantee and the screen reports that difference as it is
+— some have a hash chain, some only semantic validation, some none at all. A source without
+validation is never shown as `valid`. The personal working traces `retro` and `feedback` are
+excluded by default and appear only with `--include-local`. This command is read-only too, and does
+not even create a lock file.
 
 ## 5. Start a delivery cycle — when you actually start writing code
 
@@ -123,14 +122,14 @@ Once you reach this point, SAGE is active as a gate. Real development starts wit
 Governed changes require an exact Phase 00 declaration using `Risk Level: L1`, `Risk Level: L2`, or
 `Risk Level: L3`, plus the required phase documents — meaning you cannot edit risky code without a
 plan first. Phase 06 completion is blocked until Phase 05 review is APPROVED — meaning you cannot
-report "done" without a review.
-Fast Cycle omits physical Phases 01-04 only after embedding their content and checklists in a
-composite Phase 00. It writes no plan or audit until Fast level, lens count, and reason are present.
+report "done" without a review. Fast Cycle omits physical Phases 01-04 only after embedding their
+content and checklists in a composite Phase 00. It writes no plan or audit until Fast level, lens
+count, and reason are present.
 
 A new Phase 00 declares `Done-Criteria-Revision: 1` and exactly one `## 5. Done Criteria`, with
 concrete outcomes written as `- [ ] ...`. Mark `[x]` only when evidence exists, and use
-`[~] ... (N/A: reason)` only for a reasoned exclusion. When criterion text or scope changes,
-record the new revision, reason, and affected phases, then rerun those phases and Phase 05 review.
+`[~] ... (N/A: reason)` only for a reasoned exclusion. When criterion text or scope changes, record
+the new revision, reason, and affected phases, then rerun those phases and Phase 05 review.
 
 ## Next
 

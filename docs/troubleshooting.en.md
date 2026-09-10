@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:9fda0bbc5c6d43cf695ab82f5a3eca9f0096d528282d3a9fb57ef982c7eb70f0 -->
+<!-- sage-doc-source: troubleshooting.md sha256:f553550e1d2875cc7a77527bc71e39479cfc960b2a0cbdea976cd0630532becd -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -45,8 +45,8 @@ sage generate --kind hook --write
 sage validate
 ```
 
-Immediately after installation, CORE hooks may not yet be stamped, so run generate once. Do not
-edit files directly just to force their hashes to match.
+Immediately after installation, CORE hooks may not yet be stamped, so run generate once. Do not edit
+files directly just to force their hashes to match.
 
 ## The write guard blocks an edit
 
@@ -82,8 +82,8 @@ a prompt was not captured. An unused declaration expires after two days.
 
 When you edit a phase document the gate reads the cycle from its filename. Source edits have no such
 anchor, so the gate infers the cycle from the **last segment of the git branch name**. That is right
-when each cycle gets its own branch and permanently wrong when one branch carries many cycles — every
-governed edit is blocked as "phase documents missing" while all of them exist.
+when each cycle gets its own branch and permanently wrong when one branch carries many cycles —
+every governed edit is blocked as "phase documents missing" while all of them exist.
 
 Declare the cycle instead of renaming the branch.
 
@@ -99,30 +99,28 @@ recorded in `.sage/override.jsonl`.
 
 `sage cycle set` also prints the absolute path it wrote, whether git ignores it, and whether the
 compiled profile the gate reads is present. If a declaration seems to have no effect, read that
-output first.
-On a collision with an existing Phase 00, it overwrites nothing and prints every collision plus
-three available stem candidates. Use root-relative `--path DIR` only when a custom Phase 00 glob
-does not provide an unambiguous directory.
+output first. On a collision with an existing Phase 00, it overwrites nothing and prints every
+collision plus three available stem candidates. Use root-relative `--path DIR` only when a custom
+Phase 00 glob does not provide an unambiguous directory.
 
 `--create` creates only Phase 00. If the profile requires Phases 01-03, governed source edits remain
 blocked until those documents exist. For an urgent, waivable phase gap, grant a short override such
 as `sage override --reason "hotfix" --ttl 1h`. Phase 00 risk declaration and reconciliation blocks
 are never waivable by override.
 
-The `sage-cycle` umbrella does not run `set` or `clear` itself. `sage-plan` declares
-after stem validation, and `sage-team` reconciles with `show` on resume and clears only
-after write-back, retro, snapshots, and closing gates. `BLOCKED` or `FAIL` retains the
-declaration for resume.
-`set B` changes only the pointer, so cycle A's documents, evidence, and audits remain intact;
-`set A` restores A's evaluation.
+The `sage-cycle` umbrella does not run `set` or `clear` itself. `sage-plan` declares after stem
+validation, and `sage-team` reconciles with `show` on resume and clears only after write-back,
+retro, snapshots, and closing gates. `BLOCKED` or `FAIL` retains the declaration for resume. `set B`
+changes only the pointer, so cycle A's documents, evidence, and audits remain intact; `set A`
+restores A's evaluation.
 
 ## Blocked by Done Criteria or a stale Phase 05 approval
 
 Repair only the exact-stem Phase 00 first. Restore exactly one `## 5. Done Criteria`, a positive
-`Done-Criteria-Revision`, and valid `[ ]`, `[x]`, or reasoned `[~]` items. If criterion text or scope
-changed, increment the revision, record Changed-At, Reason, Affected-Phases, and Summary, then rerun
-affected phases in order. Do not reuse the previous Phase 05 approval. Run a new review loop with
-`--cycle-stem`, then record its `Loop-Run` and the APPROVED close's `Phase00-Hash` in Phase 05.
+`Done-Criteria-Revision`, and valid `[ ]`, `[x]`, or reasoned `[~]` items. If criterion text or
+scope changed, increment the revision, record Changed-At, Reason, Affected-Phases, and Summary, then
+rerun affected phases in order. Do not reuse the previous Phase 05 approval. Run a new review loop
+with `--cycle-stem`, then record its `Loop-Run` and the APPROVED close's `Phase00-Hash` in Phase 05.
 Write Phase 00 and later phases separately because one mixed write cannot prove post-write evidence.
 
 ## The cycle is finished but new work is blocked as an already-completed cycle
@@ -212,9 +210,9 @@ close normally. A receipt-total error means `--survived-by-severity` does not su
 `--survived` — the check exists to stop a `P0=0`-only receipt from hiding a blocking finding, so
 there is no way around it.
 
-Some things an authorization never carries past the engine gate: zero rounds, unresolved findings
-at a `severity_block` severity, architecture escalation, unresolved Done Criteria, acceptance
-`FAIL`, and audit damage. If one of those is blocking, it has to be genuinely resolved.
+Some things an authorization never carries past the engine gate: zero rounds, unresolved findings at
+a `severity_block` severity, architecture escalation, unresolved Done Criteria, acceptance `FAIL`,
+and audit damage. If one of those is blocking, it has to be genuinely resolved.
 
 A failed required build, test, or lint check also must not be closed early, but those results live
 only in Phase 03 prose and are not machine-readable by the engine. The agent must disclose that
@@ -227,9 +225,9 @@ failure to the user and refuse to close; this is an agent duty, not an engine-en
 Review-Assurance 선언은 fence 밖에 정확히 1개여야 함(found 0)
 ```
 
-The test is the **value**, not the presence of a marker. Writing either `Review-Assurance:
-REDUCED_BY_USER_AUTHORIZATION` or `Review-Close-Reason: USER_AUTHORIZED_EARLY` claims reduced
-assurance. Once claimed — or once the audit closed early — record all four markers
+The test is the **value**, not the presence of a marker. Writing either
+`Review-Assurance: REDUCED_BY_USER_AUTHORIZATION` or `Review-Close-Reason: USER_AUTHORIZED_EARLY`
+claims reduced assurance. Once claimed — or once the audit closed early — record all four markers
 (`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`, `Residual-Findings`) with values
 matching the audit record. If the loop converged normally, do not write those two values. A neutral
 line such as `Review-Rounds: 3` on a converged run is not blocked. The `(configured max: <max>)`
@@ -295,9 +293,9 @@ and risk-contract blocks cannot be bypassed with a generic override.
 [sage override] The permission cache location cannot be determined (not an absolute path: ...)
 ```
 
-Active bypass **permissions** live in a machine-local state directory outside the repository. Keeping
-them inside would let them be committed, which activates the bypass in someone else's clone. When the
-location cannot be trusted, no permission is created.
+Active bypass **permissions** live in a machine-local state directory outside the repository.
+Keeping them inside would let them be committed, which activates the bypass in someone else's clone.
+When the location cannot be trusted, no permission is created.
 
 - Point `SAGE_STATE_HOME`, `XDG_STATE_HOME`, or `HOME` outside the repository.
 - In a container without `HOME`, set `SAGE_STATE_HOME` to an absolute path.
@@ -328,8 +326,8 @@ Follow the `Next:` order on screen: upgrade the package, regenerate the installe
 confirm with `sage status`.
 
 If the block says the `runtime_api` marker is absent, the manifest is in 1.0 form but the marker
-alone is missing. In that case **an absent marker is not accepted as a pre-1.0 installation** — if it
-were, a downgrade that erases both the marker and the version would pass. Re-stamp it with
+alone is missing. In that case **an absent marker is not accepted as a pre-1.0 installation** — if
+it were, a downgrade that erases both the marker and the version would pass. Re-stamp it with
 `sage install --host <host> --force --dest .`.
 
 ## A block message has no `Next:`
@@ -364,12 +362,13 @@ measure the volume or the native primitives, so it says nothing about whether th
 technically capable.
 
 The last one is a **capability** measurement. It can become true by switching volumes or choosing a
-different root, so the plan is still shown and the refusal applies to an actual mutation request only.
+different root, so the plan is still shown and the refusal applies to an actual mutation request
+only.
 
-Here `--check` does **not** measure capability at all. It builds the plan and reports that plan's own
-status, so the exit code depends on how the plan came out — usually `COMPLETE` (0) or `PARTIAL` (1),
-but a **plan-level blocker** such as a damaged manifest makes even `--check` return `BLOCKED` (2)
-(for example `uninstall.plan_failed`). `unsafe_platform` is not the reason in that case.
+Here `--check` does **not** measure capability at all. It builds the plan and reports that plan's
+own status, so the exit code depends on how the plan came out — usually `COMPLETE` (0) or `PARTIAL`
+(1), but a **plan-level blocker** such as a damaged manifest makes even `--check` return `BLOCKED`
+(2) (for example `uninstall.plan_failed`). `unsafe_platform` is not the reason in that case.
 
 Either way **not a single file changes.** Following the four lists on screen reaches the same result
 as an automatic run.
@@ -385,12 +384,12 @@ judgement. The order is `STRIP` then `DELETE`, and the same value ships in `manu
 
 ## `sage uninstall` ends with `PARTIAL` (1) and repeats the same list
 
-That is correct. `COMPLETE` (0) is reserved for a **completely clean state — nothing to remove and no
-preserved residue**.
+That is correct. `COMPLETE` (0) is reserved for a **completely clean state — nothing to remove and
+no preserved residue**.
 
 Once you have cleaned up by hand and only preserved entries remain (a damaged host settings file,
-say), the next run is `PARTIAL` (1) and re-reports those paths and reasons. Exiting 0 would make that
-residue disappear from the screen. That run also changes nothing and creates no backups.
+say), the next run is `PARTIAL` (1) and re-reports those paths and reasons. Exiting 0 would make
+that residue disappear from the screen. That run also changes nothing and creates no backups.
 
 ## `sage uninstall` stops with `BLOCKED` (2) after the confirmation prompt
 
@@ -427,15 +426,15 @@ is skipped with a warning.
 
 ## Output stays Korean even with `--lang en`
 
-The global `--lang` only works **before the subcommand**. `sage doctor --lang en` is not a
-supported form.
+The global `--lang` only works **before the subcommand**. `sage doctor --lang en` is not a supported
+form.
 
 ```bash
 sage --lang en doctor        # this is the right position
 ```
 
-Hook output takes no `--lang` at all. To get English hook messages, configure the target
-project's `sage/project-profile.local.yaml`.
+Hook output takes no `--lang` at all. To get English hook messages, configure the target project's
+`sage/project-profile.local.yaml`.
 
 ```yaml
 interface:
@@ -444,9 +443,9 @@ interface:
 
 If it is still Korean, check three things: that the local profile sits in **the project root the
 hook is inspecting**, that the value is `ko` or `en` (anything else falls back to `ko` and
-`sage validate` reports it as a configuration failure), and whether the remaining Korean is
-**quoted source text** — a fragment read from a file and handed back as evidence is never
-translated. That is evidence, not a defect.
+`sage validate` reports it as a configuration failure), and whether the remaining Korean is **quoted
+source text** — a fragment read from a file and handed back as evidence is never translated. That is
+evidence, not a defect.
 
 Phase 00–06 documents being written in Korean is unrelated to this setting. Document language is
 fixed per cycle with `Document-Language:`, and an active cycle does not change with `--lang`.

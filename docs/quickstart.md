@@ -16,8 +16,8 @@ Windows에서는 `py -m pip install --user pipx`와 `py -m pipx ensurepath`로 p
 
 ## 2. 프로젝트에 설치 — 쓰는 AI 도구에 맞는 쪽 하나만
 
-SAGE는 Claude Code와 Codex 양쪽을 지원하지만, 한 프로젝트에는 실제로 쓰는 쪽 하나만 설치하면
-됩니다. 둘 다 쓰고 싶다면 각각 따로 실행하면 됩니다.
+SAGE는 Claude Code와 Codex 양쪽을 지원하지만, 한 프로젝트에는 실제로 쓰는 쪽 하나만 설치하면 됩니다.
+둘 다 쓰고 싶다면 각각 따로 실행하면 됩니다.
 
 **Codex를 쓴다면:**
 
@@ -48,23 +48,23 @@ sage install --host claude
 최초 init은 공유 정책 `sage/project-profile.yaml`과 Git에서 제외되는 현재 머신 capability
 `sage/project-profile.local.yaml`을 분리해 작성합니다.
 
-SAGE가 말을 거는 언어는 여기서 정합니다. init 대화 중에 물어보며, 나중에 바꾸려면
-Git이 추적하지 않는 `sage/project-profile.local.yaml`에 직접 적어도 됩니다.
+SAGE가 말을 거는 언어는 여기서 정합니다. init 대화 중에 물어보며, 나중에 바꾸려면 Git이 추적하지
+않는 `sage/project-profile.local.yaml`에 직접 적어도 됩니다.
 
 ```yaml
 interface:
   language: en      # 없으면 ko
 ```
 
-한 번만 다른 언어로 실행하려면 하위 명령 **앞에** 전역 `--lang`을 붙입니다:
-`sage --lang en doctor`. 표시 언어는 판정을 바꾸지 않습니다 — 상태·종료코드는 그대로이고
-읽는 문장만 달라집니다. Phase 00~06 문서를 쓰는 언어는 별개 결정으로, 사이클 시작 때
-한 번 고정합니다. 자세한 내용은 [CLI 레퍼런스](cli-reference.md)를 보세요.
+한 번만 다른 언어로 실행하려면 하위 명령 **앞에** 전역 `--lang`을 붙입니다: `sage --lang en doctor`.
+표시 언어는 판정을 바꾸지 않습니다 — 상태·종료코드는 그대로이고 읽는 문장만 달라집니다. Phase 00~06
+문서를 쓰는 언어는 별개 결정으로, 사이클 시작 때 한 번 고정합니다. 자세한 내용은
+[CLI 레퍼런스](cli-reference.md)를 보세요.
 
 ## 4. Hook 생성과 검증 — profile 대로 실제 실행 파일 만들기
 
-profile을 채운 것만으로는 아직 실제 hook이 생성되지 않습니다. `generate`가 profile 내용을 읽어
-AI가 실제로 읽는 실행 파일을 만들고, `validate`가 그게 제대로 됐는지 확인합니다.
+profile을 채운 것만으로는 아직 실제 hook이 생성되지 않습니다. `generate`가 profile 내용을 읽어 AI가
+실제로 읽는 실행 파일을 만들고, `validate`가 그게 제대로 됐는지 확인합니다.
 
 ```bash
 # Codex
@@ -75,32 +75,32 @@ sage doctor
 ```
 
 `validate`가 `STALE`을 보고하면(정의 파일은 바뀌었는데 실행 파일이 아직 안 갱신됐다는 뜻) 출력이
-지시한 kind를 다시 generate합니다. `FAIL`은 파일 누락, schema 오류, 실행 스모크 실패 같은 실제
-계약 위반이므로 원인을 먼저 해결한 뒤 다시 실행합니다.
+지시한 kind를 다시 generate합니다. `FAIL`은 파일 누락, schema 오류, 실행 스모크 실패 같은 실제 계약
+위반이므로 원인을 먼저 해결한 뒤 다시 실행합니다.
 
-`sage doctor` 가 환경을 깊게 진단한다면, `sage status` 는 "지금 이 프로젝트에서 개발을 시작할
-수 있는가" 를 한 화면으로 답합니다. 읽기 전용이고 1~2초 안에 끝나므로, 무언가 막혔을 때 가장
-먼저 칠 명령입니다.
+`sage doctor`가 환경을 깊게 진단한다면, `sage status`는 "지금 이 프로젝트에서 개발을 시작할 수
+있는가" 를 한 화면으로 답합니다. 읽기 전용이고 1~2초 안에 끝나므로, 무언가 막혔을 때 가장 먼저 칠
+명령입니다.
 
 ```bash
 sage status
 ```
 
-차단 항목이 있으면 각 줄 아래에 `Next:` 로 다음에 칠 명령이 순서대로 나옵니다. 특정 파일이 왜
-막히는지 알고 싶다면 `sage explain --path <경로>` 로 그 경로의 위험도와 빠진 문서를 확인합니다.
-두 명령 모두 파일이나 감사 기록을 바꾸지 않습니다.
+차단 항목이 있으면 각 줄 아래에 `Next:`로 다음에 칠 명령이 순서대로 나옵니다. 특정 파일이 왜
+막히는지 알고 싶다면 `sage explain --path <경로>`로 그 경로의 위험도와 빠진 문서를 확인합니다. 두
+명령 모두 파일이나 감사 기록을 바꾸지 않습니다.
 
-`status` 가 "지금 쓸 수 있는가" 라면, `sage audit show` 는 "무슨 일이 있었는가" 에 답합니다.
-게이트 우회·인수 유예·리뷰 루프·Fast Cycle 기록을 한 화면에서 읽습니다.
+`status`가 "지금 쓸 수 있는가" 라면, `sage audit show`는 "무슨 일이 있었는가" 에 답합니다. 게이트
+우회·인수 유예·리뷰 루프·Fast Cycle 기록을 한 화면에서 읽습니다.
 
 ```bash
 sage audit show
 ```
 
-출처마다 무결성 보증이 다르고 화면이 그 차이를 그대로 냅니다 — hash chain 이 있는 것, 의미
-검증만 있는 것, 아무 검증도 없는 것. 검증이 없는 출처는 `valid` 로 표시되지 않습니다. 개인
-작업 흔적인 `retro`·`feedback` 은 기본에서 빠지고 `--include-local` 을 줄 때만 나옵니다.
-이 명령도 읽기 전용이며 lock 파일조차 만들지 않습니다.
+출처마다 무결성 보증이 다르고 화면이 그 차이를 그대로 냅니다 — hash chain 이 있는 것, 의미 검증만
+있는 것, 아무 검증도 없는 것. 검증이 없는 출처는 `valid`로 표시되지 않습니다. 개인 작업 흔적인
+`retro`·`feedback`은 기본에서 빠지고 `--include-local`을 줄 때만 나옵니다. 이 명령도 읽기 전용이며
+lock 파일조차 만들지 않습니다.
 
 ## 5. 개발 사이클 시작 — 실제로 코드를 짤 때
 
@@ -117,14 +117,14 @@ sage audit show
 
 고위험 변경은 Phase 00의 정확한 `Risk Level: L1`, `L2`, `L3` 선언과 필요한 phase 문서를 먼저
 요구합니다 — 계획 없이 바로 위험한 코드를 고칠 수 없다는 뜻입니다. Phase 05 리뷰가 `APPROVED`되기
-전에는 Phase 06 완료 보고가 차단됩니다 — 리뷰 없이 "완료"라고 보고할 수 없다는 뜻입니다.
-Fast Cycle은 01~04 문서를 생략하는 대신 그 내용을 체크리스트가 있는 composite 00에 포함하며,
-Fast level·렌즈 수·사유를 모두 받기 전에는 문서나 감사를 쓰지 않습니다.
+전에는 Phase 06 완료 보고가 차단됩니다 — 리뷰 없이 "완료"라고 보고할 수 없다는 뜻입니다. Fast
+Cycle은 01~04 문서를 생략하는 대신 그 내용을 체크리스트가 있는 composite 00에 포함하며, Fast
+level·렌즈 수·사유를 모두 받기 전에는 문서나 감사를 쓰지 않습니다.
 
 새 Phase 00에는 `Done-Criteria-Revision: 1`과 정확한 `## 5. Done Criteria`를 두고 결과를
 `- [ ] ...`로 작성합니다. 증거가 생길 때만 `[x]`, 실제 범위 밖이면 `[~] ... (N/A: 사유)`를
-사용합니다. 기준 문구나 범위가 바뀌면 revision과 사유·영향 phase를 기록하고 해당 phase 및
-Phase 05 리뷰를 다시 수행합니다.
+사용합니다. 기준 문구나 범위가 바뀌면 revision과 사유·영향 phase를 기록하고 해당 phase 및 Phase 05
+리뷰를 다시 수행합니다.
 
 ## 다음 문서
 
