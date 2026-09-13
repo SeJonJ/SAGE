@@ -49,11 +49,22 @@ jobs:
 
       # 태그 push 는 PyPI 배포만 했고 GitHub Release 는 수동이라, v0.9.71~v0.9.73 이
       # 발행 누락으로 릴리즈 페이지에서 보이지 않았다. PyPI 배포 성공 뒤에만 발행한다
-      # (배포 실패 릴리즈가 페이지에 남지 않게 순서 고정). 노트는 자동 생성 후 사람이 보강한다.
-      - name: Create GitHub Release
+      # (배포 실패 릴리즈가 페이지에 남지 않게 순서 고정).
+      #
+      # 릴리즈가 이미 있으면 **그대로 둔다.** 사람이 먼저 만든 본문은 사후 생성된 노트보다
+      # 정확하다 — 무엇이 왜 바뀌는지는 사이클이 알고 커밋 목록은 모른다. 없을 때만 만든다.
+      #
+      # 예전에는 무조건 `create` 였고, 본문을 태그 전에 확정한 릴리즈에서 이 단계가
+      # `Release.tag_name already exists` 로 죽었다. PyPI 업로드는 이미 끝난 뒤라 배포는
+      # 성공했는데 화면만 빨갰다 — 실패가 아닌 것을 실패로 보고하면 진짜 실패를 못 읽는다.
+      - name: Create GitHub Release (본문이 이미 있으면 보존)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "릴리즈가 이미 있다 — 본문을 덮지 않는다: ${GITHUB_REF_NAME}"
+            exit 0
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             --repo "${GITHUB_REPOSITORY}" \
             --title "${GITHUB_REF_NAME}" \
