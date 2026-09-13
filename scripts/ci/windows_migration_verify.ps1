@@ -1,4 +1,4 @@
-# 레이아웃 이행의 Windows 11 실환경 검증 — 5축.
+﻿# 레이아웃 이행의 Windows 11 실환경 검증 — 5축.
 #
 # `platform_smoke.py` 는 happy path 만 본다. 이행에서 실제로 위험한 것은 **실패 경로**다 —
 # 조상이 프로젝트 밖을 가리킬 때, 전환에 실패했을 때, 전환 뒤 정리가 덜 끝났을 때.
@@ -7,9 +7,13 @@
 # POSIX 에서는 symlink 로 같은 축을 회귀에 넣었다. Windows 는 **junction 을 써야 한다** —
 # reparse point 는 symlink 와 다른 객체이고, 이 제품이 별도 backend 를 가진 이유가 그것이다.
 #
+# **이 파일은 UTF-8 BOM 으로 저장한다.** Windows PowerShell 5.1 은 BOM 없는 UTF-8 을 ANSI 로
+# 읽어 한글 주석이 토큰을 깨뜨린다 — 파서가 멀쩡한 `}` 를 "예기치 않은 토큰" 이라고 낸다.
+# Windows 가 실제로 싣고 있는 셸에서 못 도는 검증 스크립트는 검증 스크립트가 아니다.
+#
 # 사용:
-#   scp scripts/ci/windows_migration_verify.ps1 win11:C:/Users/wkdtp/
-#   ssh win11 "powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\wkdtp\windows_migration_verify.ps1 -Repo D:\dev\SAGE -Python D:\dev\venvs\sage312\Scripts\python.exe"
+#   git clone <bundle> D:\dev\SAGE-verify
+#   ssh win11 "powershell -NoProfile -ExecutionPolicy Bypass -File D:\dev\SAGE-verify\scripts\ci\windows_migration_verify.ps1 -Repo D:\dev\SAGE-verify -Python D:\dev\venvs\sage312\Scripts\python.exe"
 
 param(
   [Parameter(Mandatory=$true)][string]$Repo,
