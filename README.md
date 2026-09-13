@@ -70,7 +70,7 @@ sage validate --kind all
 공유 profile이 있다면 `sage-init` 대신 `sage-init-local`만 실행합니다. 이미 `CLAUDE.md`·`AGENTS.md`가
 있으면 설치가 멈춥니다(무변경) — 절차는 [퀵스타트](docs/quickstart.md)와 [문제 해결](docs/troubleshooting.md).
 
-## SAGE 1.0의 주요 기능
+## 주요 기능
 
 | 하고 싶은 일 | 명령 또는 기능 |
 |---|---|
@@ -119,9 +119,9 @@ sage doctor
 
 Windows에서 `.sh` 테스트를 실행할 때는 `SAGE_BASH`로 Git Bash 경로를 명시합니다.
 
-## 1.0으로 업그레이드
+## 업그레이드
 
-0.9.x에서 1.0으로 이동할 때는 패키지를 먼저 올린 뒤 프로젝트 자산을 점검·적용합니다.
+패키지를 먼저 올린 뒤 프로젝트 자산을 점검·적용합니다.
 
 ```bash
 pipx upgrade sage-harness
@@ -130,8 +130,9 @@ sage upgrade --apply
 sage status
 ```
 
-`--check`는 계획만 보여 줍니다. `--apply`는 transaction이라 실패하면 되돌리고 자동 downgrade는
-없습니다.
+`--check`는 계획만 보여 줍니다. `--apply`는 transaction이라 실패하면 되돌립니다. **1.0에서 올라오면
+설치 위치가 `sage_harness/` 한 곳으로 모입니다** — 옮기지 않고 새로 만들어 검증한 뒤 옛 것을 지우고,
+직접 넣은 파일과 직접 쓴 hook 앞에서는 멈춥니다([troubleshooting](docs/troubleshooting.md)).
 
 ## 안전하게 제거
 
@@ -190,9 +191,8 @@ hook / agent / skill spec    <------------------>   .claude / .codex
 
 ## 적합한 사용자
 
-SAGE는 Claude Code 또는 Codex로 실무 저장소를 변경하면서, prompt 권고가 아니라 검증 가능한 정책과
-독립 리뷰가 필요한 팀을 위한 도구입니다. 단순 prompt 모음이나 코드 생성 스니펫이 필요한 경우에는
-과한 선택일 수 있습니다.
+SAGE는 Claude Code 또는 Codex로 실무 저장소를 변경하면서 prompt 권고가 아니라 검증 가능한 정책과
+독립 리뷰가 필요한 팀을 위한 도구입니다. prompt 모음이나 스니펫만 필요하다면 과한 선택입니다.
 
 ## 라이선스
 

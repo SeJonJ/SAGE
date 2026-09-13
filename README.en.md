@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:dff17bef198c5bfde8feb47823edf31fc1d42ce283502e23588d79702290749c -->
+<!-- sage-doc-source: README.md sha256:451d103382ea74b735f7f8eb2dd806fb6be6e842572a37c921ca2e0c9674e974 -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)
@@ -71,7 +71,7 @@ When a shared profile exists, run `sage-init-local` instead of `sage-init`. If `
 `AGENTS.md` already exists the install stops and nothing changes — see the
 [English quickstart](docs/quickstart.en.md) and [troubleshooting](docs/troubleshooting.en.md).
 
-## What SAGE 1.0 provides
+## What SAGE provides
 
 | Goal | Command or feature |
 |---|---|
@@ -120,9 +120,9 @@ sage doctor
 
 Set `SAGE_BASH` to the Git Bash path when running `.sh` tests on Windows.
 
-## Upgrade to 1.0
+## Upgrade
 
-When moving from 0.9.x to 1.0, upgrade the package, then inspect and apply the project transition.
+Upgrade the package, then inspect and apply the project transition.
 
 ```bash
 pipx upgrade sage-harness
@@ -131,7 +131,9 @@ sage upgrade --apply
 sage status
 ```
 
-`--check` only shows the plan. `--apply` is transactional, rolls back on failure, never downgrades.
+`--check` only shows the plan. `--apply` is transactional and rolls back on failure. **Coming from 1.0, SAGE
+files gather into a single `sage_harness/` tree** — recreated and verified before the old one is removed, and it
+stops at files you added and hooks you wrote ([troubleshooting](docs/troubleshooting.en.md)).
 
 ## Remove SAGE safely
 
@@ -191,10 +193,8 @@ fail-open/fail-closed policy.
 
 ## Who it is for
 
-SAGE is for teams changing production repositories with Claude Code or Codex that need enforceable,
-reviewable policy rather than prompt-only guidance — and excessive for prompt snippets alone.
+SAGE is for teams changing production repositories with Claude Code or Codex that need enforceable, reviewable policy rather than prompt-only guidance — and excessive for prompt snippets alone.
 
 ## License
 
-Apache License 2.0. Distributions must include [LICENSE](LICENSE) and [NOTICE](NOTICE). Releases
-before `v0.9.71` used CC BY-NC-SA 4.0.
+Apache License 2.0. Distributions must include [LICENSE](LICENSE) and [NOTICE](NOTICE). Releases before `v0.9.71` used CC BY-NC-SA 4.0.
