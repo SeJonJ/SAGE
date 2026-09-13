@@ -102,6 +102,26 @@ class HookTreeHasNoEngineDependency(unittest.TestCase):
         self.assertEqual(offenders, [], f"경로 추정 폴백 잔존: {offenders}")
 
 
+def _engine_hidden(stub):
+    """엔진을 **가린** 환경 변수. `stub` 아래에 `import sage` 가 실패하는 패키지를 만든다.
+
+    `PYTHONPATH` 를 비우는 것으로는 부족하다 — 엔진이 `pip install` 된 환경에서는 그래도
+    site-packages 에서 잡힌다. CI 가 정확히 그 구성이고, 소비자 환경도 그렇다. 비우기만 하면
+    **엔진이 설치된 곳에서 이 검사가 조용히 무의미해진다.**
+
+    그래서 지우는 대신 **가린다.** `sys.path` 앞쪽의 stub 이 site-packages 보다 먼저 잡히고,
+    그 `__init__` 이 `ModuleNotFoundError` 를 올린다. 이행의 runtime load 검사가 쓰는 방법과
+    같다.
+    """
+    package = os.path.join(stub, "sage")
+    os.makedirs(package, exist_ok=True)
+    with open(os.path.join(package, "__init__.py"), "w", encoding="utf-8") as handle:
+        handle.write("raise ModuleNotFoundError(\"No module named 'sage'\")\n")
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = stub
+    return environment
+
+
 class HookTreeImportsWithoutEngine(unittest.TestCase):
     """정적 검사가 놓치는 경로(동적 import, `sys.path` 조작)를 실제 실행으로 잡는다."""
 
@@ -120,29 +140,31 @@ class HookTreeImportsWithoutEngine(unittest.TestCase):
             program = ("import sys;sys.path[:0]=['.','runtime'];"
                        "import importlib;\n"
                        "[importlib.import_module(m) for m in %r]" % modules)
-            # 부모 환경이 엔진을 잡아 주면 검사가 거짓 통과한다. PYTHONPATH 를 비우고,
-            # cwd 도 복사본으로 옮겨 저장소가 우연히 보이지 않게 한다.
-            environment = dict(os.environ)
-            environment.pop("PYTHONPATH", None)
+            stub = os.path.join(workspace, "stub")
             completed = subprocess.run([sys.executable, "-c", program], cwd=tree,
-                                       env=environment, capture_output=True, text=True)
+                                       env=_engine_hidden(stub), capture_output=True, text=True)
             self.assertEqual(completed.returncode, 0,
                              f"엔진 없이 import 실패:\n{completed.stderr}")
 
-    def test_engine_is_actually_absent_in_that_environment(self):
-        """앞 검사가 의미를 가지려면 그 환경에 엔진이 정말 없어야 한다.
+    def test_the_engine_is_really_hidden_in_that_environment(self):
+        """앞 검사가 의미를 가지려면 그 환경에서 엔진이 **정말로** 안 보여야 한다.
 
-        이 검사가 없으면, 엔진이 우연히 보이는 환경에서 앞 검사가 통과하면서 계약이 지켜진다고
+        이 검사가 없으면, 엔진이 잡히는 환경에서 앞 검사가 통과하면서 계약이 지켜진다고
         보고한다. 부재를 확인하지 않은 통과는 통과가 아니다.
+
+        실제로 한 번 그렇게 됐다 — `PYTHONPATH` 만 비우는 방식이 로컬(엔진 미설치)에서는
+        통과하고 CI(엔진 설치)에서는 실패했다. 로컬이 옳았던 것이 아니라 **로컬에서만 우연히
+        격리돼 있었다.**
         """
-        environment = dict(os.environ)
-        environment.pop("PYTHONPATH", None)
         with tempfile.TemporaryDirectory() as workspace:
+            stub = os.path.join(workspace, "stub")
+            environment = _engine_hidden(stub)
             completed = subprocess.run(
                 [sys.executable, "-c", "import sage.done_criteria_contract"],
                 cwd=workspace, env=environment, capture_output=True, text=True)
         self.assertNotEqual(completed.returncode, 0,
-                            "엔진이 격리 환경에서도 보인다 — standalone 검사가 무의미해진다")
+                            "엔진이 가려지지 않았다 — standalone 검사가 무의미해진다")
+        self.assertIn("No module named 'sage'", completed.stderr)
 
 
 if __name__ == "__main__":
