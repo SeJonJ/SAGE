@@ -29,24 +29,26 @@ echo "   fixture base: $FIXTURE_BASE"
 WORK="$(cd "$(mktemp -d "$FIXTURE_BASE/sage-wheel.XXXXXX")" && pwd -P)"
 trap 'rm -rf "$WORK" "${ISO:-}"' EXIT
 
-echo "== [1/12] wheel 빌드 (격리 build venv — 시스템 python PEP668 회피) =="
+echo "== [1/13] wheel 빌드 (격리 build venv — 시스템 python PEP668 회피) =="
 python3 -m venv "$WORK/buildenv"
 "$WORK/buildenv/bin/pip" install --quiet build >/dev/null
 ( cd "$HERE" && rm -rf dist build && "$WORK/buildenv/bin/python" -m build --wheel >/dev/null )
 WHL="$(ls "$HERE"/dist/*.whl | head -1)"
 echo "   wheel: $(basename "$WHL")"
+# 배포물의 신원을 출력에 남긴다. 어떤 바이트가 통과했는지 적혀 있지 않으면 증거가 되지 못한다.
+echo "   sha256: $(python3 -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" "$WHL")"
 
 # 중립 CWD 로 이동 — repo 루트(./sage 존재)에서 실행하면 stdin/console 스크립트가 cwd 의 repo sage 를
 # site-packages wheel 보다 먼저 import 해 번들 검증이 무력화된다. $WORK 엔 sage/ 가 없어 wheel 이 import 됨.
 cd "$WORK"
 
-echo "== [2/12] clean venv 설치 (wheel + jsonschema 만) =="
+echo "== [2/13] clean venv 설치 (wheel + jsonschema 만) =="
 python3 -m venv "$WORK/venv"
 "$WORK/venv/bin/pip" install --quiet "$WHL" jsonschema >/dev/null
 SAGE="$WORK/venv/bin/sage"
 PY="$WORK/venv/bin/python"
 
-echo "== [3/12] sage_root 가 번들(sage/_bundle)로 해석되는지 (repo fallback 아님) =="
+echo "== [3/13] sage_root 가 번들(sage/_bundle)로 해석되는지 (repo fallback 아님) =="
 unset SAGE_RESOURCE_ROOT
 "$PY" - <<'PYEOF'
 import os, sys
@@ -66,20 +68,20 @@ print(f"   sage_root = {root} (번들 OK)")
 PYEOF
 
 PROJ="$WORK/proj"; mkdir -p "$PROJ"
-echo "== [4/12] sage install (번들 → 신규 프로젝트 복사) =="
+echo "== [4/13] sage install (번들 → 신규 프로젝트 복사) =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$PROJ" >/dev/null
 test -f "$PROJ/docs/sage_harness/.manifest.json" || { echo "❌ manifest 미생성"; exit 1; }
-test -f "$PROJ/scripts/sage_harness/hooks/pre_implementation_gate_core.py" || { echo "❌ hook 정본 미복사"; exit 1; }
+test -f "$PROJ/sage_harness/hooks/pre_implementation_gate_core.py" || { echo "❌ hook 정본 미복사"; exit 1; }
 test -f "$PROJ/sage/project-profile.yaml" || { echo "❌ profile 미복사"; exit 1; }
 test -f "$PROJ/.claude/skills/sage-init/SKILL.md" || { echo "❌ /sage-init 부트스트랩 스킬 미복사"; exit 1; }
 for SKILL in sage-cycle-fast sage-plan-fast sage-team-fast; do
   test -f "$PROJ/.claude/skills/$SKILL/SKILL.md" || { echo "❌ $SKILL 스킬 미복사"; exit 1; }
 done
-test -f "$PROJ/scripts/sage_harness/hooks/runtime/fast_cycle_audit.py" || { echo "❌ Fast 감사 runtime 미복사"; exit 1; }
+test -f "$PROJ/sage_harness/hooks/runtime/fast_cycle_audit.py" || { echo "❌ Fast 감사 runtime 미복사"; exit 1; }
 echo "   install OK (manifest + hook/Fast 정본 + profile + CORE Fast 스킬 복사)"
 
 # 강제 게이트 검증: 부트스트랩 전(project.name 빈값)엔 generate 가 BLOCK(exit 2) 돼야 한다.
-echo "== [4b/12] 부트스트랩 게이트 (빈 profile → generate BLOCK 기대) =="
+echo "== [4b/13] 부트스트랩 게이트 (빈 profile → generate BLOCK 기대) =="
 if env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --write --dest "$PROJ" >/dev/null 2>&1; then
   echo "❌ 미부트스트랩 profile 인데 generate 가 통과함 (게이트 미작동)"; exit 1
 fi
@@ -96,12 +98,12 @@ t = t.replace('l2_path_globs: []', 'l2_path_globs: ["src/**"]')
 open(p, "w", encoding="utf-8").write(t)
 PY
 
-echo "== [5/12] sage generate --kind hook --write (등록 산출물 + manifest 스탬프) =="
+echo "== [5/13] sage generate --kind hook --write (등록 산출물 + manifest 스탬프) =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --write --dest "$PROJ" >/dev/null
 test -f "$PROJ/.claude/settings.json" || { echo "❌ generate 가 .claude/settings.json 미생성"; exit 1; }
 echo "   generate OK (.claude/settings.json 등록 산출물)"
 
-echo "== [6/12] 설치 template 기반 project hook 등록 + 양 host 실제 dispatch =="
+echo "== [6/13] 설치 template 기반 project hook 등록 + 양 host 실제 dispatch =="
 "$PY" - "$PROJ" <<'PY'
 import os, sys
 from pathlib import Path
@@ -112,7 +114,7 @@ hook_id = "wheel-project-gate"
 template = Path(_resources.templates_dir(), "hook.spec.md").read_text(encoding="utf-8")
 (root / "docs" / "sage_harness" / "hooks" / f"{hook_id}.md").write_text(
     template.replace('id: ""', f"id: {hook_id}", 1), encoding="utf-8")
-(root / "scripts" / "sage_harness" / "hooks" / "wheel_project_gate_core.py").write_text(
+(root / "sage_harness" / "hooks" / "wheel_project_gate_core.py").write_text(
     'CONTRACT_VERSION = "1"\n\n'
     'def decide(event, profile, snapshot):\n'
     '    return {"status": "block", "exit_code": 2, "message": "wheel project block"}\n',
@@ -128,7 +130,7 @@ for HOST in claude codex; do
   fi
   set +e
   printf '%s' "$INPUT" | SAGE_PROJECT_ROOT="$PROJ" \
-    "$PROJ/scripts/sage_harness/hooks/adapters/$HOST/wheel-project-gate.sh" \
+    "$PROJ/sage_harness/hooks/adapters/$HOST/wheel-project-gate.sh" \
     >"$WORK/$HOST.out" 2>"$WORK/$HOST.err"
   RC=$?
   set -e
@@ -140,16 +142,21 @@ for HOST in claude codex; do
 done
 echo "   project hook lifecycle OK (template → register → claude/codex dispatch)"
 
-echo "== [7/12] sage validate --check --schema (전체 PASS 기대) =="
+echo "== [7/13] sage validate --check --schema (전체 PASS 기대) =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" validate --check --schema --root "$PROJ"
 
-echo "== [8/12] Fast Cycle wheel 진입점 + strict audit runtime =="
+echo "== [8/13] Fast Cycle wheel 진입점 + strict audit runtime =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" fast-cycle --help | grep -q "open"
 "$PY" - "$PROJ" <<'PY'
 import os, sys
 root = sys.argv[1]
-runtime = os.path.join(root, "scripts", "sage_harness", "hooks", "runtime")
-sys.path.insert(0, runtime)
+from sage import asset_paths
+# 소비자 경로는 판정이 정한다. 여기서 문자열로 적으면 레이아웃이 바뀔 때 이 게이트만 조용히 뒤짐다.
+hooks = asset_paths.hooks_dir(root)
+# runtime 모듈은 hook 트리 안의 계약 모듈(`fast_cycle_contract`)을 함께 본다.
+# 한 쪽만 올리면 import 가 즉시 깨진다 — 진입점이 세우는 경로와 같아야 한다.
+sys.path.insert(0, hooks)
+sys.path.insert(0, os.path.join(hooks, "runtime"))
 import fast_cycle_audit
 run_id = fast_cycle_audit.open_fast(
     root, cycle_stem="wheel-fast", actual_risk="L2", fast_review_level="L2",
@@ -185,7 +192,7 @@ for entry in payload["diagnostics"]:
         assert set(step) == {"id", "command", "mutating"}, step
 CHECKPY
 
-echo "== [9/12] 운영 진단 명령 + runtime API preflight (설치 wheel 단독) =="
+echo "== [9/13] 운영 진단 명령 + runtime API preflight (설치 wheel 단독) =="
 # 설치본에서 실제로 도는지 본다. 엔진 소스 트리에서 도는 것은 배포 증거가 아니다.
 # 조회가 상태를 만들지 않는다. 앞 단계(Fast Cycle open)가 남긴 파일은 정상이므로
 # 존재 여부가 아니라 **조회 전후의 차이**를 본다.
@@ -264,7 +271,7 @@ for entry in payload["diagnostics"]:
         assert "source" in entry["evidence"], entry
 CHECKPY
 
-echo "== [10/12] 통합 감사 조회 (설치 wheel 단독 · 조회 무변경 · 보증 미과장) =="
+echo "== [10/13] 통합 감사 조회 (설치 wheel 단독 · 조회 무변경 · 보증 미과장) =="
 # 감사 파일을 쓸 수 있는 쪽은 메타 필드에 무엇이든 넣을 수 있다. 소비자 화면에서 그 값이
 # 그대로 나오는지 여기서 본다 — 엔진 단위 검사만으로는 배포본의 화면을 증명하지 못한다.
 LEAK="/Users/wheel-smoke/Obsidian/vault/leak.md"
@@ -393,7 +400,7 @@ cmp -s "$WORK/audit_ko.json" "$WORK/audit_en.json" \
   || { echo "❌ audit show --json 이 언어를 탄다"; exit 1; }
 echo "   audit OK (조회 무변경 + schema v1 계약 + 보증 2축 + 단일 관문 + limit 범위 + locale 독립)"
 
-echo "== [11/12] vault 없이 feedback·knowledge 실행 (설치 wheel 단독) =="
+echo "== [11/13] vault 없이 feedback·knowledge 실행 (설치 wheel 단독) =="
 
 # 격리 경계를 먼저 세운다. 개발자 머신에는 이미 vault 가 있고 HOME 에 상태가 쌓여 있어서,
 # 그 상태에서 통과한 "vault 없이 된다" 는 "내 머신에서 된다" 의 다른 이름이다.
@@ -522,7 +529,7 @@ test "$SENTINEL_BEFORE" = "$SENTINEL_AFTER" || {
 echo "   no-vault feedback·knowledge OK (격리 HOME·상태 홈 + 마커 스캔 + 기록 + 조회 + n/a 보고서"
 echo "      + 경계 밖 vault 산출물 0건 + sentinel 무변경)"
 
-echo "== [12/12] uninstall 소비자 계약 (설치 wheel 단독 · 소유권 증명 · 멱등 · 보존) =="
+echo "== [12/13] uninstall 소비자 계약 (설치 wheel 단독 · 소유권 증명 · 멱등 · 보존) =="
 # 이 명령은 엔진 저장소에서 아예 돌지 않는다(J8). 그래서 소비자 증거가 **유일한** 증거다.
 UPROJ="$WORK/uproj"; mkdir -p "$UPROJ"
 env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$UPROJ" >/dev/null
@@ -1123,5 +1130,66 @@ echo "     - g1 (codex-global / --global / yes) rc=$GRC"
 
 echo "   uninstall OK (--check 무변경 + 소유권 보존 + 사용자 자산 무변경 + 멱등 + 재설치"
 echo "      + clean-consumer matrix 8종 + --global 단독)"
+
+echo "== [13/13] 구 레이아웃 이행 (배포물 단독 · 엔진 체크아웃 없음) =="
+# 이 사이클은 **엔진 소스 경로와 wheel 번들, 소비자 설치 경로가 서로 다르다.** 저장소
+# 체크아웃에서만 검증하면 packaging 누락을 잡을 수 없다 — 번들은 구 레이아웃을 담고 소비자는
+# 신 레이아웃을 쓰므로, 이행 코드가 둘을 어떻게 잇는지는 실제 배포물로만 확인된다.
+MPROJ="$WORK/mproj"; mkdir -p "$MPROJ"
+env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$MPROJ" >/dev/null
+
+# 1.0 이 배치한 모양으로 되돌린다.
+mkdir -p "$MPROJ/scripts/sage_harness"
+mv "$MPROJ/sage_harness/hooks"  "$MPROJ/scripts/sage_harness/hooks"
+mv "$MPROJ/sage_harness/schema" "$MPROJ/schema"
+mv "$MPROJ/sage_harness/verify-changes.sh" "$MPROJ/scripts/verify-changes.sh"
+rmdir "$MPROJ/sage_harness"
+"$PY" - "$MPROJ/sage/project-profile.yaml" <<'MIGPROF'
+import sys
+p = sys.argv[1]
+t = open(p, encoding="utf-8").read()
+t = t.replace('name: ""', 'name: "wheelmig"').replace('l2_path_globs: []', 'l2_path_globs: ["src/**"]')
+open(p, "w", encoding="utf-8").write(t)
+MIGPROF
+printf 'echo mine\n' > "$MPROJ/scripts/keep-me.sh"
+
+env -u SAGE_RESOURCE_ROOT "$SAGE" upgrade --apply --root "$MPROJ" > "$WORK/mig.txt" 2>&1 \
+  || { echo "❌ 이행 실패"; cat "$WORK/mig.txt"; exit 1; }
+test -f "$MPROJ/sage_harness/hooks/runtime/run_hook.py" || { echo "❌ 신 경로 미활성"; exit 1; }
+test ! -e "$MPROJ/scripts/sage_harness/hooks/runtime/run_hook.py" || { echo "❌ 구 sentinel 잔존"; exit 1; }
+test "$(cat "$MPROJ/scripts/keep-me.sh")" = "echo mine" || { echo "❌ 사용자 파일이 변경됐다"; exit 1; }
+
+# 이행한 트리에서 **게이트가 실제로 선다**는 것까지 본다. 배치만 맞고 실행이 안 되면 이행은
+# 끝난 것이 아니다. traceback 은 차단이 아니라 크래시다 — exit 2 와 함께 없어야 한다.
+env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --write --dest "$MPROJ" >/dev/null
+"$PY" - "$MPROJ" <<'MIGHOOK'
+import sys
+from pathlib import Path
+from sage import _resources, asset_paths
+
+root = Path(sys.argv[1])
+hook_id = "migrated-gate"
+template = Path(_resources.templates_dir(), "hook.spec.md").read_text(encoding="utf-8")
+(root / "docs" / "sage_harness" / "hooks" / f"{hook_id}.md").write_text(
+    template.replace('id: ""', f"id: {hook_id}", 1), encoding="utf-8")
+Path(asset_paths.hooks_dir(str(root)), "migrated_gate_core.py").write_text(
+    'CONTRACT_VERSION = "1"\n\n'
+    'def decide(event, profile, snapshot):\n'
+    '    return {"status": "block", "exit_code": 2, "message": "migrated block"}\n',
+    encoding="utf-8")
+MIGHOOK
+env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --id migrated-gate \
+  --write --target both --root "$MPROJ" --dest "$MPROJ" >/dev/null
+set +e
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"src/a.py"}}' \
+  | SAGE_PROJECT_ROOT="$MPROJ" \
+    "$MPROJ/sage_harness/hooks/adapters/claude/migrated-gate.sh" \
+    >"$WORK/mig_gate.out" 2>"$WORK/mig_gate.err"
+MRC=$?
+set -e
+test "$MRC" -eq 2 || { echo "❌ 이행 뒤 게이트 rc=$MRC (expected 2)"; cat "$WORK/mig_gate.err"; exit 1; }
+grep -q "migrated block" "$WORK/mig_gate.err" || { echo "❌ 이행 뒤 decision 미실행"; cat "$WORK/mig_gate.err"; exit 1; }
+! grep -q "Traceback" "$WORK/mig_gate.err" || { echo "❌ 이행 뒤 게이트가 크래시"; cat "$WORK/mig_gate.err"; exit 1; }
+echo "   migration OK (구 → 신 레이아웃 · 사용자 파일 보존 · 게이트 exit 2 · traceback 0)"
 
 echo "✅ 순수 wheel 단독배포 게이트 PASS — 번들 리소스만으로 install→generate→validate 폐루프 동작"

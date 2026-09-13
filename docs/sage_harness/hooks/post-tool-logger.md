@@ -15,7 +15,7 @@ and plan files in the session JSONL log. stop-compliance-report aggregates that 
 - output: none — append only. on_fail: none; always exits 0.
 
 ## canonical
-scripts/sage_harness/hooks/post_tool_logger_core.py  →  decide(event, profile) -> decision
+sage_harness/hooks/post_tool_logger_core.py  →  decide(event, profile) -> decision
 - The core defaults to zero domains. The profile (file_type_map) must be injected from outside.
 
 ## adapter_contract
@@ -46,7 +46,7 @@ scripts/sage_harness/hooks/post_tool_logger_core.py  →  decide(event, profile)
    only. The Claude behavior is treated as a regression. **Needs human confirmation.**
 
 ## tests
-scripts/sage_harness/hooks/tests/test_post_tool_logger.py (7 PASS)
+sage_harness/hooks/tests/test_post_tool_logger.py (7 PASS)
 - Core classification across the six types plus the canonical plan-doc drift; skip_untyped; multi_changes.
 - Adapter end to end for a single Claude change and multiple Codex changes; skip parity; behavior parity.
 - Determinism is held by pinning now_utc and branch.

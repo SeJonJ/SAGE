@@ -196,6 +196,6 @@ These are inherited by every agent/skill claim set as
 ## Definition of Done
 
 - Plan doc updated; implementation matches the plan.
-- `scripts/verify-changes.sh` passes at the required gate level.
+- `sage_harness/verify-changes.sh` passes at the required gate level.
 - Conventions in `profile.conventions` satisfied.
 - No direct edits to generated artifacts.

@@ -40,7 +40,7 @@ def _sha(p):
 
 def setup_hook_root(d, edited=False):
     """native hook(demo.sh) + manifest 스탬프. edited=True 면 스탬프 후 정본 변경(divergence)."""
-    H = os.path.join(d, "scripts", "sage_harness", "hooks")
+    H = os.path.join(d, "sage_harness", "hooks")
     os.makedirs(H, exist_ok=True)
     os.makedirs(os.path.join(d, "docs", "sage_harness"), exist_ok=True)
     native = _w(os.path.join(H, "demo.sh"), "#!/bin/bash\necho ok\n")
@@ -59,6 +59,7 @@ def setup_root(d, claims_yaml):
     _w(os.path.join(d, "docs", "sage_harness", "agents", "demo.claims.yml"), claims_yaml)
     # config 모듈은 테스트 임시 root 에 쓴다(소스트리 오염 금지 — read-only 샌드박스 격리).
     # absorb 가 root/scripts/sage_harness 를 sys.path 에 추가하므로 거기서 import 됨.
+    # 추출 드라이버는 **엔진측** `scripts/sage_harness/` 에 산다 (소비측 `sage_harness/` 아님)
     sh = os.path.join(d, "scripts", "sage_harness")
     os.makedirs(sh, exist_ok=True)
     _w(os.path.join(sh, "extract_config_demo_absorb.py"),

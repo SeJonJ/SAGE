@@ -42,7 +42,7 @@ class TestManifestUtil(unittest.TestCase):
             # render 산출물(있으면 해시)
             r = os.path.join(d, "render_claude.md"); Path(r).write_text("rendered")
             entry = mu.upsert_agent(d, "demo", claude_render=r, codex_render="",
-                                    test="scripts/sage_harness/hooks/tests/test_x.py", unresolved=["u1"])
+                                    test="sage_harness/hooks/tests/test_x.py", unresolved=["u1"])
             self.assertEqual(entry["form"], "interpretive")
             self.assertTrue(entry["spec_hash"].startswith("sha256:"))
             self.assertTrue(entry["claims_hash"].startswith("sha256:"))

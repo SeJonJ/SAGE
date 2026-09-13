@@ -14,7 +14,7 @@
         "codex": "sha256:dfd1c978994ea5bd6da91b39ae7940d8daebb69b81123ebf19d153f668249687"
       },
       "risk": [],
-      "spec_hash": "sha256:7ec904d3c79d6cb7517df5645b66537bedce61629e034cec3959979e8ae7f9b8",
+      "spec_hash": "sha256:96847d1fe3e69bc655be811a429f2a101ada132c9fa7aecbcff1b7babfc87887",
       "test": "scripts/sage_harness/hooks/tests/test_capture_declared_risk.py",
       "unresolved": []
     },
@@ -32,7 +32,7 @@
         "codex": "sha256:eef506545ad80aa90064de2471fce4350ce5454730d2473d988a6d1593b995de"
       },
       "risk": [],
-      "spec_hash": "sha256:783d10b73ddcb7db77e39b26c512680526cc90989cf5530068f8a097f7aaf59e",
+      "spec_hash": "sha256:26b21cba415583ba76beac7fdb188bd7c60b42a8d991a012b2ab7a1a550d8cf9",
       "test": "scripts/sage_harness/hooks/tests/test_generated_artifact_write_guard.py",
       "unresolved": []
     },
@@ -50,7 +50,7 @@
         "codex": "sha256:b37349688572c5e6925b32689517e3ecd4c714b2b59dba890f1ffb980adb1ed9"
       },
       "risk": [],
-      "spec_hash": "sha256:7433950d1a5dd4e1ee7dbee2ba07f52520cedea1c8a5066c5ef9247fea6fec08",
+      "spec_hash": "sha256:d279189ac72351cd8d73150daacec1b69211ef740f36946ca1c934ec3b1f0640",
       "test": "scripts/sage_harness/hooks/tests/test_post_tool_logger.py",
       "unresolved": []
     },
@@ -60,7 +60,7 @@
         "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
         "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
       },
-      "canonical_hash": "sha256:29d10178656db032adbb9080c4f671a4430105c0d7d83b3885fa4b1693aa15d7",
+      "canonical_hash": "sha256:503f00ba82a28a284fb14570cd12a4a9ba3be0d9d7e542de1fb37cecefd6b329",
       "conformance": "PASS",
       "form": "core_adapter",
       "l3_review_strategy": "codex_feature_signal",
@@ -70,7 +70,7 @@
       },
       "risk": [],
       "safety_degraded": false,
-      "spec_hash": "sha256:c3eef0ee455cf562fca7d7ef8d59c273589d4de1c1d982e77290d0503c1d12fa",
+      "spec_hash": "sha256:abedb1a6fb52328a4c680ab29dfc65eadd2ed2af31f617ff0369f9918a8ddbf4",
       "test": "scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py",
       "unresolved": []
     },
@@ -88,7 +88,7 @@
         "codex": "sha256:90a0205df56a47207e6e610a4a7f32dea87b2a42d893eef4ec59529f65e1747a"
       },
       "risk": [],
-      "spec_hash": "sha256:8d92c5cb8be382af34fd620237610b9cd03257c7862f416eb12328c59ef7b04b",
+      "spec_hash": "sha256:45490af1b9f5cfa4b398618a1de95ecb5d12e309f169c386849c93721233906e",
       "test": "scripts/sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py",
       "unresolved": []
     },
@@ -106,7 +106,7 @@
         "codex": "sha256:080cb526553aa3ee9e6383e0664e5f2a35cdffdde426b7b6f0aa9936c4615527"
       },
       "risk": [],
-      "spec_hash": "sha256:0cfa2620bf411be651d420d9b9a4ec6d809b13566060e99b6e4effb58800f171",
+      "spec_hash": "sha256:95000f726046acd40c2dcdbb5382ae14e91d4269d73aff5cff81da0c0216322d",
       "unresolved": []
     },
     "hooks/stop-compliance-report": {
@@ -123,7 +123,7 @@
         "codex": "sha256:1e3437fb58f182aa65a1c36669f008db6c61d9ca92a3b9b6c8d1cb0e4d4e79b1"
       },
       "risk": [],
-      "spec_hash": "sha256:19d50f02fed0c4411ae2fadc3e035359516608b2846c16e170158456c47c6375",
+      "spec_hash": "sha256:d0574319566aedf522f0e18923dad8fa110f339c004c526bd4ea8317a553230e",
       "test": "scripts/sage_harness/hooks/tests/test_stop_compliance_report.py",
       "unresolved": []
     }
@@ -132,7 +132,7 @@
   "hook_runtime_hash": {
     "claude": "sha256:2d0318a75804defae4ac5b53e3ea9e4fe5766c21a937c1c091f45bb780be8254",
     "codex": "sha256:3519535630dd81a83cbe191b51fa3668d09ed3a9c46842e5948145a3737c941c",
-    "shared": "sha256:77542800f99d469aeb9404bc8daf2bfdef9b55267af78bd3ab94a969460e7b3e"
+    "shared": "sha256:ff49551f866a1ea946949bb9fc0a519c786da55271a402c871686dbacefb937f"
   },
   "host_runtime": "claude",
   "runtime_api": {

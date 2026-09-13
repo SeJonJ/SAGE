@@ -34,7 +34,7 @@ zero unresolved items and a Phase 05 / Loop approval hash-bound to the current P
   shown, and an L1/L0 pass has no message_key so no line is produced at all.
 
 ## canonical — partial extraction; an IO-bound gate with a two-stage pure core
-scripts/sage_harness/hooks/pre_implementation_gate_core.py
+sage_harness/hooks/pre_implementation_gate_core.py
 - `classify_risk(event, profile) -> {risk, reason, is_l3_filename, declared_l3, file_short}`
 - `decide(event, profile, snapshot, strategy_result) -> {status, exit_code, risk, message_key, safety_degraded?}`
 - The core has no filesystem or clock dependency. Plan candidate contents arrive in the snapshot,
@@ -42,8 +42,8 @@ scripts/sage_harness/hooks/pre_implementation_gate_core.py
 
 ## algorithm_delta — the strategy slot
 "Matching the L3 review doc" is a genuinely different algorithm per runtime, so both are preserved:
-- scripts/sage_harness/hooks/strategies/pre_implementation_gate/claude_grep_first.py (grep-first)
-- scripts/sage_harness/hooks/strategies/pre_implementation_gate/codex_feature_signal.py (token scoring)
+- sage_harness/hooks/strategies/pre_implementation_gate/claude_grep_first.py (grep-first)
+- sage_harness/hooks/strategies/pre_implementation_gate/codex_feature_signal.py (token scoring)
 - Common interface: **find_l3_review(signals, snapshot) -> {found, path}**.
 - **The canonical choice is `codex_feature_signal`**, adopting the more precise feature-signal
   scoring. It is injected through profile.risk.l3_review_strategy — independent, never hardcoded
@@ -257,7 +257,7 @@ structured statuses in 04.
   (plan_docs, docs/*.md) runs first, which keeps documentation false positives limited.
 
 ## tests
-scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py
+sage_harness/hooks/tests/test_pre_implementation_gate.py
 - classify (L0–L3, escalation, desktop, declared, case-insensitive) plus decide branching, plus
   both strategy candidates including inline flags and invalid patterns.
 - PDCA enforcement: mandatory phase block and pass, L3 review preservation, the report gate, and

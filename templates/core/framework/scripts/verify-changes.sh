@@ -6,7 +6,7 @@
 # the requested gate level and runs the declared commands; it hardcodes no
 # stack-specific commands (independence: domain values live in the profile).
 #
-# Usage: scripts/verify-changes.sh [L1|L2|L3]
+# Usage: sage_harness/verify-changes.sh [L1|L2|L3]
 set -euo pipefail
 
 LEVEL="${1:-L2}"

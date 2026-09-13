@@ -43,31 +43,31 @@ test
 def _root(d):
     os.makedirs(os.path.join(d, "docs", "sage_harness", "hooks"), exist_ok=True)
     for rt in ("claude", "codex"):
-        os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", rt), exist_ok=True)
-        Path(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", rt, "aaa-hook.sh")).write_text("#!/bin/bash\n")
+        os.makedirs(os.path.join(d, "sage_harness", "hooks", "adapters", rt), exist_ok=True)
+        Path(os.path.join(d, "sage_harness", "hooks", "adapters", rt, "aaa-hook.sh")).write_text("#!/bin/bash\n")
     # generate --write 는 hook_runtime_hash 스탬프에 공용 런타임 파일을 요구한다(calculate_hook_runtime_hash).
     # 없으면 registration 은 되나 manifest 미스탬프로 rc 1 이 되어, 게이트 통과 케이스가 rc 0 을 못 받는다.
-    os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime"), exist_ok=True)
-    os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "policies"), exist_ok=True)
-    strategies = os.path.join(d, "scripts", "sage_harness", "hooks", "strategies", "pre_implementation_gate")
+    os.makedirs(os.path.join(d, "sage_harness", "hooks", "runtime"), exist_ok=True)
+    os.makedirs(os.path.join(d, "sage_harness", "hooks", "policies"), exist_ok=True)
+    strategies = os.path.join(d, "sage_harness", "hooks", "strategies", "pre_implementation_gate")
     os.makedirs(strategies, exist_ok=True)
     for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py",
                "acceptance_waiver.py", "override_audit.py", "messages.py", "recovery.py", "cycle_state.py",
                "document_language.py", "prose_language.py",
                "io_claude.py", "io_codex.py"):
-        Path(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
+        Path(os.path.join(d, "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
     shutil.copyfile(
         os.path.join(REPO, "scripts", "sage_harness", "hooks", "runtime", "checklist_contract.py"),
-        os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", "checklist_contract.py"),
+        os.path.join(d, "sage_harness", "hooks", "runtime", "checklist_contract.py"),
     )
-    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "cycle_binding.py")).write_text(
+    Path(os.path.join(d, "sage_harness", "hooks", "cycle_binding.py")).write_text(
         "# cycle_binding.py\n")
-    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "risk_declaration.py")).write_text(
+    Path(os.path.join(d, "sage_harness", "hooks", "risk_declaration.py")).write_text(
         "# risk_declaration.py\n")
-    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "path_risk.py")).write_text(
+    Path(os.path.join(d, "sage_harness", "hooks", "path_risk.py")).write_text(
         "# path_risk.py\n")
-    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "retro_gate.py")).write_text("# retro_gate\n")
-    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "writeback_depth_gate.py")).write_text("# writeback_depth_gate\n")
+    Path(os.path.join(d, "sage_harness", "hooks", "policies", "retro_gate.py")).write_text("# retro_gate\n")
+    Path(os.path.join(d, "sage_harness", "hooks", "policies", "writeback_depth_gate.py")).write_text("# writeback_depth_gate\n")
     for fn in ("claude_grep_first.py", "codex_feature_signal.py", "cycle_domain_review.py"):
         Path(os.path.join(strategies, fn)).write_text(f"# {fn}\n")
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "aaa-hook.md")).write_text(_SPEC)

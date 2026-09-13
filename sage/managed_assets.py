@@ -20,6 +20,8 @@ uninstall 이 세 번째 소비자로 들어오면 그 구조는 버티지 못�
 모른다 — 그 판정은 소유권 증명을 가진 쪽(`uninstall_plan`)의 일이다. 여기서 경로를 만든다는
 것이 그 경로를 지워도 된다는 뜻이 아니다.
 """
+from sage import asset_paths
+
 import os
 
 # --- roster 정본 -------------------------------------------------------------
@@ -132,20 +134,32 @@ SAGE_TREES = (
     os.path.join("sage"),
     os.path.join(".sage"),
     os.path.join("docs", "sage_harness"),
-    os.path.join("scripts", "sage_harness"),
+    asset_paths.SAGE_TREE,
 )
 
 
 # framework 배포본. SAGE 전용 namespace 밖이지만 install 이 배치한 것이라 manifest 가 소유권을
 # 증명한다. 최상위 네 문서(`FRAMEWORK_DOCS`)와 다른 점은 **설치 전 존재 여부를 알 수 있는가**
 # 하나다 — 이 파일들은 SAGE 가 만들기 전에는 없던 이름이라 증명이 성립한다.
+#
+# `verify-changes.sh` 와 schema 는 `sage_harness/` 안으로 들어가 트리 소유가 됐지만, 목록에는
+# 남긴다 — **구 레이아웃 설치본을 아직 만날 수 있기 때문이다.** 이행 전 프로젝트에서 uninstall 을
+# 부르면 이 이름들이 여전히 구 자리에 있다.
 FRAMEWORK_FILES = (
     "verification-protocol.md",
-    os.path.join("scripts", "verify-changes.sh"),
-    os.path.join("schema", "manifest.schema.json"),
-    os.path.join("schema", "profile.schema.json"),
-    os.path.join("schema", "profile.local.schema.json"),
+    asset_paths._VERIFY_REL,
+    os.path.join(asset_paths._SCHEMA_REL, "manifest.schema.json"),
+    os.path.join(asset_paths._SCHEMA_REL, "profile.schema.json"),
+    os.path.join(asset_paths._SCHEMA_REL, "profile.local.schema.json"),
+    # --- 구 레이아웃 잔재 (이행 전 설치본) ---
+    asset_paths.LEGACY_VERIFY_REL,
+    os.path.join(asset_paths.LEGACY_SCHEMA_REL, "manifest.schema.json"),
+    os.path.join(asset_paths.LEGACY_SCHEMA_REL, "profile.schema.json"),
+    os.path.join(asset_paths.LEGACY_SCHEMA_REL, "profile.local.schema.json"),
 )
+
+# 구 레이아웃 트리. 이행 전 설치본을 uninstall 할 때만 만난다.
+LEGACY_SAGE_TREES = (asset_paths.LEGACY_SAGE_TREE,)
 
 # `docs/agent/` 는 SAGE 전용 디렉터리가 **아니다.** 사용자가 자기 문서를 같은 자리에 둘 수 있고,
 # 실제로 그러기를 권하는 구조다. 그래서 tree 째로 다루지 않고 **파일 이름 목록**으로 다룬다 —
@@ -188,4 +202,12 @@ def framework_agent_docs(bundle_dir):
 
 
 def sage_tree_paths(dest):
-    return tuple(os.path.join(os.path.abspath(dest), rel) for rel in SAGE_TREES)
+    """제거 대상 SAGE 트리. **구 레이아웃 트리를 함께 센다.**
+
+    1.0 으로 설치된 소비자는 `scripts/sage_harness/` 에 자산을 갖고 있다. 신 트리만 세면 그
+    프로젝트는 uninstall 해도 자산이 남고, 도구는 남은 것을 **보고하지도 않는다** — 사용자는
+    깨끗이 지워졌다고 믿는다. 이행하지 않고 바로 제거하는 경로가 현실적으로 존재하므로,
+    "이행했을 것" 을 전제하지 않는다.
+    """
+    base = os.path.abspath(dest)
+    return tuple(os.path.join(base, rel) for rel in SAGE_TREES + LEGACY_SAGE_TREES)

@@ -21,23 +21,11 @@ import sys
 import cycle_binding
 import risk_declaration
 from path_risk import path_risk_floor
-try:
-    from sage.done_criteria_contract import (
-        document_revision,
-        parse_done_criteria,
-        phase00_text_hash,
-    )
-except ModuleNotFoundError:
-    # Canonical-core unit tests intentionally import this file with only hooks/ on sys.path.
-    # A source checkout has sage/ three levels above; installed projects resolve the package normally.
-    _SOURCE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    if _SOURCE_ROOT not in sys.path:
-        sys.path.insert(0, _SOURCE_ROOT)
-    from sage.done_criteria_contract import (
-        document_revision,
-        parse_done_criteria,
-        phase00_text_hash,
-    )
+from done_criteria_contract import (
+    document_revision,
+    parse_done_criteria,
+    phase00_text_hash,
+)
 
 CONTRACT_VERSION = "2"   # EH-7: decide() 가 cycle_stem/cycle_source/cycle_stem_declared 를 싣고,
                          # 어댑터가 선언 사용을 감사해야 한다. 낡은 어댑터 + 새 core 조합은 스탬프만
@@ -289,7 +277,7 @@ def _fast_covers_required(fast_state, required):
     if not isinstance(recorded, dict):
         return False
     try:
-        from sage.fast_cycle_contract import converted_provenance_issue
+        from fast_cycle_contract import converted_provenance_issue
     except Exception:
         return False           # 계약을 부르지 못하면 면제하지 않는다
     if converted_provenance_issue(fast_state.get("current_phase"), recorded):
@@ -352,7 +340,7 @@ def _opener_contract_issue(state):
     계약 모듈을 부르지 못하면 통과시키지 않는다. 판정할 근거가 없는 것은 통과가 아니다.
     """
     try:
-        from sage.fast_cycle_contract import opener_run_issues
+        from fast_cycle_contract import opener_run_issues
     except Exception as exc:
         return f"Fast opener contract unavailable: {type(exc).__name__}: {exc}"
     issues = opener_run_issues(state)
@@ -461,7 +449,7 @@ def _fast_cycle_state(event, profile, snapshot, cfg):
         return None, None
     content = doc.get("content") or ""
     try:
-        from sage.fast_cycle_contract import open_issues, parse_fast_plan
+        from fast_cycle_contract import open_issues, parse_fast_plan
         plan, parse_issues = parse_fast_plan(content)
     except Exception as exc:
         return None, f"Fast Plan parser failure: {type(exc).__name__}: {exc}"

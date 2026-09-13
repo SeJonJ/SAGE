@@ -92,7 +92,7 @@ Gather, for the asset:
 
 ### hook (deterministic)
 1. Author the spec `docs/sage_harness/hooks/<id>.md` + the canonical
-   `scripts/sage_harness/hooks/<id>_core.py` (pure check).
+   `sage_harness/hooks/<id>_core.py` (pure check).
 2. For a new hook, hand off: `sage generate --kind hook --id <id> --write --target both`.
    This validates both bindings and atomically registers settings, adapters, shims, and manifest.
 

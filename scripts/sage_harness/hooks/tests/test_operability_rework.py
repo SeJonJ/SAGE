@@ -494,6 +494,7 @@ class TestRecoveryOracleHasTeeth(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         for name in ("scripts", "sage"):
             shutil.copytree(os.path.join(REPO, name), os.path.join(self.tmp, name))
+        # 엔진 트리를 그대로 복사한 거울이다(소비 설치본 아님) → 엔진 레이아웃 경로.
         self.recovery = os.path.join(self.tmp, "scripts", "sage_harness", "hooks",
                                      "runtime", "recovery.py")
         with open(self.recovery, encoding="utf-8") as fh:

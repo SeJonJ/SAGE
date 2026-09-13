@@ -80,12 +80,25 @@ def _require(done, label):
 
 
 def check_install(root):
-    """설치가 이 플랫폼에서 성립하는가. 경로 구분자·권한 모델이 먼저 걸리는 자리다."""
+    """설치가 이 플랫폼에서 성립하는가. 경로 구분자·권한 모델이 먼저 걸리는 자리다.
+
+    manifest 존재만 보면 **레이아웃을 증명하지 못한다.** 소비측 트리를 `sage_harness/` 로
+    모으는 변경은 경로를 조립하는 코드를 전부 지나가고, 그 조립은 플랫폼마다 구분자가
+    다르다. 그래서 "무엇이 생겼는가" 와 "무엇이 생기지 않았는가" 를 함께 본다 — 후자가 없으면
+    구·신 양쪽에 쓰고도 통과한다.
+    """
     _require(_sage(["install", "--host", "claude", "--prefix", "smoke", "--dest", str(root)],
                    cwd=REPO), "install")
     marker = root / "docs" / "sage_harness" / ".manifest.json"
     if not marker.is_file():
         raise SmokeFailure(f"install 후 manifest 없음: {marker}")
+    for rel in (("sage_harness", "hooks"), ("sage_harness", "schema"),
+                ("sage_harness", "verify-changes.sh")):
+        if not (root / Path(*rel)).exists():
+            raise SmokeFailure(f"신 레이아웃 자산 누락: {Path(*rel)}")
+    for rel in (("scripts", "sage_harness"), ("schema",), ("scripts", "verify-changes.sh")):
+        if (root / Path(*rel)).exists():
+            raise SmokeFailure(f"구 레이아웃 자리에 배치됐다: {Path(*rel)}")
     return "install"
 
 
@@ -176,8 +189,83 @@ def check_encoding(root):
     return "encoding"
 
 
+def check_hook_core_resolves_to_the_new_tree(root):
+    """hook 진입점이 **실제로** 신 레이아웃의 코어를 고르는가.
+
+    배치가 옳아도 해석이 구 경로로 떨어지면 사용자는 낡은 게이트를 쓰게 된다. 배치와 해석은
+    다른 코드이고, 경로 구분자가 다른 플랫폼에서는 따로 틀어질 수 있다.
+    """
+    probe = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.path.insert(0, sys.argv[1]);"
+         "from sage import hook_entry;"
+         "print(hook_entry._resolve_core_dir(sys.argv[2], None))",
+         str(REPO), str(root)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if probe.returncode != 0:
+        raise SmokeFailure(f"core 해석 실패: {probe.stderr}")
+    resolved = Path(probe.stdout.strip())
+    expected = root / "sage_harness" / "hooks"
+    if resolved != expected:
+        raise SmokeFailure(f"hook core 가 신 트리가 아니다: {resolved} (기대: {expected})")
+    if not (resolved / "runtime").is_dir():
+        raise SmokeFailure(f"해석된 core 에 runtime 이 없다: {resolved}")
+    return "hook-core-resolution"
+
+
+def check_legacy_migration(root):
+    """구 레이아웃 설치본이 `upgrade --apply` 한 번으로 넘어오는가.
+
+    이행은 바이트를 나르지 않으므로 filesystem backend 를 타지 않는다. 그래도 이 플랫폼에서
+    확인해야 하는 것이 남는다 — 경로 조립의 구분자, `os.unlink`·`os.rmdir` 의 권한 모델,
+    그리고 **사용자 파일이 그대로 남는가**.
+    """
+    import shutil as _shutil
+    work = root.parent / "smoke-legacy"
+    if work.exists():
+        _shutil.rmtree(work)
+    work.mkdir(parents=True)
+    _require(_sage(["install", "--host", "claude", "--prefix", "smoke", "--dest", str(work)],
+                   cwd=REPO), "install(legacy fixture)")
+
+    # 1.0 이 배치한 모양으로 되돌린다.
+    (work / "scripts" / "sage_harness").mkdir(parents=True)
+    (work / "sage_harness" / "hooks").rename(work / "scripts" / "sage_harness" / "hooks")
+    (work / "sage_harness" / "schema").rename(work / "schema")
+    (work / "sage_harness" / "verify-changes.sh").rename(work / "scripts" / "verify-changes.sh")
+    (work / "sage_harness").rmdir()
+
+    mine = work / "scripts" / "keep-me.sh"
+    mine.write_text("echo mine\n", encoding="utf-8")
+    (work / "sage" / "project-profile.yaml").write_text(
+        'project:\n  name: "smoke"\n  prefix: "smoke"\n'
+        'components:\n  - { id: core, paths: ["app/**"] }\n'
+        'risk:\n  l2_path_globs: ["*core/*.src"]\n', encoding="utf-8")
+
+    _require(_sage(["upgrade", "--apply", "--root", str(work)], cwd=REPO), "upgrade(migrate)")
+
+    if not (work / "sage_harness" / "hooks" / "runtime" / "run_hook.py").is_file():
+        raise SmokeFailure("이행 후 신 레이아웃 sentinel 이 없다")
+    # **빈 디렉터리는 남을 수 있다.** 재귀 정리를 하지 않기로 했다 — 그 재귀가 링크를 만날 수
+    # 있고, 빈 폴더 하나를 치우려고 그 위험을 지지 않는다. 보는 것은 **파일이 남았는가** 다.
+    legacy_runtime = work / "scripts" / "sage_harness" / "hooks" / "runtime"
+    if (legacy_runtime / "run_hook.py").exists():
+        raise SmokeFailure("이행 후에도 구 sentinel 이 남았다 — 활성 경로가 넘어가지 않았다")
+    leftover = [p for p in (work / "scripts" / "sage_harness").rglob("*") if p.is_file()]
+    if leftover:
+        raise SmokeFailure(f"구 SAGE 자산이 남았다: {leftover[:3]}")
+    if any((work / "schema").glob("*")):
+        raise SmokeFailure("구 schema 파일이 남았다")
+    if mine.read_text(encoding="utf-8") != "echo mine\n":
+        raise SmokeFailure("사용자 파일이 보존되지 않았다")
+    _shutil.rmtree(work, ignore_errors=True)
+    return "legacy-migration"
+
+
 CHECKS = (check_install, check_bilingual_help, check_local_preference,
-          check_document_language, check_validate, check_native_hook_entry, check_encoding)
+          check_document_language, check_validate, check_native_hook_entry,
+          check_hook_core_resolves_to_the_new_tree, check_encoding,
+          check_legacy_migration)
 
 
 def main() -> int:

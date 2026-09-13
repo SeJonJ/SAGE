@@ -387,7 +387,7 @@ continues 03 → 04 → 05 (review, cross-model when enabled) → 06.
 The same loop applies to introducing a new hook/agent/skill after bootstrap, and
 the **`/sage-asset` skill** drives it conversationally:
 - **hook**: author the spec under `docs/sage_harness/hooks/<id>.md` + the canonical
-  `scripts/sage_harness/hooks/<id>_core.py`, then `sage generate --kind hook --write`.
+  `sage_harness/hooks/<id>_core.py`, then `sage generate --kind hook --write`.
 - **agent/skill** (interpretive): author BOTH runtime renders (`.claude/...` and
   `.codex/...` — codex included), then `sage generate --kind <agent|skill> --id <id>
   --write` reverse-extracts spec+claims and registers them (render_hash for both

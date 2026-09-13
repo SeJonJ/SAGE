@@ -63,3 +63,25 @@ def is_engine_source_tree(path) -> bool:
     root = os.path.abspath(path)
     return (os.path.isdir(os.path.join(root, "templates", "core", "framework"))
             and os.path.isfile(os.path.join(root, "sage", "cli.py")))
+
+
+# install 이 hook 트리에 **실제로 배치하는** 것. 이행의 삭제 목록도 같은 함수를 본다.
+#
+# 목록이 둘이면 하나만 갱신되는 날이 온다. 실제로 그랬다 — install 은 `tests/`·`__pycache__`·
+# `.pyc` 를 빼는데 이행의 첫 구현은 원본 트리를 그대로 순회했다. 엔진 소스에는 그 이름들이
+# 실재하므로, **v1.0 이 배치한 적 없는 같은 경로의 사용자 파일이 삭제 후보가 됐다.**
+_NOT_INSTALLED_DIRS = {"tests", "__pycache__"}
+
+
+def installable_hook_relpaths():
+    """hook 트리에 배치되는 파일의 상대경로 집합."""
+    import os as _os
+    source = hooks_src_dir()
+    found = set()
+    for base, dirs, files in _os.walk(source):
+        dirs[:] = [name for name in dirs if name not in _NOT_INSTALLED_DIRS]
+        for name in files:
+            if name.endswith(".pyc"):
+                continue
+            found.add(_os.path.relpath(_os.path.join(base, name), source))
+    return found

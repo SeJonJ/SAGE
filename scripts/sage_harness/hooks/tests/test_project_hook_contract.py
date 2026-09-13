@@ -61,7 +61,7 @@ class TestInspectProjectHookCodes(unittest.TestCase):
         self._tmp = tempfile.mkdtemp()
         self.root = self._tmp
         os.makedirs(os.path.join(self.root, "docs", "sage_harness", "hooks"))
-        os.makedirs(os.path.join(self.root, "scripts", "sage_harness", "hooks"))
+        os.makedirs(os.path.join(self.root, "sage_harness", "hooks"))
 
     def tearDown(self):
         import shutil
@@ -72,7 +72,7 @@ class TestInspectProjectHookCodes(unittest.TestCase):
             Path(self.root, "docs", "sage_harness", "hooks",
                  f"{hook_id}.md").write_text(spec, encoding="utf-8")
         if core is not None:
-            Path(self.root, "scripts", "sage_harness", "hooks",
+            Path(self.root, "sage_harness", "hooks",
                  f"{hook_id.replace('-', '_')}_core.py").write_text(core, encoding="utf-8")
 
     def _codes(self, hook_id):

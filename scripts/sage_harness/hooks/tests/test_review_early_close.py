@@ -20,6 +20,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 HOOKS_DIR = os.path.dirname(HERE)
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HOOKS_DIR)))
 sys.path.insert(0, REPO)
+# 런타임 모듈은 부모(`hooks/`)의 계약 모듈을 형제 이름으로 부른다 — 실행 경로
+# (`run_hook.py`)도 두 디렉터리를 함께 올린다.
+sys.path.insert(0, HOOKS_DIR)
 sys.path.insert(0, os.path.join(HOOKS_DIR, "runtime"))
 
 from sage.profile_validate import validate_profile  # noqa: E402
@@ -741,10 +744,7 @@ class TestEarlyCloseOnTheDashboard(unittest.TestCase):
         않으므로, 조기 종료 감사가 예외 없이 STANDARD 로 남았다. 결속 축은 open 시점에 이미
         양쪽에 있는 stem 이다.
         """
-        sys.path.insert(0, os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
-                os.path.abspath(__file__))))), "scripts", "sage_harness", "hooks", "runtime"))
-        import fast_cycle_audit as fca  # noqa: PLC0415
+        import fast_cycle_audit as fca  # noqa: PLC0415  (경로는 모듈 상단에서 올렸다)
 
         from sage.commands import review_loop as rl  # noqa: PLC0415
 
@@ -761,10 +761,7 @@ class TestEarlyCloseOnTheDashboard(unittest.TestCase):
     def test_an_ambiguous_or_finished_fast_run_is_not_guessed_at(self):
         """살아있는 후보가 정해지지 않으면 아무거나 고르지 않는다 — 틀린 run 을 가리키는
         기록은 결속이 없는 것보다 나쁘다."""
-        sys.path.insert(0, os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
-                os.path.abspath(__file__))))), "scripts", "sage_harness", "hooks", "runtime"))
-        import fast_cycle_audit as fca  # noqa: PLC0415
+        import fast_cycle_audit as fca  # noqa: PLC0415  (경로는 모듈 상단에서 올렸다)
 
         from sage.commands import review_loop as rl  # noqa: PLC0415
 

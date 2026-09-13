@@ -9,6 +9,8 @@ Codex 2R 합의(step5, hook):
 - form: native(단일 .sh) / core_adapter(core+adapter). test 경로는 manifest 명시.
 """
 
+from sage import asset_paths
+
 import hashlib
 import json
 import ntpath
@@ -78,7 +80,7 @@ def _legacy_engine_tests():
 def _safe_test_path(root, test):
     """manifest.test 를 안전 실행 경로로만 허용 (audit 4회차 P1: 오염 manifest 임의 실행 차단).
 
-    조건: 상대경로 / `..` 없음 / .py·.sh 확장자 / realpath 가 root 내부 / scripts/sage_harness/ 하위.
+    조건: 상대경로 / `..` 없음 / .py·.sh 확장자 / realpath 가 root 내부 / sage_harness/ 하위.
     위반 시 None.
     """
     # test 가 문자열이 아니면(오염 manifest 의 test: 123 등) 안전 경로 아님 — isabs/split 이 죽지 않게 먼저 거른다.
@@ -88,7 +90,7 @@ def _safe_test_path(root, test):
         return None
     rp = os.path.realpath(os.path.join(root, test))
     root_rp = os.path.realpath(root)
-    allowed = os.path.realpath(os.path.join(root, "scripts", "sage_harness"))
+    allowed = os.path.realpath(asset_paths.sage_tree(root))
     if not rp.startswith(root_rp + os.sep) or not rp.startswith(allowed + os.sep):
         return None
     return rp if os.path.exists(rp) else None
@@ -104,7 +106,8 @@ def _schema_check(root, manifest, language=None):
         import jsonschema
     except ImportError:
         return "WARN", [tr(language, "cli.validate.manifest_schema_jsonschema_missing")]
-    sp = os.path.join(root, "schema", "manifest.schema.json")
+    sp = os.path.join(asset_paths.layout_schema_dir(root, asset_paths.detect_layout(root)),
+                      "manifest.schema.json")
     if not os.path.exists(sp):
         from sage import _resources
         sp = os.path.join(_resources.schema_dir(), "manifest.schema.json")
@@ -234,7 +237,8 @@ def _validate_core_skill_receipts(root, manifest, language=None):
 
 def _hook_paths(root, asset_id):
     """asset_id 'hooks/<id>' → 검사할 파일 경로 후보. 경로 규약은 AssetPaths 단일소스(P2-6)."""
-    ap = AssetPaths(root, "hook", asset_id.split("/", 1)[1])
+    ap = AssetPaths(root, "hook", asset_id.split("/", 1)[1],
+                    layout=asset_paths.detect_layout(root))
     return {
         "spec": ap.spec,
         "core_py": ap.core,
@@ -246,7 +250,7 @@ def _hook_paths(root, asset_id):
 
 def _write_guard_smoke(root, language=None):
     """Execute the installed Python guard path and require its exact allow/block contract."""
-    core_dir = os.path.join(root, "scripts", "sage_harness", "hooks")
+    core_dir = asset_paths.layout_hooks_dir(root, asset_paths.detect_layout(root))
     runner = os.path.join(core_dir, "runtime", "run_hook.py")
     command = [
         sys.executable, runner,

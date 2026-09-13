@@ -39,7 +39,7 @@ degraded and fail-closed at Stop.
   first-opportunity claim exits 2.
 
 ## canonical
-scripts/sage_harness/hooks/capture_declared_risk_core.py  →  decide(event) -> decision
+sage_harness/hooks/capture_declared_risk_core.py  →  decide(event) -> decision
 - Shared algorithm: two risk-level regex patterns; rejection on strong question or hypothetical
   markers combined with a sentence-final ending; rejection of multiple declared levels; the clear
   pattern with an immediately following negation excluded; session sanitize; a two-day cleanup
@@ -79,7 +79,7 @@ scripts/sage_harness/hooks/capture_declared_risk_core.py  →  decide(event) -> 
   adapter with no drift.
 
 ## tests
-scripts/sage_harness/hooks/tests/test_capture_declared_risk.py
+sage_harness/hooks/tests/test_capture_declared_risk.py
 - Core decision parity across three fixtures.
 - Capture precision: observed false-positive prompts are not captured, genuine declarations still
   are, and questions, hypotheticals and multiple levels are rejected.

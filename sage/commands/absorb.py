@@ -9,6 +9,8 @@
 
 unresolved 처리: 새로 한쪽-only 가 된 claim 은 unresolved 로 플래그(hard block 금지).
 """
+from sage import asset_paths
+
 import json
 import os
 import re
@@ -53,6 +55,9 @@ def _absorb_interpretive(args, root, kind):
 
     agent/skill 는 추출기만 다름(reverse_extract_agent / reverse_extract_skill). 렌더 문장이 아니라
     typed claim 단위 비교(interpretive 비결정성 회피)."""
+    # **엔진측 경로다.** 추출 드라이버(`extract_agent` 등)는 엔진 저장소의 `scripts/sage_harness/`
+    # 에 살고 소비 프로젝트로 배포되지 않는다. 소비측 트리(`sage_harness/`)와 혼동하지 말 것 —
+    # absorb 는 자산 저작 명령이라 엔진 저장소에서 돈다.
     sys.path.insert(0, os.path.join(root, "scripts", "sage_harness"))
     from extract_agent import load_config
     if kind == "agent":

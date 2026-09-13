@@ -405,5 +405,17 @@ echo "### 79. sage uninstall (소유권 증명 · 계획 밖 거부 · scope 격
 python3 "$HERE/test_uninstall.py" || rc=1
 
 echo ""
+echo "### 80. hook standalone 계약 (엔진 패키지 없이 선다 · AST 금지 · 경로 추정 폴백 0)"
+python3 "$HERE/test_hook_standalone_contract.py" || rc=1
+
+echo ""
+echo "### 81. 레이아웃 판정·쓰기 경계 (sentinel 기준 · 공존 fail-closed · 제자리 갱신)"
+python3 "$HERE/test_layout_contract.py" || rc=1
+
+echo ""
+echo "### 82. 레이아웃 이행 (재생성·검증 후 증명된 것만 제거 · 사용자 코드 차단 · 전환 소유권)"
+python3 "$HERE/test_layout_migration.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

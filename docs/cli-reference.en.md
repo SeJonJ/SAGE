@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:ee65f82587c6228db00d25253a9fa6ea466d615b930b1c1a5107064498364199 -->
+<!-- sage-doc-source: cli-reference.md sha256:7801de158651abf4bc285b87946d7de8fb65c5b4a6223759a162d1ed4271a8fa -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for
@@ -22,7 +22,7 @@ Without `--write`, `generate` only previews changes. For hooks and MCPs, select 
 render-first flow, so `--target` cannot narrow their scope.
 
 For a new project hook, first author only `docs/sage_harness/hooks/<id>.md` and
-`scripts/sage_harness/hooks/<id>_core.py`, then register it with:
+`sage_harness/hooks/<id>_core.py`, then register it with:
 
 ```bash
 sage generate --kind hook --id <id> --write --target both

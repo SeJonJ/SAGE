@@ -54,7 +54,7 @@ class TestEngineSourceTree(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             os.makedirs(os.path.join(d, "sage"))
             open(os.path.join(d, "sage", "project-profile.yaml"), "w").close()
-            os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks"))
+            os.makedirs(os.path.join(d, "sage_harness", "hooks"))
             self.assertFalse(_resources.is_engine_source_tree(d))
 
     def test_partial_markers_are_not_enough(self):

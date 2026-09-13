@@ -30,7 +30,7 @@ assets), then hand off to `sage generate` to extract and register.
 3. Interview for intent: id, intent sentence, advisory_scope (owns/role_boundary/
    convention_doc), runtime_bindings; for hook also the deterministic check logic.
 4. Author the source:
-   - hook: spec docs/sage_harness/hooks/<id>.md + scripts/sage_harness/hooks/<id>_core.py
+   - hook: spec docs/sage_harness/hooks/<id>.md + sage_harness/hooks/<id>_core.py
    - agent/skill: BOTH renders — claude (.claude/agents/<id>.md | .claude/skills/<id>/SKILL.md)
      AND codex (.codex/agents/<id>.md | .codex/skills/<id>/SKILL.md), semantically equivalent.
 5. Handoff: new hook → `sage generate --kind hook --id <id> --write --target both`;

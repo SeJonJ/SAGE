@@ -21,17 +21,17 @@ def _legacy_hook_spec(root, hid):
 
 
 def _legacy_core(root, hid):
-    H = os.path.join(root, "scripts", "sage_harness", "hooks")
+    H = os.path.join(root, "sage_harness", "hooks")
     return os.path.join(H, f"{hid.replace('-', '_')}_core.py")
 
 
 def _legacy_native(root, hid):
-    H = os.path.join(root, "scripts", "sage_harness", "hooks")
+    H = os.path.join(root, "sage_harness", "hooks")
     return os.path.join(H, f"{hid}.sh")
 
 
 def _legacy_adapter(root, hid, rt):
-    H = os.path.join(root, "scripts", "sage_harness", "hooks")
+    H = os.path.join(root, "sage_harness", "hooks")
     return os.path.join(H, "adapters", rt, f"{hid}.sh")
 
 
@@ -81,26 +81,26 @@ class TestAssetPathsKinds(unittest.TestCase):
         self.assertEqual(
             [os.path.relpath(p, ROOT) for p in groups["shared"]],
             [
-                os.path.join("scripts", "sage_harness", "hooks", "cycle_binding.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "risk_declaration.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "path_risk.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "runtime", "run_hook.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "runtime", "hook_runtime.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "runtime", "checklist_contract.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "runtime", "loop_audit.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "runtime", "retro_audit.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "runtime", "acceptance_waiver.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "runtime", "override_audit.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "policies", "retro_gate.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "policies", "writeback_depth_gate.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "runtime", "messages.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "runtime", "recovery.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "runtime", "cycle_state.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "runtime", "document_language.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "runtime", "prose_language.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "strategies", "pre_implementation_gate", "claude_grep_first.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "strategies", "pre_implementation_gate", "codex_feature_signal.py"),
-                os.path.join("scripts", "sage_harness", "hooks", "strategies", "pre_implementation_gate", "cycle_domain_review.py"),
+                os.path.join("sage_harness", "hooks", "cycle_binding.py"),
+                os.path.join("sage_harness", "hooks", "risk_declaration.py"),
+                os.path.join("sage_harness", "hooks", "path_risk.py"),
+                os.path.join("sage_harness", "hooks", "runtime", "run_hook.py"),
+                os.path.join("sage_harness", "hooks", "runtime", "hook_runtime.py"),
+                os.path.join("sage_harness", "hooks", "runtime", "checklist_contract.py"),
+                os.path.join("sage_harness", "hooks", "runtime", "loop_audit.py"),
+                os.path.join("sage_harness", "hooks", "runtime", "retro_audit.py"),
+                os.path.join("sage_harness", "hooks", "runtime", "acceptance_waiver.py"),
+                os.path.join("sage_harness", "hooks", "runtime", "override_audit.py"),
+                os.path.join("sage_harness", "hooks", "policies", "retro_gate.py"),
+                os.path.join("sage_harness", "hooks", "policies", "writeback_depth_gate.py"),
+                os.path.join("sage_harness", "hooks", "runtime", "messages.py"),
+                os.path.join("sage_harness", "hooks", "runtime", "recovery.py"),
+                os.path.join("sage_harness", "hooks", "runtime", "cycle_state.py"),
+                os.path.join("sage_harness", "hooks", "runtime", "document_language.py"),
+                os.path.join("sage_harness", "hooks", "runtime", "prose_language.py"),
+                os.path.join("sage_harness", "hooks", "strategies", "pre_implementation_gate", "claude_grep_first.py"),
+                os.path.join("sage_harness", "hooks", "strategies", "pre_implementation_gate", "codex_feature_signal.py"),
+                os.path.join("sage_harness", "hooks", "strategies", "pre_implementation_gate", "cycle_domain_review.py"),
             ],
         )
         self.assertEqual(os.path.basename(groups["claude"][0]), "io_claude.py")

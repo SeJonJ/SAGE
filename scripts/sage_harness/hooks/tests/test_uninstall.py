@@ -1223,7 +1223,7 @@ class DanglingRegistration(Base):
                          f"{path} 에 SAGE 등록이 남았다")
         # 등록이 가리키던 shim 도 함께 사라졌는지 본다 — 등록만 지우고 실행 파일이 남으면
         # 다음 설치가 그 파일을 자기 것으로 오인한다.
-        self.assertFalse(os.path.isdir(os.path.join(consumer.project, "scripts", "sage_harness")))
+        self.assertFalse(os.path.isdir(os.path.join(consumer.project, "sage_harness")))
 
 
     def test_a_consumer_with_a_normal_prompt_hook_finishes(self):

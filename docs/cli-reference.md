@@ -20,7 +20,7 @@
 지정합니다. agent/skill은 항상 두 host render를 요구하는 render-first 흐름이므로 `--target`으로
 범위를 줄이지 않습니다.
 
-신규 project hook은 `docs/sage_harness/hooks/<id>.md`와 `scripts/sage_harness/hooks/<id>_core.py`만
+신규 project hook은 `docs/sage_harness/hooks/<id>.md`와 `sage_harness/hooks/<id>_core.py`만
 먼저 작성한 뒤 다음 명령으로 등록합니다.
 
 ```bash

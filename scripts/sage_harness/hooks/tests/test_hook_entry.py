@@ -78,16 +78,39 @@ class TestCoreDirResolution(unittest.TestCase):
         self.assertEqual(hook_entry._resolve_core_dir("/root", CORE), CORE)
 
     def test_project_local_preferred(self):
+        """설치본이 번들을 이긴다 — 단, **sentinel 이 있을 때만.**
+
+        디렉터리만으로 고르면 배치가 끝나지 않은 트리가 정본이 된다. 그 순간 게이트는 반쪽
+        남은 코드 위에서 돈다.
+        """
         with tempfile.TemporaryDirectory() as root:
-            local = os.path.join(root, "scripts", "sage_harness", "hooks", "runtime")
+            local = os.path.join(root, "sage_harness", "hooks", "runtime")
             os.makedirs(local)
+            with open(os.path.join(local, "run_hook.py"), "w", encoding="utf-8") as handle:
+                handle.write("# sentinel\n")
+            got = hook_entry._resolve_core_dir(root, None)
+            self.assertEqual(got, os.path.join(root, "sage_harness", "hooks"))
+
+    def test_legacy_wins_while_both_trees_exist(self):
+        """전환 구간에서는 **구 경로가 이긴다.**
+
+        신 트리가 생겼다는 것은 배치됐다는 뜻일 뿐 검증됐다는 뜻이 아니다. 활성 전환점은 구
+        sentinel 의 제거이고, 그 전까지 게이트는 지금까지 돌던 코드로 돈다.
+        """
+        with tempfile.TemporaryDirectory() as root:
+            for rel in (os.path.join("sage_harness", "hooks"),
+                        os.path.join("scripts", "sage_harness", "hooks")):
+                runtime = os.path.join(root, rel, "runtime")
+                os.makedirs(runtime)
+                with open(os.path.join(runtime, "run_hook.py"), "w", encoding="utf-8") as handle:
+                    handle.write("# sentinel\n")
             got = hook_entry._resolve_core_dir(root, None)
             self.assertEqual(got, os.path.join(root, "scripts", "sage_harness", "hooks"))
 
     def test_bundle_fallback_when_no_local(self):
         with tempfile.TemporaryDirectory() as root:   # no scripts/ tree
             got = hook_entry._resolve_core_dir(root, None)
-            self.assertTrue(got.endswith(os.path.join("scripts", "sage_harness", "hooks")))
+            self.assertTrue(got.endswith(os.path.join("sage_harness", "hooks")))
             self.assertTrue(os.path.isdir(os.path.join(got, "runtime")))
 
 

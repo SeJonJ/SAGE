@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:caecd4aa4e31ce1193a7d8be2ed6562ee3b3a56e556220a650eb5c937e6cd2a3 -->
+<!-- sage-doc-source: README.md sha256:dff17bef198c5bfde8feb47823edf31fc1d42ce283502e23588d79702290749c -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)
@@ -67,9 +67,9 @@ sage generate --kind hook --write --target claude
 sage validate --kind all
 ```
 
-When joining a repository that already has a shared profile, run `sage-init-local` instead of
-`sage-init`. See the [English quickstart](docs/quickstart.en.md) for the full sequence and
-[troubleshooting](docs/troubleshooting.en.md) for installation failures.
+When a shared profile exists, run `sage-init-local` instead of `sage-init`. If `CLAUDE.md` or
+`AGENTS.md` already exists the install stops and nothing changes — see the
+[English quickstart](docs/quickstart.en.md) and [troubleshooting](docs/troubleshooting.en.md).
 
 ## What SAGE 1.0 provides
 

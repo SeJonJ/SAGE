@@ -190,15 +190,19 @@ class TestConsumerLocaleE2E(unittest.TestCase):
             self.assertEqual((code, text), self._run(host, "ko"),
                              f"{host}: 설정 부재가 한국어와 다르게 동작한다")
 
-    # --- 엔진 부재: 알려진 한계이며 이 사이클이 만든 결함이 아니다 ---
+    # --- 엔진 부재: 이제 게이트가 **선다** ---
     #
-    # `pre_implementation_gate_core` 는 module import 시점에 `sage.done_criteria_contract` 를
-    # 요구한다. 그 자리의 주석이 적어둔 전제가 "installed projects resolve the package
-    # normally" 이므로 엔진이 pip 로 깔려 있는 것이 정상 구성이고, 여기서 고칠 대상은 아니다.
+    # 이전에는 `pre_implementation_gate_core` 가 module import 시점에 `sage.done_criteria_contract`
+    # 를 요구했고, 그 자리의 주석은 "installed projects resolve the package normally" 를 전제로
+    # 두어 엔진 부재를 **알려진 한계로 수용**했다. 그 전제가 틀렸다 — 소비 프로젝트의 `sage/` 는
+    # `.py` 가 0개인 설정 디렉터리이고, PEP 420 namespace package 로 잡혀 `import sage` 만
+    # 성공한 뒤 서브모듈에서 터졌다. 폴백의 두 번째 실패를 잡는 `except` 도 없었다.
     #
-    # 그래도 박제하는 이유는 둘이다. 첫째, locale package 가 자체 포함이라는 사실이
-    # "hook 이 엔진 없이 돈다" 로 읽히면 안 된다 — 부품 하나가 독립인 것과 조립품이 독립인 것은
-    # 다르고, 지금 조립품은 독립이 아니다. 둘째, 이 상태의 exit code 가 바뀌면 즉시 알아야 한다.
+    # 실제 결과는 "테스트가 깨진다" 가 아니라 **게이트가 죽으면서 통과시킨다** 였다. 크래시의
+    # 종료코드 1은 SAGE 의 차단 계약(2)이 아니므로 통과로 읽힌다.
+    #
+    # 지금은 계약 모듈이 hook 트리에 있고 엔진이 그것을 읽는다. 따라서 검사하는 것이 뒤집혔다 —
+    # "부재가 조용한 통과로 떨어지지 않는가" 가 아니라 **"엔진 없이도 게이트가 판정하는가"** 다.
     #
     # 부재는 `_engine_absent_path()` 로 **만든다**. PYTHONPATH 를 지우는 것만으로는 엔진이
     # 사라지지 않는다 — 원격 CI 는 editable 로 엔진을 깔기 때문에 그대로 import 되고, 그러면
@@ -220,17 +224,25 @@ class TestConsumerLocaleE2E(unittest.TestCase):
         self.assertNotEqual(probe.returncode, 0, "엔진이 깔린 환경에서 부재가 성립하지 않는다")
         self.assertIn("ModuleNotFoundError", probe.stderr)
 
-    def test_the_gate_does_not_run_and_does_not_pass_silently(self):
+    def test_the_gate_runs_and_judges_without_the_engine(self):
+        """엔진이 없어도 게이트가 **판정**한다 — 죽는 것이 아니라.
+
+        종료코드만 보면 예전 상태와 구분되지 않는다. 크래시도 0이 아니었기 때문이다. 그래서
+        두 가지를 함께 본다: 차단 계약의 종료코드 2인가, 그리고 화면에 트레이스백이 아니라
+        **게이트 판정**이 있는가.
+        """
         for host in self.hosts:
             code, text = _run_shim(self.root, host, engine=False)
-            # exit 0 이면 쓰기가 통과한다. 엔진 부재가 곧 무음 우회가 되는 상태만은 아니어야 한다.
-            self.assertNotEqual(code, 0, f"{host}: 엔진 부재가 조용한 통과로 떨어졌다\n{text}")
-            self.assertIn("ModuleNotFoundError", text, f"{host}: 원인이 화면에 남지 않는다")
+            self.assertEqual(code, 2, f"{host}: 차단 계약(2)이 아니다\n{text}")
+            self.assertIn("GATE BLOCK", text, f"{host}: 게이트 판정이 화면에 없다\n{text}")
+            self.assertNotIn("ModuleNotFoundError", text,
+                             f"{host}: 엔진 부재가 여전히 예외로 새어 나온다\n{text}")
+            self.assertNotIn("Traceback", text, f"{host}: 트레이스백이 사용자에게 노출된다\n{text}")
 
     def test_the_locale_package_itself_stays_engine_free(self):
         """조립품이 엔진에 물려 있어도 locale 은 물리지 않았다는 것 자체는 유지된다."""
         env = _consumer_env(self.root, "claude", engine=False)
-        runtime = os.path.join(self.root, "scripts", "sage_harness", "hooks", "runtime")
+        runtime = os.path.join(self.root, "sage_harness", "hooks", "runtime")
         probe = subprocess.run(
             [sys.executable, "-c",
              "import i18n, messages; print(messages.gate_text("

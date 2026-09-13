@@ -161,7 +161,7 @@ the 03 doc.
 
 Invoke verification per `profile.verification` for the change's risk level:
 ```
-scripts/verify-changes.sh        # build / test / lint at the risk gate
+sage_harness/verify-changes.sh        # build / test / lint at the risk gate
 ```
 SAGE owns the policy, gate levels, and result format (`verification-protocol.md`); this
 skill only triggers the run. (`pre-implementation-gate` is the edit/phase hook — it is

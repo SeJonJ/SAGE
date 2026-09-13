@@ -74,7 +74,7 @@ Runs independently of the PDCA cycle — it never re-runs a cycle and never edit
 
 ## drift_checks
 - The marker token and severity rule are owned by
-  `scripts/sage_harness/hooks/runtime/feedback_markers.py` (single source shared with the gate
+  `sage_harness/hooks/runtime/feedback_markers.py` (single source shared with the gate
   and the CLI). If this spec ever states a different token, the spec is wrong.
 - A blocking marker cannot be bypassed by editing around it: the gate allows a write only when
   it removes the marker. The recorded escape hatch is `sage override grant --gate

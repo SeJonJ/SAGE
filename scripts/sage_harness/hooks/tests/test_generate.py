@@ -50,11 +50,11 @@ test
 
 def make_root(d, with_adapter=True):
     os.makedirs(os.path.join(d, "docs", "sage_harness", "hooks"), exist_ok=True)
-    os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", "claude"), exist_ok=True)
-    os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", "codex"), exist_ok=True)
-    os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime"), exist_ok=True)
-    os.makedirs(os.path.join(d, "scripts", "sage_harness", "hooks", "policies"), exist_ok=True)
-    strategies = os.path.join(d, "scripts", "sage_harness", "hooks", "strategies", "pre_implementation_gate")
+    os.makedirs(os.path.join(d, "sage_harness", "hooks", "adapters", "claude"), exist_ok=True)
+    os.makedirs(os.path.join(d, "sage_harness", "hooks", "adapters", "codex"), exist_ok=True)
+    os.makedirs(os.path.join(d, "sage_harness", "hooks", "runtime"), exist_ok=True)
+    os.makedirs(os.path.join(d, "sage_harness", "hooks", "policies"), exist_ok=True)
+    strategies = os.path.join(d, "sage_harness", "hooks", "strategies", "pre_implementation_gate")
     os.makedirs(strategies, exist_ok=True)
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "aaa-hook.md")).write_text(SPEC_A)
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "bbb-hook.md")).write_text(SPEC_B)
@@ -62,19 +62,19 @@ def make_root(d, with_adapter=True):
                "acceptance_waiver.py", "override_audit.py", "messages.py", "recovery.py", "cycle_state.py",
                "document_language.py", "prose_language.py",
                "io_claude.py", "io_codex.py"):
-        Path(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
+        Path(os.path.join(d, "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
     shutil.copyfile(
         os.path.join(REPO, "scripts", "sage_harness", "hooks", "runtime", "checklist_contract.py"),
-        os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", "checklist_contract.py"),
+        os.path.join(d, "sage_harness", "hooks", "runtime", "checklist_contract.py"),
     )
-    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "cycle_binding.py")).write_text(
+    Path(os.path.join(d, "sage_harness", "hooks", "cycle_binding.py")).write_text(
         "# cycle_binding.py\n")
-    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "risk_declaration.py")).write_text(
+    Path(os.path.join(d, "sage_harness", "hooks", "risk_declaration.py")).write_text(
         "# risk_declaration.py\n")
-    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "path_risk.py")).write_text(
+    Path(os.path.join(d, "sage_harness", "hooks", "path_risk.py")).write_text(
         "# path_risk.py\n")
-    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "retro_gate.py")).write_text("# retro_gate\n")
-    Path(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "writeback_depth_gate.py")).write_text("# writeback_depth_gate\n")
+    Path(os.path.join(d, "sage_harness", "hooks", "policies", "retro_gate.py")).write_text("# retro_gate\n")
+    Path(os.path.join(d, "sage_harness", "hooks", "policies", "writeback_depth_gate.py")).write_text("# writeback_depth_gate\n")
     for fn in ("claude_grep_first.py", "codex_feature_signal.py", "cycle_domain_review.py"):
         Path(os.path.join(strategies, fn)).write_text(f"# {fn}\n")
     Path(os.path.join(d, "docs", "sage_harness", ".manifest.json")).write_text(json.dumps({
@@ -85,7 +85,7 @@ def make_root(d, with_adapter=True):
     if with_adapter:
         for hid in ("aaa-hook", "bbb-hook"):
             for rt in ("claude", "codex"):
-                Path(os.path.join(d, "scripts", "sage_harness", "hooks", "adapters", rt, f"{hid}.sh")).write_text("#!/bin/bash\n")
+                Path(os.path.join(d, "sage_harness", "hooks", "adapters", rt, f"{hid}.sh")).write_text("#!/bin/bash\n")
 
 
 class Args:
@@ -587,7 +587,7 @@ class TestGenerate(unittest.TestCase):
         # 남기면 안 된다. generate 는 비정상 종료를 반환해 CI/호출자가 즉시 알 수 있어야 한다.
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as dest:
             make_root(d)
-            shutil.rmtree(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime"))
+            shutil.rmtree(os.path.join(d, "sage_harness", "hooks", "runtime"))
             rc = gen.run(Args(target="claude", dest=dest, root=d, write=True))
             self.assertEqual(rc, 1)
             self.assertFalse(os.path.exists(os.path.join(dest, ".claude", "settings.json")))

@@ -124,7 +124,7 @@ class TestInstall(unittest.TestCase):
             rc = install.run(Args("claude", d))
 
             self.assertEqual(rc, 0)
-            self.assertTrue(os.path.isfile(os.path.join(d, "schema", "profile.local.schema.json")))
+            self.assertTrue(os.path.isfile(os.path.join(d, "sage_harness", "schema", "profile.local.schema.json")))
             self.assertFalse(os.path.exists(os.path.join(d, "sage", "project-profile.local.yaml")))
             ignore = Path(d, ".gitignore").read_text(encoding="utf-8")
             self.assertIn("# >>> SAGE LOCAL PROFILE", ignore)
@@ -305,23 +305,23 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(rc, 0)
             for rel in (
                 # profile + 템플릿 + schema
-                "sage/project-profile.yaml", "schema/manifest.schema.json", "sage/templates/agent.spec.md",
+                "sage/project-profile.yaml", "sage_harness/schema/manifest.schema.json", "sage/templates/agent.spec.md",
                 # framework(중립)
-                "AGENT_GUIDE.md", "CLAUDE.md", "verification-protocol.md", "scripts/verify-changes.sh",
+                "AGENT_GUIDE.md", "CLAUDE.md", "verification-protocol.md", "sage_harness/verify-changes.sh",
                 "docs/agent/risk-classification.md", "docs/agent/review-protocol.md", "docs/agent/output-contract.md",
                 # CORE hook spec + 정본(core/adapter/strategy)
                 "docs/sage_harness/.manifest.json",
                 "docs/sage_harness/hooks/pre-implementation-gate.md",
-                "scripts/sage_harness/hooks/pre_implementation_gate_core.py",
-                "scripts/sage_harness/hooks/cycle_binding.py",
-                "scripts/sage_harness/hooks/risk_declaration.py",
-                "scripts/sage_harness/hooks/path_risk.py",
-                "scripts/sage_harness/hooks/adapters/claude/pre-implementation-gate.sh",
-                "scripts/sage_harness/hooks/adapters/codex/pre-implementation-gate.sh",
-                "scripts/sage_harness/hooks/generated_artifact_write_guard_core.py",
-                "scripts/sage_harness/hooks/adapters/claude/generated-artifact-write-guard.sh",
-                "scripts/sage_harness/hooks/adapters/codex/generated-artifact-write-guard.sh",
-                "scripts/sage_harness/hooks/strategies/pre_implementation_gate/codex_feature_signal.py",
+                "sage_harness/hooks/pre_implementation_gate_core.py",
+                "sage_harness/hooks/cycle_binding.py",
+                "sage_harness/hooks/risk_declaration.py",
+                "sage_harness/hooks/path_risk.py",
+                "sage_harness/hooks/adapters/claude/pre-implementation-gate.sh",
+                "sage_harness/hooks/adapters/codex/pre-implementation-gate.sh",
+                "sage_harness/hooks/generated_artifact_write_guard_core.py",
+                "sage_harness/hooks/adapters/claude/generated-artifact-write-guard.sh",
+                "sage_harness/hooks/adapters/codex/generated-artifact-write-guard.sh",
+                "sage_harness/hooks/strategies/pre_implementation_gate/codex_feature_signal.py",
                 # CORE roster agent(중립)
                 "docs/sage_harness/agents/leader.md", "docs/sage_harness/agents/implementer-a.md",
                 "docs/sage_harness/agents/reviewer.md", "docs/sage_harness/agents/convention-checker.md",
@@ -360,21 +360,19 @@ class TestInstall(unittest.TestCase):
             self.assertIn("exact same-`Cycle-Stem` Phase 01", review)
             self.assertIn("Phase 04 cannot introduce unknown IDs", verify)
             # tests/ 는 배치하지 않음(런타임 불필요)
-            self.assertFalse(os.path.exists(os.path.join(d, "scripts/sage_harness/hooks/tests")))
+            self.assertFalse(os.path.exists(os.path.join(d, "sage_harness/hooks/tests")))
 
     def test_force_upgrade_prunes_legacy_native_write_guard(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(install.run(Args("claude", d)), 0)
-            legacy = Path(
-                d, "scripts", "sage_harness", "hooks",
+            legacy = Path(d, "sage_harness", "hooks",
                 "generated-artifact-write-guard.sh")
             legacy.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
 
             self.assertEqual(install.run(Args("claude", d, force=True)), 0)
 
             self.assertFalse(legacy.exists())
-            self.assertTrue(Path(
-                d, "scripts", "sage_harness", "hooks",
+            self.assertTrue(Path(d, "sage_harness", "hooks",
                 "generated_artifact_write_guard_core.py").is_file())
 
     def test_host_prefix_substitution(self):
@@ -674,9 +672,9 @@ class TestInstall(unittest.TestCase):
                     }
                     authored = {
                         "docs/sage_harness/hooks/project-gate.md": "project spec\n",
-                        "scripts/sage_harness/hooks/project_gate_core.py": "project core\n",
-                        "scripts/sage_harness/hooks/adapters/claude/project-gate.sh": "claude adapter\n",
-                        "scripts/sage_harness/hooks/adapters/codex/project-gate.sh": "codex adapter\n",
+                        "sage_harness/hooks/project_gate_core.py": "project core\n",
+                        "sage_harness/hooks/adapters/claude/project-gate.sh": "claude adapter\n",
+                        "sage_harness/hooks/adapters/codex/project-gate.sh": "codex adapter\n",
                     }
                     for relative, content in authored.items():
                         path = Path(d, relative)
@@ -939,7 +937,7 @@ class TestInstall(unittest.TestCase):
             actual_sha = hashlib.sha256(b"UNTRUSTED_EXISTING_RENDER\n").hexdigest()
             self.assertIn("claude/agents/leader", output)
             self.assertIn(".claude/agents/leader.md", output)
-            self.assertIn("reason: 신뢰 anchor가 없는 기존 CORE render가 현재 배포 base와 다름", output)
+            self.assertIn("reason:   신뢰 anchor가 없는 기존 CORE render가 현재 배포 base와 다름", output)
             self.assertIn(f"expected_sha256: {expected_sha}", output)
             self.assertIn(f"actual_sha256:   {actual_sha}", output)
             self.assertIn("--force", output)
@@ -974,17 +972,30 @@ class TestInstall(unittest.TestCase):
                 expected_sha = hashlib.sha256(expected_base.encode("utf-8")).hexdigest()
                 actual_sha = hashlib.sha256(custom[relpath].encode("utf-8")).hexdigest()
                 expected_items.append(
-                    f"  - [codex/framework/{asset_id}] {relpath}\n"
-                    "      reason: 신뢰 anchor가 없는 기존 CORE render가 현재 배포 base와 다름\n"
+                    f"    [codex/framework/{asset_id}] {relpath}\n"
+                    "      reason:   신뢰 anchor가 없는 기존 CORE render가 현재 배포 base와 다름\n"
                     f"      expected_sha256: {expected_sha}\n"
                     f"      actual_sha256:   {actual_sha}\n")
+            # 안내는 **사용자 파일 충돌** 갈래다 — framework 렌더는 overlay 대상이 아니므로
+            # `asset_overrides` 가 아니라 rename + convention 문서 경로로 보낸다.
             expected_stderr = (
-                "❌ CORE trust preflight 충돌 — 기존 렌더를 정본 anchor로 기록하지 않습니다.\n"
-                + "".join(expected_items)
-                + "  선택 후 다시 실행하세요:\n"
-                  "    1) 기존 파일을 inventory/백업하고 프로젝트 지침을 sage/asset_overrides 또는 absorb/migration 흐름으로 이전\n"
-                  "    2) 기존 내용을 버리기로 명시한 경우에만 같은 명령에 --force 추가\n"
-                  "  preflight 단계에서 project 파일과 manifest anchor는 변경되지 않았습니다.\n")
+                "❌ 설치를 멈췄습니다 — 이 프로젝트에 이미 있는 파일을 SAGE 가 덮어쓰게 됩니다.\n"
+                "\n"
+                "  AGENTS.md\n"
+                "  AGENT_GUIDE.md\n"
+                "\n"
+                "  아래 파일은 SAGE 가 통째로 생성하는 자산이며, 기존 내용과 병합하지 않습니다.\n"
+                "  지금 있는 내용을 먼저 옮기지 않으면 사라지므로 아무것도 바꾸지 않고 멈췄습니다.\n"
+                "\n"
+                "  이렇게 하세요:\n"
+                "    1) 기존 파일의 이름을 바꿉니다 — 예: mv AGENTS.md docs/project-conventions.md\n"
+                "    2) 같은 명령을 다시 실행합니다\n"
+                "    3) 설치 후 profile 을 채울 때(`/sage-init` · `$sage-init`) 방금 옮긴 문서를 convention 문서로\n"
+                "       등록하세요. 에이전트가 세션 시작마다 그 문서를 계속 읽습니다.\n"
+                "\n"
+                "  preflight 단계에서 project 파일과 manifest anchor 는 변경되지 않았습니다.\n"
+                "  상세(이슈 리포트용):\n"
+                + "".join(expected_items))
             self.assertEqual(err.getvalue(), expected_stderr)
 
     def test_first_install_allows_unanchored_current_bundle_base(self):
@@ -2195,7 +2206,7 @@ class TestAgentRender(unittest.TestCase):
             Path(profile).write_text(
                 "project: {name: test}\nverification:\n  project_local_script: scripts/verify-changes.sh\n",
                 encoding="utf-8")
-            script = os.path.join(d, "scripts", "verify-changes.sh")
+            script = os.path.join(d, "sage_harness", "verify-changes.sh")
             Path(script).write_text("#!/usr/bin/env bash\necho project-local\n", encoding="utf-8")
             self.assertEqual(install.run(Args("claude", d, force=True)), 0)
             self.assertIn("project-local", Path(script).read_text(encoding="utf-8"))

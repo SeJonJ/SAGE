@@ -48,15 +48,22 @@ class TestSafeTestPath(unittest.TestCase):
         self.assertIsNone(_safe_test_path(ROOT, "sage/cli.py"))
 
     def test_reject_bad_extension(self):
-        self.assertIsNone(_safe_test_path(ROOT, "scripts/sage_harness/hooks/tests/cases.tsv"))
+        self.assertIsNone(_safe_test_path(ROOT, "sage_harness/hooks/tests/cases.tsv"))
 
     def test_accept_valid(self):
-        p = _safe_test_path(ROOT, "scripts/sage_harness/hooks/tests/test_conformance.py")
-        self.assertIsNotNone(p)
-        self.assertTrue(p.endswith("test_conformance.py"))
+        # `_safe_test_path` 는 **소비 프로젝트** manifest 의 test 경로를 검증한다. 소비측 SAGE
+        # 트리는 `sage_harness/` 이므로 엔진 저장소(`scripts/sage_harness/`)를 root 로 쓰면
+        # 성립하지 않는다 — 소비 형태 fixture 를 만들어 본다.
+        with tempfile.TemporaryDirectory() as consumer:
+            target = os.path.join(consumer, "sage_harness", "hooks", "tests")
+            os.makedirs(target)
+            Path(target, "test_conformance.py").write_text("", encoding="utf-8")
+            p = _safe_test_path(consumer, "sage_harness/hooks/tests/test_conformance.py")
+            self.assertIsNotNone(p)
+            self.assertTrue(p.endswith("test_conformance.py"))
 
     def test_reject_missing(self):
-        self.assertIsNone(_safe_test_path(ROOT, "scripts/sage_harness/hooks/tests/nope.py"))
+        self.assertIsNone(_safe_test_path(ROOT, "sage_harness/hooks/tests/nope.py"))
 
     def test_reject_non_str(self):
         # 오염 manifest 의 test: 123 등 비문자열 — isabs/split 가 죽지 않고 안전하게 거부.
@@ -535,9 +542,9 @@ class TestSchemaCheck(unittest.TestCase):
 
 
 def _runtime_root(d):
-    hooks = os.path.join(d, "scripts", "sage_harness", "hooks")
-    runtime = os.path.join(d, "scripts", "sage_harness", "hooks", "runtime")
-    policies = os.path.join(d, "scripts", "sage_harness", "hooks", "policies")
+    hooks = os.path.join(d, "sage_harness", "hooks")
+    runtime = os.path.join(d, "sage_harness", "hooks", "runtime")
+    policies = os.path.join(d, "sage_harness", "hooks", "policies")
     os.makedirs(runtime, exist_ok=True)
     os.makedirs(policies, exist_ok=True)
     strategies = os.path.join(hooks, "strategies", "pre_implementation_gate")
@@ -569,7 +576,7 @@ class TestHookRuntimeHash(unittest.TestCase):
             _runtime_root(d)
             hashes, missing = calculate_hook_runtime_hash(d)
             self.assertEqual(missing, [])
-            Path(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", "io_codex.py")).write_text(
+            Path(os.path.join(d, "sage_harness", "hooks", "runtime", "io_codex.py")).write_text(
                 "# changed\n", encoding="utf-8")
             sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
             self.assertEqual(sev, "STALE")
@@ -579,7 +586,7 @@ class TestHookRuntimeHash(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             _runtime_root(d)
             hashes, _missing = calculate_hook_runtime_hash(d)
-            os.remove(os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", "run_hook.py"))
+            os.remove(os.path.join(d, "sage_harness", "hooks", "runtime", "run_hook.py"))
             sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
             self.assertEqual(sev, "FAIL")
             self.assertTrue(any("run_hook.py" in m for m in msgs))
@@ -589,7 +596,7 @@ class TestHookRuntimeHash(unittest.TestCase):
             _runtime_root(d)
             hashes, missing = calculate_hook_runtime_hash(d)
             self.assertEqual(missing, [])
-            path = os.path.join(d, "scripts", "sage_harness", "hooks", "cycle_binding.py")
+            path = os.path.join(d, "sage_harness", "hooks", "cycle_binding.py")
             Path(path).write_text("# permissive replacement\n", encoding="utf-8")
             sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
             self.assertEqual(sev, "STALE")
@@ -607,7 +614,7 @@ class TestHookRuntimeHash(unittest.TestCase):
             _runtime_root(d)
             hashes, missing = calculate_hook_runtime_hash(d)
             self.assertEqual(missing, [])
-            path = os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", "cycle_state.py")
+            path = os.path.join(d, "sage_harness", "hooks", "runtime", "cycle_state.py")
             Path(path).write_text("# permissive replacement\n", encoding="utf-8")
             sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
             self.assertEqual(sev, "STALE")
@@ -624,7 +631,7 @@ class TestHookRuntimeHash(unittest.TestCase):
             _runtime_root(d)
             hashes, missing = calculate_hook_runtime_hash(d)
             self.assertEqual(missing, [])
-            path = os.path.join(d, "scripts", "sage_harness", "hooks", "runtime", "prose_language.py")
+            path = os.path.join(d, "sage_harness", "hooks", "runtime", "prose_language.py")
             Path(path).write_text("def violations(text, language):\n    return []\n", encoding="utf-8")
             sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
             self.assertEqual(sev, "STALE")
@@ -639,7 +646,7 @@ class TestHookRuntimeHash(unittest.TestCase):
             _runtime_root(d)
             hashes, missing = calculate_hook_runtime_hash(d)
             self.assertEqual(missing, [])
-            path = os.path.join(d, "scripts", "sage_harness", "hooks", "strategies",
+            path = os.path.join(d, "sage_harness", "hooks", "strategies",
                                 "pre_implementation_gate", "cycle_domain_review.py")
             Path(path).write_text("# permissive strategy\n", encoding="utf-8")
             sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
@@ -663,7 +670,7 @@ class TestHookRuntimeHash(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             _runtime_root(d)
             hashes, _missing = calculate_hook_runtime_hash(d)
-            os.remove(os.path.join(d, "scripts", "sage_harness", "hooks", "policies", "retro_gate.py"))
+            os.remove(os.path.join(d, "sage_harness", "hooks", "policies", "retro_gate.py"))
             sev, msgs = _validate_hook_runtime_hash(d, {"hook_runtime_hash": hashes, "assets": {}})
             self.assertEqual(sev, "FAIL")
             self.assertTrue(any("retro_gate.py" in m for m in msgs))

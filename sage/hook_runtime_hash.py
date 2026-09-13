@@ -19,13 +19,15 @@ def _hash_group(root: str, paths: list[str]) -> str:
     return "sha256:" + h.hexdigest()
 
 
-def calculate_hook_runtime_hash(root: str) -> tuple[dict[str, str], list[str]]:
+def calculate_hook_runtime_hash(root: str, layout: str = None) -> tuple[dict[str, str], list[str]]:
     """Return ({shared, claude, codex}, missing_paths) for hook runtime files.
 
     The relative file path is part of the digest so two files with swapped contents cannot collide
     at the group level. Absolute project paths are excluded to keep hashes stable across installs.
     """
-    groups = hook_runtime_files(root)
+    # layout 을 넘기지 않으면 판정한다 — 엔진 저장소와 소비 프로젝트는 트리가 다르다.
+    from sage import asset_paths
+    groups = hook_runtime_files(root, layout or asset_paths.detect_layout(root))
     missing = [p for paths in groups.values() for p in paths if not os.path.exists(p)]
     if missing:
         return {}, missing

@@ -56,7 +56,7 @@ def project_core(status="block", exit_code=2, include_version=True):
 def add_orphan(root, hook_id="demo-project-gate", spec=None, core=None):
     Path(root, "docs", "sage_harness", "hooks", f"{hook_id}.md").write_text(
         spec or project_spec(hook_id), encoding="utf-8")
-    Path(root, "scripts", "sage_harness", "hooks", f"{hook_id.replace('-', '_')}_core.py").write_text(
+    Path(root, "sage_harness", "hooks", f"{hook_id.replace('-', '_')}_core.py").write_text(
         core or project_core(), encoding="utf-8")
 
 
@@ -89,17 +89,17 @@ class TestProjectHookRegistration(unittest.TestCase):
             self.assertEqual(entry["origin"], "project")
             self.assertEqual(entry["form"], "core_adapter")
             self.assertEqual(entry["adapter_contract_version"], "1")
-            shutil.copytree(RUNTIME, Path(root, "scripts", "sage_harness", "hooks", "runtime"),
+            shutil.copytree(RUNTIME, Path(root, "sage_harness", "hooks", "runtime"),
                             dirs_exist_ok=True)
             shutil.copyfile(Path(REPO, "scripts", "sage_harness", "hooks", "cycle_binding.py"),
-                            Path(root, "scripts", "sage_harness", "hooks", "cycle_binding.py"))
+                            Path(root, "sage_harness", "hooks", "cycle_binding.py"))
             shutil.copyfile(Path(REPO, "scripts", "sage_harness", "hooks", "risk_declaration.py"),
-                            Path(root, "scripts", "sage_harness", "hooks", "risk_declaration.py"))
+                            Path(root, "sage_harness", "hooks", "risk_declaration.py"))
             shutil.copyfile(Path(REPO, "scripts", "sage_harness", "hooks", "path_risk.py"),
-                            Path(root, "scripts", "sage_harness", "hooks", "path_risk.py"))
+                            Path(root, "sage_harness", "hooks", "path_risk.py"))
             for runtime in ("claude", "codex"):
                 with self.subTest(runtime=runtime):
-                    self.assertTrue(Path(root, "scripts", "sage_harness", "hooks", "adapters",
+                    self.assertTrue(Path(root, "sage_harness", "hooks", "adapters",
                                          runtime, "demo-project-gate.sh").is_file())
                     self.assertTrue(Path(root, f".{runtime}", "hooks", "demo-project-gate.sh").is_file())
                     raw = (json.dumps({"tool_name": "Write", "tool_input": {"file_path": "src/a.py"}})
@@ -108,7 +108,7 @@ class TestProjectHookRegistration(unittest.TestCase):
                                "command": "*** Update File: src/a.py\n+x"}}))
                     env = dict(os.environ, SAGE_PROJECT_ROOT=root, SAGE_PYTHON=sys.executable)
                     result = subprocess.run(
-                        [str(Path(root, "scripts", "sage_harness", "hooks", "adapters",
+                        [str(Path(root, "sage_harness", "hooks", "adapters",
                                   runtime, "demo-project-gate.sh"))],
                         input=raw, capture_output=True, text=True, env=env,
                     )
@@ -129,7 +129,7 @@ class TestProjectHookRegistration(unittest.TestCase):
             self.assertEqual(rc, 2)
             self.assertIn("--target both", err.getvalue())
             self.assertEqual(Path(root, "docs", "sage_harness", ".manifest.json").read_bytes(), before)
-            self.assertFalse(Path(root, "scripts", "sage_harness", "hooks", "adapters",
+            self.assertFalse(Path(root, "sage_harness", "hooks", "adapters",
                                   "claude", "demo-project-gate.sh").exists())
 
     def test_binding_whitespace_and_missing_contract_are_rejected(self):
@@ -236,7 +236,7 @@ class TestProjectHookRegistration(unittest.TestCase):
             self.assertTrue(changed["done"])
             self.assertTrue(json.loads(manifest_path.read_text())["external_edit"])
             self.assertFalse(Path(root, ".claude", "settings.json").exists())
-            self.assertFalse(Path(root, "scripts", "sage_harness", "hooks", "adapters",
+            self.assertFalse(Path(root, "sage_harness", "hooks", "adapters",
                                   "claude", "demo-project-gate.sh").exists())
 
     def test_distributed_template_can_register_a_hook(self):
@@ -371,14 +371,14 @@ class TestProjectHookRuntime(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         root = temp.name
         os.makedirs(Path(root, "docs", "sage_harness"), exist_ok=True)
-        os.makedirs(Path(root, "scripts", "sage_harness", "hooks"), exist_ok=True)
-        shutil.copytree(RUNTIME, Path(root, "scripts", "sage_harness", "hooks", "runtime"))
+        os.makedirs(Path(root, "sage_harness", "hooks"), exist_ok=True)
+        shutil.copytree(RUNTIME, Path(root, "sage_harness", "hooks", "runtime"))
         shutil.copyfile(Path(REPO, "scripts", "sage_harness", "hooks", "cycle_binding.py"),
-                        Path(root, "scripts", "sage_harness", "hooks", "cycle_binding.py"))
+                        Path(root, "sage_harness", "hooks", "cycle_binding.py"))
         shutil.copyfile(Path(REPO, "scripts", "sage_harness", "hooks", "risk_declaration.py"),
-                        Path(root, "scripts", "sage_harness", "hooks", "risk_declaration.py"))
+                        Path(root, "sage_harness", "hooks", "risk_declaration.py"))
         shutil.copyfile(Path(REPO, "scripts", "sage_harness", "hooks", "path_risk.py"),
-                        Path(root, "scripts", "sage_harness", "hooks", "path_risk.py"))
+                        Path(root, "sage_harness", "hooks", "path_risk.py"))
         # 이 fixture 는 **정상 설치된** 소비 프로젝트다. 그래서 runtime API marker 를 갖는다 —
         # 1.0 manifest 에서 marker 부재는 legacy 가 아니라 손상이고, `sage-hook` 이 project core
         # 를 import 하기 전에 닫는다. marker 없는 fixture 는 "project 결정이 host 를 막는가" 가
@@ -391,7 +391,7 @@ class TestProjectHookRuntime(unittest.TestCase):
                 "adapter_contract_version": "1",
             }}
         }), encoding="utf-8")
-        Path(root, "scripts", "sage_harness", "hooks", "demo_project_gate_core.py").write_text(
+        Path(root, "sage_harness", "hooks", "demo_project_gate_core.py").write_text(
             core_text or project_core(), encoding="utf-8")
         profile_dir = Path(root, "sage")
         profile_dir.mkdir()
@@ -415,7 +415,7 @@ class TestProjectHookRuntime(unittest.TestCase):
                         err = StringIO()
                         with redirect_stderr(err):
                             rc = run_hook.dispatch(runtime, "demo-project-gate", root,
-                                                   os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                                   os.path.join(root, "sage_harness", "hooks"),
                                                    self._raw(runtime))
                         self.assertEqual(rc, 2)
                         self.assertIn("project decision", err.getvalue())
@@ -437,7 +437,7 @@ class TestProjectHookRuntime(unittest.TestCase):
                         err = StringIO()
                         with redirect_stderr(err):
                             rc = run_hook.dispatch("codex", "demo-project-gate", root,
-                                                   os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                                   os.path.join(root, "sage_harness", "hooks"),
                                                    self._raw("codex"))
                     self.assertEqual(rc, 2)
                     self.assertIn(reason, err.getvalue().lower())
@@ -450,7 +450,7 @@ class TestProjectHookRuntime(unittest.TestCase):
             with self.subTest(case=case):
                 temp, root, profile = self._runtime_root()
                 try:
-                    core_path = Path(root, "scripts", "sage_harness", "hooks",
+                    core_path = Path(root, "sage_harness", "hooks",
                                      "demo_project_gate_core.py")
                     if case == "missing":
                         core_path.unlink()
@@ -468,7 +468,7 @@ class TestProjectHookRuntime(unittest.TestCase):
                         err = StringIO()
                         with redirect_stderr(err):
                             rc = run_hook.dispatch("codex", "demo-project-gate", root,
-                                                   os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                                   os.path.join(root, "sage_harness", "hooks"),
                                                    self._raw("codex"))
                     self.assertEqual(rc, 2)
                     self.assertIn(expected, err.getvalue())
@@ -492,7 +492,7 @@ class TestProjectHookRuntime(unittest.TestCase):
                         err = StringIO()
                         with redirect_stderr(err):
                             rc = run_hook.dispatch("codex", "demo-project-gate", root,
-                                                   os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                                   os.path.join(root, "sage_harness", "hooks"),
                                                    self._raw("codex"))
                     self.assertEqual(rc, 2)
                     self.assertIn(reason, err.getvalue())
@@ -512,7 +512,7 @@ class TestProjectHookRuntime(unittest.TestCase):
                 err = StringIO()
                 with redirect_stderr(err):
                     rc = run_hook.dispatch("codex", "demo-project-gate", root,
-                                           os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                           os.path.join(root, "sage_harness", "hooks"),
                                            self._raw("codex"))
             self.assertEqual(rc, 2)
             self.assertIn("outside project root", err.getvalue())
@@ -533,7 +533,7 @@ class TestProjectHookRuntime(unittest.TestCase):
                 err = StringIO()
                 with redirect_stderr(err):
                     rc = run_hook.dispatch("codex", "demo-project-gate", root,
-                                           os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                           os.path.join(root, "sage_harness", "hooks"),
                                            self._raw("codex"))
             self.assertEqual(rc, 2)
             self.assertIn("matched symlink", err.getvalue())
@@ -552,7 +552,7 @@ class TestProjectHookRuntime(unittest.TestCase):
                 err = StringIO()
                 with redirect_stderr(err):
                     rc = run_hook.dispatch("codex", "demo-project-gate", root,
-                                           os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                           os.path.join(root, "sage_harness", "hooks"),
                                            self._raw("codex"))
             self.assertEqual(rc, 2)
             self.assertIn("unsupported non-regular path", err.getvalue())
@@ -577,7 +577,7 @@ class TestProjectHookRuntime(unittest.TestCase):
                 err = StringIO()
                 with redirect_stderr(err):
                     rc = run_hook.dispatch("codex", "demo-project-gate", root,
-                                           os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                           os.path.join(root, "sage_harness", "hooks"),
                                            self._raw("codex"))
             self.assertEqual(rc, 0, err.getvalue())
             self.assertIn("snapshot checked", err.getvalue())
@@ -598,7 +598,7 @@ class TestProjectHookRuntime(unittest.TestCase):
                 err = StringIO()
                 with redirect_stderr(err):
                     rc = run_hook.dispatch("codex", "demo-project-gate", root,
-                                           os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                           os.path.join(root, "sage_harness", "hooks"),
                                            self._raw("codex"))
             self.assertEqual(rc, 0, err.getvalue())
             self.assertIn("snapshot shape checked", err.getvalue())
@@ -618,7 +618,7 @@ class TestProjectHookRuntime(unittest.TestCase):
                 err = StringIO()
                 with redirect_stderr(err):
                     rc = run_hook.dispatch("codex", "demo-project-gate", root,
-                                           os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                           os.path.join(root, "sage_harness", "hooks"),
                                            self._raw("codex"))
             self.assertEqual(rc, 2)
             self.assertIn("plan_reads must return", err.getvalue())
@@ -644,7 +644,7 @@ class TestProjectHookRuntime(unittest.TestCase):
                 err = StringIO()
                 with redirect_stderr(err):
                     rc = run_hook.dispatch("codex", "demo-project-gate", root,
-                                           os.path.join(root, "scripts", "sage_harness", "hooks"), raw)
+                                           os.path.join(root, "sage_harness", "hooks"), raw)
             self.assertEqual(rc, 0, err.getvalue())
             self.assertIn("('plan_docs/04-analyze/x.md', 'move')", err.getvalue())
             # 이동 원본은 문서가 생기는 경로가 아니다 — 실리면 move-out 오탐의 재료가 된다.
@@ -656,7 +656,7 @@ class TestProjectHookRuntime(unittest.TestCase):
         temp, root, profile = self._runtime_root()
         outside = tempfile.TemporaryDirectory()
         try:
-            Path(root, "scripts", "sage_harness", "hooks", "demo_project_gate_core.py").unlink()
+            Path(root, "sage_harness", "hooks", "demo_project_gate_core.py").unlink()
             Path(outside.name, "demo_project_gate_core.py").write_text(
                 project_core(status="ok", exit_code=0), encoding="utf-8")
             with mock.patch.dict(os.environ, {"SAGE_PROFILE": profile}):
@@ -675,7 +675,7 @@ class TestProjectHookRuntime(unittest.TestCase):
         try:
             with mock.patch.dict(os.environ, {"SAGE_PROFILE": profile}):
                 self.assertEqual(run_hook.dispatch("codex", "future-hook", root,
-                                                   os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                                   os.path.join(root, "sage_harness", "hooks"),
                                                    self._raw("codex")), 0)
         finally:
             temp.cleanup()
@@ -689,7 +689,7 @@ class TestProjectHookRuntime(unittest.TestCase):
                 err = StringIO()
                 with redirect_stderr(err):
                     rc = run_hook.dispatch("codex", "demo-project-gate", root,
-                                           os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                           os.path.join(root, "sage_harness", "hooks"),
                                            self._raw("codex"))
             self.assertEqual(rc, 2)
             self.assertIn("compiled profile is missing", err.getvalue())
@@ -711,7 +711,7 @@ class TestProjectHookRuntime(unittest.TestCase):
                         err = StringIO()
                         with redirect_stderr(err):
                             rc = run_hook.dispatch("codex", "demo-project-gate", root,
-                                                   os.path.join(root, "scripts", "sage_harness", "hooks"),
+                                                   os.path.join(root, "sage_harness", "hooks"),
                                                    self._raw("codex"))
                     self.assertEqual(rc, 2)
                     self.assertIn("profile contract failure", err.getvalue())
@@ -724,7 +724,7 @@ class TestProjectHookRuntime(unittest.TestCase):
         try:
             env = dict(os.environ)
             env["PYTHONPATH"] = REPO + os.pathsep + env.get("PYTHONPATH", "")
-            core_dir = os.path.join(root, "scripts", "sage_harness", "hooks")
+            core_dir = os.path.join(root, "sage_harness", "hooks")
             for runtime in ("claude", "codex"):
                 with self.subTest(runtime=runtime):
                     result = subprocess.run(

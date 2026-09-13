@@ -67,8 +67,8 @@ sage generate --kind hook --write --target claude
 sage validate --kind all
 ```
 
-공유 profile이 있는 프로젝트에 합류했다면 `sage-init` 대신 `sage-init-local`만 실행합니다. 자세한
-단계는 [퀵스타트](docs/quickstart.md), 오류는 [문제 해결](docs/troubleshooting.md)에 있습니다.
+공유 profile이 있다면 `sage-init` 대신 `sage-init-local`만 실행합니다. 이미 `CLAUDE.md`·`AGENTS.md`가
+있으면 설치가 멈춥니다(무변경) — 절차는 [퀵스타트](docs/quickstart.md)와 [문제 해결](docs/troubleshooting.md).
 
 ## SAGE 1.0의 주요 기능
 
@@ -88,7 +88,7 @@ sage validate --kind all
 ## 지원 환경
 
 SAGE의 일반 CLI와 설치 hook은 Python 3.10+에서 동작하며 Windows에서도 bash가 필요 없습니다. 다만
-`scripts/verify-changes.sh`와 사용자 정의 `.sh` 테스트에는 Git Bash가 필요합니다.
+`sage_harness/verify-changes.sh`와 사용자 정의 `.sh` 테스트에는 Git Bash가 필요합니다.
 
 `sage uninstall`의 **자동 제거 지원 범위**는 더 좁습니다. 파일을 지우는 기능이므로 검증되지 않은
 환경에서는 추측해서 실행하지 않고 첫 변경 전에 멈춥니다.

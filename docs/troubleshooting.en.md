@@ -1,7 +1,125 @@
-<!-- sage-doc-source: troubleshooting.md sha256:f553550e1d2875cc7a77527bc71e39479cfc960b2a0cbdea976cd0630532becd -->
+<!-- sage-doc-source: troubleshooting.md sha256:2f3cbec9137e2f8ede6c5b44925cf6f00a933c61805cf8183c769c92d5be6cec -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
+
+## Install stops on a conflict with an existing `CLAUDE.md` or `AGENTS.md`
+
+```
+❌ Installation stopped — SAGE would overwrite a file that already exists in this project.
+```
+
+SAGE treats `CLAUDE.md`, `AGENTS.md`, `CODEX.md` and `AGENT_GUIDE.md` as files **it generates
+wholly**. It does not merge with your content, so it stops before overwriting a file of the same
+name. At that point no project file and no manifest anchor has been changed.
+
+### When the conflict is a framework document
+
+```bash
+mkdir -p docs
+mv CLAUDE.md docs/project-conventions.md   # move the rules you were using
+sage install --host claude --dest .        # run the same command again
+```
+
+After installing, register that document as a **convention document** while filling in the profile
+with `/sage-init` (`$sage-init` on Codex). Agents read it at the start of every session, so your
+existing rules stay in force.
+
+The `CLAUDE.md` that SAGE places is a thin router; project instructions belong in
+`sage/project-profile.yaml` and convention documents. Framework documents do not support overlay
+composition, so do not try to move them into `sage/asset_overrides/` — there is no slot for them.
+
+### When the conflict is an agent or skill render
+
+If a CORE agent or skill render such as `.claude/agents/leader.md` conflicts, the answer differs.
+
+```bash
+mv .claude/agents/leader.md .claude/agents/leader.md.bak
+sage install --host claude --dest .
+# move your instructions from the backup into sage/asset_overrides/agents/leader.md
+```
+
+An overlay is composed **on top of** the CORE render and survives `sage install --force`. It cannot
+weaken AGENT_GUIDE, phase, review or verification gates.
+
+**The error message tells you which path applies** to the asset that conflicted, so follow what it
+prints.
+
+### When you edited a file SAGE had already installed
+
+```
+❌ Installation stopped — a SAGE-managed file was changed after it was installed.
+```
+
+SAGE generates and refreshes that file, so direct edits are overwritten on the next install. Use
+`--force` if you do not need the change, or move it into a convention document or overlay first.
+
+### When the package moved forward
+
+```
+❌ Installation stopped — the installed files differ from the current package release.
+```
+
+This is not a fault. Use `--force`, or run `sage upgrade`, which aligns assets, hooks and
+validation as one unit.
+
+If you are willing to discard the existing content, `--force` works in every case. It cannot be
+undone.
+
+## Projects installed with 1.0 — `sage upgrade` transitions them to the new layout
+
+1.0 placed SAGE files under `scripts/sage_harness/`, `schema/`, and `scripts/verify-changes.sh`.
+Later versions gather them into a single `sage_harness/` tree.
+
+```bash
+sage upgrade --check    # see what changes first (nothing is written)
+sage upgrade --apply    # migrate
+```
+
+For an install with nothing blocking it, one run is enough. If migration starts and then stops
+partway, run it again to finish the remaining cleanup.
+
+### What is removed and what is kept
+
+Files are **not moved.** SAGE assets are recreated at the new location, the new location is
+verified to actually work, and only then are the old files whose **ownership can be proven**
+removed.
+
+| | |
+|---|---|
+| Files SAGE shipped | recreated at the new path, old copies removed |
+| Files you put there yourself | **left alone.** You are told what stayed |
+| An edited `verify-changes.sh` | left alone — we cannot tell an edit from an older install |
+| `scripts/` and `schema/` | **may remain.** They are not removed automatically, even when empty; the result lists only the empty old directories it could check safely |
+
+### When migration stops
+
+```
+Migration stopped — a project hook is in use: hooks/my-guard
+```
+
+If you wrote your own project hook or review strategy, migration **stops before writing
+anything.** Your project wrote that code, so the package cannot recreate it, and the tool does not
+get to decide where it belongs. It is neither moved nor silently disabled.
+
+**This release does not migrate user extensions automatically.** Such an install **keeps working
+exactly where it is** — the same gates, the same registrations, the same validation. You do not
+need to move anything by hand, and we do not recommend it (below). Automatic migration for user
+extensions is scoped to a later release.
+
+### Do not move the files yourself
+
+Running `mv scripts/sage_harness sage_harness` by hand is **not recommended.** The hook directory
+is not the only thing that has to move — the schema, the verify script, the paths your adapters
+point at, and the install receipt all have to agree. Move only part of it and the old and new
+layouts coexist; in that state no tool can tell which hooks are the real ones, so `sage install`
+stops.
+
+### Everything keeps working until you migrate
+
+Leaving the files where they are is fine — hook execution and validation both work. Even if
+migration starts and then stops partway, **the old code keeps serving as the gate** — until the new
+location is verified, the old one stays authoritative.
 
 ## `sage: command not found`
 

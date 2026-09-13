@@ -17,7 +17,7 @@ in passing during development produces silent drift.
 - on_fail: block — the adapter maps it to exit 2 on stderr, or to JSON.
 
 ## canonical
-scripts/sage_harness/hooks/generated_artifact_write_guard_core.py
+sage_harness/hooks/generated_artifact_write_guard_core.py
 - Input: stdin JSON — tool_input.file_path or path, or the multiple targets of an apply_patch command.
 - The core algorithm is the single classification "is this path a generated artifact".
 - Both hosts run the same Python core through `sage-hook` → `runtime/run_hook.py` → `hook_runtime`.
@@ -83,7 +83,7 @@ project-local documents.
   bootstrap needs to edit them directly. Still to be decided.
 
 ## tests
-scripts/sage_harness/hooks/tests/ (cases.tsv: path → expected exit)
+sage_harness/hooks/tests/ (cases.tsv: path → expected exit)
 
 ## mode (forward-compat)
 - In SAGE mode the guard blocks, which assumes the spec SSOT exists.

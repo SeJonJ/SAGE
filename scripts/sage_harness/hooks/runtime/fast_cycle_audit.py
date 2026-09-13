@@ -6,8 +6,8 @@ import time
 import uuid
 
 import loop_audit as _chain
-from sage import fast_cycle_contract as _contract
-from sage.fast_cycle_contract import PHASES as SOURCE_PHASES
+import fast_cycle_contract as _contract
+from fast_cycle_contract import PHASES as SOURCE_PHASES
 
 AUDIT_REL = os.path.join(".sage", "fast_cycle.jsonl")
 EVENTS = ("fast_open", "fast_convert", "fast_review", "fast_close", "fast_abort")
@@ -138,7 +138,7 @@ def convert_fast(root, *, profile, cycle_stem, current_phase, actual_risk, fast_
     # 이 확인은 writer 시점 한 번이다. 감사와 게이트가 나중에 디스크를 재검증하면 전환 뒤의
     # 정상 개발이 손상으로 오판된다.
     try:
-        from sage.fast_cycle_sources import SourceProvenanceError, verify_source_phases
+        from fast_cycle_sources import SourceProvenanceError, verify_source_phases
     except Exception as exc:                                    # pragma: no cover
         raise AuditWriteError(
             f"source provenance verifier unavailable: {type(exc).__name__}: {exc}") from exc

@@ -2,14 +2,17 @@
 
 마스터 §13 + CORE 카탈로그 §1·§4: install 은 동작하는 CORE 하네스를 배치한다.
 - framework 템플릿(중립): AGENT_GUIDE.md, {wrapper}, verification-protocol.md,
-  scripts/verify-changes.sh, docs/agent/*
-- CORE hook: spec(docs/sage_harness/hooks/*.md) + 정본(scripts/sage_harness/hooks: core+adapter+strategy+native)
+  sage_harness/verify-changes.sh, docs/agent/*
+- CORE hook: spec(docs/sage_harness/hooks/*.md) + 정본(sage_harness/hooks: core+adapter+strategy+native)
 - CORE roster agent spec(중립): leader/implementer-a/implementer-b/qa/reviewer/convention-checker
 - profile(빈 스키마, host/prefix 치환) + spec 템플릿 + schema + manifest(CORE hook 등록)
 배치 후: profile 값 채움 → `sage generate --kind hook --write`(등록 산출물 + manifest 스탬프).
 독립(제약 #2): 복사 리소스는 전부 도메인값 0(중립). 프로젝트 값은 profile 로만.
 멱등: 기존 파일 skip(--force 로 덮어쓰기). AI 생성 아님(고정 템플릿 복사).
 """
+from sage import asset_paths
+from sage import overlay_classify as _cls
+
 import hashlib
 import json
 import os
@@ -58,7 +61,7 @@ _LOCAL_STATE_IGNORE_ENTRIES = (
 )
 _RETRO_AUDIT_REL = os.path.join(".sage", "retro_audit.jsonl")
 _CORE_HOOKS = [tuple(entry) for entry in _managed.CORE_HOOKS]
-_SKIP_DIRS = {"tests", "__pycache__"}
+_SKIP_DIRS = _resources._NOT_INSTALLED_DIRS   # 이행의 삭제 목록과 같은 정본
 
 
 def _exception_text(language, exc):
@@ -231,10 +234,10 @@ def _prune_legacy_skill(skill_dir, pruned, transaction=None):
         pass
 
 
-def _prune_legacy_native_write_guard(dest, pruned, transaction=None):
+def _prune_legacy_native_write_guard(dest, pruned, layout, transaction=None):
     """Remove the retired shell canonical source during a force upgrade."""
     path = os.path.join(
-        dest, "scripts", "sage_harness", "hooks",
+        asset_paths.layout_hooks_dir(dest, layout),
         "generated-artifact-write-guard.sh")
     if not os.path.lexists(path):
         return
@@ -956,18 +959,101 @@ def _materialized_anchor_conflicts(dest, host, profile, core_renders, codex_skil
     return conflicts
 
 
+# 충돌 원인 → 안내 묶음. **세 상황은 사용자가 할 일이 서로 다르다.**
+#
+#   · 사용자 파일   — 앵커가 없다 = SAGE 가 만든 적 없는 파일이다. 옮기고 다시 설치한다.
+#   · 설치본 수정   — 앵커는 맞는데 내용이 다르다. 수정분을 옮긴 뒤 --force.
+#   · 판본 차이     — 앵커도 맞고 수정도 없다. 사고가 아니라 업그레이드다.
+#
+# 하나의 문장으로 셋을 덮으면, 세 번 중 두 번은 틀린 안내가 된다. 특히 마지막은 정상 동작인데
+# 사고처럼 읽혔다.
+_CONFLICT_GUIDANCE = {
+    "install.untrusted_render_base_mismatch": "user_file",
+    "install.anchor_base_mismatch": "edited",
+    "install.anchor_matches_but_base_changed": "upgrade",
+}
+_CONFLICT_DEFAULT = "edited"
+
+
+def _conflict_kind(conflicts):
+    """여러 충돌이 섞이면 **가장 보수적인 안내**를 고른다.
+
+    사용자 파일이 하나라도 끼어 있으면 그 안내가 이긴다 — `--force` 를 권하는 문구가 먼저
+    보이면 사용자는 자기 파일이 걸려 있다는 사실을 모른 채 그것을 친다. 잃을 것이 있는 쪽을
+    기준으로 말한다.
+    """
+    kinds = {_CONFLICT_GUIDANCE.get(getattr(item["reason"], "code", None), _CONFLICT_DEFAULT)
+             for item in conflicts}
+    for candidate in ("user_file", "edited", "upgrade"):
+        if candidate in kinds:
+            return candidate
+    return _CONFLICT_DEFAULT
+
+
+def _matches_bundled_router(source, installed):
+    """설치본의 base 가 배포 라우터와 같은가 → bool. 판독 실패는 "같다" 로 보지 않는다.
+
+    관리 블록(overlay·routing)은 프로젝트마다 달라지므로 `base_of` 로 걷어내고 비교한다. 그러지
+    않으면 라우팅 블록이 주입된 정상 설치본이 매번 "다르다" 로 잡힌다.
+    """
+    bundled, bundled_error = overlay_common.read_text_lf(source)
+    current, current_error = overlay_common.read_text_lf(installed)
+    if bundled_error or current_error:
+        return False
+    base, marker_error = overlay_common.base_of(current)
+    if marker_error:
+        return False
+    # `base_of` 는 이미 말미 개행을 정규화해 돌려준다. 번들 쪽만 같은 규칙으로 맞춘다.
+    return base == overlay_common._normalize_trailing(bundled)
+
+
+def _overlay_target(conflict):
+    """충돌 자산이 overlay 로 이어받을 수 있으면 `(kind, id)`, 아니면 None.
+
+    **framework 렌더(`CLAUDE.md` 등)는 overlay 대상이 아니다.** 그쪽에 `asset_overrides` 를
+    권하면 사용자는 넣을 자리가 없는 경로로 보내진다 — 실제로 이전 문구가 그랬다. 반대로
+    agent·skill 렌더는 overlay 가 정본 경로이므로, 거기서 "이름을 바꾸라" 고 하면 그것대로
+    틀린 안내가 된다. 자산마다 답이 다르므로 자산마다 묻는다.
+    """
+    parts = conflict["key"].split("/")
+    if len(parts) != 3:
+        return None
+    _host, kind, asset_id = parts
+    if kind not in ("agents", "skills"):
+        return None
+    return (kind, asset_id) if _cls.classify(kind, asset_id) == "compose" else None
+
+
 def _print_core_trust_conflicts(dest, conflicts, language=None):
-    print(tr(language, 'cli.install.msg02'), file=sys.stderr)
-    for item in sorted(conflicts, key=lambda value: (value["key"], value["path"])):
-        print(f"  - [{item['key']}] {os.path.relpath(item['path'], dest)}", file=sys.stderr)
-        print(f"      reason: {render_issue(language, item['reason'])}", file=sys.stderr)
+    ordered = sorted(conflicts, key=lambda value: (value["key"], value["path"]))
+    kind = _conflict_kind(ordered)
+    relative = [os.path.relpath(item["path"], dest) for item in ordered]
+    overlay = _overlay_target(ordered[0]) if kind != "upgrade" else None
+
+    print(tr(language, f"cli.install.conflict_{kind}_title"), file=sys.stderr)
+    print("", file=sys.stderr)
+    for path in relative:
+        print(f"  {path}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(tr(language, f"cli.install.conflict_{kind}_body"), file=sys.stderr)
+    print("", file=sys.stderr)
+    # `{path}` 는 첫 대상으로 채운다 — 예시 명령이 실물 이름을 담아야 그대로 복사해 쓴다.
+    if overlay is not None:
+        asset_kind, asset_id = overlay
+        print(tr(language, f"cli.install.conflict_{kind}_overlay_fix",
+                 path=relative[0], kind=asset_kind, asset=asset_id), file=sys.stderr)
+    else:
+        print(tr(language, f"cli.install.conflict_{kind}_fix", path=relative[0]), file=sys.stderr)
+    print("", file=sys.stderr)
+    print(tr(language, "cli.install.conflict_unchanged"), file=sys.stderr)
+
+    # 기계값은 지우지 않는다. 이슈 리포트에서 필요하되 원인 설명을 밀어내지 않도록 맨 아래로.
+    print(tr(language, "cli.install.conflict_detail_header"), file=sys.stderr)
+    for item in ordered:
+        print(f"    [{item['key']}] {os.path.relpath(item['path'], dest)}", file=sys.stderr)
+        print(f"      reason:   {render_issue(language, item['reason'])}", file=sys.stderr)
         print(f"      expected_sha256: {item['expected_sha']}", file=sys.stderr)
         print(f"      actual_sha256:   {item['actual_sha']}", file=sys.stderr)
-    print(tr(language, 'cli.install.msg03'), file=sys.stderr)
-    print(tr(language, 'cli.install.msg04'),
-          file=sys.stderr)
-    print(tr(language, 'cli.install.msg05'), file=sys.stderr)
-    print(tr(language, 'cli.install.msg06'), file=sys.stderr)
 
 
 def _cleanup_blocked_core_renders(dest, host, codex_skill_scope=None, language=None):
@@ -1082,11 +1168,50 @@ def _install_preconditions(dest, args, manifest_path):
     return _tx.capture_paths(paths, recursive=recursive)
 
 
+def _namespace_gate(args):
+    """배치해도 되는 자리인가. 막을 이유가 있으면 exit code, 없으면 `None`.
+
+    `sage_harness/` 는 **기계 소유 트리**다. 그 안에 우리 것이 아닌 내용이 있으면 배치가 그것을
+    덮는다. sentinel 이 없다는 사실은 "비었거나 SAGE 소유" 의 증명이 아니다.
+
+    파일명으로 거르지 않는다 — 겹치지 않는 파일을 허용하면 그 파일은 uninstall 날에 사라진다.
+    이 트리에 대한 선언이 "여기 있는 것은 SAGE 가 덮어쓴다" 이므로, 선언과 동작이 같아야 한다.
+
+    구·신 공존도 여기서 본다. **판정하지 않는다** — 어느 쪽 hook 이 돌지 도구가 임의로 정하는
+    일이고, 게이트 코드에 대해 그 결정을 사람 없이 내리지 않는다.
+
+    **lock 을 잡은 뒤에만 부른다.** lock 이전의 검사는 정확성에 기여하지 않는다 — 그 사진과 첫
+    변경 사이에 만들어진 파일은 검사를 거치지 않고 기계 소유 트리에 남고, uninstall 날에
+    사라진다. 두 번 부르면 "앞에서 봤다" 는 인상만 생기고 판정은 여전히 뒤의 것 하나다.
+
+    조정 범위는 **SAGE 프로세스끼리**다. lock 을 무시하고 같은 트리에 쓰는 임의의 외부
+    프로세스까지 막는다고 말하지 않는다.
+    """
+    dest = os.path.abspath(args.dest)
+    layout = asset_paths.detect_layout(dest)
+    if layout == asset_paths.LAYOUT_CONFLICT:
+        print(tr(language_of(args), "cli.install.layout_conflict"), file=sys.stderr)
+        return 1
+    if layout != asset_paths.LAYOUT_CONSUMER_CURRENT:
+        return None
+    if asset_paths.layout_is_active(os.path.join(dest, asset_paths._HOOKS_REL), dest):
+        return None
+    from sage import layout_migration
+    squatters = layout_migration.current_namespace_occupants(dest)
+    if squatters:
+        print(tr(language_of(args), "cli.install.namespace_occupied",
+                 path=squatters[0], count=len(squatters)), file=sys.stderr)
+        return 1
+    return None
+
+
 def run(args) -> int:
     """Acquire every write-surface lock and commit or roll back the install."""
     # 엔진 저장소에 자기 자신을 설치하면 프로필 없는 루트에 게이트 hook 이 등록돼 SAGE 자신의
     # 게이트가 SAGE 개발을 막는다(2026-06-17·07-24 두 번 발생). --dest 기본값이 cwd 라 엔진
     # 저장소에서 무인자 실행이 곧 이 사고다. 예외 플래그를 두지 않는다 — 플래그가 곧 우회로다.
+    # 구·신 공존은 **판정하지 않는다.** 어느 쪽 hook 이 돌지 도구가 임의로 정하는 일이고,
+    # 게이트 코드에 대해 그 결정을 사람 없이 내리지 않는다.
     if _resources.is_engine_source_tree(args.dest):
         print(tr(language_of(args), 'cli.install.msg10'), file=sys.stderr)
         return 2
@@ -1153,6 +1278,16 @@ def run(args) -> int:
 
 def _run_locked(args) -> int:
     dest = os.path.abspath(args.dest)
+    # **lock 을 잡은 뒤에 묻는다.** lock 이전은 아직 아무것도 막지 못한 상태이고, 그 사진과 첫
+    # 변경 사이에 만들어진 파일은 검사를 거치지 않는다.
+    blocked = _namespace_gate(args)
+    if blocked is not None:
+        return blocked
+    # **배치는 제자리에서 한다.** 구 레이아웃 프로젝트는 구 자리에 갱신하고 옮기지 않는다.
+    # 신 자리에 쓰면 구·신이 공존하고, 그 순간 어느 쪽 hook 이 도는지 도구가 임의로 정하게
+    # 된다 — install 이 스스로 거부하는 상태를 install 이 만드는 셈이다. 레이아웃을 바꾸는
+    # 것은 `upgrade` 의 일이고, 그쪽도 옮기지 않는다 — 다시 만들고 지운다.
+    layout = asset_paths.detect_layout(dest)
     skill_scope = getattr(args, "_sage_skill_scope", "project-local")
     created, skipped = [], []
     pruned = []                 # 은퇴한 CORE skill 잔존 사본 정리 결과(5d)
@@ -1277,10 +1412,13 @@ def _run_locked(args) -> int:
     _copy_file(os.path.join(fw, "verification-protocol.md"),
                os.path.join(dest, "verification-protocol.md"), args.force, created, skipped,
                transaction=transaction)
-    verify_dst = os.path.join(dest, "scripts", "verify-changes.sh")
+    verify_dst = asset_paths.layout_verify_script(dest, layout)
     project_local_script = ((_profile.get("verification") or {}).get("project_local_script")
                             if isinstance(_profile.get("verification"), dict) else None)
-    if project_local_script == "scripts/verify-changes.sh" and os.path.isfile(verify_dst):
+    # 구 레이아웃 profile 이 구 경로 문자열을 갖고 있을 수 있다. 선언의 **의도**는 "프로젝트가
+    # 자기 검증 스크립트를 소유한다" 이므로, 경로 표기가 바뀌었다고 그 선언을 무효로 읽지 않는다.
+    if (project_local_script in (asset_paths._VERIFY_REL, asset_paths.LEGACY_VERIFY_REL)
+            and os.path.isfile(verify_dst)):
         print(tr(language_of(args), 'cli.install.msg26'))
         skipped.append(verify_dst)
     else:
@@ -1328,7 +1466,14 @@ def _run_locked(args) -> int:
                 status = ("disabled", None)
             bootstrap_skill_status.append((skill_id, status))
         agents_dst = os.path.join(dest, "AGENTS.md")
-        if os.path.exists(agents_dst) and not args.force:
+        # **"있다" 와 "내 것이 아니다" 는 다른 판정이다.** 존재만 보고 경고하면 정상 재설치에서도
+        # "배치하지 못했습니다" 가 나온다 — 아무것도 잘못되지 않았는데 실패처럼 읽히고, 그런
+        # 경고가 반복되면 진짜 경고까지 같이 무시된다.
+        #
+        # 내용이 배포본과 같으면 라우터는 **이미 그 자리에 있다.** 배치할 것이 없는 것이지
+        # 배치하지 못한 것이 아니다.
+        if (os.path.exists(agents_dst) and not args.force
+                and not _matches_bundled_router(os.path.join(fw, "AGENTS.md"), agents_dst)):
             agents_md_collision = True
         else:
             _copy_file(os.path.join(fw, "AGENTS.md"), agents_dst, args.force, created, skipped,
@@ -1349,10 +1494,10 @@ def _run_locked(args) -> int:
                    os.path.join(dest, "docs", "sage_harness", "hooks", f"{hid}.md"), args.force,
                    created, skipped, transaction=transaction)
 
-    # 4. CORE hook 정본(core+adapter+strategy) → scripts/sage_harness/hooks/ (도메인값 0)
+    # 4. CORE hook 정본(core+adapter+strategy) → sage_harness/hooks/ (도메인값 0)
     if args.force:
-        _prune_legacy_native_write_guard(dest, pruned, transaction=transaction)
-    _copy_tree(_resources.hooks_src_dir(), os.path.join(dest, "scripts", "sage_harness", "hooks"),
+        _prune_legacy_native_write_guard(dest, pruned, layout, transaction=transaction)
+    _copy_tree(_resources.hooks_src_dir(), asset_paths.layout_hooks_dir(dest, layout),
                args.force, created, skipped, transaction=transaction)
 
     # 5. CORE roster agent spec(중립 6인) → docs/sage_harness/agents/
@@ -1440,7 +1585,8 @@ def _run_locked(args) -> int:
     # 오타 키 방어가 번들 폴백에 의존하지 않고 프로젝트 안에서 자립하도록.
     for s in ("manifest.schema.json", "profile.schema.json", "profile.local.schema.json"):
         _copy_file(os.path.join(_resources.schema_dir(), s),
-                   os.path.join(dest, "schema", s), args.force, created, skipped,
+                   os.path.join(asset_paths.layout_schema_dir(dest, layout), s),
+                   args.force, created, skipped,
                    transaction=transaction)
 
     if source_core_content_hash() != preflight_source_hash:

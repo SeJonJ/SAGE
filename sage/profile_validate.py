@@ -11,6 +11,8 @@
 
 반환: [(severity, message)] — severity ∈ {FAIL, WARN, INFO}. FAIL 이 있으면 호출측이 fail-closed.
 """
+from sage import asset_paths
+
 import json
 import os
 from pathlib import Path
@@ -525,7 +527,8 @@ def _positive_int_issue(rl, key, enabled, required=False):
 
 
 def _schema_path(root):
-    sp = os.path.join(root, "schema", "profile.schema.json")
+    sp = os.path.join(asset_paths.layout_schema_dir(root, asset_paths.detect_layout(root)),
+                      "profile.schema.json")
     if os.path.exists(sp):
         return sp
     try:
@@ -658,7 +661,8 @@ def _semantic_issues(profile, root):
     # 1. L3 review 전략 모듈 존재 — 없으면 전략 미선택과 동일(L3 BLOCK). 오타/미배치 적발.
     strat = risk.get("l3_review_strategy") or ""
     if strat:
-        mp = os.path.join(root, "scripts", "sage_harness", "hooks", "strategies",
+        mp = os.path.join(asset_paths.layout_hooks_dir(root, asset_paths.detect_layout(root)),
+                          "strategies",
                           "pre_implementation_gate", f"{strat}.py")
         if not os.path.exists(mp):
             issues.append(("FAIL", Diagnostic("validate.l3_strategy_missing", strategy=strat,

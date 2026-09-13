@@ -561,7 +561,7 @@ class TestDocumentProseConsumerE2E(unittest.TestCase):
     def test_deleting_the_installed_scanner_is_detected_and_fails_closed(self):
         """판정 정본 파일 하나를 지우는 것이 이 게이트를 끄는 스위치가 되면 안 된다 —
         validate 가 지문 불일치로 잡고, 게이트 자체도 통과가 아니라 차단으로 떨어져야 한다."""
-        path = os.path.join(self.root, "scripts", "sage_harness", "hooks", "runtime",
+        path = os.path.join(self.root, "sage_harness", "hooks", "runtime",
                             "prose_language.py")
         with open(path, encoding="utf-8") as handle:
             saved = handle.read()
@@ -579,7 +579,7 @@ class TestDocumentProseConsumerE2E(unittest.TestCase):
             _write(path, saved)
 
     def test_tampering_with_the_installed_scanner_is_detected(self):
-        path = os.path.join(self.root, "scripts", "sage_harness", "hooks", "runtime",
+        path = os.path.join(self.root, "sage_harness", "hooks", "runtime",
                             "prose_language.py")
         with open(path, encoding="utf-8") as handle:
             saved = handle.read()

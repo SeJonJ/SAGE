@@ -91,9 +91,21 @@ def _resolve_core_dir(root, explicit):
     프로젝트 로컬을 우선해 '프로젝트가 자기 hook 코어를 소유' 모델을 보존한다."""
     if explicit:
         return os.path.abspath(explicit)
-    local = os.path.join(root, "scripts", "sage_harness", "hooks")
-    if os.path.isdir(os.path.join(local, "runtime")):
-        return local
+    # hook 진입점은 **읽기 전용**이다. 그리고 전환 구간에서는 **구 경로가 우선이다.**
+    #
+    # 직관과 반대로 보이지만, 신 트리가 생겼다는 것은 아직 "배치됐다" 는 뜻일 뿐 "검증됐다" 는
+    # 뜻이 아니다. 이행은 배치 → 재생성 → 검증 → 활성화 순서로 진행하고, 그 사이 어느 지점에서
+    # 멈출 수 있다. 신 경로를 먼저 고르면 **검증되지 않은 트리가 게이트로 선다.**
+    #
+    # 활성 전환점은 구 sentinel 의 제거다. 그 전까지 게이트는 지금까지 돌던 코드로 계속 돈다.
+    #
+    # `root` 를 반드시 넘긴다. 빼면 sentinel 파일 하나만 보게 되고, 조상 디렉터리가 프로젝트
+    # 밖을 가리킬 때 그 sentinel 은 멀쩡한 정규 파일로 보인다 — **프로젝트 밖 코드가 게이트가
+    # 된다.** `detect_layout` 은 이미 조상을 보므로, 빼면 판정과 해석이 서로 다른 답을 낸다.
+    from sage import asset_paths
+    for candidate in (asset_paths.legacy_hooks_dir(root), asset_paths.hooks_dir(root)):
+        if asset_paths.layout_is_active(candidate, root):
+            return candidate
     from sage import _resources
     return _resources.hooks_src_dir()
 

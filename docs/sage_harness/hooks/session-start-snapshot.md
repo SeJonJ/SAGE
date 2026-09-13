@@ -56,7 +56,7 @@ legacy baseline with no claim, and an abandoned temp, are cleaned up by TTL.
   starting on both SessionStart and UserPromptSubmit.
 
 ## canonical
-scripts/sage_harness/hooks/session_start_snapshot_core.py → decide(event, snapshot) -> decision (pure)
+sage_harness/hooks/session_start_snapshot_core.py → decide(event, snapshot) -> decision (pure)
 - event = { session_id, now_utc }. snapshot = { exists, sha256:{normalized key: hash} }, observed
   by the adapter.
 - decision = { action: write|noop, record }. Write-once: when it exists the result is noop, so a

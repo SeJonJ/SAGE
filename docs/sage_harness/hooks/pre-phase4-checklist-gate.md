@@ -19,7 +19,7 @@ item (`- [ ]`). Exit 2 blocks; exit 0 passes, including the warning when no 03 i
   reason from; warn and ok = message + exit 0 plus hookSpecificOutput.additionalContext, both hosts.
 
 ## canonical — an IO-bound gate with a two-stage pure core
-scripts/sage_harness/hooks/pre_phase4_checklist_gate_core.py
+sage_harness/hooks/pre_phase4_checklist_gate_core.py
 - `plan_reads(event, profile) -> {base, globs, exact}` produces the read candidates with no
   filesystem access.
 - The adapter builds an fs_snapshot from those globs (glob_results plus files, root-relative).
@@ -58,7 +58,7 @@ scripts/sage_harness/hooks/pre_phase4_checklist_gate_core.py
   original behavior.
 
 ## tests
-scripts/sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py (15 PASS)
+sage_harness/hooks/tests/test_pre_phase4_checklist_gate.py (15 PASS)
 - Core against an in-memory snapshot: ok, warn, block for both 03 and backend, suffix handling,
   exact-match precedence, read_error.
 - Adapter against a temp tree: claude and codex produce the same exit for block and ok, a 04

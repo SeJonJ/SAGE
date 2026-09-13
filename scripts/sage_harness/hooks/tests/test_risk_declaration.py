@@ -302,7 +302,7 @@ class TestNoSecondParser(unittest.TestCase):
     그것이었다. 새 소비자가 정규식을 하나 더 만들면 여기서 실패한다.
     """
 
-    ROOTS = ("scripts/sage_harness/hooks", "sage")
+    ROOTS = ("sage_harness/hooks", "sage")
     # capture_declared_risk_core 는 입력 도메인이 다르다 — 사용자가 대화창에 쓴 자연어("L3 로
     # 개발할게요")에서 세션 선언을 포착한다. 문서 metadata 문법과 합치면 둘 다 망가진다.
     ALLOWED = ("risk_declaration.py", "capture_declared_risk_core.py")

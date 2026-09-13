@@ -24,7 +24,7 @@ With enforce unset (off by default) everything passes as before.
   combined, it is a hook failure.
 
 ## canonical — partial extraction, shared aggregation only
-scripts/sage_harness/hooks/stop_compliance_report_core.py
+sage_harness/hooks/stop_compliance_report_core.py
 - `decide(event, profile, snapshot) -> report_model` (pure)
 - `render_markdown(report_model) -> str` (pure)
 - snapshot = { entries[], today, branch, runtime }, injected by the adapter after reading the JSONL.
@@ -82,7 +82,7 @@ injected only through the policy_results extension slot:
   (shared, enforcement) — preserved, never merged.
 
 ## tests
-scripts/sage_harness/hooks/tests/test_stop_compliance_report.py plus test_retro_gate.py and test_retro_audit.py
+sage_harness/hooks/tests/test_stop_compliance_report.py plus test_retro_gate.py and test_retro_audit.py
 - Core (the three gates, aggregation, an empty log, render), policy-module preservation, and
   adapter end to end on claude and codex.
 - Retro gate: per-host block wire on the first Stop under enforce; the stop_hook_active retry

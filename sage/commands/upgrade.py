@@ -34,6 +34,8 @@ local profile·policy·overlay 원본·authored asset·plan/evidence/audit/vault
 """
 from __future__ import annotations
 
+from sage import asset_paths, layout_migration
+import contextlib
 import json
 import os
 import re
@@ -149,6 +151,30 @@ def _plan(root, language):
 
     blockers, notes, writes = [], [], []
 
+    # 레이아웃 이행. **옮기지 않는다 — 다시 만들고 지운다.**
+    #
+    # SAGE 배포 자산의 바이트는 패키지가 원본을 갖고 있으므로 나를 이유가 없다. 신 경로에 다시
+    # 만들고(`install_core`), 그것이 실제로 서는지 확인한 뒤, 구 경로에서 **SAGE 소유임을
+    # 증명할 수 있는 파일만** 지운다. 증명은 이름(번들 목록)과 바이트(공유 디렉터리의 낱개
+    # 파일) 둘로 한다.
+    #
+    # 사용자가 쓴 project hook 과 custom strategy 는 **자동으로 옮기지 않는다.** 재생성할 수
+    # 없고, 어느 자리로 가야 하는지도 사용자가 정한다. 발견하면 첫 mutation 전에 차단한다 —
+    # 조용히 비활성화되는 길을 두면, 사용자는 켜 둔 줄 아는 게이트가 실제로는 꺼진 상태를
+    # 갖게 된다.
+    migration = layout_migration.plan(root, manifest=manifest, profile=profile)
+    if migration["needed"]:
+        if migration["blockers"]:
+            for kind, name in migration["blockers"]:
+                blockers.append(tr(language, f"cli.upgrade.blocker_migration_{kind}", name=name))
+        elif migration["in_transition"]:
+            notes.append(tr(language, "cli.upgrade.note_migration_resume"))
+        else:
+            notes.append(tr(language, "cli.upgrade.note_migration_planned",
+                            remove=len(migration["remove"])))
+            for rel, reason in migration["preserve"]:
+                notes.append(tr(language, f"cli.upgrade.note_migration_preserve_{reason}", path=rel))
+
     if manifest_error:
         blockers.append(tr(language, "cli.upgrade.blocker_manifest", error=manifest_error))
     elif manifest is None:
@@ -194,9 +220,9 @@ def _plan(root, language):
                                "from": current, "to": __version__})
 
     # cycle 선언 schema 1 → 2. 미러가 낡으면 문서 언어 게이트가 legacy 로만 읽는다.
-    migration, cycle_blocker = _cycle_migration(root)
-    if migration is not None:
-        writes.append(migration)
+    cycle_write, cycle_blocker = _cycle_migration(root)
+    if cycle_write is not None:
+        writes.append(cycle_write)
     if cycle_blocker is not None:
         blockers.append(tr(language, cycle_blocker[0], **cycle_blocker[1]))
 
@@ -238,6 +264,10 @@ def _plan(root, language):
         "writes": writes,
         "unowned_drift": unowned,
         "notes": notes,
+        # `--check` 가 보여준 계획과 `--apply` 가 실행하는 계획은 **같은 객체**여야 한다.
+        # apply 시점에 다시 계산하면 그 사이 바뀐 트리를 근거로 지우게 되고, 사용자가 승인한
+        # 것과 실제로 일어난 것이 갈린다.
+        "migration": migration,
     }, blockers
 
 
@@ -375,12 +405,29 @@ def _print_report(plan, blockers, language, applied):
     print(tr(language, "cli.upgrade.host", host=plan["host_runtime"]))
     for note in plan["notes"]:
         print(note)
+    migration = plan.get("migration") or {"needed": False}
+    if migration["needed"] and migration.get("cleanup_only"):
+        print(tr(language, "cli.upgrade.migration_cleanup_only",
+                 count=len(migration["remove"])))
+    elif migration["needed"]:
+        # **활성 경로가 먼저다.** 이행의 결과는 "몇 개를 지웠는가" 가 아니라 "어느 코드가
+        # 게이트가 되는가" 다. 파일 목록보다 이것이 앞에 와야 사용자가 결과를 예측한다.
+        print(tr(language, "cli.upgrade.migration_path_from",
+                 path=asset_paths.LEGACY_HOOKS_REL))
+        print(tr(language, "cli.upgrade.migration_path_to", path=asset_paths._HOOKS_REL))
+        print(tr(language, "cli.upgrade.migration_group_remove", count=len(migration["remove"])))
+        for rel in migration["remove"][:_MIGRATION_PREVIEW]:
+            print(tr(language, "cli.upgrade.migration_item", path=rel))
+        if len(migration["remove"]) > _MIGRATION_PREVIEW:
+            print(tr(language, "cli.upgrade.migration_more",
+                     count=len(migration["remove"]) - _MIGRATION_PREVIEW))
     if plan["writes"]:
         print(tr(language, "cli.upgrade.writes_header", count=len(plan["writes"])))
         for item in plan["writes"]:
             print(tr(language, "cli.upgrade.write_item", path=item["path"],
                      from_=item["from"], to=item["to"]))
-    else:
+    elif not migration["needed"]:
+        # 이행이 예정돼 있으면 "변경할 것이 없습니다" 는 거짓이다. 선언 write 가 없을 뿐이다.
         print(tr(language, "cli.upgrade.no_writes"))
     for item in plan["unowned_drift"]:
         print(tr(language, "cli.upgrade.unowned", axis=item["axis"], current=item["current"],
@@ -474,6 +521,7 @@ def _managed_steps(root, plan, language):
     """
     host = plan["host_runtime"]
     scope = plan.get("skill_scope")
+    migration = plan.get("migration") or {"needed": False}
     steps = []
 
     def install_core():
@@ -505,7 +553,60 @@ def _managed_steps(root, plan, language):
         steps.append(("hooks", regenerate_hooks))
         steps.append(("overlays", rematerialize_overlays))
         steps.append(("validate", validate_all))
+    # `migrate-layout` 은 **이 목록에 넣지 않는다.** 활성 전환은 스냅샷 복원이 끝난 뒤에 서야
+    # 한다 — 전환 뒤에 복원이 돌면 구 파일이 되살아나 공존이 다시 만들어진다. 호출부가
+    # 순서를 소유한다(`_apply`).
     return steps
+
+
+def _finalize_layout(root, plan, language):
+    """활성 전환과 구 자산 정리. **마지막 state mutation 이고 되돌리지 않는다.**
+
+    여기 오기 전에 신 레이아웃은 배치·재생성·검증을 마쳤고, 사용자 소유 경로 복원도 끝났다.
+    그래서 이 뒤로는 스냅샷 복원을 타지 않는다 — 전환 뒤에 복원이 돌면 구 파일이 되살아나
+    **방금 없앤 공존을 다시 만든다.** 실패는 보고하고 재실행으로 수렴시킨다.
+
+    `(성공 여부, 적용 수)`.
+    """
+    migration = plan.get("migration") or {"needed": False}
+    if not migration["needed"]:
+        return True, 0
+
+    # **지우기 전에 신 경로가 실제로 로드되는지 본다.** `validate` 는 해시와 스키마를 보지만,
+    # 그것으로는 이 트리로 hook 이 설 수 있는지를 말하지 못한다.
+    loads, detail = layout_migration.runtime_loads(root)
+    if not loads:
+        print(tr(language, "cli.upgrade.migration_runtime_unloadable",
+                 detail=detail[0][:200]), file=sys.stderr)
+        return False, 0
+
+    try:
+        activated, removed, leftover = layout_migration.apply(root, migration)
+    except (OSError, ValueError) as exc:
+        print(tr(language, "cli.upgrade.migration_not_activated"), file=sys.stderr)
+        print(f"   {type(exc).__name__}: {exc}", file=sys.stderr)
+        return False, 0
+    if not activated:
+        for rel in leftover:
+            print(tr(language, "cli.upgrade.migration_leftover", path=rel), file=sys.stderr)
+        print(tr(language, "cli.upgrade.migration_not_activated"), file=sys.stderr)
+        return False, 0
+
+    # **전환 성공을 확정한 뒤에 묻는다.** 빈 부모 안내는 있으면 좋은 것이지 이행의 일부가
+    # 아니다. `apply()` 안에 두었을 때 이 조회의 실패가 그대로 이행 실패로 읽혔다.
+    try:
+        empty = layout_migration.empty_legacy_dirs(root)
+    except OSError:
+        empty = []
+
+    if not migration.get("cleanup_only"):
+        print(tr(language, "cli.upgrade.migration_activated"))
+    print(tr(language, "cli.upgrade.migration_removed", count=len(removed)))
+    for rel in leftover:
+        print(tr(language, "cli.upgrade.migration_leftover", path=rel))
+    for rel in empty:
+        print(tr(language, "cli.upgrade.migration_empty_dir", path=rel))
+    return True, 1
 
 
 # FR-U05 보호 집합. **위임 단계가 이걸 건드려도 upgrade 는 되돌린다.**
@@ -547,11 +648,17 @@ def _capture_times(root, snapshot):
     return times
 
 
-def _restore_user_owned(root, snapshot, times=None):
-    """위임 단계가 건드린 사용자 소유 경로를 원래대로 되돌린다. 되돌린 경로 목록을 준다."""
+def _restore_user_owned(root, snapshot, times=None, skip=frozenset()):
+    """위임 단계가 건드린 사용자 소유 경로를 원래대로 되돌린다. 되돌린 경로 목록을 준다.
+
+    `skip` 은 이 실행의 이행 계획이 **SAGE 소유로 증명하고 지운** 정확한 경로들이다. 증명되지
+    않은 것은 여기 들어오지 않으므로, 보호가 비는 구간이 생기지 않는다.
+    """
     reverted = []
     current = _snapshot_tree(root)
     for rel in sorted(set(snapshot) | set(current)):
+        if rel in skip:
+            continue
         if not _is_user_owned(rel):
             continue
         was, now = snapshot.get(rel), current.get(rel)
@@ -582,7 +689,16 @@ def _restore_user_owned(root, snapshot, times=None):
 
 # 각 단계가 성공으로 인정하는 exit code. validate 의 STALE(3) 은 여기서 실패다 — upgrade 가
 # 끝난 뒤에도 STALE 이면 그건 hook 재생성이 제 일을 못 했다는 뜻이다.
-_STEP_OK = {"core-assets": {0}, "hooks": {0}, "overlays": {0}, "validate": {0}}
+#
+# **이행 중에도 예외를 두지 않는다.** 한때 `{0, 3}` 으로 열어 뒀는데, 그 완화는 STALE 이 정말
+# 등록 해제 절차 때문인지 구별하지 못하고 **다른 모든 STALE 까지 통과**시켰다. 게다가 안내대로
+# spec 과 core 를 밖으로 옮기고 들어오면 validate 는 PASS 한다 — 정상 출구에 필요하지 않은
+# 완화였다. 반대로 spec 을 남기면 STALE 이 아니라 orphan FAIL(1) 이라 어차피 걸리지 않는다.
+
+_MIGRATION_PREVIEW = 8   # 기본 화면에 펼칠 개수. 전체는 보고서 JSON 에 있다
+
+_STEP_OK = {"core-assets": {0}, "hooks": {0}, "overlays": {0}, "validate": {0},
+            "migrate-layout": {0}}
 
 
 def _apply(root, plan, language):
@@ -625,24 +741,51 @@ def _apply(root, plan, language):
             applied += 1
         if needs_profile_refresh:
             _refresh_compiled_profile_json(root, language)
-        for name, run_step in _managed_steps(root, plan, language):
-            code = run_step()
-            if code not in _STEP_OK[name]:
-                raise RuntimeError(tr(language, "cli.upgrade.step_exit_nonzero", name=name, code=code))
-            applied += 1
-        reverted = _restore_user_owned(root, snapshot, user_times)
+        # 이행 중이면 단계들이 신 레이아웃을 보고 돌아야 한다. 전환 구간의 판정은 `CONFLICT`
+        # 이고, 거기에 맡기면 **이행을 끝내는 데 필요한 단계가 스스로 멈춘다.**
+        #
+        # 범위는 여기서만 연다. 이행을 아는 명령이 이행 상태를 다룬다 — 다른 명령에게 공존은
+        # 그냥 `CONFLICT` 이고, 그래서 fail-closed 한다.
+        migrating = bool((plan.get("migration") or {}).get("needed"))
+        with (asset_paths.layout_override(root, asset_paths.LAYOUT_CONSUMER_CURRENT)
+              if migrating else contextlib.nullcontext()):
+            for name, run_step in _managed_steps(root, plan, language):
+                code = run_step()
+                if code not in _STEP_OK[name]:
+                    raise RuntimeError(tr(language, "cli.upgrade.step_exit_nonzero",
+                                          name=name, code=code))
+                applied += 1
+        # 이행이 **계획으로 증명하고 지운** 경로는 복원 대상이 아니다.
+        #
+        # `_USER_OWNED_PREFIXES` 에 `scripts/verify-changes.sh` 가 있어, 그대로 두면 이행이 지운
+        # 파일을 마지막에 되살린다. 전역 목록을 실행 중에 바꾸지 않는다 — run 마다 고정된
+        # **정확한 경로 집합**만 예외로 둔다. prefix 로 다루면 그 아래 새로 생긴 것까지 함께
+        # 예외가 되고, 그건 계획이 증명한 범위를 넘는다.
+        migration_owned = frozenset((plan.get("migration") or {}).get("remove") or ())
+        reverted = _restore_user_owned(root, snapshot, user_times, skip=migration_owned)
         for rel in reverted:
             print(tr(language, "cli.upgrade.user_owned_restored", path=rel))
-        return applied, "", True
     except BaseException as exc:
         restored, problems = _restore_tree(root, snapshot, language)
         detail = f"{type(exc).__name__}: {exc}"
+        lock.release()
         if not restored:
             return 0, tr(language, "cli.upgrade.rollback_failed",
                          error=detail, rollback="; ".join(problems[:3])), False
         return 0, tr(language, "cli.upgrade.apply_failed", error=detail), True
+
+    # --- 활성 전환 구간 ---------------------------------------------------
+    #
+    # **여기부터 스냅샷 복원을 타지 않는다.** 위의 `try` 를 여기까지 늘리면, 전환 뒤 어떤 실패도
+    # `_restore_tree` 를 부르고 그것이 구 파일을 되살려 **방금 없앤 공존을 다시 만든다.**
+    # 실패는 보고하고 재실행으로 수렴시킨다 — 각 단계가 멱등이라 그것으로 닫힌다.
+    try:
+        ok, extra = _finalize_layout(root, plan, language)
     finally:
         lock.release()
+    if not ok:
+        return applied, tr(language, "cli.upgrade.migration_incomplete"), True
+    return applied + extra, "", True
 
 
 def _refresh_compiled_profile_json(root, language):
@@ -747,7 +890,9 @@ def run(args):
         print(apply_error, file=sys.stderr)
     outcome = ("applied" if applied else
                "failed" if apply_error else
-               "blocked" if blockers else "ready" if plan["writes"] else "no_op")
+               "blocked" if blockers else
+               "ready" if plan["writes"] or (plan.get("migration") or {}).get("needed")
+               else "no_op")
     report_rel, report_error = _finish_report(root, plan, blockers, language, applied,
                                               "apply" if args.apply else "check", outcome)
     if report_error:
@@ -779,4 +924,19 @@ def _finish_report(root, plan, blockers, language, applied, mode, outcome):
         "blockers": list(blockers),
         "applied": applied,
     }
+    migration = plan.get("migration") or {"needed": False}
+    if migration["needed"]:
+        # **exact 목록은 여기 남는다.** 화면은 앞 8건만 펼치므로, 무엇이 지워졌는지 나중에
+        # 확인할 자리가 없으면 "60건 제거" 라는 숫자만 남는다. 경로는 전부 root 상대다.
+        payload["migration"] = {
+            "layout": migration["layout"],
+            "in_transition": migration["in_transition"],
+            "active_path_from": asset_paths.LEGACY_HOOKS_REL,
+            "active_path_to": asset_paths._HOOKS_REL,
+            "remove": list(migration["remove"]),
+            "preserve": [{"path": rel, "reason": reason}
+                         for rel, reason in migration["preserve"]],
+            "blockers": [{"kind": kind, "name": name}
+                         for kind, name in migration["blockers"]],
+        }
     return _write_report(root, payload)

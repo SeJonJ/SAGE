@@ -58,7 +58,7 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
    pinning; otherwise report `MODEL_SELECTION_DEGRADED` and the actual host default.
    Never claim the configured model ran without execution evidence. Each edits only its
    component paths and records files, checklist, acceptance trace, and unit tests into 03.
-4. Verification: invoke `scripts/verify-changes.sh` per `profile.verification` at the risk
+4. Verification: invoke `sage_harness/verify-changes.sh` per `profile.verification` at the risk
    gate. SAGE owns policy/gates/result format; this skill only triggers the run
    (pre-implementation-gate is not the executor). Record results in 03; stop if red.
 5. QA (04): invoke the qa agent for design↔implementation gap + test coverage +

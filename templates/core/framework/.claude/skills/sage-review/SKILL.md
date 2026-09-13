@@ -196,7 +196,7 @@ loop and (in advisory) warns or (in enforce) blocks.
 ### 5. REWORK + re-validate (only `within_design` survivors)
 Hand the accepted findings to the relevant implementer with the **REWORK prompt** (do not
 exceed the approved design in `02-design`). Then **re-validate** before the next round:
-`scripts/verify-changes.sh` (build/test/lint at the risk gate) and `sage validate` must
+`sage_harness/verify-changes.sh` (build/test/lint at the risk gate) and `sage validate` must
 PASS; if either fails, retry the round (within the iteration cap). If the rework changes
 acceptance coverage, update Phase 03 and Phase 04 before the next review pass.
 

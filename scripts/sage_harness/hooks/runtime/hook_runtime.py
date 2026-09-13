@@ -180,7 +180,7 @@ def build_snapshot(profile, root, rel):
         # Fast Cycle uses one physical 00 document as deterministic virtual 01..04 documents.
         # The shared parser is also used by the CLI and server-side consumers.
         try:
-            from sage.fast_cycle_contract import parse_fast_plan
+            from fast_cycle_contract import parse_fast_plan
             for doc in list(phase_docs.get("00") or []):
                 plan, issues = parse_fast_plan(doc.get("content") or "")
                 if plan is None or issues or plan.metadata.get("Cycle-Mode") != "FAST":
@@ -992,7 +992,14 @@ def _project_manifest_entry(root, hook_id):
 def _load_project_core(root, hook_id, expected_version):
     if re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", hook_id) is None:
         raise ProjectHookError("project hook id is not strict lowercase kebab-case")
-    project_hooks = os.path.join(root, "scripts", "sage_harness", "hooks")
+    # 소비 프로젝트의 SAGE 트리. hook 트리는 엔진(`sage.asset_paths`)을 import 하지 않으므로
+    # 이름을 여기서 안다 — 대신 **구 레이아웃도 읽는다.** 이행 전이거나 이행이 중간에 멈춘
+    # 프로젝트에서 프로젝트 hook 이 조용히 사라지면, 그것은 게이트가 사라지는 것과 같다.
+    project_hooks = os.path.join(root, "sage_harness", "hooks")
+    if not os.path.isdir(project_hooks):
+        legacy = os.path.join(root, "scripts", "sage_harness", "hooks")
+        if os.path.isdir(legacy):
+            project_hooks = legacy
     hooks_real = os.path.realpath(project_hooks)
     path = os.path.join(project_hooks, f"{hook_id.replace('-', '_')}_core.py")
     if not os.path.isfile(path) or os.path.islink(path):

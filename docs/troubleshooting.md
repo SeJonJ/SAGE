@@ -2,6 +2,118 @@
 
 [English](troubleshooting.en.md) | [문서 인덱스](README.md)
 
+## 기존 `CLAUDE.md` · `AGENTS.md` 와 충돌해 설치가 멈춤
+
+```
+❌ 설치를 멈췄습니다 — 이 프로젝트에 이미 있는 파일을 SAGE 가 덮어쓰게 됩니다.
+```
+
+SAGE는 `CLAUDE.md`·`AGENTS.md`·`CODEX.md`·`AGENT_GUIDE.md`를 **자기가 통째로 생성하는 자산**으로
+다룹니다. 기존 내용과 병합하지 않기 때문에, 같은 이름의 파일이 이미 있으면 덮어쓰기 전에
+멈춥니다. 이 시점에 프로젝트 파일과 manifest는 하나도 변경되지 않습니다.
+
+### framework 문서인 경우
+
+```bash
+mkdir -p docs
+mv CLAUDE.md docs/project-conventions.md   # 쓰고 있던 규칙을 다른 이름으로
+sage install --host claude --dest .        # 같은 명령을 다시
+```
+
+설치 후 `/sage-init`(Codex는 `$sage-init`)로 profile을 채울 때 방금 옮긴 문서를 **convention
+문서로 등록**하세요. 에이전트가 세션 시작마다 그 문서를 읽으므로 기존 규칙이 그대로 살아납니다.
+
+SAGE가 배치하는 `CLAUDE.md`는 얇은 라우터이고, 프로젝트 지침이 들어갈 자리는
+`sage/project-profile.yaml`과 convention 문서입니다. framework 문서에는 overlay 합성을 쓸 수
+없으므로 `sage/asset_overrides/`로 옮기려 하지 마세요 — 넣을 자리가 없습니다.
+
+### 에이전트·스킬 렌더인 경우
+
+`.claude/agents/leader.md` 처럼 CORE 에이전트·스킬 렌더가 충돌했다면 답이 다릅니다.
+
+```bash
+mv .claude/agents/leader.md .claude/agents/leader.md.bak
+sage install --host claude --dest .
+# 백업의 프로젝트 지침을 sage/asset_overrides/agents/leader.md 로 옮긴다
+```
+
+overlay는 CORE 렌더 **위에 덧대어** 합성되고 `sage install --force`가 지우지 않습니다. 다만
+AGENT_GUIDE·phase·리뷰·검증 게이트를 완화할 수는 없습니다.
+
+어느 경로인지는 **오류 메시지가 자산마다 갈라서** 알려주므로, 화면에 나온 안내를 그대로 따르면
+됩니다.
+
+### 이미 SAGE가 설치된 파일을 직접 고친 경우
+
+```
+❌ 설치를 멈췄습니다 — SAGE 가 관리하는 파일이 설치 이후 변경됐습니다.
+```
+
+그 파일은 SAGE가 생성·갱신하므로 직접 수정하면 다음 설치 때 덮어써집니다. 수정 내용이 필요
+없으면 `--force`, 살리려면 그 부분을 convention 문서나 overlay로 옮긴 뒤 `--force`입니다.
+
+### 판본이 올라간 경우
+
+```
+❌ 설치를 멈췄습니다 — 설치본이 현재 패키지 판본과 다릅니다.
+```
+
+사고가 아닙니다. `--force` 또는 `sage upgrade`로 새 판본을 받으세요. `sage upgrade`는 자산·hook·
+검증까지 한 단위로 맞춥니다.
+
+기존 내용을 버려도 된다면 어느 경우든 `--force`를 쓸 수 있습니다. 되돌릴 수 없습니다.
+
+## 1.0 에서 설치한 프로젝트 — `sage upgrade` 로 새 레이아웃에 전환합니다
+
+1.0 은 SAGE 파일을 `scripts/sage_harness/`·`schema/`·`scripts/verify-changes.sh` 에 두었습니다.
+그 뒤 판본은 `sage_harness/` 한 곳으로 모읍니다.
+
+```bash
+sage upgrade --check    # 무엇이 바뀌는지 먼저 봅니다 (아무것도 바꾸지 않습니다)
+sage upgrade --apply    # 이행
+```
+
+차단 사유가 없는 설치본은 한 번에 끝납니다. 자동 이행이 시작된 뒤 중단되면 다시 실행해 남은
+정리를 이어갑니다.
+
+### 무엇을 지우고 무엇을 남기나
+
+파일을 **옮기지 않습니다.** SAGE 가 배포한 자산은 새 위치에 다시 만들고, 새 위치가 실제로
+동작하는 것을 확인한 뒤, 옛 위치에서 **SAGE 소유임을 증명할 수 있는 것만** 지웁니다.
+
+| | |
+|---|---|
+| SAGE 가 배포한 파일 | 새 위치에 다시 만들고 옛 것을 지웁니다 |
+| 그 폴더에 직접 넣은 파일 | **그대로 둡니다.** 무엇을 남겼는지 알려 드립니다 |
+| 고친 `verify-changes.sh` | 그대로 둡니다 — 수정본인지 구버전인지 구별할 수 없습니다 |
+| `scripts/`·`schema/` | **남을 수 있습니다.** 비어도 자동으로 지우지 않으며, 안전하게 확인된 빈 구 디렉터리만 결과에 표시합니다 |
+
+### 이행이 멈추는 경우
+
+```
+자동 이행을 멈췄습니다 — 사용 중인 project hook 이 있습니다: hooks/my-guard
+```
+
+직접 작성한 project hook 이나 review strategy 가 있으면 **첫 변경 전에 멈춥니다.** 그 코드는
+프로젝트가 쓴 것이라 패키지가 다시 만들 수 없고, 어느 자리로 가야 하는지도 도구가 정하지
+않습니다. 자동으로 옮기지도, 조용히 끄지도 않습니다.
+
+**이 릴리즈는 사용자 확장 자산의 자동 이행을 지원하지 않습니다.** 해당 설치본은 **구 위치에서
+그대로 계속 동작합니다** — 게이트도, 등록도, 검증도 이전과 같습니다. 손수 옮기실 필요는 없고,
+권하지도 않습니다(아래). 자동 이행은 다음 릴리즈의 범위입니다.
+
+### 직접 옮기지 마세요
+
+`mv scripts/sage_harness sage_harness` 로 손수 옮기는 것은 **권하지 않습니다.** 옮겨야 하는
+것이 hook 폴더만이 아니기 때문입니다 — schema, verify 스크립트, adapter 가 가리키는 경로,
+설치 영수증이 함께 맞아야 합니다. 일부만 옮기면 구·신이 공존하고, 그 상태에서는 어느 쪽 hook
+이 도는지 도구가 정할 수 없어 `sage install` 이 멈춥니다.
+
+### 이행 전까지는 그대로 동작합니다
+
+옛 위치에 그대로 두어도 hook 실행·검증 모두 됩니다. 자동 이행이 시작된 뒤 중단된 경우에도
+**옛 코드가 계속 게이트로 섭니다** — 새 위치가 검증되기 전까지 정본은 옛 위치입니다.
+
 ## `sage: command not found`
 
 ```bash
