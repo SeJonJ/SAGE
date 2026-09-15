@@ -252,6 +252,31 @@ class TestAcceptanceWaiverCli(unittest.TestCase):
             self.assertEqual(cli._run_grant(grant_args), 2)
             self.assertEqual(cli._run_revoke(revoke_args), 2)
 
+    def test_runtime_import_failure_is_a_diagnostic_not_a_traceback(self):
+        """Windows 에는 fcntl 이 없다. 그 상태를 stub 으로 재현해 세 명령이 모두 진단 한 줄로 끝나는지 본다."""
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as stub:
+            self._project(root)
+            with open(os.path.join(stub, "fcntl.py"), "w", encoding="utf-8") as fh:
+                fh.write("raise ModuleNotFoundError(\"No module named 'fcntl'\", name='fcntl')\n")
+            env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [stub, os.environ.get("PYTHONPATH")])))
+            commands = (
+                ("grant", "--cycle-stem", "feature", "--acceptance-id", "A1", "--reason", "prod only",
+                 "--scope", "one smoke", "--remaining-evidence", "live callback", "--confirm-user", "sejon"),
+                ("list",),
+                ("revoke", "--waiver-id", "aw-1", "--reason", "done", "--confirm-user", "sejon"),
+            )
+            for command in commands:
+                with self.subTest(command=command[0]):
+                    result = subprocess.run(
+                        [sys.executable, "-m", "sage", "--lang", "en", "acceptance-waiver", *command,
+                         "--root", root],
+                        cwd=REPO, env=env, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+                    self.assertIn("[sage acceptance-waiver] Could not load the acceptance waiver runtime",
+                                  result.stderr)
+                    self.assertIn("ModuleNotFoundError: No module named 'fcntl'", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

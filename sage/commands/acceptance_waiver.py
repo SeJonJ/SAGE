@@ -4,7 +4,24 @@ import os
 import sys
 
 from sage import _resources
-from sage.i18n import tr
+from sage.diagnostics import Diagnostic
+from sage.i18n import language_of, render_issue, tr
+
+
+def _runtime_modules_or_report(args):
+    """런타임 모듈을 싣고, 실을 수 없으면 진단 한 줄을 남기고 None 을 돌려준다.
+
+    import 실패를 그대로 올리면 사용자는 traceback 만 보고 원인을 환경 문제로 읽는다. 대장을 못
+    쓰는 상태라는 것과 게이트 쪽은 계속 막힌다는 것을 말하고, 원문 예외는 검색할 수 있게 붙인다.
+    """
+    try:
+        return _load_runtime_modules()
+    except ImportError as exc:
+        diagnostic = Diagnostic("acceptance_waiver.runtime_unavailable",
+                                evidence=f"{type(exc).__name__}: {exc}")
+        print("[sage acceptance-waiver] " + render_issue(language_of(args), diagnostic),
+              file=sys.stderr)
+        return None
 
 
 def _load_runtime_modules():
@@ -93,7 +110,10 @@ def _assert_required_acceptance(root, profile, cycle_stem, acceptance_id):
 
 def _run_grant(args):
     root = _root(args)
-    aw, _, _ = _load_runtime_modules()
+    modules = _runtime_modules_or_report(args)
+    if modules is None:
+        return 2
+    aw, _, _ = modules
     ttl = aw.parse_ttl(args.ttl)
     if ttl is None or ttl > aw.MAX_TTL_SECONDS:
         print("[sage acceptance-waiver] --ttl must be positive and at most 24h", file=sys.stderr)
@@ -114,7 +134,10 @@ def _run_grant(args):
 
 def _run_list(args):
     root = _root(args)
-    aw, _, _ = _load_runtime_modules()
+    modules = _runtime_modules_or_report(args)
+    if modules is None:
+        return 2
+    aw, _, _ = modules
     summary = aw.audit_summary(root)
     if not summary["valid"]:
         print("[sage acceptance-waiver] invalid audit: " + "; ".join(summary["issues"]), file=sys.stderr)
@@ -128,7 +151,10 @@ def _run_list(args):
 
 def _run_revoke(args):
     root = _root(args)
-    aw, _, _ = _load_runtime_modules()
+    modules = _runtime_modules_or_report(args)
+    if modules is None:
+        return 2
+    aw, _, _ = modules
     try:
         record = aw.revoke(root, args.waiver_id, args.reason, args.confirm_user)
     except (ValueError, OSError) as exc:

@@ -68,6 +68,7 @@ MESSAGES = {
     "cli.acceptance_waiver.ttl": "Validity period, at most 24h (default 24h)",
     "cli.acceptance_waiver.list": "Show the waiver audit and the currently active grants",
     "cli.acceptance_waiver.revoke": "Explicitly revoke an active waiver",
+    "cli.acceptance_waiver.runtime_unavailable": "Could not load the acceptance waiver runtime, so waivers cannot be granted, listed, or revoked. The acceptance gate keeps blocking while the audit cannot be read",
 
     "cli.asset_check.asset_check": "Split framework assets into those that can pass automatically and those needing human review (formerly sage review)",
     "cli.asset_check.batch": "Summarize the auto bucket in one line",

@@ -74,6 +74,7 @@ MESSAGES = {
     "cli.acceptance_waiver.ttl": "유효기간, 최대 24h (기본 24h)",
     "cli.acceptance_waiver.list": "waiver audit와 현재 active grant 조회",
     "cli.acceptance_waiver.revoke": "active waiver 명시 회수",
+    "cli.acceptance_waiver.runtime_unavailable": "acceptance waiver 런타임을 불러오지 못해 waiver 발급·조회·회수를 할 수 없습니다. 대장을 읽지 못하는 동안 acceptance 게이트는 계속 차단합니다",
 
     "cli.asset_check.asset_check": "프레임워크 자산 중 자동 통과 가능/사람 확인 필요를 나눕니다(구 sage review)",
     "cli.asset_check.batch": "auto 버킷을 1줄 요약",
