@@ -78,7 +78,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[schema]"
-      - name: Platform smoke (install · 한영 help · local preference · 문서 언어 · validate · hook 진입점 · encoding)
+      - name: Platform smoke (install · 한영 help · local preference · 문서 언어 · validate · hook 진입점 · encoding · project hook adapter 경로)
         run: python scripts/ci/platform_smoke.py
 
   uninstall_matrix:
@@ -240,7 +240,7 @@ jobs:
         run: python scripts/ci/windows_capability_report.py
 
       # 플랫폼 계약은 Python 하나면 충분하다 — 인터프리터 버전에 갈리는 계약이 아니다.
-      - name: Platform smoke (install · 한영 help · local preference · 문서 언어 · validate · hook 진입점 · encoding)
+      - name: Platform smoke (install · 한영 help · local preference · 문서 언어 · validate · hook 진입점 · encoding · project hook adapter 경로)
         if: matrix.python-version == '3.12'
         env:
           PYTHONUTF8: "1"

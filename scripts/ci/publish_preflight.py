@@ -46,6 +46,35 @@ def _engine_version():
     return match.group(1) if match else None
 
 
+def _pyproject_version():
+    """`[project]` 의 정적 version. wheel·sdist 의 버전은 여기서 나온다.
+
+    TOML 파서를 쓰지 않는다 — `tomllib` 은 3.11 부터라 3.10 에서 돌지 않고, 의존성을 늘릴 일도
+    아니다. 이 저장소의 pyproject 모양(한 줄짜리 `version = "..."`)만 읽는다.
+    """
+    text = (REPO / "pyproject.toml").read_text(encoding="utf-8")
+    section = re.search(r'^\[project\]\s*$(.*?)(?=^\[|\Z)', text, re.M | re.S)
+    if not section:
+        return None
+    match = re.search(r'^version\s*=\s*["\']([^"\']+)["\']', section.group(1), re.M)
+    return match.group(1) if match else None
+
+
+def check_pyproject_matches_version():
+    """배포물 버전(pyproject)과 엔진이 스스로 말하는 버전(`__version__`)이 같은가.
+
+    둘은 손으로 따로 맞춘다. 어긋나면 PyPI 에 올라간 이름과 설치 뒤 `sage --version` 이 다르고,
+    tag 대조는 `__version__` 만 보므로 그 차이를 잡지 못한다.
+    """
+    engine, packaged = _engine_version(), _pyproject_version()
+    if packaged is None:
+        return [Finding("pyproject-version", "pyproject.toml [project] 에서 version 을 읽지 못했다")]
+    if engine != packaged:
+        return [Finding("pyproject-version",
+                        f"pyproject version {packaged!r} 와 __version__ {engine!r} 가 다르다")]
+    return []
+
+
 def check_tag_matches_version(tag):
     """tag 와 패키지 version 이 같은가. 다르면 사용자가 설치한 것과 tag 가 가리키는 것이 다르다."""
     version = _engine_version()
@@ -277,6 +306,7 @@ def check_version_is_not_a_placeholder():
 CHECKS = (
     ("tag-version", lambda tag: check_tag_matches_version(tag)),
     ("version", lambda tag: check_version_is_not_a_placeholder()),
+    ("pyproject-version", lambda tag: check_pyproject_matches_version()),
     ("catalog", lambda tag: check_catalog_parity()),
     ("localization-debt", lambda tag: check_localization_debt()),
     ("docs-pair", lambda tag: check_document_pairs()),

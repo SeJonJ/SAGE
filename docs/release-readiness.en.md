@@ -1,4 +1,4 @@
-<!-- sage-doc-source: release-readiness.md sha256:4e30cac4f3538ff2decb6b1838ca97fd7d9b68f7a08e63ad2e89dd6d8f6d3c15 -->
+<!-- sage-doc-source: release-readiness.md sha256:6644ed52d0498157b5deb7171e4c4dbdf5e2158f145aa5ca25f4ea0451728648 -->
 # Release readiness
 
 This document records **how readiness is decided**, not what it currently is. The current answer
@@ -28,6 +28,7 @@ item at a time.
 |---|---|
 | `tag-version` | If the tag and `__version__` disagree, what the user installs is not what the tag points at |
 | `version` | Publishing a placeholder such as `0.0.0` cannot be undone |
+| `pyproject-version` | If `pyproject.toml` and `__version__` disagree, the version on PyPI is not what `sage --version` reports |
 | `catalog` | A key present on only one side falls through to a runtime fallback, so users discover the gap instead of the build |
 | `localization-debt` | Even at inventory zero, remaining leaks are counted separately. Having recorded the debt on a list is not grounds to ship |
 | `docs-pair` | Releasing with only one language updated lets the two documents drift apart |

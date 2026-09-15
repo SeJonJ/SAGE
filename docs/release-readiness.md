@@ -28,6 +28,7 @@ POSIX에서는 `python3 scripts/ci/publish_preflight.py`, Windows에서는
 |---|---|
 | `tag-version` | tag 와 `__version__`이 다르면 사용자가 설치한 것과 tag 가 가리키는 것이 다르다 |
 | `version` | `0.0.0` 류 자리표시자로 올리면 되돌릴 수 없다 |
+| `pyproject-version` | `pyproject.toml` 과 `__version__`이 다르면 PyPI 에 올라간 버전과 `sage --version` 이 다르다 |
 | `catalog` | 한쪽에만 있는 key 는 런타임 fallback 으로 조용히 넘어가고, 사용자가 빈틈을 대신 발견한다 |
 | `localization-debt` | 인벤토리가 0 이어도 남은 누출은 따로 센다. 부채를 목록에 적어 뒀다는 사실은 출하 근거가 아니다 |
 | `docs-pair` | 한쪽 언어만 갱신된 채 릴리스되면 두 문서가 갈린다 |

@@ -115,7 +115,8 @@ def _absorb_hook(args, root):
         print(tr(language_of(args), "cli.absorb.msg07", args_id=args.id), file=sys.stderr)
         return 2
 
-    paths = AssetPaths(root, "hook", args.id)   # 경로 규약 단일소스(P2-6)
+    paths = AssetPaths(root, "hook", args.id,   # 경로 규약 단일소스(P2-6)
+                       layout=asset_paths.detect_layout(root))
     form = entry.get("form", "core_adapter")
     diverged, unstamped = [], []
 

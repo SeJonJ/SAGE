@@ -409,7 +409,7 @@ def _gen_hook_locked(args, root):
         for runtime in ("claude", "codex"):
             adapter_path = AssetPaths(root, "hook", hid, layout=_layout).adapter(runtime)
             preflight_fingerprints.update(capture_paths([adapter_path]))
-            expected_body = adapter_body(runtime, hid)
+            expected_body = adapter_body(runtime, hid, _hooks_rel)
             adapter_hashes[runtime] = "sha256:" + hashlib.sha256(
                 expected_body.encode("utf-8")).hexdigest()
             if os.path.lexists(adapter_path):

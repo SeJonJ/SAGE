@@ -262,10 +262,57 @@ def check_legacy_migration(root):
     return "legacy-migration"
 
 
+def check_project_hook_adapter_paths(root):
+    """project hook adapter 본문이 **이 플랫폼에서** 실제 hook 트리를 `/` 로 가리키는가.
+
+    adapter 는 bash 가 읽는 파일이라 경로를 문자열로 적는다. 저장 위치는 레이아웃을 따라도 본문이
+    다른 트리를 적을 수 있고, Windows 에서는 `os.path.join` 이 `\\` 를 만든다 — POSIX 러너에서는
+    둘 다 보이지 않는다. 실행은 bash 가 필요해 여기서 하지 않고, 실행 회귀는 wheel smoke 가 맡는다.
+    """
+    import shutil as _shutil
+    hook_id = "smoke-project-gate"
+    spec = ("---\nid: smoke-project-gate\nkind: hook\nruntime_bindings:\n"
+            '  claude: { event: PreToolUse, matcher: "Write", timeout: 10 }\n'
+            '  codex: { event: PreToolUse, matcher: "apply_patch", timeout: 10 }\n'
+            "---\n## intent\nsmoke\n")
+    core = ('CONTRACT_VERSION = "1"\n\n\ndef decide(event, profile, snapshot):\n'
+            "    return {'status': 'pass', 'exit_code': 0, 'message': 'ok'}\n")
+    for label, hooks_parts in (("current", ("sage_harness", "hooks")),
+                               ("legacy", ("scripts", "sage_harness", "hooks"))):
+        work = root.parent / f"smoke-adapter-{label}"
+        if work.exists():
+            _shutil.rmtree(work)
+        work.mkdir(parents=True)
+        _require(_sage(["install", "--host", "claude", "--prefix", "smoke", "--dest", str(work)],
+                       cwd=REPO), f"install({label} adapter fixture)")
+        if label == "legacy":
+            (work / "scripts" / "sage_harness").mkdir(parents=True)
+            (work / "sage_harness" / "hooks").rename(work / "scripts" / "sage_harness" / "hooks")
+            (work / "sage_harness" / "schema").rename(work / "schema")
+            (work / "sage_harness" / "verify-changes.sh").rename(work / "scripts" / "verify-changes.sh")
+            (work / "sage_harness").rmdir()
+        (work / "sage" / "project-profile.yaml").write_text(
+            'project:\n  name: "smoke"\n  prefix: "smoke"\n'
+            'components:\n  - { id: core, paths: ["app/**"] }\n'
+            'risk:\n  l2_path_globs: ["*core/*.src"]\n', encoding="utf-8")
+        (work / "docs" / "sage_harness" / "hooks" / f"{hook_id}.md").write_text(spec, encoding="utf-8")
+        (work / Path(*hooks_parts) / "smoke_project_gate_core.py").write_text(core, encoding="utf-8")
+        _require(_sage(["generate", "--kind", "hook", "--id", hook_id, "--write", "--target", "both",
+                        "--root", str(work), "--dest", str(work)], cwd=REPO), f"generate({label})")
+        expected = 'CORE_DIR="$PROJECT_ROOT/' + "/".join(hooks_parts) + '"\n'
+        for host in ("claude", "codex"):
+            adapter = work / Path(*hooks_parts) / "adapters" / host / f"{hook_id}.sh"
+            body = adapter.read_bytes().decode("utf-8")
+            if expected not in body or "\\" in body:
+                raise SmokeFailure(f"{label} {host} adapter 경로가 틀렸다: {adapter}\n{body}")
+        _shutil.rmtree(work, ignore_errors=True)
+    return "project-hook-adapter-paths"
+
+
 CHECKS = (check_install, check_bilingual_help, check_local_preference,
           check_document_language, check_validate, check_native_hook_entry,
           check_hook_core_resolves_to_the_new_tree, check_encoding,
-          check_legacy_migration)
+          check_legacy_migration, check_project_hook_adapter_paths)
 
 
 def main() -> int:

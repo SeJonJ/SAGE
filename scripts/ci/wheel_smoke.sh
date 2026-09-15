@@ -142,6 +142,64 @@ for HOST in claude codex; do
 done
 echo "   project hook lifecycle OK (template → register → claude/codex dispatch)"
 
+# 1.0 이 배치한 구 레이아웃 설치본은 project hook 이 있으면 이행이 차단된 채 제자리에서 계속 쓴다.
+# adapter 저장 위치만 레이아웃을 따르고 본문이 신 경로를 적으면, 등록은 exit 0 인데 hook 은 없는
+# 트리를 가리킨다. 소스 회귀가 아니라 배포될 wheel 로 한 번 더 본다.
+echo "== [6b/13] 구 레이아웃 설치본의 project hook 등록 + 양 host 실제 dispatch + 재생성 =="
+LEGACY="$WORK/legacy"; mkdir -p "$LEGACY"
+env -u SAGE_RESOURCE_ROOT "$SAGE" install --host claude --dest "$LEGACY" >/dev/null
+mkdir -p "$LEGACY/scripts/sage_harness"
+mv "$LEGACY/sage_harness/hooks" "$LEGACY/scripts/sage_harness/hooks"
+mv "$LEGACY/sage_harness/schema" "$LEGACY/schema"
+mv "$LEGACY/sage_harness/verify-changes.sh" "$LEGACY/scripts/verify-changes.sh"
+rmdir "$LEGACY/sage_harness"
+"$PY" - "$LEGACY" <<'PY'
+import sys
+from pathlib import Path
+from sage import _resources, asset_paths
+
+root = Path(sys.argv[1])
+assert asset_paths.detect_layout(str(root)) == asset_paths.LAYOUT_CONSUMER_LEGACY, "구 레이아웃 fixture 아님"
+profile = root / "sage" / "project-profile.yaml"
+text = profile.read_text(encoding="utf-8")
+profile.write_text(text.replace('name: ""', 'name: "legacy"').replace(
+    'l2_path_globs: []', 'l2_path_globs: ["src/**"]'), encoding="utf-8")
+hook_id = "legacy-project-gate"
+template = Path(_resources.templates_dir(), "hook.spec.md").read_text(encoding="utf-8")
+(root / "docs" / "sage_harness" / "hooks" / f"{hook_id}.md").write_text(
+    template.replace('id: ""', f"id: {hook_id}", 1), encoding="utf-8")
+(root / "scripts" / "sage_harness" / "hooks" / "legacy_project_gate_core.py").write_text(
+    'CONTRACT_VERSION = "1"\n\n'
+    'def decide(event, profile, snapshot):\n'
+    '    return {"status": "block", "exit_code": 2, "message": "legacy project block"}\n',
+    encoding="utf-8")
+PY
+env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --id legacy-project-gate \
+  --write --target both --root "$LEGACY" --dest "$LEGACY" >/dev/null
+for HOST in claude codex; do
+  ADAPTER="$LEGACY/scripts/sage_harness/hooks/adapters/$HOST/legacy-project-gate.sh"
+  grep -q 'CORE_DIR="$PROJECT_ROOT/scripts/sage_harness/hooks"' "$ADAPTER" || {
+    echo "❌ $HOST adapter 가 구 레이아웃 hook 트리를 가리키지 않음"; cat "$ADAPTER"; exit 1;
+  }
+  if [ "$HOST" = claude ]; then
+    INPUT='{"tool_name":"Write","tool_input":{"file_path":"src/a.py"}}'
+  else
+    INPUT='{"tool_name":"apply_patch","tool_input":{"command":"*** Update File: src/a.py\\n+x"}}'
+  fi
+  set +e
+  printf '%s' "$INPUT" | SAGE_PROJECT_ROOT="$LEGACY" "$ADAPTER" >"$WORK/legacy-$HOST.out" 2>"$WORK/legacy-$HOST.err"
+  RC=$?
+  set -e
+  test "$RC" -eq 2 || { echo "❌ 구 레이아웃 $HOST project hook rc=$RC (expected 2)"; cat "$WORK/legacy-$HOST.err"; exit 1; }
+  grep -q "legacy project block" "$WORK/legacy-$HOST.err" || {
+    echo "❌ 구 레이아웃 $HOST decision 미실행"; cat "$WORK/legacy-$HOST.err"; exit 1;
+  }
+done
+# 등록된 adapter 가 있는 상태의 전체 재생성 — 레이아웃을 무시하면 여기서 "손상/비정본" 으로 멈춘다.
+env -u SAGE_RESOURCE_ROOT "$SAGE" generate --kind hook --write --target both \
+  --root "$LEGACY" --dest "$LEGACY" >/dev/null || { echo "❌ 구 레이아웃 전체 재생성 실패"; exit 1; }
+echo "   legacy project hook OK (구 트리 기록 → claude/codex dispatch → 재생성)"
+
 echo "== [7/13] sage validate --check --schema (전체 PASS 기대) =="
 env -u SAGE_RESOURCE_ROOT "$SAGE" validate --check --schema --root "$PROJ"
 
