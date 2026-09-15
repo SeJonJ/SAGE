@@ -246,6 +246,16 @@ jobs:
           PYTHONUTF8: "1"
         run: python scripts/ci/platform_smoke.py
 
+      # waiver 대장의 Windows 분기(`msvcrt` 잠금 · reparse point 거부 · LF 기록)는 여기서만 실제
+      # 파일시스템에 닿는다. POSIX 러너는 같은 분기를 대역으로 돌릴 뿐이다. 스크립트가 통과·skip 수와
+      # CLI 왕복 출력을 찍고, 허용하지 않은 skip 은 실패로 끝낸다 — 전부 skip 돼도 unittest 는 성공이다.
+      - name: Acceptance waiver (Windows — 회귀 스위트 · CLI 왕복)
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          git rev-parse HEAD
+          python scripts/ci/acceptance_waiver_windows_smoke.py
+
       # `SAGE_UNINSTALL_REQUIRE_PRODUCT_SUPPORT` 는 `REQUIRE_MUTATION` 보다 한 칸 위의 요구다.
       # 후자는 정책이 막는 환경에서 **거부 계약 단언으로 갈음**하는 것을 허용한다. 여기서는
       # 그 갈음이 곧 위험이다 — 갈음이 열리면 이 job 은 실제 제거를 한 번도 하지 않은 채
