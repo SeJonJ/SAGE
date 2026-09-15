@@ -139,12 +139,14 @@ class TestInstall(unittest.TestCase):
             sage_dir = Path(d, ".sage")
             sage_dir.mkdir()
             (sage_dir / "loop_audit.jsonl.lock").touch()
+            (sage_dir / "acceptance-waivers.jsonl.lock").touch()
             for name in ("loop_audit.jsonl", "override.jsonl", "acceptance-waivers.jsonl",
                          "retro_audit.jsonl"):
                 (sage_dir / name).touch()
 
             expected_ignored = {
                 "loop_audit.jsonl.lock": True,
+                "acceptance-waivers.jsonl.lock": True,
                 "retro_audit.jsonl": True,
                 "loop_audit.jsonl": False,
                 "override.jsonl": False,

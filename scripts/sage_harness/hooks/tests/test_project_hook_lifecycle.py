@@ -70,6 +70,18 @@ def file_tree(root):
     return result
 
 
+class TestProjectHookAdapterBody(unittest.TestCase):
+    def test_windows_separators_are_written_as_slashes(self):
+        """POSIX 의 relpath 는 `\\` 를 만들지 않아 macOS·Linux 회귀만으로는 이 정규화를 볼 수 없다."""
+        import ntpath
+        from sage.project_hook_contract import adapter_body
+        for host in ("claude", "codex"):
+            with self.subTest(host=host):
+                body = adapter_body(host, "demo-project-gate", ntpath.join("scripts", "sage_harness", "hooks"))
+                self.assertIn('CORE_DIR="$PROJECT_ROOT/scripts/sage_harness/hooks"\n', body)
+                self.assertNotIn("\\", body)
+
+
 class TestProjectHookRegistration(unittest.TestCase):
     def test_valid_orphan_registers_every_surface_atomically(self):
         with tempfile.TemporaryDirectory() as root:

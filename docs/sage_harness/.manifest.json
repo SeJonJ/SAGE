@@ -128,11 +128,11 @@
       "unresolved": []
     }
   },
-  "generator_version": "1.1.0",
+  "generator_version": "1.1.1",
   "hook_runtime_hash": {
     "claude": "sha256:2d0318a75804defae4ac5b53e3ea9e4fe5766c21a937c1c091f45bb780be8254",
     "codex": "sha256:3519535630dd81a83cbe191b51fa3668d09ed3a9c46842e5948145a3737c941c",
-    "shared": "sha256:ff49551f866a1ea946949bb9fc0a519c786da55271a402c871686dbacefb937f"
+    "shared": "sha256:acad917c576f16f6baaca3004512be12a8902597038c870a8c648fb29147c0d8"
   },
   "host_runtime": "claude",
   "runtime_api": {

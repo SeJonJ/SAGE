@@ -28,6 +28,7 @@ POSIX에서는 `python3 scripts/ci/publish_preflight.py`, Windows에서는
 |---|---|
 | `tag-version` | tag 와 `__version__`이 다르면 사용자가 설치한 것과 tag 가 가리키는 것이 다르다 |
 | `version` | `0.0.0` 류 자리표시자로 올리면 되돌릴 수 없다 |
+| `pyproject-version` | `pyproject.toml` 과 `__version__`이 다르면 PyPI 에 올라간 버전과 `sage --version` 이 다르다 |
 | `catalog` | 한쪽에만 있는 key 는 런타임 fallback 으로 조용히 넘어가고, 사용자가 빈틈을 대신 발견한다 |
 | `localization-debt` | 인벤토리가 0 이어도 남은 누출은 따로 센다. 부채를 목록에 적어 뒀다는 사실은 출하 근거가 아니다 |
 | `docs-pair` | 한쪽 언어만 갱신된 채 릴리스되면 두 문서가 갈린다 |
@@ -52,6 +53,7 @@ POSIX에서는 `python3 scripts/ci/publish_preflight.py`, Windows에서는
 - `validate`가 문서화된 exit code 로 판정에 도달한다
 - hook 진입점이 보고된다
 - `PYTHONIOENCODING=ascii`에서 `UnicodeEncodeError`가 나지 않는다
+- 신·구 레이아웃에서 등록한 project hook adapter 가 실제 hook 트리를 `/` 구분자로 가리킨다
 
 이 스크립트는 **bash 를 쓰지 않는다.** bash 없는 환경에서 도는지가 검사 대상인데 검사 도구가 bash 를
 요구하면, 그 환경은 영원히 미검증으로 남는다.
@@ -94,6 +96,12 @@ bitness·실제 removal 수·policy refusal 수·검증 대상 커밋이고, 이
 만드는 자리다. 같은 항목과 같은 커밋을 남긴 Windows 11 데스크톱 직접 실행 기록도 같은 증거로 센다 —
 대체할 수 없는 것은 SKU 이지 실행 방식이 아니다. 어느 쪽 기록도 없으면 그 플랫폼의 자동 제거는
 미검증이다.
+
+> **현재 상태 (1.1.1 기준).** 이 job 은 저장소에 등록된 러너가 없어 **실행된 적이 없다** — PR 마다
+> `skipped` 이고, 그 결과 전체 CI 가 초록으로 보인다. **그 초록은 "Windows 에서 통과"가 아니라
+> "Windows 는 돌리지 않음"이다.** 1.0.0 · 1.1.1 의 Windows 증거는 Windows 11 데스크톱에 SSH 로 접속해
+> 같은 스크립트를 직접 실행한 기록이다. 릴리스 전 이 실행을 사람이 챙겨야 하며, job 을 없앨지·가벼운
+> hosted 검사로 바꿀지·SSH 증거를 릴리스 게이트로 만들지는 후속 과제로 남아 있다.
 
 ## 릴리스 후보를 만드는 방법
 

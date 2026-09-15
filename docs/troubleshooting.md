@@ -100,7 +100,9 @@ sage upgrade --apply    # 이행
 
 **이 릴리즈는 사용자 확장 자산의 자동 이행을 지원하지 않습니다.** 해당 설치본은 **구 위치에서
 그대로 계속 동작합니다** — 게이트도, 등록도, 검증도 이전과 같습니다. 손수 옮기실 필요는 없고,
-권하지도 않습니다(아래). 자동 이행은 다음 릴리즈의 범위입니다.
+권하지도 않습니다(아래). **옮겨도 등록이 남아 있는 한 이행은 계속 멈추고, 등록을 해제하는 명령은
+없습니다.** 이미 옮겼다면 코드를 구 위치(`scripts/sage_harness/hooks/`)로 되돌리세요. 사용자 확장의
+자동 이행은 후속 릴리즈의 범위입니다.
 
 ### 직접 옮기지 마세요
 
@@ -113,6 +115,43 @@ sage upgrade --apply    # 이행
 
 옛 위치에 그대로 두어도 hook 실행·검증 모두 됩니다. 자동 이행이 시작된 뒤 중단된 경우에도
 **옛 코드가 계속 게이트로 섭니다** — 새 위치가 검증되기 전까지 정본은 옛 위치입니다.
+
+## `sage generate` 가 "project hook adapter 손상/비정본" 으로 멈춤
+
+```
+[sage generate] TOOL ERROR: project hook adapter 손상/비정본: .../adapters/claude/<hook-id>.sh
+```
+
+**1.1.0 에서 구 레이아웃(`scripts/sage_harness/`) 설치본의 project hook 이 있으면** 이렇게 멈췄습니다.
+1.1.0 이 adapter 본문에 레이아웃과 무관하게 신 경로를 적었기 때문이고, **1.1.1 에서 고쳤습니다.**
+1.0 이 만든 adapter 는 1.1.1 로 올리면 그대로 정본으로 인정됩니다.
+
+다음 경우에는 1.1.0 이 이미 잘못된 adapter 를 만들었으므로 한 번 직접 정리해야 합니다.
+
+- 1.1.0 에서 **구 레이아웃** 프로젝트에 project hook 을 **새로** 등록한 경우 — hook 실행이
+  `run_hook.py` 를 찾지 못하고 실패합니다
+- 1.1.0 으로 **Windows** 에 새로 설치하고 project hook 을 등록한 경우 — 1.1.1 에서 이 메시지로 멈춥니다
+
+```bash
+# 해당 hook 의 adapter 두 개를 지운 뒤 다시 등록합니다 (hook 트리는 설치 레이아웃에 따라 다릅니다)
+rm <hook 트리>/adapters/claude/<hook-id>.sh <hook 트리>/adapters/codex/<hook-id>.sh
+sage generate --kind hook --write --target both
+```
+
+직접 고친 adapter 라면 지우기 전에 내용을 확인하세요. adapter 는 생성물이라 `sage generate` 가
+다시 만듭니다.
+
+## `sage acceptance-waiver` 가 "런타임을 불러오지 못해" 로 끝남
+
+```
+[sage acceptance-waiver] acceptance waiver 런타임을 불러오지 못해 waiver 발급·조회·회수를 할 수 없습니다. ...: ModuleNotFoundError: ...
+```
+
+1.1.0 이하의 **Windows** 에서는 대장 모듈이 POSIX 전용 `fcntl` 을 불러와 항상 이렇게 끝났습니다
+(1.1.0 이하에서는 traceback 으로 보였습니다). **1.1.1 부터 Windows 에서 발급·조회·회수가 동작합니다.**
+그 밖의 환경에서 이 메시지가 보이면 설치가 손상된 것이므로 `sage install --force` 로 다시 설치하세요.
+대장을 읽지 못하는 동안에도 acceptance 게이트는 계속 차단합니다 — 승인이 없는 것으로도, 있는
+것으로도 치지 않습니다.
 
 ## `sage: command not found`
 

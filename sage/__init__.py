@@ -4,4 +4,4 @@
 설계 SSOT: Obsidian vault `TECH - SAGE 통합 마스터 설계` 외.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"

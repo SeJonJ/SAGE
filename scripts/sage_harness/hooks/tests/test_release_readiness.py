@@ -67,6 +67,24 @@ class TestPreflightBlocksWhatItClaims(unittest.TestCase):
         self.assertEqual(done.returncode, 1, done.stdout)
         self.assertIn("FAIL tag-version", done.stdout)
 
+    def test_pyproject_and_engine_version_must_agree(self):
+        """wheel 버전은 pyproject 에서, `sage --version` 은 `__version__` 에서 나온다. tag 대조는 후자만 본다."""
+        module = _load_preflight()
+        self.assertEqual(module.check_pyproject_matches_version(), [], "현재 두 버전이 이미 어긋나 있다")
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "sage").mkdir()
+            Path(tmp, "sage", "__init__.py").write_text('__version__ = "9.9.9"\n', encoding="utf-8")
+            Path(tmp, "pyproject.toml").write_text(
+                '[build-system]\nrequires = ["setuptools"]\n\n[project]\nname = "x"\nversion = "9.9.8"\n',
+                encoding="utf-8")
+            original = module.REPO
+            module.REPO = Path(tmp)
+            try:
+                findings = module.check_pyproject_matches_version()
+            finally:
+                module.REPO = original
+        self.assertEqual([finding.check for finding in findings], ["pyproject-version"])
+
     def test_a_catalog_gap_blocks(self):
         """한쪽에만 있는 key 는 런타임 fallback 으로 조용히 넘어간다 — build 에서 잡아야 한다."""
         module = _load_preflight()
