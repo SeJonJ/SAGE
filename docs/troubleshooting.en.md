@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:2f3cbec9137e2f8ede6c5b44925cf6f00a933c61805cf8183c769c92d5be6cec -->
+<!-- sage-doc-source: troubleshooting.md sha256:253f926d2b3e94d9998b22b23f0ae42ac3be6f239dd3b4ffe08511e986cef0b0 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -104,8 +104,10 @@ get to decide where it belongs. It is neither moved nor silently disabled.
 
 **This release does not migrate user extensions automatically.** Such an install **keeps working
 exactly where it is** — the same gates, the same registrations, the same validation. You do not
-need to move anything by hand, and we do not recommend it (below). Automatic migration for user
-extensions is scoped to a later release.
+need to move anything by hand, and we do not recommend it (below). **Moving the files does not clear
+the block while the registration remains, and there is no command to unregister it.** If you already
+moved them, put the code back at the old location (`scripts/sage_harness/hooks/`). Automatic
+migration for user extensions is scoped to a later release.
 
 ### Do not move the files yourself
 
@@ -120,6 +122,43 @@ stops.
 Leaving the files where they are is fine — hook execution and validation both work. Even if
 migration starts and then stops partway, **the old code keeps serving as the gate** — until the new
 location is verified, the old one stays authoritative.
+
+## `sage generate` stops with "the project hook adapter is damaged or non-canonical"
+
+```
+[sage generate] TOOL ERROR: the project hook adapter is damaged or non-canonical: .../adapters/claude/<hook-id>.sh
+```
+
+**In 1.1.0, an install on the old layout (`scripts/sage_harness/`) with a project hook** stopped like this.
+1.1.0 wrote the new-layout path into the adapter body regardless of the layout, and **1.1.1 fixes it.**
+Adapters created by 1.0 are accepted as canonical again once you upgrade to 1.1.1.
+
+In the following cases 1.1.0 already wrote a wrong adapter, so clean it up once by hand.
+
+- You **newly** registered a project hook on an **old-layout** project with 1.1.0 — running the hook
+  fails because it cannot find `run_hook.py`
+- You installed 1.1.0 fresh on **Windows** and registered a project hook — 1.1.1 stops with this message
+
+```bash
+# Remove both adapters of that hook, then register it again (the hook tree depends on the install layout)
+rm <hook tree>/adapters/claude/<hook-id>.sh <hook tree>/adapters/codex/<hook-id>.sh
+sage generate --kind hook --write --target both
+```
+
+If you edited the adapter yourself, check it before removing it. Adapters are generated output, so
+`sage generate` recreates them.
+
+## `sage acceptance-waiver` ends with "Could not load the acceptance waiver runtime"
+
+```
+[sage acceptance-waiver] Could not load the acceptance waiver runtime, so waivers cannot be granted, listed, or revoked. ...: ModuleNotFoundError: ...
+```
+
+On **Windows** with 1.1.0 or earlier, the audit module imported the POSIX-only `fcntl` and always
+ended like this (1.1.0 and earlier showed a traceback instead). **From 1.1.1, granting, listing and
+revoking work on Windows.** If you see this message anywhere else the install is damaged; reinstall
+with `sage install --force`. While the audit cannot be read, the acceptance gate keeps blocking — it
+counts neither as "no waiver" nor as "waiver granted".
 
 ## `sage: command not found`
 

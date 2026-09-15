@@ -1,4 +1,4 @@
-<!-- sage-doc-source: release-readiness.md sha256:6644ed52d0498157b5deb7171e4c4dbdf5e2158f145aa5ca25f4ea0451728648 -->
+<!-- sage-doc-source: release-readiness.md sha256:1205c2a183d491abb530e8248d22086ea106fd2f9d9650ddc1b56f884f70f6f5 -->
 # Release readiness
 
 This document records **how readiness is decided**, not what it currently is. The current answer
@@ -54,6 +54,7 @@ described below.
 - `validate` reaches a decision with a documented exit code
 - The hook entry point is reported
 - `PYTHONIOENCODING=ascii` does not raise `UnicodeEncodeError`
+- A project hook adapter registered on the new or old layout points at the real hook tree with `/` separators
 
 The script **does not use bash**. Whether things work without bash is precisely what is under test,
 so a checking tool that requires bash would leave that environment permanently unverified.
@@ -101,6 +102,13 @@ under verification; this job is the place that makes such a record **repeatable*
 recorded run on a Windows 11 desktop counts as the same evidence when it records the same items and
 the same commit — what cannot be substituted is the SKU, not the way it was run. Without a record of
 either kind, automatic removal on that platform is unverified.
+
+> **Current state (as of 1.1.1).** This job has **never run** because no runner is registered for the
+> repository — every PR shows it as `skipped`, which makes the whole CI look green. **That green means
+> "Windows was not run", not "passed on Windows".** The Windows evidence for 1.0.0 and 1.1.1 is a
+> record of running the same scripts directly on a Windows 11 desktop over SSH. Someone has to make
+> that run before a release; whether to drop the job, replace it with a light hosted check, or turn
+> the SSH evidence into a release gate is left as follow-up work.
 
 ## Building a release candidate
 

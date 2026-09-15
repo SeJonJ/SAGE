@@ -3,23 +3,24 @@
 - SAGE 개발 중 확인된 이슈들로 당장 개발해야하는 내용들은 아니지만, 추후 개발 필요시 참고한다.
 - 각 항목 = 배경 · 문제 · 접근 · 규모/위험 · 트리거 · 상태. 즉시 필요 아님 → 트리거 충족 시 착수.
 
-## 전체 현황 (2026-09-09 기준)
+## 전체 현황 (2026-09-16 기준)
 
-**EH-1~EH-27 + EH-29·EH-30 중 15건 완료 · 1건 일부 완료 · 13건 보류.** (EH-28은 아래 단서 참조)
+**EH-1~EH-27 + EH-29~EH-35 중 15건 완료 · 1건 일부 완료 · 18건 보류.** (EH-28은 아래 단서 참조)
 
 | 상태 | 항목 |
 |---|---|
-| ✅ 완료 | EH-1·2(`v0.9.x` 초기) · EH-3(`v0.9.75`) · EH-5(`v0.9.72`) · EH-6(`v0.9.65`) · EH-7(`v0.9.71`) · EH-9(`v0.9.77`) · EH-12(`v0.9.79`) · EH-18·EH-19(`v0.9.84`) · **EH-13·EH-14·EH-15·EH-16(미릴리즈, `sage-gate-diagnostics-batch`)** · **EH-30(미릴리즈, `sage-uninstall-windows-mutation`)** |
+| ✅ 완료 | EH-1·2(`v0.9.x` 초기) · EH-3(`v0.9.75`) · EH-5(`v0.9.72`) · EH-6(`v0.9.65`) · EH-7(`v0.9.71`) · EH-9(`v0.9.77`) · EH-12(`v0.9.79`) · EH-18·EH-19(`v0.9.84`) · EH-13·EH-14·EH-15·EH-16(`v0.9.90`) · EH-30(`v1.0.0`) |
 | 🕗 일부 완료 | EH-11 — 9개 하위 중 8개 완료(J-4·5·6·8·9 = `v0.9.78`, 결속 본체 J-1·2·3 = `v0.9.79`, J-11 기각), **잔여 J-7만 보류** |
-| 🕗 보류 | EH-4 · EH-8 · EH-10 · EH-17 · EH-20 · EH-21 · EH-22 · EH-23 · EH-24 · EH-25 · EH-26 · EH-27 · EH-29 |
+| 🕗 보류 | EH-4 · EH-8 · EH-10 · EH-17 · EH-20 · EH-21 · EH-22 · EH-23 · EH-24 · EH-25 · EH-26 · EH-27 · EH-29 · EH-31 · EH-32 · EH-33 · EH-34 · EH-35 |
 
 보류의 성격은 셋으로 갈린다.
 
 - **독립 L3 설계 대상**: EH-4·8·10(retro 게이트 잔여 우회, 감사 로그 3종 무결성, adapter
   freshness) · EH-27(전환 provenance descriptor hardening). EH-8·EH-10은 아직 설계 정본이 없어
   착수하려면 설계부터다.
-- **트리거 대기**: EH-17(오버레이 누적 성장 실측) · EH-20 · EH-23 · EH-25(1.0 이전 runtime 관찰).
-- **수용된 잔여 위험**: EH-21 · EH-22 · EH-24 · EH-26 · EH-27 · EH-29. 사이클이 범위를 그으며 명시
+- **트리거 대기**: EH-17(오버레이 누적 성장 실측) · EH-20 · EH-23 · EH-25(1.0 이전 runtime 관찰) ·
+  EH-31(Windows 검증 체계) · EH-32(CRLF checkout 소유권 비교) · EH-35(구 경로 안내·미호출 코드 정리).
+- **수용된 잔여 위험**: EH-21 · EH-22 · EH-24 · EH-26 · EH-27 · EH-29 · EH-33 · EH-34. 사이클이 범위를 그으며 명시
   수용하고 이관한 것들이고, **해소가 아니다.** 특히 EH-27은 `sage-operability-diagnostics`
   Phase 05 P1-02 로 공개된 상태이며 개발자 승인으로 1.0 범위에서 수용했다.
 
@@ -29,6 +30,10 @@ handle 결속 backend 를 구현하고 Windows 11 데스크톱 실환경에서 �
 제거 범위는 그 SKU 로 좁혀 선언했고, 범위 밖 환경은 계획만 보여 주고 첫 mutation 전에 막는다.
 **EH-29는 그대로 확정 잔여 위험이다** — 사이클이 끝났다는 것과 위험이 해소됐다는 것은 다르고,
 착수하려면 그 항목의 트리거를 다시 봐야 한다.
+
+**EH-31~EH-35는 `1.1.1`(1.1.0 업그레이드 결함 대응)이 등재했다.** 두 결함(Windows acceptance waiver 로드 불가,
+구 레이아웃 project hook adapter 경로)을 고치며 범위 밖으로 둔 것들이다. 상세 경과는 Obsidian 정본
+`SAGE - 1.1.0 업그레이드 버그 대응 (26.09.15)`이 소유한다.
 
 **이 파일이 EH 전부는 아니다.** `sage-audit-visibility-no-vault`에서 수용한 P1 잔여 위험은
 **EH-28**이고, 사용자 결정에 따라 여기 항목으로 두지 않고 Obsidian 정본
@@ -813,7 +818,54 @@ stdin이 닫힌다), EH-16의 "재료는 이미 있다"는 L0에만 맞고 pdca 
 - **재검토 조건 충족**: (1) ancestor·root 교체를 **실제로 주입**하는 race smoke 가 Windows 에서 돌았고 프로젝트 밖 변경 0건이다. (2) POSIX 와 같은 계약(`boundary_changed`·완전 복구·보관소 잔여 0)을 만족한다. 둘 다 섰다.
 - **증거**: `SAGE-Windows11-verification-FINAL-2026-09-09.md` — Windows 11 Pro 25H2 build 26200.9168 · workstation · AMD64 · 64-bit Python · 로컬 NTFS, 커밋 `237d278`, Python 3.10·3.11·3.12 각각 smoke 11 real removals/0 policy refusals · race 14/14 · core 103/0/0 · selectors 4. GitHub-hosted Server 2025 결과는 backend 회귀 증거이지 이 항목의 데스크톱 증거가 아니다.
 - **남는 것**: 정식 자동 제거 범위는 **Windows 11 데스크톱 workstation · x64 · 64-bit Python · 로컬 NTFS** 다. Windows 10 · Server/DC · 32-bit · native ARM64 · 비 NTFS·network/UNC 는 아래 두 미등재 항목이 소유한다 — 그 환경들은 자동 제거를 하지 않고 계획과 수동 정리 목록만 낸다.
-- **상태**: ✅ **완료(2026-09-09, `sage-uninstall-windows-mutation` Phase 05 `APPROVED`)**. 미릴리즈. 2026-08-29 등재 · 2026-08-31 `sage-uninstall` Phase 05 에서 잔여 위험으로 확정됐던 항목이며, 그때의 수용은 이 사이클의 실증으로 대체됐다. owner: uninstall maintainer.
+- **상태**: ✅ **완료(2026-09-09, `sage-uninstall-windows-mutation` Phase 05 `APPROVED`)**. `v1.0.0` 릴리즈. 2026-08-29 등재 · 2026-08-31 `sage-uninstall` Phase 05 에서 잔여 위험으로 확정됐던 항목이며, 그때의 수용은 이 사이클의 실증으로 대체됐다. owner: uninstall maintainer.
+
+---
+
+## EH-31 — Windows 검증이 CI 에서 한 번도 실행되지 않는다
+
+- **배경**: `ci.yml` 의 `windows11_uninstall` 은 Windows 11 데스크톱 증거를 CI 안에서 반복 가능하게 만들려고 둔 self-hosted job 이다. 같은 저장소 PR 에 `run-win11-uninstall` 라벨을 붙이는 사건에서만 열린다.
+- **문제**: 저장소에 등록된 러너가 0개이고 라벨도 없다. 최근 PR 전부에서 `skipped` 이고, 그 결과 CI 전체가 초록으로 보인다. **그 초록은 "Windows 에서 통과"가 아니라 "Windows 는 돌리지 않음"이다.** 실제 Windows 증거(1.0.0 · 1.1.1)는 데스크톱에 SSH 로 접속해 같은 스크립트를 직접 돌린 기록이다. hook 회귀 스위트는 `ubuntu-latest` 에서만 돌고, Windows acceptance waiver 가 `0.9.81` 부터 로드되지 않던 결함이 오래 남은 원인이 이 공백이다.
+- **접근(검토한 방향)**: (1) 실행되지 않는 self-hosted job 과 그 보안 조건 테스트 정리 (2) 에디션과 무관한 검사(런타임 모듈 전수 import · waiver 테스트 · adapter 경로 구분자)만 hosted `windows-latest` 에서 돌리되 "지원 환경 증거 아님" 을 이름에 명시 (3) 후보 SHA 의 SSH 실기 증거를 릴리스 게이트로. hosted checkout 도 `autocrlf=true` 라 EH-32 검사와 충돌한다.
+- **규모/위험**: 중. (1) 1~2시간 · (2) 약 1시간 · (3) 설계에 따라 약 1시간. 그대로 두는 동안의 위험은 릴리스 전 SSH 실행을 사람이 빠뜨리는 것이다.
+- **트리거**: 다음 Windows 영향 변경을 릴리스하기 전, 또는 SSH 실행 누락이 한 번이라도 생길 때.
+- **상태**: 🕗 보류(2026-09-16 등재, 사용자 결정 — 현재 CI 는 통과하므로 별도로 다룬다).
+
+## EH-32 — Windows CRLF 소스 checkout 에서 구 레이아웃 이행이 옛 schema 파일을 남긴다
+
+- **배경**: 구 레이아웃 이행은 공유 디렉터리의 낱개 파일(`schema/*.json` · `scripts/verify-changes.sh`)을 **번들과 바이트가 같을 때만** SAGE 소유로 보고 지운다(`layout_migration._ships_as`).
+- **문제**: install 의 `_copy_file` 은 `read_text` 로 읽어 줄 끝을 LF 로 정규화해 쓰는데, 이행은 원시 바이트로 비교한다. Git for Windows 기본값(`core.autocrlf=true`)으로 checkout 한 소스에서 엔진을 돌리면 번들이 CRLF 라 설치 사본(LF)과 달라지고, 옛 schema 파일이 `content_differs` 로 보존된다. `platform_smoke` `check_legacy_migration` 이 Windows 11 실기에서 `main`(1.1.0)과 1.1.1 후보 모두 실패했고, 엔진측 세 파일만 LF 로 바꾸면 통과했다. `verify-changes.sh` 도 같은 비교라 남을 가능성이 높다(미확인).
+- **영향**: 중요도 낮음(기능 무영향, 옛 JSON 3개 정리 누락) · 실질 위험 낮음(지우지 않고 남기는 쪽, 결과에 "보존" 표시) · 재현도는 조건 충족 시 100% 이나 조건(Windows + CRLF 소스로 엔진 실행 + 구 레이아웃 이행)이 좁다. Linux 에서 빌드한 wheel 사용자는 번들이 LF 라 비해당으로 추정한다(Windows wheel 재현 없음).
+- **접근**: (a) `.gitattributes` 로 배포 자산을 LF 로 고정(권장) (b) 소유권 비교에서 줄 끝 차이를 무시 — CRLF 만 다른 사용자 파일도 SAGE 소유로 지울 수 있어 증명이 느슨해진다.
+- **트리거**: EH-31 에서 Windows 자동 검사를 둘 때, 또는 Windows 소스 개발자 보고.
+- **상태**: 🕗 보류(2026-09-16 등재). 그 전까지 SSH 검증 clone 에서는 이 검사 실패를 알려진 한계로 구분한다.
+
+## EH-33 — Windows acceptance waiver 대장의 check-to-open 경쟁
+
+- **배경**: POSIX 는 `.sage` 디렉터리 fd 에 결속해 `dir_fd` 로 대장을 연다. Windows 에는 디렉터리 fd·`dir_fd`·`O_NOFOLLOW` 가 없어 1.1.1 은 경로 기반으로 열고, 열기 전 `lstat` 으로 링크·reparse point 를 거부하며 열린 fd 가 검사한 대상인지 비교한다(`.lock` · 대장 모두).
+- **문제**: 검사와 open 사이에 `.sage` 를 junction 으로 바꾸면 프로젝트 밖 파일에 레코드가 기록될 수 있다. 정적으로 존재하는 링크·reparse point 는 거부된다.
+- **수용 근거**: 프로젝트 쓰기 권한과 정밀한 경쟁 주입이 필요해 자연 발생 가능성이 매우 낮다 · 게이트는 대장을 못 읽으면 fail-closed · 감사는 `self_asserted_local` 로 보안 권한 경계가 아니다.
+- **접근(재검토 시)**: 열린 핸들의 최종 경로(`GetFinalPathNameByHandleW`)를 쓰기 전에 대조. hook 런타임은 엔진 비의존이라 `sage/uninstall_windows_fs.py` 를 재사용할 수 없다.
+- **재검토 조건**: 실제 환경에서 교체 경쟁이 관찰됨 · 신뢰하지 않는 여러 사용자가 workspace 를 공유 · 감사가 보안 권한 경계로 승격 · "프로젝트 밖 쓰기 0건" 이 비면제 요구가 됨.
+- **상태**: 🕗 보류 — 수용된 잔여 위험(2026-09-15, 사용자 결정 · 외부 리뷰 위험 비례성 판단).
+
+## EH-34 — 1.1.0 이 잘못 만든 project hook adapter 를 자동으로 고치지 않는다
+
+- **배경**: 1.1.0 은 project hook adapter 본문에 레이아웃과 무관하게 신 경로를 적었고, Windows 에서는 `\` 구분자를 적었다. 1.1.1 은 판정된 레이아웃 경로를 `/` 로 적어 v1.0.0 과 바이트를 맞췄다.
+- **문제**: 1.1.0 에서 (a) 구 레이아웃 프로젝트에 project hook 을 **새로** 등록했거나 (b) Windows 에 새로 설치하고 등록한 경우, 이미 쓰인 adapter 는 1.1.1 의 기대 본문과 달라 `sage generate` 가 "손상/비정본" 으로 멈춘다. (a) 는 파일과 manifest 해시가 함께 틀려 `validate` 해시 대조로는 PASS 로 보인다.
+- **수용 근거**: 대상이 1.1.0 배포(2026-09-13) 뒤 짧은 기간의 신규 등록자뿐이다 · (a) 는 hook 이 실행마다 exit 2 로, (b) 는 generate 가 경로와 함께 **보이게** 실패한다 · adapter 삭제 후 재생성으로 복구된다(릴리스 노트·`docs/troubleshooting.md` 안내).
+- **접근(재검토 시)**: 기존 파일이 1.1.0 렌더 바이트와 정확히 같을 때만 SAGE 생성물로 인정해 재작성 · `validate` 에 같은 판정 추가.
+- **트리거**: 해당 사용자 보고가 들어올 때.
+- **상태**: 🕗 보류 — 수용된 잔여 위험(2026-09-15, 외부 리뷰 동의).
+
+## EH-35 — 구 경로를 가리키는 안내 문구와 호출되지 않는 shim 코드
+
+- **배경**: 1.1.0 이 설치 레이아웃을 `sage_harness/` 로 모은 뒤에도 일부 문자열과 코드가 옛 자리를 가리킨다.
+- **문제**: `cli.install.msg26` · `cli.doctor.bash_optional` · `cli.doctor.bash_optional_full` 이 `scripts/verify-changes.sh` 를 안내한다(신 레이아웃은 `sage_harness/verify-changes.sh`). `sage/commands/generate.py` 의 `_write_hook_shims` 는 정의만 있고 호출되지 않는다. 안내 문구가 실제 CLI 출력에서 잘못 보이는지는 재현하지 않았다.
+- **접근**: 레이아웃 판정 결과로 경로를 넣거나 레이아웃 중립 문구로 바꾼다 · 미호출 함수 제거.
+- **규모/위험**: 작음. 제품 동작 무영향.
+- **트리거**: 해당 문구가 실제 출력에서 확인되거나, 인접 코드를 고칠 때.
+- **상태**: 🕗 보류(2026-09-16 등재).
 
 ---
 
