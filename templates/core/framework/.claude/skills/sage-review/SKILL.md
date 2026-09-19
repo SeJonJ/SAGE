@@ -149,11 +149,19 @@ Run **exactly `cfg.refuters` refuters for the whole round** — each refuter jud
 fresh findings in one batched pass** (via the **REFUTE prompt**), NOT one refuter per
 finding. This spawns `refuters` subagents per round regardless of finding count, and loads
 each cited file's context once per refuter instead of once per finding×refuter (the old
-per-finding fan-out re-read the same file for every finding in it). A finding **survives**
-only if refuting votes `< ⌈refuters/2⌉` (majority of refuters marked it refuted → dropped) —
-tallied per finding, so the result is identical to per-finding refutation. Refuters bias
-toward "refuted=true when uncertain" — this conservatively drops weak findings; the backstop
-for a wrongly-dropped real issue is the human BLOCKED path. Add survivors to `seen`.
+per-finding fan-out re-read the same file for every finding in it). A finding is
+**dropped only when refuting votes `> refuters/2`** (a strict majority of refuters marked it
+refuted); a tie survives — with `refuters: 2`, one refuter alone cannot drop a finding. With
+`refuters: 1` the single refuter decides. Tallied per finding, so the result is identical to
+per-finding refutation. Refuters bias toward "refuted=true when uncertain" — this drops weak
+findings; the backstop for a wrongly-dropped real issue is the human BLOCKED path.
+
+**Peer-only P0/P1 cannot be dropped by host refuters alone.** A P0/P1 finding raised only by
+the cross-model peer (no host lens found it) survives this round even if host refuters vote it
+refuted. Put the refutation evidence into the **next** round's packet delta ("host refuters
+dispute this finding because …") so the peer re-checks it in the call it already makes — no
+extra peer call. It is dropped only if the peer withdraws it, or, in the last round, if a human
+approves the drop; record either in the 05 document with the evidence. Add survivors to `seen`.
 
 ### 3. TRIAGE (human-escalation boundary)
 For each survivor, run the **TRIAGE prompt**. If `scope == architecture_change` AND
@@ -216,6 +224,9 @@ sage review-loop round --run-id $RUN_ID --iteration <n> \
   --found <N> --survived <N> --accepted <N> --arch <N> --tokens <cumulative> \
   --peer-tokens "$PEER_TOKENS"
 ```
+`--tokens` is the host's own cumulative estimate. `--peer-tokens` is the peer's measured usage,
+copied verbatim from `sage cross-check` (`unknown` when it could not be measured — never `0`);
+the budget check adds it to the host total. Omit it only when no peer ran this round.
 
 When `pdca.review_loop.early_completion.enabled` is true, also pass the per-severity residual
 receipt so the surviving findings are counted by severity, not just totalled:
@@ -224,9 +235,6 @@ receipt so the surviving findings are counted by severity, not just totalled:
 ```
 The receipt must name every severity and its total must equal `--survived` exactly. Writing
 `P0=0` alone while findings survive is the failure this exists to prevent, and the command
-`--tokens` is the host's own cumulative estimate. `--peer-tokens` is the peer's measured usage,
-copied verbatim from `sage cross-check` (`unknown` when it could not be measured — never `0`);
-the budget check adds it to the host total. Omit it only when no peer ran this round.
 rejects a receipt whose sum disagrees.
 
 ### Early completion by user authorization

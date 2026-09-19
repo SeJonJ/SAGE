@@ -86,10 +86,12 @@ Per round (up to `review_loop.max_iterations[risk]`):
    claim-hash)` so resurfaced items don't churn.
 2. **REFUTE** — exactly `review_loop.refuters` refuters run for the round; each judges ALL
    fresh findings in one batched pass (not one refuter per finding — that fanned out to
-   refuters×findings subagents and re-read each file per finding). A finding survives only
-   if refuting votes `< ⌈refuters/2⌉` (majority, tallied per finding — identical result).
-   Refuters bias to "refuted when uncertain", so weak findings drop; a wrongly-dropped real
-   issue is caught by the human BLOCKED path.
+   refuters×findings subagents and re-read each file per finding). A finding is dropped only
+   when refuting votes `> refuters/2` (strict majority, tallied per finding); a tie survives,
+   so with `refuters: 2` one refuter cannot drop a finding alone. Refuters bias to "refuted when
+   uncertain", so weak findings drop; a wrongly-dropped real issue is caught by the human
+   BLOCKED path. A P0/P1 raised only by the cross-model peer is not dropped by host refuters
+   alone — the dispute goes into the next round's packet for the peer to re-check.
 3. **TRIAGE** — surviving findings are classified `within_design` vs `architecture_change`.
    An `architecture_change` at L3 stops the loop and escalates to a human (never auto-reworked).
 4. **TERMINATION** (fixed priority): no survivors → APPROVED(CONVERGED); `dry_rounds`
