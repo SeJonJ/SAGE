@@ -87,6 +87,13 @@ class TestTokensLine(unittest.TestCase):
                         tool_calls=3, wall_s=12.4)
         self.assertEqual(run.tokens_line(), "new_input=5 cached_input=6 output=7 turns=2 tool_calls=3 wall_s=12")
 
+    def test_combined_usage_sums_both_runs_or_is_unknown(self):
+        a = P.PeerRun("codex", usage={"new_input": 10, "cached_input": 100, "output": 1}, tool_calls=4, wall_s=500)
+        b = P.PeerRun("claude", usage={"new_input": 5, "cached_input": 50, "output": 2}, tool_calls=1, wall_s=60)
+        self.assertEqual(a.combined_with(b).tokens_line(),
+                         "new_input=15 cached_input=150 output=3 tool_calls=5 wall_s=560")
+        self.assertEqual(P.PeerRun("codex").combined_with(b).tokens_line(), "unknown")
+
     def test_legacy_reason_from_diagnostic_code(self):
         run = P.PeerRun.from_legacy("codex", False, None, Diagnostic("review.peer_timeout", peer="codex", timeout=1))
         self.assertEqual(run.reason, "timeout")
@@ -112,7 +119,9 @@ class TestVersionGate(unittest.TestCase):
             self.assertIn(flag, cmd)
         self.assertEqual(cmd[cmd.index("--output-format") + 1], "stream-json")
         self.assertEqual(cmd[cmd.index("--add-dir") + 1], "/r")
-        self.assertEqual(cmd[cmd.index("--setting-sources") + 1], "")
+        # 빈 값은 별도 인자가 아니라 한 토큰 — Windows .cmd shim 이 빈 인자를 떨어뜨린다.
+        self.assertIn("--setting-sources=", cmd)
+        self.assertNotIn("", cmd)
         i = cmd.index("--disallowedTools")
         self.assertEqual(cmd[i + 1:i + 3], ["Agent", "Task"])
         self.assertEqual(cmd[-2:], ["--effort", "high"])
@@ -150,6 +159,30 @@ class TestProcessTree(unittest.TestCase):
             time.sleep(0.1)
         self.assertFalse(alive, "peer 가 띄운 자식이 timeout 뒤에도 살아 있다")
 
+    def test_peer_that_never_reads_stdin_still_times_out(self):
+        # 패킷이 파이프 버퍼보다 크고 peer 가 stdin 을 읽지 않으면, 쓰기가 timeout 을 막으면 안 된다.
+        code, _out, _err, timed_out, wall = P.run_process(
+            [sys.executable, "-c", "import time; time.sleep(30)"], "x" * 1_000_000, 2)
+        self.assertTrue(timed_out)
+        self.assertLess(wall, 15)
+
+    def test_codex_usage_limit_event(self):
+        text = _stream({"type": "error", "message": "You\u2019ve hit your usage limit. Upgrade to Pro"},
+                       {"type": "turn.failed", "error": {"message": "You\u2019ve hit your usage limit."}})
+        self.assertTrue(P.codex_rate_limited(text))
+        self.assertFalse(P.codex_rate_limited(_stream({"type": "turn.failed", "error": {"message": "boom"}})))
+
+    def test_finished_peer_is_not_held_by_a_background_child(self):
+        # peer 는 끝났는데 백그라운드 자식이 stdout 을 쥐고 있다 — 끝난 리뷰가 timeout 으로 보고되면 안 된다.
+        script = ("import subprocess,sys\n"
+                  "subprocess.Popen(['sleep','30'])\n"
+                  "print('done', flush=True)\n")
+        code, out, _err, timed_out, wall = P.run_process([sys.executable, "-c", script], "", 20)
+        self.assertFalse(timed_out)
+        self.assertEqual(code, 0)
+        self.assertIn("done", out)
+        self.assertLess(wall, 15)
+
 
 _FAKE_CLAUDE = textwrap.dedent('''\
     #!{python}
@@ -159,11 +192,14 @@ _FAKE_CLAUDE = textwrap.dedent('''\
     mode = os.environ.get("FAKE_MODE", "ok")
     if mode == "reject":
         print("error: unknown option '--restricted'", file=sys.stderr); sys.exit(1)
+    if mode == "silent_fail":
+        print("some new wording nobody anticipated", file=sys.stderr); sys.exit(1)
     prompt = sys.stdin.read()
     with open(os.environ["FAKE_LOG"], "w") as f:
         json.dump({{"argv": sys.argv[1:], "cwd": os.getcwd(), "prompt": prompt}}, f)
     def emit(o): print(json.dumps(o), flush=True)
-    emit({{"type": "assistant", "message": {{"content": [{{"type": "text", "text": "FINDING: P2 a.py:1"}}]}}}})
+    emit({{"type": "assistant", "message": {{"id": "m1", "content": [{{"type": "text", "text": "FINDING: P2 a.py:1"}}],
+          "usage": {{"input_tokens": 5, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 1000, "output_tokens": 9}}}}}})
     if mode == "hang":
         import time; time.sleep(30)
     if mode == "limit":
@@ -238,6 +274,23 @@ class TestRunPeerWithFakeClaude(unittest.TestCase):
         self.assertEqual(run.reason, "timeout")
         self.assertIn("FINDING: P2", run.partial)
 
+    def test_timeout_still_measures_usage(self):
+        # 제한 시간에 걸린 실행이 가장 많이 쓴 실행이다 — unknown 으로 내면 예산 게이트가 못 본다.
+        run = self._run(timeout=3, FAKE_MODE="hang")
+        self.assertEqual(run.usage["new_input"], 105)
+        self.assertEqual(run.usage["cached_input"], 1000)
+        self.assertIn("measured=partial", run.tokens_line())
+
+    def test_silent_startup_failure_is_not_a_fallback_reason(self):
+        run = self._run(FAKE_MODE="silent_fail")
+        self.assertEqual(run.reason, "startup_failed")
+        self.assertNotIn(run.reason, RV._FALLBACK_REASONS)
+
+    def test_uncontrolled_run_is_not_reported_as_audited(self):
+        self._run(FAKE_VERSION="2.1.100")
+        run = self._run(FAKE_VERSION="2.1.100")
+        self.assertEqual(RV._audit_line(run), "not_audited")
+
 
 class _Args:
     def __init__(self, root, packet_file, on_peer_failure="block", timeout=540):
@@ -297,10 +350,24 @@ class TestCrossCheckFallback(unittest.TestCase):
         self.assertEqual(self.calls[1][1], 270, "폴백은 제한 시간의 절반")
         self.assertIn("SAME RUNTIME VERDICT", out)
         self.assertIn("REVIEWER_FALLBACK_FROM: codex", out)
-        self.assertIn("REVIEWER_BLOCK_REASON: exit_nonzero", out)
+        self.assertIn("REVIEWER_FALLBACK_REASON: exit_nonzero", out)
+        self.assertNotIn("REVIEWER_BLOCK_REASON", out)
         self.assertIn("REVIEWER_ACTUAL: same_runtime", out)
         self.assertIn("REVIEWER_STATUS: COMPLETE_DEGRADED", out)
         self.assertNotIn("REVIEWER_ACTUAL: cross_model", out)
+
+    def test_double_failure_keeps_the_first_reason(self):
+        def fake(peer, prompt, timeout, effort=None, model=None):
+            self.calls.append((peer, timeout))
+            if peer == "codex":
+                return False, None, Diagnostic("review.peer_timeout", peer="codex", timeout=540)
+            return False, None, Diagnostic("review.peer_exit_nonzero", peer="claude", code=1)
+        RV._invoke_peer = fake
+        rc, out = self._run("same-runtime")
+        self.assertEqual(rc, 3)
+        self.assertIn("REVIEWER_FALLBACK_REASON: timeout", out)
+        self.assertIn("REVIEWER_BLOCK_REASON: exit_nonzero", out)
+        self.assertIn("REVIEWER_STATUS: BLOCKED", out)
 
     def test_parse_failure_is_not_covered_by_fallback(self):
         # peer 는 답했는데 수집에 실패했다 — 자체 리뷰로 덮지 않고 원인을 조사한다.

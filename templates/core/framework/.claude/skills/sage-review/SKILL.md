@@ -53,7 +53,8 @@ When cross-model is on and the peer fails at run time (time limit, usage limit, 
 `PARTIAL` with the findings the peer had already emitted — and exits non-zero. It does **not**
 silently degrade. Falling back to a same-runtime review is a per-round decision the user makes:
 rerun with `--on-peer-failure same-runtime`, which prints `REVIEWER_ACTUAL: same_runtime` and
-`REVIEWER_STATUS: COMPLETE_DEGRADED`. Pass whatever `REVIEWER_ACTUAL` says to
+`REVIEWER_STATUS: COMPLETE_DEGRADED` (with `REVIEWER_FALLBACK_REASON`). Read the outcome from
+`REVIEWER_STATUS` only — the other `REVIEWER_*` lines are detail. Pass whatever `REVIEWER_ACTUAL` says to
 `sage review-loop close --reviewer-actual` so the gate flags a degraded cross-model run. A
 `*_degraded` actual means the reviewer did something its process controls should have made
 impossible (e.g. spawned a sub-agent) — the round does not count as a clean review. State the

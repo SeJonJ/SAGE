@@ -22,6 +22,7 @@ import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 
 from sage.diagnostics import Diagnostic
@@ -46,7 +47,8 @@ Your working directory is an empty scratch directory on purpose.
 ## Exploration budget
 - Judge from this packet first. Draft your verdict before reading any file.
 - Then read only what a specific claim needs: files named in the packet's context map and
-  their direct callers/callees. Use `rg -n` and ranged reads (at most ~150 lines per read).
+  their direct callers/callees. Use your search tool and ranged reads (at most ~150 lines per
+  read) — whichever search/read tools you actually have.
 - Hard limit: {max_lookups} file lookups for this review. When you reach it, stop exploring,
   list what you could not check under UNEXPLORED, and output.
 - Do NOT: re-read rule/profile/skill/memory documents, run tests or builds, spawn sub-agents,
@@ -111,7 +113,29 @@ class PeerRun:
             parts.append(f"wall_s={int(round(self.wall_s))}")
         if u.get("cost_usd") is not None:
             parts.append(f"cost_usd={u['cost_usd']}")
+        if u.get("measured"):
+            parts.append(f"measured={u['measured']}")
         return " ".join(parts)
+
+    def combined_with(self, other):
+        """두 실행(실패한 peer + 폴백)의 사용량 합을 담은 PeerRun. 한쪽이라도 모르면 합도 모른다 —
+        알려진 쪽만 적으면 예산 게이트가 실제보다 적게 읽는다."""
+        total = PeerRun(self.peer, controls=self.controls)
+        if not self.usage or not other.usage:
+            return total
+        usage = {}
+        for key in ("new_input", "cached_input", "output", "turns", "cost_usd"):
+            values = [r.usage.get(key) for r in (self, other)]
+            if all(v is not None for v in values):
+                usage[key] = values[0] + values[1]
+        if any(r.usage.get("measured") for r in (self, other)):
+            usage["measured"] = "partial"
+        total.usage = usage
+        if self.tool_calls is not None and other.tool_calls is not None:
+            total.tool_calls = self.tool_calls + other.tool_calls
+        if self.wall_s is not None and other.wall_s is not None:
+            total.wall_s = self.wall_s + other.wall_s
+        return total
 
 
 # ---- 버전 ----
@@ -125,7 +149,7 @@ def cli_version(peer):
     """peer CLI 버전 튜플. 못 읽으면 None."""
     try:
         r = subprocess.run([peer, "--version"], capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=30)
+                           encoding="utf-8", errors="replace", timeout=10)
     except Exception:
         return None
     return parse_version(r.stdout) or parse_version(r.stderr)
@@ -159,7 +183,9 @@ def peer_command(peer, effort=None, model=None, root=None, controlled=False):
             cmd = ["claude", "-p", "--output-format", "stream-json", "--verbose",
                    "--restricted",
                    "--disallowedTools", "Agent", "Task",
-                   "--setting-sources", "",
+                   # 빈 값을 별도 인자("")로 넘기면 Windows 의 .cmd shim 이 떨어뜨려 다음 플래그를
+                   # 값으로 삼킨다. 한 토큰으로 붙여 넘긴다(실측: 거부 없이 설정 미주입).
+                   "--setting-sources=",
                    "--strict-mcp-config", "--disable-slash-commands",
                    "--no-session-persistence"]
             if root:
@@ -182,6 +208,17 @@ def parse_codex_jsonl(text):
         if o.get("type") == "item.completed" and it.get("type") == "agent_message" and it.get("text"):
             last = it["text"]
     return last
+
+
+def codex_rate_limited(text):
+    """codex --json 의 실패 이벤트가 사용 한도 때문인지. 실측: 한도 소진 시 stdout 에
+    `{"type":"turn.failed","error":{"message":"You've hit your usage limit..."}}` 가 오고 exit 1, stderr 는 비어 있다."""
+    for o in _json_lines(text):
+        if o.get("type") in ("turn.failed", "error"):
+            message = (o.get("error") or {}).get("message") if o.get("type") == "turn.failed" else o.get("message")
+            if re.search(r"(?i)usage limit", str(message or "")):
+                return True
+    return False
 
 
 def parse_claude_json(text):
@@ -217,12 +254,16 @@ def summarize_claude_stream(text):
     assistant 텍스트가 `partial` 로 남는다.
     """
     texts, tool_calls, violations = [], 0, []
+    per_message = {}                    # message.id → usage. 한 메시지가 블록마다 이벤트로 나뉘어 반복된다
     result = None
     rate_limited = False
     for o in _json_lines(text):
         t = o.get("type")
         if t == "assistant":
-            for c in (o.get("message") or {}).get("content") or []:
+            message = o.get("message") or {}
+            if isinstance(message.get("usage"), dict):
+                per_message[message.get("id") or len(per_message)] = message["usage"]
+            for c in message.get("content") or []:
                 if not isinstance(c, dict):
                     continue
                 if c.get("type") == "text" and c.get("text"):
@@ -247,21 +288,32 @@ def summarize_claude_stream(text):
                 review = r
         u = result.get("usage") or {}
         if isinstance(u, dict) and u:
-            # new_input = 캐시 밖 입력(신규 + 캐시 기록). 캐시 읽기는 따로 — 제공자 한도가 캐시를 어떻게
-            # 세는지 모르므로 두 해석 모두에서 판단할 수 있게 나눠 둔다.
-            new_input = (u.get("input_tokens") or 0) + (u.get("cache_creation_input_tokens") or 0)
-            usage = {"new_input": new_input,
-                     "cached_input": u.get("cache_read_input_tokens") or 0,
-                     "output": u.get("output_tokens") or 0,
-                     "turns": result.get("num_turns"),
-                     "cost_usd": result.get("total_cost_usd")}
+            usage = _claude_usage(u)
+            usage.update(turns=result.get("num_turns"), cost_usd=result.get("total_cost_usd"))
         spawned = ((result.get("subagent_stats") or {}).get("spawned") or 0)
         if spawned:
             violations.append(f"subagent_spawned:{spawned}")
         if result.get("is_error") and re.search(r"(?i)usage limit|rate limit", str(result.get("result") or "")):
             rate_limited = True
+    if usage is None and per_message:
+        # 끊긴 실행에는 result 가 없다. 제한 시간에 걸린 실행이 가장 많이 쓴 실행이라, 여기서 unknown 을
+        # 내면 예산 게이트가 정작 막아야 할 라운드를 못 본다. 메시지별 usage 합으로 대신하되, 출력 토큰은
+        # 스트리밍 중간값이라 실제보다 작을 수 있어 `measured=partial` 로 표시한다.
+        usage = {"new_input": 0, "cached_input": 0, "output": 0}
+        for u in per_message.values():
+            for key, value in _claude_usage(u).items():
+                usage[key] += value
+        usage["measured"] = "partial"
     return {"review": review, "partial": "\n\n".join(texts) or None, "usage": usage,
             "tool_calls": tool_calls, "violations": violations, "rate_limited": rate_limited}
+
+
+def _claude_usage(u):
+    # new_input = 캐시 밖 입력(신규 + 캐시 기록). 캐시 읽기는 따로 — 제공자 한도가 캐시를 어떻게
+    # 세는지 모르므로 두 해석 모두에서 판단할 수 있게 나눠 둔다.
+    return {"new_input": (u.get("input_tokens") or 0) + (u.get("cache_creation_input_tokens") or 0),
+            "cached_input": u.get("cache_read_input_tokens") or 0,
+            "output": u.get("output_tokens") or 0}
 
 
 # ---- 프로세스 ----
@@ -289,26 +341,69 @@ def _kill_tree(proc):
         pass
 
 
+def _reader(stream, sink):
+    # 바이트로 읽고 끝에서 한 번에 디코딩한다. 텍스트 스트림의 read(n) 은 n 글자가 찰 때까지 붙잡고
+    # 있어서, 파이프를 쥔 프로세스가 남으면 그때까지 받은 출력이 sink 에 들어오지 못한다.
+    fd = stream.fileno()
+    try:
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            sink.append(chunk)
+    except Exception:
+        pass
+
+
+def _writer(stream, data):
+    # 프롬프트 쓰기도 별도 스레드다. 패킷은 파이프 버퍼(64KB)보다 크므로, peer 가 stdin 을 읽기 전에
+    # 멈추면 주 스레드의 write 가 끝나지 않고 timeout 도 시작되지 않는다.
+    try:
+        stream.write(data)
+    except (BrokenPipeError, OSError):
+        pass                            # peer 가 입력을 다 읽기 전에 끝났다 — 종료 코드가 말해준다
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
+
+
 def run_process(cmd, prompt, timeout, env=None, cwd=None):
-    """(returncode|None, stdout, stderr, timed_out, wall_s). timeout 이면 프로세스 트리를 끝내고
-    그때까지의 출력을 돌려준다."""
+    """(returncode|None, stdout, stderr, timed_out, wall_s). timeout 이면 그때까지의 출력을 돌려준다.
+
+    출력은 별도 스레드가 모은다. `communicate` 는 파이프 EOF 까지 기다리는데, peer 가 백그라운드로 띄운
+    명령이 파이프를 쥐고 있으면 peer 가 끝나도 EOF 가 오지 않아 끝난 리뷰가 timeout 으로 보고된다.
+    그래서 peer 프로세스의 종료만 기다리고, 어떤 경로로 나가든 프로세스 그룹을 정리한다.
+    """
     # 프롬프트는 stdin 으로 넘긴다. positional arg 로 넘기면 큰 diff 가 OS ARG_MAX 를 넘겨 대형 리뷰가
     # 전부 실패한다. encoding 을 명시하지 않으면 locale 인코딩을 써서 C-locale 호스트에서 한글 패킷이
     # UnicodeEncodeError 로 매번 실패한다(패킷 파일도 utf-8 로 읽으므로 대칭).
     start = time.monotonic()
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, env=env, cwd=cwd, text=True,
-                            encoding="utf-8", errors="replace", **_popen_kwargs())
+                            stderr=subprocess.PIPE, env=env, cwd=cwd, **_popen_kwargs())
+    out, err = [], []
+    threads = [threading.Thread(target=_reader, args=(proc.stdout, out), daemon=True),
+               threading.Thread(target=_reader, args=(proc.stderr, err), daemon=True),
+               threading.Thread(target=_writer, args=(proc.stdin, prompt.encode("utf-8")), daemon=True)]
+    for t in threads:
+        t.start()
+    timed_out = False
     try:
-        out, err = proc.communicate(input=prompt, timeout=timeout)
-        return proc.returncode, out or "", err or "", False, time.monotonic() - start
-    except subprocess.TimeoutExpired:
-        _kill_tree(proc)
         try:
-            out, err = proc.communicate(timeout=30)
-        except Exception:
-            out, err = "", ""
-        return None, out or "", err or "", True, time.monotonic() - start
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+    finally:
+        # 성공·timeout·예외(KeyboardInterrupt 포함) 어느 경로든 peer 가 남긴 자식까지 끝낸다.
+        _kill_tree(proc)
+        for t in threads:
+            t.join(timeout=10)
+
+    def text(chunks):
+        return b"".join(chunks).decode("utf-8", errors="replace")
+    return (None if timed_out else proc.returncode, text(out), text(err), timed_out,
+            time.monotonic() - start)
 
 
 def _flags_rejected(peer, stderr):
@@ -323,7 +418,8 @@ def run_peer(peer, prompt, timeout, effort=None, model=None, root=None, env=None
     if not shutil.which(peer):
         return PeerRun(peer, error=Diagnostic("review.peer_cli_missing", peer=peer),
                        reason="cli_missing")
-    version = cli_version(peer)
+    # 통제 조합이 없는 peer 는 버전을 물을 이유가 없다 — 리뷰 시작만 늦춘다.
+    version = cli_version(peer) if peer in MIN_CONTROLLED_VERSION else None
     controlled = controls_supported(peer, version)
     cmd = peer_command(peer, effort, model, root=root, controlled=controlled)
     if controlled:
@@ -344,6 +440,8 @@ def run_peer(peer, prompt, timeout, effort=None, model=None, root=None, env=None
         run.tool_calls, run.violations, run.rate_limited = s["tool_calls"], s["violations"], s["rate_limited"]
     else:
         run.review = parse_codex_jsonl(out) if peer == "codex" else parse_claude_json(out)
+        if peer == "codex":
+            run.rate_limited = codex_rate_limited(out)
     if timed_out:
         run.reason = "timeout"
         run.error = Diagnostic("review.peer_timeout", peer=peer, timeout=timeout)
@@ -355,7 +453,11 @@ def run_peer(peer, prompt, timeout, effort=None, model=None, root=None, env=None
             run.error = Diagnostic("review.peer_flags_rejected", evidence=(err or "").strip()[:200],
                                    peer=peer, code=code)
         else:
-            run.reason = "usage_limit" if run.rate_limited else "exit_nonzero"
+            # 이벤트를 하나도 내지 못하고 끝났다면 리뷰를 시작도 못 한 것이다(인자·설정·인증 문제).
+            # 거부 문구가 버전마다 달라도 여기서 걸러, 매 라운드 조용히 폴백으로 흘러가지 않게 한다.
+            started = any(True for _ in _json_lines(out))
+            run.reason = ("usage_limit" if run.rate_limited
+                          else "exit_nonzero" if started else "startup_failed")
             run.error = Diagnostic("review.peer_exit_nonzero", evidence=(err or "").strip()[:200],
                                    peer=peer, code=code)
         run.review = None

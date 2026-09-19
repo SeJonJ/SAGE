@@ -366,6 +366,9 @@ def _blocked_review(command, message, status_code=3):
 def _audit_line(run):
     if run.controls == "unknown":
         return "unknown"
+    if run.controls != "full":
+        # 통제 없이 돈 실행은 감사할 기준도 없다. `ok` 로 찍으면 검사한 적 없는 것이 통과로 읽힌다.
+        return "not_audited"
     return "ok" if not run.violations else "violation " + ",".join(run.violations)
 
 
@@ -396,13 +399,22 @@ def _blocked_peer(command, run, language, message=None):
 
 
 def _run_same_runtime(profile, host, packet_file, timeout, command="sage review", language=None,
-                      root=None, fallback_from=None, fallback_reason=None):
+                      root=None, fallback_from=None, fallback_reason=None, failed_run=None):
     prompt = _read_packet(packet_file, command, language)
     if prompt is None:
         return _blocked_review(command, tr(language, "cli.review.blocked_packet_required"), 2)
     model = _same_runtime_model(profile)
     run = _call_peer(host, prompt, timeout, root or os.getcwd(), model=model, legacy_effort=False)
     if not run.ok:
+        if failed_run is not None:
+            # 폴백까지 실패했다. 이 라운드에서 가장 많이 쓴 것은 먼저 실패한 peer 라, 폴백 몫만 남기면
+            # 예산 게이트가 최악의 라운드를 적게 센다. 원래 사유와 합산을 함께 남긴다.
+            print(f"REVIEWER_PEER_TOKENS: {failed_run.tokens_line()}")
+            print(f"REVIEWER_FALLBACK_FROM: {fallback_from}")
+            print(f"REVIEWER_FALLBACK_REASON: {fallback_reason}")
+            run = _peer.PeerRun(run.peer, error=run.error, reason=run.reason, partial=run.partial,
+                                usage=failed_run.combined_with(run).usage, controls=run.controls,
+                                violations=run.violations)
         return _blocked_peer(command, run, language)
     print(f"===== {host.upper()} SAME-RUNTIME REVIEW =====")
     print(run.review)
@@ -410,11 +422,21 @@ def _run_same_runtime(profile, host, packet_file, timeout, command="sage review"
     print(f"REVIEWER_PROCESS: {_review_process(host)}")
     print(f"REVIEWER_HOST: {host}")
     print(f"REVIEWER_MODEL: {model or 'cli-default'}")
-    _print_run_telemetry(run)
+    if failed_run is not None:
+        # 라운드가 쓴 토큰은 실패한 peer 와 폴백의 합이다. 폴백 몫만 적으면 제한 시간까지 쓴 peer 의
+        # 소비가 예산 게이트에서 사라진다. 내역은 따로 남긴다.
+        print(f"REVIEWER_PEER_TOKENS: {failed_run.tokens_line()}")
+        print(f"REVIEWER_FALLBACK_TOKENS: {run.tokens_line()}")
+        print(f"REVIEWER_TOKENS: {failed_run.combined_with(run).tokens_line()}")
+        print(f"REVIEWER_CONTROLS: {run.controls}")
+        print(f"REVIEWER_AUDIT: {_audit_line(run)}")
+    else:
+        _print_run_telemetry(run)
     degraded = bool(run.violations)
     if fallback_from:
+        # 완료된 리뷰라 BLOCK_REASON 이 아니다 — 그 줄을 차단 신호로 읽는 소비자가 오판하지 않게.
         print(f"REVIEWER_FALLBACK_FROM: {fallback_from}")
-        print(f"REVIEWER_BLOCK_REASON: {fallback_reason}")
+        print(f"REVIEWER_FALLBACK_REASON: {fallback_reason}")
     # 통제가 불가능하게 만든 행동이 관측됐다 = 통제가 실패했다. 요청한 리뷰어 모드와 다르게 기록해
     # ci_authority 가 강등으로 잡게 한다.
     print(f"REVIEWER_ACTUAL: same_runtime{'_degraded' if degraded else ''}")
@@ -620,7 +642,6 @@ def _fallback_same_runtime(args, profile, current, run, root):
     print(tr(language, "cli.review.fallback_same_runtime", peer=run.peer, host=current,
              reason=run.reason, timeout=timeout), file=sys.stderr)
     _print_partial(run)
-    print(f"REVIEWER_PEER_TOKENS: {run.tokens_line()}")
     return _run_same_runtime(profile, current, args.packet_file, timeout,
                              command="sage cross-check", language=language, root=root,
-                             fallback_from=run.peer, fallback_reason=run.reason)
+                             fallback_from=run.peer, fallback_reason=run.reason, failed_run=run)
