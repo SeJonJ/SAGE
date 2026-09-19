@@ -667,6 +667,7 @@ MESSAGES = {
     "cli.review_loop.term_approved_with_survivors": "APPROVED, yet the last round has survived={survived} (unresolved findings remain) — this is not convergence",
     "cli.review_loop.term_converged_with_survivors": "CONVERGED, yet the last round has survived={survived} (it must be 0)",
     "cli.review_loop.term_budget_unset": "budget_tokens[{risk}] is unset — the budget cross-check is skipped",
+    "cli.review_loop.term_peer_usage_unknown": "{rounds} round(s) have no measured peer usage — the budget cross-check may have used a total lower than reality",
     "cli.review_loop.term_approved_over_budget": "APPROVED, yet cumulative tokens={tokens} ≥ budget={budget} — this must be BUDGET_TOK/BLOCKED",
     "cli.review_loop.term_budget_tok_under_budget": "BUDGET_TOK, yet cumulative tokens={tokens} < budget={budget} (the budget was not exceeded)",
     "cli.review_loop.term_max_iterations_unset": "max_iterations[{risk}] is unset — the iteration-cap cross-check is skipped",

@@ -299,6 +299,8 @@ def _run_round(args):
 
 _PEER_TOKEN_KEYS = {"new_input": int, "cached_input": int, "output": int, "turns": int,
                     "tool_calls": int, "wall_s": int, "cost_usd": float}
+# 끊긴 실행을 메시지별 usage 로 추정한 값이면 `measured=partial` 이 붙는다.
+_PEER_TOKEN_MEASURED = frozenset({"partial"})
 
 
 def parse_peer_tokens(text):
@@ -316,6 +318,11 @@ def parse_peer_tokens(text):
     out = {}
     for part in text.split():
         key, sep, value = part.partition("=")
+        if key == "measured" and sep:
+            if value not in _PEER_TOKEN_MEASURED:
+                raise ValueError(f"measured must be one of {sorted(_PEER_TOKEN_MEASURED)}")
+            out[key] = value
+            continue
         if not sep or key not in _PEER_TOKEN_KEYS:
             raise ValueError(f"unexpected field {part!r}")
         try:
@@ -343,8 +350,26 @@ def budget_tokens_of(rounds):
     for r in rounds:
         usage = r.get("peer_usage")
         if isinstance(usage, dict):
-            peer += int(usage.get("new_input", 0) or 0) + int(usage.get("output", 0) or 0)
+            # 쓰기 때 검증하지만 감사 파일은 손으로 고쳐질 수 있다 — 숫자가 아니면 그 라운드는 모르는 값.
+            for key in ("new_input", "output"):
+                value = usage.get(key)
+                if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                    peer += value
     return host + peer
+
+
+def unmeasured_peer_rounds(rounds):
+    """peer 사용량을 모르는 라운드 수 — `unknown` 이거나 기록이 숫자가 아닌 경우."""
+    count = 0
+    for r in rounds:
+        usage = r.get("peer_usage")
+        if usage == "unknown":
+            count += 1
+        elif isinstance(usage, dict) and not all(
+                isinstance(usage.get(k), int) and not isinstance(usage.get(k), bool)
+                for k in ("new_input", "output")):
+            count += 1
+    return count
 
 
 def _run_risk(la, root, run_id):
@@ -474,6 +499,10 @@ def _termination_discrepancies(la, root, run_id, result, reason, iterations, cfg
         if budget is None:
             out.append(("skip", Diagnostic("review_loop.term_budget_unset", risk=risk)))
         else:
+            unmeasured = unmeasured_peer_rounds(rounds)
+            if unmeasured:
+                # 예산 안이라는 판정이 실제보다 낮은 총량에서 나왔을 수 있다 — 모순은 아니라 skip 으로 알린다.
+                out.append(("skip", Diagnostic("review_loop.term_peer_usage_unknown", rounds=unmeasured)))
             if result == "APPROVED" and total_tokens >= budget:
                 out.append(("mismatch", Diagnostic("review_loop.term_approved_over_budget",
                                                    tokens=total_tokens, budget=budget)))
@@ -932,7 +961,7 @@ def _next_recommendation(la, root, run_id, cfg, risk):
     total_tokens = budget_tokens_of(rounds)
     any_arch = any(int(r.get("arch", 0) or 0) > 0 for r in rounds)
     converged = last_survived == 0
-    unmeasured = sum(1 for r in rounds if r.get("peer_usage") == "unknown")
+    unmeasured = unmeasured_peer_rounds(rounds)
     if unmeasured:
         skips.append(Diagnostic("review_loop.next_peer_usage_unknown", rounds=unmeasured))
 

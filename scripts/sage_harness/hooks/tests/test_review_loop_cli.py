@@ -456,9 +456,28 @@ class TestReviewLoopNext(unittest.TestCase):
         self.assertIn("NEXT: CONTINUE", r.stdout)
         self.assertIn("no measured peer usage", r.stderr + r.stdout)
 
+    def test_partial_measurement_is_accepted(self):
+        self.assertEqual(review_loop_command.parse_peer_tokens("new_input=3 output=4 measured=partial"),
+                         {"new_input": 3, "output": 4, "measured": "partial"})
+
+    def test_corrupt_stored_peer_usage_is_unknown_not_a_crash(self):
+        rounds = [{"tokens": 10, "peer_usage": {"new_input": "x", "output": None}},
+                  {"tokens": 20, "peer_usage": {"new_input": 5, "output": 1}}]
+        self.assertEqual(review_loop_command.budget_tokens_of(rounds), 26)
+        self.assertEqual(review_loop_command.unmeasured_peer_rounds(rounds), 1)
+
+    def test_close_warns_on_unmeasured_peer_rounds(self):
+        rid = self._open()
+        sage("round", "--run-id", rid, "--iteration", "1", "--found", "0", "--survived", "0",
+             "--accepted", "0", "--tokens", "10", "--peer-tokens", "unknown", root=self.tmp)
+        r = sage("close", "--run-id", rid, "--result", "APPROVED", "--reason", "CONVERGED",
+                 "--iterations", "1", root=self.tmp, lang="en")
+        self.assertIn("no measured peer usage", r.stderr + r.stdout)
+
     def test_malformed_peer_tokens_rejected(self):
         rid = self._open()
-        for bad in ("new_input=abc output=1", "tokens=5", "cached_input=5"):
+        for bad in ("new_input=abc output=1", "tokens=5", "cached_input=5",
+                    "new_input=1 output=1 measured=guess"):
             r = sage("round", "--run-id", rid, "--iteration", "1", "--found", "1", "--survived", "0",
                      "--accepted", "0", "--peer-tokens", bad, root=self.tmp)
             self.assertEqual(r.returncode, 2, bad)

@@ -684,6 +684,7 @@ MESSAGES = {
     "cli.review_loop.term_approved_with_survivors": "APPROVED 인데 마지막 라운드 survived={survived}(미해결 남음) — 수렴 아님",
     "cli.review_loop.term_converged_with_survivors": "CONVERGED 인데 마지막 라운드 survived={survived}(0 이어야)",
     "cli.review_loop.term_budget_unset": "budget_tokens[{risk}] 미설정 — 예산 검산 skip",
+    "cli.review_loop.term_peer_usage_unknown": "peer 사용량이 측정되지 않은 라운드 {rounds}개 — 예산 검산이 실제보다 낮은 총량으로 이뤄졌을 수 있음",
     "cli.review_loop.term_approved_over_budget": "APPROVED 인데 누적 tokens={tokens} ≥ budget={budget} — BUDGET_TOK/BLOCKED 여야",
     "cli.review_loop.term_budget_tok_under_budget": "BUDGET_TOK 인데 누적 tokens={tokens} < budget={budget}(초과 아님)",
     "cli.review_loop.term_max_iterations_unset": "max_iterations[{risk}] 미설정 — 반복상한 검산 skip",
