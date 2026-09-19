@@ -242,11 +242,12 @@ toggle's detail entirely when it stays off.
   - **If the user enables cross_model**, confirm the peer CLI is installed:
     - claude-host: `codex` must be on PATH (`which codex`)
     - codex-host: `claude` must be on PATH (`which claude`)
-    If the peer CLI is unavailable, `sage doctor` falls back to
-    `clean_context_same_runtime` (same model, fresh context). Run `sage doctor`
-    to verify the resolved reviewer mode before starting a cycle. If the user
-    prefers not to install the peer CLI, that's fine — leave cross_model on with
-    the same-runtime fallback, and say so.
+    If the peer CLI is unavailable, `sage doctor` resolves the reviewer as `blocked`
+    (`<peer>_cli_unavailable`) and `sage cross-check` stops with `REVIEWER_STATUS: BLOCKED`
+    — there is no silent same-runtime fallback. Run `sage doctor` to verify the resolved
+    reviewer mode before starting a cycle. If the user prefers not to install the peer CLI,
+    that's fine — turn cross_model off (Phase 05 then runs a clean-context same-runtime
+    review via `sage review`), and say so.
   - **Only when cross_model is on**, optionally offer `cross_model.effort` — the reasoning
     effort SAGE passes to the peer CLI for its review. **Unset → `high`.** The vocabulary
     differs per peer and a wrong value is **silently ignored by codex**, so `sage validate`

@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cross-review.md sha256:fbcafc968203e560e2d75475f1cb06076fa90b8b0e37179b5e381de0f0c89709 -->
+<!-- sage-doc-source: cross-review.md sha256:3f87580890b28c0452ee9e39c69ce5d3589c33440fd99a597c8ff37f4e834024 -->
 # Phase 05 Review: Single Review and Cross Review
 
 [한국어](cross-review.md) | [Documentation index](README.en.md)
@@ -76,7 +76,10 @@ point in opposite directions, so the goal is **the same limit**, not the same fl
 
 The control flags are applied from the verified minimum versions (claude 2.1.275, codex 0.155.1). When
 a CLI is confirmed to be older, the reviewer runs without controls and reports
-`REVIEWER_CONTROLS: none`. Processes the reviewer starts are cleaned up however the review ends.
+`REVIEWER_CONTROLS: none`. When the review ends by time limit, failure, or interruption, processes the
+reviewer started are terminated with it. When the reviewer exits normally while a command it started in
+the background is still running, macOS and Linux clean it up from the descendant list gathered during the
+run; Windows has no such list, so the command can remain.
 
 ## The packet
 
