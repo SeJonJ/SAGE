@@ -12,6 +12,7 @@ import os
 import sys
 import re
 import glob
+import math
 
 from sage import _resources
 from sage.diagnostics import Diagnostic
@@ -329,6 +330,8 @@ def parse_peer_tokens(text):
             number = _PEER_TOKEN_KEYS[key](value)
         except ValueError:
             raise ValueError(f"{key} is not a number: {value!r}") from None
+        if not math.isfinite(number):
+            raise ValueError(f"{key} is not a finite number: {value!r}")
         if number < 0:
             raise ValueError(f"{key} is negative")
         out[key] = number

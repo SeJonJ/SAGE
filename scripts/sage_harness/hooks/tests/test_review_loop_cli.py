@@ -477,7 +477,8 @@ class TestReviewLoopNext(unittest.TestCase):
     def test_malformed_peer_tokens_rejected(self):
         rid = self._open()
         for bad in ("new_input=abc output=1", "tokens=5", "cached_input=5",
-                    "new_input=1 output=1 measured=guess"):
+                    "new_input=1 output=1 measured=guess", "new_input=1 output=1 cost_usd=nan",
+                    "new_input=1 output=1 cost_usd=inf"):
             r = sage("round", "--run-id", rid, "--iteration", "1", "--found", "1", "--survived", "0",
                      "--accepted", "0", "--peer-tokens", bad, root=self.tmp)
             self.assertEqual(r.returncode, 2, bad)
