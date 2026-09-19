@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:31d6baa08dec059ce7d8ed4c4a1ed3ff0e711f71e0b55f5ce4d76af851a6e36f -->
+<!-- sage-doc-source: profile-reference.md sha256:cde8fad00bf84927b182441714b01a63e974157ead83c6308cfe97d588d1f1cd -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -49,7 +49,7 @@ sage doctor --profile sage/project-profile.yaml
 
 ```yaml
 sage:
-  required_version: "1.1.1"
+  required_version: "1.2.0"
 
 project:
   name: "weatherapp"
@@ -80,9 +80,11 @@ required review policy produces BLOCKED.
 
 `cross_model.policy` is `required | recommended | off`. `required` cannot be weakened by a local
 `cross_model.enabled: false` (a local profile can never weaken shared policy). `on_unavailable`
-governs what happens when the peer CLI cannot be reached: `block` (default, effectively mandatory
-under a `required` policy) or `clean_context_same_runtime` (fall back to a fresh session on the same
-runtime).
+governs what happens when the peer CLI cannot be reached, and only `block` is allowed, so that a
+committed policy file never declares a standing relaxation. To replace a round whose reviewer failed
+mid-run with a same-runtime review, use `sage cross-check --on-peer-failure same-runtime` for that
+round (recorded as degraded). `effort` is the reasoning effort passed to the peer CLI and defaults to
+`high`. How the reviewer runs and is measured is in [Cross review](cross-review.en.md).
 
 ### Risk
 
@@ -145,7 +147,7 @@ pdca:
 ```
 
 The Phase 05 find→refute→triage→rework adversarial loop. Disabled by default. `lenses` are the
-perspectives each round searches from, `refuters` is how many reviewers challenge each finding,
+perspectives each round searches from, `refuters` is how many reviewers challenge the round's findings (each judges all of them in one batch; a finding is dropped only when a strict majority refutes it, so a tie survives),
 `max_iterations` caps the rounds, and `dry_rounds` is how many consecutive rounds with zero new
 findings count as convergence. `termination_enforce`/`report_gate_enforce` are
 `off | advisory | enforce`; `enforce` actually blocks writing Phase 06. This is the standard cycle's

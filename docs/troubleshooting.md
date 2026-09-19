@@ -536,8 +536,20 @@ prompt가 열려 있는 동안 대상 파일을 고치면 합의한 상태와 �
 
 ## Cross-model 리뷰가 BLOCKED
 
-`sage doctor`로 반대 runtime CLI와 model 설정을 확인합니다. required 정책에서는 peer runtime에
-도달하지 못한 상태를 same-runtime 성공으로 낮추지 않습니다.
+`sage cross-check` 출력의 `REVIEWER_BLOCK_REASON`이 원인을 알려 줍니다.
+
+| 사유 | 할 일 |
+|---|---|
+| `cli_missing` | `sage doctor`로 반대 runtime CLI 설치를 확인합니다 |
+| `flags_rejected` | 리뷰어 CLI가 SAGE의 통제 플래그를 모릅니다. CLI를 최신으로 올립니다(claude 2.1.275·codex 0.155.1 이상) |
+| `startup_failed` | 리뷰어가 시작하지 못했습니다. 반대 runtime에서 로그인·인증 상태를 확인합니다 |
+| `usage_limit` | 반대 runtime의 사용 한도가 소진됐습니다. 리셋 뒤 다시 실행하거나, 이 라운드만 `--on-peer-failure same-runtime`으로 대신합니다 |
+| `timeout` | 제한 시간을 넘겼습니다. 이미 나온 finding은 `PARTIAL`로 남습니다. 패킷을 줄이거나(명제·컨텍스트 지도 중심) `--timeout`을 늘립니다 |
+| `exit_nonzero` | 리뷰 도중 비정상 종료했습니다. stderr 요약을 확인하고 다시 실행합니다 |
+| `parse_failed` | 리뷰어는 답했지만 결과를 읽지 못했습니다. 폴백으로 덮지 말고 출력 형식을 확인합니다 |
+
+required 정책에서는 peer runtime에 도달하지 못한 상태를 same-runtime 성공으로 낮추지 않고, 폴백도 하지
+않습니다. 사유별 동작은 [교차 리뷰](cross-review.md)에 있습니다.
 
 ## Schema 검증이 WARN
 

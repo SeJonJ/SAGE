@@ -4,7 +4,7 @@
 - cross_model=false → `sage review`      : active host의 새 headless process에서 same-runtime 리뷰.
 - cross_model=true  → `sage cross-check`  : 반대 런타임 CLI 를 **직접 호출**해 독립 리뷰 획득(cross-model).
 
-둘 다 표준 마지막 줄 `REVIEWER_ACTUAL: <mode>` 를 출력한다 — sage-team 이 이를 캡처해
+둘 다 `REVIEWER_ACTUAL: <mode>` 줄을 출력하고 마지막 줄은 `REVIEWER_STATUS` 다 — sage-team 이 ACTUAL 을 캡처해
 `sage review-loop close --reviewer-actual <mode>` 로 넘기면 의도(open 의 --reviewer-requested)와 대조해
 degraded 가 판정된다(배치3). cross-model 요청이 peer에 도달하지 못하면 same-runtime으로 완화하지 않고
 `REVIEWER_STATUS: BLOCKED`와 nonzero exit를 반환한다.
@@ -14,13 +14,12 @@ gstack 의존 없음: claude-host→`codex exec`, codex-host→`claude -p` 를 S
 """
 
 import argparse
-import json
 import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
+from sage import peer_process as _peer
 from sage.commands import doctor as _doctor
 from sage.diagnostics import Diagnostic
 from sage.i18n import language_of, render_issue, tr
@@ -51,6 +50,8 @@ def register(sub, context):
     pc.add_argument("--host", choices=["claude", "codex"],
                     help=tr(context, "cli.review.host_2"))
     pc.add_argument("--timeout", type=int, default=_DEFAULT_TIMEOUT, help=tr(context, "cli.review.timeout_peer", default=_DEFAULT_TIMEOUT))
+    pc.add_argument("--on-peer-failure", choices=["block", "same-runtime"], default="block",
+                    help=tr(context, "cli.review.on_peer_failure"))
     pc.add_argument("--strict", action="store_true",
                     help=tr(context, "cli.review.strict"))
     pc.add_argument("--root", default=None)
@@ -164,63 +165,17 @@ def effort_issue(peer, effort):
 
 
 def _peer_command(peer, effort=None, model=None):
-    """peer 런타임 비대화 리뷰 argv(프롬프트 제외). shell 미경유(주입 안전).
-    프롬프트는 **stdin** 으로 전달한다(codex R1 P1): positional arg 로 넘기면 큰 diff 가 OS ARG_MAX 를
-    넘겨 모든 대형 리뷰가 same_runtime 으로 degrade. codex exec/claude -p 둘 다 prompt 부재 시 stdin 을 읽는다.
-
-    model 은 지정하지 않는다 — peer CLI 자신의 설정이 고른 모델을 존중한다. effort 는 호출자가
-    해석한 값(profile `cross_model.effort` 또는 DEFAULT_EFFORT)을 넘긴다. None 이면 argv 에 아무것도
-    붙이지 않아 peer CLI 기본값이 된다."""
-    if peer == "codex":
-        # codex exec: 비대화 1턴, read-only 샌드박스. PROMPT 생략 → stdin 읽기.
-        cmd = ["codex", "exec", "--json", "-s", "read-only"]
-        if effort:
-            cmd += ["-c", f'model_reasoning_effort="{effort}"']
-        if model:
-            cmd += ["-m", model]
-        return cmd
-    if peer == "claude":
-        cmd = ["claude", "-p", "--output-format", "json"]
-        if effort:
-            cmd += ["--effort", effort]
-        if model:
-            cmd += ["--model", model]
-        return cmd
-    raise ValueError(f"unknown peer runtime: {peer!r}")
+    """통제 플래그 없는 peer argv(프롬프트 제외 — stdin). 실제 실행 argv 는 `peer_process.run_peer` 가
+    버전에 따라 통제 플래그를 붙여 만든다. model 은 호출자가 넘길 때만 붙는다."""
+    return _peer.peer_command(peer, effort, model)
 
 
 def _parse_codex_jsonl(text):
-    """codex exec --json stdout(JSONL) → 최종 agent_message 텍스트(없으면 None).
-    item.completed 이벤트 중 item.type=='agent_message' 의 마지막 text."""
-    last = None
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            o = json.loads(line)
-        except Exception:
-            continue
-        it = o.get("item") or {}
-        if o.get("type") == "item.completed" and it.get("type") == "agent_message" and it.get("text"):
-            last = it["text"]
-    return last
+    return _peer.parse_codex_jsonl(text)
 
 
 def _parse_claude_json(text):
-    """claude -p --output-format json stdout → 최종 결과 텍스트(없으면 None).
-    표준 형태는 {"is_error": bool, "result": "<text>", ...}.
-    is_error=true(에러 응답)면 result 가 에러 메시지이므로 리뷰로 오인하지 않고 None(codex 배치2 R5 P1:
-    에러 JSON 을 성공 cross-model 리뷰로 잘못 보고하면 degraded 게이트를 우회)."""
-    try:
-        o = json.loads(text)
-    except Exception:
-        return None
-    if isinstance(o, dict) and not o.get("is_error"):
-        r = o.get("result")
-        if isinstance(r, str) and r.strip():
-            return r
-    return None
+    return _peer.parse_claude_json(text)
 
 
 def _parse_peer_output(peer, text):
@@ -230,33 +185,36 @@ def _parse_peer_output(peer, text):
 # ---- subprocess 경계(테스트는 이 함수를 monkeypatch) ----
 
 def _invoke_peer(peer, prompt, timeout, effort=None, model=None):
-    """peer 런타임을 비대화 실행 → (ok, review_text, err). 미설치/타임아웃/비정상종료/파싱실패 = (False, None, 사유)."""
-    if not shutil.which(peer):
-        return False, None, Diagnostic("review.peer_cli_missing", peer=peer)
-    cmd = _peer_command(peer, effort, model)
-    try:
-        # 프롬프트는 stdin 으로(ARG_MAX 회피, codex R1 P1). codex exec/claude -p 가 stdin 을 프롬프트로 읽음.
-        # encoding 명시(codex R2 P2): text=True 만 두면 locale 인코딩 사용 → C-locale 호스트에서 한글
-        # 패킷이 UnicodeEncodeError 로 매번 degrade. 패킷 파일도 utf-8 로 읽으므로 대칭 맞춤.
-        # peer 환경에서 부모 host 표식을 지운다. 자식은 부모 env 를 상속하므로, 그대로 두면 peer
-        # 안에서 도는 SAGE hook 이 `CLAUDECODE` 같은 상속된 값을 보고 자기를 부모 host 로 오인한다
-        # (실측: claude → codex exec 시 두 계열 표식이 동시에 관측됨).
-        from sage.runtime_hosts import peer_env
-        r = subprocess.run(cmd, input=prompt, capture_output=True, env=peer_env(peer),
-                           text=True, encoding="utf-8", timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return False, None, Diagnostic("review.peer_timeout", peer=peer, timeout=timeout)
-    except Exception as e:
-        # evidence 는 외부 도구/런타임이 낸 원문이라 번역하지 않는다.
-        return False, None, Diagnostic("review.peer_exception", evidence=str(e), peer=peer)
-    if r.returncode != 0:
-        return False, None, Diagnostic("review.peer_exit_nonzero",
-                                       evidence=(r.stderr or "").strip()[:200],
-                                       peer=peer, code=r.returncode)
-    review = _parse_peer_output(peer, r.stdout or "")
-    if not review:
-        return False, None, Diagnostic("review.peer_parse_failed", peer=peer)
-    return True, review, None
+    """peer 런타임을 비대화 실행 → (ok, review_text, err). 구 계약 — 테스트·어댑터가 갈아끼우는 자리다.
+    실제 경로는 `_call_peer` 가 사용량·감사까지 담긴 PeerRun 으로 받는다."""
+    run = _peer.run_peer(peer, prompt, timeout, effort, model, root=os.getcwd(),
+                         env=_peer_env(peer))
+    return run.ok, run.review, run.error
+
+
+_INVOKE_PEER_DEFAULT = _invoke_peer
+
+
+def _peer_env(peer):
+    # peer 환경에서 부모 host 표식을 지운다. 자식은 부모 env 를 상속하므로, 그대로 두면 peer
+    # 안에서 도는 SAGE hook 이 `CLAUDECODE` 같은 상속된 값을 보고 자기를 부모 host 로 오인한다
+    # (실측: claude → codex exec 시 두 계열 표식이 동시에 관측됨).
+    from sage.runtime_hosts import peer_env
+    return peer_env(peer)
+
+
+def _call_peer(peer, prompt, timeout, root, effort=None, model=None, legacy_effort=True):
+    """peer 1회 실행 → PeerRun. `_invoke_peer` 가 갈아끼워져 있으면 그 구 계약 호출 모양을 그대로
+    지킨다(사용량·감사는 unknown). `legacy_effort=False` 는 same-runtime 의 호출 모양이다."""
+    if _invoke_peer is not _INVOKE_PEER_DEFAULT:
+        if legacy_effort:
+            ok, review, err = (_invoke_peer(peer, prompt, timeout, effort, model) if model
+                               else _invoke_peer(peer, prompt, timeout, effort))
+        else:
+            ok, review, err = (_invoke_peer(peer, prompt, timeout, model=model) if model
+                               else _invoke_peer(peer, prompt, timeout))
+        return _peer.PeerRun.from_legacy(peer, ok, review, err)
+    return _peer.run_peer(peer, prompt, timeout, effort, model, root=root, env=_peer_env(peer))
 
 
 def _load_profile_caps(root):
@@ -405,25 +363,87 @@ def _blocked_review(command, message, status_code=3):
     return status_code
 
 
-def _run_same_runtime(profile, host, packet_file, timeout, command="sage review", language=None):
+def _audit_line(run):
+    if run.controls == "unknown":
+        return "unknown"
+    if run.controls != "full":
+        # 통제 없이 돈 실행은 감사할 기준도 없다. `ok` 로 찍으면 검사한 적 없는 것이 통과로 읽힌다.
+        return "not_audited"
+    if run.violations:
+        return "violation " + ",".join(run.violations)
+    # 통제로 막을 수 없는 행동(codex 의 하위 에이전트·테스트 실행)은 강등하지 않고 경고로 드러낸다.
+    return "warn " + ",".join(run.warnings) if run.warnings else "ok"
+
+
+def _print_run_telemetry(run):
+    """peer 사용량·통제·감사. 실패한 실행도 토큰은 썼으므로 BLOCKED 경로에서도 찍는다."""
+    print(f"REVIEWER_TOKENS: {run.tokens_line()}")
+    print(f"REVIEWER_CONTROLS: {run.controls}")
+    print(f"REVIEWER_AUDIT: {_audit_line(run)}")
+
+
+def _print_partial(run):
+    if run.partial:
+        print(f"===== {run.peer.upper()} PARTIAL REVIEW (cut off: {run.reason}) =====")
+        print(run.partial)
+        print(f"===== END {run.peer.upper()} PARTIAL REVIEW =====")
+
+
+def _blocked_peer(command, run, language, message=None):
+    """peer 실패 → BLOCKED(부분 결과가 있으면 PARTIAL). 사유는 stdout 에도 기계 판독용으로 남긴다 —
+    미설치·한도·제한 시간·파싱 실패가 전부 같은 BLOCKED 면 사람이 대응을 고를 수 없다."""
+    print(f"[{command}] BLOCKED: {message or render_issue(language, run.error)}", file=sys.stderr)
+    _print_partial(run)
+    print(f"REVIEWER_BLOCK_REASON: {run.reason}")
+    _print_run_telemetry(run)
+    # PARTIAL 은 완료가 아니다 — 확인된 finding 을 REWORK 입력으로 살리되 리뷰 완료로 세지 않는다.
+    print(f"REVIEWER_STATUS: {'PARTIAL' if run.partial else 'BLOCKED'}")
+    return 3
+
+
+def _run_same_runtime(profile, host, packet_file, timeout, command="sage review", language=None,
+                      root=None, fallback_from=None, fallback_reason=None, failed_run=None):
     prompt = _read_packet(packet_file, command, language)
     if prompt is None:
         return _blocked_review(command, tr(language, "cli.review.blocked_packet_required"), 2)
     model = _same_runtime_model(profile)
-    if model:
-        ok, review, error = _invoke_peer(host, prompt, timeout, model=model)
-    else:
-        ok, review, error = _invoke_peer(host, prompt, timeout)
-    if not ok:
-        return _blocked_review(command, error)
+    run = _call_peer(host, prompt, timeout, root or os.getcwd(), model=model, legacy_effort=False)
+    if not run.ok:
+        if failed_run is not None:
+            # 폴백까지 실패했다. 이 라운드에서 가장 많이 쓴 것은 먼저 실패한 peer 라, 폴백 몫만 남기면
+            # 예산 게이트가 최악의 라운드를 적게 센다. 원래 사유와 합산을 함께 남긴다.
+            print(f"REVIEWER_PEER_TOKENS: {failed_run.tokens_line()}")
+            print(f"REVIEWER_FALLBACK_FROM: {fallback_from}")
+            print(f"REVIEWER_FALLBACK_REASON: {fallback_reason}")
+            run = _peer.PeerRun(run.peer, error=run.error, reason=run.reason, partial=run.partial,
+                                usage=failed_run.combined_with(run).usage, controls=run.controls,
+                                violations=run.violations)
+        return _blocked_peer(command, run, language)
     print(f"===== {host.upper()} SAME-RUNTIME REVIEW =====")
-    print(review)
+    print(run.review)
     print(f"===== END {host.upper()} REVIEW =====")
     print(f"REVIEWER_PROCESS: {_review_process(host)}")
     print(f"REVIEWER_HOST: {host}")
     print(f"REVIEWER_MODEL: {model or 'cli-default'}")
-    print("REVIEWER_ACTUAL: same_runtime")
-    print("REVIEWER_STATUS: COMPLETE")
+    if failed_run is not None:
+        # 라운드가 쓴 토큰은 실패한 peer 와 폴백의 합이다. 폴백 몫만 적으면 제한 시간까지 쓴 peer 의
+        # 소비가 예산 게이트에서 사라진다. 내역은 따로 남긴다.
+        print(f"REVIEWER_PEER_TOKENS: {failed_run.tokens_line()}")
+        print(f"REVIEWER_FALLBACK_TOKENS: {run.tokens_line()}")
+        print(f"REVIEWER_TOKENS: {failed_run.combined_with(run).tokens_line()}")
+        print(f"REVIEWER_CONTROLS: {run.controls}")
+        print(f"REVIEWER_AUDIT: {_audit_line(run)}")
+    else:
+        _print_run_telemetry(run)
+    degraded = bool(run.violations)
+    if fallback_from:
+        # 완료된 리뷰라 BLOCK_REASON 이 아니다 — 그 줄을 차단 신호로 읽는 소비자가 오판하지 않게.
+        print(f"REVIEWER_FALLBACK_FROM: {fallback_from}")
+        print(f"REVIEWER_FALLBACK_REASON: {fallback_reason}")
+    # 통제가 불가능하게 만든 행동이 관측됐다 = 통제가 실패했다. 요청한 리뷰어 모드와 다르게 기록해
+    # ci_authority 가 강등으로 잡게 한다.
+    print(f"REVIEWER_ACTUAL: same_runtime{'_degraded' if degraded else ''}")
+    print(f"REVIEWER_STATUS: {'COMPLETE_DEGRADED' if (degraded or fallback_from) else 'COMPLETE'}")
     return 0
 
 
@@ -489,7 +509,7 @@ def run_review(args):
                               reason=reason)
         )
     return _run_same_runtime(profile, host, args.packet_file, args.timeout,
-                             language=language_of(args))
+                             language=language_of(args), root=root)
 
 
 def run_cross_check(args):
@@ -548,7 +568,8 @@ def run_cross_check(args):
             print(tr(language_of(args), "cli.review.msg04", host=host),
                   file=sys.stderr)
             return _run_same_runtime(profile, host, args.packet_file, args.timeout,
-                                     command="sage cross-check", language=language_of(args))
+                                     command="sage cross-check", language=language_of(args),
+                                     root=root)
         reason = rr.get("reviewer_degrade_reason") or "peer_unavailable"
         return _blocked_review("sage cross-check",
                                tr(language_of(args), "cli.review.blocked_reviewer_unavailable",
@@ -578,23 +599,53 @@ def run_cross_check(args):
                                      else tr(language_of(args), "cli.review.effort_default_suffix"))
     model_note = reviewer_model or "peer CLI default"
     print(tr(language_of(args), "cli.review.msg05", peer=peer, args_timeout=args.timeout, eff_note=eff_note, model_note=model_note), file=sys.stderr)
-    if reviewer_model:
-        ok, review, err = _invoke_peer(peer, prompt, args.timeout, effort, reviewer_model)
-    else:
-        # Keep the legacy call shape for downstream monkeypatch/adapters when no model was configured.
-        ok, review, err = _invoke_peer(peer, prompt, args.timeout, effort)
-    if not ok:
-        return _blocked_review("sage cross-check",
-                               tr(language_of(args), "cli.review.blocked_peer_review_failed",
-                                  peer=peer, err=render_issue(language_of(args), err)))
+    run = _call_peer(peer, prompt, args.timeout, root, effort, reviewer_model)
+    if not run.ok:
+        on_failure = getattr(args, "on_peer_failure", "block") or "block"
+        if on_failure == "same-runtime" and run.reason in _FALLBACK_REASONS:
+            return _fallback_same_runtime(args, profile, current, run, root)
+        return _blocked_peer("sage cross-check", run, language_of(args),
+                             tr(language_of(args), "cli.review.blocked_peer_review_failed",
+                                peer=peer, err=render_issue(language_of(args), run.error)))
 
-    # peer 리뷰 본문 = stdout(스킬이 05 문서/REWORK 입력으로 사용). 마지막 줄에 REVIEWER_ACTUAL.
+    # peer 리뷰 본문 = stdout(스킬이 05 문서/REWORK 입력으로 사용).
     print(f"===== {peer.upper()} CROSS-MODEL REVIEW =====")
-    print(review)
+    print(run.review)
     print(f"===== END {peer.upper()} REVIEW =====")
     print(f"REVIEWER_PROCESS: {_review_process(peer)}")
     print(f"REVIEWER_HOST: {peer}")
     print(f"REVIEWER_MODEL: {reviewer_model or 'cli-default'}")
-    print("REVIEWER_ACTUAL: cross_model")
-    print("REVIEWER_STATUS: COMPLETE")
+    _print_run_telemetry(run)
+    degraded = bool(run.violations)
+    print(f"REVIEWER_ACTUAL: cross_model{'_degraded' if degraded else ''}")
+    print(f"REVIEWER_STATUS: {'COMPLETE_DEGRADED' if degraded else 'COMPLETE'}")
     return 0
+
+
+# 폴백 대상 실패 사유. peer 가 답했는데 수집에 실패한 경우(parse_failed)는 자체 리뷰로 덮을 일이
+# 아니라 원인 조사 대상이고, 플래그 거부(flags_rejected)는 SAGE 가 붙인 인자의 문제라 고쳐야 한다.
+# startup_failed 는 포함한다 — 사용자가 이 라운드에 폴백을 명시적으로 켰고, 폴백은 사유와 함께 강등으로 남는다.
+_FALLBACK_REASONS = frozenset({"timeout", "usage_limit", "exit_nonzero", "startup_failed"})
+
+
+def _fallback_same_runtime(args, profile, current, run, root):
+    """peer 런타임 실패 → 실행 중인 host 의 새 프로세스로 1회만 리뷰(재귀 없음).
+
+    프로필 키가 아니라 호출 단위 옵션인 이유: `cross_model.on_unavailable` 은 `block` 고정이 의도된
+    설계다. 커밋되는 정책 파일에 상시 완화를 두지 않고, 완화는 그 라운드의 기록된 결정으로만 남긴다.
+    강등은 REVIEWER_ACTUAL 이 요청과 달라 ci_authority 가 잡는다 — 교차 리뷰로 위장되지 않는다.
+    """
+    language = language_of(args)
+    from sage.profile_layers import cross_model_policy
+    if cross_model_policy(profile) == "required":
+        return _blocked_peer("sage cross-check", run, language,
+                             tr(language, "cli.review.fallback_policy_required",
+                                err=render_issue(language, run.error)))
+    # 폴백까지 합친 대기가 두 배가 되지 않게 절반으로 제한한다(하한을 두면 짧은 timeout 에서 절반을 넘는다).
+    timeout = max(1, int(args.timeout) // 2)
+    print(tr(language, "cli.review.fallback_same_runtime", peer=run.peer, host=current,
+             reason=run.reason, timeout=timeout), file=sys.stderr)
+    _print_partial(run)
+    return _run_same_runtime(profile, current, args.packet_file, timeout,
+                             command="sage cross-check", language=language, root=root,
+                             fallback_from=run.peer, fallback_reason=run.reason, failed_run=run)

@@ -433,6 +433,56 @@ class TestReviewLoopNext(unittest.TestCase):
         r = sage("next", "--run-id", rid, root=self.tmp)
         self.assertIn("NEXT: STOP result=BLOCKED reason=BUDGET_TOK", r.stdout)
 
+    def test_peer_usage_counts_toward_budget(self):
+        # 호스트 추정 1,000 만으로는 예산(100,000) 아래지만 peer 실측(캐시 밖 입력+출력)을 더하면 넘는다.
+        rid = self._open()
+        r = sage("round", "--run-id", rid, "--iteration", "1", "--found", "3", "--survived", "1",
+                 "--accepted", "0", "--tokens", "1000",
+                 "--peer-tokens", "REVIEWER_TOKENS: new_input=90000 cached_input=3800000 output=12000 turns=30",
+                 root=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(os.path.join(self.tmp, ".sage", "loop_audit.jsonl"), encoding="utf-8") as f:
+            rec = [json.loads(line) for line in f][-1]
+        self.assertEqual(rec["peer_usage"]["cached_input"], 3800000)
+        r = sage("next", "--run-id", rid, root=self.tmp)
+        self.assertIn("NEXT: STOP result=BLOCKED reason=BUDGET_TOK", r.stdout)
+
+    def test_unmeasured_peer_round_is_flagged_not_zeroed(self):
+        rid = self._open()
+        r = sage("round", "--run-id", rid, "--iteration", "1", "--found", "3", "--survived", "1",
+                 "--accepted", "0", "--tokens", "1000", "--peer-tokens", "unknown", root=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = sage("next", "--run-id", rid, root=self.tmp, lang="en")
+        self.assertIn("NEXT: CONTINUE", r.stdout)
+        self.assertIn("no measured peer usage", r.stderr + r.stdout)
+
+    def test_partial_measurement_is_accepted(self):
+        self.assertEqual(review_loop_command.parse_peer_tokens("new_input=3 output=4 measured=partial"),
+                         {"new_input": 3, "output": 4, "measured": "partial"})
+
+    def test_corrupt_stored_peer_usage_is_unknown_not_a_crash(self):
+        rounds = [{"tokens": 10, "peer_usage": {"new_input": "x", "output": None}},
+                  {"tokens": 20, "peer_usage": {"new_input": 5, "output": 1}}]
+        self.assertEqual(review_loop_command.budget_tokens_of(rounds), 26)
+        self.assertEqual(review_loop_command.unmeasured_peer_rounds(rounds), 1)
+
+    def test_close_warns_on_unmeasured_peer_rounds(self):
+        rid = self._open()
+        sage("round", "--run-id", rid, "--iteration", "1", "--found", "0", "--survived", "0",
+             "--accepted", "0", "--tokens", "10", "--peer-tokens", "unknown", root=self.tmp)
+        r = sage("close", "--run-id", rid, "--result", "APPROVED", "--reason", "CONVERGED",
+                 "--iterations", "1", root=self.tmp, lang="en")
+        self.assertIn("no measured peer usage", r.stderr + r.stdout)
+
+    def test_malformed_peer_tokens_rejected(self):
+        rid = self._open()
+        for bad in ("new_input=abc output=1", "tokens=5", "cached_input=5",
+                    "new_input=1 output=1 measured=guess", "new_input=1 output=1 cost_usd=nan",
+                    "new_input=1 output=1 cost_usd=inf"):
+            r = sage("round", "--run-id", rid, "--iteration", "1", "--found", "1", "--survived", "0",
+                     "--accepted", "0", "--peer-tokens", bad, root=self.tmp)
+            self.assertEqual(r.returncode, 2, bad)
+
     def test_max_iter_unresolved_stop_blocked(self):
         rid = self._open()
         for it in (1, 2, 3):                      # max_iterations[L3]=3

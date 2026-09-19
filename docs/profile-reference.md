@@ -46,7 +46,7 @@ sage doctor --profile sage/project-profile.yaml
 
 ```yaml
 sage:
-  required_version: "1.1.1"
+  required_version: "1.2.0"
 
 project:
   name: "weatherapp"
@@ -76,8 +76,11 @@ active host를 제외한 runtime을 선택합니다. peer CLI에 도달하지 �
 
 `cross_model.policy`는 `required | recommended | off`입니다. `required`는 로컬 profile에서
 `cross_model.enabled: false`로 완화할 수 없습니다(local이 공유 정책을 완화 불가). `on_unavailable`은
-peer CLI에 도달하지 못했을 때의 처리이며 `block`(기본, required 정책에서 사실상 강제)이거나
-`clean_context_same_runtime`(같은 runtime의 새 세션으로 대체)입니다.
+peer CLI에 도달하지 못했을 때의 처리이며 `block`만 허용됩니다. 커밋되는 정책 파일에 상시 완화를 두지
+않기 위해서입니다. 리뷰어가 실행 중 실패한 라운드를 같은 runtime 리뷰로 대신하려면, 그 라운드에서
+`sage cross-check --on-peer-failure same-runtime`을 씁니다(강등으로 기록). `effort`는 peer CLI에 넘길
+추론 강도이고 미설정이면 `high`입니다. 리뷰어가 어떻게 실행되고 측정되는지는 [교차 리뷰](cross-review.md)에
+있습니다.
 
 ### Risk
 
@@ -137,7 +140,7 @@ pdca:
 ```
 
 Phase 05의 find→refute→triage→rework 적대적 반복 루프입니다. 기본은 꺼져 있습니다. `lenses`가 각
-라운드에서 찾을 관점, `refuters`가 finding당 반박자 수, `max_iterations`가 라운드 상한,
+라운드에서 찾을 관점, `refuters`가 라운드당 반박자 수(모든 finding 을 한 번에 판정하고, 과반이 반박해야 기각 — 동률은 생존), `max_iterations`가 라운드 상한,
 `dry_rounds`가 "신규 발견 0"이 몇 라운드 연속이면 수렴으로 볼지입니다.
 `termination_enforce`/`report_gate_enforce`는 `off | advisory | enforce`이며, `enforce`는 06 작성을
 실제로 차단합니다. 표준 사이클의 정식 절차이고, 명시적으로 허용된 L2/L3에서만 쓰는 축약판은 아래

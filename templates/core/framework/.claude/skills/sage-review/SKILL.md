@@ -48,8 +48,16 @@ Do not invoke the peer ad-hoc. Use the deterministic commands so the fallback is
 - cross_model **true** → `sage cross-check` (invokes the peer, prints its review, emits `REVIEWER_ACTUAL`)
 - cross_model **false** → `sage review` (same-runtime, emits `REVIEWER_ACTUAL: same_runtime`)
 
-If `sage cross-check` cannot reach the peer it prints `REVIEWER_ACTUAL: same_runtime` (not silent) — pass
-that to `sage review-loop close --reviewer-actual` so the gate flags the degraded cross-model run. State the
+When cross-model is on and the peer fails at run time (time limit, usage limit, abnormal exit),
+`sage cross-check` prints `REVIEWER_BLOCK_REASON: <reason>` and `REVIEWER_STATUS: BLOCKED` — or
+`PARTIAL` with the findings the peer had already emitted — and exits non-zero. It does **not**
+silently degrade. Falling back to a same-runtime review is a per-round decision the user makes:
+rerun with `--on-peer-failure same-runtime`, which prints `REVIEWER_ACTUAL: same_runtime` and
+`REVIEWER_STATUS: COMPLETE_DEGRADED` (with `REVIEWER_FALLBACK_REASON`). Read the outcome from
+`REVIEWER_STATUS` only — the other `REVIEWER_*` lines are detail. Pass whatever `REVIEWER_ACTUAL` says to
+`sage review-loop close --reviewer-actual` so the gate flags a degraded cross-model run. A
+`*_degraded` actual means the reviewer did something its process controls should have made
+impossible (e.g. spawned a sub-agent) — the round does not count as a clean review. State the
 resolved mode before reviewing.
 
 ## Choose pass vs loop
@@ -127,10 +135,13 @@ Run **exactly one reviewer per lens** in `cfg.lenses` over the full diff (parall
 divergent). Do NOT sub-divide a lens by component / file / module — that multiplies
 subagents (e.g. 6 lenses × 2 components = 12) with no coverage gain; one lens reviewer
 already sees the whole diff. For the cross-model peer,
-**do not invoke the peer by hand** — write the review packet (diff + 05 context) to a file and run
-`sage cross-check --packet-file <f>`; it invokes the peer (`codex exec`/`claude -p`) and prints the
-peer's findings. Capture its last line `REVIEWER_ACTUAL: <mode>` as `ACTUAL` (it is `same_runtime`
-if the peer was unreachable — fold those findings into the host's same-runtime review). Use the
+**do not invoke the peer by hand** — write the review packet to a file following **Review packet**
+in `docs/agent/review-protocol.md` (propositions, context map, verification summary — not raw rule
+or plan documents) and run `sage cross-check --packet-file <f>`; it invokes the peer
+(`codex exec`/`claude -p`) under process controls and prints the peer's findings. Keep the packet
+body fixed across rounds and append each round's delta at the end (the unchanged prefix keeps the
+peer's prompt cache warm). Capture the `REVIEWER_ACTUAL: <mode>` line as `ACTUAL` and the
+`REVIEWER_TOKENS:` line as `PEER_TOKENS`. Use the
 **FIND prompt** (§ skeletons) for host lenses. Collect findings. **Dedup**: drop any finding whose key `(norm(file), line_bucket, lens, sha(norm(claim)))`
 is already in `seen` (prevents tail/resurfacing churn).
 
@@ -139,11 +150,19 @@ Run **exactly `cfg.refuters` refuters for the whole round** — each refuter jud
 fresh findings in one batched pass** (via the **REFUTE prompt**), NOT one refuter per
 finding. This spawns `refuters` subagents per round regardless of finding count, and loads
 each cited file's context once per refuter instead of once per finding×refuter (the old
-per-finding fan-out re-read the same file for every finding in it). A finding **survives**
-only if refuting votes `< ⌈refuters/2⌉` (majority of refuters marked it refuted → dropped) —
-tallied per finding, so the result is identical to per-finding refutation. Refuters bias
-toward "refuted=true when uncertain" — this conservatively drops weak findings; the backstop
-for a wrongly-dropped real issue is the human BLOCKED path. Add survivors to `seen`.
+per-finding fan-out re-read the same file for every finding in it). A finding is
+**dropped only when refuting votes `> refuters/2`** (a strict majority of refuters marked it
+refuted); a tie survives — with `refuters: 2`, one refuter alone cannot drop a finding. With
+`refuters: 1` the single refuter decides. Tallied per finding, so the result is identical to
+per-finding refutation. Refuters bias toward "refuted=true when uncertain" — this drops weak
+findings; the backstop for a wrongly-dropped real issue is the human BLOCKED path.
+
+**Peer-only P0/P1 cannot be dropped by host refuters alone.** A P0/P1 finding raised only by
+the cross-model peer (no host lens found it) survives this round even if host refuters vote it
+refuted. Put the refutation evidence into the **next** round's packet delta ("host refuters
+dispute this finding because …") so the peer re-checks it in the call it already makes — no
+extra peer call. It is dropped only if the peer withdraws it, or, in the last round, if a human
+approves the drop; record either in the 05 document with the evidence. Add survivors to `seen`.
 
 ### 3. TRIAGE (human-escalation boundary)
 For each survivor, run the **TRIAGE prompt**. If `scope == architecture_change` AND
@@ -203,8 +222,12 @@ acceptance coverage, update Phase 03 and Phase 04 before the next review pass.
 ### Record the round (every iteration)
 ```
 sage review-loop round --run-id $RUN_ID --iteration <n> \
-  --found <N> --survived <N> --accepted <N> --arch <N> --tokens <cumulative>
+  --found <N> --survived <N> --accepted <N> --arch <N> --tokens <cumulative> \
+  --peer-tokens "$PEER_TOKENS"
 ```
+`--tokens` is the host's own cumulative estimate. `--peer-tokens` is the peer's measured usage,
+copied verbatim from `sage cross-check` (`unknown` when it could not be measured — never `0`);
+the budget check adds it to the host total. Omit it only when no peer ran this round.
 
 When `pdca.review_loop.early_completion.enabled` is true, also pass the per-severity residual
 receipt so the surviving findings are counted by severity, not just totalled:

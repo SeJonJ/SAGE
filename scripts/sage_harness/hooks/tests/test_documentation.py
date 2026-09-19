@@ -18,6 +18,7 @@ REFERENCE_PAIRS = (
     ("docs/troubleshooting.md", "docs/troubleshooting.en.md"),
     ("docs/ARTIFACTS.md", "docs/ARTIFACTS.en.md"),
     ("docs/ARCHITECTURE.md", "docs/ARCHITECTURE.en.md"),
+    ("docs/cross-review.md", "docs/cross-review.en.md"),
 )
 
 
