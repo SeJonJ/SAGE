@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:31d6baa08dec059ce7d8ed4c4a1ed3ff0e711f71e0b55f5ce4d76af851a6e36f -->
+<!-- sage-doc-source: profile-reference.md sha256:342f7a01d84ac500cb06f4f5d891ac6abadb9921948c07072fd5fbd2c3acd6a8 -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -145,7 +145,7 @@ pdca:
 ```
 
 The Phase 05 find→refute→triage→rework adversarial loop. Disabled by default. `lenses` are the
-perspectives each round searches from, `refuters` is how many reviewers challenge each finding,
+perspectives each round searches from, `refuters` is how many reviewers challenge the round's findings (each judges all of them in one batch; a finding is dropped only when a strict majority refutes it, so a tie survives),
 `max_iterations` caps the rounds, and `dry_rounds` is how many consecutive rounds with zero new
 findings count as convergence. `termination_enforce`/`report_gate_enforce` are
 `off | advisory | enforce`; `enforce` actually blocks writing Phase 06. This is the standard cycle's

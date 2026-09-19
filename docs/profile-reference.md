@@ -137,7 +137,7 @@ pdca:
 ```
 
 Phase 05의 find→refute→triage→rework 적대적 반복 루프입니다. 기본은 꺼져 있습니다. `lenses`가 각
-라운드에서 찾을 관점, `refuters`가 finding당 반박자 수, `max_iterations`가 라운드 상한,
+라운드에서 찾을 관점, `refuters`가 라운드당 반박자 수(모든 finding 을 한 번에 판정하고, 과반이 반박해야 기각 — 동률은 생존), `max_iterations`가 라운드 상한,
 `dry_rounds`가 "신규 발견 0"이 몇 라운드 연속이면 수렴으로 볼지입니다.
 `termination_enforce`/`report_gate_enforce`는 `off | advisory | enforce`이며, `enforce`는 06 작성을
 실제로 차단합니다. 표준 사이클의 정식 절차이고, 명시적으로 허용된 L2/L3에서만 쓰는 축약판은 아래
