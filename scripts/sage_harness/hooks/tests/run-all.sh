@@ -88,6 +88,10 @@ echo "### 11b. sage review / cross-check (Phase 05 same-runtime / cross-model �
 python3 "$HERE/test_phase05_review.py" || rc=1
 
 echo ""
+echo "### 11c. Phase 05 peer 프로세스 (비용 통제·부분 결과·사용량·감사·폴백)"
+python3 "$HERE/test_peer_process.py" || rc=1
+
+echo ""
 echo "### 12. validate 안전성 (오염 manifest test 경로 차단)"
 python3 "$HERE/test_validate_safety.py" || rc=1
 

@@ -48,8 +48,15 @@ Do not invoke the peer ad-hoc. Use the deterministic commands so the fallback is
 - cross_model **true** → `sage cross-check` (invokes the peer, prints its review, emits `REVIEWER_ACTUAL`)
 - cross_model **false** → `sage review` (same-runtime, emits `REVIEWER_ACTUAL: same_runtime`)
 
-If `sage cross-check` cannot reach the peer it prints `REVIEWER_ACTUAL: same_runtime` (not silent) — pass
-that to `sage review-loop close --reviewer-actual` so the gate flags the degraded cross-model run. State the
+When cross-model is on and the peer fails at run time (time limit, usage limit, abnormal exit),
+`sage cross-check` prints `REVIEWER_BLOCK_REASON: <reason>` and `REVIEWER_STATUS: BLOCKED` — or
+`PARTIAL` with the findings the peer had already emitted — and exits non-zero. It does **not**
+silently degrade. Falling back to a same-runtime review is a per-round decision the user makes:
+rerun with `--on-peer-failure same-runtime`, which prints `REVIEWER_ACTUAL: same_runtime` and
+`REVIEWER_STATUS: COMPLETE_DEGRADED`. Pass whatever `REVIEWER_ACTUAL` says to
+`sage review-loop close --reviewer-actual` so the gate flags a degraded cross-model run. A
+`*_degraded` actual means the reviewer did something its process controls should have made
+impossible (e.g. spawned a sub-agent) — the round does not count as a clean review. State the
 resolved mode before reviewing.
 
 ## Choose pass vs loop
@@ -127,10 +134,13 @@ Run **exactly one reviewer per lens** in `cfg.lenses` over the full diff (parall
 divergent). Do NOT sub-divide a lens by component / file / module — that multiplies
 subagents (e.g. 6 lenses × 2 components = 12) with no coverage gain; one lens reviewer
 already sees the whole diff. For the cross-model peer,
-**do not invoke the peer by hand** — write the review packet (diff + 05 context) to a file and run
-`sage cross-check --packet-file <f>`; it invokes the peer (`codex exec`/`claude -p`) and prints the
-peer's findings. Capture its last line `REVIEWER_ACTUAL: <mode>` as `ACTUAL` (it is `same_runtime`
-if the peer was unreachable — fold those findings into the host's same-runtime review). Use the
+**do not invoke the peer by hand** — write the review packet to a file following **Review packet**
+in `docs/agent/review-protocol.md` (propositions, context map, verification summary — not raw rule
+or plan documents) and run `sage cross-check --packet-file <f>`; it invokes the peer
+(`codex exec`/`claude -p`) under process controls and prints the peer's findings. Keep the packet
+body fixed across rounds and append each round's delta at the end (the unchanged prefix keeps the
+peer's prompt cache warm). Capture the `REVIEWER_ACTUAL: <mode>` line as `ACTUAL` and the
+`REVIEWER_TOKENS:` line as `PEER_TOKENS`. Use the
 **FIND prompt** (§ skeletons) for host lenses. Collect findings. **Dedup**: drop any finding whose key `(norm(file), line_bucket, lens, sha(norm(claim)))`
 is already in `seen` (prevents tail/resurfacing churn).
 
