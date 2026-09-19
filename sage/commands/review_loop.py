@@ -91,6 +91,8 @@ def register(sub, context):
     pr.add_argument("--accepted", required=True, type=_nonneg, help=tr(context, "cli.review_loop.accepted"))
     pr.add_argument("--arch", default=0, type=_nonneg, help=tr(context, "cli.review_loop.arch"))
     pr.add_argument("--tokens", default=0, type=_nonneg, help=tr(context, "cli.review_loop.tokens"))
+    pr.add_argument("--peer-tokens", default=None,
+                    help=tr(context, "cli.review_loop.peer_tokens"))
     pr.add_argument("--lens-receipts", default=None,
                     help=tr(context, "cli.review_loop.lens_receipts"))
     pr.add_argument("--survived-by-severity", default=None,
@@ -275,12 +277,17 @@ def _run_round(args):
             print("[sage review-loop] --survived-by-severity invalid: " + "; ".join(issues),
                   file=sys.stderr)
             return 2
+    try:
+        peer_usage = parse_peer_tokens(getattr(args, "peer_tokens", None))
+    except ValueError as exc:
+        print(f"[sage review-loop] --peer-tokens invalid: {exc}", file=sys.stderr)
+        return 2
     written = _write_audit(
         la,
         lambda: la.record_round(root, args.run_id, args.iteration, args.found,
                                 args.survived, args.accepted, arch=args.arch,
                                 tokens=args.tokens, lens_receipts=lens_receipts,
-                                survived_by_severity=receipt),
+                                survived_by_severity=receipt, peer_usage=peer_usage),
         language=language_of(args),
     )
     if written is None:
@@ -288,6 +295,56 @@ def _run_round(args):
     print(f"[sage review-loop] round {args.iteration} run_id={args.run_id} "
           f"found={args.found} survived={args.survived} accepted={args.accepted} arch={args.arch}", file=sys.stderr)
     return 0
+
+
+_PEER_TOKEN_KEYS = {"new_input": int, "cached_input": int, "output": int, "turns": int,
+                    "tool_calls": int, "wall_s": int, "cost_usd": float}
+
+
+def parse_peer_tokens(text):
+    """`sage cross-check` 의 `REVIEWER_TOKENS:` 값 → dict, "unknown", 또는 None(인자 없음).
+
+    값을 그대로 옮겨 적게 한다 — 호스트가 추정치를 넣던 자리를 실측으로 바꾸는 것이 목적이다.
+    """
+    if text is None:
+        return None
+    text = text.strip()
+    if text.startswith("REVIEWER_TOKENS:"):
+        text = text[len("REVIEWER_TOKENS:"):].strip()
+    if text == "unknown":
+        return "unknown"
+    out = {}
+    for part in text.split():
+        key, sep, value = part.partition("=")
+        if not sep or key not in _PEER_TOKEN_KEYS:
+            raise ValueError(f"unexpected field {part!r}")
+        try:
+            number = _PEER_TOKEN_KEYS[key](value)
+        except ValueError:
+            raise ValueError(f"{key} is not a number: {value!r}") from None
+        if number < 0:
+            raise ValueError(f"{key} is negative")
+        out[key] = number
+    if not {"new_input", "output"} <= set(out):
+        raise ValueError("new_input and output are required (or pass 'unknown')")
+    return out
+
+
+def budget_tokens_of(rounds):
+    """예산 판정에 쓰는 총량 = 호스트 누적(tokens 의 최댓값) + 라운드별 peer 실측의 합.
+
+    peer 는 캐시 밖 입력 + 출력만 센다. 보고 입력의 대부분은 같은 맥락을 턴마다 다시 실은 캐시
+    읽기라, 그걸 더하면 예산 기본값이 가정한 "작업량"과 단위가 달라진다. 캐시 읽기는 라운드 기록에
+    따로 남아 있어 한도 해석이 달라져도 다시 계산할 수 있다. 측정 안 된 라운드("unknown")는 0 이
+    아니라 모르는 값이라, `next` 가 따로 경고한다.
+    """
+    host = max((int(r.get("tokens", 0) or 0) for r in rounds), default=0)  # tokens=누적 → max=총량
+    peer = 0
+    for r in rounds:
+        usage = r.get("peer_usage")
+        if isinstance(usage, dict):
+            peer += int(usage.get("new_input", 0) or 0) + int(usage.get("output", 0) or 0)
+    return host + peer
 
 
 def _run_risk(la, root, run_id):
@@ -388,7 +445,7 @@ def _termination_discrepancies(la, root, run_id, result, reason, iterations, cfg
             out.append(("skip", Diagnostic("review_loop.term_no_rounds_nothing_to_check")))
         return out
     last_survived = int(rounds[-1].get("survived", 0) or 0)
-    total_tokens = max((int(r.get("tokens", 0) or 0) for r in rounds), default=0)  # tokens=누적 → max=총량
+    total_tokens = budget_tokens_of(rounds)
     any_arch = any(int(r.get("arch", 0) or 0) > 0 for r in rounds)
 
     def _tier_int(section):
@@ -872,9 +929,12 @@ def _next_recommendation(la, root, run_id, cfg, risk):
 
     iterations = len(rounds)
     last_survived = int(rounds[-1].get("survived", 0) or 0)
-    total_tokens = max((int(r.get("tokens", 0) or 0) for r in rounds), default=0)  # tokens=누적 → max=총량
+    total_tokens = budget_tokens_of(rounds)
     any_arch = any(int(r.get("arch", 0) or 0) > 0 for r in rounds)
     converged = last_survived == 0
+    unmeasured = sum(1 for r in rounds if r.get("peer_usage") == "unknown")
+    if unmeasured:
+        skips.append(Diagnostic("review_loop.next_peer_usage_unknown", rounds=unmeasured))
 
     # 우선순위: 아키텍처 > 예산 > 반복상한 > 수렴 > 계속.
     if any_arch:

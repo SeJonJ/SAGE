@@ -213,7 +213,8 @@ acceptance coverage, update Phase 03 and Phase 04 before the next review pass.
 ### Record the round (every iteration)
 ```
 sage review-loop round --run-id $RUN_ID --iteration <n> \
-  --found <N> --survived <N> --accepted <N> --arch <N> --tokens <cumulative>
+  --found <N> --survived <N> --accepted <N> --arch <N> --tokens <cumulative> \
+  --peer-tokens "$PEER_TOKENS"
 ```
 
 When `pdca.review_loop.early_completion.enabled` is true, also pass the per-severity residual
@@ -223,6 +224,9 @@ receipt so the surviving findings are counted by severity, not just totalled:
 ```
 The receipt must name every severity and its total must equal `--survived` exactly. Writing
 `P0=0` alone while findings survive is the failure this exists to prevent, and the command
+`--tokens` is the host's own cumulative estimate. `--peer-tokens` is the peer's measured usage,
+copied verbatim from `sage cross-check` (`unknown` when it could not be measured — never `0`);
+the budget check adds it to the host total. Omit it only when no peer ran this round.
 rejects a receipt whose sum disagrees.
 
 ### Early completion by user authorization
