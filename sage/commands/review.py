@@ -4,7 +4,7 @@
 - cross_model=false → `sage review`      : active host의 새 headless process에서 same-runtime 리뷰.
 - cross_model=true  → `sage cross-check`  : 반대 런타임 CLI 를 **직접 호출**해 독립 리뷰 획득(cross-model).
 
-둘 다 표준 마지막 줄 `REVIEWER_ACTUAL: <mode>` 를 출력한다 — sage-team 이 이를 캡처해
+둘 다 `REVIEWER_ACTUAL: <mode>` 줄을 출력하고 마지막 줄은 `REVIEWER_STATUS` 다 — sage-team 이 ACTUAL 을 캡처해
 `sage review-loop close --reviewer-actual <mode>` 로 넘기면 의도(open 의 --reviewer-requested)와 대조해
 degraded 가 판정된다(배치3). cross-model 요청이 peer에 도달하지 못하면 same-runtime으로 완화하지 않고
 `REVIEWER_STATUS: BLOCKED`와 nonzero exit를 반환한다.
@@ -369,7 +369,10 @@ def _audit_line(run):
     if run.controls != "full":
         # 통제 없이 돈 실행은 감사할 기준도 없다. `ok` 로 찍으면 검사한 적 없는 것이 통과로 읽힌다.
         return "not_audited"
-    return "ok" if not run.violations else "violation " + ",".join(run.violations)
+    if run.violations:
+        return "violation " + ",".join(run.violations)
+    # 통제로 막을 수 없는 행동(codex 의 하위 에이전트·테스트 실행)은 강등하지 않고 경고로 드러낸다.
+    return "warn " + ",".join(run.warnings) if run.warnings else "ok"
 
 
 def _print_run_telemetry(run):
@@ -620,8 +623,9 @@ def run_cross_check(args):
 
 
 # 폴백 대상 실패 사유. peer 가 답했는데 수집에 실패한 경우(parse_failed)는 자체 리뷰로 덮을 일이
-# 아니라 원인 조사 대상이고, 플래그 거부(flags_rejected)는 설정·버전 문제라 고쳐야 한다.
-_FALLBACK_REASONS = frozenset({"timeout", "usage_limit", "exit_nonzero"})
+# 아니라 원인 조사 대상이고, 플래그 거부(flags_rejected)는 SAGE 가 붙인 인자의 문제라 고쳐야 한다.
+# startup_failed 는 포함한다 — 사용자가 이 라운드에 폴백을 명시적으로 켰고, 폴백은 사유와 함께 강등으로 남는다.
+_FALLBACK_REASONS = frozenset({"timeout", "usage_limit", "exit_nonzero", "startup_failed"})
 
 
 def _fallback_same_runtime(args, profile, current, run, root):
@@ -637,8 +641,8 @@ def _fallback_same_runtime(args, profile, current, run, root):
         return _blocked_peer("sage cross-check", run, language,
                              tr(language, "cli.review.fallback_policy_required",
                                 err=render_issue(language, run.error)))
-    # 폴백까지 합친 대기가 두 배가 되지 않게 절반으로 제한한다.
-    timeout = max(60, int(args.timeout) // 2)
+    # 폴백까지 합친 대기가 두 배가 되지 않게 절반으로 제한한다(하한을 두면 짧은 timeout 에서 절반을 넘는다).
+    timeout = max(1, int(args.timeout) // 2)
     print(tr(language, "cli.review.fallback_same_runtime", peer=run.peer, host=current,
              reason=run.reason, timeout=timeout), file=sys.stderr)
     _print_partial(run)

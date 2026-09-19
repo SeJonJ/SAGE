@@ -159,6 +159,35 @@ class TestProcessTree(unittest.TestCase):
             time.sleep(0.1)
         self.assertFalse(alive, "peer 가 띄운 자식이 timeout 뒤에도 살아 있다")
 
+    def test_child_in_its_own_session_is_also_killed(self):
+        # codex 는 셸 명령마다 새 세션을 만든다(실측) — 프로세스 그룹 종료로는 닿지 않는다.
+        script = ("import subprocess,sys,time\n"
+                  "p=subprocess.Popen(['sleep','30'], start_new_session=True)\n"
+                  "print('child', p.pid, flush=True)\n"
+                  "time.sleep(30)\n")
+        _code, out, _err, timed_out, _wall = P.run_process([sys.executable, "-c", script], "", 2)
+        self.assertTrue(timed_out)
+        pid = int(out.split()[1])
+        time.sleep(0.5)
+        with os.popen(f"ps -o stat= -p {pid}") as f:
+            state = f.read().strip()
+        self.assertTrue(state == "" or state.startswith("Z"), f"새 세션 자식이 살아 있다: {state!r}")
+
+    def test_child_left_behind_by_a_normal_exit_is_killed(self):
+        # peer 가 새 세션 자식을 남기고 정상 종료하면, 끝난 뒤에는 ppid 체인에서 사라져 찾을 수 없다.
+        script = ("import subprocess,sys,time\n"
+                  "p=subprocess.Popen(['sleep','30'], start_new_session=True)\n"
+                  "print('child', p.pid, flush=True)\n"
+                  "time.sleep(3)\n")
+        code, out, _err, timed_out, _wall = P.run_process([sys.executable, "-c", script], "", 30)
+        self.assertFalse(timed_out)
+        self.assertEqual(code, 0)
+        pid = int(out.split()[1])
+        time.sleep(0.5)
+        with os.popen(f"ps -o stat= -p {pid}") as f:
+            state = f.read().strip()
+        self.assertTrue(state == "" or state.startswith("Z"), f"정상 종료 뒤에도 자식이 살아 있다: {state!r}")
+
     def test_peer_that_never_reads_stdin_still_times_out(self):
         # 패킷이 파이프 버퍼보다 크고 peer 가 stdin 을 읽지 않으면, 쓰기가 timeout 을 막으면 안 된다.
         code, _out, _err, timed_out, wall = P.run_process(
@@ -281,15 +310,132 @@ class TestRunPeerWithFakeClaude(unittest.TestCase):
         self.assertEqual(run.usage["cached_input"], 1000)
         self.assertIn("measured=partial", run.tokens_line())
 
-    def test_silent_startup_failure_is_not_a_fallback_reason(self):
+    def test_silent_startup_failure_has_its_own_reason(self):
+        # 사용자가 폴백을 켰다면 대상이다 — 사유가 FALLBACK_REASON 으로 남아 조용히 넘어가지 않는다.
         run = self._run(FAKE_MODE="silent_fail")
         self.assertEqual(run.reason, "startup_failed")
-        self.assertNotIn(run.reason, RV._FALLBACK_REASONS)
+        self.assertIn(run.reason, RV._FALLBACK_REASONS)
+        self.assertNotIn("flags_rejected", RV._FALLBACK_REASONS)
 
     def test_uncontrolled_run_is_not_reported_as_audited(self):
         self._run(FAKE_VERSION="2.1.100")
         run = self._run(FAKE_VERSION="2.1.100")
         self.assertEqual(RV._audit_line(run), "not_audited")
+
+
+_FAKE_CODEX = textwrap.dedent("""\
+    #!{python}
+    import json, os, sys, time
+    if "--version" in sys.argv:
+        print(os.environ.get("FAKE_VERSION", "codex-cli 0.155.1")); sys.exit(0)
+    mode = os.environ.get("FAKE_MODE", "ok")
+    if mode == "strict":
+        print("Error loading config.toml: unknown configuration field `x`", file=sys.stderr); sys.exit(1)
+    prompt = sys.stdin.read()
+    with open(os.environ["FAKE_LOG"], "w") as f:
+        json.dump({{"argv": sys.argv[1:], "cwd": os.getcwd(), "prompt": prompt}}, f)
+    tid = "11111111-2222-3333-4444-555555555555"
+    day = os.path.join(os.environ["CODEX_HOME"], "sessions", time.strftime("%Y"), time.strftime("%m"), time.strftime("%d"))
+    os.makedirs(day, exist_ok=True)
+    def rollout(name, meta, calls):
+        with open(os.path.join(day, name), "w") as f:
+            f.write(json.dumps({{"type": "session_meta", "payload": meta}}) + "\\n")
+            for u in calls:
+                f.write(json.dumps({{"type": "token_usage_record", "payload": {{"usage": u}}}}) + "\\n")
+    rollout(f"rollout-x-{{tid}}.jsonl", {{"id": tid}},
+            [{{"input_tokens": 100, "cached_input_tokens": 60, "output_tokens": 5}}] * 2)
+    if mode == "collab_no_file":
+        print(json.dumps({{"type": "item.started", "item": {{"type": "collab_tool_call"}}}}), flush=True)
+    if mode == "spawn":
+        rollout("rollout-y-child.jsonl", {{"id": "child-1", "parent_thread_id": tid}},
+                [{{"input_tokens": 50, "cached_input_tokens": 0, "output_tokens": 1}}])
+        rollout("rollout-z-grandchild.jsonl", {{"id": "child-2", "parent_thread_id": "child-1"}},
+                [{{"input_tokens": 7, "cached_input_tokens": 0, "output_tokens": 1}}])
+    def emit(o): print(json.dumps(o), flush=True)
+    emit({{"type": "thread.started", "thread_id": tid}})
+    emit({{"type": "item.completed", "item": {{"type": "error", "message": "Skill descriptions were shortened"}}}})
+    emit({{"type": "item.completed", "item": {{"type": "command_execution", "command": "/bin/zsh -lc 'npm test'"}}}})
+    emit({{"type": "item.completed", "item": {{"type": "agent_message", "text": "FINDING: P1 b.py:2"}}}})
+    if mode == "hang":
+        time.sleep(30)
+    emit({{"type": "item.completed", "item": {{"type": "agent_message", "text": "VERDICT: FAIL"}}}})
+    emit({{"type": "turn.completed", "usage": {{"input_tokens": 200, "cached_input_tokens": 120, "output_tokens": 10}}}})
+""")
+
+
+class TestRunPeerWithFakeCodex(unittest.TestCase):
+    def setUp(self):
+        if os.name == "nt":
+            self.skipTest("가짜 CLI 실행 파일은 POSIX shebang 으로 만든다")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        bindir = os.path.join(self.tmp.name, "bin")
+        os.makedirs(bindir)
+        path = os.path.join(bindir, "codex")
+        with open(path, "w") as f:
+            f.write(_FAKE_CODEX.format(python=sys.executable))
+        os.chmod(path, os.stat(path).st_mode | stat.S_IEXEC)
+        self.log = os.path.join(self.tmp.name, "log.json")
+        self.root = os.path.join(self.tmp.name, "repo")
+        os.makedirs(self.root)
+        env = {"PATH": bindir + os.pathsep + os.environ.get("PATH", ""), "FAKE_LOG": self.log,
+               "CODEX_HOME": os.path.join(self.tmp.name, "codex_home")}
+        patcher = mock.patch.dict(os.environ, env)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _run(self, timeout=30, **env):
+        with mock.patch.dict(os.environ, env):
+            return P.run_peer("codex", "PACKET", timeout, "high", root=self.root, env=dict(os.environ))
+
+    def test_controlled_argv_keeps_the_users_model_config(self):
+        run = self._run()
+        self.assertTrue(run.ok, run.error)
+        with open(self.log) as f:
+            seen = json.load(f)
+        for flag in ("--strict-config", "--skip-git-repo-check", "project_doc_max_bytes=0",
+                     'web_search="disabled"', "mcp_servers={}"):
+            self.assertIn(flag, seen["argv"])
+        # 사용자 config.toml 을 통째로 무시하면 리뷰 모델이 조용히 바뀐다(실측).
+        self.assertNotIn("--ignore-user-config", seen["argv"])
+        self.assertNotEqual(os.path.realpath(seen["cwd"]), os.path.realpath(self.root))
+        self.assertTrue(seen["prompt"].startswith("# SAGE reviewer contract"))
+
+    def test_usage_splits_cached_input_and_flags_test_runs(self):
+        run = self._run()
+        self.assertEqual(run.review, "VERDICT: FAIL")
+        self.assertEqual(run.usage, {"new_input": 80, "cached_input": 120, "output": 10})
+        self.assertIn("build_or_test_run:1", run.warnings)
+        self.assertEqual(RV._audit_line(run), "warn build_or_test_run:1")
+
+    def test_subagents_found_through_session_files_and_counted(self):
+        # stdout 에 흔적이 없어도 세션 파일의 parent_thread_id 로 손자까지 찾는다.
+        run = self._run(FAKE_MODE="spawn")
+        self.assertIn("subagent_spawned:2", run.warnings)
+        self.assertEqual(run.usage["new_input"], 80 + 50 + 7)
+
+    def test_subagent_without_session_file_marks_usage_partial(self):
+        run = self._run(FAKE_MODE="collab_no_file")
+        self.assertEqual(run.usage.get("measured"), "partial")
+        self.assertIn("subagent_usage_unmeasured", run.warnings)
+
+    def test_timeout_measures_from_the_session_file(self):
+        run = self._run(timeout=3, FAKE_MODE="hang")
+        self.assertEqual(run.reason, "timeout")
+        self.assertIn("FINDING: P1", run.partial)
+        self.assertEqual(run.usage["new_input"], 80)
+        self.assertEqual(run.usage["measured"], "partial")
+
+    def test_strict_config_rejection_is_flags_rejected(self):
+        run = self._run(FAKE_MODE="strict")
+        self.assertEqual(run.reason, "flags_rejected")
+
+    def test_old_codex_runs_uncontrolled(self):
+        self._run(FAKE_VERSION="codex-cli 0.150.0")
+        with open(self.log) as f:
+            seen = json.load(f)
+        self.assertNotIn("--strict-config", seen["argv"])
+        self.assertEqual(seen["prompt"], "PACKET")
 
 
 class _Args:
@@ -355,6 +501,12 @@ class TestCrossCheckFallback(unittest.TestCase):
         self.assertIn("REVIEWER_ACTUAL: same_runtime", out)
         self.assertIn("REVIEWER_STATUS: COMPLETE_DEGRADED", out)
         self.assertNotIn("REVIEWER_ACTUAL: cross_model", out)
+
+    def test_short_timeout_fallback_never_exceeds_half(self):
+        self._fake(Diagnostic("review.peer_timeout", peer="codex", timeout=30))
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            RV.run_cross_check(_Args(self.d, self.packet, "same-runtime", timeout=30))
+        self.assertEqual(self.calls[1][1], 15)
 
     def test_double_failure_keeps_the_first_reason(self):
         def fake(peer, prompt, timeout, effort=None, model=None):

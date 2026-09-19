@@ -30,11 +30,17 @@ from sage.diagnostics import Diagnostic
 # 통제 플래그를 실측으로 확인한 최소 버전. 이보다 낮다고 **확인된** 경우에만 통제 없이 실행한다.
 # 버전을 못 읽으면 통제를 건다 — 모르는 플래그면 peer 가 명시적으로 거부하므로(`peer_flags_rejected`)
 # 조용히 통제 없이 도는 경로가 생기지 않는다.
-MIN_CONTROLLED_VERSION = {"claude": (2, 1, 275)}
+MIN_CONTROLLED_VERSION = {"claude": (2, 1, 275), "codex": (0, 155, 1)}
 
 # 통제가 **불가능하게 만든** 행동. 관측되면 리뷰 내용과 무관하게 통제가 실패한 것이다.
 # claude: `--restricted` 가 Bash 계열을, `--disallowedTools` 가 하위 에이전트를 없앤다.
 _CLAUDE_FORBIDDEN_TOOLS = frozenset({"Bash", "BashOutput", "KillShell", "Agent", "Task"})
+
+# codex 는 셸이 유일한 도구라 테스트·빌드 실행을 옵션으로 막을 수 없다. 사후에 명령을 분류해 경고한다.
+_BUILD_OR_TEST = re.compile(
+    r"\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|build)\b|\bgradlew?\b|\bmvn\b|\bpytest\b"
+    r"|\bpython\d*(?:\.\d+)?\s+-m\s+(?:pytest|unittest)\b|\bgo\s+(?:test|build)\b"
+    r"|\bcargo\s+(?:test|build)\b|\bmake\b|run-all\.sh")
 
 # 리뷰어가 따라야 할 탐색·출력 계약. 모든 프로젝트에서 같으므로 패킷 작성자(호스트 AI)에게 맡기지
 # 않고 여기서 붙인다 — 빠지거나 바뀌어 쓰일 여지를 없앤다.
@@ -70,7 +76,7 @@ class PeerRun:
     """peer 1회 실행의 결과. `reason` 은 기계 판독용 실패 사유(성공이면 None)."""
 
     __slots__ = ("peer", "ok", "review", "error", "reason", "partial", "usage", "tool_calls",
-                 "violations", "controls", "wall_s", "rate_limited")
+                 "violations", "warnings", "controls", "wall_s", "rate_limited")
 
     def __init__(self, peer, ok=False, review=None, error=None, reason=None, partial=None,
                  usage=None, tool_calls=None, violations=(), controls="none", wall_s=None,
@@ -84,6 +90,8 @@ class PeerRun:
         self.usage = usage
         self.tool_calls = tool_calls
         self.violations = list(violations)
+        # 통제로 막을 수 없는 peer 에서 관측된 금지 행동(codex 의 하위 에이전트·테스트 실행). 강등하지 않고 드러낸다.
+        self.warnings = []
         self.controls = controls
         self.wall_s = wall_s
         self.rate_limited = rate_limited
@@ -169,6 +177,18 @@ def peer_command(peer, effort=None, model=None, root=None, controlled=False):
     """peer 리뷰 argv(프롬프트 제외 — stdin 으로 넘긴다)."""
     if peer == "codex":
         cmd = ["codex", "exec", "--json", "-s", "read-only"]
+        if controlled:
+            # 모르는 -c 키는 조용히 무시된다 — --strict-config 로 키 오타를 실패로 드러낸다(실측).
+            # --ignore-user-config 는 쓰지 않는다: 사용자가 고른 리뷰 모델까지 codex 기본값으로 조용히
+            # 바뀐다(실측). 비용 요소만 하나씩 끈다. 하위 에이전트는 0.155.1 에서 어떤 설정으로도 막히지
+            # 않아(실측·codex 확인) 여기서 끄지 못하고 사후 감사로 드러낸다.
+            cmd += ["--skip-git-repo-check", "--strict-config",
+                    "-c", "project_doc_max_bytes=0",
+                    "-c", "tool_output_token_limit=4000",
+                    "-c", 'web_search="disabled"',
+                    "-c", "mcp_servers={}",
+                    "--disable", "multi_agent", "--disable", "multi_agent_v2",
+                    "--disable", "memories", "--disable", "hooks"]
         if effort:
             cmd += ["-c", f'model_reasoning_effort="{effort}"']
         if model:
@@ -308,6 +328,123 @@ def summarize_claude_stream(text):
             "tool_calls": tool_calls, "violations": violations, "rate_limited": rate_limited}
 
 
+def summarize_codex_stream(text):
+    """codex exec --json → dict(review, partial, usage, tool_calls, warnings, thread_id, rate_limited)."""
+    texts, commands, warnings = [], [], []
+    usage, thread_id, collab = None, None, 0
+    for o in _json_lines(text):
+        t = o.get("type")
+        it = o.get("item") or {}
+        if t == "thread.started":
+            thread_id = o.get("thread_id")
+        elif t == "item.completed" and it.get("type") == "agent_message" and it.get("text"):
+            texts.append(it["text"])
+        elif t == "item.completed" and it.get("type") == "command_execution":
+            commands.append(str(it.get("command") or ""))
+        elif t == "item.started" and it.get("type") == "collab_tool_call":
+            collab += 1
+        elif t == "turn.completed" and isinstance(o.get("usage"), dict):
+            # 실행 1회에 보통 한 번, 값은 그 턴의 모델 호출 누적(실측: 호출별 기록 합과 일치).
+            usage = _add_usage(usage, _codex_usage(o["usage"]))
+    builds = [c for c in commands if _BUILD_OR_TEST.search(c)]
+    if builds:
+        warnings.append(f"build_or_test_run:{len(builds)}")
+    if collab:
+        warnings.append(f"subagent_call:{collab}")
+    return {"review": texts[-1] if texts else None, "partial": "\n\n".join(texts) or None,
+            "usage": usage, "tool_calls": len(commands) + collab, "warnings": warnings,
+            "collab_calls": collab, "thread_id": thread_id, "rate_limited": codex_rate_limited(text)}
+
+
+def _codex_usage(u):
+    # codex 의 input_tokens 는 캐시 적중분을 포함한다 — 캐시 밖 입력만 new_input 으로.
+    total = u.get("input_tokens") or 0
+    cached = u.get("cached_input_tokens") or 0
+    return {"new_input": max(0, total - cached), "cached_input": cached,
+            "output": u.get("output_tokens") or 0}
+
+
+def _add_usage(a, b):
+    if a is None:
+        return dict(b)
+    return {k: (a.get(k) or 0) + (b.get(k) or 0) for k in ("new_input", "cached_input", "output")}
+
+
+def codex_sessions_dir():
+    return os.path.join(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex"), "sessions")
+
+
+def _session_meta(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            first = json.loads(f.readline() or "{}")
+    except Exception:
+        return {}
+    payload = first.get("payload") if first.get("type") == "session_meta" else None
+    return payload if isinstance(payload, dict) else {}
+
+
+def _rollout_usage(path):
+    """rollout 의 모델 호출별 token_usage_record 합(끊긴 실행도 호출 단위로 남는다)."""
+    usage = None
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                if '"token_usage_record"' not in line:
+                    continue
+                try:
+                    o = json.loads(line)
+                except Exception:
+                    continue
+                u = (o.get("payload") or {}).get("usage")
+                if isinstance(u, dict):
+                    usage = _add_usage(usage, _codex_usage(u))
+    except Exception:
+        return None
+    return usage
+
+
+def codex_session_family(thread_id, since, sessions_dir=None):
+    """(부모 rollout 경로|None, 자손 rollout 경로 목록). 자손은 session_meta.parent_thread_id 를 재귀로 따라간다.
+
+    하위 에이전트 생성은 stdout 에 이벤트가 안 남는 경우가 있어(실측) 세션 파일이 확실한 양성 증거다.
+    파일이 없다고 생성되지 않았다는 증거는 아니다(codex 확인). since(epoch) 이후 수정된 파일만 본다.
+    """
+    root = sessions_dir or codex_sessions_dir()
+    if not thread_id or not os.path.isdir(root):
+        return None, []
+    # 세션 디렉터리는 날짜별(YYYY/MM/DD)로 쌓인다. 전부 훑지 않고 실행 기간의 날짜 폴더만 본다
+    # (지역 시각과 UTC 둘 다 — 자정 전후 실행도 놓치지 않게).
+    days = set()
+    t = since - 86400
+    while t <= time.time() + 86400:
+        for stamp in (time.localtime(t), time.gmtime(t)):
+            days.add(os.path.join(root, time.strftime("%Y", stamp), time.strftime("%m", stamp),
+                                  time.strftime("%d", stamp)))
+        t += 43200
+    candidates = []
+    for day in sorted(d for d in days if os.path.isdir(d)):
+        for name in os.listdir(day):
+            if not (name.startswith("rollout-") and name.endswith(".jsonl")):
+                continue
+            path = os.path.join(day, name)
+            try:
+                if os.path.getmtime(path) < since - 5:
+                    continue
+            except OSError:
+                continue
+            candidates.append(path)
+    parent = next((p for p in candidates if thread_id in os.path.basename(p)), None)
+    metas = {p: _session_meta(p) for p in candidates}
+    family, frontier = [], {thread_id}
+    while frontier:
+        found = [p for p, m in metas.items()
+                 if m.get("parent_thread_id") in frontier and p not in family]
+        family.extend(found)
+        frontier = {metas[p].get("id") for p in found if metas[p].get("id")}
+    return parent, family
+
+
 def _claude_usage(u):
     # new_input = 캐시 밖 입력(신규 + 캐시 기록). 캐시 읽기는 따로 — 제공자 한도가 캐시를 어떻게
     # 세는지 모르므로 두 해석 모두에서 판단할 수 있게 나눠 둔다.
@@ -326,7 +463,37 @@ def _popen_kwargs():
     return {"start_new_session": True}
 
 
-def _kill_tree(proc):
+def _descendants(pid):
+    """pid 의 자손 pid 목록(POSIX, ps 기반). codex 는 셸 명령마다 새 세션을 만들어(실측) 프로세스 그룹
+    종료로는 닿지 않는다 — 부모가 살아 있을 때 ppid 체인으로 모아야 한다."""
+    try:
+        out = subprocess.run(["ps", "-axo", "pid=,ppid="], capture_output=True, text=True,
+                             timeout=10).stdout
+    except Exception:
+        return []
+    children = {}
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            children.setdefault(int(parts[1]), []).append(int(parts[0]))
+    found, stack = [], [pid]
+    while stack:
+        for child in children.get(stack.pop(), []):
+            found.append(child)
+            stack.append(child)
+    return found
+
+
+def _kill_tree(proc, seen=()):
+    if os.name != "nt":
+        # 부모가 끝나면 자손은 init 으로 넘어가 ppid 체인이 끊긴다 — 도는 동안 모아 둔 목록을 함께 쓴다.
+        for pid in set(_descendants(proc.pid)) | set(seen):
+            for kill in (lambda: os.killpg(os.getpgid(pid), signal.SIGKILL),
+                         lambda: os.kill(pid, signal.SIGKILL)):
+                try:
+                    kill()
+                except Exception:
+                    pass
     try:
         if os.name == "nt":
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
@@ -389,14 +556,24 @@ def run_process(cmd, prompt, timeout, env=None, cwd=None):
     for t in threads:
         t.start()
     timed_out = False
+    seen = set()
     try:
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
+        deadline = time.monotonic() + timeout
+        while True:
+            # 자손을 도는 동안 표본으로 모은다. 끝나고 나서 찾으면, 새 세션으로 띄워져 부모가 바뀐
+            # 자식(codex 의 셸 명령이 그렇다)은 이미 ppid 체인에서 사라진 뒤다.
+            if os.name != "nt":
+                seen.update(_descendants(proc.pid))
+            try:
+                proc.wait(timeout=min(2, max(0.05, deadline - time.monotonic())))
+                break
+            except subprocess.TimeoutExpired:
+                if time.monotonic() >= deadline:
+                    timed_out = True
+                    break
     finally:
         # 성공·timeout·예외(KeyboardInterrupt 포함) 어느 경로든 peer 가 남긴 자식까지 끝낸다.
-        _kill_tree(proc)
+        _kill_tree(proc, seen)
         for t in threads:
             t.join(timeout=10)
 
@@ -410,7 +587,31 @@ def _flags_rejected(peer, stderr):
     s = stderr or ""
     if peer == "claude":
         return "unknown option" in s or "error: option" in s
-    return "unexpected argument" in s or "Unknown feature flag" in s
+    return ("unexpected argument" in s or "Unknown feature flag" in s
+            or "unknown configuration field" in s)
+
+
+def _account_codex_sessions(run, thread_id, started_at, collab_calls=0):
+    """세션 파일로 사용량·하위 에이전트를 보정한다. 끊긴 실행은 turn.completed 가 없어 부모 rollout 의
+    호출별 기록을 쓰고, 하위 에이전트의 사용량은 부모 usage 에 없으므로(codex 확인) 더한다."""
+    parent, family = codex_session_family(thread_id, started_at)
+    if run.usage is None and parent:
+        measured = _rollout_usage(parent)
+        if measured:
+            run.usage = dict(measured, measured="partial")
+    if collab_calls and not family and run.usage is not None:
+        # 하위 에이전트를 부른 흔적은 있는데 그 세션 기록을 못 찾았다 — 자식 사용량이 빠진 값이다.
+        run.usage = dict(run.usage, measured="partial")
+        run.warnings.append("subagent_usage_unmeasured")
+    if family:
+        run.warnings.append(f"subagent_spawned:{len(family)}")
+        for path in family:
+            child = _rollout_usage(path)
+            if child and run.usage is not None:
+                merged = _add_usage(run.usage, child)
+                if run.usage.get("measured"):
+                    merged["measured"] = run.usage["measured"]
+                run.usage = merged
 
 
 def run_peer(peer, prompt, timeout, effort=None, model=None, root=None, env=None):
@@ -425,6 +626,7 @@ def run_peer(peer, prompt, timeout, effort=None, model=None, root=None, env=None
     if controlled:
         prompt = REVIEW_CONTRACT.format(root=root or os.getcwd(), max_lookups=12) + prompt
     workdir = tempfile.mkdtemp(prefix="sage-peer-") if controlled else None
+    started_at = time.time()
     try:
         code, out, err, timed_out, wall = run_process(cmd, prompt, timeout, env=env, cwd=workdir)
     except Exception as e:
@@ -434,7 +636,12 @@ def run_peer(peer, prompt, timeout, effort=None, model=None, root=None, env=None
         if workdir:
             shutil.rmtree(workdir, ignore_errors=True)
     run = PeerRun(peer, controls="full" if controlled else "none", wall_s=wall)
-    if peer == "claude" and controlled:
+    if peer == "codex" and controlled:
+        c = summarize_codex_stream(out)
+        run.review, run.partial, run.usage = c["review"], c["partial"], c["usage"]
+        run.tool_calls, run.warnings, run.rate_limited = c["tool_calls"], c["warnings"], c["rate_limited"]
+        _account_codex_sessions(run, c["thread_id"], started_at, c["collab_calls"])
+    elif peer == "claude" and controlled:
         s = summarize_claude_stream(out)
         run.review, run.partial, run.usage = s["review"], s["partial"], s["usage"]
         run.tool_calls, run.violations, run.rate_limited = s["tool_calls"], s["violations"], s["rate_limited"]
