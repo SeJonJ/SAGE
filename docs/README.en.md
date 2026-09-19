@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:80a90c2fee618519a93904fbc297435cbd5b3205f96ec6ac058dcd382b3f4c94 -->
+<!-- sage-doc-source: README.md sha256:8953a59aed2f819a7ec92d8083ebc6579884671b6b02ba68533e38d723a7b1c3 -->
 # SAGE Documentation
 
 [한국어](README.md) | [Project README](../README.en.md)
@@ -10,6 +10,7 @@ Start with the document that matches your task.
 | First-time user | [English quickstart](quickstart.en.md) |
 | Developer using the CLI daily | [CLI reference](cli-reference.en.md) |
 | Maintainer configuring project policy | [Profile reference](profile-reference.en.md) |
+| Developer who wants to understand Phase 05 review modes and cost | [Cross review](cross-review.en.md) |
 | User resolving installation or runtime errors | [Troubleshooting](troubleshooting.en.md) |
 | Contributor changing SAGE internals | [Architecture](ARCHITECTURE.en.md) |
 | Developer locating generated artifacts and deciding what to commit | [Artifacts](ARTIFACTS.en.md) |

@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:7801de158651abf4bc285b87946d7de8fb65c5b4a6223759a162d1ed4271a8fa -->
+<!-- sage-doc-source: cli-reference.md sha256:66dce0e1c44f7889d9caed0e4193dc70ace858bc7b1b67648366cf0c3b8fac79 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for
@@ -326,14 +326,17 @@ switching. Close normally with `fast-cycle close` before `cycle clear`; abandon 
 | Command | Purpose |
 |---|---|
 | `sage review` | Start a fresh same-runtime headless reviewer |
-| `sage cross-check --packet-file FILE` | Start a cross-model reviewer in the opposite runtime |
+| `sage cross-check --packet-file FILE [--on-peer-failure block\|same-runtime]` | Start a cross-model reviewer in the opposite runtime. `same-runtime` replaces that round once with a same-runtime review when the reviewer fails mid-run (recorded as degraded) |
 | `sage review-loop open [--cycle-stem S --lenses CSV]` | Start a review loop; Fast binds exact stem and lenses |
-| `sage review-loop round [... --lens-receipts CSV] [--survived-by-severity P0=N,P1=N,P2=N,P3=N]` | Record findings, rebuttals, fixes, Fast lens receipts, and the per-severity residual receipt |
+| `sage review-loop round [... --lens-receipts CSV] [--survived-by-severity P0=N,P1=N,P2=N,P3=N] [--peer-tokens "<REVIEWER_TOKENS value>"]` | Record findings, rebuttals, fixes, Fast lens receipts, the per-severity residual receipt, and the reviewer's measured usage |
 | `sage review-loop next` | Produce a deterministic continue-or-stop recommendation |
 | `sage review-loop close` | Close the loop with `--result APPROVED|BLOCKED` |
 | `sage review-loop close --reason USER_AUTHORIZED_EARLY --authorization-reason R --confirmed-by W --confirm USER_AUTHORIZED_EARLY` | Close before convergence on an explicit user authorization (reduced-assurance markers required) |
 | `sage retro --feature STEM` | Generate a completed-cycle retrospective note and distillation input |
 | `sage retro --check NOTE` | Verify that a retrospective note is not an untouched template |
+
+The reviewer's `REVIEWER_*` output lines, handling per failure reason, and how to record usage are
+in [Cross review](cross-review.en.md).
 
 Early completion requires `pdca.review_loop.early_completion.enabled: true` and is meaningful only
 while `sage review-loop next` still recommends `CONTINUE`. It is not an iteration waiver but an

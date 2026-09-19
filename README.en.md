@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:451d103382ea74b735f7f8eb2dd806fb6be6e842572a37c921ca2e0c9674e974 -->
+<!-- sage-doc-source: README.md sha256:aa233b1dae5b4b2a4275da285ec5e112371bbf95b4acc19020184aee3e21553f -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)
@@ -173,7 +173,7 @@ fail-open/fail-closed policy.
 
 ## Development workflow
 
-- **PDCA** binds planning → implementation → independent review → completion reporting.
+- **PDCA** binds planning → implementation → independent review ([single and cross review](docs/cross-review.en.md)) → completion reporting.
 - **completion criteria (Done Criteria)** track evidence and revalidate affected phases on change.
 - **Profile** separates team policy from machine-local settings.
 - **Fast Cycle** reduces document count only when enabled and records the transition in the audit.

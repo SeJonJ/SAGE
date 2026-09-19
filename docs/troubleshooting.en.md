@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:253f926d2b3e94d9998b22b23f0ae42ac3be6f239dd3b4ffe08511e986cef0b0 -->
+<!-- sage-doc-source: troubleshooting.md sha256:00ce924787500e458064eea84fffd9cf982a79ed0b840d9708f06d30056f50b2 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -567,8 +567,20 @@ when the process exits; there is no lock file for you to clean up.
 
 ## Cross-model review is BLOCKED
 
-Use `sage doctor` to verify the opposite runtime CLI and model configuration. Under a required
-policy, inability to reach the peer runtime is not downgraded to same-runtime success.
+`REVIEWER_BLOCK_REASON` in the `sage cross-check` output names the cause.
+
+| Reason | What to do |
+|---|---|
+| `cli_missing` | Use `sage doctor` to confirm the opposite runtime CLI is installed |
+| `flags_rejected` | The reviewer CLI does not know SAGE's control flags. Update the CLI (claude 2.1.275, codex 0.155.1 or later) |
+| `startup_failed` | The reviewer could not start. Check login and authentication in the opposite runtime |
+| `usage_limit` | The opposite runtime's usage limit is exhausted. Rerun after the reset, or replace this round with `--on-peer-failure same-runtime` |
+| `timeout` | The time limit was exceeded; findings emitted so far remain as `PARTIAL`. Shrink the packet (propositions and context map) or raise `--timeout` |
+| `exit_nonzero` | The reviewer exited abnormally mid-review. Check the stderr summary and rerun |
+| `parse_failed` | The reviewer answered but the result could not be read. Do not cover it with a fallback; check the output format |
+
+Under a required policy, inability to reach the peer runtime is not downgraded to same-runtime
+success, and no fallback runs. Behavior per reason is in [Cross review](cross-review.en.md).
 
 ## Schema validation reports WARN
 

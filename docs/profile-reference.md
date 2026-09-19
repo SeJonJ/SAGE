@@ -76,8 +76,11 @@ active host를 제외한 runtime을 선택합니다. peer CLI에 도달하지 �
 
 `cross_model.policy`는 `required | recommended | off`입니다. `required`는 로컬 profile에서
 `cross_model.enabled: false`로 완화할 수 없습니다(local이 공유 정책을 완화 불가). `on_unavailable`은
-peer CLI에 도달하지 못했을 때의 처리이며 `block`(기본, required 정책에서 사실상 강제)이거나
-`clean_context_same_runtime`(같은 runtime의 새 세션으로 대체)입니다.
+peer CLI에 도달하지 못했을 때의 처리이며 `block`만 허용됩니다. 커밋되는 정책 파일에 상시 완화를 두지
+않기 위해서입니다. 리뷰어가 실행 중 실패한 라운드를 같은 runtime 리뷰로 대신하려면, 그 라운드에서
+`sage cross-check --on-peer-failure same-runtime`을 씁니다(강등으로 기록). `effort`는 peer CLI에 넘길
+추론 강도이고 미설정이면 `high`입니다. 리뷰어가 어떻게 실행되고 측정되는지는 [교차 리뷰](cross-review.md)에
+있습니다.
 
 ### Risk
 

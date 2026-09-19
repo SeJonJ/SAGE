@@ -297,14 +297,16 @@ Fast 명령은 `pdca.fast_cycle.enabled: true`인 L2/L3에만 열립니다. 실�
 | 명령 | 역할 |
 |---|---|
 | `sage review` | 새 same-runtime headless reviewer 실행 |
-| `sage cross-check --packet-file FILE` | 반대 runtime의 cross-model reviewer 실행 |
+| `sage cross-check --packet-file FILE [--on-peer-failure block\|same-runtime]` | 반대 runtime의 cross-model reviewer 실행. `same-runtime`은 리뷰어가 실행 중 실패했을 때 그 라운드만 같은 runtime 리뷰로 1회 대신합니다(강등으로 기록) |
 | `sage review-loop open [--cycle-stem S --lenses CSV]` | review loop 시작; Fast는 stem·렌즈를 exact 결속 |
-| `sage review-loop round [... --lens-receipts CSV] [--survived-by-severity P0=N,P1=N,P2=N,P3=N]` | finding, 반박, 수정 결과와 Fast 렌즈 수행 영수증, 심각도별 잔여 영수증 기록 |
+| `sage review-loop round [... --lens-receipts CSV] [--survived-by-severity P0=N,P1=N,P2=N,P3=N] [--peer-tokens "<REVIEWER_TOKENS 값>"]` | finding, 반박, 수정 결과와 Fast 렌즈 수행 영수증, 심각도별 잔여 영수증, 리뷰어 실측 사용량 기록 |
 | `sage review-loop next` | 결정론적 계속/종료 권고 |
 | `sage review-loop close` | `--result APPROVED|BLOCKED`로 loop 종료 |
 | `sage review-loop close --reason USER_AUTHORIZED_EARLY --authorization-reason R --confirmed-by W --confirm USER_AUTHORIZED_EARLY` | 사용자 승인으로 수렴 전 종료 (보증 저하 표기 필수) |
 | `sage retro --feature STEM` | 완료 사이클 회고 노트와 distillation 입력 생성 |
 | `sage retro --check NOTE` | 회고 노트가 빈 템플릿이 아닌지 검사 |
+
+리뷰어 출력의 `REVIEWER_*` 줄, 실패 사유별 처리, 사용량 기록 방법은 [교차 리뷰](cross-review.md)에 있습니다.
 
 조기 종료는 `pdca.review_loop.early_completion.enabled: true`가 필요하고, `sage review-loop next`가
 아직 `CONTINUE`를 권고하는 상태에서만 의미가 있습니다. 반복 횟수 면제가 아니라 **잔여 비차단 위험을

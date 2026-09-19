@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:342f7a01d84ac500cb06f4f5d891ac6abadb9921948c07072fd5fbd2c3acd6a8 -->
+<!-- sage-doc-source: profile-reference.md sha256:ab0fad89b2d2f2280f9ebf984c86259387bf891d377d9f1df3676c6a7ba635cc -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -80,9 +80,11 @@ required review policy produces BLOCKED.
 
 `cross_model.policy` is `required | recommended | off`. `required` cannot be weakened by a local
 `cross_model.enabled: false` (a local profile can never weaken shared policy). `on_unavailable`
-governs what happens when the peer CLI cannot be reached: `block` (default, effectively mandatory
-under a `required` policy) or `clean_context_same_runtime` (fall back to a fresh session on the same
-runtime).
+governs what happens when the peer CLI cannot be reached, and only `block` is allowed, so that a
+committed policy file never declares a standing relaxation. To replace a round whose reviewer failed
+mid-run with a same-runtime review, use `sage cross-check --on-peer-failure same-runtime` for that
+round (recorded as degraded). `effort` is the reasoning effort passed to the peer CLI and defaults to
+`high`. How the reviewer runs and is measured is in [Cross review](cross-review.en.md).
 
 ### Risk
 
