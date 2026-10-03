@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cross-review.md sha256:e1c3c6d5cec42e98eafda01fdf6bdd31882be35e507e00955b9b218873d6af36 -->
+<!-- sage-doc-source: cross-review.md sha256:2c927d77910d4a8431a73e16ad7064e57c2f78ddd7e3d3c64cdce24649b0f00a -->
 # Phase 05 Review: Single Review and Cross Review
 
 [한국어](cross-review.md) | [Documentation index](README.en.md)
@@ -45,6 +45,11 @@ flowchart LR
 - **Termination** — `sage review-loop next` recommends continue or stop deterministically from the
   recorded rounds and the settings (iteration cap, token budget, convergence). When the cycle's
   rounds reach `max_cycle_rounds` it asks the user (`ASK`), and no further round opens until then.
+- **Blocking convergence (opt-in)** — with `converge_on: blocking`, once P0, P1 and undecided critical
+  P2 are zero the loop records the non-blocking residuals and approves (`CONVERGED_RESIDUAL`, reduced
+  assurance `REDUCED_BY_POLICY`). On a critical P2 the loop stops and the developer chooses fix or
+  accept for each finding. Non-blocking findings get local fixes only, and a defect that predates the
+  change goes to the ledger as a known pre-existing defect unless this change touched it.
 - **Round record** — each round leaves a sidecar (`round --findings-file`) with the verbatim
   findings, sources, refutation reasons and dispositions, and the packet's "Decisions and
   residuals" section is generated from the ledger by `sage review-loop ledger render`, never retyped.

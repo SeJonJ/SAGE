@@ -133,6 +133,7 @@ pdca:
     dry_rounds: 1
     budget_tokens: { L2: 150000, L3: 400000 }
     severity_block: ["P0", "P1"]
+    converge_on: all
     termination_enforce: advisory
     report_gate_enforce: advisory
     early_completion:
@@ -145,6 +146,13 @@ Phase 05의 find→refute→triage→rework 적대적 반복 루프입니다. �
 `dry_rounds`가 "신규 발견 0"이 몇 라운드 연속이면 수렴으로 볼지입니다.
 `max_cycle_rounds`는 같은 사이클의 모든 run 을 합친 라운드 상한입니다. 닿으면 `sage review-loop next`가
 `ASK`로 사용자에게 계속·잔여 승인·멈춤을 묻습니다. 키가 없어도 기본값(L3 5 · L2 3)이 적용됩니다.
+`converge_on`은 수렴 기준입니다. 기본 `all`은 생존 지적이 0 이어야 수렴합니다. `blocking`(opt-in)은
+차단 지적 — P0·P1(항상)과 그 밖의 `severity_block` 심각도, 판단 안 된 크리티컬 P2 — 이 0 이면 비차단 잔여를 기록하고
+`CONVERGED_RESIDUAL`로 승인하며, 그 승인은 보증 저하 `REDUCED_BY_POLICY`로 남습니다. 크리티컬 P2 는
+자동으로 고치지 않고 지적마다 개발자에게 묻습니다(`decide --finding`). 분류는 `critical_p2`(소문자 id
+목록)로 바꿀 수 있고, 없으면 `unauthenticated_crash`·`exposure_or_traversal`·`wrong_content_served`·
+`deploy_breakage`·`security_setting_regression`·`silent_data_corruption` 여섯 개입니다. 두 키는 run 을 열 때의
+값이 그 run 끝까지 적용됩니다.
 `termination_enforce`/`report_gate_enforce`는 `off | advisory | enforce`이며, `enforce`는 06 작성을
 실제로 차단합니다. 표준 사이클의 정식 절차이고, 명시적으로 허용된 L2/L3에서만 쓰는 축약판은 아래
 Fast Cycle입니다.

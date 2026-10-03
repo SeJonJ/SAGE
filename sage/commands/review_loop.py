@@ -20,8 +20,12 @@ from sage.profile_layers import load_profile_layers
 from sage.i18n import language_of, render_issue, tr
 
 # result↔reason 의미 짝(설계 §3) — APPROVED 는 수렴/dry 로만, BLOCKED 는 예산초과/아키텍처로만.
-_APPROVED_REASONS = {"CONVERGED", "DRY", "USER_AUTHORIZED_EARLY"}
+_RESIDUAL_REASON = "CONVERGED_RESIDUAL"
+_APPROVED_REASONS = {"CONVERGED", "DRY", "USER_AUTHORIZED_EARLY", _RESIDUAL_REASON}
 _EARLY_REASON = "USER_AUTHORIZED_EARLY"
+_CRITICAL_REASON = "CRITICAL_P2"
+# 크리티컬 P2 결정 대기 중에도 닫을 수 있는 사유. 판정 순위가 크리티컬 질문보다 앞선다.
+_CLOSE_DURING_CRITICAL = {"BLOCKED_ARCH", "BUDGET_TOK"}
 _EARLY_AUTHORIZATION_ARGS = ("authorization_reason", "confirmed_by", "confirm")
 # 상한 미설정을 화면과 감사가 같은 단어로 말한다. 예전에는 화면이 `unset`, 감사가 `-1` 이라
 # 같은 사실이 두 곳에서 다른 모양이었고, 대시보드는 그 `-1` 을 `2/-1 rounds` 로 냈다.
@@ -150,10 +154,19 @@ def register(sub, context):
 
     pd = sp.add_parser("decide", help=tr(context, "cli.review_loop.decide"))
     pd.add_argument("--run-id", required=True)
-    pd.add_argument("--cycle", required=True, choices=["continue"],
+    # 두 형태 중 하나다: 사이클 상한의 `--cycle continue --extend N`, 크리티컬 P2 의
+    # `--finding <id> --claim <hash> --fix|--accept`. 섞였는지는 `_run_decide` 가 본다.
+    pd.add_argument("--cycle", default=None, choices=["continue"],
                     help=tr(context, "cli.review_loop.decide_cycle"))
-    pd.add_argument("--extend", required=True, type=_nonneg,
+    pd.add_argument("--extend", default=None, type=_nonneg,
                     help=tr(context, "cli.review_loop.decide_extend"))
+    pd.add_argument("--finding", default=None, help=tr(context, "cli.review_loop.decide_finding"))
+    pd.add_argument("--claim", default=None, help=tr(context, "cli.review_loop.decide_claim"))
+    choice = pd.add_mutually_exclusive_group()
+    choice.add_argument("--fix", action="store_const", const="fix", dest="critical_choice",
+                        help=tr(context, "cli.review_loop.decide_fix"))
+    choice.add_argument("--accept", action="store_const", const="accept", dest="critical_choice",
+                        help=tr(context, "cli.review_loop.decide_accept"))
     pd.add_argument("--reason", required=True, help=tr(context, "cli.review_loop.decide_reason"))
     pd.add_argument("--decided-by", required=True,
                     help=tr(context, "cli.review_loop.decide_decided_by"))
@@ -306,12 +319,14 @@ def _run_open(args):
     stem = _open_cycle_stem(root, args.cycle_stem, language_of(args))
     if stem is None:
         return 2
+    fast_minimum = _fast_minimum_rounds(root, stem)
     rid = _write_audit(
         la,
         lambda: la.open_loop(root, args.risk, cfg=_cfg_snapshot(root, profile),
                              run_id=args.run_id,
                              reviewer_requested=args.reviewer_requested,
-                             cycle_stem=stem, lenses=lenses),
+                             cycle_stem=stem, lenses=lenses,
+                             fast_minimum_rounds=fast_minimum),
         language=language_of(args),
     )
     if rid is None:
@@ -319,6 +334,34 @@ def _run_open(args):
     print(rid)   # stdout = run_id 만(스킬이 캡처해 후속 round/close 에 전달)
     print(f"[sage review-loop] open run_id={rid} risk={args.risk} → {la.audit_path(root)}", file=sys.stderr)
     return 0
+
+
+def _fast_cycle_audit():
+    rt = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks", "runtime")
+    if rt not in sys.path:
+        sys.path.insert(0, rt)
+    import fast_cycle_audit as fca
+    return fca
+
+
+def _fast_minimum_rounds(root, stem):
+    """같은 사이클의 살아 있는 Fast run 이 정확히 하나면 그 최소 라운드. 아니면 None.
+
+    Loop 가 이 값보다 먼저 수렴해 승인으로 닫히면 `sage fast-cycle review` 가 거부하는데, 닫힌
+    run 에는 라운드를 더 붙일 수 없다. open 시점에 적어 두면 `next` 가 그 전까지 계속을 권한다.
+    Fast 를 쓰지 않는 프로젝트가 대부분이라 읽기 실패는 「없음」으로 둔다.
+    """
+    try:
+        runs = _fast_cycle_audit().audit_summary(root).get("runs") or {}
+    except Exception:  # noqa: BLE001 - Fast 미사용·감사 없음은 정상
+        return None
+    live = [state for state in runs.values()
+            if state.get("cycle_stem") == stem and not state.get("terminal")
+            and state.get("clean") is not False]
+    if len(live) != 1:
+        return None
+    value = live[0].get("minimum_rounds")
+    return value if type(value) is int and value > 0 else None
 
 
 def _run_round(args):
@@ -331,11 +374,18 @@ def _run_round(args):
     if _is_closed(la, root, args.run_id):
         print(tr(language_of(args), "cli.review_loop.msg05", args_run_id=args.run_id), file=sys.stderr)
         return 2
-    state = la.run_cycle_state(la.read_records(root), args.run_id)
+    records = la.read_records(root)
+    state = la.run_cycle_state(records, args.run_id)
     if state is not None and state["reached"]:
         print(tr(language_of(args), "cli.review_loop.round_cycle_cap", stem=state["stem"],
                  rounds=state["rounds"], cap=state["cap"], run_id=args.run_id), file=sys.stderr)
         return 2
+    pending = la.pending_critical(records, args.run_id)
+    if pending:
+        print(tr(language_of(args), "cli.review_loop.round_critical_pending", run_id=args.run_id,
+                 findings=", ".join(pending)), file=sys.stderr)
+        return 2
+    policy = la.run_policy(records, args.run_id)
     sidecar_doc = None
     if args.findings_file is not None:
         rounds_mod = _load_runtime("review_rounds")
@@ -350,6 +400,13 @@ def _run_round(args):
         except rounds_mod.SidecarError as exc:
             print(f"[sage review-loop] --findings-file invalid: {exc}", file=sys.stderr)
             return 2
+        if policy["converge_on"] == "blocking":
+            problems = rounds_mod.policy_issues(sidecar_doc, policy)
+            if problems:
+                more = "" if len(problems) <= 5 else f"; ... and {len(problems) - 5} more"
+                print(tr(language_of(args), "cli.review_loop.round_policy_invalid",
+                         issues="; ".join(problems[:5]) + more), file=sys.stderr)
+                return 2
         derived = rounds_mod.derive(sidecar_doc)
         mismatched = [f"--{name.replace('_', '-')}={getattr(args, name)} != {derived[name]}"
                       for name in ("found", "survived", "accepted", "arch")
@@ -699,6 +756,19 @@ def _termination_discrepancies(la, root, run_id, result, reason, iterations, cfg
     # 통째로 죽고 advisory 에서는 매번 거짓 경고가 찍힌다.
     if reason == la.EARLY_CLOSE_REASON:
         return out
+    # 잔여 승인도 생존을 안고 닫는 것이 그 기능이다. 대신 그 run 이 `blocking` 으로 열렸고 판정이
+    # 정말 그 사유인지를 본다 — 아니면 일반 승인이 잔여를 숨긴 것이다.
+    if reason == _RESIDUAL_REASON:
+        records = la.read_records(root)
+        if la.run_policy(records, run_id)["converge_on"] != "blocking":
+            out.append(("mismatch", Diagnostic("review_loop.term_residual_not_blocking")))
+        else:
+            verdict = la.loop_verdict(records, run_id, cfg, risk)
+            if (verdict["action"], verdict["reason"]) != ("STOP", _RESIDUAL_REASON):
+                out.append(("mismatch", Diagnostic("review_loop.term_residual_verdict",
+                                                   action=verdict["action"],
+                                                   reason=verdict["reason"])))
+        return out
     # APPROVED/CONVERGED 는 미해결(survived>0)과 공존 불가 (cfg 불요)
     if result == "APPROVED" and last_survived > 0:
         out.append(("mismatch", Diagnostic("review_loop.term_approved_with_survivors",
@@ -919,6 +989,17 @@ def _early_close_blockers(la, root, args, profile, cfg, risk, language):
         issues = la.severity_receipt_issues(receipt, rounds[-1].get("survived", 0))
         if issues:
             blockers.append("last round severity receipt invalid: " + "; ".join(issues))
+        elif la.run_policy(la.read_records(root), args.run_id)["converge_on"] == "blocking":
+            # 차단 기준 수렴 run 은 통일 수렴식으로 본다 — 결정 없는 크리티컬·「수정」으로 정한
+            # 크리티컬도 차단이고, 「수용」으로 정한 크리티컬은 차단이 아니다.
+            verdict = la.loop_verdict(la.read_records(root), args.run_id, cfg, risk)
+            state = verdict.get("convergence") or {}
+            if not state.get("receipt"):
+                blockers.append("converge_on: blocking needs a sidecar receipt on the last round "
+                                "to show the blocking findings are zero")
+            elif state.get("blocking_open"):
+                blockers.append(f"blocking findings remain unresolved: "
+                                f"blocking_open={state['blocking_open']}")
         else:
             blocking = [s for s in (cfg.get("severity_block") or ["P0", "P1"])
                         if isinstance(s, str)]
@@ -944,6 +1025,9 @@ def _early_close_blockers(la, root, args, profile, cfg, risk, language):
         if action == "STOP" and result == "APPROVED":
             # 정상 승인이 가능한 상태에서 조기 종료를 쓰면 정상 승인이 보증 저하로 잘못 기록된다.
             blockers.append(f"normal close is available ({result}/{reason}); use it instead")
+        elif action == "ASK" and reason == _CRITICAL_REASON:
+            blockers.append("critical P2 findings await the developer's decision; record each "
+                            "with `sage review-loop decide --finding <id> --claim <hash> --fix|--accept` first")
         else:
             # 예산 초과·아키텍처 에스컬레이션은 사용자 확인으로 덮을 수 없는 BLOCKED 다.
             blockers.append(f"{action} {result}/{reason} cannot be closed by user authorization")
@@ -970,10 +1054,7 @@ def _fast_run_id(la, root, loop_run_id):
     기록이 틀린 run 을 가리키고, 그건 결속이 없는 것보다 나쁘다.
     """
     try:
-        rt = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks", "runtime")
-        if rt not in sys.path:
-            sys.path.insert(0, rt)
-        import fast_cycle_audit as fca
+        fca = _fast_cycle_audit()
     except Exception:  # noqa: BLE001 - Fast 미사용 프로젝트에서 결속 정보가 없는 것은 정상
         return None
     open_record = _open_record(la, root, loop_run_id)
@@ -1020,6 +1101,74 @@ def _residual_lines(la, root, last_round):
     return lines or ["(no residual finding in the last round sidecar)"]
 
 
+def _residual_close(la, root, args, profile, cfg, risk):
+    """`CONVERGED_RESIDUAL` close 의 차단 사유와 기록할 잔여 묶음.
+
+    승인 자격 검사(감사 무결성·Done Criteria·acceptance)는 조기 종료와 같은 기준이다. 잔여를 안고
+    닫는 두 경로 중 하나만 느슨하면 그쪽이 우회로가 된다.
+    """
+    blockers = []
+    records = la.read_records(root)
+    if la.run_policy(records, args.run_id)["converge_on"] != "blocking":
+        blockers.append("this run was not opened with converge_on: blocking")
+    rounds = la.rounds_of(root, args.run_id)
+    if args.iterations != len(rounds):
+        blockers.append(f"--iterations must equal the recorded rounds ({len(rounds)})")
+    if la.integrity_issues(root):
+        blockers.append("loop audit integrity failed")
+    verdict = la.loop_verdict(records, args.run_id, cfg, risk)
+    if (verdict["action"], verdict["reason"]) != ("STOP", _RESIDUAL_REASON):
+        blockers.append(f"next is {verdict['action']} {verdict['reason']}, not STOP "
+                        f"{_RESIDUAL_REASON}")
+    try:
+        _hash, done_issue, done_mode = _approved_phase00_hash(la, root, profile, args.run_id)
+    except (OSError, UnicodeError, ValueError) as exc:
+        done_issue, done_mode = f"Done Criteria check failed: {type(exc).__name__}: {exc}", "enforce"
+    if done_issue and done_mode in ("advisory", "enforce"):
+        blockers.append(f"Phase 00 Done Criteria must be resolved: {done_issue}")
+    blockers.extend(_acceptance_blockers(la, root, args, profile, risk))
+    if blockers:
+        return blockers, None
+    last = rounds[-1]
+    state = verdict["convergence"]
+    max_iterations = ((cfg.get("max_iterations") or {}).get(risk)
+                      if isinstance(cfg.get("max_iterations"), dict) else None)
+    sidecar = last.get("sidecar") if isinstance(last.get("sidecar"), dict) else {}
+    return [], {
+        "completed_rounds": len(rounds),
+        "configured_max_iterations": (max_iterations if max_iterations is not None
+                                      else la.UNBOUNDED_ITERATIONS),
+        "survived_by_severity": last.get("survived_by_severity"),
+        "actual_risk": risk or "unknown",
+        "mode": _cycle_mode(la, root, args.run_id),
+        "residual": {"blocking_open": state["blocking_open"],
+                     "accepted_residual": state["accepted_residual"],
+                     "nonblocking": state["nonblocking"]},
+        "accepted_decisions": la.accepted_decision_refs(verdict["critical"]),
+        "sidecar_sha256": sidecar.get("sha256"),
+        "lens_receipts": last.get("lens_receipts") or [],
+        "fast_run_id": _fast_run_id(la, root, args.run_id),
+    }
+
+
+def _print_residual_disclosure(residual, residual_lines=()):
+    """잔여 승인이 무엇을 남기는지 화면에 먼저 드러낸다."""
+    receipt = residual["survived_by_severity"]
+    counts = ", ".join(f"{key}={int(receipt.get(key, 0))}" for key in ("P0", "P1", "P2", "P3"))
+    state = residual["residual"]
+    print("", file=sys.stderr)
+    print("⚠️  [SAGE REVIEW RESIDUAL APPROVAL — converge_on: blocking]", file=sys.stderr)
+    print(f"    completed reviews: {residual['completed_rounds']}", file=sys.stderr)
+    print(f"    residual findings: {counts} (blocking_open={state['blocking_open']}, "
+          f"accepted critical={state['accepted_residual']}, nonblocking={state['nonblocking']})",
+          file=sys.stderr)
+    for line in residual_lines:
+        print(f"      - {line}", file=sys.stderr)
+    print("    Phase 05 and 06 record REDUCED_BY_POLICY with the four markers — assurance is "
+          "lower than a standard close.", file=sys.stderr)
+    print("", file=sys.stderr)
+
+
 def _print_early_disclosure(authorization, max_iterations, residual_lines=()):
     """무엇을 인수하는지 화면에 먼저 드러낸다 — 조기 종료는 잔여 위험의 명시적 인수다."""
     receipt = authorization["survived_by_severity"]
@@ -1060,6 +1209,22 @@ def _run_close(args):
         return 2
     if _is_closed(la, root, args.run_id):
         print(tr(language_of(args), "cli.review_loop.msg12", args_run_id=args.run_id), file=sys.stderr)
+        return 2
+    # 크리티컬 P2 결정 전에는 아키텍처·예산 STOP 말고는 닫지 않는다(잠금 안에서도 다시 본다).
+    records = la.read_records(root)
+    pending = la.pending_critical(records, args.run_id)
+    if pending and args.reason not in _CLOSE_DURING_CRITICAL:
+        print(tr(language_of(args), "cli.review_loop.close_critical_pending", run_id=args.run_id,
+                 findings=", ".join(pending)), file=sys.stderr)
+        return 2
+    # `blocking` run 에서 생존이 남은 승인은 잔여 승인(보증 저하)뿐이다. 종료 검산 mode 와 무관하게
+    # 막는다(잠금 안에서도 다시 본다).
+    run_rounds = [r for r in records if r.get("event") == "round" and r.get("run_id") == args.run_id]
+    if (args.result == "APPROVED" and args.reason in ("CONVERGED", "DRY")
+            and la.run_policy(records, args.run_id)["converge_on"] == "blocking"
+            and run_rounds and int(run_rounds[-1].get("survived", 0) or 0) > 0):
+        print(tr(language_of(args), "cli.review_loop.close_blocking_survivors",
+                 run_id=args.run_id, reason=args.reason), file=sys.stderr)
         return 2
 
     profile = _validated_profile(root, language_of(args))
@@ -1141,13 +1306,28 @@ def _run_close(args):
         _print_early_disclosure(authorization, max_iterations,
                                 _residual_lines(la, root, last))
 
+    residual = None
+    if args.reason == _RESIDUAL_REASON:
+        blockers, residual = _residual_close(la, root, args, profile, cfg, risk)
+        if blockers:
+            for item in blockers:
+                print(f"[sage review-loop] residual approval refused: {item}", file=sys.stderr)
+            return 2
+        phase00_identity, residual["done_criteria_revision"] = _phase00_identity(
+            la, root, profile, args.run_id)
+        if phase00_hash is None:
+            phase00_hash = phase00_identity
+        _print_residual_disclosure(residual, _residual_lines(la, root,
+                                                             la.rounds_of(root, args.run_id)[-1]))
+
     written = _write_audit(
         la,
         lambda: la.close_loop(root, args.run_id, args.result, args.reason,
                               args.iterations,
                               reviewer_actual=args.reviewer_actual,
                               phase00_hash=phase00_hash,
-                              authorization=authorization),
+                              authorization=authorization,
+                              residual=residual, cfg=cfg, risk=risk),
         language=language_of(args),
     )
     if written is None:
@@ -1205,10 +1385,18 @@ def _run_show(args):
             elif r.get("sidecar") == "absent":
                 extra += " sidecar=absent"
             if isinstance(r.get("receipt"), dict):
-                extra += " receipt=" + ",".join(f"{k}={v}" for k, v in sorted(r["receipt"].items()))
+                extra += " receipt=" + ",".join(f"{k}={v}" for k, v in sorted(r["receipt"].items())
+                                                if k != "critical_findings")
+                listed = r["receipt"].get("critical_findings")
+                if isinstance(listed, list) and listed:
+                    extra += " critical=" + ",".join(str((item or {}).get("id")) for item in listed)
             print(f"      [{r.get('iteration')}] found={r.get('found')} survived={r.get('survived')} "
                   f"accepted={r.get('accepted')} arch={r.get('arch')} tokens={r.get('tokens')}{extra}")
         for d in la.decisions_of(root, rid):
+            if d.get("kind") == la.DECISION_CRITICAL_P2:
+                print(f"      decision {d.get('kind')}/{d.get('choice')} {d.get('finding_id')} "
+                      f"(round {d.get('iteration')}) by {d.get('decided_by')}")
+                continue
             print(f"      decision {d.get('kind')}/{d.get('choice')} +{d.get('extend')} "
                   f"({d.get('cap_before')}→{d.get('cap_after')}) by {d.get('decided_by')}")
     _print_cycle_summary(la, root, target_runs, language_of(args))
@@ -1251,6 +1439,16 @@ def _next_recommendation(la, root, run_id, cfg, risk):
     elif basis == "over_budget":
         why = Diagnostic("review_loop.next_over_budget", tokens=verdict["tokens"], risk=risk,
                          budget=verdict["budget"])
+    elif basis == "critical_pending":
+        pending = (verdict["critical"] or {}).get("pending") or []
+        why = Diagnostic("review_loop.next_critical_pending", count=len(pending),
+                         findings=", ".join(pending))
+    elif basis == "max_iter_converged" and verdict["reason"] == _RESIDUAL_REASON:
+        state = verdict["convergence"] or {}
+        why = Diagnostic("review_loop.next_max_iter_residual", iterations=verdict["iterations"],
+                         risk=risk, max_iterations=verdict["max_iterations"],
+                         accepted=state.get("accepted_residual"),
+                         nonblocking=state.get("nonblocking"))
     elif basis == "max_iter_converged":
         why = Diagnostic("review_loop.next_max_iter_converged", iterations=verdict["iterations"],
                          risk=risk, max_iterations=verdict["max_iterations"])
@@ -1260,6 +1458,17 @@ def _next_recommendation(la, root, run_id, cfg, risk):
                          survived=verdict["survived"])
     elif basis == "converged":
         why = Diagnostic("review_loop.next_converged")
+    elif basis == "converged_residual":
+        state = verdict["convergence"] or {}
+        why = Diagnostic("review_loop.next_converged_residual",
+                         accepted=state.get("accepted_residual"),
+                         nonblocking=state.get("nonblocking"))
+    elif basis == "fast_minimum":
+        why = Diagnostic("review_loop.next_fast_minimum",
+                         minimum=verdict["policy"]["fast_minimum_rounds"],
+                         iterations=verdict["iterations"])
+    elif basis == "receipt_missing":
+        why = Diagnostic("review_loop.next_receipt_missing", survived=verdict["survived"])
     else:
         why = Diagnostic("review_loop.next_continue", survived=verdict["survived"])
     return verdict["action"], verdict["result"], verdict["reason"], why, skips
@@ -1300,8 +1509,16 @@ def _run_next(args):
     print(tr(language_of(args), "cli.review_loop.msg27",
              why=render_issue(language_of(args), why)), file=sys.stderr)
     _print_cycle_line(la, root, args.run_id, language_of(args))
+    _print_blocking_line(la, root, args.run_id, cfg, risk, language_of(args))
     if action == "CONTINUE":
         print("NEXT: CONTINUE")
+    elif action == "ASK" and reason == _CRITICAL_REASON:
+        critical = la.critical_state(la.read_records(root), args.run_id)
+        print(f"NEXT: ASK kind={reason} findings={','.join(critical['pending'])}")
+        print(tr(language_of(args), "cli.review_loop.ask_critical_p2", run_id=args.run_id,
+                 iteration=critical["iteration"]), file=sys.stderr)
+        for line in _critical_lines(la, root, args.run_id, critical):
+            print(f"      - {line}", file=sys.stderr)
     elif action == "ASK":
         cycle = la.run_cycle_state(la.read_records(root), args.run_id) or {}
         print(f"NEXT: ASK kind={reason} cycle_rounds={cycle.get('rounds')} cap={cycle.get('cap')}")
@@ -1318,8 +1535,52 @@ def _run_next(args):
 _MAX_EXTEND = 10
 
 
+def _print_blocking_line(la, root, run_id, cfg, risk, language):
+    """`converge_on: blocking` run 이면 통일 수렴식의 칸들을 한 줄로(stderr)."""
+    records = la.read_records(root)
+    if la.run_policy(records, run_id)["converge_on"] != "blocking":
+        return
+    state = la.loop_verdict(records, run_id, cfg, risk).get("convergence")
+    if not state:
+        return
+    print(tr(language, "cli.review_loop.blocking_line", blocking_open=state["blocking_open"],
+             accepted=state["accepted_residual"], nonblocking=state["nonblocking"],
+             refute_pending=state["refute_pending"], unexplored=state["unexplored"]),
+          file=sys.stderr)
+
+
+def _critical_lines(la, root, run_id, critical):
+    """결정을 기다리는 크리티컬 지적 한 줄씩. 사이드카를 해시로 읽을 수 없으면 id·분류만."""
+    rounds = la.rounds_of(root, run_id)
+    ref = rounds[-1].get("sidecar") if rounds else None
+    doc = None
+    if isinstance(ref, dict):
+        doc, _problem = _load_runtime("review_rounds").load(root, ref)
+    by_id = {item["id"]: item for item in (doc or {}).get("findings") or []}
+    lines = []
+    for entry in critical["listed"]:
+        if entry["id"] not in critical["pending"]:
+            continue
+        item = by_id.get(entry["id"])
+        claim_tag = f"[claim {entry['claim_sha256'][:12]}]"
+        if item is None:
+            lines.append(f"{entry['id']} {claim_tag} P2 {entry.get('category') or '-'} "
+                         "(sidecar unavailable)")
+            continue
+        where = item["file"] or "-"
+        if item["line"]:
+            where = f"{where}:{item['line']}"
+        claim = " ".join(item["claim"].split())
+        claim = claim if len(claim) <= 120 else claim[:117] + "..."
+        lines.append(f"{entry['id']} {claim_tag} P2 {entry.get('category') or '-'} {where} — {claim}")
+    return lines
+
+
 def _run_decide(args):
-    """사이클 상한에서의 「계속」 결정을 감사에 남긴다. 사유·결정자는 그 턴의 사용자 말이다."""
+    """사람의 결정을 감사에 남긴다. 사유·결정자는 그 턴의 사용자 말이다.
+
+    사이클 상한의 「계속」과 크리티컬 P2 하나의 「수정·수용」 두 형태다.
+    """
     la = _load_loop_audit()
     root = _root(args)
     language = language_of(args)
@@ -1329,12 +1590,30 @@ def _run_decide(args):
     if _is_closed(la, root, args.run_id):
         print(tr(language, "cli.review_loop.msg05", args_run_id=args.run_id), file=sys.stderr)
         return 2
+    cycle_form = args.cycle is not None or args.extend is not None
+    critical_form = (args.finding is not None or args.critical_choice is not None
+                     or args.claim is not None)
     problems = []
-    if not 1 <= args.extend <= _MAX_EXTEND:
-        problems.append(f"--extend must be between 1 and {_MAX_EXTEND}")
+    if cycle_form == critical_form:
+        problems.append("give exactly one form: --cycle continue --extend <N>, or "
+                        "--finding <id> --claim <hash> --fix|--accept")
+    elif cycle_form:
+        if args.cycle is None or args.extend is None:
+            problems.append("--cycle continue needs --extend <N>")
+        elif not 1 <= args.extend <= _MAX_EXTEND:
+            problems.append(f"--extend must be between 1 and {_MAX_EXTEND}")
+    elif args.finding is None or args.critical_choice is None or args.claim is None:
+        # `--claim` 은 사용자가 본 주장이다. 없으면 결정이 「그 사이 바뀐 주장」에 붙을 수 있다.
+        problems.append("--finding <id> needs --claim <hash shown by next> and --fix or --accept")
     for name in ("reason", "decided_by"):
         if not (getattr(args, name) or "").strip():
             problems.append(f"--{name.replace('_', '-')} must be a non-empty line")
+    if problems:
+        for item in problems:
+            print(f"[sage review-loop] decide refused: {item}", file=sys.stderr)
+        return 2
+    if critical_form:
+        return _decide_critical(la, root, args, language)
     state = la.run_cycle_state(la.read_records(root), args.run_id)
     cfg = risk = None
     if state is None:
@@ -1343,7 +1622,8 @@ def _run_decide(args):
         problems.append(f"cycle {state['stem']} has not reached its round cap "
                         f"({state['rounds']}/{state['cap']}); nothing to decide")
     else:
-        # `next` 와 같은 판정이어야 한다. 상한에 닿았어도 STOP 이면 연장할 자리가 아니다.
+        # `next` 와 같은 판정이어야 한다. 상한에 닿았어도 STOP 이거나 크리티컬 P2 를 먼저 정해야
+        # 하면 연장할 자리가 아니다.
         profile = _validated_profile(root, language)
         if profile is None:
             return 2
@@ -1351,7 +1631,7 @@ def _run_decide(args):
         risk = _run_risk(la, root, args.run_id)
         action, _result, reason, _why, _skips = _next_recommendation(la, root, args.run_id,
                                                                     cfg, risk)
-        if action != "ASK":
+        if (action, reason) != ("ASK", _CYCLE_CAP_REASON):
             problems.append(f"next is {action} {reason}, not ASK {_CYCLE_CAP_REASON}; "
                             "nothing to decide")
     if problems:
@@ -1370,6 +1650,63 @@ def _run_decide(args):
     print(tr(language, "cli.review_loop.decide_recorded", stem=written["cycle_stem"],
              before=written["cap_before"], after=written["cap_after"],
              rounds=written["cycle_rounds"]), file=sys.stderr)
+    return 0
+
+
+def _decide_critical(la, root, args, language):
+    """크리티컬 P2 하나의 결정. 결정은 마지막 라운드의 그 지적 내용(주장 해시)에 묶인다."""
+    profile = _validated_profile(root, language)
+    if profile is None:
+        return 2
+    cfg = _cfg_snapshot(root, profile)
+    risk = _run_risk(la, root, args.run_id)
+    records = la.read_records(root)
+    problems = []
+    if la.run_policy(records, args.run_id)["converge_on"] != "blocking":
+        problems.append("this run was not opened with converge_on: blocking; critical P2 "
+                        "decisions do not apply")
+    else:
+        # 판정·크리티컬 목록·라운드 해시를 한 번 읽은 같은 레코드에서 만든다. 따로 읽으면 두 시점이 섞인다.
+        verdict = la.loop_verdict(records, args.run_id, cfg, risk)
+        critical = la.critical_state(records, args.run_id)
+        pending = critical["pending"]
+        if (verdict["action"], verdict["reason"]) != ("ASK", _CRITICAL_REASON):
+            problems.append(f"next is {verdict['action']} {verdict['reason']}, not ASK "
+                            f"{_CRITICAL_REASON}; nothing to decide")
+        elif args.finding not in pending:
+            problems.append(f"{args.finding} is not a critical P2 awaiting a decision "
+                            f"(pending: {', '.join(pending) or '-'})")
+        else:
+            # 사용자가 본 `next` 출력의 주장 해시. 그 뒤 같은 id 에 다른 주장이 왔으면 이 답은 그 주장에
+            # 대한 답이 아니다.
+            shown = next(item for item in critical["listed"] if item["id"] == args.finding)
+            prefix = args.claim.strip().lower()
+            if len(prefix) < 8 or not shown["claim_sha256"].startswith(prefix):
+                problems.append(f"{args.finding} now has claim {shown['claim_sha256'][:12]}, not "
+                                f"the {args.claim!r} that was shown; show the current finding "
+                                "and ask again")
+    if problems:
+        for item in problems:
+            print(f"[sage review-loop] decide refused: {item}", file=sys.stderr)
+        return 2
+    # 잠금 안에서 같은 라운드·같은 주장인지 다시 본다. 그 사이 라운드가 바뀌었으면 이 답은 지금 지적에
+    # 대한 답이 아니다.
+    shown = next(item for item in critical["listed"] if item["id"] == args.finding)
+    last_hash = [r for r in records if r.get("event") == "round"
+                 and r.get("run_id") == args.run_id][-1].get("record_hash")
+    written = _write_audit(
+        la,
+        lambda: la.record_decision(root, args.run_id, la.DECISION_CRITICAL_P2,
+                                   args.critical_choice, args.reason, args.decided_by,
+                                   finding_id=args.finding, cfg=cfg, risk=risk,
+                                   expected_round_hash=last_hash,
+                                   expected_claim_sha256=shown["claim_sha256"]),
+        language=language,
+    )
+    if written is None:
+        return 2
+    print(tr(language, "cli.review_loop.decide_critical_recorded", finding=args.finding,
+             choice=args.critical_choice, iteration=written["iteration"]), file=sys.stderr)
     return 0
 
 
@@ -1438,19 +1775,45 @@ def _ledger_lines(ledger, language):
         out.append(f"### {tr(language, 'cli.review_loop.ledger_h_residual')}")
         for item in ledger["residual"]:
             out.append(f"- {item['run_id']}:{item['iteration']}:{item['id']} {_finding_label(item)}")
+    if ledger.get("accepted_critical"):
+        out.append(f"### {tr(language, 'cli.review_loop.ledger_h_accepted_critical')}")
+        for item in ledger["accepted_critical"]:
+            out.append(f"- {item['run_id']}:{item.get('iteration')}:{item.get('finding_id')} P2 "
+                       f"{item.get('category') or '-'} — {item['reason']} / {item['decided_by']}")
+    if ledger.get("preexisting"):
+        out.append(f"### {tr(language, 'cli.review_loop.ledger_h_preexisting')}")
+        for item in ledger["preexisting"]:
+            out.append(f"- {item['run_id']}:{item['iteration']}:{item['id']} "
+                       f"{_finding_label(item)} [exposure: {item.get('exposure') or '-'}]")
+    reduced = (_EARLY_REASON, _RESIDUAL_REASON)
     decided = [d for d in ledger["decisions"]] + [
-        c for c in ledger["closes"] if c.get("reason") == "USER_AUTHORIZED_EARLY"]
+        c for c in ledger["closes"] if c.get("reason") in reduced]
     if decided:
         out.append(f"### {tr(language, 'cli.review_loop.ledger_h_decisions')}")
         for item in ledger["decisions"]:
+            if item.get("kind") == "critical_p2":
+                out.append(f"- {item['run_id']} critical {item.get('finding_id')} "
+                           f"{item.get('choice')} (round {item.get('iteration')}) — "
+                           f"{item['reason']} / {item['decided_by']}")
+                continue
             out.append(f"- {item['run_id']} cycle continue +{item['extend']} "
                        f"({item['cap_before']}→{item['cap_after']}) — {item['reason']} "
                        f"/ {item['decided_by']}")
         for item in ledger["closes"]:
-            if item.get("reason") == "USER_AUTHORIZED_EARLY":
+            if item.get("reason") == _EARLY_REASON:
                 out.append(f"- {item['run_id']} USER_AUTHORIZED_EARLY at "
                            f"{item.get('stopped_at') or 'CONTINUE'} — "
                            f"{item.get('authorization_reason')} / {item.get('confirmed_by')}")
+            elif item.get("reason") == _RESIDUAL_REASON:
+                state = item.get("residual") or {}
+                out.append(f"- {item['run_id']} CONVERGED_RESIDUAL (REDUCED_BY_POLICY) — "
+                           f"accepted critical {state.get('accepted_residual')}, "
+                           f"nonblocking {state.get('nonblocking')}")
+    if ledger.get("unclosed"):
+        out.append(f"### {tr(language, 'cli.review_loop.ledger_h_unclosed')}")
+        for item in ledger["unclosed"]:
+            note = f" — {item['note']}" if item.get("note") else ""
+            out.append(f"- {item['run_id']}:{item['iteration']} {item.get('ref')}{note}")
     if ledger["refuted"]:
         out.append(f"### {tr(language, 'cli.review_loop.ledger_h_refuted')}")
         for item in ledger["refuted"]:
@@ -1599,8 +1962,8 @@ def _dashboard_md(la, root, retro_links=None, language=None):
             "|---|---|---:|---:|---:|---|---:|---|"]
     body += rows or [f"| {tr(language, 'cli.review_loop.dashboard_no_records')} | | | | | | | |"]
     integ = la.integrity_issues(root)
-    # 종료 열은 `APPROVED/USER_AUTHORIZED_EARLY` 로 이미 둘을 가른다. 여기서 더하는 것은
-    # **무엇이 남은 채로 닫혔는가** — 그게 없으면 노트만 보고는 조기 승인의 잔여 위험을 모른다.
+    # 종료 열은 `APPROVED/USER_AUTHORIZED_EARLY`·`APPROVED/CONVERGED_RESIDUAL` 로 이미 둘을 가른다.
+    # 여기서 더하는 것은 **무엇이 남은 채로 닫혔는가** — 그게 없으면 노트만 보고는 잔여 위험을 모른다.
     early = _early_close_rows(la, root)
     if early:
         body += ["", f"## {tr(language, 'cli.review_loop.dashboard_reduced_heading')}", "",
@@ -1613,7 +1976,7 @@ def _dashboard_md(la, root, retro_links=None, language=None):
 
 
 def _early_close_rows(la, root):
-    """사용자 승인으로 조기 종료한 run 의 잔여 영수증 줄. 없으면 빈 목록.
+    """잔여를 안고 닫은 run(조기 종료·잔여 승인)의 잔여 영수증 줄. 없으면 빈 목록.
 
     영수증 어휘(`P0`~`P3`)와 승인자·사유는 감사 레코드 그대로 쓴다 — 표시 언어로 바꾸면 같은
     사실이 언어마다 다른 문자열로 남아 두 언어 노트를 대조할 수 없다.
@@ -1621,7 +1984,7 @@ def _early_close_rows(la, root):
     rows = []
     for rid in la.runs(root):
         close = la.close_of(root, rid) or {}
-        if close.get("reason") != la.EARLY_CLOSE_REASON:
+        if close.get("reason") not in la.REDUCED_ASSURANCE_BY_REASON:
             continue
         receipt = close.get("survived_by_severity")
         residual = (", ".join(f"{key}={receipt.get(key, 0)}" for key in la.SEVERITIES)
@@ -1631,6 +1994,11 @@ def _early_close_rows(la, root):
         configured = close.get("configured_max_iterations")
         if configured in (-1, None):
             configured = _UNBOUNDED_LABEL
+        if close.get("reason") == la.CONVERGED_RESIDUAL_REASON:
+            state = close.get("residual") or {}
+            rows.append(f"- `{rid}` — {la.CONVERGED_RESIDUAL_REASON} · {rounds}/{configured} rounds"
+                        f" · {residual} · accepted critical {state.get('accepted_residual', '-')}")
+            continue
         rows.append(f"- `{rid}` — {rounds}/{configured} rounds · {residual}"
                     f" · {close.get('confirmed_by') or '-'}"
                     f" · {close.get('authorization_reason') or '-'}")

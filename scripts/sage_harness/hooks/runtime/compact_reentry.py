@@ -124,7 +124,11 @@ def _loop_lines(language, records, stem, profile):
         state = loop_audit.run_cycle_state(records, rid)
         # `next` 와 같은 판정이다. 상한 도달만 보면 예산·아키텍처 STOP 을 ASK 로 보여 준다.
         verdict = loop_audit.loop_verdict(records, rid, cfg, opened.get("risk"))
-        if verdict["action"] == "ASK":
+        if verdict["action"] == "ASK" and verdict["reason"] == loop_audit.CRITICAL_P2_REASON:
+            pending = (verdict.get("critical") or {}).get("pending") or []
+            waiting = _i18n.tr(language, "hook.compact.ask_critical_p2",
+                               findings=", ".join(pending) or "-")
+        elif verdict["action"] == "ASK":
             waiting = _i18n.tr(language, "hook.compact.ask_cycle_cap")
         elif verdict["action"] == "STOP":
             waiting = _i18n.tr(language, "hook.compact.wait_stop", reason=verdict["reason"])

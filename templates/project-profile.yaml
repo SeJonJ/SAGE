@@ -109,6 +109,8 @@ pdca:                            # PDCA phase 의무구조 — pre-implementatio
     budget_tokens: { L2: 150000, L3: 600000 }   # loop-until-budget. 초과 → BLOCKED
     cross_model: from_options.cross_model        # FIND 단계에 opposite-runtime peer 리뷰어 1명 추가(sage cross-check). 문제를 *찾는* 쪽 — refuters(반박자) 아님. options.cross_model 연동
     severity_block: [P0, P1]     # 미해결 시 APPROVED 불가한 심각도
+    converge_on: all             # 수렴 기준(opt-in): all = 생존 0 이어야 수렴 | blocking = 차단 지적(P0·P1·판단 안 된 크리티컬 P2) 0 이면 잔여를 기록하고 승인(보증 저하 REDUCED_BY_POLICY). blocking 이면 크리티컬 P2 는 지적마다 개발자에게 묻는다
+    # critical_p2: [unauthenticated_crash, exposure_or_traversal, wrong_content_served, deploy_breakage, security_setting_regression, silent_data_corruption]   # blocking 의 크리티컬 P2 분류(부재 = 이 여섯 개)
     architecture_escalation: from_risk.l3        # arch 변경 finding → BLOCKED(사람). risk.l3_* 재사용(중복정의 금지)
     termination_enforce: advisory                # 종료 검산 모드: advisory(불일치 경고만, 측정용) | enforce(불일치 close 거부). 수렴률 측정 후 enforce 전환 권장
     report_gate_enforce: advisory                # 06←05 audit 게이트: off(마커만) | advisory(WARN) | enforce(BLOCK). 05 가 가리키는 loop run 이 closed+APPROVED 인지 검사. enforce 는 모든 05 가 루프 돌 때만 안전

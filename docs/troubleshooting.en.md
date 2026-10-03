@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:322e3dfe75e8abcf3b211390984a6dd3b9de2256f828def410aa6584c320974c -->
+<!-- sage-doc-source: troubleshooting.md sha256:4e5d06fa6fb55e219ea71256aea25c151452fc31123c2eb59bd43e200c1cbee0 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -394,18 +394,42 @@ the early completion close; to stop, `close --result BLOCKED --reason CYCLE_CAP`
 only once the cap is reached — raising it ahead of time would remove the "ask at the cap" contract.
 Runs opened without a cycle before the upgrade are not capped retroactively; `show` lists them apart.
 
+## Rounds and closes are refused before a critical P2 decision (`converge_on: blocking`)
+
+```
+[sage review-loop] Run rl-… has critical P2 finding(s) (F3) awaiting the developer's decision. ...
+[sage review-loop] decide refused: F2 is not a critical P2 awaiting a decision (pending: F3)
+```
+
+A run opened under `converge_on: blocking` never fixes a critical P2 on its own. When `next` prints
+`NEXT: ASK kind=CRITICAL_P2 findings=…`, report each finding to the developer and record the answer with
+`sage review-loop decide --run-id <id> --finding <id> --claim <hash> --fix|--accept --reason <reason> --decided-by
+<name>`. Until then rounds are refused, and so is every close except `BLOCKED_ARCH` and `BUDGET_TOK`.
+A decision binds to that round's finding text, so if the same critical survives the next round it is
+asked again.
+
+If `round` is refused for breaking the `converge_on: blocking` rules, fix the sidecar — `critical` is
+for P2 only, the category comes from the `critical_p2` list, and dropping a P0/P1/critical finding as
+`out_of_scope_preexisting` needs `preexisting: true` and `exposure: unchanged` (a defect this change
+touched or newly exposed cannot be dropped that way).
+
+If `next` keeps saying `CONTINUE` when only residuals are left, read the reason line: the last round
+was recorded without a sidecar (zero critical findings cannot be shown), a refutation is pending or a
+lens is unexplored, or the loop has not reached the Fast run's minimum rounds yet.
+
 ## Phase 05 is blocked over reduced-assurance markers
 
 ```
-조기 완료로 닫히지 않은 run 인데 보증 저하를 자칭함: [...]
+잔여를 안고 닫히지 않은 run 인데 보증 저하를 자칭함: [...]
 Review-Assurance 선언은 fence 밖에 정확히 1개여야 함(found 0)
 ```
 
-The test is the **value**, not the presence of a marker. Writing either
-`Review-Assurance: REDUCED_BY_USER_AUTHORIZATION` or `Review-Close-Reason: USER_AUTHORIZED_EARLY`
-claims reduced assurance. Once claimed — or once the audit closed early — record all four markers
-(`Review-Assurance`, `Review-Close-Reason`, `Review-Rounds`, `Residual-Findings`) with values
-matching the audit record. If the loop converged normally, do not write those two values. A neutral
+The test is the **value**, not the presence of a marker. Writing `REDUCED_BY_USER_AUTHORIZATION` or
+`REDUCED_BY_POLICY` in `Review-Assurance`, or `USER_AUTHORIZED_EARLY` or `CONVERGED_RESIDUAL` in
+`Review-Close-Reason`, claims reduced assurance. Once claimed — or once the audit closed with one of
+those reasons (early completion, residual approval) — record all four markers (`Review-Assurance`,
+`Review-Close-Reason`, `Review-Rounds`, `Residual-Findings`) with values matching the audit record:
+`REDUCED_BY_USER_AUTHORIZATION` for an early completion, `REDUCED_BY_POLICY` for a residual approval. If the loop converged normally, do not write those two values. A neutral
 line such as `Review-Rounds: 3` on a converged run is not blocked. The `(configured max: <max>)`
 part of `Review-Rounds` must match the audit too; a project with no ceiling configured writes
 `unbounded`, the same word the audit records.

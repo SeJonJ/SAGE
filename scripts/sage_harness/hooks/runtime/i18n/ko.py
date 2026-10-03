@@ -85,6 +85,7 @@ MESSAGES = {
     "hook.compact.restore": "  먼저 실행: sage context restore --snapshot {path} → 출력된 briefing 파일을 읽으세요.",
     "hook.compact.loop": "- review loop: {run_id} 열림 · run 라운드 {rounds} · 사이클 라운드 {cycle_rounds}/{cap} · 판정 대기: {waiting}",
     "hook.compact.ask_cycle_cap": "ASK CYCLE_CAP(사용자 결정 전 라운드 금지)",
+    "hook.compact.ask_critical_p2": "ASK CRITICAL_P2 — 크리티컬 P2({findings})를 개발자에게 보고하고 지적마다 `decide --finding` 으로 기록",
     "hook.compact.wait_stop": "STOP {reason} — sage review-loop next 로 확인한 뒤 close(라운드 추가 금지)",
     "hook.compact.ask_none": "없음 — sage review-loop next 로 판정",
     "hook.compact.loop_none": "- 이 사이클의 열린 review loop run 없음",

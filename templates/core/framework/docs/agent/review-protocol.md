@@ -112,8 +112,24 @@ across every run of the cycle — default L3 5 · L2 3):
    Each round's findings are recorded as a sidecar (`round --findings-file`, schema
    `sage.review-round/1`, kept under `.sage/review-rounds/`); the audit stores its sha256, the
    derived counts and receipt, and the working-tree delta since the previous round.
+   **Blocking convergence** (`converge_on: blocking`, opt-in, read from the run's open
+   snapshot): after the budget check, an undecided critical P2 in the last round →
+   **ASK(CRITICAL_P2)** — the developer decides each finding (`decide --finding <id> --claim <hash>
+   --fix|--accept`, bound to that round's finding text), and no round or close (other than
+   BLOCKED_ARCH / BUDGET_TOK) is recorded until then. "Converged" becomes: blocking findings
+   (P0/P1 and other severity_block survivors + undecided or fix-decided critical P2) = 0, no pending refutation,
+   no unexplored lens, and a sidecar receipt. With survivors left that is
+   APPROVED(**CONVERGED_RESIDUAL**), recorded as reduced assurance `REDUCED_BY_POLICY`; Phase 05
+   and 06 carry the same four markers as an early completion, with that value. A loop bound to a
+   Fast run keeps going until the Fast minimum rounds even when it converged earlier.
 5. **REWORK + re-validate** — `within_design` survivors are reworked within the approved
-   design; `verify-changes.sh` and `sage validate` must PASS before the next round.
+   design; `verify-changes.sh` and `sage validate` must PASS before the next round. Under
+   blocking convergence a non-blocking survivor is fixed only locally (no new state, lock,
+   marker, protocol or background process) and otherwise stays residual; a blocking finding
+   whose fix needs such a mechanism is `architecture_change`. A rework lists what it closes
+   (`closes`) and the next round records whether each closed (`closure`). Pre-existing defects
+   (`preexisting`, `exposure`) are dropped as `out_of_scope_preexisting` into the ledger unless
+   this change touched them or changed their reach — a P0/P1/critical one stays when it did.
    If rework changes acceptance coverage, update Phase 03 and Phase 04 before
    the next review pass.
 

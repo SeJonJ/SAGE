@@ -525,6 +525,52 @@ class PureAuthorityTests(unittest.TestCase):
         self.assertEqual(level, "UNKNOWN")
         self.assertNotEqual(reasons, [])
 
+    def _residual_audit_text(self, run_id="rl-aa01"):
+        """`converge_on: blocking` run 이 잔여 승인(CONVERGED_RESIDUAL)으로 닫힌 실제 감사 원문."""
+        import tempfile  # noqa: PLC0415
+        from pathlib import Path as _Path  # noqa: PLC0415
+
+        ci_authority._trusted_gate_modules()
+        import loop_audit as la  # noqa: PLC0415
+
+        receipt = {"P0": 0, "P1": 0, "P2": 1, "P3": 1}
+        with tempfile.TemporaryDirectory() as root:
+            _Path(root, ".sage").mkdir()
+            la.open_loop(root, "L3", cfg={"converge_on": "blocking"}, run_id=run_id,
+                         cycle_stem=STEM)
+            la.record_round(root, run_id, 1, 2, 2, 0, survived_by_severity=receipt,
+                            sidecar={"path": "x", "sha256": "a" * 64, "schema": "s"},
+                            receipt={"critical": 0, "refute_pending": 0, "unexplored": 0,
+                                     "critical_findings": []})
+            la.close_loop(root, run_id, "APPROVED", "CONVERGED_RESIDUAL", 1, residual={
+                "completed_rounds": 1, "configured_max_iterations": 3,
+                "survived_by_severity": receipt, "actual_risk": "L3", "mode": "STANDARD",
+                "residual": {"blocking_open": 0, "accepted_residual": 0, "nonblocking": 2},
+                "accepted_decisions": [], "sidecar_sha256": "a" * 64})
+            return _Path(root, ".sage", "loop_audit.jsonl").read_text(encoding="utf-8")
+
+    def test_a_policy_residual_approval_is_reduced_by_policy(self):
+        """차단 기준 수렴으로 잔여를 안고 닫은 승인도 일반 승인과 구분돼야 한다. 값은 사용자 승인
+        조기 종료와 다르다 — 누가 잔여를 받아들였는지(그 자리의 사용자 vs 프로젝트 정책)가 갈린다."""
+        audit = self._residual_audit_text()
+        core, _binding, _risk = ci_authority._trusted_gate_modules()
+        head = "Loop-Run: rl-aa01\nFinal Status: APPROVED\n"
+        markers = ("Review-Assurance: REDUCED_BY_POLICY\n"
+                   "Review-Close-Reason: CONVERGED_RESIDUAL\n"
+                   "Review-Rounds: 1 (configured max: 3)\n"
+                   "Residual-Findings: P0=0, P1=0, P2=1, P3=1\n")
+        self.assertEqual(self._assurance(head + markers, audit), (core.REVIEW_ASSURANCE_POLICY, []))
+        level, reasons = self._assurance(head, audit)
+        self.assertEqual(level, "UNKNOWN")
+        self.assertNotEqual(reasons, [])
+        level, _reasons = self._assurance(
+            head + markers.replace("REDUCED_BY_POLICY", "REDUCED_BY_USER_AUTHORIZATION"), audit)
+        self.assertEqual(level, "UNKNOWN")
+        converged = self._loop_audit_text(reason="CONVERGED")
+        level, reasons = self._assurance(head + "Review-Assurance: REDUCED_BY_POLICY\n", converged)
+        self.assertEqual(level, "UNKNOWN")
+        self.assertNotEqual(reasons, [])
+
     def test_an_uncorroborated_claim_is_refused_and_an_unbindable_silence_is_not_standard(self):
         """감사에 결속하지 못하는 두 갈래는 서로 다르게 다뤄야 한다.
 

@@ -686,7 +686,7 @@ def _review_assurance(request: dict[str, Any], selected: dict[str, dict[str, Any
     보증이 낮은 승인이 표준 승인과 같은 무게로 통과한다.
 
     **문서만 읽어서는 구분할 수 없다.** 문서 안에서만 정합성을 보면 위험한 방향이 그대로 열린다 —
-    감사가 `USER_AUTHORIZED_EARLY` 로 닫혔는데 05 가 네 표기를 아예 생략하면 자칭이 없으니
+    감사가 잔여를 안은 사유(`USER_AUTHORIZED_EARLY`·`CONVERGED_RESIDUAL`)로 닫혔는데 05 가 네 표기를 아예 생략하면 자칭이 없으니
     STANDARD 로 통과했다. 로컬 게이트는 같은 상황을 감사와 대조해 막는데, 변조된 로컬 훅을 전제로
     존재하는 이 층에만 그 축이 없었다. 그래서 판정 자체를 게이트와 **같은 함수**에 위임한다.
 
@@ -705,9 +705,10 @@ def _review_assurance(request: dict[str, Any], selected: dict[str, dict[str, Any
     # `Review-Rounds`·`Residual-Findings` 는 일반 리뷰 문서에도 자연스럽게 적히는 중립 표기다.
     # 존재를 트리거로 쓰면 그 한 줄을 적은 평범한 05 가 게이트는 통과하고 권위에서만 막힌다 —
     # 같은 문서에 두 층이 다른 답을 내는 상태다. 게이트와 같은 기준으로 **자칭**만 본다.
-    claimed = any(value.strip().upper() == token
-                  for label, token in (("Review-Assurance", core.REVIEW_ASSURANCE_REDUCED),
-                                       ("Review-Close-Reason", core.EARLY_CLOSE_REASON))
+    claimed = any(value.strip().upper() in tokens
+                  for label, tokens in (
+                      ("Review-Assurance", set(core.REDUCED_ASSURANCE_BY_REASON.values())),
+                      ("Review-Close-Reason", set(core.REDUCED_ASSURANCE_BY_REASON)))
                   for value in found[label])
     close, binding_issue = _loop_run_binding(request, content, core)
     if close is None:
@@ -726,8 +727,9 @@ def _review_assurance(request: dict[str, Any], selected: dict[str, dict[str, Any
     if issues:
         return "UNKNOWN", [f"Phase 05 review assurance does not match the Loop audit: "
                            + "; ".join(str(issue) for issue in issues[:3])]
-    if (close.get("reason") or "") == core.EARLY_CLOSE_REASON:
-        return core.REVIEW_ASSURANCE_REDUCED, []
+    reduced = core.REDUCED_ASSURANCE_BY_REASON.get(close.get("reason") or "")
+    if reduced is not None:
+        return reduced, []
     return "STANDARD", []
 
 
