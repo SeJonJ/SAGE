@@ -15,6 +15,7 @@ from sage import asset_paths
 
 import json
 import os
+import re
 from pathlib import Path
 
 from sage.diagnostics import Diagnostic
@@ -49,7 +50,9 @@ _LOOP_TIERS = {"L2", "L3"}   # L0/L1 은 루프 없음(risk → mandatory phase 
 _REVIEW_LOOP_KEYS = {"enabled", "lenses", "refuters", "refute_threshold", "max_iterations",
                      "dry_rounds", "budget_tokens", "cross_model", "severity_block",
                      "architecture_escalation", "termination_enforce", "report_gate_enforce",
-                     "early_completion", "max_cycle_rounds"}
+                     "early_completion", "max_cycle_rounds", "converge_on", "critical_p2"}
+_CONVERGE_MODES = {"all", "blocking"}   # 수렴 기준(기본 all). blocking = 차단 지적 0 이면 잔여 승인
+_CRITICAL_CATEGORY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _TERMINATION_MODES = {"advisory", "enforce"}   # 종료 검산 모드(기본 advisory)
 _REPORT_GATE_MODES = {"off", "advisory", "enforce"}   # 06←05 audit 게이트 모드(기본 advisory)
 _BASE_PLAN_KEYS = {"done_criteria_gate"}
@@ -334,6 +337,21 @@ def _review_loop_issues(profile):
     if bad_sev:
         issues.append(("FAIL", Diagnostic("validate.review_loop_severity_unknown", severities=bad_sev,
                                           allowed=sorted(_KNOWN_SEVERITY))))
+
+    # 4a. converge_on·critical_p2 — 차단 기준 수렴 opt-in. 오타가 기본값(all)으로 조용히 떨어지면 켠 줄
+    #     알고 안 켜진다. critical_p2 는 크리티컬 P2 분류 id 목록(부재 = 엔진 기본 여섯 개).
+    mode = rl.get("converge_on")
+    if mode is not None and (not isinstance(mode, str) or mode not in _CONVERGE_MODES):
+        issues.append(("FAIL", Diagnostic("validate.review_loop_converge_on_invalid", value=repr(mode),
+                                          allowed=sorted(_CONVERGE_MODES))))
+    critical = rl.get("critical_p2")
+    if critical is not None:
+        if (not isinstance(critical, list) or not critical
+                or any(not isinstance(item, str) or not _CRITICAL_CATEGORY_RE.match(item)
+                       for item in critical)
+                or len(set(critical)) != len(critical)):
+            issues.append(("FAIL", Diagnostic("validate.review_loop_critical_p2_invalid",
+                                              value=repr(critical))))
 
     # 4b. termination_enforce — 종료 검산 모드. advisory|enforce 만(오타 시 침묵 무효 방지). 비문자열 FAIL.
     te = rl.get("termination_enforce")

@@ -44,6 +44,9 @@ _TRIAGES = ("local", "architecture_change")
 _DISPOSITIONS = ("fix", "residual", "rejected", "pending")
 _MEASURED = ("measured", "estimated", "absent")
 _UNEXPLORED_REASONS = ("truncated", "timeout", "limit", "other")
+# 변경 전 결함에 이번 변경이 준 영향: 그대로·그 줄을 고침·도달 가능성·입력·권한을 바꿈.
+_EXPOSURES = ("unchanged", "touched", "reach_changed")
+_CATEGORY = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _PEER_KEYS = ("new_input", "cached_input", "output", "turns", "tool_calls", "wall_s", "cost_usd")
 # `sage cross-check` 가 끊긴 실행을 메시지별 usage 로 추정했을 때만 붙는 표기.
 _PEER_MEASURED = ("partial",)
@@ -54,10 +57,14 @@ _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 LEDGER_KINDS = ("out_of_scope", "preexisting", "withdraw")
 _LEDGER_REF = re.compile(r"^L-\d{1,6}$")
 
-_TOP_KEYS = {"schema", "run_id", "iteration", "packet", "usage", "unexplored", "findings"}
-_FINDING_KEYS = {"id", "source", "file", "line", "severity", "critical", "preexisting", "claim",
-                 "refute", "refute_pending", "status", "triage", "disposition", "closes",
-                 "ledger_ref"}
+_TOP_KEYS = {"schema", "run_id", "iteration", "packet", "usage", "unexplored", "findings",
+             "closure"}
+_FINDING_KEYS = {"id", "source", "file", "line", "severity", "critical", "critical_category",
+                 "preexisting", "exposure", "claim", "refute", "refute_pending", "status", "triage",
+                 "disposition", "closes", "ledger_ref"}
+# 크리티컬급 = P0·P1 이거나 크리티컬 표시(P2)가 있는 지적. 변경 전 결함이라도 노출이 바뀌면 버리지 못한다.
+# 수렴에 쓰는 `severity_block` 과 일부러 분리한다 — 그 값을 낮추면 P0 보호가 빠지고, 높이면 P3 까지 막힌다.
+_CRITICAL_GRADE = ("P0", "P1")
 
 
 class SidecarError(ValueError):
@@ -231,6 +238,10 @@ def _finding(issues, index, raw, seen_ids):
     if ledger_ref is not None and (not isinstance(ledger_ref, str)
                                    or not _LEDGER_REF.match(ledger_ref)):
         issues.append(f"{where}.ledger_ref must look like L-<n> or be null")
+    category = raw.get("critical_category")
+    if category is not None and (not isinstance(category, str) or not _CATEGORY.match(category)):
+        issues.append(f"{where}.critical_category must look like a lower_snake_case id or be null")
+        category = None
     return {
         "id": fid,
         "source": source,
@@ -238,8 +249,11 @@ def _finding(issues, index, raw, seen_ids):
         "line": line,
         "severity": _choice(issues, f"{where}.severity", raw.get("severity"), SEVERITIES),
         "critical": _bool(issues, f"{where}.critical", raw.get("critical"), False),
+        "critical_category": category,
         "preexisting": _bool(issues, f"{where}.preexisting", raw.get("preexisting"), None,
                              nullable=True),
+        "exposure": _choice(issues, f"{where}.exposure", raw.get("exposure"), _EXPOSURES,
+                            nullable=True),
         "claim": _text(issues, f"{where}.claim", raw.get("claim"), MAX_CLAIM),
         "refute": refute,
         "refute_pending": _bool(issues, f"{where}.refute_pending", raw.get("refute_pending"),
@@ -301,6 +315,26 @@ def validate(doc, run_id=None, iteration=None):
             "detail": _text(issues, f"{where}.detail", item.get("detail"), MAX_TEXT,
                             required=False),
         })
+    closure = []
+    raw_closure = doc.get("closure") or []
+    if not isinstance(raw_closure, list):
+        issues.append("closure must be a list")
+        raw_closure = []
+    for index, item in enumerate(raw_closure):
+        where = f"closure[{index}]"
+        if not isinstance(item, dict):
+            issues.append(f"{where} must be an object")
+            continue
+        _unknown_keys(issues, where, item, {"ref", "closed", "note"})
+        ref = item.get("ref")
+        if not isinstance(ref, str) or not _CLOSES.match(ref):
+            issues.append(f"{where}.ref must look like <run_id>:<iteration>:<id>")
+            ref = None
+        if not isinstance(item.get("closed"), bool):
+            issues.append(f"{where}.closed must be a boolean")
+        closure.append({"ref": ref, "closed": item.get("closed") is True,
+                        "note": _text(issues, f"{where}.note", item.get("note"), MAX_TEXT,
+                                      required=False)})
     raw_findings = doc.get("findings")
     findings = []
     if not isinstance(raw_findings, list):
@@ -317,7 +351,8 @@ def validate(doc, run_id=None, iteration=None):
         more = "" if len(issues) <= 5 else f"; ... and {len(issues) - 5} more"
         raise SidecarError("; ".join(issues[:5]) + more)
     return {"schema": SCHEMA, "run_id": doc["run_id"], "iteration": doc["iteration"],
-            "packet": packet, "usage": usage, "unexplored": unexplored, "findings": findings}
+            "packet": packet, "usage": usage, "unexplored": unexplored, "findings": findings,
+            "closure": closure}
 
 
 def parse(data, run_id=None, iteration=None):
@@ -359,8 +394,52 @@ def derive(doc):
                 1 for item in refuted
                 if any(vote["drop_reason"] == "out_of_scope_preexisting"
                        for vote in item["refute"])),
+            # 크리티컬 결정은 이 목록(id·주장 해시)에 묶인다. 감사에 있으므로 CI·게이트도 같은
+            # 대조를 사이드카 없이 한다.
+            "critical_findings": [
+                {"id": item["id"], "claim_sha256": claim_sha256(item["claim"]),
+                 "category": item["critical_category"]}
+                for item in survived if item["critical"]],
+            "unclosed": sum(1 for item in doc.get("closure") or [] if not item["closed"]),
         },
     }
+
+
+def claim_sha256(claim):
+    return hashlib.sha256((claim or "").encode("utf-8")).hexdigest()
+
+
+def policy_issues(doc, policy):
+    """`converge_on: blocking` run 의 사이드카 규칙. 형식 검사(`validate`)와 따로 둔다.
+
+    `all` run 에는 부르지 않는다 — 기본 모드의 기록 동작을 바꾸지 않는다. 판정은 리뷰어가 하고,
+    엔진은 그 판정이 서로 모순되지 않는지와 크리티컬급 결함을 「변경 전」을 이유로 버릴 때의 조건만
+    본다.
+    """
+    issues = []
+    allowed = set(policy.get("critical_p2") or [])
+    for item in doc["findings"]:
+        where = f"finding {item['id']}"
+        if item["critical"] and item["severity"] != "P2":
+            issues.append(f"{where}: critical marks a P2 only (severity {item['severity']})")
+        if item["critical"] and item["critical_category"] not in allowed:
+            issues.append(f"{where}: critical_category {item['critical_category']!r} is not one "
+                          f"of {sorted(allowed)}")
+        if item["critical_category"] is not None and not item["critical"]:
+            issues.append(f"{where}: critical_category is set but critical is false")
+        if item["exposure"] is not None and item["preexisting"] is not True:
+            issues.append(f"{where}: exposure is only for preexisting findings")
+        out_of_scope = any(vote["drop_reason"] == "out_of_scope_preexisting"
+                           for vote in item["refute"])
+        if out_of_scope and item["preexisting"] is not True:
+            issues.append(f"{where}: out_of_scope_preexisting needs preexisting: true")
+        grade = item["critical"] or item["severity"] in _CRITICAL_GRADE
+        if (out_of_scope and grade and item["status"] == "refuted"
+                and item["exposure"] != "unchanged"):
+            issues.append(f"{where}: a {item['severity']} critical-grade finding can be dropped as "
+                          "out_of_scope_preexisting only when exposure is 'unchanged' (this change "
+                          "touched it or changed its reach)")
+    return issues
 
 
 def canonical_bytes(doc):
@@ -633,7 +712,7 @@ def build_ledger(root, records, stem):
     run_ids = [r.get("run_id") for r in opens]
     members = set(run_ids)
     residual, refuted, conflicts, sidecar_issues = [], [], [], []
-    decisions, closes = [], []
+    decisions, closes, preexisting, unclosed = [], [], [], []
     last_round = {}
     for record in records:
         rid = record.get("run_id")
@@ -659,16 +738,25 @@ def build_ledger(root, records, stem):
                     refuted.append({**where, "reasons": [
                         {"reason": vote["reason"], "drop_reason": vote["drop_reason"]}
                         for vote in reasons]})
+                    # 변경 전 결함을 범위 밖으로 버린 것은 사라지는 것이 아니라 별도 이슈 후보다.
+                    if any(vote["drop_reason"] == "out_of_scope_preexisting"
+                           for vote in item["refute"]):
+                        preexisting.append({**where, "exposure": item.get("exposure")})
                 if item["ledger_ref"]:
                     conflicts.append({**where, "ledger_ref": item["ledger_ref"]})
+            for check in doc.get("closure") or []:
+                if not check["closed"]:
+                    unclosed.append({"run_id": rid, "iteration": doc["iteration"],
+                                     "ref": check["ref"], "note": check["note"]})
         elif event == "decision":
             decisions.append({key: record.get(key) for key in (
                 "run_id", "kind", "choice", "extend", "cycle_rounds", "cap_before", "cap_after",
-                "reason", "decided_by", "ts")})
+                "iteration", "finding_id", "category", "reason", "decided_by", "ts")})
         elif event == "loop_close":
             closes.append({key: record.get(key) for key in (
                 "run_id", "result", "reason", "iterations", "authorization_reason",
-                "confirmed_by", "survived_by_severity", "stopped_at", "ts")})
+                "confirmed_by", "survived_by_severity", "stopped_at", "residual",
+                "review_assurance", "ts")})
     # 잔여는 각 run 의 마지막 라운드에서만 읽는다. 앞 라운드의 잔여는 다음 라운드가 다시 판정했다.
     for rid in run_ids:
         record = last_round.get(rid)
@@ -688,7 +776,11 @@ def build_ledger(root, records, stem):
     manual = [item for item in entries
               if item.get("kind") in ("out_of_scope", "preexisting")
               and item.get("id") not in withdrawn]
+    accepted_critical = [item for item in decisions
+                         if item.get("kind") == "critical_p2" and item.get("choice") == "accept"]
     return {"stem": stem, "runs": run_ids, "residual": residual, "refuted": refuted,
             "decisions": decisions, "closes": closes, "manual": manual,
+            "accepted_critical": accepted_critical, "preexisting": preexisting,
+            "unclosed": unclosed,
             "conflicts": conflicts, "sidecar_issues": sidecar_issues,
             "entry_issues": entry_issues}

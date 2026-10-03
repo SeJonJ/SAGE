@@ -133,10 +133,11 @@ _ALLOWLIST = {
                           "survived_by_severity"),
     ("review", "loop_close"): ("result", "reason", "iterations", "reviewer_actual",
                                "review_assurance", "completed_rounds",
-                               "configured_max_iterations", "survived_by_severity"),
-    # 사이클 상한에서의 「계속」 결정. 사유·결정자는 loop_close 의 승인 사유·승인자처럼 싣지 않는다.
+                               "configured_max_iterations", "survived_by_severity", "residual"),
+    # 사이클 상한의 「계속」과 크리티컬 P2 결정. 사유·결정자·주장 해시는 loop_close 의 승인 사유·
+    # 승인자처럼 싣지 않는다.
     ("review", "decision"): ("kind", "choice", "extend", "cycle_stem", "cycle_rounds",
-                             "cap_before", "cap_after"),
+                             "cap_before", "cap_after", "iteration", "finding_id", "category"),
 
     ("fast", "fast_open"): ("entry_mode", "actual_risk_open", "fast_review_level", "reason",
                             "minimum_rounds", "lens_count", "lenses"),

@@ -81,6 +81,7 @@ MESSAGES = {
     "hook.compact.restore": "  Run first: sage context restore --snapshot {path} → read the briefing file it prints.",
     "hook.compact.loop": "- review loop: {run_id} open · run rounds {rounds} · cycle rounds {cycle_rounds}/{cap} · pending: {waiting}",
     "hook.compact.ask_cycle_cap": "ASK CYCLE_CAP (no round before the user decides)",
+    "hook.compact.ask_critical_p2": "ASK CRITICAL_P2 — report critical P2 ({findings}) to the developer and record each with `decide --finding`",
     "hook.compact.wait_stop": "STOP {reason} — confirm with sage review-loop next, then close (no more rounds)",
     "hook.compact.ask_none": "none — decide with sage review-loop next",
     "hook.compact.loop_none": "- No open review loop run in this cycle",

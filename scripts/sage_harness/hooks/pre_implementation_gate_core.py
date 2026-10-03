@@ -1246,6 +1246,12 @@ _REDUCED_ASSURANCE_MARKERS = ("Review-Assurance", "Review-Close-Reason", "Review
                               "Residual-Findings")
 EARLY_CLOSE_REASON = "USER_AUTHORIZED_EARLY"
 REVIEW_ASSURANCE_REDUCED = "REDUCED_BY_USER_AUTHORIZATION"
+# 잔여를 안고 닫는 사유와 그 보증 표기. 사용자가 그 자리에서 승인한 조기 종료와, 차단 기준 수렴
+# 정책(`converge_on: blocking`)으로 닫은 잔여 승인을 값으로 구분한다. CI authority 도 이 표를 쓴다.
+CONVERGED_RESIDUAL_REASON = "CONVERGED_RESIDUAL"
+REVIEW_ASSURANCE_POLICY = "REDUCED_BY_POLICY"
+REDUCED_ASSURANCE_BY_REASON = {EARLY_CLOSE_REASON: REVIEW_ASSURANCE_REDUCED,
+                               CONVERGED_RESIDUAL_REASON: REVIEW_ASSURANCE_POLICY}
 
 
 def _marker_values(content, label):
@@ -1293,18 +1299,19 @@ def _reduced_assurance_issues(content, run):
     한쪽만 있으면 차단한다. 문서에만 있으면 감사 없이 보증 저하를 자칭한 것이고, 감사에만 있으면
     조기 종료로 닫힌 run 이 일반 승인처럼 06 으로 넘어간다. 둘 다 사후 판별을 불가능하게 만든다.
     """
-    early = (run.get("close_reason") or "") == EARLY_CLOSE_REASON
+    reason = run.get("close_reason") or ""
+    expected = REDUCED_ASSURANCE_BY_REASON.get(reason)
     found = {label: _marker_values(content, label) for label in _REDUCED_ASSURANCE_MARKERS}
-    if not early:
+    if expected is None:
         # `Review-Rounds`·`Residual-Findings` 는 일반 리뷰 문서에도 자연스럽게 적히는 중립 표기다.
         # 표기의 존재를 트리거로 쓰면 기존 05 문서가 그 한 줄 때문에 막힌다. 차단해야 하는 것은
         # 문서가 감사와 다르게 보증 저하를 **자칭**하는 경우뿐이다.
-        claimed = [f"{label}: {value}" for label, token in (
-            ("Review-Assurance", REVIEW_ASSURANCE_REDUCED),
-            ("Review-Close-Reason", EARLY_CLOSE_REASON),
-        ) for value in found[label] if value.strip().upper() == token]
+        claimed = [f"{label}: {value}" for label, tokens in (
+            ("Review-Assurance", set(REDUCED_ASSURANCE_BY_REASON.values())),
+            ("Review-Close-Reason", set(REDUCED_ASSURANCE_BY_REASON)),
+        ) for value in found[label] if value.strip().upper() in tokens]
         if claimed:
-            return [f"조기 완료로 닫히지 않은 run 인데 보증 저하를 자칭함: {claimed}"]
+            return [f"잔여를 안고 닫히지 않은 run 인데 보증 저하를 자칭함: {claimed}"]
         return []
     issues = []
     for label in _REDUCED_ASSURANCE_MARKERS:
@@ -1312,10 +1319,10 @@ def _reduced_assurance_issues(content, run):
             issues.append(f"{label} 선언은 fence 밖에 정확히 1개여야 함(found {len(found[label])})")
     if issues:
         return issues
-    if found["Review-Assurance"][0].upper() != REVIEW_ASSURANCE_REDUCED:
-        issues.append(f"Review-Assurance 는 {REVIEW_ASSURANCE_REDUCED} 여야 함")
-    if found["Review-Close-Reason"][0].upper() != EARLY_CLOSE_REASON:
-        issues.append(f"Review-Close-Reason 은 {EARLY_CLOSE_REASON} 이어야 함")
+    if found["Review-Assurance"][0].upper() != expected:
+        issues.append(f"Review-Assurance 는 {expected} 여야 함")
+    if found["Review-Close-Reason"][0].upper() != reason:
+        issues.append(f"Review-Close-Reason 은 {reason} 이어야 함")
     rounds = run.get("completed_rounds")
     if rounds is not None and (type(rounds) is not int or isinstance(rounds, bool)):
         # 손상된 레코드는 대조 기준이 될 수 없다. 여기서 크래시하면 진단이 runtime error 로

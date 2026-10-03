@@ -429,5 +429,9 @@ echo "### 84. 압축 직후 SessionStart 재진입 문맥 (compact 에서만 · 
 python3 "$HERE/test_compact_reentry.py" || rc=1
 
 echo ""
+echo "### 85. Phase 05 리뷰 규칙 2단계 (차단 기준 수렴·크리티컬 P2 결정·잔여 승인 보증 저하·변경 전 결함·Fast 최소 라운드)"
+python3 "$HERE/test_review_blocking_convergence.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"
