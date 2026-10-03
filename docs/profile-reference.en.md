@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:e48111f2848f97fef8334e45d17ec2895b5ff4bbf9557e63f311553b72c295c8 -->
+<!-- sage-doc-source: profile-reference.md sha256:9549c787545d33a3d5caee54215e39788b87c81df78569b3ea64c6f984ecf866 -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -140,6 +140,7 @@ pdca:
     dry_rounds: 1
     budget_tokens: { L2: 150000, L3: 400000 }
     severity_block: ["P0", "P1"]
+    converge_on: all
     termination_enforce: advisory
     report_gate_enforce: advisory
     early_completion:
@@ -152,7 +153,15 @@ perspectives each round searches from, `refuters` is how many reviewers challeng
 `max_iterations` caps the rounds, and `dry_rounds` is how many consecutive rounds with zero new
 findings count as convergence. `max_cycle_rounds` caps the rounds of every run of the same cycle
 together; at the cap `sage review-loop next` asks the user (`ASK`) to continue, approve the residual,
-or stop. Without the key the default (L3 5 · L2 3) applies. `termination_enforce`/`report_gate_enforce` are
+or stop. Without the key the default (L3 5 · L2 3) applies. `converge_on` is the convergence rule. The
+default `all` converges only when no finding survives. `blocking` (opt-in) records the non-blocking
+residuals and approves with `CONVERGED_RESIDUAL` once no blocking finding is left — survivors at P0/P1
+(always) or another `severity_block` severity and undecided critical P2 — and that approval is kept as reduced assurance
+`REDUCED_BY_POLICY`. A critical P2 is never fixed automatically; the developer decides each one
+(`decide --finding`). `critical_p2` (a list of lowercase ids) replaces the categories; without it they
+are `unauthenticated_crash`, `exposure_or_traversal`, `wrong_content_served`, `deploy_breakage`,
+`security_setting_regression` and `silent_data_corruption`. Both keys apply to a run as they were when
+it opened. `termination_enforce`/`report_gate_enforce` are
 `off | advisory | enforce`; `enforce` actually blocks writing Phase 06. This is the standard cycle's
 full procedure — the compressed variant for explicitly allowed L2/L3 work is Fast Cycle, below.
 

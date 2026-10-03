@@ -301,11 +301,13 @@ Fast 명령은 `pdca.fast_cycle.enabled: true`인 L2/L3에만 열립니다. 실�
 | `sage review-loop open [--cycle-stem S --lenses CSV]` | review loop 시작. run 은 항상 사이클에 묶인다 — `--cycle-stem` 이 없으면 선언된 사이클(`SAGE_CYCLE_STEM` > `.sage/cycle.json`)을 쓰고, 없으면 거부. Fast는 stem·렌즈를 exact 결속 |
 | `sage review-loop round --findings-file FILE [--tokens N --peer-tokens "<REVIEWER_TOKENS 값>"]` | 라운드 사이드카(`sage.review-round/1`: 지적 원문·출처·반박 사유·처분)를 기록. 개수와 심각도 영수증을 사이드카에서 산출하고, sha256 과 직전 라운드 대비 작업 트리 delta 를 함께 남긴다 |
 | `sage review-loop round [... --lens-receipts CSV] [--survived-by-severity P0=N,P1=N,P2=N,P3=N] [--peer-tokens "<REVIEWER_TOKENS 값>"]` | 사이드카 없이 개수를 직접 기록(`sidecar: absent`). finding, 반박, 수정 결과와 Fast 렌즈 수행 영수증, 심각도별 잔여 영수증, 리뷰어 실측 사용량. 작업 트리 식별자와 직전 라운드 대비 delta 는 사이드카 유무와 관계없이 남는다 |
-| `sage review-loop next` | 결정론적 계속/종료/질문 권고. 사이클 전체 라운드가 `max_cycle_rounds` 에 닿으면 `NEXT: ASK kind=CYCLE_CAP` |
+| `sage review-loop next` | 결정론적 계속/종료/질문 권고. 사이클 전체 라운드가 `max_cycle_rounds` 에 닿으면 `NEXT: ASK kind=CYCLE_CAP`, `converge_on: blocking` run 에서 결정 없는 크리티컬 P2 가 있으면 `NEXT: ASK kind=CRITICAL_P2 findings=<ids>` |
 | `sage review-loop decide --run-id ID --cycle continue --extend N --reason R --decided-by W` | 사이클 상한에서 사용자가 고른 「계속」을 감사에 기록하고 상한을 N 라운드 늘린다 |
+| `sage review-loop decide --run-id ID --finding F [--claim H] --fix\|--accept --reason R --decided-by W` | 크리티컬 P2 하나에 대한 개발자 결정(수정·잔여 수용)을 그 라운드의 지적 내용(주장 해시)에 묶어 기록. `--claim` 은 `next` 가 보여 준 주장 해시 앞자리로, 그 사이 주장이 바뀌었으면 거부 |
 | `sage review-loop ledger add\|show\|render [--cycle-stem S]` | 사이클 이월 장부. `add` 는 범위 밖 결정·알려진 변경 전 결함, `render` 는 패킷의 「결정·잔여」 절 |
 | `sage review-loop close` | `--result APPROVED|BLOCKED`로 loop 종료. 사이클 상한에서 멈추면 `--result BLOCKED --reason CYCLE_CAP` |
 | `sage review-loop close --reason USER_AUTHORIZED_EARLY --authorization-reason R --confirmed-by W --confirm USER_AUTHORIZED_EARLY` | 사용자 승인으로 수렴 전 종료 (보증 저하 표기 필수) |
+| `sage review-loop close --result APPROVED --reason CONVERGED_RESIDUAL --iterations N` | `converge_on: blocking` run 에서 차단 지적 0·비차단 잔여만 남았을 때의 승인. 보증 저하 `REDUCED_BY_POLICY` (표기 필수) |
 | `sage retro --feature STEM` | 완료 사이클 회고 노트와 distillation 입력 생성 |
 | `sage retro --check NOTE` | 회고 노트가 빈 템플릿이 아닌지 검사 |
 
@@ -331,6 +333,15 @@ fence 밖에 정확히 하나씩 있어야 하고 값이 감사 레코드와 일
 부풀리거나 낮춰 적으면 얼마나 건너뛴 리뷰인지가 다르게 읽힙니다. 상한을 설정하지 않은 프로젝트는
 감사와 같은 낱말인 `unbounded`를 적습니다. `--survived-by-severity`의 합계는 `--survived`와 정확히
 같아야 합니다 — `P0=0`만 적어 차단 finding을 숨기는 것을 막습니다.
+
+차단 기준 수렴(`converge_on: blocking`)의 잔여 승인 `CONVERGED_RESIDUAL` 도 같은 네 표기를 쓰고, 값만
+다릅니다 — `Review-Assurance: REDUCED_BY_POLICY`, `Review-Close-Reason: CONVERGED_RESIDUAL`. 누가 잔여를
+받아들였는지(그 자리의 사용자 vs 프로젝트 정책)를 값으로 가릅니다. 두 토큰 중 하나만 적어도 자칭이고,
+감사의 종료 사유와 다른 값을 적으면 차단됩니다. 서버 권위는 이 run 의 보증 수준을 `REDUCED_BY_POLICY` 로
+기록합니다. 잔여 승인 close 는 감사 무결성·Done Criteria·acceptance 검사를 조기 종료와 같은 기준으로
+거치고, 잠금 안에서 판정을 다시 계산해 그 사이 라운드나 결정이 붙었으면 거부합니다. `blocking` run 에서
+생존 지적이 남았으면 `CONVERGED`·`DRY` 승인은 종료 검산 mode 와 무관하게 거부됩니다 — 잔여를 안은
+승인이 일반 승인으로 남지 않게 합니다.
 
 조기 완료가 인수하는 것은 리뷰가 남긴 finding이지 미검증 요구사항이 아닙니다. 선택된 Phase 04에
 acceptance `FAIL`이나 exact waiver 없는 필수 `NOT TESTED`가 남아 있으면 조기 완료가 거부되고 감사

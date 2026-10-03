@@ -193,20 +193,25 @@ Do not eyeball this. After recording each round (§ below), run:
 sage review-loop next --run-id $RUN_ID
 ```
 It reads the recorded rounds + profile cfg and prints the deterministic decision —
-`NEXT: CONTINUE`, `NEXT: STOP result=<..> reason=<..>`, or `NEXT: ASK kind=CYCLE_CAP
-cycle_rounds=<n> cap=<m>` — moving the continue/stop call from host judgment to SAGE. It is
+`NEXT: CONTINUE`, `NEXT: STOP result=<..> reason=<..>`, `NEXT: ASK kind=CYCLE_CAP
+cycle_rounds=<n> cap=<m>`, or (blocking convergence only) `NEXT: ASK kind=CRITICAL_P2
+findings=<ids>` — moving the continue/stop call from host judgment to SAGE. It is
 advisory (writes nothing); on `STOP`, pass the printed `result`/`reason` straight to `close`.
-On `ASK`, the user decides — see **Cycle cap** below. Do not open another round first: `round`
-is refused while the cycle sits at its cap.
+On `ASK`, the user decides — see **Cycle cap** and **Blocking convergence** below. Do not open
+another round first: `round` is refused while either question is open.
 
 Evaluation order it uses (highest precedence first — budget/iteration limits win over
 convergence, matching what `close` accepts):
 1. architecture escalation recorded (`arch > 0`) → **BLOCKED** (`BLOCKED_ARCH`)
 2. cumulative tokens ≥ `cfg.budget_tokens[risk]` → **BLOCKED** (`BUDGET_TOK`)
-3. iteration ≥ `cfg.max_iterations[risk]` → **APPROVED** (`CONVERGED`) if last-round survivors == 0, else **BLOCKED** (`BUDGET_ITER`)
-4. cycle rounds (every run of this cycle) ≥ the cycle cap → **APPROVED** (`CONVERGED`) if last-round survivors == 0, else **ASK** (`CYCLE_CAP`) — also on a fresh run with no round yet
-5. last-round survivors == 0 → **APPROVED** (`CONVERGED`)
-6. otherwise → **CONTINUE**
+3. (`converge_on: blocking` only) a critical P2 in the last round has no decision → **ASK** (`CRITICAL_P2`)
+4. iteration ≥ `cfg.max_iterations[risk]` → **APPROVED** if the loop has converged (below), else **BLOCKED** (`BUDGET_ITER`)
+5. cycle rounds (every run of this cycle) ≥ the cycle cap → **APPROVED** if converged, else **ASK** (`CYCLE_CAP`) — also on a fresh run with no round yet
+6. converged → **APPROVED** (`CONVERGED` when nothing survived; `CONVERGED_RESIDUAL` when only non-blocking findings survived under `converge_on: blocking`)
+7. otherwise → **CONTINUE** (also when the loop converged below a Fast run's minimum rounds)
+
+"Converged" means zero survivors under the default `converge_on: all`. Under `converge_on:
+blocking` it means no blocking finding is left (see below).
 
 ### Cycle cap (`NEXT: ASK kind=CYCLE_CAP`)
 Stop and ask the user, showing the cycle rounds, what still survives (`sage review-loop ledger
@@ -218,6 +223,50 @@ show`) and the three choices. Never pick one yourself:
    run and the `early_completion` opt-in).
 3. **Stop** — `sage review-loop close --run-id $RUN_ID --result BLOCKED --reason CYCLE_CAP
    --iterations <n> --reviewer-actual $ACTUAL`.
+
+### Blocking convergence (`converge_on: blocking`)
+The default `converge_on: all` keeps every rule above as it is — skip this section. When the run
+was opened under `cfg.converge_on: blocking` (the open snapshot decides; changing the profile
+mid-run changes nothing), these rules apply on top:
+
+- **Critical P2.** A P2 in one of the `cfg.critical_p2` categories (default:
+  `unauthenticated_crash`, `exposure_or_traversal`, `wrong_content_served`, `deploy_breakage`,
+  `security_setting_regression`, `silent_data_corruption`) is marked `critical: true` with its
+  `critical_category`. Refuters may dispute the category. `critical` is for P2 only.
+- **`NEXT: ASK kind=CRITICAL_P2`.** Do not rework. Report each listed finding to the developer —
+  the verbatim claim, the evidence and the expected fix scope — and let them choose per finding.
+  Record each answer in that turn with the user's own words, passing the `[claim <hash>]` shown
+  next to that finding so an answer never lands on a claim that changed since:
+  `sage review-loop decide --run-id $RUN_ID --finding <id> --claim <hash> --fix|--accept
+  --reason "<…>" --decided-by "<…>"`. `--fix` → rework, then the next round. `--accept` → the finding becomes an
+  accepted residual. A decision binds to that round's finding text; if the same critical
+  survives the next round, it is asked again.
+- **Convergence.** Nothing surviving is still a normal `CONVERGED` close (no receipt needed).
+  With findings surviving, `CONVERGED`/`DRY` closes are refused — the only approval is the
+  residual one below.
+  When findings survive, blocking = survivors at P0, P1 (always) and the other `cfg.severity_block`
+  severities + undecided
+  critical P2 + critical P2 decided `--fix`. The loop converges when that is zero, no refutation
+  is pending, no lens is unexplored, and the last round has a sidecar receipt (a round recorded
+  without `--findings-file` cannot show it). `next` then prints `STOP result=APPROVED
+  reason=CONVERGED_RESIDUAL`; close with that reason. The close records reduced assurance
+  `REDUCED_BY_POLICY`.
+- **Phase 05 and 06 markers.** After a `CONVERGED_RESIDUAL` close write, outside fenced code,
+  exactly one each of `Review-Assurance: REDUCED_BY_POLICY`, `Review-Close-Reason:
+  CONVERGED_RESIDUAL`, `Review-Rounds: <n> (configured max: <m>)` and `Residual-Findings:
+  P0=<n>, P1=<n>, P2=<n>, P3=<n>` (from the close), plus the residual list from `sage review-loop
+  ledger show`. The 06←05 gate and CI check them against the audit.
+- **Rework scope.** Fix a non-blocking survivor only when the fix is local — no new state, lock,
+  marker, protocol or background process. Otherwise set `disposition: residual`. When a
+  blocking finding's fix needs such a mechanism, triage it `architecture_change`.
+  A rework lists the findings it closes in `closes`; the next round's FIND checks each and
+  writes the result to the sidecar `closure` list.
+- **Pre-existing defects.** Mark a finding that also exists at the cycle base `preexisting: true`
+  with `exposure`: `touched` (this diff edits that line), `reach_changed` (this diff changes who
+  can reach it, its input or its permission) or `unchanged`. Refuters drop a pre-existing finding
+  with `drop_reason: out_of_scope_preexisting` — it goes to the ledger as a known pre-existing
+  defect (a separate issue candidate). A P0/P1 or critical finding may be dropped that way only
+  when `exposure` is `unchanged`; `round` refuses otherwise.
 
 `DRY` (dry-convergence: `cfg.dry_rounds` consecutive rounds with 0 new findings) remains a
 valid `close` reason for a resolved loop, but `next` reports resolved loops as `CONVERGED`
@@ -263,9 +312,12 @@ Each finding carries `id` (unique in the round), `source` `{"kind": "lens"|"peer
 `reason`, `drop_reason` `not_a_defect|out_of_scope_preexisting|insufficient_evidence|null`),
 `triage` (`local` | `architecture_change`), `disposition` (`fix` | `residual` | `rejected` |
 `pending`), `closes` (ids `<run_id>:<iteration>:<id>` this rework claims to close) and
-`ledger_ref` (`L-<n>` when it re-raises a ledger entry). Optional round fields: `packet`
+`ledger_ref` (`L-<n>` when it re-raises a ledger entry). Blocking convergence adds
+`critical_category`, `preexisting` and `exposure` (see above). Optional round fields: `packet`
 (`path`, `sha256`), `usage` (`host`, `peer` copied verbatim from `PEER_TOKENS`, per-lens
-`lenses`), and `unexplored` (lenses that were truncated or timed out). SAGE stores it under
+`lenses`), `unexplored` (lenses that were truncated or timed out) and `closure`
+(`{"ref": "<run_id>:<iteration>:<id>", "closed": true|false, "note": ...}` per finding a
+previous rework claimed to close). SAGE stores it under
 `.sage/review-rounds/`, records its sha256 in the audit, and saves the working-tree delta since
 the previous round as a patch. Counts you also pass by hand must match the sidecar or nothing is
 written.
@@ -294,8 +346,10 @@ Available only when `pdca.review_loop.early_completion.enabled` is true, and onl
 `sage review-loop next` still recommends `CONTINUE`, or stopped at a ceiling where the user is
 the one to decide: `STOP` with `BUDGET_ITER` (the run's iteration cap) or `ASK` with `CYCLE_CAP`
 (the cycle cap). A loop that `CONVERGED` closes normally instead, and `BUDGET_TOK` or
-`BLOCKED_ARCH` cannot be closed by an authorization at all. Before asking, show the user what
-stays open: the close prints the residual findings from the last round's sidecar.
+`BLOCKED_ARCH` cannot be closed by an authorization at all, and neither can `ASK CRITICAL_P2`
+(decide the critical findings first). Under `converge_on: blocking` the "no blocking finding"
+check uses the blocking count above instead of `severity_block` alone. Before asking, show the
+user what stays open: the close prints the residual findings from the last round's sidecar.
 
 If that key is absent or false, early completion is unavailable: say so, keep running the loop
 to convergence or its configured maximum, and **never propose editing the profile mid-loop to

@@ -378,17 +378,40 @@ run 은 항상 사이클에 묶입니다. 라운드 상한(`pdca.review_loop.max
 두면 「상한에서 묻는다」는 계약이 사라지기 때문입니다. 업그레이드 전에 사이클 없이 열린 run 은 상한을
 소급 적용하지 않고 `show` 에 따로 표시합니다.
 
+## 크리티컬 P2 결정 전이라 라운드·종료가 거부됨 (`converge_on: blocking`)
+
+```
+[sage review-loop] run rl-… 의 크리티컬 P2(F3)가 개발자 결정을 기다립니다. ...
+[sage review-loop] decide refused: F2 is not a critical P2 awaiting a decision (pending: F3)
+```
+
+`converge_on: blocking` 으로 연 run 은 크리티컬 P2 를 자동으로 고치지 않습니다. `next` 가 `NEXT: ASK
+kind=CRITICAL_P2 findings=…` 를 내면 지적마다 개발자에게 보고하고 `sage review-loop decide --run-id <id>
+--finding <id> --claim <hash> --fix|--accept --reason <사유> --decided-by <이름>` 으로 기록하십시오. 그 전에는 라운드도,
+`BLOCKED_ARCH`·`BUDGET_TOK` 외의 종료도 거부됩니다. 결정은 그 라운드의 지적 내용에 묶여서, 다음 라운드에
+같은 크리티컬이 다시 살아남으면 다시 묻습니다.
+
+`round` 가 `converge_on: blocking 규칙을 어깁니다` 로 거부되면 사이드카를 고치십시오 — `critical` 은 P2
+에만, 분류는 `critical_p2` 목록 안에서, P0·P1·크리티컬 지적을 `out_of_scope_preexisting` 으로 버리려면
+`preexisting: true` 와 `exposure: unchanged` 가 있어야 합니다(이번 변경이 그 결함을 건드렸거나 노출을
+바꿨으면 버릴 수 없습니다).
+
+`next` 가 잔여만 남았는데도 `CONTINUE` 를 내면 근거 줄을 보십시오. 마지막 라운드가 사이드카 없이
+기록됐거나(크리티컬 0 을 증명할 수 없음), 미결 반박·미탐색 렌즈가 남았거나, Fast run 의 최소 라운드에
+아직 못 미친 것입니다.
+
 ## Phase 05가 "보증 저하 표기" 때문에 막힘
 
 ```
-조기 완료로 닫히지 않은 run 인데 보증 저하를 자칭함: [...]
+잔여를 안고 닫히지 않은 run 인데 보증 저하를 자칭함: [...]
 Review-Assurance 선언은 fence 밖에 정확히 1개여야 함(found 0)
 ```
 
-기준은 표기의 존재가 아니라 **값**입니다. `Review-Assurance: REDUCED_BY_USER_AUTHORIZATION` 또는
-`Review-Close-Reason: USER_AUTHORIZED_EARLY` 중 하나라도 적으면 보증 저하를 자칭한 것입니다. 자칭
-했거나 감사가 조기 종료로 닫혔다면 네 표기(`Review-Assurance`, `Review-Close-Reason`,
-`Review-Rounds`, `Residual-Findings`)를 모두 적고 값이 감사 레코드와 일치해야 합니다. 정상 수렴한
+기준은 표기의 존재가 아니라 **값**입니다. `Review-Assurance` 에 `REDUCED_BY_USER_AUTHORIZATION`·
+`REDUCED_BY_POLICY`, 또는 `Review-Close-Reason` 에 `USER_AUTHORIZED_EARLY`·`CONVERGED_RESIDUAL` 중 하나라도
+적으면 보증 저하를 자칭한 것입니다. 자칭했거나 감사가 그 사유(조기 종료·잔여 승인)로 닫혔다면 네 표기(`Review-Assurance`, `Review-Close-Reason`,
+`Review-Rounds`, `Residual-Findings`)를 모두 적고 값이 감사 레코드와 일치해야 합니다 — 조기 종료는
+`REDUCED_BY_USER_AUTHORIZATION`, 잔여 승인은 `REDUCED_BY_POLICY` 입니다. 정상 수렴한
 run이라면 그 두 값을 적지 않습니다. `Review-Rounds: 3` 같은 중립 표기만 있는 것은 막지 않습니다.
 `Review-Rounds`의 `(configured max: <max>)`도 감사와 같아야 합니다. 상한이 없는 프로젝트는 감사와
 같은 낱말인 `unbounded`를 적습니다.

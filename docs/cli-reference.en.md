@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:8fca55f2a5346f217fb9390232cd1e9a27f5e59b44c05f720d15f4ad44ceb3e5 -->
+<!-- sage-doc-source: cli-reference.md sha256:c77dd735d6b95ef1f2ed334695306d0062f3d4afa7c1494d72da27c4a9885328 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for
@@ -330,11 +330,13 @@ switching. Close normally with `fast-cycle close` before `cycle clear`; abandon 
 | `sage review-loop open [--cycle-stem S --lenses CSV]` | Start a review loop. A run is always bound to a cycle — without `--cycle-stem` the declared cycle (`SAGE_CYCLE_STEM` > `.sage/cycle.json`) is used, and the open is refused when none resolves. Fast binds exact stem and lenses |
 | `sage review-loop round --findings-file FILE [--tokens N --peer-tokens "<REVIEWER_TOKENS value>"]` | Record the round sidecar (`sage.review-round/1`: verbatim findings, sources, refutation reasons, dispositions). Counts and the severity receipt are derived from it; its sha256 and the working-tree delta since the previous round are recorded too |
 | `sage review-loop round [... --lens-receipts CSV] [--survived-by-severity P0=N,P1=N,P2=N,P3=N] [--peer-tokens "<REVIEWER_TOKENS value>"]` | Record counts by hand without a sidecar (`sidecar: absent`): findings, rebuttals, fixes, Fast lens receipts, the per-severity residual receipt, and the reviewer's measured usage. The working-tree id and the delta since the previous round are recorded with or without a sidecar |
-| `sage review-loop next` | Produce a deterministic continue, stop, or ask recommendation. When the cycle's rounds reach `max_cycle_rounds` it prints `NEXT: ASK kind=CYCLE_CAP` |
+| `sage review-loop next` | Produce a deterministic continue, stop, or ask recommendation. When the cycle's rounds reach `max_cycle_rounds` it prints `NEXT: ASK kind=CYCLE_CAP`; on a `converge_on: blocking` run with an undecided critical P2 it prints `NEXT: ASK kind=CRITICAL_P2 findings=<ids>` |
 | `sage review-loop decide --run-id ID --cycle continue --extend N --reason R --decided-by W` | Record the user's "continue" at the cycle cap in the audit and raise the cap by N rounds |
+| `sage review-loop decide --run-id ID --finding F [--claim H] --fix\|--accept --reason R --decided-by W` | Record the developer's decision on one critical P2 (fix or accept as residual), bound to that round's finding text (claim hash). `--claim` is the leading part of the claim hash `next` showed; the decision is refused if the claim changed since |
 | `sage review-loop ledger add\|show\|render [--cycle-stem S]` | Cycle carry-over ledger. `add` records out-of-scope decisions and known pre-existing defects; `render` prints the packet's "Decisions and residuals" section |
 | `sage review-loop close` | Close the loop with `--result APPROVED|BLOCKED`. Stopping at the cycle cap is `--result BLOCKED --reason CYCLE_CAP` |
 | `sage review-loop close --reason USER_AUTHORIZED_EARLY --authorization-reason R --confirmed-by W --confirm USER_AUTHORIZED_EARLY` | Close before convergence on an explicit user authorization (reduced-assurance markers required) |
+| `sage review-loop close --result APPROVED --reason CONVERGED_RESIDUAL --iterations N` | Approve a `converge_on: blocking` run once no blocking finding is left and only non-blocking residuals survive. Reduced assurance `REDUCED_BY_POLICY` (markers required) |
 | `sage retro --feature STEM` | Generate a completed-cycle retrospective note and distillation input |
 | `sage retro --check NOTE` | Verify that a retrospective note is not an untouched template |
 
@@ -364,6 +366,17 @@ line such as `Review-Rounds: 3` is not blocked. The `(configured max: <max>)` pa
 inflating or lowering it changes how the document reads. A project with no ceiling configured writes
 `unbounded`, the same word the audit records. The `--survived-by-severity` total must equal
 `--survived` exactly — that is what stops a `P0=0`-only receipt from hiding a blocking finding.
+
+The residual approval of blocking convergence (`converge_on: blocking`), `CONVERGED_RESIDUAL`, uses
+the same four markers with different values — `Review-Assurance: REDUCED_BY_POLICY` and
+`Review-Close-Reason: CONVERGED_RESIDUAL`. The value tells who accepted the residuals (the user on the
+spot versus the project policy). Writing either token alone is a claim, and a value that differs from
+the audit's close reason is blocked. The server authority records this run's assurance as
+`REDUCED_BY_POLICY`. A residual close goes through the same audit-integrity, Done Criteria and
+acceptance checks as an early completion, and recomputes the verdict inside the lock — it is refused
+if a round or decision was added in between. On a `blocking` run with surviving findings, a
+`CONVERGED` or `DRY` approval is refused whatever the termination mode, so an approval that carries
+residuals never stays on record as a standard one.
 
 What an early completion accepts is residual review findings, not unverified requirements. If the
 selected Phase 04 still carries an acceptance `FAIL`, or a required `NOT TESTED` without an active
