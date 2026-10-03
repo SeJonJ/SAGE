@@ -104,6 +104,7 @@ pdca:                            # PDCA phase 의무구조 — pre-implementatio
     refuters: 2                  # 라운드당 반박자 수. 기각 = 반증표 > refuters/2(과반). 동률은 생존 — 2 면 한 명이 단독 기각 못 함
     refute_threshold: majority   # v1=majority 고정
     max_iterations: { L2: 1, L3: 3 }      # risk-tier 비례 반복 상한. 초과 미수렴 → BLOCKED
+    max_cycle_rounds: { L2: 3, L3: 5 }    # 사이클 전체(같은 cycle stem 의 모든 run) 라운드 상한. 닿으면 next 가 ASK 로 사용자에게 묻는다(계속·잔여 승인·멈춤). max_iterations 와 먼저 닿는 쪽이 이긴다
     dry_rounds: 1                # K라운드 연속 신규 0 → 수렴(APPROVED)
     budget_tokens: { L2: 150000, L3: 600000 }   # loop-until-budget. 초과 → BLOCKED
     cross_model: from_options.cross_model        # FIND 단계에 opposite-runtime peer 리뷰어 1명 추가(sage cross-check). 문제를 *찾는* 쪽 — refuters(반박자) 아님. options.cross_model 연동

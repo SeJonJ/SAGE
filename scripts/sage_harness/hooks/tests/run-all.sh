@@ -421,5 +421,13 @@ echo "### 82. 레이아웃 이행 (재생성·검증 후 증명된 것만 제거
 python3 "$HERE/test_layout_migration.py" || rc=1
 
 echo ""
+echo "### 83. Phase 05 리뷰 규칙 1단계 (사이드카·사이클 상한 ASK·decide·CYCLE_CAP·상한 잔여 승인·장부)"
+python3 "$HERE/test_review_cycle_rules.py" || rc=1
+
+echo ""
+echo "### 84. 압축 직후 SessionStart 재진입 문맥 (compact 에서만 · 양 host wire · 모호 사이클 미선택 · 엔진 비의존)"
+python3 "$HERE/test_compact_reentry.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

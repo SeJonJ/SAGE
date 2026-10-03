@@ -115,7 +115,7 @@ class TestEarlyCloseCLI(unittest.TestCase):
                               text=True, capture_output=True, env=env, cwd=self.root)
 
     def _open(self):
-        result = self._run("open", "--risk", self.RISK)
+        result = self._run("open", "--risk", self.RISK, "--cycle-stem", "demo")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.run_id = result.stdout.strip().split()[-1]
         return self.run_id

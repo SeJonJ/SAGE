@@ -25,8 +25,18 @@ _CHAIN_FIELDS = ("chain_version", "prev_hash", "record_hash")
 # 종료 어휘(설계 §3) — 호출자가 close 에 넘기는 표준값. 라이브러리는 강제 아닌 참조용 상수로 노출.
 CLOSE_RESULTS = ("APPROVED", "BLOCKED")
 EARLY_CLOSE_REASON = "USER_AUTHORIZED_EARLY"
+# 사이클 라운드 상한에서 사용자가 멈추기로 한 종료. `BUDGET_ITER` 로 닫으면 run 반복 상한에
+# 닿지 않은 run 이라 검산이 모순으로 잡는다 — 멈춘 이유가 다르므로 어휘도 따로 둔다.
+CYCLE_CAP_REASON = "CYCLE_CAP"
 CLOSE_REASONS = ("CONVERGED", "DRY", "BUDGET_ITER", "BUDGET_TOK", "BLOCKED_ARCH",
-                 EARLY_CLOSE_REASON)
+                 CYCLE_CAP_REASON, EARLY_CLOSE_REASON)
+# 사람이 내린 루프 결정. run 의 hash-chain 에 같이 묶여 round·close 와 같은 무결성 검사를 받는다.
+DECISION_EVENT = "decision"
+DECISION_CYCLE_CAP = "cycle_cap"
+# 사이클 전체 라운드 상한의 기본값. 키가 없는 profile 에도 적용한다 — 상한은 멈춤이 아니라
+# 사람에게 묻는 지점이라, 키가 없다고 무제한으로 두면 run 을 새로 열 때마다 카운터가 0 으로
+# 돌아가던 지금 상태가 그대로 남는다. 값을 바꿀 곳은 여기 한 곳이다.
+DEFAULT_MAX_CYCLE_ROUNDS = {"L2": 3, "L3": 5}
 SEVERITIES = ("P0", "P1", "P2", "P3")
 # 조기 종료로 닫힌 run 은 일반 승인과 같은 토큰(APPROVED)을 쓰되 보증 수준이 다르다는 것을
 # 이 값으로 드러낸다. 값이 없으면 두 승인이 구분되지 않는다.
@@ -397,11 +407,192 @@ def severity_receipt_issues(receipt, survived):
     return issues
 
 
+def _tier_cap(cfg, risk):
+    """cfg 스냅샷의 사이클 상한. 없거나 형식이 틀리면 기본값이다.
+
+    형식이 틀린 값을 무제한으로 읽으면 상한이 조용히 꺼진다. 기본값이 더 엄격하므로 그쪽으로 접는다.
+    """
+    block = (cfg or {}).get("max_cycle_rounds") if isinstance(cfg, dict) else None
+    value = block.get(risk) if isinstance(block, dict) else None
+    if type(value) is int and value >= 1:
+        return value
+    if risk in DEFAULT_MAX_CYCLE_ROUNDS:
+        return DEFAULT_MAX_CYCLE_ROUNDS[risk]
+    return min(DEFAULT_MAX_CYCLE_ROUNDS.values())
+
+
+def cycle_state(records, stem, cfg, risk):
+    """사이클 전체 라운드 집계와 상한 판정. 레코드 목록만 받는 순수 함수다.
+
+    `next`(권고), `round`·`decide` 의 잠금 안 재검사(거부), SessionStart 재진입 문맥(표시)이 모두
+    이 함수를 쓴다. 셋이 각자 세면 갈린다. `cfg`·`risk` 는 사이클의 가장 최근 run 의 open 레코드에서
+    온다(`run_cycle_state`). `tokens` 는 run 별 예산 총량(`budget_tokens_of`)의 합이다 — 표시용이고,
+    예산 판정은 지금처럼 run 단위다.
+    """
+    stems = {}
+    unbound = []
+    for record in records or []:
+        if not isinstance(record, dict) or record.get("event") != "loop_open":
+            continue
+        rid = record.get("run_id")
+        bound = record.get("cycle_stem")
+        if isinstance(bound, str) and bound:
+            stems[rid] = bound
+        elif isinstance(rid, str):
+            unbound.append(rid)
+    runs_in = [rid for rid, value in stems.items() if value == stem]
+    members = set(runs_in)
+    rounds = 0
+    extended = 0
+    for record in records or []:
+        if not isinstance(record, dict) or record.get("run_id") not in members:
+            continue
+        if record.get("event") == "round":
+            rounds += 1
+        elif (record.get("event") == DECISION_EVENT
+              and record.get("kind") == DECISION_CYCLE_CAP
+              and record.get("choice") == "continue"):
+            extend = record.get("extend")
+            if type(extend) is int and extend > 0:
+                extended += extend
+    base = _tier_cap(cfg, risk)
+    cap = base + extended
+    tokens = sum(budget_tokens_of([record for record in records or []
+                                   if isinstance(record, dict) and record.get("event") == "round"
+                                   and record.get("run_id") == rid])
+                 for rid in runs_in)
+    return {"stem": stem, "runs": runs_in, "rounds": rounds, "base_cap": base,
+            "extended": extended, "cap": cap, "reached": rounds >= cap,
+            "tokens": tokens, "unbound_runs": unbound}
+
+
+def run_cycle_state(records, run_id):
+    """run 이 속한 사이클의 상태. 사이클에 묶이지 않은 run 이면 None 이다.
+
+    업그레이드 전에 stem 없이 열린 run 에 상한을 소급 적용하지 않는다 — 그 run 은 open 시점의
+    계약으로 끝까지 간다.
+    """
+    opened = next((record for record in records or []
+                   if isinstance(record, dict) and record.get("event") == "loop_open"
+                   and record.get("run_id") == run_id), None)
+    if opened is None:
+        return None
+    stem = opened.get("cycle_stem")
+    if not isinstance(stem, str) or not stem:
+        return None
+    # 상한은 사이클 하나에 하나다. 조회한 run 의 cfg 를 쓰면 같은 사이클이 run 마다 다른 상한을
+    # 갖고, 상한이 큰 옛 run 으로 라운드를 더 붙일 수 있다. 가장 최근 run 의 cfg 가 기준이다.
+    latest = opened
+    for record in records or []:
+        if (isinstance(record, dict) and record.get("event") == "loop_open"
+                and record.get("cycle_stem") == stem):
+            latest = record
+    return cycle_state(records, stem, latest.get("cfg") or {}, latest.get("risk"))
+
+
+def _is_count(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def budget_tokens_of(rounds):
+    """예산 판정에 쓰는 총량 = 호스트 누적(tokens 의 최댓값) + 라운드별 peer 실측의 합.
+
+    peer 는 캐시 밖 입력 + 출력만 센다. 보고 입력의 대부분은 같은 맥락을 턴마다 다시 실은 캐시
+    읽기라, 그걸 더하면 예산 기본값이 가정한 "작업량"과 단위가 달라진다. 캐시 읽기는 라운드 기록에
+    따로 남아 있어 한도 해석이 달라져도 다시 계산할 수 있다. 측정 안 된 라운드("unknown")는 0 이
+    아니라 모르는 값이라, `next` 가 따로 경고한다.
+    """
+    host = max((int(r.get("tokens", 0) or 0) for r in rounds), default=0)  # tokens=누적 → max=총량
+    peer = 0
+    for r in rounds:
+        usage = r.get("peer_usage")
+        if isinstance(usage, dict):
+            # 쓰기 때 검증하지만 감사 파일은 손으로 고쳐질 수 있다 — 숫자가 아니면 그 라운드는 모르는 값.
+            for key in ("new_input", "output"):
+                if _is_count(usage.get(key)):
+                    peer += usage.get(key)
+    return host + peer
+
+
+def unmeasured_peer_rounds(rounds):
+    """peer 사용량을 모르는 라운드 수 — `unknown` 이거나 기록이 숫자가 아닌 경우."""
+    count = 0
+    for r in rounds:
+        usage = r.get("peer_usage")
+        if usage == "unknown":
+            count += 1
+        elif isinstance(usage, dict) and not all(
+                isinstance(usage.get(k), int) and not isinstance(usage.get(k), bool)
+                for k in ("new_input", "output")):
+            count += 1
+    return count
+
+
+def _tier_int(cfg, section, risk):
+    block = cfg.get(section) if isinstance(cfg, dict) and isinstance(cfg.get(section), dict) else {}
+    value = block.get(risk)
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def loop_verdict(records, run_id, cfg, risk):
+    """`next` 의 판정. 레코드 목록만 받는 순수 함수다.
+
+    `next`(권고), `decide` 의 CLI 검사와 잠금 안 검사, SessionStart 재진입 문맥이 같은 판정을 써야
+    한다. 각자 일부 조건만 보면 `next` 가 STOP 인데 `decide` 가 연장을 받거나, 훅이 STOP 을 ASK 로
+    보여 준다.
+
+    우선순위: 아키텍처 > 예산 > run 반복 상한 > 사이클 상한(ASK) > 수렴 > 계속.
+    반환 `basis` 는 판정 근거의 언어 중립 이름이고, 문장은 호출하는 쪽이 만든다.
+    """
+    rounds = [record for record in records or []
+              if isinstance(record, dict) and record.get("event") == "round"
+              and record.get("run_id") == run_id]
+    budget = _tier_int(cfg, "budget_tokens", risk)
+    max_iter = _tier_int(cfg, "max_iterations", risk)
+    cycle = run_cycle_state(records, run_id)
+    verdict = {"action": "CONTINUE", "result": None, "reason": None, "basis": "continue",
+               "iterations": len(rounds), "budget": budget, "max_iterations": max_iter,
+               "tokens": budget_tokens_of(rounds), "survived": None, "converged": False,
+               "unmeasured": unmeasured_peer_rounds(rounds), "cycle": cycle}
+
+    def _set(action, result, reason, basis):
+        verdict.update({"action": action, "result": result, "reason": reason, "basis": basis})
+        return verdict
+
+    if not rounds:
+        # 앞 run 들이 사이클 상한을 다 쓴 뒤 새 run 을 열었다. 라운드를 열기 전에 사람이 정해야 한다.
+        if cycle is not None and cycle["reached"]:
+            return _set("ASK", None, CYCLE_CAP_REASON, "cycle_cap")
+        return _set("CONTINUE", None, None, "no_rounds")
+    survived = int(rounds[-1].get("survived", 0) or 0)
+    converged = survived == 0
+    verdict.update({"survived": survived, "converged": converged})
+    if any(int(r.get("arch", 0) or 0) > 0 for r in rounds):
+        return _set("STOP", "BLOCKED", "BLOCKED_ARCH", "arch_escalated")
+    if budget is not None and verdict["tokens"] >= budget:
+        return _set("STOP", "BLOCKED", "BUDGET_TOK", "over_budget")
+    if max_iter is not None and len(rounds) >= max_iter:
+        if converged:
+            return _set("STOP", "APPROVED", "CONVERGED", "max_iter_converged")
+        return _set("STOP", "BLOCKED", "BUDGET_ITER", "max_iter_unresolved")
+    # 사이클 상한은 run 반복 상한 다음이다. 둘 다 닿았으면 run 이 먼저 BLOCKED 로 끝나고, 새 run 이
+    # 라운드 0 에서 이 질문을 받는다. 상한 라운드에서 수렴했으면 묻지 않고 정상 승인이다 — run 반복
+    # 상한의 처리와 같다.
+    if cycle is not None and cycle["reached"] and not converged:
+        return _set("ASK", None, CYCLE_CAP_REASON, "cycle_cap")
+    if converged:
+        return _set("STOP", "APPROVED", "CONVERGED", "converged")
+    return _set("CONTINUE", None, None, "continue")
+
+
 def record_round(root, run_id, iteration, found, survived, accepted, arch=0, tokens=0, now=None,
-                 lens_receipts=None, survived_by_severity=None, peer_usage=None):
+                 lens_receipts=None, survived_by_severity=None, peer_usage=None,
+                 sidecar=None, receipt=None, tree=None):
     """라운드 1건 기록.
     found=FIND 발견수, survived=REFUTE 생존수, accepted=REWORK 채택수, arch=아키텍처 에스컬레이션수, tokens=누적 토큰.
     peer_usage=이 라운드 peer 리뷰어 실측(`sage cross-check` 의 REVIEWER_TOKENS) dict 또는 "unknown".
+    sidecar=라운드 사이드카 참조(경로·sha256·스키마) 또는 "absent". receipt=승인 판단 값(사이드카 산출).
+    tree=작업 트리 식별자·직전 대비 delta 참조. 셋 다 None 이면 필드를 쓰지 않는다(옛 호출 호환).
     seq=append 순 단조 번호(라이브러리 stamp, 수기 위조·순서조작 탐지용 — 7차 배치3)."""
     t = time.time() if now is None else now
     record = {
@@ -419,6 +610,12 @@ def record_round(root, run_id, iteration, found, survived, accepted, arch=0, tok
                                           for key in SEVERITIES}
     if peer_usage is not None:
         record["peer_usage"] = peer_usage if peer_usage == "unknown" else dict(peer_usage)
+    if sidecar is not None:
+        record["sidecar"] = sidecar if sidecar == "absent" else dict(sidecar)
+    if receipt is not None:
+        record["receipt"] = dict(receipt)
+    if tree is not None:
+        record["tree"] = dict(tree)
 
     # close 와 같은 이유로 lock 안에서 다시 본다. CLI 는 orphan(open 없음)과 종료된 run 을 이미
     # 거부하지만 그 검사는 lock 밖이라, round 와 close 가 경합하면 둘 다 통과해 종료 뒤에 라운드가
@@ -426,14 +623,72 @@ def record_round(root, run_id, iteration, found, survived, accepted, arch=0, tok
     # 우회가 아니라 복구 불가능한 손상이다. 판정은 CLI 와 **같은 두 가지**만 옮긴다: iteration
     # 단조성 같은 새 규칙을 여기서 켜면 지금 통과하던 기록이 소급 거부된다.
     # (주석인 이유: 중첩 함수의 한국어 docstring 은 판정 문자열 오라클에 판정으로 잡힌다.)
+    # 사이클 상한도 같은 이유로 잠금 안에서 다시 본다. CLI 가 `next` 로 막아도, 두 세션이 같은
+    # 사이클에 라운드를 붙이면 둘 다 상한 밖에서 통과할 수 있다. 판정은 CLI 와 같은 `cycle_state`.
     def _open_and_not_closed(prior, _record):
         mine = [item for item in prior if item.get("run_id") == run_id]
         if not any(item.get("event") == "loop_open" for item in mine):
             raise AuditWriteError(f"run {run_id!r} was never opened")
         if any(item.get("event") == "loop_close" for item in mine):
             raise AuditWriteError(f"run {run_id!r} is already closed")
+        state = run_cycle_state(prior, run_id)
+        if state is not None and state["reached"]:
+            raise AuditWriteError(
+                f"cycle {state['stem']!r} reached its round cap "
+                f"({state['rounds']}/{state['cap']}); record a decision first")
 
     return _append(audit_path(root), record, validator=_open_and_not_closed)
+
+
+def record_decision(root, run_id, kind, choice, reason, decided_by, extend=None, now=None,
+                    cfg=None, risk=None):
+    """사람이 내린 루프 결정 1건. 지금 받는 결정은 사이클 상한에서의 「계속」 하나다.
+
+    「잔여 승인」과 「멈춤」은 각각 조기 종료 close 와 `CYCLE_CAP` close 가 결정 기록이다. 같은
+    결정을 두 레코드에 쓰면 둘이 어긋날 수 있다.
+
+    `cfg`·`risk` 는 `next` 가 판정에 쓴 값이다(CLI 가 넘긴다). 없으면 run 의 open 스냅샷을 쓴다.
+    """
+    if kind != DECISION_CYCLE_CAP or choice != "continue":
+        raise AuditWriteError(f"unsupported decision {kind!r}/{choice!r}")
+    if type(extend) is not int or extend < 1:
+        raise AuditWriteError("cycle continue decision needs a positive integer extend")
+    for label, value in (("reason", reason), ("decided_by", decided_by)):
+        if not isinstance(value, str) or not value.strip():
+            raise AuditWriteError(f"decision {label} must be a non-empty line")
+    t = time.time() if now is None else now
+    record = {"event": DECISION_EVENT, "run_id": run_id, "ts": _iso(t), "epoch": int(t),
+              "kind": kind, "choice": choice, "extend": extend,
+              "reason": reason, "decided_by": decided_by}
+
+    # 결정은 그 순간 상한에 닿아 있을 때만 의미가 있다. 상한 전에 미리 늘려 두면 「상한에서 묻는다」
+    # 는 계약이 사라진다. 사이클 값은 잠금 안에서 계산해 레코드에 같이 남긴다.
+    def _cap_reached(prior, rec):
+        mine = [item for item in prior if item.get("run_id") == run_id]
+        if not any(item.get("event") == "loop_open" for item in mine):
+            raise AuditWriteError(f"run {run_id!r} was never opened")
+        if any(item.get("event") == "loop_close" for item in mine):
+            raise AuditWriteError(f"run {run_id!r} is already closed")
+        state = run_cycle_state(prior, run_id)
+        if state is None:
+            raise AuditWriteError(f"run {run_id!r} is not bound to a cycle")
+        if not state["reached"]:
+            raise AuditWriteError(
+                f"cycle {state['stem']!r} has not reached its round cap "
+                f"({state['rounds']}/{state['cap']})")
+        # 상한에 닿았어도 판정이 STOP(아키텍처·예산·run 반복 상한·수렴)이면 물을 것이 없다.
+        opened = next(item for item in mine if item.get("event") == "loop_open")
+        verdict = loop_verdict(prior, run_id,
+                               opened.get("cfg") or {} if cfg is None else cfg,
+                               opened.get("risk") if risk is None else risk)
+        if verdict["action"] != "ASK":
+            raise AuditWriteError(
+                f"run {run_id!r} is at {verdict['action']} {verdict['reason']}, not ASK "
+                f"{CYCLE_CAP_REASON}; nothing to decide")
+        rec.update({"cycle_stem": state["stem"], "cycle_rounds": state["rounds"],
+                    "cap_before": state["cap"], "cap_after": state["cap"] + extend})
+
+    return _append(audit_path(root), record, validator=_cap_reached)
 
 
 def close_loop(root, run_id, result, reason, iterations, now=None, reviewer_actual=None,
@@ -470,6 +725,10 @@ def close_loop(root, run_id, result, reason, iterations, now=None, reviewer_actu
             rec["fast_run_id"] = authorization["fast_run_id"]
         if authorization.get("done_criteria_revision") is not None:
             rec["done_criteria_revision"] = authorization["done_criteria_revision"]
+        # 어느 판정에서 승인했는가(`CONTINUE`·`STOP:BUDGET_ITER`·`ASK:CYCLE_CAP`). 선택 필드라
+        # 옛 기록에는 없다 — 그때는 `CONTINUE` 에서만 허용됐다.
+        if authorization.get("stopped_at") is not None:
+            rec["stopped_at"] = authorization["stopped_at"]
         rec["attestation"] = "self_asserted_local"
         rec["review_assurance"] = REVIEW_ASSURANCE_REDUCED
     elif authorization is not None:
@@ -532,6 +791,12 @@ def rounds_of(root, run_id):
     """특정 run_id 의 round 레코드(append 순)."""
     return [r for r in read_records(root)
             if r.get("event") == "round" and r.get("run_id") == run_id]
+
+
+def decisions_of(root, run_id):
+    """특정 run_id 의 decision 레코드(append 순)."""
+    return [r for r in read_records(root)
+            if r.get("event") == DECISION_EVENT and r.get("run_id") == run_id]
 
 
 def close_of(root, run_id):
@@ -651,6 +916,11 @@ def integrity_issues(root):
     return integrity_from_records(*_read_status(audit_path(root)))
 
 
+# open 뒤에만, close 전에만 올 수 있는 이벤트. `decision` 도 라운드와 같은 축이다 — 닫힌 run 에
+# 결정이 붙거나 open 없는 결정이 있으면 그 결정이 어느 루프의 것인지 말할 수 없다.
+_RUN_EVENTS = ("round", "loop_close", DECISION_EVENT)
+
+
 def integrity_from_records(recs, file_issues):
     """`integrity_issues` 의 판정부. 파일을 모르는 순수 함수."""
     issues = [_diagnostic("loop_audit.malformed_line", evidence=issue) for issue in file_issues]
@@ -663,10 +933,10 @@ def integrity_from_records(recs, file_issues):
             issues.append(_diagnostic("loop_audit.duplicate_open", run_id=repr(rid), count=n))
     for r in recs:
         ev, rid = r.get("event"), r.get("run_id")
-        if ev in ("round", "loop_close") and rid not in opens:
+        if ev in _RUN_EVENTS and rid not in opens:
             issues.append(_diagnostic("loop_audit.orphan_event", event=ev, run_id=repr(rid)))
             continue
-        if ev in ("round", "loop_close") and closes.get(rid):
+        if ev in _RUN_EVENTS and closes.get(rid):
             issues.append(_diagnostic("loop_audit.event_after_close", event=ev, run_id=repr(rid)))
         if ev == "loop_close":
             closes[rid] = closes.get(rid, 0) + 1

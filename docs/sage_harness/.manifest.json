@@ -130,9 +130,9 @@
   },
   "generator_version": "1.2.0",
   "hook_runtime_hash": {
-    "claude": "sha256:2d0318a75804defae4ac5b53e3ea9e4fe5766c21a937c1c091f45bb780be8254",
-    "codex": "sha256:3519535630dd81a83cbe191b51fa3668d09ed3a9c46842e5948145a3737c941c",
-    "shared": "sha256:ce23aad8da8587eb1ae20e2a1bc96fca3367a586b2717d81cdf768867d45b561"
+    "claude": "sha256:b12f8aa772d58ef4a1b1ff0f195a26a99457125334d10a19198e4a3c7ffa678e",
+    "codex": "sha256:81e7562907900e6de6e2fb85f5e6338bc707606003ff37687ac702655bc5ca0f",
+    "shared": "sha256:7e7c76e3c73ee4c3206291d71ed2bd4928da98352d681a36df016d73c5e87694"
   },
   "host_runtime": "claude",
   "runtime_api": {

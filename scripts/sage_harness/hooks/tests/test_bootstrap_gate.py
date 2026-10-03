@@ -53,7 +53,7 @@ def _root(d):
     os.makedirs(strategies, exist_ok=True)
     for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py",
                "acceptance_waiver.py", "override_audit.py", "messages.py", "recovery.py", "cycle_state.py",
-               "document_language.py", "prose_language.py",
+               "document_language.py", "prose_language.py", "compact_reentry.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(d, "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
     shutil.copyfile(

@@ -452,8 +452,13 @@ class DoneCriteriaReviewLoopTests(unittest.TestCase):
     def test_enforce_approved_close_requires_open_cycle_stem(self):
         Path(self.root, "plan_docs", "00-base_plan", "feature.md").write_text(
             standard("- [x] implementation"), encoding="utf-8")
-        opened = self._sage("open", "--risk", "L3", "--run-id", "rl-no-stem")
-        self.assertEqual(opened.returncode, 0, opened.stderr)
+        # CLI 는 이제 사이클 없이 run 을 열지 않는다. 업그레이드 전에 열린 무결속 run 은 감사에
+        # 남아 있을 수 있으므로, 그 run 의 승인 close 가 여전히 거부되는지를 라이브러리로 만든
+        # 기록으로 본다.
+        refused = self._sage("open", "--risk", "L3", "--run-id", "rl-no-stem")
+        self.assertEqual(refused.returncode, 2)
+        import loop_audit  # noqa: PLC0415
+        loop_audit.open_loop(self.root, "L3", cfg={}, run_id="rl-no-stem")
         rounded = self._sage("round", "--run-id", "rl-no-stem", "--iteration", "1",
                              "--found", "0", "--survived", "0", "--accepted", "0")
         self.assertEqual(rounded.returncode, 0, rounded.stderr)

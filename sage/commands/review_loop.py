@@ -27,7 +27,13 @@ _EARLY_AUTHORIZATION_ARGS = ("authorization_reason", "confirmed_by", "confirm")
 # 같은 사실이 두 곳에서 다른 모양이었고, 대시보드는 그 `-1` 을 `2/-1 rounds` 로 냈다.
 # `loop_audit` 이 정본이지만 그 모듈 import 는 런타임 경로 주입 뒤에만 가능해 여기 상수로 둔다.
 _UNBOUNDED_LABEL = "unbounded"
-_BLOCKED_REASONS = {"BUDGET_ITER", "BUDGET_TOK", "BLOCKED_ARCH"}
+_CYCLE_CAP_REASON = "CYCLE_CAP"
+_BLOCKED_REASONS = {"BUDGET_ITER", "BUDGET_TOK", "BLOCKED_ARCH", _CYCLE_CAP_REASON}
+# 조기 종료(잔여 승인)를 받을 수 있는 `next` 판정. 반복 상한·사이클 상한은 "남은 것을 보고
+# 사람이 정하라" 는 지점이라 허용하고, 예산 초과·아키텍처 에스컬레이션은 사용자 승인으로 덮을 수
+# 없는 BLOCKED 라 허용하지 않는다. 수렴은 정상 close 가 있으므로 허용하지 않는다.
+_EARLY_ALLOWED_VERDICTS = {("CONTINUE", None), ("STOP", "BUDGET_ITER"), ("ASK", _CYCLE_CAP_REASON)}
+_GIT_TIMEOUT_S = 30
 
 
 def _load_loop_audit():
@@ -44,6 +50,14 @@ def _load_cycle_binding():
         sys.path.insert(0, hooks)
     import cycle_binding
     return cycle_binding
+
+
+def _load_runtime(name):
+    rt = os.path.join(_resources.sage_root(), "scripts", "sage_harness", "hooks", "runtime")
+    if rt not in sys.path:
+        sys.path.insert(0, rt)
+    import importlib
+    return importlib.import_module(name)
 
 
 def _nonneg_of(context):
@@ -87,10 +101,14 @@ def register(sub, context):
     pr = sp.add_parser("round", help=tr(context, "cli.review_loop.round"))
     pr.add_argument("--run-id", required=True)
     pr.add_argument("--iteration", required=True, type=_nonneg)
-    pr.add_argument("--found", required=True, type=_nonneg, help=tr(context, "cli.review_loop.found"))
-    pr.add_argument("--survived", required=True, type=_nonneg, help=tr(context, "cli.review_loop.survived"))
-    pr.add_argument("--accepted", required=True, type=_nonneg, help=tr(context, "cli.review_loop.accepted"))
-    pr.add_argument("--arch", default=0, type=_nonneg, help=tr(context, "cli.review_loop.arch"))
+    # 사이드카가 있으면 개수는 사이드카에서 산출하고, 손으로 준 값은 일치 검사에만 쓴다.
+    # 그래서 argparse 가 아니라 `_run_round` 가 "사이드카가 없을 때만 필수" 를 강제한다.
+    pr.add_argument("--found", default=None, type=_nonneg, help=tr(context, "cli.review_loop.found"))
+    pr.add_argument("--survived", default=None, type=_nonneg, help=tr(context, "cli.review_loop.survived"))
+    pr.add_argument("--accepted", default=None, type=_nonneg, help=tr(context, "cli.review_loop.accepted"))
+    pr.add_argument("--arch", default=None, type=_nonneg, help=tr(context, "cli.review_loop.arch"))
+    pr.add_argument("--findings-file", default=None,
+                    help=tr(context, "cli.review_loop.findings_file"))
     pr.add_argument("--tokens", default=0, type=_nonneg, help=tr(context, "cli.review_loop.tokens"))
     pr.add_argument("--peer-tokens", default=None,
                     help=tr(context, "cli.review_loop.peer_tokens"))
@@ -129,6 +147,38 @@ def register(sub, context):
     pn.add_argument("--run-id", required=True)
     pn.add_argument("--root", default=None)
     pn.set_defaults(func=_run_next)
+
+    pd = sp.add_parser("decide", help=tr(context, "cli.review_loop.decide"))
+    pd.add_argument("--run-id", required=True)
+    pd.add_argument("--cycle", required=True, choices=["continue"],
+                    help=tr(context, "cli.review_loop.decide_cycle"))
+    pd.add_argument("--extend", required=True, type=_nonneg,
+                    help=tr(context, "cli.review_loop.decide_extend"))
+    pd.add_argument("--reason", required=True, help=tr(context, "cli.review_loop.decide_reason"))
+    pd.add_argument("--decided-by", required=True,
+                    help=tr(context, "cli.review_loop.decide_decided_by"))
+    pd.add_argument("--root", default=None)
+    pd.set_defaults(func=_run_decide)
+
+    pl = sp.add_parser("ledger", help=tr(context, "cli.review_loop.ledger"))
+    lsp = pl.add_subparsers(dest="ledger_action", metavar="<action>")
+    lsp.required = True
+    la_add = lsp.add_parser("add", help=tr(context, "cli.review_loop.ledger_add"))
+    la_add.add_argument("--cycle-stem", default=None, help=tr(context, "cli.review_loop.ledger_stem"))
+    la_add.add_argument("--kind", required=True, choices=["out_of_scope", "preexisting", "withdraw"])
+    la_add.add_argument("--source", default=None, help=tr(context, "cli.review_loop.ledger_source"))
+    la_add.add_argument("--reason", required=True)
+    la_add.add_argument("--severity", default=None, choices=["P0", "P1", "P2", "P3"])
+    la_add.add_argument("--location", default=None)
+    la_add.add_argument("--ref", default=None, help=tr(context, "cli.review_loop.ledger_ref"))
+    la_add.add_argument("--root", default=None)
+    la_add.set_defaults(func=_run_ledger_add)
+    for name in ("show", "render"):
+        lp = lsp.add_parser(name, help=tr(context, f"cli.review_loop.ledger_{name}"))
+        lp.add_argument("--cycle-stem", default=None,
+                        help=tr(context, "cli.review_loop.ledger_stem"))
+        lp.add_argument("--root", default=None)
+        lp.set_defaults(func=_run_ledger_show if name == "show" else _run_ledger_render)
 
 
 def _find_project_root(start):
@@ -211,6 +261,33 @@ def _comma_list(value):
     return items
 
 
+def _open_cycle_stem(root, explicit, language):
+    """open 이 run 에 묶을 사이클 stem. 못 정하면 None(거부 문구는 여기서 낸다).
+
+    사이클 라운드 상한은 같은 stem 의 run 을 합쳐 센다. stem 없이 열린 run 은 그 집계에서 빠지므로,
+    결속을 선택으로 두면 상한을 우회하는 run 이 생긴다. 해석은 게이트와 같은 `resolve_stem`(env > 파일)
+    이다 — 다른 해석기를 쓰면 게이트가 보는 사이클과 루프가 세는 사이클이 갈린다.
+    """
+    binding = _load_cycle_binding()
+    cycle_state = _load_runtime("cycle_state")
+    try:
+        resolved, origin, error = cycle_state.resolve_stem(root)
+    except Exception as exc:  # noqa: BLE001 - 선언을 못 읽으면 "없다" 가 아니라 실패다
+        resolved, origin, error = "", "", f"{type(exc).__name__}: {exc}"
+    if error:
+        print(tr(language, "cli.review_loop.cycle_declaration_issue",
+                 error=render_issue(language, error)), file=sys.stderr)
+    stem = explicit if explicit is not None else resolved
+    normalized = binding.normalize_stem(stem) if stem else None
+    if not normalized:
+        print(tr(language, "cli.review_loop.cycle_stem_required"), file=sys.stderr)
+        return None
+    if explicit is not None and resolved and binding.normalize_stem(resolved) != normalized:
+        print(tr(language, "cli.review_loop.cycle_stem_differs", explicit=normalized,
+                 resolved=resolved, origin=origin), file=sys.stderr)
+    return normalized
+
+
 def _run_open(args):
     la = _load_loop_audit()
     root = _root(args)
@@ -226,12 +303,15 @@ def _run_open(args):
     except ValueError as exc:
         print(f"[sage review-loop] --lenses invalid: {exc}", file=sys.stderr)
         return 2
+    stem = _open_cycle_stem(root, args.cycle_stem, language_of(args))
+    if stem is None:
+        return 2
     rid = _write_audit(
         la,
         lambda: la.open_loop(root, args.risk, cfg=_cfg_snapshot(root, profile),
                              run_id=args.run_id,
                              reviewer_requested=args.reviewer_requested,
-                             cycle_stem=args.cycle_stem, lenses=lenses),
+                             cycle_stem=stem, lenses=lenses),
         language=language_of(args),
     )
     if rid is None:
@@ -251,6 +331,55 @@ def _run_round(args):
     if _is_closed(la, root, args.run_id):
         print(tr(language_of(args), "cli.review_loop.msg05", args_run_id=args.run_id), file=sys.stderr)
         return 2
+    state = la.run_cycle_state(la.read_records(root), args.run_id)
+    if state is not None and state["reached"]:
+        print(tr(language_of(args), "cli.review_loop.round_cycle_cap", stem=state["stem"],
+                 rounds=state["rounds"], cap=state["cap"], run_id=args.run_id), file=sys.stderr)
+        return 2
+    sidecar_doc = None
+    if args.findings_file is not None:
+        rounds_mod = _load_runtime("review_rounds")
+        try:
+            with open(args.findings_file, "rb") as handle:
+                data = handle.read(rounds_mod.MAX_SIDECAR_BYTES + 1)
+            sidecar_doc = rounds_mod.parse(data, run_id=args.run_id, iteration=args.iteration)
+        except OSError as exc:
+            print(f"[sage review-loop] --findings-file unreadable: {type(exc).__name__}: {exc}",
+                  file=sys.stderr)
+            return 2
+        except rounds_mod.SidecarError as exc:
+            print(f"[sage review-loop] --findings-file invalid: {exc}", file=sys.stderr)
+            return 2
+        derived = rounds_mod.derive(sidecar_doc)
+        mismatched = [f"--{name.replace('_', '-')}={getattr(args, name)} != {derived[name]}"
+                      for name in ("found", "survived", "accepted", "arch")
+                      if getattr(args, name) is not None and getattr(args, name) != derived[name]]
+        if args.survived_by_severity is not None:
+            try:
+                manual = _severity_receipt(args.survived_by_severity)
+            except ValueError as exc:
+                print(f"[sage review-loop] --survived-by-severity invalid: {exc}", file=sys.stderr)
+                return 2
+            if manual != derived["survived_by_severity"]:
+                mismatched.append(f"--survived-by-severity {manual} != "
+                                  f"{derived['survived_by_severity']}")
+        if mismatched:
+            print("[sage review-loop] counts disagree with --findings-file: "
+                  + "; ".join(mismatched), file=sys.stderr)
+            return 2
+        for name in ("found", "survived", "accepted", "arch"):
+            setattr(args, name, derived[name])
+        args.survived_by_severity = ",".join(
+            f"{key}={value}" for key, value in derived["survived_by_severity"].items())
+    else:
+        missing = [f"--{name}" for name in ("found", "survived", "accepted")
+                   if getattr(args, name) is None]
+        if missing:
+            print(tr(language_of(args), "cli.review_loop.round_counts_required",
+                     missing=", ".join(missing)), file=sys.stderr)
+            return 2
+        if args.arch is None:
+            args.arch = 0
     # 불가능 튜플 거부(순수 산술, 읽기 불요): survived ≤ found, accepted ≤ survived, arch ≤ survived.
     #   (REFUTE 는 발견 부분집합, REWORK 채택은 생존 부분집합, arch 에스컬레이션은 생존 중 분류.)
     if args.survived > args.found:
@@ -283,12 +412,32 @@ def _run_round(args):
     except ValueError as exc:
         print(f"[sage review-loop] --peer-tokens invalid: {exc}", file=sys.stderr)
         return 2
+    sidecar_ref, round_receipt, tree = "absent", None, None
+    if sidecar_doc is not None:
+        side_peer = sidecar_doc["usage"]["peer"]
+        if side_peer is not None and peer_usage is not None and side_peer != peer_usage:
+            print("[sage review-loop] --findings-file usage.peer disagrees with --peer-tokens "
+                  "(--peer-tokens is the measured value; copy it into the sidecar verbatim)",
+                  file=sys.stderr)
+            return 2
+        rounds_mod = _load_runtime("review_rounds")
+        try:
+            sidecar_ref = rounds_mod.store(root, sidecar_doc)
+        except (OSError, rounds_mod.SidecarError) as exc:
+            print(f"[sage review-loop] sidecar could not be stored: {type(exc).__name__}: {exc}",
+                  file=sys.stderr)
+            return 2
+        round_receipt = rounds_mod.derive(sidecar_doc)["receipt"]
+    # 작업 트리 식별자는 사이드카와 무관하게 라운드마다 남긴다. 한 라운드라도 빠지면 다음 delta 가
+    # 「직전 라운드 대비」가 아니게 된다.
+    tree = _round_tree(la, _load_runtime("review_rounds"), root, args.run_id, args.iteration)
     written = _write_audit(
         la,
         lambda: la.record_round(root, args.run_id, args.iteration, args.found,
                                 args.survived, args.accepted, arch=args.arch,
                                 tokens=args.tokens, lens_receipts=lens_receipts,
-                                survived_by_severity=receipt, peer_usage=peer_usage),
+                                survived_by_severity=receipt, peer_usage=peer_usage,
+                                sidecar=sidecar_ref, receipt=round_receipt, tree=tree),
         language=language_of(args),
     )
     if written is None:
@@ -296,6 +445,83 @@ def _run_round(args):
     print(f"[sage review-loop] round {args.iteration} run_id={args.run_id} "
           f"found={args.found} survived={args.survived} accepted={args.accepted} arch={args.arch}", file=sys.stderr)
     return 0
+
+
+def _git(root, *argv, env=None, binary=False):
+    import subprocess
+    result = subprocess.run(["git", *argv], cwd=root, capture_output=True, env=env,
+                            timeout=_GIT_TIMEOUT_S)
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", "replace").strip().splitlines()
+        raise RuntimeError(detail[-1] if detail else f"git {argv[0]} exited {result.returncode}")
+    return result.stdout if binary else result.stdout.decode("utf-8", "replace").strip()
+
+
+def _previous_tree(la, records, run_id):
+    """직전 라운드의 tree → (식별자 또는 None, 없을 때의 사유 또는 None).
+
+    직전 라운드는 같은 run 의 마지막 라운드, run 의 첫 라운드면 같은 사이클의 마지막 라운드다. 그
+    라운드에 식별자가 없으면(업그레이드 전 기록·git 실패) 더 앞 라운드로 건너뛰지 않는다 — 건너뛰면
+    patch 가 두 라운드 이상의 변경을 「직전 대비」로 담는다.
+    """
+    def _last(run_ids):
+        found = None
+        for record in records:
+            if record.get("event") == "round" and record.get("run_id") in run_ids:
+                found = record
+        return found
+    previous = _last({run_id})
+    if previous is None:
+        state = la.run_cycle_state(records, run_id)
+        previous = _last(set(state["runs"]) - {run_id}) if state else None
+    if previous is None:
+        return None, "first_round"
+    tree = previous.get("tree")
+    if isinstance(tree, dict) and isinstance(tree.get("id"), str):
+        return tree["id"], None
+    return None, "previous_round_without_tree"
+
+
+def _round_tree(la, rounds_mod, root, run_id, iteration):
+    """라운드 시점 작업 트리 식별자와 직전 라운드 대비 delta.
+
+    임시 index 로 `git add -A` → `git write-tree` 를 한다. 실제 index 는 건드리지 않는다. 임시
+    index 를 실제 index 의 사본에서 시작하는 이유는 바뀌지 않은 파일의 재해시를 피하려는 것이다.
+    계측이라 실패가 라운드를 막지 않는다 — 사유만 남긴다.
+    """
+    import shutil
+    records = la.read_records(root)
+    prev, prev_note = _previous_tree(la, records, run_id)
+    tree = {"id": None, "prev": prev, "patch": None, "note": None}
+    workdir = None
+    try:
+        import tempfile
+        top = _git(root, "rev-parse", "--show-toplevel")
+        index = _git(root, "rev-parse", "--git-path", "index")
+        index = index if os.path.isabs(index) else os.path.join(root, index)
+        workdir = tempfile.mkdtemp(prefix="sage-round-index-")
+        temp_index = os.path.join(workdir, "index")
+        if os.path.isfile(index):
+            shutil.copyfile(index, temp_index)
+        env = dict(os.environ, GIT_INDEX_FILE=temp_index)
+        # `.sage/` 는 SAGE 가 라운드마다 쓰는 곳이다(감사·사이드카). 프로젝트가 git 무시로 두지
+        # 않았어도 빼야 delta 가 리뷰 대상 변경만 담는다.
+        sage_rel = os.path.relpath(os.path.join(os.path.realpath(root), ".sage"),
+                                   os.path.realpath(top)).replace(os.sep, "/")
+        _git(top, "add", "-A", "--", ".", f":(exclude){sage_rel}", env=env)
+        tree["id"] = _git(top, "write-tree", env=env)
+        if prev is None:
+            tree["note"] = prev_note
+        elif prev != tree["id"]:
+            patch = _git(top, "diff", "--binary", prev, tree["id"], binary=True)
+            if patch:
+                tree["patch"] = rounds_mod.store_patch(root, run_id, iteration, patch)
+    except Exception as exc:  # noqa: BLE001 - git 없음·저장소 아님·시간 초과 모두 계측 실패일 뿐
+        tree["note"] = f"git_unavailable: {type(exc).__name__}: {str(exc)[:200]}"
+    finally:
+        if workdir:
+            shutil.rmtree(workdir, ignore_errors=True)
+    return tree
 
 
 _PEER_TOKEN_KEYS = {"new_input": int, "cached_input": int, "output": int, "turns": int,
@@ -341,38 +567,13 @@ def parse_peer_tokens(text):
 
 
 def budget_tokens_of(rounds):
-    """예산 판정에 쓰는 총량 = 호스트 누적(tokens 의 최댓값) + 라운드별 peer 실측의 합.
-
-    peer 는 캐시 밖 입력 + 출력만 센다. 보고 입력의 대부분은 같은 맥락을 턴마다 다시 실은 캐시
-    읽기라, 그걸 더하면 예산 기본값이 가정한 "작업량"과 단위가 달라진다. 캐시 읽기는 라운드 기록에
-    따로 남아 있어 한도 해석이 달라져도 다시 계산할 수 있다. 측정 안 된 라운드("unknown")는 0 이
-    아니라 모르는 값이라, `next` 가 따로 경고한다.
-    """
-    host = max((int(r.get("tokens", 0) or 0) for r in rounds), default=0)  # tokens=누적 → max=총량
-    peer = 0
-    for r in rounds:
-        usage = r.get("peer_usage")
-        if isinstance(usage, dict):
-            # 쓰기 때 검증하지만 감사 파일은 손으로 고쳐질 수 있다 — 숫자가 아니면 그 라운드는 모르는 값.
-            for key in ("new_input", "output"):
-                value = usage.get(key)
-                if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-                    peer += value
-    return host + peer
+    """예산 판정 총량. 정의는 hook runtime `loop_audit` 에 있다 — 훅과 CLI 가 같은 값을 써야 한다."""
+    return _load_loop_audit().budget_tokens_of(rounds)
 
 
 def unmeasured_peer_rounds(rounds):
-    """peer 사용량을 모르는 라운드 수 — `unknown` 이거나 기록이 숫자가 아닌 경우."""
-    count = 0
-    for r in rounds:
-        usage = r.get("peer_usage")
-        if usage == "unknown":
-            count += 1
-        elif isinstance(usage, dict) and not all(
-                isinstance(usage.get(k), int) and not isinstance(usage.get(k), bool)
-                for k in ("new_input", "output")):
-            count += 1
-    return count
+    """peer 사용량을 모르는 라운드 수. 정의는 `loop_audit` 에 있다."""
+    return _load_loop_audit().unmeasured_peer_rounds(rounds)
 
 
 def _run_risk(la, root, run_id):
@@ -469,6 +670,14 @@ def _termination_discrepancies(la, root, run_id, result, reason, iterations, cfg
         # 라운드 0 — 수렴/승인을 뒷받침할 증거 없음(codex P1). BLOCKED 는 즉시차단 가능하므로 미해당.
         if result == "APPROVED" or reason in ("CONVERGED", "DRY"):
             out.append(("mismatch", Diagnostic("review_loop.term_no_rounds_claims_convergence")))
+        elif reason == _CYCLE_CAP_REASON:
+            # 앞 run 들이 사이클 상한을 다 쓴 뒤 열린 run 은 라운드 0 에서 멈출 수 있다. 사이클
+            # 상한 사실은 이 run 의 라운드가 아니라 사이클 집계에서 확인한다.
+            state = la.run_cycle_state(la.read_records(root), run_id)
+            if state is None or not state["reached"]:
+                out.append(("mismatch", Diagnostic(
+                    "review_loop.term_cycle_cap_not_reached",
+                    rounds=(state or {}).get("rounds", 0), cap=(state or {}).get("cap", 0))))
         else:
             out.append(("skip", Diagnostic("review_loop.term_no_rounds_nothing_to_check")))
         return out
@@ -523,6 +732,14 @@ def _termination_discrepancies(la, root, run_id, result, reason, iterations, cfg
                                                    max_iterations=max_iter)))
             if last_survived == 0:
                 out.append(("mismatch", Diagnostic("review_loop.term_budget_iter_converged")))
+    # 사이클 상한(open cfg 스냅샷): CYCLE_CAP 이면 사이클 라운드가 상한에 닿아 있어야 한다.
+    if reason == _CYCLE_CAP_REASON:
+        state = la.run_cycle_state(la.read_records(root), run_id)
+        if state is None:
+            out.append(("mismatch", Diagnostic("review_loop.term_cycle_cap_unbound")))
+        elif not state["reached"]:
+            out.append(("mismatch", Diagnostic("review_loop.term_cycle_cap_not_reached",
+                                               rounds=state["rounds"], cap=state["cap"])))
     # 아키텍처 에스컬레이션(cfg 불요)
     if reason == "BLOCKED_ARCH" and not any_arch:
         out.append(("mismatch", Diagnostic("review_loop.term_blocked_arch_without_arch")))
@@ -723,11 +940,22 @@ def _early_close_blockers(la, root, args, profile, cfg, risk, language):
     blockers.extend(_acceptance_blockers(la, root, args, profile, risk))
 
     action, result, reason, _why, _skips = _next_recommendation(la, root, args.run_id, cfg, risk)
-    if action != "CONTINUE":
-        # 정상 종료가 가능한 상태에서는 조기 종료를 쓰지 않는다. 쓰면 정상 승인이 보증 저하로
-        # 잘못 기록되고, 반대로 BLOCKED 상태를 사용자 확인으로 덮는 통로가 된다.
-        blockers.append(f"normal close is available ({result}/{reason}); use it instead")
+    if (action, reason) not in _EARLY_ALLOWED_VERDICTS:
+        if action == "STOP" and result == "APPROVED":
+            # 정상 승인이 가능한 상태에서 조기 종료를 쓰면 정상 승인이 보증 저하로 잘못 기록된다.
+            blockers.append(f"normal close is available ({result}/{reason}); use it instead")
+        else:
+            # 예산 초과·아키텍처 에스컬레이션은 사용자 확인으로 덮을 수 없는 BLOCKED 다.
+            blockers.append(f"{action} {result}/{reason} cannot be closed by user authorization")
+    elif action == "ASK" and not rounds:
+        blockers.append("this run has no completed round; authorize the residual on the run that "
+                        "reached the cap, or decide to continue")
     return blockers
+
+
+def _stopped_at(action, reason):
+    """조기 종료 시점의 `next` 판정을 감사에 남길 한 단어."""
+    return "CONTINUE" if action == "CONTINUE" else f"{action}:{reason}"
 
 
 def _fast_run_id(la, root, loop_run_id):
@@ -770,7 +998,29 @@ def _cycle_mode(la, root, loop_run_id):
     return "FAST" if _fast_run_id(la, root, loop_run_id) else "STANDARD"
 
 
-def _print_early_disclosure(authorization, max_iterations):
+def _residual_lines(la, root, last_round):
+    """마지막 라운드 사이드카의 잔여 지적 한 줄씩. 사이드카가 없거나 해시가 다르면 그 사실 한 줄."""
+    ref = (last_round or {}).get("sidecar")
+    if not isinstance(ref, dict):
+        return ["(no sidecar for the last round — counts only)"]
+    rounds_mod = _load_runtime("review_rounds")
+    doc, problem = rounds_mod.load(root, ref)
+    if problem:
+        return [f"(sidecar unusable: {problem} — counts only)"]
+    lines = []
+    for item in doc["findings"]:
+        if item["status"] != "survived" or item["disposition"] == "fix":
+            continue
+        where = item["file"] or "-"
+        if item["line"]:
+            where = f"{where}:{item['line']}"
+        claim = " ".join(item["claim"].split())
+        claim = claim if len(claim) <= 120 else claim[:117] + "..."
+        lines.append(f"{item['id']} {item['severity']} {where} — {claim}")
+    return lines or ["(no residual finding in the last round sidecar)"]
+
+
+def _print_early_disclosure(authorization, max_iterations, residual_lines=()):
     """무엇을 인수하는지 화면에 먼저 드러낸다 — 조기 종료는 잔여 위험의 명시적 인수다."""
     receipt = authorization["survived_by_severity"]
     residual = ", ".join(f"{key}={int(receipt.get(key, 0))}" for key in ("P0", "P1", "P2", "P3"))
@@ -780,7 +1030,10 @@ def _print_early_disclosure(authorization, max_iterations):
     print(f"    configured iteration ceiling: {ceiling}", file=sys.stderr)
     print(f"    completed reviews: {authorization['completed_rounds']}", file=sys.stderr)
     print(f"    residual findings: {residual}", file=sys.stderr)
-    print("    next normal verdict: CONTINUE", file=sys.stderr)
+    for line in residual_lines:
+        print(f"      - {line}", file=sys.stderr)
+    print(f"    next normal verdict: {authorization.get('stopped_at') or 'CONTINUE'}",
+          file=sys.stderr)
     print("    Phase 06 records REDUCED_BY_USER_AUTHORIZATION — verification assurance is lower "
           "than a standard close.", file=sys.stderr)
     print("", file=sys.stderr)
@@ -867,6 +1120,8 @@ def _run_close(args):
         max_iterations = ((cfg.get("max_iterations") or {}).get(risk)
                           if isinstance(cfg.get("max_iterations"), dict) else None)
         phase00_identity, done_revision = _phase00_identity(la, root, profile, args.run_id)
+        verdict_action, _result, verdict_reason, _why, _skips = _next_recommendation(
+            la, root, args.run_id, cfg, risk)
         if phase00_hash is None:
             phase00_hash = phase00_identity
         authorization = {
@@ -881,8 +1136,10 @@ def _run_close(args):
             "mode": _cycle_mode(la, root, args.run_id),
             "lens_receipts": last.get("lens_receipts") or [],
             "fast_run_id": _fast_run_id(la, root, args.run_id),
+            "stopped_at": _stopped_at(verdict_action, verdict_reason),
         }
-        _print_early_disclosure(authorization, max_iterations)
+        _print_early_disclosure(authorization, max_iterations,
+                                _residual_lines(la, root, last))
 
     written = _write_audit(
         la,
@@ -900,6 +1157,26 @@ def _run_close(args):
         print(f"Phase00-Hash: {phase00_hash}", file=sys.stderr)
     _auto_write_vault_dashboard(la, root, language_of(args))
     return 0
+
+
+def _print_cycle_summary(la, root, run_ids, language):
+    """보여 준 run 들이 속한 사이클마다 라운드 집계 한 줄, 그리고 사이클에 묶이지 않은 run 수."""
+    records = la.read_records(root)
+    seen = set()
+    unbound = 0
+    for rid in run_ids:
+        state = la.run_cycle_state(records, rid)
+        if state is None:
+            unbound += 1
+            continue
+        if state["stem"] in seen:
+            continue
+        seen.add(state["stem"])
+        print(tr(language, "cli.review_loop.cycle_line", stem=state["stem"], rounds=state["rounds"],
+                 cap=state["cap"], base=state["base_cap"], extended=state["extended"], tokens=state["tokens"],
+                 runs=len(state["runs"]), unbound=len(state["unbound_runs"])))
+    if unbound and seen:
+        print(tr(language, "cli.review_loop.cycle_unbound_count", count=unbound))
 
 
 def _run_show(args):
@@ -921,8 +1198,20 @@ def _run_show(args):
         if close and close.get("phase00_hash"):
             print(f"      Phase00-Hash: {close['phase00_hash']}")
         for r in rounds:
+            extra = ""
+            # 새 필드는 있을 때만 붙인다 — 옛 기록의 화면은 그대로다.
+            if isinstance(r.get("sidecar"), dict):
+                extra += f" sidecar={r['sidecar'].get('path')}"
+            elif r.get("sidecar") == "absent":
+                extra += " sidecar=absent"
+            if isinstance(r.get("receipt"), dict):
+                extra += " receipt=" + ",".join(f"{k}={v}" for k, v in sorted(r["receipt"].items()))
             print(f"      [{r.get('iteration')}] found={r.get('found')} survived={r.get('survived')} "
-                  f"accepted={r.get('accepted')} arch={r.get('arch')} tokens={r.get('tokens')}")
+                  f"accepted={r.get('accepted')} arch={r.get('arch')} tokens={r.get('tokens')}{extra}")
+        for d in la.decisions_of(root, rid):
+            print(f"      decision {d.get('kind')}/{d.get('choice')} +{d.get('extend')} "
+                  f"({d.get('cap_before')}→{d.get('cap_after')}) by {d.get('decided_by')}")
+    _print_cycle_summary(la, root, target_runs, language_of(args))
     if integ:
         print(tr(language_of(args), "cli.review_loop.msg23"))
         for i in integ:
@@ -935,59 +1224,57 @@ def _run_show(args):
 
 def _next_recommendation(la, root, run_id, cfg, risk):
     """기록된 라운드 + cfg(review_loop)로 '계속 vs 종료'를 결정론 권고한다(LLM 0, 감사 기록 0).
-    _termination_discrepancies 와 같은 신호(survived/tokens/arch + cfg tier)를 쓰되, 사후 검산이
-    아니라 전향 권고를 낸다. 반환: (action, result, reason, why, skips).
-    action == 'STOP' 이면 result/reason 은 close 에 그대로 넘길 값. 권고는 사실 기반이라, 자료가
+    판정은 `loop_audit.loop_verdict` 하나다 — `decide` 의 잠금 안 검사와 압축 재진입 문맥도 같은
+    함수를 쓴다. 반환: (action, result, reason, why, skips).
+    action == 'STOP' 이면 result/reason 은 close 에 그대로 넘길 값. action == 'ASK' 면 사람이 정할
+    차례이고 reason 자리에 질문 종류(`CYCLE_CAP`)가 온다. 권고는 사실 기반이라, 자료가
     부족한 축(cfg tier 미설정)은 STOP 을 권하지 않고 skip 사유만 남긴다(false STOP 방지).
 
     `why`·`skips` 는 언어 중립 진단이다 — 권고 근거는 판정이고 문장은 `_run_next` 가 만든다."""
-    rounds = la.rounds_of(root, run_id)
-
-    def _tier_int(section):
-        m = cfg.get(section) if isinstance(cfg.get(section), dict) else {}
-        v = m.get(risk)
-        return v if isinstance(v, int) and not isinstance(v, bool) else None
-    budget = _tier_int("budget_tokens")
-    max_iter = _tier_int("max_iterations")
-
+    verdict = la.loop_verdict(la.read_records(root), run_id, cfg, risk)
     skips = []
-    if budget is None:
+    if verdict["budget"] is None:
         skips.append(Diagnostic("review_loop.next_budget_unset", risk=risk))
-    if max_iter is None:
+    if verdict["max_iterations"] is None:
         skips.append(Diagnostic("review_loop.next_max_iterations_unset", risk=risk))
+    if verdict["iterations"] and verdict["unmeasured"]:
+        skips.append(Diagnostic("review_loop.next_peer_usage_unknown", rounds=verdict["unmeasured"]))
+    basis = verdict["basis"]
+    cycle = verdict["cycle"] or {}
+    if basis == "cycle_cap":
+        why = Diagnostic("review_loop.next_cycle_cap", stem=cycle.get("stem"),
+                         rounds=cycle.get("rounds"), cap=cycle.get("cap"))
+    elif basis == "no_rounds":
+        why = Diagnostic("review_loop.next_no_rounds")
+    elif basis == "arch_escalated":
+        why = Diagnostic("review_loop.next_arch_escalated")
+    elif basis == "over_budget":
+        why = Diagnostic("review_loop.next_over_budget", tokens=verdict["tokens"], risk=risk,
+                         budget=verdict["budget"])
+    elif basis == "max_iter_converged":
+        why = Diagnostic("review_loop.next_max_iter_converged", iterations=verdict["iterations"],
+                         risk=risk, max_iterations=verdict["max_iterations"])
+    elif basis == "max_iter_unresolved":
+        why = Diagnostic("review_loop.next_max_iter_unresolved", iterations=verdict["iterations"],
+                         risk=risk, max_iterations=verdict["max_iterations"],
+                         survived=verdict["survived"])
+    elif basis == "converged":
+        why = Diagnostic("review_loop.next_converged")
+    else:
+        why = Diagnostic("review_loop.next_continue", survived=verdict["survived"])
+    return verdict["action"], verdict["result"], verdict["reason"], why, skips
 
-    if not rounds:
-        return ("CONTINUE", None, None, Diagnostic("review_loop.next_no_rounds"), skips)
 
-    iterations = len(rounds)
-    last_survived = int(rounds[-1].get("survived", 0) or 0)
-    total_tokens = budget_tokens_of(rounds)
-    any_arch = any(int(r.get("arch", 0) or 0) > 0 for r in rounds)
-    converged = last_survived == 0
-    unmeasured = unmeasured_peer_rounds(rounds)
-    if unmeasured:
-        skips.append(Diagnostic("review_loop.next_peer_usage_unknown", rounds=unmeasured))
-
-    # 우선순위: 아키텍처 > 예산 > 반복상한 > 수렴 > 계속.
-    if any_arch:
-        return ("STOP", "BLOCKED", "BLOCKED_ARCH",
-                Diagnostic("review_loop.next_arch_escalated"), skips)
-    if budget is not None and total_tokens >= budget:
-        return ("STOP", "BLOCKED", "BUDGET_TOK",
-                Diagnostic("review_loop.next_over_budget", tokens=total_tokens, risk=risk,
-                           budget=budget), skips)
-    if max_iter is not None and iterations >= max_iter:
-        if converged:
-            return ("STOP", "APPROVED", "CONVERGED",
-                    Diagnostic("review_loop.next_max_iter_converged", iterations=iterations,
-                               risk=risk, max_iterations=max_iter), skips)
-        return ("STOP", "BLOCKED", "BUDGET_ITER",
-                Diagnostic("review_loop.next_max_iter_unresolved", iterations=iterations,
-                           risk=risk, max_iterations=max_iter, survived=last_survived), skips)
-    if converged:
-        return ("STOP", "APPROVED", "CONVERGED", Diagnostic("review_loop.next_converged"), skips)
-    return ("CONTINUE", None, None,
-            Diagnostic("review_loop.next_continue", survived=last_survived), skips)
+def _print_cycle_line(la, root, run_id, language):
+    """run 이 속한 사이클의 라운드 집계 한 줄(stderr). 사이클에 묶이지 않은 run 이면 그렇다고 말한다."""
+    records = la.read_records(root)
+    state = la.run_cycle_state(records, run_id)
+    if state is None:
+        print(tr(language, "cli.review_loop.cycle_unbound_run", run_id=run_id), file=sys.stderr)
+        return
+    print(tr(language, "cli.review_loop.cycle_line", stem=state["stem"], rounds=state["rounds"],
+             cap=state["cap"], base=state["base_cap"], extended=state["extended"], tokens=state["tokens"],
+             runs=len(state["runs"]), unbound=len(state["unbound_runs"])), file=sys.stderr)
 
 
 def _run_next(args):
@@ -1012,12 +1299,216 @@ def _run_next(args):
                  s=render_issue(language_of(args), s)), file=sys.stderr)
     print(tr(language_of(args), "cli.review_loop.msg27",
              why=render_issue(language_of(args), why)), file=sys.stderr)
+    _print_cycle_line(la, root, args.run_id, language_of(args))
     if action == "CONTINUE":
         print("NEXT: CONTINUE")
+    elif action == "ASK":
+        cycle = la.run_cycle_state(la.read_records(root), args.run_id) or {}
+        print(f"NEXT: ASK kind={reason} cycle_rounds={cycle.get('rounds')} cap={cycle.get('cap')}")
+        print(tr(language_of(args), "cli.review_loop.ask_cycle_cap", run_id=args.run_id,
+                 stem=cycle.get("stem"), count=len(la.rounds_of(root, args.run_id))),
+              file=sys.stderr)
     else:
         print(f"NEXT: STOP result={result} reason={reason}")
         print(tr(language_of(args), "cli.review_loop.msg28", args_run_id=args.run_id, result=result, reason=reason, count=len(la.rounds_of(root, args.run_id))), file=sys.stderr)
     print(tr(language_of(args), "cli.review_loop.msg29"), file=sys.stderr)
+    return 0
+
+
+_MAX_EXTEND = 10
+
+
+def _run_decide(args):
+    """사이클 상한에서의 「계속」 결정을 감사에 남긴다. 사유·결정자는 그 턴의 사용자 말이다."""
+    la = _load_loop_audit()
+    root = _root(args)
+    language = language_of(args)
+    if not _is_open(la, root, args.run_id):
+        print(tr(language, "cli.review_loop.msg24", args_run_id=args.run_id), file=sys.stderr)
+        return 2
+    if _is_closed(la, root, args.run_id):
+        print(tr(language, "cli.review_loop.msg05", args_run_id=args.run_id), file=sys.stderr)
+        return 2
+    problems = []
+    if not 1 <= args.extend <= _MAX_EXTEND:
+        problems.append(f"--extend must be between 1 and {_MAX_EXTEND}")
+    for name in ("reason", "decided_by"):
+        if not (getattr(args, name) or "").strip():
+            problems.append(f"--{name.replace('_', '-')} must be a non-empty line")
+    state = la.run_cycle_state(la.read_records(root), args.run_id)
+    cfg = risk = None
+    if state is None:
+        problems.append("this run is not bound to a cycle")
+    elif not state["reached"]:
+        problems.append(f"cycle {state['stem']} has not reached its round cap "
+                        f"({state['rounds']}/{state['cap']}); nothing to decide")
+    else:
+        # `next` 와 같은 판정이어야 한다. 상한에 닿았어도 STOP 이면 연장할 자리가 아니다.
+        profile = _validated_profile(root, language)
+        if profile is None:
+            return 2
+        cfg = _cfg_snapshot(root, profile)
+        risk = _run_risk(la, root, args.run_id)
+        action, _result, reason, _why, _skips = _next_recommendation(la, root, args.run_id,
+                                                                    cfg, risk)
+        if action != "ASK":
+            problems.append(f"next is {action} {reason}, not ASK {_CYCLE_CAP_REASON}; "
+                            "nothing to decide")
+    if problems:
+        for item in problems:
+            print(f"[sage review-loop] decide refused: {item}", file=sys.stderr)
+        return 2
+    written = _write_audit(
+        la,
+        lambda: la.record_decision(root, args.run_id, la.DECISION_CYCLE_CAP, args.cycle,
+                                   args.reason, args.decided_by, extend=args.extend,
+                                   cfg=cfg, risk=risk),
+        language=language,
+    )
+    if written is None:
+        return 2
+    print(tr(language, "cli.review_loop.decide_recorded", stem=written["cycle_stem"],
+             before=written["cap_before"], after=written["cap_after"],
+             rounds=written["cycle_rounds"]), file=sys.stderr)
+    return 0
+
+
+def _ledger_stem(args, language):
+    binding = _load_cycle_binding()
+    stem = args.cycle_stem
+    if stem is None:
+        try:
+            stem = _load_runtime("cycle_state").resolve_stem(_root(args))[0]
+        except Exception:  # noqa: BLE001
+            stem = ""
+    normalized = binding.normalize_stem(stem) if stem else None
+    if not normalized:
+        print(tr(language, "cli.review_loop.cycle_stem_required"), file=sys.stderr)
+    return normalized
+
+
+def _run_ledger_add(args):
+    la = _load_loop_audit()
+    rounds_mod = _load_runtime("review_rounds")
+    language = language_of(args)
+    stem = _ledger_stem(args, language)
+    if stem is None:
+        return 2
+    try:
+        entry = rounds_mod.add_entry(_root(args), stem, args.kind, source=args.source,
+                                     reason=args.reason, severity=args.severity,
+                                     location=args.location, ref=args.ref,
+                                     lock=la._audit_lock)
+    except (OSError, rounds_mod.SidecarError, la.AuditWriteError) as exc:
+        print(f"[sage review-loop] ledger add refused: {exc}", file=sys.stderr)
+        return 2
+    print(entry["id"])
+    return 0
+
+
+def _ledger(args, language):
+    la = _load_loop_audit()
+    rounds_mod = _load_runtime("review_rounds")
+    stem = _ledger_stem(args, language)
+    if stem is None:
+        return None
+    root = _root(args)
+    return rounds_mod.build_ledger(root, la.read_records(root), stem)
+
+
+def _finding_label(item):
+    where = item.get("file") or "-"
+    if item.get("line"):
+        where = f"{where}:{item['line']}"
+    claim = " ".join(str(item.get("claim") or "").split())
+    claim = claim if len(claim) <= 160 else claim[:157] + "..."
+    return f"{item.get('severity')} {where} — {claim}"
+
+
+def _ledger_lines(ledger, language):
+    out = []
+    if ledger["manual"]:
+        out.append(f"### {tr(language, 'cli.review_loop.ledger_h_manual')}")
+        for item in ledger["manual"]:
+            severity = f" {item.get('severity')}" if item.get("severity") else ""
+            location = f" {item.get('location')}" if item.get("location") else ""
+            out.append(f"- {item.get('id')} [{item.get('kind')}]{severity}{location} — "
+                       f"{item.get('reason')} (source: {item.get('source')})")
+    if ledger["residual"]:
+        out.append(f"### {tr(language, 'cli.review_loop.ledger_h_residual')}")
+        for item in ledger["residual"]:
+            out.append(f"- {item['run_id']}:{item['iteration']}:{item['id']} {_finding_label(item)}")
+    decided = [d for d in ledger["decisions"]] + [
+        c for c in ledger["closes"] if c.get("reason") == "USER_AUTHORIZED_EARLY"]
+    if decided:
+        out.append(f"### {tr(language, 'cli.review_loop.ledger_h_decisions')}")
+        for item in ledger["decisions"]:
+            out.append(f"- {item['run_id']} cycle continue +{item['extend']} "
+                       f"({item['cap_before']}→{item['cap_after']}) — {item['reason']} "
+                       f"/ {item['decided_by']}")
+        for item in ledger["closes"]:
+            if item.get("reason") == "USER_AUTHORIZED_EARLY":
+                out.append(f"- {item['run_id']} USER_AUTHORIZED_EARLY at "
+                           f"{item.get('stopped_at') or 'CONTINUE'} — "
+                           f"{item.get('authorization_reason')} / {item.get('confirmed_by')}")
+    if ledger["refuted"]:
+        out.append(f"### {tr(language, 'cli.review_loop.ledger_h_refuted')}")
+        for item in ledger["refuted"]:
+            reasons = "; ".join(
+                f"{r.get('drop_reason') or '-'}: {r.get('reason') or '-'}" for r in item["reasons"])
+            out.append(f"- {item['run_id']}:{item['iteration']}:{item['id']} "
+                       f"{_finding_label(item)} [{reasons or '-'}]")
+    return out
+
+
+def _ledger_warnings(ledger, language):
+    out = []
+    for item in ledger["sidecar_issues"]:
+        out.append(tr(language, "cli.review_loop.ledger_sidecar_issue", run_id=item["run_id"],
+                      iteration=item["iteration"], problem=item["problem"]))
+    for item in ledger["entry_issues"]:
+        out.append(tr(language, "cli.review_loop.ledger_entry_issue", problem=item))
+    return out
+
+
+def _run_ledger_show(args):
+    language = language_of(args)
+    ledger = _ledger(args, language)
+    if ledger is None:
+        return 2
+    print(tr(language, "cli.review_loop.ledger_show_title", stem=ledger["stem"],
+             runs=len(ledger["runs"])))
+    lines = _ledger_lines(ledger, language)
+    print("\n".join(lines) if lines else tr(language, "cli.review_loop.ledger_empty"))
+    if ledger["conflicts"]:
+        print(f"### {tr(language, 'cli.review_loop.ledger_h_conflicts')}")
+        for item in ledger["conflicts"]:
+            print(f"- {item['run_id']}:{item['iteration']}:{item['id']} → {item['ledger_ref']} "
+                  f"{_finding_label(item)}")
+    warnings = _ledger_warnings(ledger, language)
+    for line in warnings:
+        print(line, file=sys.stderr)
+    return 1 if warnings else 0
+
+
+def _run_ledger_render(args):
+    """패킷의 「결정·잔여」 절. 손으로 옮기지 않게 장부에서 그대로 찍는다."""
+    language = language_of(args)
+    ledger = _ledger(args, language)
+    if ledger is None:
+        return 2
+    print(f"## {tr(language, 'cli.review_loop.ledger_render_heading')}")
+    print("")
+    print(tr(language, "cli.review_loop.ledger_render_note"))
+    print("")
+    lines = _ledger_lines(ledger, language)
+    print("\n".join(lines) if lines else tr(language, "cli.review_loop.ledger_empty"))
+    # 빠진 사이드카를 조용히 건너뛰면 패킷이 완전한 장부처럼 보인다. 경고를 패킷 본문에도 싣는다.
+    warnings = _ledger_warnings(ledger, language)
+    if warnings:
+        print("")
+        for line in warnings:
+            print(f"> {line}")
     return 0
 
 

@@ -49,7 +49,7 @@ _LOOP_TIERS = {"L2", "L3"}   # L0/L1 은 루프 없음(risk → mandatory phase 
 _REVIEW_LOOP_KEYS = {"enabled", "lenses", "refuters", "refute_threshold", "max_iterations",
                      "dry_rounds", "budget_tokens", "cross_model", "severity_block",
                      "architecture_escalation", "termination_enforce", "report_gate_enforce",
-                     "early_completion"}
+                     "early_completion", "max_cycle_rounds"}
 _TERMINATION_MODES = {"advisory", "enforce"}   # 종료 검산 모드(기본 advisory)
 _REPORT_GATE_MODES = {"off", "advisory", "enforce"}   # 06←05 audit 게이트 모드(기본 advisory)
 _BASE_PLAN_KEYS = {"done_criteria_gate"}
@@ -306,6 +306,26 @@ def _review_loop_issues(profile):
             if missing:
                 issues.append(("FAIL", Diagnostic("validate.review_loop_tier_incomplete", field=key,
                                                   missing=missing)))
+
+    # 3b. max_cycle_rounds — 사이클 전체 라운드 상한(닿으면 next 가 ASK). 키·tier 부재는 정상이다:
+    #     엔진 기본값(L3 5 · L2 3)이 적용된다. 값이 틀리면 엔진은 기본값으로 접지만, 적은 값이
+    #     조용히 무시되는 것이라 여기서 FAIL 로 드러낸다.
+    cycle_caps = rl.get("max_cycle_rounds")
+    if cycle_caps is not None:
+        if not isinstance(cycle_caps, dict):
+            issues.append(("FAIL", Diagnostic("validate.review_loop_tier_not_mapping",
+                                              field="max_cycle_rounds")))
+        else:
+            unknown_tier = sorted(set(cycle_caps.keys()) - _LOOP_TIERS, key=str)
+            if unknown_tier:
+                issues.append(("WARN", Diagnostic("validate.review_loop_tier_out_of_scope",
+                                                  field="max_cycle_rounds", tiers=unknown_tier)))
+            for tier, val in cycle_caps.items():
+                if tier in _LOOP_TIERS and (isinstance(val, bool) or not isinstance(val, int)
+                                            or val < 1):
+                    issues.append(("FAIL", Diagnostic("validate.review_loop_tier_value_invalid",
+                                                      field="max_cycle_rounds", tier=tier,
+                                                      value=repr(val), floor=1)))
 
     # 4. severity_block — 차단 심각도 어휘 검사(오타 시 차단이 침묵). 리스트 가드(크래시 방지).
     sev_list, sev_issue = _as_list(rl, "severity_block")

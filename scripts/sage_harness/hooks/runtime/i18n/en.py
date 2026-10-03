@@ -63,6 +63,28 @@ MESSAGES = {
     "cycle_declaration_ignored": "[cycle declaration ignored] {detail} — proceeding as if "
         "nothing was declared. Rewrite it with `sage cycle set <stem>` or clear it with "
         "`sage cycle clear`.",
+    "hook.compact.head": "[SAGE] The context was compacted. The phase documents are canonical — where the summary disagrees, follow the documents.",
+    "hook.compact.decisions_warning": "- Conversation decisions that were not written into a document are not recovered. Re-confirm any decision you cannot find with the user.",
+    "hook.compact.next": "- Next: re-enter with /sage-team (codex: $sage-team). Continue an open review loop run instead of opening a new one.",
+    "hook.compact.item_failed": "- {item} check failed: {error}",
+    "hook.compact.label_loop": "review loop audit",
+    "hook.compact.label_cycle": "cycle",
+    "hook.compact.label_snapshot": "context snapshot",
+    "hook.compact.cycle_ambiguous": "- The cycle is ambiguous: {values} — ask the user which cycle this is. No briefing is chosen until then.",
+    "hook.compact.cycle_none": "- No cycle is declared. Check the current phase in the phase documents (plan_docs).",
+    "hook.compact.cycle": "- Cycle: {stem} (from: {origin})",
+    "hook.compact.origin_env": "env SAGE_CYCLE_STEM",
+    "hook.compact.origin_file": "file declaration .sage/cycle.json",
+    "hook.compact.origin_run": "open review loop run",
+    "hook.compact.snapshot_none": "- No context snapshot — check the current phase in the phase documents.",
+    "hook.compact.snapshot": "- Latest snapshot: {path} (completed {phase} → next {next})",
+    "hook.compact.restore": "  Run first: sage context restore --snapshot {path} → read the briefing file it prints.",
+    "hook.compact.loop": "- review loop: {run_id} open · run rounds {rounds} · cycle rounds {cycle_rounds}/{cap} · pending: {waiting}",
+    "hook.compact.ask_cycle_cap": "ASK CYCLE_CAP (no round before the user decides)",
+    "hook.compact.wait_stop": "STOP {reason} — confirm with sage review-loop next, then close (no more rounds)",
+    "hook.compact.ask_none": "none — decide with sage review-loop next",
+    "hook.compact.loop_none": "- No open review loop run in this cycle",
+    "hook.compact.ledger": "- Carry-over ledger: sage review-loop ledger show --cycle-stem {stem}",
 }
 
 # 판정 문장이 아니라 그 문장을 **감싸는 조각**이다. message_key 와 섞으면 build-time oracle

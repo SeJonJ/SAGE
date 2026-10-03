@@ -19,6 +19,7 @@ REPO = Path(__file__).resolve().parents[4]
 RUNTIME = REPO / "scripts/sage_harness/hooks/runtime"
 LOCALE = RUNTIME / "i18n"
 MESSAGES = RUNTIME / "messages.py"
+COMPACT_REENTRY = RUNTIME / "compact_reentry.py"
 
 sys.path.insert(0, str(RUNTIME))
 from i18n import CATALOGS, HOOK_MESSAGE_KEYS, tr  # noqa: E402
@@ -76,7 +77,14 @@ def _direct_tr_keys():
     `cycle_declaration_ignored` 같은 진단-래핑 문장이 여기 해당한다 — 진단 자체(code+arguments)는
     `_diagnostic_keys()` 가 잡고, 그걸 감싸는 고정 문장은 여기서 리터럴로 잡힌다.
     """
-    tree = ast.parse(MESSAGES.read_text(encoding="utf-8"))
+    keys = set()
+    for source in (MESSAGES, COMPACT_REENTRY):
+        keys |= _literal_tr_keys(source)
+    return keys
+
+
+def _literal_tr_keys(source):
+    tree = ast.parse(source.read_text(encoding="utf-8"))
     keys = set()
     for node in ast.walk(tree):
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)

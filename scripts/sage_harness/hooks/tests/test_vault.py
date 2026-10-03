@@ -204,7 +204,7 @@ def _sage(*args, root, lang=None):
 
 
 def _run_loop(tmp):
-    r = _sage("review-loop", "open", "--risk", "L3", root=tmp)
+    r = _sage("review-loop", "open", "--risk", "L3", "--cycle-stem", "vault-test-cycle", root=tmp)
     rid = r.stdout.strip().splitlines()[0]
     _sage("review-loop", "round", "--run-id", rid, "--iteration", "1", "--found", "7",
           "--survived", "3", "--accepted", "3", "--tokens", "48000", root=tmp)
@@ -249,7 +249,7 @@ class TestVaultDashboard(unittest.TestCase):
     def test_close_auto_writes_dashboard_when_profile_flag_enabled(self):
         tmp, vault = tempfile.mkdtemp(), tempfile.mkdtemp()
         _profile(tmp, vault, loop_audit_dashboard=True)
-        r = _sage("review-loop", "open", "--risk", "L3", root=tmp)
+        r = _sage("review-loop", "open", "--risk", "L3", "--cycle-stem", "vault-test-cycle", root=tmp)
         rid = r.stdout.strip().splitlines()[0]
         _sage("review-loop", "round", "--run-id", rid, "--iteration", "1", "--found", "1",
               "--survived", "0", "--accepted", "0", root=tmp)
