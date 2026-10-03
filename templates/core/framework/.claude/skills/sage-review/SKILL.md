@@ -128,6 +128,16 @@ so it records to the one canonical `.sage/loop_audit.jsonl` regardless of the cu
 directory — open/round/close stay on the same trail. Pass the captured `$RUN_ID` to every
 subsequent `round`/`close`.
 
+A run is always bound to a cycle. Without `--cycle-stem`, `open` uses the declared cycle
+(`SAGE_CYCLE_STEM`, then `.sage/cycle.json` — the same resolution the gates use) and refuses
+when none resolves. Rounds are counted **per cycle across every run**, so opening a new run does
+not reset the count; the cycle cap is `cfg.max_cycle_rounds[risk]` (default L3 5 · L2 3).
+
+**Write user decisions down where they are made.** A decision the user gives in conversation
+goes into the current phase document's decision section in that same turn; decisions inside the
+loop are recorded by `sage review-loop decide` or by the close itself. Context can be compacted
+at any time, and a decision that lives only in the conversation is not recovered.
+
 Then repeat each round until a termination rule fires (max `cfg.max_iterations[risk]`):
 
 ### 1. FIND (parallel lenses + cross-model peer)
@@ -140,8 +150,13 @@ in `docs/agent/review-protocol.md` (propositions, context map, verification summ
 or plan documents) and run `sage cross-check --packet-file <f>`; it invokes the peer
 (`codex exec`/`claude -p`) under process controls and prints the peer's findings. Keep the packet
 body fixed across rounds and append each round's delta at the end (the unchanged prefix keeps the
-peer's prompt cache warm). Capture the `REVIEWER_ACTUAL: <mode>` line as `ACTUAL` and the
-`REVIEWER_TOKENS:` line as `PEER_TOKENS`. Use the
+peer's prompt cache warm). The packet's decisions-and-residuals section is **generated, not
+rewritten by hand**: paste the output of `sage review-loop ledger render` (scope decisions,
+known pre-existing defects, residuals and refuted findings carried across runs). Add an
+out-of-scope decision or a known pre-existing defect (for example a Phase 04 `F-n`) with
+`sage review-loop ledger add --kind out_of_scope|preexisting --source <doc or F-n> --reason <...>`
+instead of retyping it into a new packet. Capture the `REVIEWER_ACTUAL: <mode>` line as `ACTUAL`
+and the `REVIEWER_TOKENS:` line as `PEER_TOKENS`. Use the
 **FIND prompt** (§ skeletons) for host lenses. Collect findings. **Dedup**: drop any finding whose key `(norm(file), line_bucket, lens, sha(norm(claim)))`
 is already in `seen` (prevents tail/resurfacing churn).
 
@@ -178,17 +193,31 @@ Do not eyeball this. After recording each round (§ below), run:
 sage review-loop next --run-id $RUN_ID
 ```
 It reads the recorded rounds + profile cfg and prints the deterministic decision —
-`NEXT: CONTINUE` or `NEXT: STOP result=<..> reason=<..>` — moving the continue/stop call
-from host judgment to SAGE. It is advisory (writes nothing); on `STOP`, pass the printed
-`result`/`reason` straight to `close`.
+`NEXT: CONTINUE`, `NEXT: STOP result=<..> reason=<..>`, or `NEXT: ASK kind=CYCLE_CAP
+cycle_rounds=<n> cap=<m>` — moving the continue/stop call from host judgment to SAGE. It is
+advisory (writes nothing); on `STOP`, pass the printed `result`/`reason` straight to `close`.
+On `ASK`, the user decides — see **Cycle cap** below. Do not open another round first: `round`
+is refused while the cycle sits at its cap.
 
 Evaluation order it uses (highest precedence first — budget/iteration limits win over
 convergence, matching what `close` accepts):
 1. architecture escalation recorded (`arch > 0`) → **BLOCKED** (`BLOCKED_ARCH`)
 2. cumulative tokens ≥ `cfg.budget_tokens[risk]` → **BLOCKED** (`BUDGET_TOK`)
 3. iteration ≥ `cfg.max_iterations[risk]` → **APPROVED** (`CONVERGED`) if last-round survivors == 0, else **BLOCKED** (`BUDGET_ITER`)
-4. last-round survivors == 0 → **APPROVED** (`CONVERGED`)
-5. otherwise → **CONTINUE**
+4. cycle rounds (every run of this cycle) ≥ the cycle cap → **APPROVED** (`CONVERGED`) if last-round survivors == 0, else **ASK** (`CYCLE_CAP`) — also on a fresh run with no round yet
+5. last-round survivors == 0 → **APPROVED** (`CONVERGED`)
+6. otherwise → **CONTINUE**
+
+### Cycle cap (`NEXT: ASK kind=CYCLE_CAP`)
+Stop and ask the user, showing the cycle rounds, what still survives (`sage review-loop ledger
+show`) and the three choices. Never pick one yourself:
+1. **Continue** — `sage review-loop decide --run-id $RUN_ID --cycle continue --extend <N>
+   --reason "<the user's words>" --decided-by "<the name the user states>"`, then `next` again.
+   `N` is 1–10; the decision is refused unless the cycle is at its cap.
+2. **Approve the residual** — the early-completion close below (needs a completed round in this
+   run and the `early_completion` opt-in).
+3. **Stop** — `sage review-loop close --run-id $RUN_ID --result BLOCKED --reason CYCLE_CAP
+   --iterations <n> --reviewer-actual $ACTUAL`.
 
 `DRY` (dry-convergence: `cfg.dry_rounds` consecutive rounds with 0 new findings) remains a
 valid `close` reason for a resolved loop, but `next` reports resolved loops as `CONVERGED`
@@ -220,6 +249,28 @@ PASS; if either fails, retry the round (within the iteration cap). If the rework
 acceptance coverage, update Phase 03 and Phase 04 before the next review pass.
 
 ### Record the round (every iteration)
+Write the round's findings to a sidecar file and pass it; the counts and the per-severity
+receipt are then derived from it, so you do not type them:
+```
+sage review-loop round --run-id $RUN_ID --iteration <n> --findings-file <round.json> \
+  --tokens <cumulative> --peer-tokens "$PEER_TOKENS"
+```
+The sidecar (`sage.review-round/1`) is JSON:
+`{"schema": "sage.review-round/1", "run_id": "<RUN_ID>", "iteration": <n>, "findings": [...]}`.
+Each finding carries `id` (unique in the round), `source` `{"kind": "lens"|"peer", "name": ...}`,
+`file`, `line`, `severity` (`P0`–`P3`), the **verbatim** `claim`, `status` (`survived` |
+`refuted`), the refuters' votes in `refute` (`refuter`, `verdict` `refuted|upheld|uncertain`,
+`reason`, `drop_reason` `not_a_defect|out_of_scope_preexisting|insufficient_evidence|null`),
+`triage` (`local` | `architecture_change`), `disposition` (`fix` | `residual` | `rejected` |
+`pending`), `closes` (ids `<run_id>:<iteration>:<id>` this rework claims to close) and
+`ledger_ref` (`L-<n>` when it re-raises a ledger entry). Optional round fields: `packet`
+(`path`, `sha256`), `usage` (`host`, `peer` copied verbatim from `PEER_TOKENS`, per-lens
+`lenses`), and `unexplored` (lenses that were truncated or timed out). SAGE stores it under
+`.sage/review-rounds/`, records its sha256 in the audit, and saves the working-tree delta since
+the previous round as a patch. Counts you also pass by hand must match the sidecar or nothing is
+written.
+
+Without a sidecar the round is still recorded (marked `sidecar: absent`), with the counts by hand:
 ```
 sage review-loop round --run-id $RUN_ID --iteration <n> \
   --found <N> --survived <N> --accepted <N> --arch <N> --tokens <cumulative> \
@@ -240,8 +291,11 @@ rejects a receipt whose sum disagrees.
 
 ### Early completion by user authorization
 Available only when `pdca.review_loop.early_completion.enabled` is true, and only while
-`sage review-loop next` still recommends `CONTINUE` — a loop that already reached `STOP` or
-`CONVERGED` closes normally instead.
+`sage review-loop next` still recommends `CONTINUE`, or stopped at a ceiling where the user is
+the one to decide: `STOP` with `BUDGET_ITER` (the run's iteration cap) or `ASK` with `CYCLE_CAP`
+(the cycle cap). A loop that `CONVERGED` closes normally instead, and `BUDGET_TOK` or
+`BLOCKED_ARCH` cannot be closed by an authorization at all. Before asking, show the user what
+stays open: the close prints the residual findings from the last round's sidecar.
 
 If that key is absent or false, early completion is unavailable: say so, keep running the loop
 to convergence or its configured maximum, and **never propose editing the profile mid-loop to
@@ -272,7 +326,8 @@ summarise, translate, or improve them into a reason they did not give.
 
 What an authorization can never waive — the command refuses each of these and appends nothing:
 zero completed rounds (or fewer than `minimum_completed_rounds`), unresolved findings at a
-`severity_block` severity, architecture escalation or `BLOCKED_ARCH`, unresolved Done Criteria or
+`severity_block` severity, architecture escalation or `BLOCKED_ARCH`, a token budget overrun
+(`BUDGET_TOK`), unresolved Done Criteria or
 a revision rerun that has not happened, acceptance `FAIL`, a required `NOT TESTED` without an
 active exact waiver, audit damage or chain/sequence failure, and a binding mismatch. The
 acceptance judgment is the same policy and the same parser the Phase-06 report gate uses, so a

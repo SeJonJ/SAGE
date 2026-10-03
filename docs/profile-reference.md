@@ -129,6 +129,7 @@ pdca:
     refuters: 2
     refute_threshold: majority
     max_iterations: { L2: 1, L3: 3 }
+    max_cycle_rounds: { L2: 3, L3: 5 }
     dry_rounds: 1
     budget_tokens: { L2: 150000, L3: 400000 }
     severity_block: ["P0", "P1"]
@@ -142,6 +143,8 @@ pdca:
 Phase 05의 find→refute→triage→rework 적대적 반복 루프입니다. 기본은 꺼져 있습니다. `lenses`가 각
 라운드에서 찾을 관점, `refuters`가 라운드당 반박자 수(모든 finding 을 한 번에 판정하고, 과반이 반박해야 기각 — 동률은 생존), `max_iterations`가 라운드 상한,
 `dry_rounds`가 "신규 발견 0"이 몇 라운드 연속이면 수렴으로 볼지입니다.
+`max_cycle_rounds`는 같은 사이클의 모든 run 을 합친 라운드 상한입니다. 닿으면 `sage review-loop next`가
+`ASK`로 사용자에게 계속·잔여 승인·멈춤을 묻습니다. 키가 없어도 기본값(L3 5 · L2 3)이 적용됩니다.
 `termination_enforce`/`report_gate_enforce`는 `off | advisory | enforce`이며, `enforce`는 06 작성을
 실제로 차단합니다. 표준 사이클의 정식 절차이고, 명시적으로 허용된 L2/L3에서만 쓰는 축약판은 아래
 Fast Cycle입니다.

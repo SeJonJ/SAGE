@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:00ce924787500e458064eea84fffd9cf982a79ed0b840d9708f06d30056f50b2 -->
+<!-- sage-doc-source: troubleshooting.md sha256:322e3dfe75e8abcf3b211390984a6dd3b9de2256f828def410aa6584c320974c -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -361,9 +361,10 @@ converted run legitimately carries no `Fast-Audit-Run` line in its document; do 
 [sage review-loop] --survived-by-severity invalid: severity total 2 does not equal survived 3
 ```
 
-Early completion requires `pdca.review_loop.early_completion.enabled: true` and is meaningful only
-while `sage review-loop next` still recommends `CONTINUE`; once it reports `STOP` or `CONVERGED`,
-close normally. A receipt-total error means `--survived-by-severity` does not sum to that round's
+Early completion requires `pdca.review_loop.early_completion.enabled: true` and is available while
+`sage review-loop next` recommends `CONTINUE` or has stopped at a ceiling the user decides
+(`STOP BUDGET_ITER`, `ASK CYCLE_CAP`). A `CONVERGED` loop closes normally, and `BUDGET_TOK` or
+`BLOCKED_ARCH` cannot be closed by an authorization. A receipt-total error means `--survived-by-severity` does not sum to that round's
 `--survived` — the check exists to stop a `P0=0`-only receipt from hiding a blocking finding, so
 there is no way around it.
 
@@ -374,6 +375,24 @@ and audit damage. If one of those is blocking, it has to be genuinely resolved.
 A failed required build, test, or lint check also must not be closed early, but those results live
 only in Phase 03 prose and are not machine-readable by the engine. The agent must disclose that
 failure to the user and refuse to close; this is an agent duty, not an engine-enforced receipt.
+
+## A review loop does not open, or a round is refused (cycle binding and cap)
+
+```
+[sage review-loop] Cannot determine the cycle — declare it with `sage cycle set <stem>` or pass --cycle-stem. ...
+[sage review-loop] decide refused: cycle demo has not reached its round cap (2/3); nothing to decide
+```
+
+A run is always bound to a cycle, because the round cap (`pdca.review_loop.max_cycle_rounds`,
+default L3 5 · L2 3) counts every run of the same cycle together. Declare the cycle with
+`sage cycle set <stem>` or pass `open --cycle-stem <stem>`.
+
+When `next` prints `NEXT: ASK kind=CYCLE_CAP`, the cycle has reached its cap and `round` is refused
+until the user decides. To continue, `sage review-loop decide --run-id <id> --cycle continue
+--extend <N> --reason <reason> --decided-by <name>`; to accept the remaining non-blocking findings,
+the early completion close; to stop, `close --result BLOCKED --reason CYCLE_CAP`. `decide` is accepted
+only once the cap is reached — raising it ahead of time would remove the "ask at the cap" contract.
+Runs opened without a cycle before the upgrade are not capped retroactively; `show` lists them apart.
 
 ## Phase 05 is blocked over reduced-assurance markers
 
