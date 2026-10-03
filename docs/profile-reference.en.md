@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:cde8fad00bf84927b182441714b01a63e974157ead83c6308cfe97d588d1f1cd -->
+<!-- sage-doc-source: profile-reference.md sha256:e48111f2848f97fef8334e45d17ec2895b5ff4bbf9557e63f311553b72c295c8 -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -136,6 +136,7 @@ pdca:
     refuters: 2
     refute_threshold: majority
     max_iterations: { L2: 1, L3: 3 }
+    max_cycle_rounds: { L2: 3, L3: 5 }
     dry_rounds: 1
     budget_tokens: { L2: 150000, L3: 400000 }
     severity_block: ["P0", "P1"]
@@ -149,7 +150,9 @@ pdca:
 The Phase 05 find→refute→triage→rework adversarial loop. Disabled by default. `lenses` are the
 perspectives each round searches from, `refuters` is how many reviewers challenge the round's findings (each judges all of them in one batch; a finding is dropped only when a strict majority refutes it, so a tie survives),
 `max_iterations` caps the rounds, and `dry_rounds` is how many consecutive rounds with zero new
-findings count as convergence. `termination_enforce`/`report_gate_enforce` are
+findings count as convergence. `max_cycle_rounds` caps the rounds of every run of the same cycle
+together; at the cap `sage review-loop next` asks the user (`ASK`) to continue, approve the residual,
+or stop. Without the key the default (L3 5 · L2 3) applies. `termination_enforce`/`report_gate_enforce` are
 `off | advisory | enforce`; `enforce` actually blocks writing Phase 06. This is the standard cycle's
 full procedure — the compressed variant for explicitly allowed L2/L3 work is Fast Cycle, below.
 

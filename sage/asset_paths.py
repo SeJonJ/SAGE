@@ -317,6 +317,10 @@ def hook_runtime_files(root: str, layout: str = LAYOUT_CONSUMER_CURRENT) -> dict
             # document_language 와 같은 근거이고, 게이트가 import 실패를 fail-closed 로 받는
             # 것과 짝을 이룬다 — 차단은 되지만 그 상태가 왜 생겼는지는 validate 가 짚어줘야 한다.
             os.path.join(runtime, "prose_language.py"),
+            # compact_reentry.py: 압축 직후 SessionStart 가 모델에 넣는 재진입 문맥. 게이트는
+            # 아니지만 hook_runtime 이 import 한다. 누락되면 압축 뒤 문맥이 실패 한 줄로 바뀌고,
+            # 추적하지 않으면 어느 사이클 briefing 을 가리키는지를 조용히 바꿔도 hash 가 PASS 한다.
+            os.path.join(runtime, "compact_reentry.py"),
         ] + strategy_files,
         "claude": [os.path.join(runtime, "io_claude.py")],
         "codex": [os.path.join(runtime, "io_codex.py")],

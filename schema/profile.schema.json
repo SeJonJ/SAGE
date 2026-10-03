@@ -373,6 +373,20 @@
             "max_iterations": {
               "type": "object"
             },
+            "max_cycle_rounds": {
+              "type": "object",
+              "description": "사이클 전체(같은 cycle stem 의 모든 run) 라운드 상한. 닿으면 sage review-loop next 가 ASK CYCLE_CAP 으로 사용자에게 묻는다. 부재 시 엔진 기본값 L3 5 · L2 3",
+              "properties": {
+                "L2": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "L3": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
             "dry_rounds": {
               "type": "integer",
               "minimum": 1

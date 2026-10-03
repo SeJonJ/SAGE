@@ -298,10 +298,13 @@ Fast 명령은 `pdca.fast_cycle.enabled: true`인 L2/L3에만 열립니다. 실�
 |---|---|
 | `sage review` | 새 same-runtime headless reviewer 실행 |
 | `sage cross-check --packet-file FILE [--on-peer-failure block\|same-runtime]` | 반대 runtime의 cross-model reviewer 실행. `same-runtime`은 리뷰어가 실행 중 실패했을 때 그 라운드만 같은 runtime 리뷰로 1회 대신합니다(강등으로 기록) |
-| `sage review-loop open [--cycle-stem S --lenses CSV]` | review loop 시작; Fast는 stem·렌즈를 exact 결속 |
-| `sage review-loop round [... --lens-receipts CSV] [--survived-by-severity P0=N,P1=N,P2=N,P3=N] [--peer-tokens "<REVIEWER_TOKENS 값>"]` | finding, 반박, 수정 결과와 Fast 렌즈 수행 영수증, 심각도별 잔여 영수증, 리뷰어 실측 사용량 기록 |
-| `sage review-loop next` | 결정론적 계속/종료 권고 |
-| `sage review-loop close` | `--result APPROVED|BLOCKED`로 loop 종료 |
+| `sage review-loop open [--cycle-stem S --lenses CSV]` | review loop 시작. run 은 항상 사이클에 묶인다 — `--cycle-stem` 이 없으면 선언된 사이클(`SAGE_CYCLE_STEM` > `.sage/cycle.json`)을 쓰고, 없으면 거부. Fast는 stem·렌즈를 exact 결속 |
+| `sage review-loop round --findings-file FILE [--tokens N --peer-tokens "<REVIEWER_TOKENS 값>"]` | 라운드 사이드카(`sage.review-round/1`: 지적 원문·출처·반박 사유·처분)를 기록. 개수와 심각도 영수증을 사이드카에서 산출하고, sha256 과 직전 라운드 대비 작업 트리 delta 를 함께 남긴다 |
+| `sage review-loop round [... --lens-receipts CSV] [--survived-by-severity P0=N,P1=N,P2=N,P3=N] [--peer-tokens "<REVIEWER_TOKENS 값>"]` | 사이드카 없이 개수를 직접 기록(`sidecar: absent`). finding, 반박, 수정 결과와 Fast 렌즈 수행 영수증, 심각도별 잔여 영수증, 리뷰어 실측 사용량. 작업 트리 식별자와 직전 라운드 대비 delta 는 사이드카 유무와 관계없이 남는다 |
+| `sage review-loop next` | 결정론적 계속/종료/질문 권고. 사이클 전체 라운드가 `max_cycle_rounds` 에 닿으면 `NEXT: ASK kind=CYCLE_CAP` |
+| `sage review-loop decide --run-id ID --cycle continue --extend N --reason R --decided-by W` | 사이클 상한에서 사용자가 고른 「계속」을 감사에 기록하고 상한을 N 라운드 늘린다 |
+| `sage review-loop ledger add\|show\|render [--cycle-stem S]` | 사이클 이월 장부. `add` 는 범위 밖 결정·알려진 변경 전 결함, `render` 는 패킷의 「결정·잔여」 절 |
+| `sage review-loop close` | `--result APPROVED|BLOCKED`로 loop 종료. 사이클 상한에서 멈추면 `--result BLOCKED --reason CYCLE_CAP` |
 | `sage review-loop close --reason USER_AUTHORIZED_EARLY --authorization-reason R --confirmed-by W --confirm USER_AUTHORIZED_EARLY` | 사용자 승인으로 수렴 전 종료 (보증 저하 표기 필수) |
 | `sage retro --feature STEM` | 완료 사이클 회고 노트와 distillation 입력 생성 |
 | `sage retro --check NOTE` | 회고 노트가 빈 템플릿이 아닌지 검사 |
@@ -309,11 +312,12 @@ Fast 명령은 `pdca.fast_cycle.enabled: true`인 L2/L3에만 열립니다. 실�
 리뷰어 출력의 `REVIEWER_*` 줄, 실패 사유별 처리, 사용량 기록 방법은 [교차 리뷰](cross-review.md)에 있습니다.
 
 조기 종료는 `pdca.review_loop.early_completion.enabled: true`가 필요하고, `sage review-loop next`가
-아직 `CONTINUE`를 권고하는 상태에서만 의미가 있습니다. 반복 횟수 면제가 아니라 **잔여 비차단 위험을
-사용자가 명시적으로 인수**하는 것이라, 다음은 승인으로도 통과하지 않습니다 — 라운드 0건 또는
-`minimum_completed_rounds` 미만, `severity_block` 심각도의 미해결 finding, architecture escalation과
-`BLOCKED_ARCH`, Done Criteria 미해결과 revision 재실행 누락, acceptance `FAIL`, waiver 없는 필수
-`NOT TESTED`, 감사 손상과 chain/seq 실패, 결속 불일치.
+`CONTINUE`를 권고하거나 사용자가 정할 상한에서 멈춘 상태(`STOP BUDGET_ITER`, `ASK CYCLE_CAP`)에서
+쓸 수 있습니다. 반복 횟수 면제가 아니라 **잔여 비차단 위험을 사용자가 명시적으로 인수**하는 것이라,
+다음은 승인으로도 통과하지 않습니다 — 라운드 0건 또는 `minimum_completed_rounds` 미만, `severity_block`
+심각도의 미해결 finding, architecture escalation과 `BLOCKED_ARCH`, 토큰 예산 초과(`BUDGET_TOK`), Done
+Criteria 미해결과 revision 재실행 누락, acceptance `FAIL`, waiver 없는 필수 `NOT TESTED`, 감사 손상과
+chain/seq 실패, 결속 불일치. 종료 안내는 마지막 라운드 사이드카의 잔여 지적 목록을 보여 줍니다.
 
 판정 토큰은 호환을 위해 `APPROVED`를 유지하므로, Phase 05 문서가 어떻게 도달했는지를 적습니다. 차단
 여부를 정하는 것은 표기의 **존재가 아니라 값**입니다.

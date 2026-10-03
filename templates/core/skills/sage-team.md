@@ -142,7 +142,13 @@ ownership. SAGE owns the deterministic gates; this skill only ensures they are i
    has been applied.
 11. When `context_management.compaction.enabled: true`, run
    `sage context snapshot --cycle-stem <stem> --phase <id>` after each completed 03,
-   04, 05, and 06 boundary and include the packet paths in the artifact inventory.
+   04, 05, and 06 boundary and include the packet paths in the artifact inventory. After the
+   Phase 04 snapshot, prompt the user once to `/compact` and then `continue` (or just `continue`
+   to skip) — the agent cannot compact on either host. After a compaction the SessionStart hook
+   injects a re-entry note; run the `sage context restore` it names, read the briefing, and resume
+   from disk state. If no note appears (untrusted hook), re-invoking `/sage-team` resumes the same
+   way. Decisions from conversation are written into the current phase document where they are
+   made, never batched at a boundary.
    Snapshot only after that phase's evidence anchor is complete; a file's mere presence
    is not a phase boundary.
 

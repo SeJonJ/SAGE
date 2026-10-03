@@ -75,6 +75,11 @@ see `docs/agent/language-policy.md`.
 
 Do not proceed to leader handoff until scope + interview are confirmed.
 
+**Decisions are written where they are made.** Every decision the user gives in conversation —
+during the interview or later — goes into the interview record or the current phase document in
+that same turn. Compaction can happen at any time, and a decision that lives only in the
+conversation is not recovered.
+
 ## Step 2 — Invoke the leader
 
 Before leader handoff, run the configured knowledge scan when it is enabled:

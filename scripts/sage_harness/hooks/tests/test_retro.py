@@ -76,8 +76,8 @@ class _ProjectFixture:
 
     def _run_loop(self, risk="L3", cycle_stem=None):
         cmd = [sys.executable, "-m", "sage", "review-loop", "open", "--risk", risk, "--root", self.tmp]
-        if cycle_stem:
-            cmd += ["--cycle-stem", cycle_stem]
+        # open 은 사이클 결속이 필수다. stem 을 따로 보지 않는 테스트는 중립 stem 으로 연다.
+        cmd += ["--cycle-stem", cycle_stem or "retro-test-cycle"]
         r = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True)
         rid = r.stdout.strip().splitlines()[0]
         sage_review_loop("round", "--run-id", rid, "--iteration", "1", "--found", "7",

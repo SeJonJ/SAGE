@@ -98,6 +98,7 @@ class TestAssetPathsKinds(unittest.TestCase):
                 os.path.join("sage_harness", "hooks", "runtime", "cycle_state.py"),
                 os.path.join("sage_harness", "hooks", "runtime", "document_language.py"),
                 os.path.join("sage_harness", "hooks", "runtime", "prose_language.py"),
+                os.path.join("sage_harness", "hooks", "runtime", "compact_reentry.py"),
                 os.path.join("sage_harness", "hooks", "strategies", "pre_implementation_gate", "claude_grep_first.py"),
                 os.path.join("sage_harness", "hooks", "strategies", "pre_implementation_gate", "codex_feature_signal.py"),
                 os.path.join("sage_harness", "hooks", "strategies", "pre_implementation_gate", "cycle_domain_review.py"),

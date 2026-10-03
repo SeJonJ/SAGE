@@ -1250,4 +1250,29 @@ grep -q "migrated block" "$WORK/mig_gate.err" || { echo "❌ 이행 뒤 decision
 ! grep -q "Traceback" "$WORK/mig_gate.err" || { echo "❌ 이행 뒤 게이트가 크래시"; cat "$WORK/mig_gate.err"; exit 1; }
 echo "   migration OK (구 → 신 레이아웃 · 사용자 파일 보존 · 게이트 exit 2 · traceback 0)"
 
+# 압축 직후 SessionStart(source compact) 재진입 문맥 — 설치본 hook 트리만으로(엔진 import 없이)
+# 두 host wire 모두 stdout 에 JSON 한 줄을 내야 한다. 다른 source 는 stdout 이 비어야 한다.
+test -f "$MPROJ/sage_harness/hooks/runtime/compact_reentry.py" || { echo "❌ compact_reentry 미설치"; exit 1; }
+for HOST in claude codex; do
+  printf '%s' '{"session_id":"wheel-compact","source":"compact"}' \
+    | SAGE_PROJECT_ROOT="$MPROJ" "$MPROJ/sage_harness/hooks/adapters/$HOST/session-start-snapshot.sh" \
+    >"$WORK/compact_$HOST.out" 2>"$WORK/compact_$HOST.err" \
+    || { echo "❌ $HOST SessionStart(compact) 실패"; cat "$WORK/compact_$HOST.err"; exit 1; }
+  "$PY" - "$WORK/compact_$HOST.out" <<'COMPACT'
+import json, sys
+lines = [line for line in open(sys.argv[1], encoding="utf-8").read().splitlines() if line.strip()]
+assert len(lines) == 1, lines
+payload = json.loads(lines[0])["hookSpecificOutput"]
+assert payload["hookEventName"] == "SessionStart", payload
+assert payload["additionalContext"].startswith("[SAGE]"), payload
+assert len(payload["additionalContext"].encode("utf-8")) <= 2064, len(payload["additionalContext"])
+COMPACT
+  ! grep -q "Traceback" "$WORK/compact_$HOST.err" || { echo "❌ $HOST SessionStart 크래시"; cat "$WORK/compact_$HOST.err"; exit 1; }
+done
+printf '%s' '{"session_id":"wheel-startup","source":"startup"}' \
+  | SAGE_PROJECT_ROOT="$MPROJ" "$MPROJ/sage_harness/hooks/adapters/claude/session-start-snapshot.sh" \
+  >"$WORK/startup.out" 2>/dev/null || true
+test ! -s "$WORK/startup.out" || { echo "❌ startup 에서 stdout 출력"; cat "$WORK/startup.out"; exit 1; }
+echo "   SessionStart(compact) OK (claude·codex JSON 1줄 · startup stdout 없음 · traceback 0)"
+
 echo "✅ 순수 wheel 단독배포 게이트 PASS — 번들 리소스만으로 install→generate→validate 폐루프 동작"

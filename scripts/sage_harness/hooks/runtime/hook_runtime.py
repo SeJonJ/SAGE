@@ -1915,7 +1915,28 @@ def run_session_start_snapshot(io, root, core_dir, raw_text):
     overlay_rc = _session_start_overlay_l1(io, root)
     if overlay_rc:
         return overlay_rc
-    return _ensure_session_06_snapshot(io, root, core_dir, raw_text)
+    rc = _ensure_session_06_snapshot(io, root, core_dir, raw_text)
+    # 압축 직후에만 재진입 문맥을 넣는다. 06 baseline 은 session_id 가 같아 write-once 로 그대로다.
+    # baseline 이 실패(rc≠0)해도 문맥은 낸다 — 그 실패는 이미 stderr 로 드러났고, 문맥까지 빠지면
+    # 압축 뒤 에이전트가 어디서 이어 가야 하는지 모른다.
+    _emit_compact_reentry(io, root, raw_text)
+    return rc
+
+
+def _emit_compact_reentry(io, root, raw_text):
+    raw = parse_input_fail_open("session-start-snapshot", raw_text, surface=False)
+    if not isinstance(raw, dict) or raw.get("source") != "compact":
+        return
+    render = getattr(io, "render_session_context", None)
+    if render is None:
+        return
+    try:
+        import compact_reentry
+        text = compact_reentry.build(root, load_profile_fail_open("session-start-snapshot"))
+    except Exception as e:  # noqa: BLE001 - 문맥 생성 실패를 조용히 넘기지 않는다
+        text = ("[SAGE] 재진입 문맥 생성 실패 / re-entry context failed: "
+                f"{type(e).__name__}: {str(e)[:200]} — /sage-team (codex: $sage-team)")
+    render(text)
 
 
 def retro_gate_result(profile, root, raw, session_entries, snapshot_06=None, snapshot_status="ok"):

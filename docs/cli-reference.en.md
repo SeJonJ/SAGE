@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:66dce0e1c44f7889d9caed0e4193dc70ace858bc7b1b67648366cf0c3b8fac79 -->
+<!-- sage-doc-source: cli-reference.md sha256:8fca55f2a5346f217fb9390232cd1e9a27f5e59b44c05f720d15f4ad44ceb3e5 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for
@@ -327,10 +327,13 @@ switching. Close normally with `fast-cycle close` before `cycle clear`; abandon 
 |---|---|
 | `sage review` | Start a fresh same-runtime headless reviewer |
 | `sage cross-check --packet-file FILE [--on-peer-failure block\|same-runtime]` | Start a cross-model reviewer in the opposite runtime. `same-runtime` replaces that round once with a same-runtime review when the reviewer fails mid-run (recorded as degraded) |
-| `sage review-loop open [--cycle-stem S --lenses CSV]` | Start a review loop; Fast binds exact stem and lenses |
-| `sage review-loop round [... --lens-receipts CSV] [--survived-by-severity P0=N,P1=N,P2=N,P3=N] [--peer-tokens "<REVIEWER_TOKENS value>"]` | Record findings, rebuttals, fixes, Fast lens receipts, the per-severity residual receipt, and the reviewer's measured usage |
-| `sage review-loop next` | Produce a deterministic continue-or-stop recommendation |
-| `sage review-loop close` | Close the loop with `--result APPROVED|BLOCKED` |
+| `sage review-loop open [--cycle-stem S --lenses CSV]` | Start a review loop. A run is always bound to a cycle — without `--cycle-stem` the declared cycle (`SAGE_CYCLE_STEM` > `.sage/cycle.json`) is used, and the open is refused when none resolves. Fast binds exact stem and lenses |
+| `sage review-loop round --findings-file FILE [--tokens N --peer-tokens "<REVIEWER_TOKENS value>"]` | Record the round sidecar (`sage.review-round/1`: verbatim findings, sources, refutation reasons, dispositions). Counts and the severity receipt are derived from it; its sha256 and the working-tree delta since the previous round are recorded too |
+| `sage review-loop round [... --lens-receipts CSV] [--survived-by-severity P0=N,P1=N,P2=N,P3=N] [--peer-tokens "<REVIEWER_TOKENS value>"]` | Record counts by hand without a sidecar (`sidecar: absent`): findings, rebuttals, fixes, Fast lens receipts, the per-severity residual receipt, and the reviewer's measured usage. The working-tree id and the delta since the previous round are recorded with or without a sidecar |
+| `sage review-loop next` | Produce a deterministic continue, stop, or ask recommendation. When the cycle's rounds reach `max_cycle_rounds` it prints `NEXT: ASK kind=CYCLE_CAP` |
+| `sage review-loop decide --run-id ID --cycle continue --extend N --reason R --decided-by W` | Record the user's "continue" at the cycle cap in the audit and raise the cap by N rounds |
+| `sage review-loop ledger add\|show\|render [--cycle-stem S]` | Cycle carry-over ledger. `add` records out-of-scope decisions and known pre-existing defects; `render` prints the packet's "Decisions and residuals" section |
+| `sage review-loop close` | Close the loop with `--result APPROVED|BLOCKED`. Stopping at the cycle cap is `--result BLOCKED --reason CYCLE_CAP` |
 | `sage review-loop close --reason USER_AUTHORIZED_EARLY --authorization-reason R --confirmed-by W --confirm USER_AUTHORIZED_EARLY` | Close before convergence on an explicit user authorization (reduced-assurance markers required) |
 | `sage retro --feature STEM` | Generate a completed-cycle retrospective note and distillation input |
 | `sage retro --check NOTE` | Verify that a retrospective note is not an untouched template |
@@ -338,13 +341,15 @@ switching. Close normally with `fast-cycle close` before `cycle clear`; abandon 
 The reviewer's `REVIEWER_*` output lines, handling per failure reason, and how to record usage are
 in [Cross review](cross-review.en.md).
 
-Early completion requires `pdca.review_loop.early_completion.enabled: true` and is meaningful only
-while `sage review-loop next` still recommends `CONTINUE`. It is not an iteration waiver but an
-explicit user acceptance of residual non-blocking risk, so an authorization does not carry any of
-these past the gate: zero completed rounds or fewer than `minimum_completed_rounds`, unresolved
-findings at a `severity_block` severity, architecture escalation or `BLOCKED_ARCH`, unresolved Done
-Criteria or a missing revision rerun, acceptance `FAIL`, a required `NOT TESTED` without an active
-waiver, audit damage or chain/sequence failure, and a binding mismatch.
+Early completion requires `pdca.review_loop.early_completion.enabled: true` and is available while
+`sage review-loop next` recommends `CONTINUE` or has stopped at a ceiling the user decides
+(`STOP BUDGET_ITER`, `ASK CYCLE_CAP`). It is not an iteration waiver but an explicit user acceptance
+of residual non-blocking risk, so an authorization does not carry any of these past the gate: zero
+completed rounds or fewer than `minimum_completed_rounds`, unresolved findings at a
+`severity_block` severity, architecture escalation or `BLOCKED_ARCH`, a token budget overrun
+(`BUDGET_TOK`), unresolved Done Criteria or a missing revision rerun, acceptance `FAIL`, a required
+`NOT TESTED` without an active waiver, audit damage or chain/sequence failure, and a binding
+mismatch. The close disclosure lists the residual findings from the last round's sidecar.
 
 The verdict token stays `APPROVED` for compatibility, so the Phase 05 document records how it was
 reached. What decides a block is **the value, not the presence** of a marker. Writing either

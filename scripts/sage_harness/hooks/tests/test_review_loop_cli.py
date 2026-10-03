@@ -24,14 +24,21 @@ from pathlib import Path
 KOREAN = re.compile(r"[가-힣]")
 
 
-def sage(*args, root=None, lang=None):
+TEST_STEM = "test-cycle"
+
+
+def sage(*args, root=None, lang=None, stem=TEST_STEM):
     """python3 -m sage [--lang L] review-loop <args> 실행 → CompletedProcess.
 
     `--lang` 은 전역 옵션이라 서브커맨드보다 앞에 와야 한다(argparse 계약).
+    `open` 은 사이클 결속이 필수라 `--cycle-stem` 이 없으면 `stem` 을 붙인다. 결속 거부 자체를
+    보려면 `stem=None` 으로 부른다.
     """
     cmd = [sys.executable, "-m", "sage"]
     if lang:
         cmd += ["--lang", lang]
+    if args and args[0] == "open" and stem and "--cycle-stem" not in args:
+        args = (*args, "--cycle-stem", stem)
     cmd += ["review-loop", *args]
     if root:
         cmd += ["--root", root]
@@ -239,7 +246,8 @@ class TestReviewLoopCli(unittest.TestCase):
         subdir = os.path.join(self.tmp, "src", "deep")
         os.makedirs(subdir, exist_ok=True)
         # --root 생략 + cwd=서브디렉토리 → 루트 자동 탐색
-        r = subprocess.run([sys.executable, "-m", "sage", "review-loop", "open", "--risk", "L3"],
+        r = subprocess.run([sys.executable, "-m", "sage", "review-loop", "open", "--risk", "L3",
+                            "--cycle-stem", TEST_STEM],
                            cwd=subdir, capture_output=True, text=True,
                            env={**os.environ, "PYTHONPATH": REPO})
         self.assertEqual(r.returncode, 0, r.stderr)

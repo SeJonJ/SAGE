@@ -67,6 +67,28 @@ MESSAGES = {
     "cycle_state.language_invalid": "{path}: document_language 값이 유효하지 않음 ({language!r})",
     "cycle_declaration_ignored": "[사이클 선언 무시됨] {detail} — 선언 없음으로 진행합니다. "
         "`sage cycle set <stem>` 으로 다시 쓰거나 `sage cycle clear` 로 지우세요.",
+    "hook.compact.head": "[SAGE] 컨텍스트가 압축됐습니다. 정본은 phase 문서입니다 — 압축 요약과 다르면 문서를 따르세요.",
+    "hook.compact.decisions_warning": "- 문서에 적히지 않은 대화 결정은 복구되지 않습니다. 기억나지 않는 결정은 사용자에게 다시 확인하세요.",
+    "hook.compact.next": "- 다음: /sage-team 으로 재진입합니다(codex: $sage-team). 열린 review loop run 은 다시 열지 말고 이어 갑니다.",
+    "hook.compact.item_failed": "- {item} 확인 실패: {error}",
+    "hook.compact.label_loop": "review loop 감사",
+    "hook.compact.label_cycle": "사이클",
+    "hook.compact.label_snapshot": "context snapshot",
+    "hook.compact.cycle_ambiguous": "- 사이클이 모호합니다: {values} — 어느 사이클인지 사용자에게 확인하세요. 확인 전에는 briefing 을 고르지 않습니다.",
+    "hook.compact.cycle_none": "- 선언된 사이클이 없습니다. phase 문서(plan_docs)에서 현재 단계를 확인하세요.",
+    "hook.compact.cycle": "- 사이클: {stem} (출처: {origin})",
+    "hook.compact.origin_env": "env SAGE_CYCLE_STEM",
+    "hook.compact.origin_file": "파일 선언 .sage/cycle.json",
+    "hook.compact.origin_run": "열린 review loop run",
+    "hook.compact.snapshot_none": "- context snapshot 없음 — phase 문서에서 현재 단계를 확인하세요.",
+    "hook.compact.snapshot": "- 최신 snapshot: {path} (완료 {phase} → 다음 {next})",
+    "hook.compact.restore": "  먼저 실행: sage context restore --snapshot {path} → 출력된 briefing 파일을 읽으세요.",
+    "hook.compact.loop": "- review loop: {run_id} 열림 · run 라운드 {rounds} · 사이클 라운드 {cycle_rounds}/{cap} · 판정 대기: {waiting}",
+    "hook.compact.ask_cycle_cap": "ASK CYCLE_CAP(사용자 결정 전 라운드 금지)",
+    "hook.compact.wait_stop": "STOP {reason} — sage review-loop next 로 확인한 뒤 close(라운드 추가 금지)",
+    "hook.compact.ask_none": "없음 — sage review-loop next 로 판정",
+    "hook.compact.loop_none": "- 이 사이클의 열린 review loop run 없음",
+    "hook.compact.ledger": "- 이월 장부: sage review-loop ledger show --cycle-stem {stem}",
 }
 
 # 판정 문장이 아니라 그 문장을 **감싸는 조각**이다. message_key 와 섞으면 build-time oracle

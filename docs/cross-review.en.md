@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cross-review.md sha256:3f87580890b28c0452ee9e39c69ce5d3589c33440fd99a597c8ff37f4e834024 -->
+<!-- sage-doc-source: cross-review.md sha256:e1c3c6d5cec42e98eafda01fdf6bdd31882be35e507e00955b9b218873d6af36 -->
 # Phase 05 Review: Single Review and Cross Review
 
 [한국어](cross-review.md) | [Documentation index](README.en.md)
@@ -43,7 +43,11 @@ flowchart LR
   refuters alone. The refutation evidence goes into the next round's packet for the peer to re-judge;
   in the last round a human approves the drop.
 - **Termination** — `sage review-loop next` recommends continue or stop deterministically from the
-  recorded rounds and the settings (iteration cap, token budget, convergence).
+  recorded rounds and the settings (iteration cap, token budget, convergence). When the cycle's
+  rounds reach `max_cycle_rounds` it asks the user (`ASK`), and no further round opens until then.
+- **Round record** — each round leaves a sidecar (`round --findings-file`) with the verbatim
+  findings, sources, refutation reasons and dispositions, and the packet's "Decisions and
+  residuals" section is generated from the ledger by `sage review-loop ledger render`, never retyped.
 
 ## How the reviewer process starts
 

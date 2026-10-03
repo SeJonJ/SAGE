@@ -347,7 +347,8 @@ Phase 00에서 전환했다면 01~03을 그대로 작성해야 합니다. 전환
 ```
 
 조기 종료는 `pdca.review_loop.early_completion.enabled: true`가 필요하고, `sage review-loop next`가
-아직 `CONTINUE`를 권고할 때만 의미가 있습니다. 이미 `STOP`/`CONVERGED`면 정상 close를 쓰십시오.
+`CONTINUE`를 권고하거나 사용자가 정할 상한(`STOP BUDGET_ITER`, `ASK CYCLE_CAP`)에서 멈췄을 때 쓸 수
+있습니다. `CONVERGED`면 정상 close를 쓰고, `BUDGET_TOK`·`BLOCKED_ARCH`는 승인으로 닫을 수 없습니다.
 영수증 합계 오류는 `--survived-by-severity`의 합이 그 라운드의 `--survived`와 다르다는 뜻입니다 —
 `P0=0`만 적어 차단 finding을 숨기는 것을 막는 검사라 우회 경로가 없습니다.
 
@@ -358,6 +359,24 @@ finding, architecture escalation, Done Criteria 미해결, acceptance `FAIL`, �
 필수 build/test/lint 실패도 조기 완료해서는 안 되지만, 그 결과는 Phase 03 산문에만 있어 엔진이 직접
 읽지 못합니다. 이 항목은 에이전트가 사용자에게 그대로 알리고 close를 진행하지 않아야 하는
 의무입니다.
+
+## review loop 가 열리지 않거나 라운드가 거부됨 (사이클 결속·상한)
+
+```
+[sage review-loop] 사이클을 정할 수 없습니다 — `sage cycle set <stem>` 으로 선언하거나 --cycle-stem 을 주세요. ...
+[sage review-loop] decide refused: cycle demo has not reached its round cap (2/3); nothing to decide
+```
+
+run 은 항상 사이클에 묶입니다. 라운드 상한(`pdca.review_loop.max_cycle_rounds`, 기본 L3 5 · L2 3)을
+같은 사이클의 모든 run 을 합쳐 세기 때문입니다. `sage cycle set <stem>` 으로 사이클을 선언하거나
+`open --cycle-stem <stem>` 을 주십시오.
+
+`next` 가 `NEXT: ASK kind=CYCLE_CAP` 을 내면 사이클이 상한에 닿은 것이고, 사용자가 정하기 전에는
+`round` 가 거부됩니다. 계속하려면 `sage review-loop decide --run-id <id> --cycle continue --extend <N>
+--reason <사유> --decided-by <이름>`, 남은 비차단 지적을 인수하려면 조기 종료, 멈추려면
+`close --result BLOCKED --reason CYCLE_CAP` 입니다. `decide` 는 상한에 닿은 뒤에만 받습니다 — 미리 늘려
+두면 「상한에서 묻는다」는 계약이 사라지기 때문입니다. 업그레이드 전에 사이클 없이 열린 run 은 상한을
+소급 적용하지 않고 `show` 에 따로 표시합니다.
 
 ## Phase 05가 "보증 저하 표기" 때문에 막힘
 

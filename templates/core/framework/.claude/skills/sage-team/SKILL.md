@@ -91,6 +91,12 @@ sage cycle set <stem>   # only when show does not report this verified stem
 Do not set a stem before identity validation. If `SAGE_CYCLE_STEM` wins, surface the
 CLI warning and require `unset SAGE_CYCLE_STEM` when it names another cycle.
 
+**Decisions are written where they are made.** When the user decides something in
+conversation, record it in the current phase document's decision section in that same turn —
+not later at a boundary. Compaction (manual or automatic) can happen at any time, and a decision
+that exists only in the conversation is not recovered. Loop decisions are recorded by
+`sage review-loop decide` or the close itself.
+
 Then find the first incomplete stage using **evidence anchors**, not bare
 file existence:
 
@@ -174,6 +180,28 @@ Invoke the `qa` agent: assess design↔implementation gap + **test coverage** (c
 not covered / intentionally excluded; recommended additional scenarios) + acceptance
 evidence (`PASS`/`FAIL`/`NOT TESTED`/`N/A`). Record in the 04 doc. **No verdict here** —
 that belongs to Phase 05.
+
+### Phase 05 entry — compact the context once
+
+The agent cannot compact its own context on either host; only the user's `/compact` (or the
+host's automatic compaction) can. When `context_management.compaction.enabled: true`, after the
+Phase 04 boundary snapshot, make sure every decision from the conversation is already in a phase
+document, then end the turn with this single prompt in the conversation language and wait:
+
+> Phase 05 is next. To shrink the context first, send `/compact`, then `continue`. To skip,
+> just send `continue`. If no SAGE note appears after compacting (for example an untrusted hook
+> on Codex), re-invoke `/sage-team` (Codex `$sage-team`).
+
+Korean: 「Phase 05 전에 컨텍스트를 줄입니다. `/compact` 입력 뒤 `계속` 이라고 보내 주세요.
+건너뛰려면 바로 `계속`. 압축 뒤 SAGE 안내가 보이지 않으면(codex 훅 미신뢰 등) `/sage-team`
+(codex `$sage-team`)을 다시 부르면 됩니다.」
+
+Skipping changes nothing but the context size — this is an optimisation, not a gate. After a
+compaction the SessionStart hook injects a short re-entry note (cycle, latest snapshot, the
+`sage context restore --snapshot <path>` command, the open loop run and any pending `ASK`). Run
+that restore, read the briefing it prints, then resume from disk state with the resume state
+machine above. The documents are canonical: where the compacted summary disagrees with them,
+the documents win. Do not reopen a loop run that is still open.
 
 ## Step 4 — Review (Phase 05) — via /sage-review (mandatory)
 
