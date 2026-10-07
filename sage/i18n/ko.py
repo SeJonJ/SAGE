@@ -716,7 +716,7 @@ MESSAGES = {
     "cli.review_loop.ledger_show": "장부를 사람용 목록으로 출력",
     "cli.review_loop.ledger_render": "패킷의 「결정·잔여」 절 마크다운 출력",
     "cli.review_loop.cycle_declaration_issue": "[sage review-loop] WARN: 사이클 선언 읽기 문제: {error}",
-    "cli.review_loop.cycle_stem_required": "[sage review-loop] 사이클을 정할 수 없습니다 — `sage cycle set <stem>` 으로 선언하거나 --cycle-stem 을 주세요. 사이클 라운드 상한은 같은 사이클의 run 을 합쳐 세므로 사이클 없이 run 을 열 수 없습니다",
+    "cli.review_loop.cycle_stem_required": "[sage review-loop] 사이클을 정할 수 없습니다 — `sage cycle set <stem>` 으로 선언하거나 --cycle-stem 을 주세요. <stem> 은 이 사이클 Phase 00 문서의 `Cycle-Stem:` 값입니다 — 비슷한 이름을 짐작해 넣으면 다른 사이클의 라운드와 합쳐 셉니다. 사이클 라운드 상한은 같은 사이클의 run 을 합쳐 세므로 사이클 없이 run 을 열 수 없습니다",
     "cli.review_loop.cycle_stem_differs": "[sage review-loop] WARN: --cycle-stem {explicit} 이 선언된 사이클 {resolved}({origin}) 와 다릅니다 — 명시값으로 엽니다",
     "cli.review_loop.round_cycle_cap": "[sage review-loop] 사이클 {stem} 이 라운드 상한에 닿았습니다({rounds}/{cap}). 라운드를 더 열기 전에 사용자에게 물으세요: 계속(`sage review-loop decide --run-id {run_id} --cycle continue --extend <N> --reason … --decided-by …`) · 잔여 승인(조기 종료 close) · 멈춤(`close --result BLOCKED --reason CYCLE_CAP`)",
     "cli.review_loop.round_counts_required": "[sage review-loop] --findings-file 이 없으면 {missing} 가 필요합니다",

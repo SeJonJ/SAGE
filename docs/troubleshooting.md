@@ -369,7 +369,15 @@ finding, architecture escalation, Done Criteria 미해결, acceptance `FAIL`, �
 
 run 은 항상 사이클에 묶입니다. 라운드 상한(`pdca.review_loop.max_cycle_rounds`, 기본 L3 5 · L2 3)을
 같은 사이클의 모든 run 을 합쳐 세기 때문입니다. `sage cycle set <stem>` 으로 사이클을 선언하거나
-`open --cycle-stem <stem>` 을 주십시오.
+`open --cycle-stem <stem>` 을 주십시오. 1.3.0 부터 생긴 거부입니다.
+
+- `<stem>` 은 이 사이클 Phase 00 문서의 `Cycle-Stem:` 값을 그대로 씁니다. 최근 문서나 비슷한 이름으로
+  짐작하지 마십시오. 거부는 풀리지만 run 이 다른 사이클에 묶여, 상한을 그 사이클의 라운드와 합쳐 세고
+  경고도 나오지 않습니다. 후보가 여럿이거나 확실하지 않으면 에이전트는 고르지 말고 사용자에게 묻습니다.
+- 환경변수 `SAGE_CYCLE_STEM` 은 선언 파일보다 우선합니다. 다른 사이클을 가리키면 `unset SAGE_CYCLE_STEM`
+  뒤 다시 선언하십시오. `sage cycle show` 가 어느 쪽 값을 쓰는지 보여 줍니다.
+- 패키지만 올리고(`pipx upgrade`) 프로젝트 자산을 갱신하지 않으면 스킬이 이전 버전 그대로라, 에이전트가
+  이 규칙을 모른 채 거부를 만납니다. 업그레이드 뒤 `sage upgrade --apply` 로 자산까지 갱신하십시오.
 
 `next` 가 `NEXT: ASK kind=CYCLE_CAP` 을 내면 사이클이 상한에 닿은 것이고, 사용자가 정하기 전에는
 `round` 가 거부됩니다. 계속하려면 `sage review-loop decide --run-id <id> --cycle continue --extend <N>

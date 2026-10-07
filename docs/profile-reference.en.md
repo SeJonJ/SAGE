@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:9549c787545d33a3d5caee54215e39788b87c81df78569b3ea64c6f984ecf866 -->
+<!-- sage-doc-source: profile-reference.md sha256:afc9d375c9b36f15379b24709b9582db7f0ce63ff89e708e355bbd0d941dd0d5 -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -49,7 +49,7 @@ sage doctor --profile sage/project-profile.yaml
 
 ```yaml
 sage:
-  required_version: "1.2.0"
+  required_version: "1.3.0"
 
 project:
   name: "weatherapp"
@@ -161,7 +161,8 @@ residuals and approves with `CONVERGED_RESIDUAL` once no blocking finding is lef
 (`decide --finding`). `critical_p2` (a list of lowercase ids) replaces the categories; without it they
 are `unauthenticated_crash`, `exposure_or_traversal`, `wrong_content_served`, `deploy_breakage`,
 `security_setting_regression` and `silent_data_corruption`. Both keys apply to a run as they were when
-it opened. `termination_enforce`/`report_gate_enforce` are
+it opened. `blocking` is **experimental**: it makes the review do less, so it stays opt-in until real L3
+cycles show it does not miss defects. `termination_enforce`/`report_gate_enforce` are
 `off | advisory | enforce`; `enforce` actually blocks writing Phase 06. This is the standard cycle's
 full procedure — the compressed variant for explicitly allowed L2/L3 work is Fast Cycle, below.
 

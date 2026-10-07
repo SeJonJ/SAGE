@@ -699,7 +699,7 @@ MESSAGES = {
     "cli.review_loop.ledger_show": "Print the ledger as a human-readable list",
     "cli.review_loop.ledger_render": "Print the packet's \"Decisions and residuals\" section as markdown",
     "cli.review_loop.cycle_declaration_issue": "[sage review-loop] WARN: problem reading the cycle declaration: {error}",
-    "cli.review_loop.cycle_stem_required": "[sage review-loop] Cannot determine the cycle — declare it with `sage cycle set <stem>` or pass --cycle-stem. The cycle round cap counts every run of a cycle, so a run cannot open without one",
+    "cli.review_loop.cycle_stem_required": "[sage review-loop] Cannot determine the cycle — declare it with `sage cycle set <stem>` or pass --cycle-stem. <stem> is the `Cycle-Stem:` value of this cycle's Phase 00 document — a guessed name counts the rounds together with another cycle. The cycle round cap counts every run of a cycle, so a run cannot open without one",
     "cli.review_loop.cycle_stem_differs": "[sage review-loop] WARN: --cycle-stem {explicit} differs from the declared cycle {resolved} ({origin}) — opening with the explicit value",
     "cli.review_loop.round_cycle_cap": "[sage review-loop] Cycle {stem} reached its round cap ({rounds}/{cap}). Ask the user before opening another round: continue (`sage review-loop decide --run-id {run_id} --cycle continue --extend <N> --reason … --decided-by …`) · residual approval (early-completion close) · stop (`close --result BLOCKED --reason CYCLE_CAP`)",
     "cli.review_loop.round_counts_required": "[sage review-loop] Without --findings-file, {missing} are required",

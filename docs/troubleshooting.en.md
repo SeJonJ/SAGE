@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:4e5d06fa6fb55e219ea71256aea25c151452fc31123c2eb59bd43e200c1cbee0 -->
+<!-- sage-doc-source: troubleshooting.md sha256:fc49d305039b9b5ffecb72f63e3e312a577f70d988481d4c76da186dca6b3a27 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -385,7 +385,17 @@ failure to the user and refuse to close; this is an agent duty, not an engine-en
 
 A run is always bound to a cycle, because the round cap (`pdca.review_loop.max_cycle_rounds`,
 default L3 5 · L2 3) counts every run of the same cycle together. Declare the cycle with
-`sage cycle set <stem>` or pass `open --cycle-stem <stem>`.
+`sage cycle set <stem>` or pass `open --cycle-stem <stem>`. This refusal is new in 1.3.0.
+
+- Use the `Cycle-Stem:` value of this cycle's Phase 00 document as `<stem>`, exactly. Do not guess it from
+  a recent document or a similar name: the refusal goes away, but the run is bound to another cycle, the cap
+  counts that cycle's rounds as well, and nothing warns about it. When there are several candidates or you
+  are not sure, the agent asks the user instead of choosing.
+- The `SAGE_CYCLE_STEM` environment variable wins over the declaration file. If it names another cycle,
+  `unset SAGE_CYCLE_STEM` and declare again. `sage cycle show` tells you which value is in use.
+- Upgrading only the package (`pipx upgrade`) without refreshing the project assets leaves the skills at the
+  previous version, so the agent meets this refusal without knowing the rule. After upgrading, run
+  `sage upgrade --apply` to refresh the assets too.
 
 When `next` prints `NEXT: ASK kind=CYCLE_CAP`, the cycle has reached its cap and `round` is refused
 until the user decides. To continue, `sage review-loop decide --run-id <id> --cycle continue

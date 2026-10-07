@@ -1,4 +1,4 @@
-<!-- sage-doc-source: release-readiness.md sha256:18fe3d79f89a573984f07a38bb284155ada1596205f543b478b7798dc19e05ed -->
+<!-- sage-doc-source: release-readiness.md sha256:417d39474a437eb12dc268d96360d5419045c29a9dd38231b74b110c3eee32e6 -->
 # Release readiness
 
 This document records **how readiness is decided**, not what it currently is. The current answer
@@ -103,12 +103,17 @@ recorded run on a Windows 11 desktop counts as the same evidence when it records
 the same commit — what cannot be substituted is the SKU, not the way it was run. Without a record of
 either kind, automatic removal on that platform is unverified.
 
-> **Current state (as of 1.2.0).** This job has **never run** because no runner is registered for the
+> **Current state (as of 1.3.0).** This job has **never run** because no runner is registered for the
 > repository — every PR shows it as `skipped`, which makes the whole CI look green. **That green means
 > "Windows was not run", not "passed on Windows".** The Windows evidence for 1.0.0 and 1.1.1 is a
 > record of running the same scripts directly on a Windows 11 desktop over SSH. 1.2.0 ran the Phase 05
 > reviewer process paths the same way (child termination on timeout, timeout for a reviewer that does
-> not read its input, UTF-8 I/O, and the real claude/codex control flags). Someone has to make
+> not read its input, UTF-8 I/O, and the real claude/codex control flags). 1.3.0 ran the new suites for
+> review round sidecar storage, path confinement (including symlinks), the compaction re-entry context and
+> blocking convergence the same way on 3.10, 3.11 and 3.12. Some existing suites run alongside them
+> (`test_vault`, `test_generate`, `test_ci_authority`, `test_pre_implementation_gate` and others, 23 tests)
+> fail with the same lines on the commit before the change; they are pre-existing Windows failures left as
+> follow-up work. Someone has to make
 > that run before a release; whether to drop the job, replace it with a light hosted check, or turn
 > the SSH evidence into a release gate is left as follow-up work.
 

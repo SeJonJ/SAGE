@@ -46,7 +46,7 @@ sage doctor --profile sage/project-profile.yaml
 
 ```yaml
 sage:
-  required_version: "1.2.0"
+  required_version: "1.3.0"
 
 project:
   name: "weatherapp"
@@ -152,7 +152,8 @@ Phase 05의 find→refute→triage→rework 적대적 반복 루프입니다. �
 자동으로 고치지 않고 지적마다 개발자에게 묻습니다(`decide --finding`). 분류는 `critical_p2`(소문자 id
 목록)로 바꿀 수 있고, 없으면 `unauthenticated_crash`·`exposure_or_traversal`·`wrong_content_served`·
 `deploy_breakage`·`security_setting_regression`·`silent_data_corruption` 여섯 개입니다. 두 키는 run 을 열 때의
-값이 그 run 끝까지 적용됩니다.
+값이 그 run 끝까지 적용됩니다. `blocking`은 **실험적**입니다 — 리뷰를 덜 하게 만드는 규칙이라, 실제 L3
+사이클에서 결함을 놓치지 않는지 확인하기 전까지는 기본값으로 바꾸지 않습니다.
 `termination_enforce`/`report_gate_enforce`는 `off | advisory | enforce`이며, `enforce`는 06 작성을
 실제로 차단합니다. 표준 사이클의 정식 절차이고, 명시적으로 허용된 L2/L3에서만 쓰는 축약판은 아래
 Fast Cycle입니다.
