@@ -128,7 +128,7 @@
       "unresolved": []
     }
   },
-  "generator_version": "1.2.0",
+  "generator_version": "1.3.0",
   "hook_runtime_hash": {
     "claude": "sha256:b12f8aa772d58ef4a1b1ff0f195a26a99457125334d10a19198e4a3c7ffa678e",
     "codex": "sha256:81e7562907900e6de6e2fb85f5e6338bc707606003ff37687ac702655bc5ca0f",
