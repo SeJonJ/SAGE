@@ -178,22 +178,12 @@ def build_snapshot(profile, root, rel):
             phase_docs[pid] = docs
 
         # Fast Cycle uses one physical 00 document as deterministic virtual 01..04 documents.
-        # The shared parser is also used by the CLI and server-side consumers.
+        # The CLI and server-side consumers expand through the same shared function.
         try:
-            from fast_cycle_contract import parse_fast_plan
-            for doc in list(phase_docs.get("00") or []):
-                plan, issues = parse_fast_plan(doc.get("content") or "")
-                if plan is None or issues or plan.metadata.get("Cycle-Mode") != "FAST":
-                    continue
-                header = (f"Cycle-Stem: `{plan.metadata.get('Cycle-Stem', '')}`\n"
-                          f"Risk Level: {plan.metadata.get('Risk Level', '')}\n")
-                for virtual_id in ("01", "02", "03", "04"):
-                    phase_docs.setdefault(virtual_id, []).append({
-                        "path": doc.get("path"),
-                        "content": header + plan.sections.get(virtual_id, ""),
-                        "recent": doc.get("recent", False),
-                        "virtual_fast": True,
-                    })
+            from fast_cycle_contract import virtual_phase_docs
+            virtual, _issues = virtual_phase_docs(list(phase_docs.get("00") or []))
+            for virtual_id, docs in virtual.items():
+                phase_docs.setdefault(virtual_id, []).extend(docs)
         except Exception:
             # Core receives parser/audit failures separately and closes only active Fast runs.
             pass
