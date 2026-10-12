@@ -159,8 +159,14 @@ def collect(root, raw_path, language=None):
 
     findings = []
     if guarded:
-        findings.append(Finding("guard.generated_asset", evidence={"path": relative},
-                                arguments={"path": relative}))
+        # project agent·skill 렌더는 차단은 같지만 출구가 다르다(초안 + `--from-drafts`). guard 가
+        # 내는 code 와 같은 판정을 써야 explain 이 guard 와 다른 복구를 안내하지 않는다.
+        code, arguments = guard.block_reason(relative)
+        if code == "guard.interpretive_render":
+            findings.append(Finding(code, evidence={"path": relative}, arguments=arguments))
+        else:
+            findings.append(Finding("guard.generated_asset", evidence={"path": relative},
+                                    arguments={"path": relative}))
     if cycle_unavailable:
         findings.append(Finding("cycle.state_unavailable",
                                 evidence={"error": cycle_unavailable[:200]},
@@ -225,7 +231,9 @@ def _print_text(facts, findings, language):
         print(f"[{finding.code}] "
               + render_diagnostic(finding.diagnostic(), lambda k, **kw: tr(language, k, **kw),
                                   "cli"))
-        for line in render_recovery(finding.code, lambda k, **kw: tr(language, k, **kw), "cli"):
+        # 판정 인자(자산 종류·id 등)로 복구 명령의 자리표시를 채운다 — 채울 값이 없으면 그대로 둔다.
+        for line in render_recovery(finding.code, lambda k, **kw: tr(language, k, **kw), "cli",
+                                    **dict(finding.arguments or {})):
             print(line)
 
 

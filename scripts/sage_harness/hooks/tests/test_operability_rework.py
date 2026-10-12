@@ -1636,6 +1636,20 @@ class TestToolFailureHasOneOwner(unittest.TestCase):
         self.assertIn("guard.generated_asset",
                       [d["code"] for d in json.loads(out)["diagnostics"]])
 
+    def test_explain_points_a_project_skill_render_to_the_drafts_exit(self):
+        """explain 은 guard 와 같은 code·복구를 낸다 — 다르면 사용자는 두 안내 중 어느 쪽인지 모른다."""
+        root = self._repo()
+        rc, out, _err = _run(E, root=root, path=".claude/skills/deploy-check/SKILL.md", json=True)
+        self.assertEqual(rc, 0)
+        diagnostics = {d["code"]: d for d in json.loads(out)["diagnostics"]}
+        self.assertIn("guard.interpretive_render", diagnostics)
+        self.assertNotIn("guard.generated_asset", diagnostics)
+        self.assertEqual([step["id"] for step in diagnostics["guard.interpretive_render"]["recovery"]],
+                         ["write-drafts", "place-drafts", "validate"])
+        rc, out, _err = _run(E, root=root, path=".claude/skills/deploy-check/SKILL.md")
+        self.assertEqual(rc, 0)
+        self.assertIn("Next: sage generate --kind skill --id deploy-check --from-drafts --write", out)
+
 
 
 FAST_POLICY = {"enabled": True, "reason_required": True,

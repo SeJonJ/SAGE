@@ -13,6 +13,7 @@
 | `sage generate --kind hook --write --target HOST` | hook spec에서 host 등록, adapter, manifest stamp 생성 |
 | `sage generate --kind mcp --write --target HOST` | MCP spec에서 host 설정 생성 |
 | `sage generate --kind {agent,skill} --write` | 두 host render에서 spec과 claims를 역추출하고 정합화 |
+| `sage generate --kind {agent,skill} --id ID --from-drafts --write` | `sage/asset_drafts/<kind>s/<id>/{claude,codex}-render.md` 초안을 두 host 렌더 자리에 배치한 뒤 역추출·등록. 기존 렌더 교체는 `--replace` |
 | `sage generate --kind roster` | `profile.components`에서 implementer spec 생성 |
 | `sage generate --kind roster --from-existing ID` | 기존 implementer 합성 렌더를 새 component identity로 승격 |
 

@@ -148,6 +148,10 @@ _FIX_CANONICAL_SPEC = RecoveryStep("fix-canonical-spec", None, "recovery.fix_can
                                    mutating=False)
 _REGENERATE = RecoveryStep("regenerate", "sage generate --kind <kind> --write",
                            "recovery.regenerate", mutating=True)
+_WRITE_DRAFTS = RecoveryStep("write-drafts", None, "recovery.write_drafts", mutating=False)
+_PLACE_DRAFTS = RecoveryStep("place-drafts",
+                             "sage generate --kind {kind} --id {id} --from-drafts --write",
+                             "recovery.place_drafts", mutating=True)
 
 # 안전한 직접 복구가 없을 때 내려앉는 바닥값. BLOCK 인데 매핑이 비어 있으면 렌더가 이걸 쓴다.
 FALLBACK_RECOVERY = (_STATUS,)
@@ -204,6 +208,7 @@ SEVERITY = {
     # --- gate / guard ------------------------------------------------------
     "gate.phase_incomplete": BLOCK,
     "guard.generated_asset": BLOCK,
+    "guard.interpretive_render": BLOCK,
     "cycle.binding_missing": BLOCK,
     # 준비 상태를 **판정하지 못한 것**은 준비됐다는 뜻이 아니다. WARN 으로 두면 rc 0 이
     # 되어 "지금 쓸 수 있는가" 에 확인 없이 그렇다고 답한다.
@@ -319,6 +324,7 @@ RECOVERY = {
     "status.area_unavailable": (_DOCTOR, _VALIDATE),
     "cycle.mode_unknown": (_FAST_CYCLE_SHOW, _VALIDATE),
     "guard.generated_asset": (_FIX_CANONICAL_SPEC, _REGENERATE, _VALIDATE),
+    "guard.interpretive_render": (_WRITE_DRAFTS, _PLACE_DRAFTS, _VALIDATE),
     # 새 recovery step id 를 만들지 않는다. 만들면 `recovery_issues` 가 CLI↔hook 대칭을
     # 요구하고, 조회 실패 때문에 hook 쪽에 이 사이클과 무관한 진단을 심게 된다. 감사를 읽지
     # 못했을 때의 다음 행동은 이미 있는 읽기 전용 확인으로 충분하다.
