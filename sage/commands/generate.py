@@ -13,6 +13,7 @@ import os
 import re
 import stat
 import sys
+import tempfile
 from copy import deepcopy
 from pathlib import Path
 
@@ -53,6 +54,10 @@ def register(sub, context):
                    help=tr(context, "cli.generate.from_existing"))
     p.add_argument("--deploy-codex", action="store_true",
                    help=tr(context, "cli.generate.deploy_codex"))
+    p.add_argument("--from-drafts", action="store_true",
+                   help=tr(context, "cli.generate.from_drafts"))
+    p.add_argument("--replace", action="store_true",
+                   help=tr(context, "cli.generate.replace"))
     p.set_defaults(func=run)
 
 
@@ -1029,6 +1034,195 @@ def _interpretive_render_paths(dest, kind, aid):
             os.path.join(dest, ".codex", "skills", aid, "SKILL.md"))
 
 
+def _draft_render_paths(dest, kind, aid):
+    """`--from-drafts` 초안 경로. write guard 의 매칭(`.claude|.codex/...`) 밖이라 편집 도구로 쓸 수 있다.
+
+    렌더 자리는 guard 가 막는다. 막는 것이 맞다 — 편집 도구로 생성물을 고치면 다음 generate 와
+    어긋난다. 그래서 AI 는 여기에 쓰고, 제자리 배치는 편집 도구를 거치지 않는 CLI 가 한다.
+    """
+    base = os.path.join(dest, "sage", "asset_drafts", f"{kind}s", aid)
+    return base, os.path.join(base, "claude-render.md"), os.path.join(base, "codex-render.md")
+
+
+def _contained_real(dest, path):
+    """`path` 의 모든 구성 요소가 링크 없이 프로젝트 안에 있는가.
+
+    realpath 가 「프로젝트 실경로 + 상대 경로」와 같아야 한다. 중간 디렉터리 하나라도 링크면
+    다르게 풀리므로, 초안이 프로젝트 밖 파일을 끌어오거나 배치가 밖에 쓰는 일을 함께 막는다.
+    """
+    real_dest = os.path.realpath(dest)
+    relative = os.path.relpath(os.path.abspath(path), os.path.abspath(dest))
+    if relative == os.pardir or relative.startswith(os.pardir + os.sep):
+        return False
+    return os.path.realpath(path) == os.path.normpath(os.path.join(real_dest, relative))
+
+
+def _read_drafts(dest, kind, aid, language):
+    """초안 두 벌을 한 번 읽는다. 반환 `(contents, error)` — contents 는 (claude, codex) bytes."""
+    _base, *drafts = _draft_render_paths(dest, kind, aid)
+    missing = [os.path.relpath(p, dest) for p in drafts if not os.path.lexists(p)]
+    if missing:
+        return None, tr(language, "cli.generate.drafts_missing", aid=aid, items=", ".join(missing))
+    contents = []
+    for path in drafts:
+        shown = os.path.relpath(path, dest)
+        if os.path.islink(path) or not os.path.isfile(path) or not _contained_real(dest, path):
+            return None, tr(language, "cli.generate.drafts_unsafe", aid=aid, path=shown)
+        with open(path, "rb") as fh:
+            data = fh.read()
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError:
+            return None, tr(language, "cli.generate.drafts_not_utf8", aid=aid, path=shown)
+        contents.append(data)
+    return tuple(contents), None
+
+
+class _RenderTransaction:
+    """초안 배치와 그 뒤 등록(spec·claims 기록)을 한 범위로 묶는다. 실패하면 처음 상태로 되돌린다.
+
+    두 렌더는 한 쌍이다 — 한쪽만 바뀌면 claims 가 어느 쪽의 교집합인지 알 수 없다. 렌더만 놓이고
+    등록이 실패해도 같다: 새 렌더는 manifest 에 없고, 수정이면 manifest 해시와 렌더가 어긋나며,
+    다시 실행하려면 `--replace` 가 필요해진다. 그래서 manifest 기록이 끝날 때까지 되돌릴 수 있게
+    바꾸기 전 내용을 모두 기억한다(manifest 는 원자적으로 쓰므로 실패하면 그대로다).
+    """
+
+    def __init__(self, dest):
+        self.dest = dest
+        self.previous = []        # (경로, 바꾸기 전 bytes | None, 우리가 쓴 bytes)
+        self.created_dirs = []
+        self.temps = []
+
+    def _parent(self, target):
+        parent = os.path.dirname(target)
+        existing = parent
+        while not os.path.lexists(existing):
+            existing = os.path.dirname(existing)
+        if not _contained_real(self.dest, existing):
+            raise OSError(f"render directory escapes the project: "
+                          f"{os.path.relpath(parent, self.dest)}")
+        if not os.path.isdir(parent):
+            os.makedirs(parent)
+            self.created_dirs.append(parent)
+        if not _contained_real(self.dest, parent):
+            raise OSError(f"render directory escapes the project: "
+                          f"{os.path.relpath(parent, self.dest)}")
+        return parent
+
+    def _previous(self, target):
+        """교체 전 내용. 기록은 교체가 끝난 뒤에 한다 — 교체가 실패하면 원본이 그대로이므로
+        되돌릴 것이 없고, 미리 기록하면 그 원본을 「되돌리지 못한 경로」로 잘못 보고한다."""
+        if os.path.islink(target):
+            raise OSError(f"render is a link: {os.path.relpath(target, self.dest)}")
+        if not os.path.exists(target):
+            return None
+        with open(target, "rb") as fh:
+            return fh.read()
+
+    def place(self, pairs, *, create_only):
+        """임시 파일을 모두 쓴 뒤 교체한다. 임시 이름은 예측할 수 없게 배타적으로 만든다 —
+        이름이 정해져 있으면 미리 놓인 링크를 따라 프로젝트 밖에 쓸 수 있다."""
+        staged = []
+        for data, target in pairs:
+            parent = self._parent(target)
+            fd, tmp = tempfile.mkstemp(dir=parent, prefix=".sage-draft-", suffix=".tmp")
+            self.temps.append(tmp)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data)
+            staged.append((tmp, target))
+        for (tmp, target), (data, _target) in zip(staged, pairs):
+            if create_only:
+                # 검사 뒤에 누가 렌더를 만들었으면 덮지 않는다. 링크 게시는 대상이 있으면 실패하는
+                # 원자 연산이라 「확인하고 쓰기」 사이의 틈이 없다.
+                consumed = self._publish_new(tmp, target, data, self.previous)
+                if not consumed:
+                    os.remove(tmp)
+            else:
+                previous = self._previous(target)
+                os.replace(tmp, target)
+                self.previous.append((target, previous, data))
+            self.temps.remove(tmp)
+
+    @staticmethod
+    def _publish_new(tmp, target, data, journal):
+        """덮어쓰지 않고 게시한다. 게시한 순간 되돌림 기록에 올린다. 반환: 임시 파일이 옮겨졌는가."""
+        try:
+            os.link(tmp, target)
+            journal.append((target, None, data))
+            return False
+        except FileExistsError:
+            raise
+        except OSError:
+            pass
+        # 하드 링크를 못 만드는 파일시스템. 자리를 배타적으로 잡고 바로 채운다 — 같은 프로젝트의
+        # SAGE 쓰기는 잠금으로 직렬화돼 있으므로 남는 틈은 잠금 밖 writer 뿐이다. 채우기 전에
+        # 실패하면 우리가 만든 빈 자리를 바로 치운다(되돌림 기록의 내용 대조로는 못 치운다).
+        os.close(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644))
+        try:
+            os.replace(tmp, target)
+        except OSError:
+            try:
+                if os.path.isfile(target) and os.path.getsize(target) == 0:
+                    os.remove(target)
+            except OSError:
+                pass
+            raise
+        journal.append((target, None, data))
+        return True
+
+    def write(self, path, text):
+        """등록 산출물(spec·claims). 위치는 manifest 루트가 정하므로 렌더 경로 검사를 하지 않는다."""
+        parent = os.path.dirname(path)
+        if not os.path.isdir(parent):
+            os.makedirs(parent)
+            self.created_dirs.append(parent)
+        data = text.encode("utf-8")
+        # 임시 파일에 다 쓴 뒤 교체한다. 제자리에 쓰다 실패하면 원본이 잘린 채 남고, 되돌림은
+        # 그것을 「남이 바꾼 파일」로 보아 손대지 못한다.
+        fd, tmp = tempfile.mkstemp(dir=parent, prefix=".sage-draft-", suffix=".tmp")
+        self.temps.append(tmp)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        previous = self._previous(path)
+        os.replace(tmp, path)
+        self.previous.append((path, previous, data))
+        self.temps.remove(tmp)
+
+    def rollback(self):
+        """되돌린다. 반환: 되돌리지 못한 경로(상대)."""
+        failed = []
+        for target, previous, written in reversed(self.previous):
+            try:
+                # 우리가 쓴 그대로일 때만 되돌린다. 그 사이 누가 바꿨거나 링크로 바뀌었으면 남의
+                # 내용을 지우거나 링크 너머를 덮게 되므로, 손대지 않고 「되돌리지 못함」으로 알린다.
+                if os.path.islink(target) or not os.path.isfile(target):
+                    raise OSError("changed after placement")
+                with open(target, "rb") as fh:
+                    if fh.read() != written:
+                        raise OSError("changed after placement")
+                if previous is None:
+                    os.remove(target)
+                else:
+                    with open(target, "wb") as fh:
+                        fh.write(previous)
+            except OSError:
+                failed.append(os.path.relpath(target, self.dest))
+        for tmp in self.temps:
+            try:
+                os.remove(tmp)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                failed.append(os.path.relpath(tmp, self.dest))
+        for parent in reversed(self.created_dirs):
+            try:
+                os.rmdir(parent)
+            except OSError:
+                pass
+        self.previous, self.temps, self.created_dirs = [], [], []
+        return failed
+
+
 def _scan_interpretive_ids(dest, kind):
     """렌더 디렉토리(claude+codex)에서 자산 id 수집 — --id 미지정 시 일괄 처리 대상."""
     ids = set()
@@ -1189,8 +1383,17 @@ def _gen_interpretive(args, root, kind):
     # 없는 경로로 FAIL 하는 것뿐이었다. 자산별 회귀가 실제로 있으면 프로젝트가 직접 채운다.
     test_path = None
     written, failed, deployed = [], [], []
+    from_drafts = getattr(args, "from_drafts", False)
+    core_folded = {name.casefold() for name in core_names}
     for aid in ids:
-        if aid in core_names:
+        # 대소문자를 구분하지 않는 파일시스템(Windows·macOS 기본)에서는 `SAGE-REVIEW` 가 CORE
+        # `sage-review` 렌더와 같은 파일이다. 초안 배치는 쓰기라서 철자가 아니라 파일로 판정한다.
+        if aid in core_names or (from_drafts and aid.casefold() in core_folded):
+            if from_drafts:
+                # CORE 렌더는 install 이 소유한다. 초안으로 덮으면 다음 install 이 되돌리거나, 되돌리지
+                # 못하면 CORE 가 프로젝트 사본으로 바뀐다 — 건너뛰지 말고 실패로 알린다.
+                print(tr(language_of(args), 'cli.generate.drafts_core', aid=aid), file=sys.stderr)
+                failed.append(aid); continue
             print(tr(language_of(args), 'cli.generate.msg67', aid=aid))
             continue
         if not re.match(r"^[A-Za-z0-9_-]+$", aid):
@@ -1198,22 +1401,71 @@ def _gen_interpretive(args, root, kind):
             print(tr(language_of(args), 'cli.generate.msg68', aid=aid), file=sys.stderr)
             failed.append(aid); continue
         claude_r, codex_r = _interpretive_render_paths(dest, kind, aid)
-        missing = [os.path.relpath(p, dest) for p in (claude_r, codex_r) if not os.path.exists(p)]
-        if missing:
-            print(tr(language_of(args), 'cli.generate.msg69', aid=aid, items=', '.join(missing)), file=sys.stderr)
-            print(tr(language_of(args), 'cli.generate.msg70', aid=aid), file=sys.stderr)
-            failed.append(aid); continue
+        drafts = None
+        if from_drafts:
+            drafts, problem = _read_drafts(dest, kind, aid, language_of(args))
+            if problem is None:
+                existing = [os.path.relpath(p, dest) for p in (claude_r, codex_r)
+                            if os.path.lexists(p)]
+                if existing and not getattr(args, "replace", False):
+                    problem = tr(language_of(args), 'cli.generate.drafts_target_exists', aid=aid,
+                                 items=", ".join(existing))
+            if problem:
+                print(problem, file=sys.stderr)
+                failed.append(aid); continue
+            for target in (claude_r, codex_r):
+                action = "replace" if os.path.lexists(target) else "create"
+                print(tr(language_of(args), f'cli.generate.drafts_plan_{action}',
+                         path=os.path.relpath(target, dest)))
+        else:
+            missing = [os.path.relpath(p, dest) for p in (claude_r, codex_r) if not os.path.exists(p)]
+            if missing:
+                print(tr(language_of(args), 'cli.generate.msg69', aid=aid, items=', '.join(missing)), file=sys.stderr)
+                print(tr(language_of(args), 'cli.generate.msg70', aid=aid), file=sys.stderr)
+                failed.append(aid); continue
         try:
-            spec_md, claims_yaml, claims = drv.extract(aid, claude_r, codex_r, guide, config)
+            if drafts is not None:
+                # 추출은 읽어 둔 초안 사본으로 한다. 배치·추출·등록이 같은 바이트를 보게 하려는
+                # 것이다 — 원본 초안을 다시 열면 그 사이 바뀐 내용이 렌더와 claims 에 따로 들어간다.
+                with tempfile.TemporaryDirectory(prefix="sage-drafts-") as snapshot:
+                    extract_paths = (os.path.join(snapshot, "claude-render.md"),
+                                     os.path.join(snapshot, "codex-render.md"))
+                    for data, path in zip(drafts, extract_paths):
+                        Path(path).write_bytes(data)
+                    spec_md, claims_yaml, claims = drv.extract(aid, *extract_paths, guide, config)
+            else:
+                spec_md, claims_yaml, claims = drv.extract(aid, claude_r, codex_r, guide, config)
         except Exception as e:
             print(tr(language_of(args), 'cli.generate.msg71', aid=aid, arg=type(e).__name__, e=e), file=sys.stderr)
             failed.append(aid); continue
-        if args.write:
+        if args.write and drafts is not None:
+            # 배치부터 manifest 등록까지 한 범위다. 어디서 실패해도 처음 상태로 돌린다. 잠금은
+            # `run()` 이 마지막 manifest 스탬프까지 감싸 잡는다.
+            tx = _RenderTransaction(dest)
+            try:
+                tx.place(list(zip(drafts, (claude_r, codex_r))),
+                         create_only=not getattr(args, "replace", False))
+                tx.write(os.path.join(out_dir, f"{aid}.md"), spec_md)
+                tx.write(os.path.join(out_dir, f"{aid}.claims.yml"), claims_yaml)
+                upsert(root, aid, claude_render=claude_r, codex_render=codex_r,
+                       test=test_path, unresolved=claims["unresolved"])
+            except Exception as exc:  # noqa: BLE001 - 무엇이 실패했든 반쯤 놓인 자산을 남기지 않는다
+                unrestored = tx.rollback()
+                reason = f"{type(exc).__name__}: {exc}"
+                if unrestored:
+                    print(tr(language_of(args), 'cli.generate.drafts_place_failed_unrestored',
+                             aid=aid, reason=reason, items=", ".join(unrestored)), file=sys.stderr)
+                else:
+                    print(tr(language_of(args), 'cli.generate.drafts_place_failed', aid=aid,
+                             reason=reason), file=sys.stderr)
+                failed.append(aid); continue
+        elif args.write:
             os.makedirs(out_dir, exist_ok=True)
             Path(os.path.join(out_dir, f"{aid}.md")).write_text(spec_md, encoding="utf-8")
             Path(os.path.join(out_dir, f"{aid}.claims.yml")).write_text(claims_yaml, encoding="utf-8")
             upsert(root, aid, claude_render=claude_r, codex_render=codex_r,
                    test=test_path, unresolved=claims["unresolved"])
+        if args.write:
             print(tr(language_of(args), 'cli.generate.msg72', aid=aid, count=len(claims['required_claims']), count2=len(claims['unresolved'])))
             # Part C: codex 전역 배포(opt-in) — repo 정본(codex_r)을 $CODEX_HOME/skills/<prefix>-<id> 로 복사.
             #   manifest 는 repo 정본만 추적(clone-stable); 전역은 codex 자동발견용 배포 캐시(force 갱신).
@@ -1228,6 +1480,11 @@ def _gen_interpretive(args, root, kind):
                     print(tr(language_of(args), 'cli.generate.msg74', os_path=os.path.relpath(codex_r, dest)), file=sys.stderr)
                 else:
                     print(tr(language_of(args), 'cli.generate.msg75', status=status, gdst=gdst), file=sys.stderr)
+            if drafts is not None:
+                # 초안은 지우지 않는다. 지우는 순간 그 사이 고친 초안이 사라질 수 있고(동시 편집),
+                # 그 손실은 되돌릴 수 없다. 렌더가 정본이 됐다는 것과 초안을 치워도 된다는 것만 알린다.
+                base = os.path.relpath(_draft_render_paths(dest, kind, aid)[0], dest)
+                print(tr(language_of(args), 'cli.generate.drafts_left', path=base))
         else:
             print(tr(language_of(args), 'cli.generate.msg76', aid=aid, count=len(claims['required_claims']), count2=len(claims['unresolved']))
                   + (tr(language_of(args), 'cli.generate.msg77') if deploy_codex else ""))
@@ -1246,6 +1503,13 @@ def run(args) -> int:
     if not root:
         print(tr(language_of(args), 'cli.generate.msg80'), file=sys.stderr)
         return 2
+    from_drafts = getattr(args, "from_drafts", False)
+    if from_drafts and (args.kind not in ("agent", "skill") or not args.id):
+        print(tr(language_of(args), 'cli.generate.drafts_usage'), file=sys.stderr)
+        return 2
+    if getattr(args, "replace", False) and not from_drafts:
+        print(tr(language_of(args), 'cli.generate.replace_needs_drafts'), file=sys.stderr)
+        return 2
     # 강제 게이트(C): 미부트스트랩/미설치/손상 profile 이면 전 kind 차단(거버넌스 무력화 방지).
     from sage.commands._common import bootstrap_block_text, bootstrap_gate_reason
     reason = bootstrap_gate_reason(root, args.dest)
@@ -1260,9 +1524,19 @@ def run(args) -> int:
         rc = _gen_mcp(args, root)   # MCP 4번째 kind: spec md → .mcp.json + config.toml managed-block
     # agent/skill: render 는 interpretive(런타임 AI 저작) → generate 가 spec+claims 추출 + manifest 등록 (Gap-3).
     elif args.kind in ("agent", "skill"):
+        if from_drafts and args.write:
+            # 초안 배치는 렌더·spec·manifest 를 쓴다. hook generate·install 과 같은 잠금으로 마지막
+            # 스탬프까지 직렬화한다 — 두 SAGE 쓰기가 겹치면 되돌리기가 상대의 결과를 지우거나,
+            # manifest 를 읽고 쓰는 사이 상대의 등록이 사라진다.
+            return _locked(args, root, lambda: _with_stamp(args, root,
+                                                           _gen_interpretive(args, root, args.kind)))
         rc = _gen_interpretive(args, root, args.kind)
     else:
         rc = 0
+    return _with_stamp(args, root, rc)
+
+
+def _with_stamp(args, root, rc):
     if rc == 0 and args.write:
         try:
             _stamp_generator_version(root)
@@ -1270,3 +1544,22 @@ def run(args) -> int:
             print(tr(language_of(args), 'cli.generate.msg81', exc=exc), file=sys.stderr)
             return 1
     return rc
+
+
+def _locked(args, root, action):
+    """hook generate 와 같은 목적지 잠금 안에서 `action` 을 실행한다."""
+    locks = [DestinationLock(path) for path in sorted({os.path.abspath(args.dest),
+                                                       os.path.abspath(root)})]
+    acquired = []
+    try:
+        for lock in locks:
+            lock.acquire()
+            acquired.append(lock)
+        return action()
+    except (OSError, ValueError, InstallBusyError, InstallDriftError) as exc:
+        print(tr(language_of(args), 'cli.generate.msg05', arg=type(exc).__name__,
+                 exc=_exception_text(language_of(args), exc)), file=sys.stderr)
+        return 1
+    finally:
+        for lock in reversed(acquired):
+            lock.release()

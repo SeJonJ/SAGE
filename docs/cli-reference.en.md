@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:c77dd735d6b95ef1f2ed334695306d0062f3d4afa7c1494d72da27c4a9885328 -->
+<!-- sage-doc-source: cli-reference.md sha256:0527237dd10cc9819a1ec4760fc64cad890e3232dafc391c9a17d70b33e84bee -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for
@@ -14,6 +14,7 @@ the exact options available in your environment
 | `sage generate --kind hook --write --target HOST` | Generate host registration, adapters, and manifest stamps from hook specs |
 | `sage generate --kind mcp --write --target HOST` | Generate host configuration from MCP specs |
 | `sage generate --kind {agent,skill} --write` | Reverse-extract and reconcile specs and claims from both host renders |
+| `sage generate --kind {agent,skill} --id ID --from-drafts --write` | Place the drafts at `sage/asset_drafts/<kind>s/<id>/{claude,codex}-render.md` into both host render paths, then extract and register. Replacing existing renders needs `--replace` |
 | `sage generate --kind roster` | Generate implementer specs from `profile.components` |
 | `sage generate --kind roster --from-existing ID` | Promote an existing implementer's composed render to a new component identity |
 

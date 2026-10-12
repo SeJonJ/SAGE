@@ -39,6 +39,9 @@ FIX_DOCUMENT = ("fix-document", None, "recovery.fix_document", False)
 FIX_SHARED_PROFILE = ("fix-shared-profile", None, "recovery.fix_shared_profile", False)
 FIX_REPORT = ("fix-report", None, "recovery.fix_report", False)
 MOVE_OFF_DESKTOP = ("move-off-desktop", None, "recovery.move_off_desktop", False)
+WRITE_DRAFTS = ("write-drafts", None, "recovery.write_drafts", False)
+PLACE_DRAFTS = ("place-drafts", "sage generate --kind {kind} --id {id} --from-drafts --write",
+                "recovery.place_drafts", True)
 
 # message_key → 안정 진단 code.
 #
@@ -77,10 +80,10 @@ CODE_OF = {
     "block_stale_done_criteria_revision": "report.done_criteria_revision_stale",
 }
 
-# write guard 의 5 분기. 이전에는 여기 문장이 한국어로 직접 조립돼 있었고, catalog 키가 아니라
+# write guard 의 분기. 이전에는 여기 문장이 한국어로 직접 조립돼 있었고, catalog 키가 아니라
 # 어떤 한영 대조에도 걸리지 않았다.
 GUARD_CODES = ("guard.cycle_declaration", "guard.framework_doc", "guard.core_render",
-               "guard.core_render_blocked", "guard.generated_asset")
+               "guard.core_render_blocked", "guard.generated_asset", "guard.interpretive_render")
 
 RECOVERY = {
     # --- cycle -------------------------------------------------------------
@@ -102,6 +105,9 @@ RECOVERY = {
     "guard.core_render": (EXPLAIN, FIX_DOCUMENT, VALIDATE),
     "guard.core_render_blocked": (EXPLAIN, REINSTALL_HOST, VALIDATE),
     "guard.generated_asset": (FIX_CANONICAL_SPEC, REGENERATE, VALIDATE),
+    # agent·skill 은 렌더에서 spec 을 뽑는다. spec 을 고치라는 안내는 렌더를 만들지 못하고 다음
+    # generate 에 덮어써진다 — 초안을 쓰고 CLI 가 배치하는 것이 이 자산의 유일한 출구다.
+    "guard.interpretive_render": (WRITE_DRAFTS, PLACE_DRAFTS, VALIDATE),
     # --- document ----------------------------------------------------------
     "document.language_conflict": (EXPLAIN, FIX_DOCUMENT, VALIDATE),
     "document.post_image": (EXPLAIN, FIX_DOCUMENT, VALIDATE),

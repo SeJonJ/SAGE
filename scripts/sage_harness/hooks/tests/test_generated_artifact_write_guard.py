@@ -89,6 +89,68 @@ class TestGuardCoreContract(unittest.TestCase):
         self.assertNotIn("sage/asset_overrides/skills/sage-review.md", incomplete_skill)
 
 
+class TestInterpretiveRenderExit(unittest.TestCase):
+    """project agent·skill 렌더 차단은 막다른 길이 아니어야 한다.
+
+    차단 메시지에 `sage generate` 가 있는지만 보면, 그 안내를 따라가도 렌더가 생기지 않는 순환을
+    놓친다. 안내가 가리키는 초안 자리를 guard 가 통과시키는지까지 본다.
+    """
+
+    def test_project_agent_and_skill_renders_point_to_the_drafts_exit(self):
+        import generated_artifact_write_guard_core as core
+
+        for path, kind, asset_id in ((".claude/skills/deploy-check/SKILL.md", "skill", "deploy-check"),
+                                     (".codex/skills/deploy-check/SKILL.md", "skill", "deploy-check"),
+                                     (".claude/agents/my-custom.md", "agent", "my-custom"),
+                                     (".codex/agents/my-custom.md", "agent", "my-custom")):
+            with self.subTest(path=path):
+                result = core.decide_paths([path])
+                self.assertEqual(result["exit_code"], 2)
+                self.assertIn("[guard.interpretive_render]", result["message"])
+                self.assertIn(f"Next: sage generate --kind {kind} --id {asset_id} --from-drafts --write",
+                              result["message"])
+                self.assertNotIn("정본 spec", result["message"])
+
+    def test_the_recovery_keeps_the_original_id_spelling(self):
+        """판정은 소문자로 하지만, 대소문자를 가리는 파일시스템에서 소문자 id 는 다른 자산이다."""
+        import generated_artifact_write_guard_core as core
+
+        message = core.decide_paths([r".claude\skills\MySkill\SKILL.md"])["message"]
+        self.assertIn("--kind skill --id MySkill --from-drafts", message)
+        message = core.decide_paths(["./.codex/agents/PayAgent.md"])["message"]
+        self.assertIn("--kind agent --id PayAgent --from-drafts", message)
+
+    def test_other_guarded_paths_keep_their_guidance(self):
+        import generated_artifact_write_guard_core as core
+
+        cases = {".claude/hooks/my-hook.sh": "guard.generated_asset",
+                 ".claude/agents/archive/old.md": "guard.generated_asset",
+                 ".claude/skills/sage-review/SKILL.md": "guard.core_render",
+                 ".claude/skills/sage-asset/SKILL.md": "guard.core_render_blocked",
+                 "CLAUDE.md": "guard.framework_doc"}
+        for path, code in cases.items():
+            with self.subTest(path=path):
+                result = core.decide_paths([path])
+                self.assertEqual(result["exit_code"], 2)
+                self.assertIn(f"[{code}]", result["message"])
+                self.assertNotIn("--from-drafts", result["message"])
+
+    def test_the_drafts_the_guidance_points_to_are_writable(self):
+        import generated_artifact_write_guard_core as core
+
+        drafts = ["sage/asset_drafts/skills/deploy-check/claude-render.md",
+                  "sage/asset_drafts/skills/deploy-check/codex-render.md",
+                  "sage/asset_drafts/agents/my-custom/claude-render.md",
+                  "sage/asset_drafts/agents/my-custom/codex-render.md"]
+        self.assertEqual(core.decide_paths(drafts)["exit_code"], 0)
+        patch = {"tool_name": "apply_patch", "tool_input": {"command": "*** Begin Patch\n" + "".join(
+            f"*** Add File: {path}\n+x\n" for path in drafts) + "*** End Patch"}}
+        self.assertEqual(core.decide_json(json.dumps(patch))["exit_code"], 0)
+        # 초안 파일명을 `claude.md`·`codex.md` 로 두면 framework 문서 검사에 걸린다.
+        self.assertEqual(core.decide_paths(
+            ["sage/asset_drafts/skills/deploy-check/claude.md"])["exit_code"], 2)
+
+
 class TestDispatchFailClosed(unittest.TestCase):
     def test_write_guard_dispatches_without_subprocess(self):
         raw = json.dumps({"tool_input": {"file_path": ".codex/agents/a.md"}})

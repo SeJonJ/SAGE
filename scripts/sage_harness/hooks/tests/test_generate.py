@@ -307,6 +307,412 @@ class TestGenerateInterpretive(unittest.TestCase):
             self.assertFalse(os.path.isdir(os.path.join(ch, "skills")))   # agent 는 전역 배포 안 함
 
 
+# 「되돌리지 못한 경로」 보고의 언어 중립 표지. 메시지는 표시 언어를 따르므로 한 언어의 문구로
+# 단언하면 다른 언어에서는 아무것도 확인하지 않는다.
+UNRESTORED_MARKERS = ("되돌리지 못했습니다", "could not be restored")
+
+
+def _reports_unrestored(err):
+    return any(marker in err for marker in UNRESTORED_MARKERS)
+
+
+class TestGenerateFromDrafts(unittest.TestCase):
+    """`/sage-asset` 의 출구 — write guard 가 렌더 자리를 막으므로 AI 는 초안에 쓰고 CLI 가 배치한다.
+
+    차단 메시지에 `sage generate` 가 들어 있는지만 보던 시험은 그 안내를 따라가면 실제로 자산이
+    만들어지는지는 보지 않았다. 여기서는 초안부터 manifest 등록까지 끝까지 간다.
+    """
+
+    def setUp(self):
+        scripts_dir = os.path.join(REPO, "scripts", "sage_harness")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import manifest_util  # noqa: PLC0415
+        self.mu = manifest_util
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.d = self.tmp.name
+        make_interpretive_root(self.d)
+
+    def _drafts(self, kind, aid, claude=None, codex=None):
+        base = Path(self.d, "sage", "asset_drafts", f"{kind}s", aid)
+        base.mkdir(parents=True, exist_ok=True)
+        if claude is not False:
+            Path(base, "claude-render.md").write_text(claude or _render_md(aid), encoding="utf-8")
+        if codex is not False:
+            Path(base, "codex-render.md").write_text(codex or _render_md(aid), encoding="utf-8")
+        return base
+
+    def _gen(self, kind, aid, **kw):
+        args = Args(kind=kind, id=aid, write=True, dest=self.d, root=self.d, from_drafts=True,
+                    replace=False)
+        args.__dict__.update(kw)
+        err = StringIO()
+        with redirect_stdout(StringIO()), redirect_stderr(err):
+            rc = gen._gen_interpretive(args, self.d, kind)
+        return rc, err.getvalue()
+
+    def _renders(self, kind, aid):
+        return gen._interpretive_render_paths(self.d, kind, aid)
+
+    def _manifest(self):
+        return json.loads(Path(self.d, "docs", "sage_harness", ".manifest.json").read_text())
+
+    def _snapshot(self):
+        out = {}
+        for path in Path(self.d).rglob("*"):
+            if path.is_file():
+                out[str(path.relative_to(self.d))] = path.read_bytes()
+        return out
+
+    def test_a_new_skill_is_placed_and_registered_and_its_drafts_are_left(self):
+        base = self._drafts("skill", "deploy-check")
+        rc, err = self._gen("skill", "deploy-check")
+        self.assertEqual(rc, 0, err)
+        claude_r, codex_r = self._renders("skill", "deploy-check")
+        self.assertEqual(Path(claude_r).read_text(encoding="utf-8"), _render_md("deploy-check"))
+        self.assertTrue(os.path.exists(codex_r))
+        self.assertTrue(Path(self.d, "docs", "sage_harness", "skills", "deploy-check.md").exists())
+        self.assertTrue(Path(self.d, "docs", "sage_harness", "skills",
+                             "deploy-check.claims.yml").exists())
+        entry = self._manifest()["assets"]["skills/deploy-check"]
+        self.assertEqual(entry["render_hash"], {"claude": self.mu.sha256_of(claude_r),
+                                                "codex": self.mu.sha256_of(codex_r)})
+        # 초안은 지우지 않는다 — 지우는 순간 동시에 고친 초안이 사라질 수 있다.
+        self.assertEqual(sorted(p.name for p in base.iterdir()),
+                         ["claude-render.md", "codex-render.md"])
+        self._assert_validates("skills/deploy-check")
+
+    def _assert_validates(self, asset_key):
+        """등록된 자산이 validate 의 interpretive 검사(해시·계약·conformance)를 통과하는가."""
+        from sage.commands import validate as val  # noqa: PLC0415
+        entry = self._manifest()["assets"][asset_key]
+        sev, msgs = val._validate_interpretive(self.d, asset_key, entry, run_regression=False)
+        self.assertIn(sev, ("PASS", "WARN"), "\n".join(msgs))
+
+    def test_a_new_agent_follows_the_same_path(self):
+        self._drafts("agent", "payment")
+        rc, err = self._gen("agent", "payment")
+        self.assertEqual(rc, 0, err)
+        claude_r, codex_r = self._renders("agent", "payment")
+        self.assertTrue(os.path.exists(claude_r) and os.path.exists(codex_r))
+        self.assertIn("agents/payment", self._manifest()["assets"])
+        self._assert_validates("agents/payment")
+
+    def test_existing_renders_are_not_overwritten_without_replace(self):
+        self._drafts("skill", "deploy-check")
+        self.assertEqual(self._gen("skill", "deploy-check")[0], 0)
+        self._drafts("skill", "deploy-check", claude=_render_md("deploy-check") + "changed\n")
+        before = self._snapshot()
+        rc, err = self._gen("skill", "deploy-check")
+        self.assertEqual(rc, 1)
+        self.assertIn("--replace", err)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_replace_swaps_the_renders_and_refreshes_the_hash(self):
+        self._drafts("skill", "deploy-check")
+        self.assertEqual(self._gen("skill", "deploy-check")[0], 0)
+        changed = _render_md("deploy-check") + "## Extra\nAlso checks rollback.\n"
+        self._drafts("skill", "deploy-check", claude=changed, codex=changed)
+        rc, err = self._gen("skill", "deploy-check", replace=True)
+        self.assertEqual(rc, 0, err)
+        claude_r, _codex_r = self._renders("skill", "deploy-check")
+        self.assertEqual(Path(claude_r).read_text(encoding="utf-8"), changed)
+        self.assertEqual(self._manifest()["assets"]["skills/deploy-check"]["render_hash"]["claude"],
+                         self.mu.sha256_of(claude_r))
+        self._assert_validates("skills/deploy-check")
+
+    def test_core_names_and_unsafe_ids_are_refused_before_any_copy(self):
+        for aid in ("sage-asset", "sage-review", "../escape"):
+            with self.subTest(aid=aid):
+                if "/" not in aid:
+                    self._drafts("skill", aid)
+                before = self._snapshot()
+                rc, _err = self._gen("skill", aid)
+                self.assertEqual(rc, 1)
+                self.assertEqual(self._snapshot(), before)
+        self._drafts("agent", "leader")
+        before = self._snapshot()
+        self.assertEqual(self._gen("agent", "leader")[0], 1)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_usage_is_checked_before_anything_else(self):
+        for kw in ({"kind": "hook", "id": "x", "from_drafts": True},
+                   {"kind": "skill", "id": None, "from_drafts": True},
+                   {"kind": "skill", "id": "x", "replace": True}):
+            with self.subTest(**{k: str(v) for k, v in kw.items()}):
+                args = Args(dest=self.d, root=self.d, from_drafts=False, replace=False)
+                args.__dict__.update(kw)
+                with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                    self.assertEqual(gen.run(args), 2)
+
+    def test_a_missing_or_unextractable_draft_changes_nothing(self):
+        self._drafts("skill", "half", codex=False)
+        before = self._snapshot()
+        rc, err = self._gen("skill", "half")
+        self.assertEqual(rc, 1)
+        self.assertIn("codex-render.md", err)
+        self.assertEqual(self._snapshot(), before)
+        self._drafts("skill", "broken")
+        before = self._snapshot()
+        with mock.patch("extract_skill.extract", side_effect=ValueError("bad render")):
+            rc, err = self._gen("skill", "broken")
+        self.assertEqual(rc, 1)
+        self.assertIn("bad render", err)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_without_write_only_the_plan_is_shown(self):
+        self._drafts("skill", "deploy-check")
+        before = self._snapshot()
+        args = Args(kind="skill", id="deploy-check", write=False, dest=self.d, root=self.d,
+                    from_drafts=True, replace=False)
+        out = StringIO()
+        with redirect_stdout(out), redirect_stderr(StringIO()):
+            self.assertEqual(gen._gen_interpretive(args, self.d, "skill"), 0)
+        self.assertIn(os.path.join(".claude", "skills", "deploy-check", "SKILL.md"), out.getvalue())
+        self.assertEqual(self._snapshot(), before)
+
+    @unittest.skipIf(os.name == "nt", "symlink 생성 권한이 환경마다 다르다")
+    def test_linked_drafts_are_refused(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        Path(outside.name, "claude-render.md").write_text(_render_md("linked"), encoding="utf-8")
+        base = self._drafts("skill", "linked", claude=False)
+        os.symlink(os.path.join(outside.name, "claude-render.md"), base / "claude-render.md")
+        before = self._snapshot()
+        rc, err = self._gen("skill", "linked")
+        self.assertEqual(rc, 1)
+        self.assertIn("claude-render.md", err)
+        self.assertEqual(self._snapshot(), before)
+        # 초안 폴더 자체가 밖을 가리키는 경우도 같다.
+        shutil.rmtree(Path(self.d, "sage", "asset_drafts"))
+        Path(outside.name, "codex-render.md").write_text(_render_md("linked"), encoding="utf-8")
+        Path(self.d, "sage", "asset_drafts", "skills").mkdir(parents=True)
+        os.symlink(outside.name, Path(self.d, "sage", "asset_drafts", "skills", "linked"))
+        self.assertEqual(self._gen("skill", "linked")[0], 1)
+        self.assertFalse(os.path.exists(self._renders("skill", "linked")[0]))
+
+    def test_a_failed_second_replace_restores_the_first_render(self):
+        self._drafts("skill", "deploy-check")
+        self.assertEqual(self._gen("skill", "deploy-check")[0], 0)
+        claude_r, codex_r = self._renders("skill", "deploy-check")
+        original = (Path(claude_r).read_bytes(), Path(codex_r).read_bytes())
+        changed = _render_md("deploy-check") + "changed\n"
+        self._drafts("skill", "deploy-check", claude=changed, codex=changed)
+        real_replace = os.replace
+        calls = []
+
+        def flaky(src, dst):
+            calls.append(dst)
+            if len(calls) == 2:
+                raise OSError("disk full")
+            return real_replace(src, dst)
+
+        with mock.patch.object(gen.os, "replace", side_effect=flaky):
+            rc, err = self._gen("skill", "deploy-check", replace=True)
+        self.assertEqual(rc, 1)
+        self.assertIn("disk full", err)
+        self.assertEqual((Path(claude_r).read_bytes(), Path(codex_r).read_bytes()), original)
+        self.assertEqual([p.name for p in Path(claude_r).parent.iterdir()], ["SKILL.md"])
+        self.assertTrue(Path(self.d, "sage", "asset_drafts", "skills", "deploy-check").exists())
+
+    def test_a_case_alias_of_a_core_name_is_refused(self):
+        """대소문자를 가리지 않는 파일시스템에서 `SAGE-REVIEW` 는 CORE `sage-review` 와 같은 파일이다."""
+        for kind, aid in (("skill", "SAGE-REVIEW"), ("skill", "Sage-Asset"), ("agent", "LEADER")):
+            with self.subTest(aid=aid):
+                self._drafts(kind, aid)
+                before = self._snapshot()
+                rc, err = self._gen(kind, aid, replace=True)
+                self.assertEqual(rc, 1)
+                self.assertIn("CORE", err)
+                self.assertEqual(self._snapshot(), before)
+
+    def test_a_registration_failure_restores_everything(self):
+        """렌더만 놓이고 등록이 실패하면 새 렌더는 manifest 에 없고, 다시 하려면 --replace 가 필요해진다."""
+        self._drafts("skill", "deploy-check")
+        before = self._snapshot()
+        with mock.patch.object(self.mu, "save", side_effect=OSError("manifest disk full")):
+            rc, err = self._gen("skill", "deploy-check")
+        self.assertEqual(rc, 1)
+        self.assertIn("manifest disk full", err)
+        self.assertEqual(self._snapshot(), before)
+        # 수정(--replace)에서도 원래 렌더·spec·claims 로 돌아간다.
+        self.assertEqual(self._gen("skill", "deploy-check")[0], 0)
+        self._drafts("skill", "deploy-check", claude=_render_md("deploy-check") + "x\n",
+                     codex=_render_md("deploy-check") + "x\n")
+        before = self._snapshot()
+        with mock.patch.object(self.mu, "save", side_effect=OSError("manifest disk full")):
+            rc, _err = self._gen("skill", "deploy-check", replace=True)
+        self.assertEqual(rc, 1)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_a_failed_temp_write_leaves_no_temp_file(self):
+        self._drafts("skill", "deploy-check")
+        before = self._snapshot()
+        real_fdopen = os.fdopen
+        calls = []
+
+        class Exploding:
+            def __init__(self, fh):
+                self.fh = fh
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                self.fh.close()
+                return False
+
+            def write(self, data):
+                self.fh.write(data[:3])
+                raise OSError("disk full while staging")
+
+        def fdopen(fd, mode="r", *a, **kw):
+            calls.append(fd)
+            handle = real_fdopen(fd, mode, *a, **kw)
+            return Exploding(handle) if len(calls) == 2 else handle
+
+        with mock.patch.object(gen.os, "fdopen", side_effect=fdopen):
+            rc, err = self._gen("skill", "deploy-check")
+        self.assertEqual(rc, 1)
+        self.assertIn("disk full while staging", err)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_a_render_created_after_the_check_is_not_overwritten(self):
+        """존재 검사 뒤 배치 전에 생긴 렌더를 --replace 없이 덮지 않는다."""
+        self._drafts("skill", "deploy-check")
+        claude_r, _codex_r = self._renders("skill", "deploy-check")
+        import extract_skill  # noqa: PLC0415
+        real = extract_skill.extract
+
+        def extract_then_race(*args, **kw):
+            Path(claude_r).parent.mkdir(parents=True, exist_ok=True)
+            Path(claude_r).write_text("someone else\n", encoding="utf-8")
+            return real(*args, **kw)
+
+        with mock.patch("extract_skill.extract", side_effect=extract_then_race):
+            rc, _err = self._gen("skill", "deploy-check")
+        self.assertEqual(rc, 1)
+        self.assertEqual(Path(claude_r).read_text(encoding="utf-8"), "someone else\n")
+        self.assertNotIn("skills/deploy-check", self._manifest()["assets"])
+
+    def test_rollback_leaves_a_render_someone_else_changed(self):
+        """되돌리기는 우리가 쓴 그대로일 때만 한다. 그 사이 바뀐 파일을 지우면 남의 결과가 사라진다."""
+        self._drafts("skill", "deploy-check")
+        claude_r, codex_r = self._renders("skill", "deploy-check")
+
+        def upsert_after_someone_edits(*args, **kw):
+            Path(claude_r).write_text("someone else\n", encoding="utf-8")
+            raise OSError("manifest disk full")
+
+        with mock.patch.object(self.mu, "upsert_skill", side_effect=upsert_after_someone_edits):
+            rc, err = self._gen("skill", "deploy-check")
+        self.assertEqual(rc, 1)
+        self.assertEqual(Path(claude_r).read_text(encoding="utf-8"), "someone else\n")
+        self.assertFalse(os.path.exists(codex_r))
+        self.assertIn(os.path.join(".claude", "skills", "deploy-check", "SKILL.md"), err)
+        self.assertTrue(_reports_unrestored(err), err)
+        self.assertNotIn("skills/deploy-check", self._manifest()["assets"])
+
+    def test_the_no_link_fallback_leaves_no_empty_render(self):
+        """하드 링크를 못 쓰는 파일시스템에서 채우기 전에 실패해도 빈 렌더를 남기지 않는다."""
+        self._drafts("skill", "deploy-check")
+        before = self._snapshot()
+        real_replace = os.replace
+
+        def replace(src, dst):
+            if dst.endswith("SKILL.md"):
+                raise OSError("replace failed")
+            return real_replace(src, dst)
+
+        with mock.patch.object(gen.os, "link", side_effect=PermissionError("no hard links")), \
+                mock.patch.object(gen.os, "replace", side_effect=replace):
+            rc, err = self._gen("skill", "deploy-check")
+        self.assertEqual(rc, 1)
+        self.assertFalse(_reports_unrestored(err), err)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_the_no_link_fallback_still_places_the_renders(self):
+        self._drafts("skill", "deploy-check")
+        with mock.patch.object(gen.os, "link", side_effect=PermissionError("no hard links")):
+            rc, err = self._gen("skill", "deploy-check")
+        self.assertEqual(rc, 0, err)
+        self._assert_validates("skills/deploy-check")
+
+    def test_a_failed_spec_write_keeps_the_original_spec(self):
+        """spec 을 제자리에 쓰다 실패하면 잘린 원본을 되돌리지 못한다 — 임시 파일로 쓴 뒤 교체한다."""
+        self._drafts("skill", "deploy-check")
+        self.assertEqual(self._gen("skill", "deploy-check")[0], 0)
+        self._drafts("skill", "deploy-check", claude=_render_md("deploy-check") + "x\n",
+                     codex=_render_md("deploy-check") + "x\n")
+        before = self._snapshot()
+        real_replace = os.replace
+
+        def replace(src, dst):
+            if dst.endswith("deploy-check.md") and "docs" in dst:
+                raise OSError("spec disk full")
+            return real_replace(src, dst)
+
+        with mock.patch.object(gen.os, "replace", side_effect=replace):
+            rc, err = self._gen("skill", "deploy-check", replace=True)
+        self.assertEqual(rc, 1)
+        self.assertIn("spec disk full", err)
+        self.assertFalse(_reports_unrestored(err), err)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_a_failed_replace_does_not_report_the_untouched_original(self):
+        """교체가 실패하면 원본은 그대로다 — 그것을 「되돌리지 못함」으로 알리면 사용자가 멀쩡한 파일을 고친다."""
+        self._drafts("skill", "deploy-check")
+        self.assertEqual(self._gen("skill", "deploy-check")[0], 0)
+        self._drafts("skill", "deploy-check", claude=_render_md("deploy-check") + "x\n",
+                     codex=_render_md("deploy-check") + "x\n")
+        before = self._snapshot()
+        with mock.patch.object(gen.os, "replace", side_effect=OSError("replace refused")):
+            rc, err = self._gen("skill", "deploy-check", replace=True)
+        self.assertEqual(rc, 1)
+        self.assertIn("replace refused", err)
+        self.assertFalse(_reports_unrestored(err), err)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_a_busy_destination_lock_changes_nothing(self):
+        """초안 배치는 hook generate·install 과 같은 잠금 안에서 마지막 스탬프까지 한다."""
+        from sage.install_transaction import InstallBusyError  # noqa: PLC0415
+        self._drafts("skill", "deploy-check")
+        before = self._snapshot()
+        args = Args(kind="skill", id="deploy-check", write=True, dest=self.d, root=self.d,
+                    from_drafts=True, replace=False)
+        called = []
+        with mock.patch.object(gen.DestinationLock, "acquire",
+                               side_effect=InstallBusyError("busy")), \
+                redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            rc = gen._locked(args, self.d, lambda: called.append(1) or 0)
+        self.assertEqual(rc, 1)
+        self.assertEqual(called, [])
+        self.assertEqual(self._snapshot(), before)
+
+    @unittest.skipIf(os.name == "nt", "symlink 생성 권한이 환경마다 다르다")
+    def test_a_linked_render_or_render_directory_is_refused(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        victim = Path(outside.name, "victim.md")
+        victim.write_text("outside\n", encoding="utf-8")
+        self._drafts("skill", "deploy-check")
+        claude_r, _codex_r = self._renders("skill", "deploy-check")
+        Path(claude_r).parent.mkdir(parents=True)
+        os.symlink(victim, claude_r)
+        rc, _err = self._gen("skill", "deploy-check", replace=True)
+        self.assertEqual(rc, 1)
+        self.assertEqual(victim.read_text(encoding="utf-8"), "outside\n")
+        self.assertTrue(os.path.islink(claude_r))
+        # 렌더 디렉터리 자체가 밖을 가리키는 경우.
+        shutil.rmtree(Path(self.d, ".claude"))
+        Path(self.d, ".claude", "skills").mkdir(parents=True)
+        os.symlink(outside.name, Path(self.d, ".claude", "skills", "deploy-check"))
+        rc, _err = self._gen("skill", "deploy-check", replace=True)
+        self.assertEqual(rc, 1)
+        self.assertEqual(sorted(os.listdir(outside.name)), ["victim.md"])
+
+
 class TestGenerate(unittest.TestCase):
     def test_manifest_stamp_records_current_generator_version(self):
         with tempfile.TemporaryDirectory() as root:

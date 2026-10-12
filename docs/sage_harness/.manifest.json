@@ -24,7 +24,7 @@
         "claude": "sha256:ec506d9e4e881f66ca7f8a8a4081b517c0b86d2cdafdf9e9f7f6a869e5facf93",
         "codex": "sha256:eef506545ad80aa90064de2471fce4350ce5454730d2473d988a6d1593b995de"
       },
-      "canonical_hash": "sha256:7726af70304774d28a990b24cfb71af3a99615abea4390184bc258b8c2d88099",
+      "canonical_hash": "sha256:43ac9e42d1b2623bd6f771bea60db4ffda56f40d2a0b71c6188aa47eb2220d59",
       "conformance": "PASS",
       "form": "core_adapter",
       "render_hash": {
@@ -32,7 +32,7 @@
         "codex": "sha256:eef506545ad80aa90064de2471fce4350ce5454730d2473d988a6d1593b995de"
       },
       "risk": [],
-      "spec_hash": "sha256:26b21cba415583ba76beac7fdb188bd7c60b42a8d991a012b2ab7a1a550d8cf9",
+      "spec_hash": "sha256:a68537dd2d17f24ee81e09d4c6ec7ca6b728c4e3fa4a971dc4d94b77854d0a3b",
       "test": "scripts/sage_harness/hooks/tests/test_generated_artifact_write_guard.py",
       "unresolved": []
     },
@@ -132,7 +132,7 @@
   "hook_runtime_hash": {
     "claude": "sha256:b12f8aa772d58ef4a1b1ff0f195a26a99457125334d10a19198e4a3c7ffa678e",
     "codex": "sha256:81e7562907900e6de6e2fb85f5e6338bc707606003ff37687ac702655bc5ca0f",
-    "shared": "sha256:2cda06488c63f20abe478b98bf45221b1a5e56013db6272b877da13eb4e30a1d"
+    "shared": "sha256:ebc9b66f1069f0b60bd642c2e45cb6775b969a734d0ef18d657d89c05c791472"
   },
   "host_runtime": "claude",
   "runtime_api": {
