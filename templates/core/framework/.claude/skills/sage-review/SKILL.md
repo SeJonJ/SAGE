@@ -224,6 +224,13 @@ show`) and the three choices. Never pick one yourself:
 3. **Stop** — `sage review-loop close --run-id $RUN_ID --result BLOCKED --reason CYCLE_CAP
    --iterations <n> --reviewer-actual $ACTUAL`.
 
+`--cycle continue` raises the cycle cap, not the run's own `max_iterations`. When the run itself
+has stopped (`NEXT: STOP result=BLOCKED reason=BUDGET_ITER`) and the user wants another round
+rather than early completion, close that run with the result and reason `next` printed, open a
+new run on the same `--cycle-stem` and follow its `next`. Rounds keep counting per cycle, so a
+cycle already at its cap asks `CYCLE_CAP` again on the new run, and the continue decision is made
+there.
+
 ### Blocking convergence (`converge_on: blocking`)
 The default `converge_on: all` keeps every rule above as it is — skip this section. When the run
 was opened under `cfg.converge_on: blocking` (the open snapshot decides; changing the profile

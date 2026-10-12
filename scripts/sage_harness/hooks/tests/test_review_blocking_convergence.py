@@ -311,6 +311,193 @@ class TestResidualEligibility(_Case):
         self.assertEqual(self._residual_run().returncode, 0)
 
 
+FAST_LENSES = ["correctness", "security"]
+
+
+def _composite(status="PASS", stem=STEM, broken=False):
+    """01·04 를 품은 Fast 합본 00. `broken` 이면 Phase 머리글 순서가 깨진다."""
+    phases = ["00", "01", "02", "03", "04"]
+    if broken:
+        phases[1], phases[2] = phases[2], phases[1]
+    body = {
+        "00": "### Done Criteria\n- [x] behaviour verified\n",
+        "01": ("### Acceptance Matrix\n| ID | User Requirement | Required Evidence | Owner | Required? |\n"
+               "|---|---|---|---|---|\n| A1 | 검색 | test | qa | yes |\n"),
+        "02": "design\n",
+        "03": "Acceptance: A1\n",
+        "04": f"### Acceptance Evidence\n| ID | Status | Evidence |\n|---|---|---|\n| A1 | {status} | 로그 |\n",
+    }
+    sections = "".join(f"## Phase {p} — section\n{body[p]}\n" for p in phases)
+    return (f"# fast\n\nCycle-Stem: `{stem}`\nCycle-Mode: FAST\nRisk Level: L3\n"
+            f"Done-Criteria-Revision: 1\n\n{sections}")
+
+
+class TestFastCompositeAcceptance(_Case):
+    """Fast 합본 사이클의 잔여 승인·조기 완료는 합본 안의 01·04 로 acceptance 를 본다.
+
+    실제 파일만 찾으면 `next` 가 권한 `CONVERGED_RESIDUAL` 을 `close` 가 「문서 없음」으로 막는다.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.profile["pdca"]["phases"] += [{"id": "01", "glob": "plan_docs/01-plan/**/*.md"},
+                                           {"id": "04", "glob": "plan_docs/04-analyze/**/*.md"}]
+        self.profile["verification"] = {"acceptance": {
+            "enabled": True, "require_for_risk": ["L2", "L3"],
+            "report_gate_by_risk": {"L2": "advisory", "L3": "enforce"}}}
+        self._write_profile()
+
+    def _plan(self, name=STEM, **kwargs):
+        target = Path(self.root, "plan_docs", "00-base_plan")
+        target.mkdir(parents=True, exist_ok=True)
+        Path(target, f"{name}.md").write_text(_composite(**kwargs), encoding="utf-8")
+
+    def _open_fast(self):
+        import fast_cycle_audit as fca  # noqa: PLC0415
+        fca.open_fast(self.root, cycle_stem=STEM, actual_risk="L3", fast_review_level="L3",
+                      reason="긴급", minimum_rounds=1, lenses=list(FAST_LENSES),
+                      profile_hash="sha256:" + "0" * 64, plan_hash_open="0" * 64)
+
+    def _fast_round(self, iteration, findings, receipts=FAST_LENSES):
+        doc = {"schema": rr.SCHEMA, "run_id": self.rid, "iteration": iteration,
+               "findings": list(findings), "unexplored": [], "closure": []}
+        path = Path(self.root, f"side-{iteration}.json")
+        path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+        args = ["round", "--run-id", self.rid, "--iteration", str(iteration),
+                "--findings-file", str(path)]
+        if receipts is not None:
+            args += ["--lens-receipts", ",".join(receipts)]
+        return self._run(*args)
+
+    def _residual_run(self):
+        self._open_fast()
+        self._open()
+        result = self._fast_round(1, [_finding("F1", "P3")])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self._next()[0], "NEXT: STOP result=APPROVED reason=CONVERGED_RESIDUAL")
+        return self._close("CONVERGED_RESIDUAL")
+
+    def _closes(self):
+        return [r for r in self._records() if r.get("event") == "loop_close"]
+
+    def test_the_residual_approval_reads_the_composite(self):
+        self._plan()
+        result = self._residual_run()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        close = self._records()[-1]
+        self.assertEqual(close["review_assurance"], "REDUCED_BY_POLICY")
+        self.assertEqual(close["mode"], "FAST")
+        summary = la.audit_summary(self.root)["runs"][self.rid]
+        self.assertEqual(summary["close_reason"], "CONVERGED_RESIDUAL")
+
+    def test_unresolved_composite_acceptance_blocks_the_residual_approval(self):
+        for status in ("FAIL", "NOT TESTED"):
+            with self.subTest(status=status):
+                self.setUp()
+                self._plan(status=status)
+                result = self._residual_run()
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("unresolved acceptance", result.stderr)
+                self.assertNotIn("exact cycle selection failed", result.stderr)
+                self.assertEqual(self._closes(), [])
+
+    def test_the_early_close_reaches_the_composite_acceptance(self):
+        self._plan(status="FAIL")
+        self._open_fast()
+        self._open()
+        self.assertEqual(self._fast_round(1, [_finding("F1", "P3")]).returncode, 0)
+        result = self._run("close", "--run-id", self.rid, "--result", "APPROVED",
+                           "--reason", "USER_AUTHORIZED_EARLY", "--iterations", "1",
+                           "--authorization-reason", "사용자 판단", "--confirmed-by", "sejon",
+                           "--confirm", "USER_AUTHORIZED_EARLY")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("unresolved acceptance", result.stderr)
+        self.assertNotIn("exact cycle selection failed", result.stderr)
+
+    def test_a_real_phase01_file_beside_the_composite_is_ambiguous(self):
+        self._plan()
+        target = Path(self.root, "plan_docs", "01-plan")
+        target.mkdir(parents=True)
+        Path(target, f"{STEM}.md").write_text(f"Cycle-Stem: `{STEM}`\n", encoding="utf-8")
+        result = self._residual_run()
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("ambiguous phase documents", result.stderr)
+        self.assertEqual(self._closes(), [])
+
+    def test_a_broken_composite_of_this_cycle_is_reported_as_such(self):
+        self._plan(broken=True)
+        result = self._residual_run()
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("Fast composite Phase 00 unreadable", result.stderr)
+        self.assertIn("phase headings", result.stderr)
+        self.assertNotIn("no phase document", result.stderr)
+
+    def test_a_broken_composite_of_another_cycle_does_not_block(self):
+        self._plan()
+        self._plan(name="other-cycle", stem="other-cycle", broken=True)
+        result = self._residual_run()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_fast_round_without_the_lens_receipts_is_refused(self):
+        self._plan()
+        self._open_fast()
+        self._open()
+        for receipts in (None, ["correctness"], list(reversed(FAST_LENSES))):
+            with self.subTest(receipts=receipts):
+                result = self._fast_round(1, [_finding("F1", "P3")], receipts=receipts)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("--lens-receipts must equal the Fast run lenses", result.stderr)
+        self.assertEqual([r for r in self._records() if r.get("event") == "round"], [])
+        self.assertEqual(self._fast_round(1, [_finding("F1", "P3")]).returncode, 0)
+
+    def test_a_standard_round_without_lens_receipts_is_unchanged(self):
+        self._open()
+        self._ok_round(1, [_finding("F1", "P3")])
+
+
+class TestVirtualPhaseDocs(unittest.TestCase):
+    """06 게이트·CI 권위 판정·리뷰 close 가 함께 쓰는 합본 펼치기."""
+
+    def setUp(self):
+        import fast_cycle_contract as fcc  # noqa: PLC0415
+        self.fcc = fcc
+
+    def test_expands_only_fast_composites_and_keeps_the_document_keys(self):
+        docs = [{"path": "a.md", "content": _composite(), "recent": True, "sha": "x"},
+                {"path": "b.md", "content": f"Cycle-Stem: `{STEM}`\n"}]
+        virtual, issues = self.fcc.virtual_phase_docs(docs)
+        self.assertEqual(issues, [])
+        self.assertEqual(sorted(virtual), ["01", "02", "03", "04"])
+        doc = virtual["04"][0]
+        self.assertEqual(set(doc), {"path", "content", "recent", "virtual_fast"})
+        self.assertTrue(doc["content"].startswith(f"Cycle-Stem: `{STEM}`\nRisk Level: L3\n"))
+        self.assertIn("| A1 | PASS |", doc["content"])
+        self.assertNotIn("recent", self.fcc.virtual_phase_docs(
+            [{"path": "a.md", "content": _composite()}])[0]["01"][0])
+
+    def test_reports_parse_issues_and_filters_by_stem(self):
+        docs = [{"path": "a.md", "content": _composite(broken=True)},
+                {"path": "b.md", "content": _composite(stem="other")}]
+        virtual, issues = self.fcc.virtual_phase_docs(docs)
+        self.assertEqual(len(virtual["01"]), 1)
+        self.assertTrue(issues and "phase headings" in issues[0])
+        virtual, issues = self.fcc.virtual_phase_docs(docs, stem="other")
+        self.assertEqual((len(virtual["01"]), issues), (1, []))
+        self.assertEqual(self.fcc.virtual_phase_docs(docs, stem="missing"), ({}, []))
+
+    def test_the_ci_authority_caller_keeps_its_contract(self):
+        """CI 권위 판정은 깨진 합본을 `Fast composite:` 문제로 돌려주고, 정상 합본만 펼친다."""
+        from sage.ci_authority import _expand_fast_phase_docs  # noqa: PLC0415
+        expanded, issues = _expand_fast_phase_docs({"00": [
+            {"path": "a.md", "content": _composite()},
+            {"path": "b.md", "content": _composite(stem="other", broken=True)}]})
+        self.assertEqual(sorted(expanded), ["00", "01", "02", "03", "04", "05"])
+        self.assertEqual([d["path"] for d in expanded["04"]], ["a.md"])
+        self.assertEqual(set(expanded["04"][0]), {"path", "content", "virtual_fast"})
+        self.assertEqual(len(issues), 1)
+        self.assertTrue(issues[0].startswith("Fast composite: Fast Plan phase headings"))
+
+
 class TestCriticalP2(_Case):
     def test_a_critical_p2_asks_and_blocks_rounds_and_closes(self):
         self._open()

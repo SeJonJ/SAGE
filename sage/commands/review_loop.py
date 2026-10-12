@@ -453,6 +453,13 @@ def _run_round(args):
     except ValueError as exc:
         print(f"[sage review-loop] --lens-receipts invalid: {exc}", file=sys.stderr)
         return 2
+    expected_lenses = _fast_expected_lenses(la, root, args.run_id)
+    if expected_lenses is not None and lens_receipts != expected_lenses:
+        print("[sage review-loop] --lens-receipts must equal the Fast run lenses "
+              f"{','.join(expected_lenses)} (got {','.join(lens_receipts or []) or 'none'}); "
+              "`sage fast-cycle review` refuses a round without them, after the run is closed",
+              file=sys.stderr)
+        return 2
     try:
         receipt = _severity_receipt(args.survived_by_severity)
     except ValueError as exc:
@@ -922,9 +929,20 @@ def _acceptance_blockers(la, root, args, profile, risk):
     if not isinstance(stem, str) or not stem:
         return ["review-loop open record has no --cycle-stem"]
     binding = _load_cycle_binding()
+    # Fast 사이클의 01·04 는 합본 00 안에 있다. 06 게이트와 같은 공용 함수로 펼쳐야 두 층이 같은
+    # 문서를 본다 — 실제 파일만 찾으면 `next` 가 권한 잔여 승인을 여기서 「문서 없음」으로 막는다.
+    try:
+        from sage.fast_cycle_contract import virtual_phase_docs
+        virtual, composite_issues = virtual_phase_docs(_phase_docs(root, profile, "00"), stem=stem)
+        candidates = {phase: _phase_docs(root, profile, phase) + virtual.get(phase, [])
+                      for phase in ("01", "04")}
+    except Exception as exc:  # noqa: BLE001 - 문서를 읽거나 펼치지 못하면 판정 자체가 불가능하다
+        return [f"acceptance check failed: {type(exc).__name__}: {exc}"]
+    if composite_issues:
+        return [f"Fast composite Phase 00 unreadable: {composite_issues[0]}"]
     selected = {}
     for phase in ("01", "04"):
-        document, error = binding.select_document(_phase_docs(root, profile, phase), stem)
+        document, error = binding.select_document(candidates[phase], stem)
         if error:
             return [f"Phase {phase} exact cycle selection failed: {error}"]
         selected[phase] = document
@@ -1073,6 +1091,24 @@ def _fast_run_id(la, root, loop_run_id):
             if state.get("cycle_stem") == stem and not state.get("terminal")
             and state.get("clean") is not False]
     return live[0] if len(live) == 1 else None
+
+
+def _fast_expected_lenses(la, root, loop_run_id):
+    """이 Loop run 이 묶인 Fast run 의 렌즈 목록. Fast run 을 특정할 수 없으면 None.
+
+    렌즈 영수증은 `sage fast-cycle review` 가 묶을 때 비로소 검사된다. 그때는 Loop 가 이미 승인으로
+    닫혀 다시 열 수 없으므로, 영수증 없는 라운드는 기록 시점에 막아야 리뷰를 처음부터 다시 하지
+    않는다. 특정할 수 없을 때(미사용·후보 둘 이상·감사 읽기 실패)는 지금처럼 묶기 검사에 맡긴다.
+    """
+    fast_run = _fast_run_id(la, root, loop_run_id)
+    if not fast_run:
+        return None
+    try:
+        state = (_fast_cycle_audit().audit_summary(root).get("runs") or {}).get(fast_run) or {}
+    except Exception:  # noqa: BLE001
+        return None
+    lenses = state.get("lenses")
+    return list(lenses) if isinstance(lenses, list) else None
 
 
 def _cycle_mode(la, root, loop_run_id):

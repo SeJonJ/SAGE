@@ -281,22 +281,11 @@ def _expand_fast_phase_docs(phase_docs: dict[str, Any]):
         expanded.setdefault(phase, [])
     issues = []
     try:
-        from sage.fast_cycle_contract import parse_fast_plan
-        for doc in list(expanded["00"]):
-            plan, parse_issues = parse_fast_plan(doc.get("content") or "")
-            if plan is None or plan.metadata.get("Cycle-Mode") != "FAST":
-                continue
-            if parse_issues:
-                issues.extend(f"Fast composite: {issue}" for issue in parse_issues)
-                continue
-            header = (f"Cycle-Stem: `{plan.metadata.get('Cycle-Stem', '')}`\n"
-                      f"Risk Level: {plan.metadata.get('Risk Level', '')}\n")
-            for phase in ("01", "02", "03", "04"):
-                expanded[phase].append({
-                    "path": doc.get("path"),
-                    "content": header + plan.sections.get(phase, ""),
-                    "virtual_fast": True,
-                })
+        from sage.fast_cycle_contract import virtual_phase_docs
+        virtual, parse_issues = virtual_phase_docs(list(expanded["00"]))
+        issues.extend(f"Fast composite: {issue}" for issue in parse_issues)
+        for phase, docs in virtual.items():
+            expanded[phase].extend(docs)
     except Exception as exc:
         issues.append(f"Fast composite parser failure: {type(exc).__name__}: {exc}")
     return expanded, issues
