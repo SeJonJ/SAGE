@@ -1,4 +1,4 @@
-<!-- sage-doc-source: release-readiness.md sha256:d3ae80eac05dbe9f16a420d7205c8c823ac77673572ee47bb3d0a58f1415fac2 -->
+<!-- sage-doc-source: release-readiness.md sha256:f091a60bc27baff50179776da97ff18c5041f5cafa71801bea75c6278b263c9a -->
 # Release readiness
 
 This document records **how readiness is decided**, not what it currently is. The current answer
@@ -103,7 +103,7 @@ recorded run on a Windows 11 desktop counts as the same evidence when it records
 the same commit — what cannot be substituted is the SKU, not the way it was run. Without a record of
 either kind, automatic removal on that platform is unverified.
 
-> **Current state (as of 1.3.2).** This job has **never run** because no runner is registered for the
+> **Current state (as of 1.3.3).** This job has **never run** because no runner is registered for the
 > repository — every PR shows it as `skipped`, which makes the whole CI look green. **That green means
 > "Windows was not run", not "passed on Windows".** The Windows evidence for 1.0.0 and 1.1.1 is a
 > record of running the same scripts directly on a Windows 11 desktop over SSH. 1.2.0 ran the Phase 05
@@ -117,11 +117,14 @@ either kind, automatic removal on that platform is unverified.
 > and `generate --from-drafts` (no-clobber publish, rollback, lock) — on 3.10, 3.11 and 3.12 side by side
 > with the 1.3.0 source; no test failed only on 1.3.1 (the 22 failures per version also fail on 1.3.0 and
 > are pre-existing Windows failures). Tests that create links are skipped on Windows. 1.3.2 (session risk declaration
-> scope) shipped **without a Windows run** — its changed path check, when wrong, either blocks as before or
-> matches an undeclared session, so it opens no new bypass; it is run on Windows together with the 1.3.3
-> path work. Someone has to make
-> that run before a release; whether to drop the job, replace it with a light hosted check, or turn
-> the SSH evidence into a release gate is left as follow-up work.
+> scope) shipped **without a Windows run**; that run was made in 1.3.3. 1.3.3 fed claude and codex input
+> straight into the installed `sage-hook` and confirmed the confirmed-outside exemption on another drive (the 1.3.2 part)
+> and the path warning for a short-name root, and ran the new tests on 3.10, 3.11 and 3.12. At the same time the full set
+> of regression test files (110) was run on Windows for the first time: even on main, 933 of 3,699 tests fail — mostly
+> portability problems where tests assume bash, symlink privilege or UTF-8 output; the failures whose cause is not yet
+> known are tracked in a separate issue. **Windows is verified by a manual run over SSH** (the Windows PC is not always on,
+> so no self-hosted runner is registered). Before a release that touches paths, file I/O, encoding, subprocesses, the hook
+> entry point or install/upgrade/uninstall, someone has to make that run.
 
 ## Building a release candidate
 
