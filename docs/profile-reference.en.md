@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:79041af0bd7909c620f3659bb6c034359a45ef20cd544d7cc7acad20e26d7fc6 -->
+<!-- sage-doc-source: profile-reference.md sha256:61cb9cef383fa09a42b7a1d96a6b893fc6f7d30766f0f06aceb537844d09d436 -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -49,7 +49,7 @@ sage doctor --profile sage/project-profile.yaml
 
 ```yaml
 sage:
-  required_version: "1.3.1"
+  required_version: "1.3.2"
 
 project:
   name: "weatherapp"
