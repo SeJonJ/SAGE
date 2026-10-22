@@ -45,6 +45,10 @@ echo "### 5a2. cycle stem 선언 통로 (EH-7 장수 브랜치 오안내 + 선�
 python3 "$HERE/test_cycle_stem_declaration.py" || rc=1
 
 echo ""
+echo "### 5a2b. 세션 위험도 선언 범위 (#23 — 확인된 밖·마무리 요약·Fast 종료 run·선언 ≥ 미선언)"
+python3 "$HERE/test_declared_risk_scope.py" || rc=1
+
+echo ""
 echo "### 5a3. 사이클 선언 통로 (.sage/cycle.json — root 해석 + 우선순위 + 가드 + 배선)"
 python3 "$HERE/test_cycle_state.py" || rc=1
 

@@ -104,12 +104,12 @@ def render_gate(decision, profile, root=None):
     return decision["exit_code"]
 
 
-def render_declared_capture(level):
+def render_declared_capture(level, root=None):
     # Codex 출력 프로토콜: hookSpecificOutput JSON
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
-            "additionalContext": messages.declared_capture_text(level, RUNTIME)
+            "additionalContext": messages.declared_capture_text(level, RUNTIME, messages.display_language(root))
         }
     }, ensure_ascii=False))
 
@@ -124,20 +124,20 @@ def render_session_context(text):
                                               "additionalContext": text}}, ensure_ascii=False))
 
 
-def render_declared_ambiguous():
+def render_declared_ambiguous(root=None, key="risk_declaration_ambiguous"):
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
-            "additionalContext": messages.declared_ambiguous_text(RUNTIME)
+            "additionalContext": messages.declared_ambiguous_text(RUNTIME, messages.display_language(root), key)
         }
     }, ensure_ascii=False))
 
 
-def render_declared_clear(existed=True):
+def render_declared_clear(existed=True, root=None):
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
-            "additionalContext": messages.declared_clear_text(RUNTIME, existed)
+            "additionalContext": messages.declared_clear_text(RUNTIME, existed, messages.display_language(root))
         }
     }, ensure_ascii=False))
 

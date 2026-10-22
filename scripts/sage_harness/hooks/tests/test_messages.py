@@ -118,10 +118,11 @@ class TestGateText(unittest.TestCase):
 
 class TestOtherMessages(unittest.TestCase):
     def test_declared_capture(self):
-        self.assertEqual(M.declared_capture_text("L3", "claude"),
-                         "ℹ️  [Risk 선언 포착] 이번 세션 작업 레벨: L3 — 소스 수정 시 해당 레벨 게이트가 적용됩니다.")
-        self.assertEqual(M.declared_capture_text("L3", "codex"),
-                         "[Risk 선언 포착] 이번 세션 작업 레벨: L3 — 소스 수정 시 해당 레벨 게이트가 적용됩니다.")
+        # 잡힌 사실과 지우는 법을 함께 낸다 — 오포착일 때 사용자가 보는 것은 이 한 줄뿐이다.
+        core = ("[Risk 선언 포착] 이번 세션 작업 레벨: L3 — 소스 수정 시 해당 레벨 게이트가 적용됩니다. "
+                "잘못 잡혔으면 `위험도 선언 해제` 또는 `SAGE-RISK: clear`.")
+        self.assertEqual(M.declared_capture_text("L3", "claude"), f"ℹ️  {core}")
+        self.assertEqual(M.declared_capture_text("L3", "codex"), core)
 
     def test_report_saved_host_dir(self):
         self.assertEqual(M.report_saved_text(".claude", "2026-07-01", "claude"),

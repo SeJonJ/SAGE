@@ -91,11 +91,11 @@ def render_gate(decision, profile, root=None):
     return decision["exit_code"]
 
 
-def render_declared_capture(level):
+def render_declared_capture(level, root=None):
     # UserPromptSubmit 은 exit 0 평문 stdout 이 그대로 컨텍스트가 되는 세 이벤트 중 하나라
     # 봉투가 필요 없다(PreToolUse 와 다르다). JSON 도 파싱되지만 바꿀 이유가 없으므로
     # 기존 동작을 유지한다 — 이 사이클의 범위는 '닿지 않는 메시지'를 닿게 하는 것이다.
-    print(messages.declared_capture_text(level, RUNTIME))
+    print(messages.declared_capture_text(level, RUNTIME, messages.display_language(root)))
 
 
 def render_session_context(text):
@@ -108,12 +108,12 @@ def render_session_context(text):
                                               "additionalContext": text}}, ensure_ascii=False))
 
 
-def render_declared_ambiguous():
-    print(messages.declared_ambiguous_text(RUNTIME))
+def render_declared_ambiguous(root=None, key="risk_declaration_ambiguous"):
+    print(messages.declared_ambiguous_text(RUNTIME, messages.display_language(root), key))
 
 
-def render_declared_clear(existed=True):
-    print(messages.declared_clear_text(RUNTIME, existed))
+def render_declared_clear(existed=True, root=None):
+    print(messages.declared_clear_text(RUNTIME, existed, messages.display_language(root)))
 
 
 # --- post-tool-logger IO (Claude: tool_input.file_path 단일) ---

@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:fc49d305039b9b5ffecb72f63e3e312a577f70d988481d4c76da186dca6b3a27 -->
+<!-- sage-doc-source: troubleshooting.md sha256:856519557d461235a99ca986561c9d21d3b44958a4cbe326397ba63275b2054b -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -230,10 +230,30 @@ risk 선언 취소
 
 Send that as a prompt and the session declaration is deleted; later decisions use only path and
 content classification. The block message states where the risk level came from, so the guidance
-tells you which case you are in.
+tells you which case you are in. When a block exists only because of the declaration, the message
+adds "it was checked only because of this session's L3 declaration" — if this really is work at that
+level, do not clear it; follow the guidance above (declare the cycle, write Phase 00).
 
 A declaration is captured only from a plain statement naming a single level, and SAGE tells you when
-a prompt was not captured. An unused declaration expires after two days.
+a prompt was not captured. To state it exactly instead of in words, put this line at the top of the
+message as is (before the first code block, the whole line). Clearing is the single line `SAGE-RISK: clear`.
+Written after a code block, it is not applied and SAGE only tells you where to put it — that message
+does not change the declaration.
+
+```
+SAGE-RISK: L3
+```
+
+Messages the host inserts, such as a report handed back by a subagent, are never treated as a
+declaration or a clear. An unused declaration expires after two days.
+
+A declaration is about this session's **work**, so it is not applied to the following writes — they
+get the same decision as a session with no declaration:
+
+- A file confirmed to be outside the project (a note in your home directory, for example). A path
+  that could reach the project through an alias, a case variant or a link is treated as unconfirmed
+  and still gets the declaration.
+- The closing summary `.sage/knowledge_writeback_summary.md` that the skill writes after Phase 06.
 
 ## Every document exists but the gate reports missing PDCA phases
 
@@ -475,6 +495,25 @@ When `close` is rejected, check whether Phase 00 changed after the latest Fast r
 Phase 05/06 bind the same `Fast-Run`, `Loop-Run`, and `Final Status: APPROVED`. If the audit text is
 damaged, do not delete it or overwrite it with a new run; inspect recoverable Git history together
 with `.sage/fast_cycle.jsonl`.
+
+## An edit is blocked in a cycle whose Fast run has ended (`cycle.fast_terminal`)
+
+The run named by Phase 00's `Fast-Audit-Run` has already been closed or aborted. The audit is
+intact; the edit tried to start new work in that cycle.
+
+- In a completed cycle — closed as APPROVED, with an approved 05 and a 06 — corrections to phase
+  documents and the write-back summary pass. Source edits are blocked with `block_cycle_closed`.
+- An aborted cycle, a cycle without an approved 05, and non-document edits get this block. It is not
+  overridable — an aborted cycle is not complete, so opening it would open source edits too.
+
+```bash
+sage cycle show
+sage cycle clear
+# start new work in a new cycle
+```
+
+A damaged audit, or a plan that points at a different run, is `cycle.fast_audit_missing`, not this
+block.
 
 ## The write guard blocks an edit to the declaration file
 

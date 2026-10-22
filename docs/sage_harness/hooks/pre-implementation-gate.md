@@ -40,6 +40,34 @@ sage_harness/hooks/pre_implementation_gate_core.py
 - The core has no filesystem or clock dependency. Plan candidate contents arrive in the snapshot,
   and the L3 review match arrives as an injected strategy_result.
 
+### Session risk declaration scope
+- `classify_risk` raises the computed risk to the session declaration (`declared_max`) — except
+  when every change (at least one) is confirmed outside the project, or every change is a closing
+  artifact (`_CLOSING_ARTIFACTS`: `.sage/knowledge_writeback_summary.md`). A declaration is about
+  this session's work; those writes get exactly the decision a session without a declaration gets.
+  `declared_l3` is switched off for them too. Mixed changes and zero changes are still raised.
+- "Confirmed outside" is the event field `outside_confirmed`, set by the adapter, never the path
+  string. `make_rel` compares strings and also returns `<outside-project>` for a project file
+  written through an alias or a case variant; `make_rel` itself is unchanged. The adapter records
+  the original path of every change it mapped outside and calls `_outside_confirmed`, which returns
+  false on any doubt: `realpath` of the unfolded path (so a link followed by `..` resolves through
+  the link) or its `abspath` lying under the root when compared case-insensitively, a regular file
+  with more than one hard link, or any lookup error other than "does not exist". Being wrong can only produce today's decision
+  (raised) or the undeclared one.
+- `decide` judges a raised input a second time with `declared_max=None` and returns the stricter
+  verdict (block > warn > ok). A declaration means "be more careful", but a raised risk can open the
+  phase-writing exemption or skip the L0 content warning branch and so end up looser. This
+  guarantees "declared ≥ undeclared" for every input; it does not compare one declared level with
+  another.
+- A risk-gated block (`block_cycle_binding`, `block_cycle_closed`,
+  `block_document_language_conflict`, `block_cycle_risk_declaration`, `block_phase_incomplete`,
+  `block_l3_no_plan`, `block_l3_strategy_unresolved`, `block_l3_review_evidence`,
+  `block_fast_cycle_terminal`) that exists only because of the declaration — computed risk
+  `none`/`L0`, not a phase write, and the undeclared verdict does not block — carries
+  `declaration_only: true` and `declared_risk`. The message adds both ways forward: clear the
+  declaration, or follow the guidance if the work really is at that level. Reconciliation keeps its
+  own source-aware hint.
+
 ## algorithm_delta — the strategy slot
 "Matching the L3 review doc" is a genuinely different algorithm per runtime, so both are preserved:
 - sage_harness/hooks/strategies/pre_implementation_gate/claude_grep_first.py (grep-first)
@@ -101,8 +129,10 @@ profile.pdca: { enabled, phases[{id,glob}], pre_implementation_required{L1,L2,L3
      every gate, so the point is to stop new work on a long-lived branch from proceeding quietly
      with no plan document. The report document must be stem-bound: counting any 06 at all would
      make every stem look closed the moment the repository contains a single 06.
-     **There is exactly one exemption: at least one change, and all of them phase documents** —
-     correcting the 05 or 06 of a finished cycle is normal work. The binding origin is not an
+     **There is exactly one exemption: at least one change, and all of them phase documents or
+     closing artifacts** — correcting the 05 or 06 of a finished cycle, or writing the write-back
+     summary between 06 and `sage cycle clear`, is normal work. The missing-phase exemption keeps
+     the phase-documents-only predicate. The binding origin is not an
      exemption condition: an env declaration died with the shell and was harmless, but a file
      declaration survives across sessions, so a stale one would switch this block off entirely.
      Writing the exemption with `any()` would let a single documentation line mixed into a source
@@ -160,6 +190,15 @@ physical documents for the same stem also exist the ambiguity is not hidden. A s
 requires a clean active run in the strict-chain `.sage/fast_cycle.jsonl`, the exact stem, and a
 bound plan hash. A missing or corrupt audit, and a terminal or mismatched state, are blocked with
 `block_fast_cycle_audit` and are not overridable.
+
+When no run of this stem is active and the run named by `Fast-Audit-Run` is terminal with the same
+stem, that run goes through the same integrity and plan checks as an active one (opener contract,
+`chain_ok is True`, plan consistency, actual risk, policy floor); any failure is still
+`block_fast_cycle_audit`. A run that passes them is then split: closed as APPROVED after an APPROVED
+review, on a completed cycle, with only phase documents or closing artifacts changed — this returns
+the run state, so the composite 00 still covers the required phases; anything else (aborted, cycle
+not complete, other changes) is `block_fast_cycle_terminal`, not overridable, because an aborted
+cycle is not complete and the closed-cycle block does not stand in front of its source edits.
 
 A source edit under an active Fast run emits `warn_fast_cycle` without lowering the actual risk.
 Only the standard L3 pre-review strategy is replaced by the Fast review contract; the acceptance,
