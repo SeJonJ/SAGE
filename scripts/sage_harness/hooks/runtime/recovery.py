@@ -55,6 +55,7 @@ CODE_OF = {
     "block_cycle_risk_reconciliation": "cycle.risk_reconciliation_failed",
     "block_cycle_stem_audit_failure": "cycle.stem_audit_failure",
     "block_fast_cycle_audit": "cycle.fast_audit_missing",
+    "block_fast_cycle_terminal": "cycle.fast_terminal",
     "block_desktop": "guard.desktop_path",
     "block_document_language_conflict": "document.language_conflict",
     "block_document_post_image": "document.post_image",
@@ -96,6 +97,8 @@ RECOVERY = {
     "cycle.risk_reconciliation_failed": (EXPLAIN, FIX_RISK_DECLARATION, VALIDATE),
     "cycle.stem_audit_failure": (STATUS, CYCLE_SHOW, VALIDATE),
     "cycle.fast_audit_missing": (STATUS, FAST_OPEN, VALIDATE),
+    # 감사는 정상이고 run 이 이미 끝났다. 복구가 아니라 이 사이클에서 빠져나가는 것이 다음 행동이다.
+    "cycle.fast_terminal": (CYCLE_SHOW, CYCLE_CLEAR),
     # --- guard -------------------------------------------------------------
     "guard.desktop_path": (EXPLAIN, MOVE_OFF_DESKTOP),
     # 세 갈래를 다 준다. 이 파일을 직접 열려는 사람은 셋 중 하나를 하려던 것이고, 그중

@@ -115,16 +115,48 @@ def classify_risk(event: dict, profile: dict) -> dict:
                 best["file_short"] = path
                 best["reason"] = reason
     best["l0_l3_file"] = l0_l3_file
+    # 선언 반영 전 위험도. 「선언 때문에만 막혔다」 안내가 이 값으로 갈린다.
+    best["computed_risk"] = best["risk"]
 
     # 유저 선언 레벨 반영 (effective = max(감지, 선언), 상향만)
     declared = event.get("declared_max")  # "L0".."L3" or None
-    declared_l3 = declared == "L3"
-    if declared and _RANK.get(declared, -1) > _RANK.get(best["risk"], -1):
+    # 선언은 이 세션의 **작업**에 대한 것이다. 확인된 프로젝트 밖 파일과 06 뒤 마무리 산출물만
+    # 바꾸는 쓰기는 작업이 아니므로 선언 없는 세션과 같게 둔다 — 같은 쓰기는 거기서 이미 통과한다.
+    # `declared_l3` 도 함께 끈다. 켜 두면 밖 파일의 내용 키워드 L3 가 plan 없음으로 막힌다.
+    exempt = bool(declared) and _declaration_exempt(changes, event)
+    declared_l3 = declared == "L3" and not exempt
+    if declared and not exempt and _RANK.get(declared, -1) > _RANK.get(best["risk"], -1):
         best["risk"] = declared
         best["reason"] = (best["reason"] + " + " if best["reason"] else "") + f"유저 선언 {declared}"
         best["trigger_sources"] = list(best.get("trigger_sources") or []) + [f"declared_{declared.lower()}"]
+        if not best.get("file_short") and changes:
+            best["file_short"] = changes[0].get("path") or ""
+        best["declared_lift"] = declared
     best["declared_l3"] = declared_l3
     return best
+
+
+# 이 경로 표기는 `hook_runtime.make_rel` 의 출력과 같아야 한다(시험으로 묶는다).
+OUTSIDE_PROJECT = "<outside-project>"
+# 06 뒤 SAGE 스킬이 편집 도구로 프로젝트 안에 쓰는 마무리 산출물. profile 키로 열지 않는다 —
+# 키로 열면 `**/*` 같은 값이 완결 사이클 차단을 끄는 통로가 된다. sage-team 스킬의 경로와
+# 같은지 시험으로 묶는다.
+_CLOSING_ARTIFACTS = (".sage/knowledge_writeback_summary.md",)
+
+
+def _declaration_exempt(changes, event) -> bool:
+    """선언 상향을 하지 않는 쓰기인가 — 변경 1건 이상이 **전부** 확인된 밖이거나 전부 마무리 산출물.
+
+    「확인된 밖」은 경로 문자열이 아니라 어댑터가 파일 시스템으로 확인해 실어 보낸
+    `outside_confirmed` 만 믿는다. `<outside-project>` 표기는 별칭·대소문자 변형으로 쓴 프로젝트
+    파일에도 붙는다. 섞인 변경·변경 0건은 상향한다 — 경로를 못 뽑은 상태가 면제를 받으면 안 된다.
+    """
+    if not changes:
+        return False
+    paths = [change.get("path") or "" for change in changes]
+    if event.get("outside_confirmed") is True and all(path == OUTSIDE_PROJECT for path in paths):
+        return True
+    return all(path in _CLOSING_ARTIFACTS for path in paths)
 
 
 def _doc_match(docs: list, event: dict) -> str:
@@ -181,6 +213,21 @@ def _phase_only_change(event, cfg):
     return bool(changes) and all(
         any(cycle_binding.matches_glob(change.get("path") or "", pattern)
             for pattern in patterns if pattern)
+        for change in changes)
+
+
+def _closing_only_change(event, cfg):
+    """완결 사이클의 마무리 쓰기인가 — 변경 1건 이상이 **전부** phase 문서 또는 마무리 산출물.
+
+    완결 사이클 차단과 Fast 종료 run 통과에만 쓴다. missing phases 면제는 「요구 phase 문서를
+    만드는 쓰기」의 교착 해소라 마무리 산출물과 무관하므로 `_phase_only_change` 를 그대로 쓴다.
+    """
+    patterns = [item.get("glob") or "" for item in (cfg.get("phases") or [])]
+    changes = event.get("changes") or []
+    return bool(changes) and all(
+        (change.get("path") or "") in _CLOSING_ARTIFACTS
+        or any(cycle_binding.matches_glob(change.get("path") or "", pattern)
+               for pattern in patterns if pattern)
         for change in changes)
 
 
@@ -475,10 +522,16 @@ def _fast_cycle_state(event, profile, snapshot, cfg):
         details = "; ".join(str(item) for item in (audit.get("file_issues") or [])[:3])
         return None, f"Fast audit file integrity failed: {details or 'cause unavailable'}"
     run_id = plan.metadata.get("Fast-Audit-Run")
-    if len(matching_active) != 1 or matching_active[0] != run_id:
+    # 이 사이클의 run 이 이미 끝났는가. 그때는 active 가 비어 있어 아래 결속 불일치에 걸리는데,
+    # 정상 close·abort·진짜 불일치가 한 문구로 뭉치고 close 된 사이클의 06 정정까지 막혔다.
+    # 종료 run 도 active 와 **같은** 무결성·plan 검증을 거치고, 그 뒤에만 갈래를 나눈다.
+    terminal_run = (not matching_active and isinstance(run_id, str)
+                    and bool(runs.get(run_id, {}).get("terminal"))
+                    and runs.get(run_id, {}).get("cycle_stem") == binding["stem"])
+    if not terminal_run and (len(matching_active) != 1 or matching_active[0] != run_id):
         return None, f"Fast Plan run binding mismatch: plan={run_id!r}, active={matching_active}"
     state = (audit.get("runs") or {}).get(run_id) or {}
-    if state.get("terminal"):
+    if state.get("terminal") and not terminal_run:
         return None, "active Fast run integrity/state is invalid"
     opener_issue = _opener_contract_issue(state)
     if opener_issue:
@@ -496,6 +549,23 @@ def _fast_cycle_state(event, profile, snapshot, cfg):
         issues.append(floor_issue)
     if issues:
         return None, "; ".join(issues[:5])
+    if terminal_run:
+        # 통과는 「APPROVED 리뷰 뒤 정상 close · 완결 사이클 · 문서·마무리 산출물만」 하나다.
+        # state 를 돌려준다 — None 이면 뒤의 missing phases 가 composite 00 안의 01~03 을 보지
+        # 못해 선언 세션의 06 정정이 phase 누락으로 막힌다.
+        if state.get("result") == "APPROVED" and not (
+                state.get("review_result") == "APPROVED" and state.get("loop_run_id")):
+            # 기록기는 APPROVED 리뷰와 loop 결속 없이 close 하지 않는다. 그런 기록은 정상 종료가
+            # 아니라 감사 계약 손상이다 — `cycle clear` 가 아니라 감사 복구를 안내해야 한다.
+            return None, (f"Fast run {run_id} closed as APPROVED without an APPROVED review "
+                          "bound to a loop run")
+        if (state.get("result") == "APPROVED"
+                and _cycle_closed(binding["stem"], cfg, snapshot)
+                and _closing_only_change(event, cfg)):
+            return state, None
+        # 사유는 언어 중립 토큰만 싣는다 — 설명 문장은 catalog 가 소유한다.
+        return None, {"key": "block_fast_cycle_terminal",
+                      "detail": f"{run_id} {state.get('result') or 'ABORTED'}"}
     return state, None
 
 
@@ -1613,6 +1683,11 @@ def _select_pending_gate_decision(decisions):
     selected = dict(warnings[0])
     reasons = [decision.get("reason") for decision in warnings if decision.get("reason")]
     selected["reason"] = "; ".join(dict.fromkeys(reasons))
+    # 다른 경고가 먼저 와도 waiver 소비 기록은 잃지 않는다. 어댑터는 최종 판정의 `waiver_uses` 만
+    # 기록하므로, 여기서 빠지면 waiver 를 쓰고도 사용 감사 없이 통과한다.
+    uses = [use for decision in warnings for use in (decision.get("waiver_uses") or [])]
+    if uses:
+        selected["waiver_uses"] = uses
     return selected
 
 
@@ -1730,10 +1805,53 @@ def _drop_contentless_binding_line(decision: dict) -> dict:
     return decision
 
 
+_STRICTNESS = {"block": 2, "warn": 1}
+
+# 세션 선언이 연 분기(PDCA 진입·L3 분기) 안의 차단. 선언을 지우면 풀릴 수 있는 차단만이라
+# 여기에만 「선언 때문」 안내를 붙인다. reconciliation 은 자체 출처별 안내가 있고, feedback·
+# desktop·report·감사 손상 계열은 선언과 무관하다.
+_RISK_GATED_BLOCKS = frozenset({
+    "block_cycle_binding", "block_cycle_closed", "block_document_language_conflict",
+    "block_cycle_risk_declaration", "block_phase_incomplete", "block_l3_no_plan",
+    "block_l3_strategy_unresolved", "block_l3_review_evidence", "block_fast_cycle_terminal",
+})
+
+
 def decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:
-    """risk-gate 판정. strategy_result: None=미선택 / {found:bool, path?} = 선택된 전략 실행결과."""
-    return _stamp_cycle_identity(
+    """risk-gate 판정. strategy_result: None=미선택 / {found:bool, path?} = 선택된 전략 실행결과.
+
+    세션 선언이 위험도를 올린 판정은 같은 입력을 선언 없이 한 번 더 판정해 **더 엄격한 쪽**을
+    돌려준다. 선언은 「더 조심하겠다」는 뜻인데, 올라간 위험도가 phase 작성 면제를 켜거나 L0
+    내용 경고 분기를 건너뛰어 오히려 느슨해지는 입력이 리뷰마다 새로 나왔다. 반례를 하나씩 막는
+    대신 「선언 판정 ≥ 미선언 판정」을 여기서 한 번에 보장한다. core 는 순수 함수라 두 번 판정해도
+    부작용이 없다. 등급끼리(L1 선언 대 L2 선언)의 비교는 보장하지 않는다.
+    """
+    decision = _stamp_cycle_identity(
         _decide(event, profile, snapshot, strategy_result), event, profile, snapshot)
+    if not isinstance(decision, dict):
+        return decision
+    classified = classify_risk(event, profile)
+    declared = classified.get("declared_lift")
+    if not declared:
+        return decision
+    base_event = dict(event, declared_max=None)
+    base = _stamp_cycle_identity(
+        _decide(base_event, profile, snapshot, strategy_result), base_event, profile, snapshot)
+    if (isinstance(base, dict) and _STRICTNESS.get(base.get("status"), 0)
+            > _STRICTNESS.get(decision.get("status"), 0)):
+        return base
+    cfg = _pdca_cfg(profile)
+    # 「선언 때문에만」은 선언 없이 판정하면 막히지 않을 때만 말한다.
+    if (decision.get("message_key") in _RISK_GATED_BLOCKS
+            and isinstance(base, dict) and base.get("status") != "block"
+            and classified.get("computed_risk") in ("none", "L0")
+            and not (cfg is not None and _is_phase_write(event, cfg))):
+        decision["declaration_only"] = True
+        decision["declared_risk"] = declared
+        if not decision.get("file_short"):
+            changes = event.get("changes") or []
+            decision["file_short"] = (changes[0].get("path") or "") if changes else ""
+    return decision
 
 
 def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:
@@ -1771,11 +1889,12 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
         # 진행된다. 예전에는 브랜치 leaf 추론만 막았다. env 선언은 셸과 함께 죽어 무해했기 때문이다.
         # 파일 선언(.sage/cycle.json)은 세션을 넘겨 살아남으므로 3주 전 선언이 이 차단을 통째로
         # 꺼버린다(실측: exit 0, 출력 0바이트). 그래서 결속 출처가 아니라 **무엇을 고치는가**로 가른다.
-        # 면제는 "완결 사이클의 문서를 정정하는 편집" 하나뿐이고, 그건 정상 작업이다.
+        # 면제는 "완결 사이클의 문서를 정정하거나 마무리 산출물을 쓰는 편집" 하나뿐이고, 그건 정상
+        # 작업이다 — 스킬은 06 뒤 write-back 요약을 쓰고 나서 사이클을 해제한다.
         # 주의: "L1 이상"은 "L0 경로가 아님"과 다르다. 세션 위험도 선언(declared_max)이 L0 경로를
         # 상향시키므로, L3 를 선언한 세션에서는 문서 편집도 이 차단에 걸린다.
         source = binding.get("source") or []
-        if (not _phase_only_change(event, cfg)
+        if (not _closing_only_change(event, cfg)
                 and _cycle_closed(binding["stem"], cfg, snapshot)):
             return {"status": "block", "exit_code": 2, "risk": risk,
                     "message_key": "block_cycle_closed",
@@ -1847,6 +1966,11 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
                         str(s).startswith("declared_") for s in (c.get("trigger_sources") or [])),
                 }
             fast_state, fast_error = _fast_cycle_state(event, profile, snapshot, cfg)
+            if isinstance(fast_error, dict):
+                # 감사는 정상이고 run 이 이미 끝났다 — 손상과 같은 문구로 뭉치지 않는다.
+                return {"status": "block", "exit_code": 2, "risk": "FAST",
+                        "message_key": fast_error["key"],
+                        "reason": fast_error["detail"], "file_short": c["file_short"]}
             if fast_error:
                 return {"status": "block", "exit_code": 2, "risk": "PDCA",
                         "message_key": "block_fast_cycle_audit",
@@ -1935,7 +2059,8 @@ def _decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict
     if fast_state is not None and risk in ("L2", "L3"):
         return {"status": "warn", "exit_code": 0, "risk": risk,
                 "message_key": "warn_fast_cycle",
-                "reason": (f"Fast {fast_state.get('fast_review_level')} · "
+                "reason": ((f"{fast_state.get('result')} · " if fast_state.get("terminal") else "")
+                           + f"Fast {fast_state.get('fast_review_level')} · "
                            f"{fast_state.get('minimum_rounds')} round · "
                            f"{len(fast_state.get('lenses') or [])} lenses · "
                            f"{fast_state.get('reason')}"),
