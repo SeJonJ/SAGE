@@ -470,7 +470,9 @@ class TestOutsideConfirmation(unittest.TestCase):
 
     def test_make_rel_is_unchanged(self):
         rel = hr.make_rel(self.root)
-        self.assertEqual(rel(os.path.join(self.base, "PROJ", "src", "a.py")), "<outside-project>")
+        # Windows 의 `ntpath` 는 대소문자를 무시하므로 변형도 프로젝트 안이다.
+        variant = "src/a.py" if os.name == "nt" else "<outside-project>"
+        self.assertEqual(rel(os.path.join(self.base, "PROJ", "src", "a.py")), variant)
         self.assertEqual(rel(os.path.join(self.root, "src", "a.py")), "src/a.py")
 
 

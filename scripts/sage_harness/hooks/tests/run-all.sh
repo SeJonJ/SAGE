@@ -49,6 +49,10 @@ echo "### 5a2b. 세션 위험도 선언 범위 (#23 — 확인된 밖·마무리
 python3 "$HERE/test_declared_risk_scope.py" || rc=1
 
 echo ""
+echo "### 5a2c. 코드 블록 닫힘·확인 안 된 밖 경로 경고·선언 등급 순서 검증"
+python3 "$HERE/test_gate_followups.py" || rc=1
+
+echo ""
 echo "### 5a3. 사이클 선언 통로 (.sage/cycle.json — root 해석 + 우선순위 + 가드 + 배선)"
 python3 "$HERE/test_cycle_state.py" || rc=1
 

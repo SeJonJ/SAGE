@@ -734,9 +734,13 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
 
     changes = io.extract_changes(raw, rel_recording)  # ← 런타임별 (file_path vs apply_patch)
     _attach_post_image(root, changes)
+    # 확인하지 못한 밖 경로는 게이트가 경고한다 — 별칭으로 쓴 프로젝트 파일이 위험 규칙을 조용히
+    # 비켜 가지 않게 한다. 경로 판정(`make_rel`) 자체는 바꾸지 않는다.
+    outside_unconfirmed = list(dict.fromkeys(
+        str(p) for p in outside_raw if not _outside_confirmed(root, p)))
     outside_confirmed = (bool(changes) and bool(outside_raw)
                          and all((change.get("path") or "") == "<outside-project>" for change in changes)
-                         and all(_outside_confirmed(root, p) for p in outside_raw))
+                         and not outside_unconfirmed)
     declared = io.read_declared_level(raw, root)  # ← 런타임별 ($host/logs)
     # 선언은 env(SAGE_CYCLE_STEM) 와 `<root>/.sage/cycle.json` 두 통로다. 기원을 함께 실어야
     # 표시·감사가 "어느 통로로 읽었는지" 를 갈라 말할 수 있다 — env 가 이기는데 화면이
@@ -751,7 +755,8 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
              "session_id": raw.get("session_id", "") or "", "branch": resolve_branch(root, ""),
              "cycle_stem": cycle_stem, "cycle_stem_origin": cycle_origin,
              "cycle_document_language": document_language,
-             "declared_max": declared, "outside_confirmed": outside_confirmed, "changes": changes}
+             "declared_max": declared, "outside_confirmed": outside_confirmed,
+             "outside_unconfirmed": outside_unconfirmed, "changes": changes}
     snapshot = build_snapshot(profile, root, rel)
     feedback_state = _build_feedback_state(profile, root, changes)
     if feedback_state is not None:
@@ -765,11 +770,19 @@ def run_pre_implementation_gate(io, root, core_dir, raw_text):
     decision = _record_acceptance_waiver_uses(hid, root, decision)
     # override 우회보다 먼저 기록한다 — 우회로 통과하든 게이트가 통과시키든 선언 사실은 남아야 한다.
     decision = _record_declared_cycle_stem(hid, root, decision, event.get("session_id") or "")
+    # 감사 실패·코어 예외는 판정을 새 차단으로 통째로 바꾼다. 경로 진단은 그 차단에도 붙어야 한다.
+    if outside_unconfirmed and isinstance(decision, dict) and not decision.get("outside_unconfirmed"):
+        decision["outside_unconfirmed"] = list(outside_unconfirmed)
     # 선언 파일이 있는데 못 읽은 상태는 선언 부재로 degrade 하되 반드시 보이게 한다. 부재·손상이
     # 똑같이 조용하면 파일을 1바이트만 잘라도 완결 사이클 차단이 사라지고 아무도 모른다.
     if cycle_error and isinstance(decision, dict):
         decision["cycle_declaration_error"] = cycle_error
     if _maybe_override(hid, root, decision, changes):   # P1-5: 활성 override 면 BLOCK 우회(감사 기록)
+        # override 알림은 stderr 뿐이라 통과한 호출에서는 모델에게 닿지 않는다. 경로 진단은
+        # 비차단 컨텍스트 채널(경고 렌더)로 따로 보낸다.
+        if isinstance(decision, dict) and decision.get("outside_unconfirmed"):
+            io.render_gate(core.outside_unconfirmed_warning(decision["outside_unconfirmed"]),
+                           profile, root)
         return 0
     return io.render_gate(decision, profile, root)   # ← 런타임별 채널/포맷/exit
 

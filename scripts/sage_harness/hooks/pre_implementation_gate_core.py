@@ -1817,7 +1817,40 @@ _RISK_GATED_BLOCKS = frozenset({
 })
 
 
+def outside_unconfirmed_warning(paths) -> dict:
+    """프로젝트 밖으로 판정했지만 확실히 밖인지 확인하지 못한 경로의 경고 판정.
+
+    `make_rel` 은 글자로 루트와 비교해, 링크·대소문자·짧은 이름으로 쓴 프로젝트 파일도 밖으로 본다.
+    그 판정은 바꾸지 않는다(정규화는 별도 과제). 대신 조용히 통과하던 것을 보이게 한다 — 어댑터가
+    확인 결과를 `event["outside_unconfirmed"]` 로 싣고, override 우회 뒤에도 같은 경고를 낸다.
+    """
+    shown = [str(path) for path in (paths or []) if path]
+    more = f" (+{len(shown) - 3})" if len(shown) > 3 else ""
+    return {"status": "warn", "exit_code": 0, "risk": "",
+            "message_key": "warn_path_outside_unconfirmed",
+            "reason": ", ".join(shown[:3]) + more,
+            "file_short": shown[0] if shown else "",
+            "outside_unconfirmed": shown}
+
+
 def decide(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:
+    """risk-gate 판정 + 확인 안 된 밖 경로 진단.
+
+    경로 진단은 판정을 바꾸지 않는다. 통과는 경고로 올리고, 경고·차단은 키를 그대로 둔 채 경로만
+    싣는다 — 표시(`gate_text`)가 어떤 판정이든 보조 줄로 붙인다. 경고 병합은 첫 키만 남기고 일부
+    키는 근거를 출력하지 않아서, 판정 키에 기대면 다른 경고와 겹칠 때 진단이 사라진다.
+    """
+    decision = _decide_declared(event, profile, snapshot, strategy_result)
+    paths = [str(path) for path in ((event or {}).get("outside_unconfirmed") or []) if path]
+    if not paths or not isinstance(decision, dict):
+        return decision
+    if decision.get("status") == "ok":
+        return dict(decision, **outside_unconfirmed_warning(paths))
+    decision["outside_unconfirmed"] = paths
+    return decision
+
+
+def _decide_declared(event: dict, profile: dict, snapshot: dict, strategy_result) -> dict:
     """risk-gate 판정. strategy_result: None=미선택 / {found:bool, path?} = 선택된 전략 실행결과.
 
     세션 선언이 위험도를 올린 판정은 같은 입력을 선언 없이 한 번 더 판정해 **더 엄격한 쪽**을

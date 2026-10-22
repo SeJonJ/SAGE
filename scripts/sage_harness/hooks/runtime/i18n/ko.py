@@ -18,6 +18,7 @@ MESSAGES = {
     "warn_l0_l3_content": "문서/plan 에 L3 내용 키워드 감지 — 민감정보 노출 점검.",
     "block_phase_incomplete": "의무 PDCA phase 미작성: [{miss}].",
     "warn_phase_incomplete": "권장 PDCA phase 미작성: [{miss}].",
+    "warn_path_outside_unconfirmed": "프로젝트 밖으로 판정했지만 확실히 밖인지 확인하지 못한 경로입니다 — 위험 규칙·사이클 검사를 받지 않았습니다.",
     "block_cycle_risk_declaration": "cycle `{cycle_stem}`의 Phase 00 Risk Level 선언이 없거나 유효하지 않습니다.",
     "block_cycle_risk_reconciliation": "Phase 00 Risk Level {phase00_risk}보다 계산 위험도 {required_risk}가 높습니다.",
     "block_report_without_approval": "{rs}.",
@@ -136,6 +137,7 @@ FRAGMENTS = {
     "hint.block_gate_runtime_error": "profile 타입과 설치된 SAGE runtime 무결성을 확인하고 validate를 다시 실행하세요",
     "gate.frame.file": "파일",
     "gate.frame.reason": "근거",
+    "gate.outside_unconfirmed": "확실히 밖인지 확인하지 못한 경로: {paths} — 위험 규칙·사이클 검사를 받지 않았습니다. 프로젝트 파일이면 프로젝트 경로로 다시 써 주세요",
 
     # 계산 hint 의 조각. 출처에 따라 문장이 갈리므로 완성문이 아니라 조각으로 둔다.
     "hint.phase_doc": "해당 phase 문서를 먼저 작성하세요 (docs/agent/pdca-templates.md)",
@@ -150,6 +152,7 @@ FRAGMENTS = {
     "hint.risk_from_declaration": "이 위험도는 이번 세션의 {required_risk} 선언에서 왔습니다. 잘못 잡힌 선언이면 `위험도 선언 해제` 또는 `SAGE-RISK: clear` 로 지우세요 — {raise_00}",
     "hint.cycle_closed": "새 사이클의 Phase 00 을 먼저 작성한 뒤 `sage cycle set <새 stem>` 으로 선언하세요(CI 는 `export SAGE_CYCLE_STEM=<새 stem>`). {clear}",
     "hint.declaration_only": "이 파일의 경로·내용 위험도는 L0 이하인데 이번 세션의 {level} 선언 때문에 이 검사를 받았습니다. 선언이 잘못이면 `위험도 선언 해제` 또는 `SAGE-RISK: clear` 로 지우고, 실제 {level} 작업이면 위 안내대로 진행하세요",
+    "hint.warn_path_outside_unconfirmed": "프로젝트 파일이면 프로젝트 경로로 다시 써 주세요(링크·대소문자·짧은 이름 대신 프로젝트 루트 기준 경로). 모든 편집에서 이 경고가 나오면 프로젝트 경로 설정을 확인하세요",
     "capture.declared": "[Risk 선언 포착] 이번 세션 작업 레벨: {level} — 소스 수정 시 해당 레벨 게이트가 적용됩니다. 잘못 잡혔으면 `위험도 선언 해제` 또는 `SAGE-RISK: clear`.",
     "capture.ambiguous": "[Risk 선언 미포착] 여러 레벨이 함께 언급돼 선언으로 보지 않았습니다 — 적용하려면 레벨 하나만 적거나, 한 줄로 `SAGE-RISK: L3` 처럼 적으세요.",
     "capture.marker_position": "[Risk 선언 미포착] `SAGE-RISK:` 줄이 코드 블록 뒤에 있어 적용하지 않았습니다 — 메시지 맨 위(첫 코드 블록보다 앞)에 적어 주세요. 이번 메시지로는 선언을 바꾸지 않았습니다.",

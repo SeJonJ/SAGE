@@ -193,6 +193,8 @@ def _gate_record(decision, profile, language=DEFAULT_LANGUAGE):
         "block_phase_incomplete": ("BLOCK", risk, True,
                              _phase_incomplete_hint(decision, language)),
         "warn_phase_incomplete": ("WARN", "L1", False, None),
+        # 확인 안 된 밖 경로. 경고만 낸다 — 경로 판정은 그대로라 다음 행동은 hint 하나다.
+        "warn_path_outside_unconfirmed": ("WARN", "", True, None),
         "block_cycle_risk_declaration": (
             "BLOCK", "PDCA", True,
             _cycle_risk_declaration_hint(decision, language)),
@@ -301,6 +303,14 @@ def gate_text(decision, profile, runtime, language=DEFAULT_LANGUAGE):
         declared = _i18n.frag(language, "hint.declaration_only").replace(
             "{level}", str(decision.get("declared_risk") or ""))
         line += (" | " if runtime == "codex" else "\n  → ") + declared
+    unconfirmed = decision.get("outside_unconfirmed") or []
+    if unconfirmed and decision.get("message_key") != "warn_path_outside_unconfirmed":
+        # 다른 경고·차단과 겹친 경로 진단. 판정 키는 그쪽 것이라 여기서 따로 붙인다.
+        paths = ", ".join(str(path) for path in unconfirmed[:3])
+        if len(unconfirmed) > 3:
+            paths += f" (+{len(unconfirmed) - 3})"
+        line += ((" | " if runtime == "codex" else "\n  → ")
+                 + _i18n.frag(language, "gate.outside_unconfirmed").replace("{paths}", paths))
     if sev == "BLOCK":
         # 차단 뒤에는 항상 다음에 칠 것이 있어야 한다. hint 는 "무엇이 잘못됐나" 를 설명하고
         # `Next:` 는 "지금 무엇을 치면 되나" 를 준다 — 둘은 다른 물건이다. code 도 함께 낸다:

@@ -60,7 +60,7 @@
         "claude": "sha256:54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
         "codex": "sha256:c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded"
       },
-      "canonical_hash": "sha256:40e155021fa05c5e0a972a9429624b969458f6cc1a91c01aa107f1551a0d8ff4",
+      "canonical_hash": "sha256:b63c9d7f0c4bf355ba562572e5167167d2a4c44962ad228979701f1a1ac78dc5",
       "conformance": "PASS",
       "form": "core_adapter",
       "l3_review_strategy": "codex_feature_signal",
@@ -70,7 +70,7 @@
       },
       "risk": [],
       "safety_degraded": false,
-      "spec_hash": "sha256:84c6741fabfa2e00c9e08ee566550bd5354ade361a8d3a0410a50f64b9a2a568",
+      "spec_hash": "sha256:221555afa234c47691daba0af2229627acb46786b0548393e353794030b088be",
       "test": "scripts/sage_harness/hooks/tests/test_pre_implementation_gate.py",
       "unresolved": []
     },
@@ -132,7 +132,7 @@
   "hook_runtime_hash": {
     "claude": "sha256:86de61306860e7cbbd7b8d869a164512f9701bc67dbbb4efed9afb5e34bd261f",
     "codex": "sha256:2552516ace0a1c81f6f1dad10699214fc4187e7edea9d8b98937a9dd56a7350c",
-    "shared": "sha256:e34f808d8a10569f5ebfaeb5a6bec1e1d3fc4a23b3677a767c929faffa77db1b"
+    "shared": "sha256:f7d0ad754c85bf34ef1ea2b2a4093e66f81f9c9666ab741d34869c751acd7c66"
   },
   "host_runtime": "claude",
   "runtime_api": {
