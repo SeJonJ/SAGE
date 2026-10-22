@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:856519557d461235a99ca986561c9d21d3b44958a4cbe326397ba63275b2054b -->
+<!-- sage-doc-source: troubleshooting.md sha256:713444ccab6a8075c293a108ccaf612d713a7dc2cceb228cf6df18bdbd18d38c -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -255,6 +255,37 @@ get the same decision as a session with no declaration:
   and still gets the declaration.
 - The closing summary `.sage/knowledge_writeback_summary.md` that the skill writes after Phase 06.
 
+## "Could not confirm the path is really outside" warning
+
+The gate compares paths with the project root as text. A project file written through a link, a
+different letter case or a Windows short name (`PROJEC~1`) therefore looks outside the project, and
+path risk rules (`src/**` and so on) and cycle checks are not applied to it. The gate warns when it
+meets such a path. It does not block the edit.
+
+- If it is a project file, write it again with its path relative to the project root. The warning
+  says the risk rules were not applied; ignore it and that edit passes unchecked.
+- If every edit warns, the configured project path itself may be a link or a different spelling.
+  Match it to the real path the tool uses.
+- A path that really is outside but cannot be confirmed — a hard-linked file, a separate folder
+  that differs only in case — is warned about too. You can go ahead in that case.
+
+When it comes with another warning or a block, the path is added as one more line under that
+message. A call that bypasses a block with an override gets the same warning.
+
+## `sage validate` warns about the level order of `pre_implementation_required`
+
+It warns when a higher level requires fewer phases than a lower one (for example L2=`[00, 01]`,
+L3=`[00]`). An omitted level counts as an empty list. With such a profile, declaring a higher level
+("proceed at L3") can let through a source edit that an L2 declaration blocks. Put every phase of a
+lower level into the higher level's list (L1 ⊆ L2 ⊆ L3). Nothing is asked when `pdca.enabled: false`.
+
+One difference remains even in an ordered profile, the default template included. The gate leaves a
+write of a phase document that the level requires out of the missing-phase check (so writing 01 is
+not deadlocked by a missing 02 or 03). Declaring a higher level therefore lets you write a **phase
+document that becomes required at that level** in any order — a write that warns or blocks under the
+lower declaration. Source edits are not affected, and neither case is looser than a session with no
+declaration.
+
 ## Every document exists but the gate reports missing PDCA phases
 
 When you edit a phase document the gate reads the cycle from its filename. Source edits have no such
@@ -299,6 +330,20 @@ scope changed, increment the revision, record Changed-At, Reason, Affected-Phase
 rerun affected phases in order. Do not reuse the previous Phase 05 approval. Run a new review loop
 with `--cycle-stem`, then record its `Loop-Run` and the APPROVED close's `Phase00-Hash` in Phase 05.
 Write Phase 00 and later phases separately because one mixed write cannot prove post-write evidence.
+
+## An example inside a code block is read as a declaration or an approval, or decisions change after an upgrade
+
+`Cycle-Stem`, `Final Status`, Done Criteria and Fast evidence lines in a cycle document are read only
+outside code blocks. A line that closes a code block may have only spaces or tabs after the fence
+(```` ``` ```` or `~~~`), as in CommonMark. A ```` ```python ```` or ```` ``` end ```` line inside a block
+does not close it and stays content.
+
+Up to 1.3.2 such a line closed the block and the example after it was read as a real declaration — a
+document was blocked for "two declarations" because of an example `Cycle-Stem`, or an example
+`Final Status: APPROVED` was read as approval. From 1.3.3 SAGE treats as code whatever GitHub shows as
+code, so a decision can change after upgrading. A 05 with only an example and no real approval line
+now blocks writing 06, and a document blocked for a duplicate example now passes. If something is
+blocked, write the real declaration line once outside the block.
 
 ## The cycle is finished but new work is blocked as an already-completed cycle
 

@@ -15,6 +15,7 @@ MESSAGES = {
     "warn_l0_l3_content": "L3 content keywords detected in a document or plan — check for exposed sensitive information.",
     "block_phase_incomplete": "Mandatory PDCA phases not written: [{miss}].",
     "warn_phase_incomplete": "Recommended PDCA phases not written: [{miss}].",
+    "warn_path_outside_unconfirmed": "Treated as outside the project, but could not confirm the path is really outside — risk rules and cycle checks were not applied.",
     "block_cycle_risk_declaration": "Cycle `{cycle_stem}` has no valid Phase 00 Risk Level declaration.",
     "block_cycle_risk_reconciliation": "The computed risk {required_risk} is higher than the Phase 00 Risk Level {phase00_risk}.",
     "block_report_without_approval": "{rs}.",
@@ -132,6 +133,7 @@ FRAGMENTS = {
     "hint.block_gate_runtime_error": "Check the profile types and the integrity of the installed SAGE runtime, then run validate again",
     "gate.frame.file": "file",
     "gate.frame.reason": "evidence",
+    "gate.outside_unconfirmed": "Could not confirm these paths are really outside the project: {paths} — risk rules and cycle checks were not applied. If they are project files, write them with their project paths",
 
     # 계산 hint 의 조각. 출처에 따라 문장이 갈리므로 완성문이 아니라 조각으로 둔다.
     "hint.phase_doc": "Write the phase document first (docs/agent/pdca-templates.md)",
@@ -146,6 +148,7 @@ FRAGMENTS = {
     "hint.risk_from_declaration": "This risk level came from a {required_risk} declaration made in this session. If it was captured by mistake, clear it by typing `위험도 선언 해제` or `SAGE-RISK: clear` — {raise_00}",
     "hint.cycle_closed": "Write the new cycle's Phase 00 first, then declare it with `sage cycle set <new stem>` (in CI, `export SAGE_CYCLE_STEM=<new stem>`). {clear}",
     "hint.declaration_only": "This file's path and content risk is L0 or lower; it was checked only because of this session's {level} declaration. If the declaration is wrong, clear it with `위험도 선언 해제` or `SAGE-RISK: clear`; if this really is {level} work, follow the guidance above",
+    "hint.warn_path_outside_unconfirmed": "If this is a project file, write it with its project path (relative to the project root, not through a link, a different letter case, or a short name). If every edit shows this warning, check the configured project path",
     "capture.declared": "[Risk declaration captured] Work level for this session: {level} — source edits are gated at that level. If this was captured by mistake, type `위험도 선언 해제` or `SAGE-RISK: clear`.",
     "capture.ambiguous": "[Risk declaration not captured] Several levels were mentioned together, so this was not treated as a declaration — name a single level, or write one line such as `SAGE-RISK: L3`.",
     "capture.marker_position": "[Risk declaration not captured] The `SAGE-RISK:` line comes after a code block, so it was not applied — put it at the top of the message, before the first code block. This message did not change the declaration.",

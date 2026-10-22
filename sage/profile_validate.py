@@ -719,6 +719,20 @@ def _semantic_issues(profile, root):
             issues.append(("FAIL", Diagnostic("validate.pre_implementation_unknown_phase", level=lvl,
                                               phases=unknown, defined=sorted(phase_ids, key=str))))
 
+    # 2-b. 높은 등급이 낮은 등급의 필수 phase 를 모두 요구하는지(L1 ⊆ L2 ⊆ L3).
+    #    게이트는 바꾸는 phase 문서가 그 등급의 필수 목록 안이면 결핍 검사를 건너뛴다(교착 해소).
+    #    높은 등급이 더 적게 요구하면 높은 선언이 낮은 선언에서 막히던 소스 편집까지 통과시킨다.
+    #    생략된 등급은 게이트처럼 빈 목록으로 본다. pdca 를 강제하지 않으면(게이트 `_pdca_cfg` 와
+    #    같은 조건) 이 순서도 판정에 쓰이지 않으므로 묻지 않는다.
+    if pdca.get("enabled") and pdca.get("phases") and isinstance(pir, dict):
+        required = {lvl: pir.get(lvl) or [] for lvl in ("L1", "L2", "L3")}
+        if all(isinstance(req, list) for req in required.values()):
+            for lower, higher in (("L1", "L2"), ("L2", "L3")):
+                missing = [pid for pid in required[lower] if pid not in required[higher]]
+                if missing:
+                    issues.append(("WARN", Diagnostic("validate.pre_implementation_not_monotonic",
+                                                      lower=lower, higher=higher, phases=missing)))
+
     # 3. 위험 분류 글롭이 전부 비면 게이트가 사실상 무동작(의도일 수 있어 INFO).
     if not any(risk.get(k) for k in ("l1_path_globs", "l2_path_globs", "l3_filename_globs")):
         issues.append(("INFO", Diagnostic("validate.risk_globs_all_empty")))

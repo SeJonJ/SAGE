@@ -11,6 +11,16 @@ _HEADING = re.compile(r"(?m)^## Phase (00|01|02|03|04)\b.*$")
 _META = re.compile(r"(?m)^([A-Za-z][A-Za-z0-9 -]*):[ \t]*(.*?)\s*$")
 _RUN_ID = re.compile(r"^fc-[a-f0-9]{12}$")
 _FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+# CommonMark 의 줄 끝은 LF·CR·CRLF 뿐이다(`str.splitlines()` 는 U+2028 등도 나눈다).
+_LINE_BREAK = re.compile(r"\r\n|\r|\n")
+
+
+def _markdown_lines(content):
+    """줄 끝을 LF·CR·CRLF 로만 나눈 줄 목록. 맨 끝 줄바꿈 뒤의 빈 조각은 `splitlines()` 처럼 뺀다."""
+    lines = _LINE_BREAK.split(content or "")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
 
 
 @dataclass(frozen=True)
@@ -358,13 +368,16 @@ def evidence_marker_issues(content: str, *, fast_run_id: str, loop_run_id: str) 
     in_fence = False
     fence_char = ""
     fence_len = 0
-    for raw in (content or "").splitlines():
+    for raw in _markdown_lines(content):
         match = _FENCE.match(raw)
         if match:
             token = match.group(1)
             if not in_fence:
                 in_fence, fence_char, fence_len = True, token[0], len(token)
-            elif token[0] == fence_char and len(token) >= fence_len:
+            # CommonMark: only spaces or tabs may follow a closing fence, so
+            # an example ```python line inside a block keeps it open.
+            elif (token[0] == fence_char and len(token) >= fence_len
+                    and not raw[match.end():].strip(" \t")):
                 in_fence = False
             continue
         if in_fence or raw.startswith("\t") or re.match(r"^ {4,}", raw):

@@ -1590,6 +1590,7 @@ MESSAGES = {
     "cli.validate.positive_int_invalid": "pdca.review_loop.{field}={value} 는 정수 ≥1 이 필요합니다. 문자열/0/bool 은 불가합니다.",
     "cli.validate.positive_int_required": "pdca.review_loop.{field} 가 없습니다 → 켜진 루프에서 값이 정해지지 않았습니다. 정수 ≥1 이 필요합니다.",
     "cli.validate.pre_implementation_unknown_phase": "pdca.pre_implementation_required[{level}] 가 정의되지 않은 phase 를 참조합니다: {phases} (정의된 phase: {defined})",
+    "cli.validate.pre_implementation_not_monotonic": "pdca.pre_implementation_required[{higher}] 에 {lower} 의 필수 phase 가 빠져 있습니다: {phases} — 높은 등급이 더 적게 요구하면 {higher} 선언이 {lower} 선언에서 막히던 편집을 통과시킬 수 있습니다. {higher} 목록에 추가하세요",
     "cli.validate.project_root_env_unsupported": "hooks.project_root_env={value} 는 지원되지 않습니다 — 크로스런타임 표준값 SAGE_PROJECT_ROOT 만 사용할 수 있습니다.",
     "cli.validate.required_version_not_exact": "sage.required_version 은 exact SemVer 형식이어야 합니다(예: 1.2.3).",
     "cli.validate.retro_06_not_classified": "pdca.retro.report_gate_enforce={mode} 이지만 06 문서('{sample}' 형태)가 file_type_map 에 걸리지 않습니다 → post_tool_logger 가 남기지 않아 게이트가 06 작성을 보지 못합니다(무동작). file_type_map 에 06 경로를 분류하는 항목을 추가하거나 skip_untyped=false 로 하세요.",

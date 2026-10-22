@@ -1573,6 +1573,7 @@ MESSAGES = {
     "cli.validate.positive_int_invalid": "pdca.review_loop.{field}={value} must be an integer of at least 1. Strings, 0, and booleans are not allowed.",
     "cli.validate.positive_int_required": "pdca.review_loop.{field} is missing → the enabled loop has no value set. An integer of at least 1 is required.",
     "cli.validate.pre_implementation_unknown_phase": "pdca.pre_implementation_required[{level}] references undefined phases: {phases} (defined phases: {defined})",
+    "cli.validate.pre_implementation_not_monotonic": "pdca.pre_implementation_required[{higher}] is missing phases required at {lower}: {phases} — when a higher level requires less, declaring {higher} can let through edits that {lower} blocks. Add them to the {higher} list",
     "cli.validate.project_root_env_unsupported": "hooks.project_root_env={value} is not supported — only the cross-runtime standard value SAGE_PROJECT_ROOT may be used.",
     "cli.validate.required_version_not_exact": "sage.required_version must be an exact SemVer (e.g. 1.2.3).",
     "cli.validate.retro_06_not_classified": "pdca.retro.report_gate_enforce={mode} but the 06 document (shape '{sample}') doesn't match file_type_map → post_tool_logger never logs it, so the gate can't see the 06 write (no effect). Add an entry classifying the 06 path in file_type_map, or set skip_untyped=false.",
