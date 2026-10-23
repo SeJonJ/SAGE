@@ -46,7 +46,7 @@ sage doctor --profile sage/project-profile.yaml
 
 ```yaml
 sage:
-  required_version: "1.3.3"
+  required_version: "1.3.4"
 
 project:
   name: "weatherapp"

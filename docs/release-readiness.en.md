@@ -1,4 +1,4 @@
-<!-- sage-doc-source: release-readiness.md sha256:25f8aa69bb15fa63f4079f568079c6bb32494ebb14b1d74cbc99f0f091d8a35c -->
+<!-- sage-doc-source: release-readiness.md sha256:b131a6baee63a51f1f8c72e9b5c6205bace4026872178cd87aa68d8b1b312fd6 -->
 # Release readiness
 
 This document records **how readiness is decided**, not what it currently is. The current answer
@@ -103,7 +103,7 @@ recorded run on a Windows 11 desktop counts as the same evidence when it records
 the same commit — what cannot be substituted is the SKU, not the way it was run. Without a record of
 either kind, automatic removal on that platform is unverified.
 
-> **Current state (as of 1.3.3).** This job has **never run** because no runner is registered for the
+> **Current state (as of 1.3.4).** This job has **never run** because no runner is registered for the
 > repository — every PR shows it as `skipped`, which makes the whole CI look green. **That green means
 > "Windows was not run", not "passed on Windows".** The Windows evidence for 1.0.0 and 1.1.1 is a
 > record of running the same scripts directly on a Windows 11 desktop over SSH. 1.2.0 ran the Phase 05
@@ -124,7 +124,10 @@ either kind, automatic removal on that platform is unverified.
 > mixing an administrator SSH run with forced output encoding; under real-use conditions (normal rights, a fresh temp
 > folder, no forced encoding) main fails 592 — mostly portability problems where tests assume bash, symlink privilege
 > or UTF-8 output. The two product defects found there (install lock folder permissions, Windows context snapshot) are
-> fixed in 1.3.4; test portability is tracked in a separate issue (#28). **Windows is verified by a manual run over SSH** (the Windows PC is not always on,
+> fixed in 1.3.4; test portability is tracked in a separate issue (#28). 1.3.4 ran install, generate, upgrade and
+> uninstall plus context snapshot and restore side by side with 1.3.3 through the Task Scheduler — normal rights, no forced
+> encoding, with the administrator-created 1.3.3 lock folder still present — and no test in the five related files failed
+> only on 1.3.4. The uninstall backup residue seen there (also in 1.3.3) is tracked as #30. **Windows is verified by a manual run over SSH** (the Windows PC is not always on,
 > so no self-hosted runner is registered). Before a release that touches paths, file I/O, encoding, subprocesses, the hook
 > entry point or install/upgrade/uninstall, someone has to make that run.
 
