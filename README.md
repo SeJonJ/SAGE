@@ -130,9 +130,9 @@ sage upgrade --apply
 sage status
 ```
 
-`--check`는 계획만 보여 줍니다. `--apply`는 transaction이라 실패하면 되돌립니다. **1.0에서 올라오면
-설치 위치가 `sage_harness/` 한 곳으로 모입니다** — 옮기지 않고 새로 만들어 검증한 뒤 옛 것을 지우고,
-직접 넣은 파일과 직접 쓴 hook 앞에서는 멈춥니다([troubleshooting](docs/troubleshooting.md)).
+`--check`는 계획만 보여 줍니다. `--apply`는 transaction이라 실패하면 SAGE가 관리하는 경로만 되돌리고, 빌드 산출물
+같은 다른 파일은 건드리지 않습니다. **1.0에서 올라오면 설치 위치가 `sage_harness/` 한 곳으로 모입니다** — 옮기지 않고
+새로 만들어 검증한 뒤 옛 것을 지우고, 직접 넣은 파일과 직접 쓴 hook 앞에서는 멈춥니다([troubleshooting](docs/troubleshooting.md)).
 
 ## 안전하게 제거
 

@@ -272,12 +272,10 @@ class TestInstallTransaction(unittest.TestCase):
 
     def test_lock_root_symlink_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp_root, tempfile.TemporaryDirectory() as outside:
-            uid = os.geteuid() if hasattr(os, "geteuid") else None
-            lock_name = "sage-install-locks" if uid is None else f"sage-install-locks-{uid}"
-            Path(temp_root, lock_name).symlink_to(outside, target_is_directory=True)
             with mock.patch("sage.install_transaction.tempfile.gettempdir",
                             return_value=temp_root):
                 lock = tx.DestinationLock(Path(temp_root, "project"))
+            Path(lock.lock_root).symlink_to(outside, target_is_directory=True)
 
             with self.assertRaises(tx.InstallBusyError):
                 lock.acquire()
@@ -317,6 +315,94 @@ class TestInstallTransaction(unittest.TestCase):
                 journal.stage_write(Path(root, "docs", "agent", "review.md"))
 
             self.assertEqual(os.listdir(outside), [])
+
+
+class TestLockRootPermissions(unittest.TestCase):
+    """#28 — 관리자로 처음 만든 잠금 폴더 때문에 같은 사용자의 일반 권한 명령이 전부 막히던 결함.
+
+    Python 3.12.4 부터 Windows 의 `mkdir(..., 0o700)` 은 「만든 주체만」 ACL 을 건다. 그래서
+    Windows 에서는 mode 를 주지 않고, 이미 그렇게 만들어진 폴더를 피하도록 이름을 바꾼다. 잠금
+    자리를 못 여는 것은 「다른 명령이 실행 중」이 아니므로 다른 진단으로 올린다.
+    """
+
+    def _lock(self, temp_root):
+        with mock.patch("sage.install_transaction.tempfile.gettempdir", return_value=temp_root):
+            return tx.DestinationLock(Path(temp_root, "project"))
+
+    def _mkdir_calls(self, os_name):
+        calls = []
+        real_mkdir = os.mkdir
+
+        def spy(path, *args, **kwargs):
+            calls.append(args + tuple(kwargs.values()))
+            return real_mkdir(path, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as temp_root:
+            lock = self._lock(temp_root)
+            with mock.patch("sage.install_transaction.os.mkdir", side_effect=spy), \
+                    mock.patch("sage.install_transaction.os.name", os_name):
+                lock._prepare_lock_root()
+        return calls
+
+    def test_windows_creates_the_lock_root_without_a_mode(self):
+        self.assertEqual(self._mkdir_calls("nt"), [()],
+                         "Windows 에서 mode 를 주면 관리자 생성 폴더를 일반 권한이 못 연다")
+
+    @unittest.skipIf(os.name == "nt", "POSIX 권한 검사 전제")
+    def test_posix_keeps_the_private_mode(self):
+        self.assertEqual(self._mkdir_calls("posix"), [(0o700,)])
+
+    def test_windows_uses_a_new_lock_folder_name(self):
+        """1.3.3 까지의 폴더가 관리자 소유로 남아 있어도 손으로 지우지 않고 풀려야 한다."""
+        saved = getattr(os, "geteuid", None)
+        if saved is not None:
+            del os.geteuid
+        try:
+            with tempfile.TemporaryDirectory() as temp_root, \
+                    mock.patch("sage.install_transaction.os.name", "nt"):
+                lock = self._lock(temp_root)
+        finally:
+            if saved is not None:
+                os.geteuid = saved
+        self.assertEqual(os.path.basename(lock.lock_root), "sage-install-locks-v2")
+
+    def _assert_unavailable(self, raised, lock):
+        diagnostic = raised.exception.diagnostic
+        self.assertEqual(diagnostic.code, "install.lock_unavailable")
+        self.assertEqual(diagnostic.arguments["path"], lock.lock_root)
+        self.assertIn("PermissionError", diagnostic.arguments["error"])
+        self.assertEqual(lock._locks, [])
+
+    def test_a_lock_root_that_cannot_be_created_is_a_diagnostic(self):
+        with tempfile.TemporaryDirectory() as temp_root:
+            lock = self._lock(temp_root)
+            with mock.patch("sage.install_transaction.os.mkdir",
+                            side_effect=PermissionError(13, "Access is denied")):
+                with self.assertRaises(tx.InstallBusyError) as raised:
+                    lock.acquire()
+            self._assert_unavailable(raised, lock)
+
+    def test_a_lock_file_that_cannot_be_opened_is_not_reported_as_busy(self):
+        with tempfile.TemporaryDirectory() as temp_root:
+            lock = self._lock(temp_root)
+            with mock.patch("sage.install_transaction.os.open",
+                            side_effect=PermissionError(13, "Access is denied")):
+                with self.assertRaises(tx.InstallBusyError) as raised:
+                    lock.acquire()
+            self._assert_unavailable(raised, lock)
+
+    def test_a_held_lock_is_still_reported_as_busy(self):
+        """과차단 방향의 반대 — 진짜 실행 중은 그대로 실행 중이다."""
+        with tempfile.TemporaryDirectory() as temp_root:
+            first, second = self._lock(temp_root), self._lock(temp_root)
+            first.acquire()
+            # 임시 폴더를 지우기 전에 놓는다. Windows 는 열린 잠금 파일을 지우지 못한다.
+            try:
+                with self.assertRaises(tx.InstallBusyError) as raised:
+                    second.acquire()
+            finally:
+                first.release()
+            self.assertEqual(raised.exception.diagnostic.code, "install.destination_busy")
 
 
 if __name__ == "__main__":

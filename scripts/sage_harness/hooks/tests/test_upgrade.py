@@ -951,7 +951,8 @@ class TestFailureMessagesFollowLanguage(unittest.TestCase):
     def test_restore_tree_reports_failures_in_english(self):
         from unittest import mock
         with tempfile.TemporaryDirectory() as root:
-            path = os.path.join(root, "x.txt")
+            # 복원은 스냅샷 범위 안만 본다 — 범위 밖 이름이면 지우려 하지도 않는다.
+            path = os.path.join(root, "AGENT_GUIDE.md")
             Path(path).write_text("x", encoding="utf-8")
             with mock.patch("sage.commands.upgrade.os.unlink",
                             side_effect=OSError("permission denied")):
@@ -966,6 +967,436 @@ class TestFailureMessagesFollowLanguage(unittest.TestCase):
                 up._write_declaration(root, {"kind": "bogus", "path": "irrelevant"}, language="en")
         self.assertIn("unknown write kind: bogus", str(ctx.exception))
         self.assertNotIn("알 수 없는", str(ctx.exception))
+
+
+# --- #29 스냅샷 범위 --------------------------------------------------------
+
+def _age(root):
+    """설치본을 구버전 소비자로 만든다 — 위임 단계가 실제로 바이트를 쓰게 하려고."""
+    Path(root, "sage", "project-profile.yaml").write_text(PROFILE, encoding="utf-8")
+    policy = Path(root, "docs", "agent", "language-policy.md")
+    if policy.is_file():
+        policy.unlink()
+    manifest_path = Path(root, "docs", "sage_harness", ".manifest.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["sage_version"] = "0.9.84"
+    renders = manifest.get("core_renders")
+    if isinstance(renders, dict):
+        for key in [k for k in renders if "language-policy" in k]:
+            renders.pop(key)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    return root
+
+
+def _sage_cli(*args, cwd=None):
+    done = subprocess.run([sys.executable, "-m", "sage", *args], cwd=cwd or str(REPO),
+                          env=dict(os.environ, PYTHONPATH=str(REPO)),
+                          capture_output=True, text=True)
+    assert done.returncode == 0, f"{args}\n{done.stdout}\n{done.stderr}"
+    return done
+
+
+def _in_scope(rel):
+    """`rel` 이 apply 의 스냅샷 범위(또는 롤백하지 않는 보고서)에 드는가.
+
+    범위 함수(`_scope_entries`)는 **있는** 경로를 나열한다. 시험은 apply 도중 생겼다 사라지는
+    경로도 판정해야 해서 같은 상수로 이름을 판정한다.
+    """
+    if rel.startswith(up.REPORT_REL + os.sep):
+        return True
+    if rel in up._SCOPE_FILES:
+        return True
+    if any(rel == tree or rel.startswith(tree + os.sep) for tree in up._SCOPE_TREES):
+        return True
+    if os.path.dirname(rel) in up._SCOPE_USER_OWNED_PARENTS and up._is_user_owned(rel):
+        return True
+    for parent in up._SCOPE_TEMP_PARENTS:
+        prefix = parent + os.sep if parent else ""
+        if rel.startswith(prefix) and up._is_sage_temp(rel[len(prefix):].split(os.sep)[0]):
+            return True
+    # 범위 경로의 조상 폴더를 만드는 것은 범위 안 쓰기의 일부다.
+    return any(target.startswith(rel + os.sep) for target in up._SCOPE_TREES + up._SCOPE_FILES)
+
+
+class _WriteRecorder:
+    """apply 도중 프로젝트 안에 일어난 쓰기를 감사 hook 으로 모은다.
+
+    감사 hook 은 한 번 걸면 뗄 수 없어서, 모듈에 하나만 걸고 `active` 로 켜고 끈다. `dir_fd`
+    상대 이름과 상대 경로는 어디에 썼는지 이 자리에서 확정할 수 없다 — 조용히 버리지 않고
+    `unresolved` 에 남겨 시험이 실패하게 한다. fd 기반 쓰기(fchmod 등)와 자식 프로세스 안의
+    쓰기는 보이지 않으므로 전후 트리 비교가 따로 잡는다.
+    """
+
+    active = None
+    _installed = False
+    _WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
+
+    def __init__(self, root):
+        self.root = os.path.realpath(root)
+        self.paths = set()
+        self.unresolved = []
+
+    def __enter__(self):
+        if not _WriteRecorder._installed:
+            sys.addaudithook(_WriteRecorder._hook)
+            _WriteRecorder._installed = True
+        _WriteRecorder.active = self
+        return self
+
+    def __exit__(self, *exc):
+        _WriteRecorder.active = None
+
+    def stop(self):
+        _WriteRecorder.active = None
+
+    def _note(self, event, path, dir_fd=None):
+        if isinstance(path, int):
+            return
+        path = os.fsdecode(path)
+        # 버리는 출력(하위 프로세스의 DEVNULL)은 프로젝트 쓰기가 아니다. Windows 에서는 `nul` 이라
+        # 상대 경로처럼 보인다.
+        if path == os.devnull:
+            return
+        # 감사 이벤트는 `dir_fd` 가 없을 때 -1 을 싣는다. 있으면 그 fd 의 경로로 이름을 복원한다
+        # (은퇴 skill 정리처럼 부모 handle 기준으로 지우는 쓰기).
+        if isinstance(dir_fd, int) and dir_fd >= 0:
+            parent = _fd_path(dir_fd)
+            if parent is None:
+                self.unresolved.append((event, path))
+                return
+            path = os.path.join(parent, path)
+        if not os.path.isabs(path):
+            self.unresolved.append((event, path))
+            return
+        real = os.path.join(os.path.realpath(os.path.dirname(path)), os.path.basename(path))
+        rel = os.path.relpath(real, self.root)
+        if not rel.startswith(os.pardir):
+            self.paths.add(rel)
+
+    @staticmethod
+    def _hook(event, args):
+        self = _WriteRecorder.active
+        if self is None:
+            return
+        if event == "open" and args:
+            mode = args[1] if len(args) > 1 else None
+            flags = args[2] if len(args) > 2 else 0
+            writes = ((isinstance(mode, str) and any(c in mode for c in "wax+"))
+                      or (isinstance(flags, int) and flags & _WriteRecorder._WRITE_FLAGS))
+            if writes:
+                self._note(event, args[0])
+        elif event in ("os.rename", "os.replace", "os.link", "os.symlink"):
+            dir_fds = [a for a in args[2:] if isinstance(a, int) and not isinstance(a, bool)
+                       and a >= 0]
+            for path in args[:2]:
+                self._note(event, path, dir_fds[0] if dir_fds else None)
+        elif event in ("shutil.move", "shutil.copyfile", "shutil.copytree"):
+            self._note(event, args[1])
+        elif event in ("os.remove", "os.rmdir", "os.mkdir", "os.chmod", "os.truncate",
+                       "os.utime", "shutil.rmtree"):
+            dir_fd = args[-1] if event != "os.truncate" and len(args) > 1 else None
+            if event in ("os.chmod", "os.utime") and isinstance(args[0], int):
+                return
+            self._note(event, args[0], dir_fd if isinstance(dir_fd, int) else None)
+
+
+def _fd_path(fd):
+    """열린 디렉터리 fd 의 경로. 알 수 없으면 None(그 쓰기는 미확정으로 남는다)."""
+    try:
+        import fcntl
+        if hasattr(fcntl, "F_GETPATH"):                       # macOS
+            raw = fcntl.fcntl(fd, fcntl.F_GETPATH, b"\0" * 1024)
+            return os.fsdecode(raw.split(b"\0", 1)[0])
+    except (ImportError, OSError):
+        return None
+    try:
+        return os.readlink(f"/proc/self/fd/{fd}")              # Linux
+    except OSError:
+        return None
+
+
+def _changed(before, after):
+    """전후 트리에서 bytes·mode 가 달라진 경로."""
+    return {rel for rel in set(before) | set(after)
+            if (before.get(rel) or (None, None))[:2] != (after.get(rel) or (None, None))[:2]}
+
+
+class TestSnapshotScope(unittest.TestCase):
+    """#29 — 스냅샷은 **위임 단계가 쓸 수 있는 SAGE 관리 경로**만 담는다.
+
+    프로젝트 전체를 담으면 빌드 산출물·프로젝트 안 worktree·host 캐시까지 메모리에 올라가 큰
+    저장소에서 apply 가 끝나지 않고, 실패 롤백이 SAGE 와 무관한 파일을 지우거나 되돌린다.
+    범위를 줄이면 새 위험이 하나 생긴다 — **목록에 없는 경로를 위임 단계가 쓰면 실패해도 되돌아가지
+    않는다.** 그래서 실제 apply 의 쓰기를 관측해 범위 밖이 없는지 본다. 보장은 이 fixture 들에서
+    관측한 경로까지다.
+    """
+
+    def test_unrelated_large_folders_stay_out_of_the_snapshot(self):
+        root = _install(tempfile.mkdtemp())
+        noise = {
+            os.path.join("build", "blob.bin"): b"\0" * 4096,
+            os.path.join("wt-copy", ".git"): b"gitdir: /elsewhere/.git/worktrees/x\n",
+            os.path.join("wt-copy", "src.py"): b"print(1)\n",
+            os.path.join(".claude", "worktrees", "feature", "README.md"): b"worktree\n",
+            os.path.join(".codex", ".tmp", "cache.bin"): b"cache",
+            os.path.join(".codex", "plugins", "x", "plugin.json"): b"{}",
+            os.path.join(".sage", "gma-evidence", "run.log"): b"evidence",
+            os.path.join("src", "app.py"): b"print('project')\n",
+        }
+        for rel, body in noise.items():
+            Path(root, rel).parent.mkdir(parents=True, exist_ok=True)
+            Path(root, rel).write_bytes(body)
+        # host 설정은 generate 가 만든다 — 갓 설치한 트리에는 아직 없다.
+        Path(root, ".claude", "settings.json").write_text("{}\n", encoding="utf-8")
+        snapshot = up._snapshot_tree(root)
+        for rel in noise:
+            self.assertNotIn(rel, snapshot, f"{rel} 이 스냅샷에 들어갔다")
+        for rel in (os.path.join("sage", "project-profile.yaml"),
+                    os.path.join(".claude", "settings.json"), "AGENT_GUIDE.md", ".gitignore",
+                    os.path.join("docs", "sage_harness", ".manifest.json")):
+            self.assertIn(rel, snapshot, f"{rel} 이 범위에서 빠졌다")
+
+    def _observe(self, root):
+        """apply 의 롤백 구간에서 바뀐·쓴 경로. `_finalize_layout` 부터는 롤백하지 않으므로 뺀다."""
+        before = _tree(root)
+        seen = {}
+        real_finalize = up._finalize_layout
+
+        def finalize(root_, plan, language):
+            recorder.stop()
+            seen["tree"] = _tree(root_)
+            return real_finalize(root_, plan, language)
+
+        up._finalize_layout = finalize
+        try:
+            with _WriteRecorder(root) as recorder:
+                result = _run(root, apply=True, force=True)
+        finally:
+            up._finalize_layout = real_finalize
+        self.assertEqual(result, up.EXIT_OK)
+        self.assertIn("tree", seen, "롤백 구간 끝(_finalize_layout)에 닿지 않았다")
+        return _changed(before, seen["tree"]), recorder
+
+    def _assert_observed_in_scope(self, root, label):
+        changed, recorder = self._observe(root)
+        with self.subTest(fixture=label):
+            self.assertTrue(changed, "위임 단계가 아무것도 쓰지 않았다 — fixture 가 apply 를 타지 않는다")
+            self.assertEqual(recorder.unresolved, [], "어디에 썼는지 확정할 수 없는 쓰기가 있다")
+            outside = sorted(rel for rel in changed | recorder.paths if not _in_scope(rel))
+            self.assertEqual(outside, [], "스냅샷 범위 밖 쓰기 — 실패하면 되돌아가지 않는다")
+
+    def test_claude_host(self):
+        self._assert_observed_in_scope(_age(_install(tempfile.mkdtemp())), "claude")
+
+    def test_codex_project_local_host(self):
+        root = tempfile.mkdtemp()
+        _sage_cli("install", "--host", "codex", "--skill-scope", "project-local",
+                  "--prefix", "smoke", "--dest", root)
+        self._assert_observed_in_scope(_age(root), "codex project-local")
+
+    def test_both_hosts_installed(self):
+        root = _install(tempfile.mkdtemp())
+        _sage_cli("install", "--host", "codex", "--skill-scope", "project-local",
+                  "--prefix", "smoke", "--dest", root, "--force")
+        manifest = json.loads(Path(root, "docs", "sage_harness", ".manifest.json")
+                              .read_text(encoding="utf-8"))
+        self.assertEqual(sorted(manifest.get("installed_hosts") or []), ["claude", "codex"],
+                         "전제: 두 host 가 설치된 상태")
+        self._assert_observed_in_scope(_age(root), "dual-host")
+
+    def test_cycle_schema_declaration(self):
+        root = _age(_install(tempfile.mkdtemp()))
+        Path(root, ".sage").mkdir(exist_ok=True)
+        Path(root, ".sage", "cycle.json").write_text(
+            json.dumps({"version": 1, "cycle_stem": "demo"}), encoding="utf-8")
+        self._assert_observed_in_scope(root, "cycle schema v1")
+
+    def test_retired_skill_left_behind(self):
+        from sage import managed_assets
+        root = _age(_install(tempfile.mkdtemp()))
+        retired = Path(root, ".claude", "skills", managed_assets.LEGACY_CORE_SKILLS[-1], "SKILL.md")
+        retired.parent.mkdir(parents=True, exist_ok=True)
+        retired.write_text(f"<!-- {managed_assets.LEGACY_SKILL_SIGNATURE} -->\nold\n",
+                           encoding="utf-8")
+        self._assert_observed_in_scope(root, "retired skill")
+
+    def test_registered_project_hook_with_missing_adapters(self):
+        """등록 hook 은 누락된 양 host adapter·shim 을 다시 만드는 별도 분기를 탄다."""
+        from sage import asset_paths as ap
+        root = _age(_install(tempfile.mkdtemp()))
+        Path(root, "docs", "sage_harness", "hooks").mkdir(parents=True, exist_ok=True)
+        Path(root, "docs", "sage_harness", "hooks", "my-guard.md").write_text(
+            "---\nid: my-guard\nkind: hook\nruntime_bindings:\n"
+            '  claude: { event: PreToolUse, matcher: "Write", timeout: 10 }\n'
+            '  codex: { event: PreToolUse, matcher: "apply_patch", timeout: 10 }\n'
+            "---\n\n프로젝트 전용 게이트.\n", encoding="utf-8")
+        Path(root, ap._HOOKS_REL, "my_guard_core.py").write_text(
+            'CONTRACT_VERSION = "1"\n\n\ndef main():\n    return 0\n', encoding="utf-8")
+        _sage_cli("generate", "--kind", "hook", "--id", "my-guard", "--write",
+                  "--target", "both", "--root", root, "--dest", root)
+        removed = []
+        for path in (Path(root, ".claude", "hooks", "my-guard.sh"),
+                     Path(root, ap._HOOKS_REL, "adapters", "claude", "my-guard.sh"),
+                     Path(root, ap._HOOKS_REL, "adapters", "codex", "my-guard.sh")):
+            if path.exists():
+                path.unlink()
+                removed.append(path)
+        self.assertTrue(removed, "전제: 다시 만들어질 adapter·shim 이 있어야 한다")
+        self._assert_observed_in_scope(root, "registered project hook")
+
+    def test_legacy_layout_migration(self):
+        """구 레이아웃(`scripts/sage_harness/`·루트 `schema/`)에서 이행하는 apply."""
+        from sage import asset_paths as ap
+        root = _install(tempfile.mkdtemp())
+        os.makedirs(os.path.join(root, "scripts", "sage_harness"))
+        os.rename(os.path.join(root, "sage_harness", "hooks"),
+                  os.path.join(root, "scripts", "sage_harness", "hooks"))
+        os.rename(os.path.join(root, "sage_harness", "schema"), os.path.join(root, "schema"))
+        os.rename(os.path.join(root, "sage_harness", "verify-changes.sh"),
+                  os.path.join(root, "scripts", "verify-changes.sh"))
+        os.rmdir(os.path.join(root, "sage_harness"))
+        self.assertEqual(ap.detect_layout(root), ap.LAYOUT_CONSUMER_LEGACY, "전제: 구 레이아웃")
+        self._assert_observed_in_scope(_age(root), "legacy layout migration")
+        self.assertEqual(ap.detect_layout(root), ap.LAYOUT_CONSUMER_CURRENT, "이행이 끝나지 않았다")
+
+
+class TestRollbackStaysInScope(unittest.TestCase):
+    """실패하면 범위 안은 시작 전 바이트로 돌아오고, 범위 밖의 동시 작업은 그대로 남는다."""
+
+    STEPS = ("core-assets", "hooks", "overlays", "validate")
+
+    def _fail_after(self, root, step_name, during=None):
+        real = up._managed_steps
+        fired = []
+
+        def failing(root_, plan, language):
+            steps = list(real(root_, plan, language))
+            self.assertEqual([name for name, _ in steps], list(self.STEPS))
+            out = []
+            for name, call in steps:
+                if name != step_name:
+                    out.append((name, call))
+                    continue
+
+                def wrapped(call=call):
+                    code = call()
+                    if during:
+                        during(root_)
+                    fired.append(code)
+                    raise OSError(f"injected failure after {step_name}")
+                out.append((name, wrapped))
+            return out
+
+        up._managed_steps = failing
+        try:
+            result = _run(root, apply=True, force=True)
+        finally:
+            up._managed_steps = real
+        self.assertEqual(fired, [0], f"{step_name} 뒤 실패 주입이 발동하지 않았다")
+        return result
+
+    @staticmethod
+    def _concurrent_work(root):
+        """apply 도중 IDE·다른 에이전트가 범위 밖에서 한 일."""
+        Path(root, "src", "app.py").write_text("print('edited during apply')\n", encoding="utf-8")
+        Path(root, "notes").mkdir(exist_ok=True)
+        Path(root, "notes", "new.md").write_text("new during apply\n", encoding="utf-8")
+
+    def test_each_step_failure_restores_scope_and_keeps_outside_work(self):
+        for step in self.STEPS:
+            root = _age(_install(tempfile.mkdtemp()))
+            Path(root, "src").mkdir(exist_ok=True)
+            Path(root, "src", "app.py").write_text("print('project')\n", encoding="utf-8")
+            before = _tree(root)
+            with self.subTest(step=step):
+                self.assertEqual(self._fail_after(root, step, self._concurrent_work),
+                                 up.EXIT_BLOCKED)
+                after = _tree(root)
+                drift = sorted(rel for rel in _changed(before, after)
+                               if _in_scope(rel) and not rel.startswith(up.REPORT_REL + os.sep))
+                self.assertEqual(drift, [], "범위 안이 시작 전 바이트로 돌아오지 않았다")
+                self.assertEqual(Path(root, "src", "app.py").read_text(encoding="utf-8"),
+                                 "print('edited during apply')\n", "범위 밖 동시 수정을 되돌렸다")
+                self.assertTrue(Path(root, "notes", "new.md").is_file(),
+                                "범위 밖에 새로 만든 파일을 지웠다")
+
+    def test_backup_cleanup_failure_then_a_later_failure_still_restores(self):
+        """install 이 커밋 뒤 백업 정리에 실패하면 백업 이름이 남는다. 그 뒤 실패해도 범위 안은
+        시작 전으로 돌아오고, 남은 백업 이름도 지워진다(임시 이름은 범위에 든다)."""
+        from unittest import mock
+        from sage import install_transaction as tx
+        root = _age(_install(tempfile.mkdtemp()))
+        before = _tree(root)
+        real_remove = tx.InstallTransaction._remove
+        residue = []
+
+        def stubborn(self_, path):
+            if os.path.basename(path).startswith(".sage-install-backup-"):
+                residue.append(path)
+                raise OSError("injected cleanup failure")
+            return real_remove(self_, path)
+
+        def left_behind(root_):
+            self.assertTrue(any(os.path.lexists(path) for path in residue),
+                            "전제: 정리 실패로 백업 이름이 남아 있어야 한다")
+
+        with mock.patch.object(tx.InstallTransaction, "_remove", stubborn):
+            self.assertEqual(self._fail_after(root, "core-assets", left_behind), up.EXIT_BLOCKED)
+        after = _tree(root)
+        drift = sorted(rel for rel in _changed(before, after)
+                       if not rel.startswith(up.REPORT_REL + os.sep))
+        self.assertEqual(drift, [], "정리 실패 뒤 롤백이 시작 전으로 돌아오지 않았다")
+
+
+class TestScopeWalkBoundary(unittest.TestCase):
+    """고정 경로마다 따로 걸으면 **시작점이 링크일 때** 밖을 읽는다. 루트에서 한 번 걷던 때는
+    디렉터리 링크 아래로 내려가지 않았으므로 그 성질을 지킨다."""
+
+    def test_links_on_the_way_to_a_scope_path_are_not_followed(self):
+        root = tempfile.mkdtemp()
+        outside = tempfile.mkdtemp()
+        secret = b"outside secret\n"
+        Path(outside, "hooks").mkdir()
+        for rel in ("secret.md", "settings.json", "hooks.json", os.path.join("hooks", "x.sh")):
+            Path(outside, rel).write_bytes(secret)
+        Path(root, "sage").mkdir()
+        Path(root, "sage", "project-profile.yaml").write_text("x: 1\n", encoding="utf-8")
+        Path(root, ".claude").mkdir()
+        try:
+            # 시작점 링크 · 조상 링크(트리) · 정확한 파일의 조상 링크
+            os.symlink(outside, os.path.join(root, ".claude", "skills"), target_is_directory=True)
+            os.symlink(outside, os.path.join(root, ".codex"), target_is_directory=True)
+            os.symlink(os.path.join(outside, "settings.json"),
+                       os.path.join(root, ".claude", "settings.json"))
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"심링크를 만들 수 없는 환경: {exc}")
+        snapshot = up._snapshot_tree(root)
+        self.assertIn(os.path.join("sage", "project-profile.yaml"), snapshot)
+        leaked = sorted(rel for rel, (_mode, body) in snapshot.items() if body == secret)
+        self.assertEqual(leaked, [], "링크 너머 파일을 읽었다")
+        for rel in snapshot:
+            self.assertFalse(rel.startswith((os.path.join(".claude", "skills"), ".codex")), rel)
+
+
+class TestLockFailureIsReported(unittest.TestCase):
+    """잠금을 잡는 순간의 실패는 트레이스백이 아니라 `lock_failed` 안내로 끝난다(#28)."""
+
+    def test_an_unavailable_lock_ends_with_lock_failed(self):
+        from unittest import mock
+        from sage import install_transaction as tx
+        from sage.diagnostics import Diagnostic
+        root = _install(tempfile.mkdtemp())
+        plan, _blockers = up._plan(root, "en")
+        before = _tree(root)
+        for raised in (tx.InstallBusyError(Diagnostic("install.lock_unavailable", path="locks",
+                                                       error="PermissionError: denied")),
+                       tx.InstallBusyError(Diagnostic("install.destination_busy"))):
+            with self.subTest(code=raised.diagnostic.code), \
+                    mock.patch.object(tx.DestinationLock, "acquire", side_effect=raised):
+                applied, error, complete = up._apply(root, plan, "en")
+                self.assertEqual((applied, complete), (0, True))
+                self.assertIn("upgrade lock failed", error)
+        self.assertEqual(_tree(root), before, "잠금을 못 잡았는데 트리가 바뀌었다")
 
 
 class TestRunAllRegistration(unittest.TestCase):

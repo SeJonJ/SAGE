@@ -15,9 +15,21 @@ import yaml
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, REPO)
 
+from sage import context_packet  # noqa: E402
 from sage.cli import main as cli_main  # noqa: E402
 from sage.context_packet import ContextError, create_snapshot, restore_snapshot  # noqa: E402
 from sage.profile_validate import severity_of, validate_profile  # noqa: E402
+
+
+def _skip_on_windows_open(test):
+    """부모 fd(`dir_fd`) 호출에 주입하는 시험. Windows 열기 분기에는 그 호출이 없다."""
+    def wrapper(self):
+        if context_packet._WINDOWS_OPEN:
+            self.skipTest("dir_fd 주입 시험 — Windows 열기 분기는 TestContextPacketWindowsOpen 이 본다")
+        return test(self)
+    wrapper.__name__ = test.__name__
+    wrapper.__doc__ = test.__doc__
+    return wrapper
 
 
 class TestContextPacket(unittest.TestCase):
@@ -329,6 +341,7 @@ class TestContextPacket(unittest.TestCase):
         with self.assertRaisesRegex(ContextError, "JSON-compatible"):
             self._snapshot_at("2026-07-17T06:00:05.000000Z")
 
+    @_skip_on_windows_open
     def test_snapshot_rejects_source_replaced_during_secure_open(self):
         phase = self.root / "plan_docs/02-design/sandbox-cycle.md"
         replacement = self._write(
@@ -353,7 +366,9 @@ class TestContextPacket(unittest.TestCase):
         with mock.patch("sage.context_packet.os.open", side_effect=swapping_open):
             with self.assertRaisesRegex(ContextError, "changed during secure open"):
                 self._snapshot_at("2026-07-17T06:00:06.000000Z")
+        self.assertTrue(swapped, "교체 주입이 발동하지 않았다")
 
+    @_skip_on_windows_open
     def test_snapshot_rejects_ancestor_replaced_with_symlink_during_secure_open(self):
         phase_dir = self.root / "plan_docs/02-design"
         original_dir = self.root / "plan_docs/02-design-original"
@@ -376,6 +391,7 @@ class TestContextPacket(unittest.TestCase):
             with mock.patch("sage.context_packet.os.open", side_effect=swapping_open):
                 with self.assertRaisesRegex(ContextError, "secure read failed"):
                     self._snapshot_at("2026-07-17T06:00:07.000000Z")
+            self.assertTrue(swapped, "교체 주입이 발동하지 않았다")
         finally:
             if phase_dir.is_symlink():
                 phase_dir.unlink()
@@ -385,6 +401,131 @@ class TestContextPacket(unittest.TestCase):
                 for child in outside.iterdir():
                     child.unlink()
                 outside.rmdir()
+
+
+class TestContextPacketWindowsOpen(TestContextPacket):
+    """#28 — 같은 계약을 **Windows 열기 분기**로 다시 본다.
+
+    Windows 는 폴더를 `os.open` 으로 열 수 없고 `dir_fd` 도 없어 부모 fd 결속 읽기가 항상
+    실패했다. Windows 분기는 경로로 열고 열기 전 `lstat` 과 열린 `fstat` 의 identity 를 대조한다.
+    쓰는 API 가 POSIX 에도 있으므로 분기를 강제해 위의 모든 시험을 이 분기로 한 번 더 돌린다.
+    `dir_fd` 에 주입하는 두 시험은 건너뛰고, 같은 뜻의 시험을 아래에 둔다.
+    """
+
+    def setUp(self):
+        forced = mock.patch("sage.context_packet._WINDOWS_OPEN", True)
+        forced.start()
+        self.addCleanup(forced.stop)
+        super().setUp()
+
+    def _phase(self):
+        return self.root / "plan_docs/02-design/sandbox-cycle.md"
+
+    def test_windows_open_rejects_a_leaf_replaced_between_check_and_open(self):
+        phase = self._phase()
+        replacement = self._write(
+            "replacement.md", "Cycle-Stem: `sandbox-cycle`\n\n# Replaced after lstat\n")
+        real_open = os.open
+        swapped = []
+
+        def swapping_open(path, flags, *args, **kwargs):
+            if not swapped and os.path.realpath(path) == os.path.realpath(phase):
+                os.replace(replacement, phase)
+                swapped.append(True)
+            return real_open(path, flags, *args, **kwargs)
+
+        with mock.patch("sage.context_packet.os.open", side_effect=swapping_open):
+            with self.assertRaisesRegex(ContextError, "changed during secure open"):
+                self._snapshot_at("2026-07-17T06:00:08.000000Z")
+        self.assertEqual(swapped, [True], "교체 주입이 발동하지 않았다")
+
+    def _on_phase_read(self, action):
+        """phase 문서를 읽는 첫 `os.read` 에서 `action` 을 한 번 실행한다."""
+        phase_id = os.stat(self._phase()).st_ino
+        real_read = os.read
+        fired = []
+
+        def reading(fd, size):
+            if not fired and os.fstat(fd).st_ino == phase_id:
+                action()
+                fired.append(True)
+            return real_read(fd, size)
+
+        return mock.patch("sage.context_packet.os.read", side_effect=reading), fired
+
+    def test_windows_open_rejects_an_ancestor_left_as_a_link_after_reading(self):
+        """열린 파일은 진짜지만, 읽는 동안 조상이 링크로 바뀐 채 남았다면 그 결과를 쓰지 않는다."""
+        if os.name == "nt":
+            self.skipTest("실제 Windows 는 열린 파일의 조상 이름 변경을 막아 이 교체가 성립하지 않는다")
+        phase_dir = self._phase().parent
+        moved = self.root / "plan_docs/02-design-original"
+        outside = Path(tempfile.mkdtemp())
+        (outside / "sandbox-cycle.md").write_text(
+            "Cycle-Stem: `sandbox-cycle`\n\n# Outside\n", encoding="utf-8")
+
+        def swap():
+            phase_dir.rename(moved)
+            phase_dir.symlink_to(outside, target_is_directory=True)
+
+        patched, fired = self._on_phase_read(swap)
+        try:
+            with patched:
+                with self.assertRaisesRegex(ContextError, "symlink path"):
+                    self._snapshot_at("2026-07-17T06:00:09.000000Z")
+            self.assertEqual(fired, [True], "교체 주입이 발동하지 않았다")
+        finally:
+            if phase_dir.is_symlink():
+                phase_dir.unlink()
+            if moved.exists():
+                moved.rename(phase_dir)
+
+    def test_windows_open_detects_a_change_while_reading(self):
+        def append():
+            with open(self._phase(), "a", encoding="utf-8") as handle:
+                handle.write("appended during read\n")
+
+        patched, fired = self._on_phase_read(append)
+        with patched:
+            with self.assertRaisesRegex(ContextError, "changed while being read"):
+                self._snapshot_at("2026-07-17T06:00:10.000000Z")
+        self.assertEqual(fired, [True], "변경 주입이 발동하지 않았다")
+
+    def test_windows_failure_carries_a_report_line_without_absolute_paths(self):
+        """이슈에 그대로 붙일 수 있게 — 사용자 이름·프로젝트 이름이 든 절대 경로는 넣지 않는다."""
+        phase = self._phase()
+        real_open = os.open
+
+        def denied(path, flags, *args, **kwargs):
+            if os.path.realpath(path) == os.path.realpath(phase):
+                raise PermissionError(13, "Access is denied")
+            return real_open(path, flags, *args, **kwargs)
+
+        with mock.patch("sage.context_packet.os.open", side_effect=denied):
+            with self.assertRaises(ContextError) as raised:
+                self._snapshot_at("2026-07-17T06:00:11.000000Z")
+        message = str(raised.exception)
+        self.assertIn("[report:", message)
+        report = message[message.index("[report:"):]
+        for needle in ("stage=open", "error=PermissionError", "errno=13",
+                       "path=plan_docs/02-design/sandbox-cycle.md", "python="):
+            self.assertIn(needle, report)
+        self.assertNotIn(str(self.root), report)
+        self.assertNotIn(os.path.realpath(self.root), report)
+        self.assertNotIn(str(Path.home()), report)
+
+    def test_windows_creates_context_folders_without_a_private_mode(self):
+        """0o700 은 Windows 에서 「만든 주체만」 ACL 이 된다 — 관리자로 처음 만들면 일반 권한이 못 쓴다."""
+        modes = []
+        real_mkdir = Path.mkdir
+
+        def spy(path_self, *args, **kwargs):
+            modes.append(kwargs.get("mode", args[0] if args else None))
+            return real_mkdir(path_self, *args, **kwargs)
+
+        with mock.patch.object(Path, "mkdir", spy):
+            self._snapshot_at("2026-07-17T06:00:12.000000Z")
+        self.assertTrue(modes, "전제: context 폴더를 새로 만들었어야 한다")
+        self.assertNotIn(0o700, modes)
 
 
 if __name__ == "__main__":

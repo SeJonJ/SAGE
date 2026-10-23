@@ -278,6 +278,7 @@ FRAGMENTS = {
     "hook.install.lock_root_foreign_owner": "install lock root 의 소유자가 현재 사용자와 다릅니다: {path}",
     "hook.install.lock_root_permissive": "install lock root 권한이 0700 보다 넓습니다: {path}",
     "hook.install.destination_busy": "같은 destination 에서 다른 sage install 이 실행 중입니다.",
+    "hook.install.lock_unavailable": "install lock 폴더를 준비하거나 열 수 없습니다: {path} ({error}). 다른 명령이 실행 중인 것이 아니라 권한·경로 문제입니다.",
     "hook.install.outputs_changed_before_commit": "commit 직전에 install 산출물이 바뀌었습니다",
     "hook.runtime.not_mapping": "runtime 은 매핑이어야 합니다 (받음: {received})",
     "hook.runtime.unknown_keys": "runtime 에 알 수 없는 키가 있습니다: {keys} (허용: {allowed})",

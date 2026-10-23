@@ -1,4 +1,4 @@
-<!-- sage-doc-source: release-readiness.md sha256:f091a60bc27baff50179776da97ff18c5041f5cafa71801bea75c6278b263c9a -->
+<!-- sage-doc-source: release-readiness.md sha256:25f8aa69bb15fa63f4079f568079c6bb32494ebb14b1d74cbc99f0f091d8a35c -->
 # Release readiness
 
 This document records **how readiness is decided**, not what it currently is. The current answer
@@ -120,9 +120,11 @@ either kind, automatic removal on that platform is unverified.
 > scope) shipped **without a Windows run**; that run was made in 1.3.3. 1.3.3 fed claude and codex input
 > straight into the installed `sage-hook` and confirmed the confirmed-outside exemption on another drive (the 1.3.2 part)
 > and the path warning for a short-name root, and ran the new tests on 3.10, 3.11 and 3.12. At the same time the full set
-> of regression test files (110) was run on Windows for the first time: even on main, 933 of 3,699 tests fail — mostly
-> portability problems where tests assume bash, symlink privilege or UTF-8 output; the failures whose cause is not yet
-> known are tracked in a separate issue. **Windows is verified by a manual run over SSH** (the Windows PC is not always on,
+> of regression test files (110) was run on Windows for the first time. The first count, 933 of 3,699, was inflated by
+> mixing an administrator SSH run with forced output encoding; under real-use conditions (normal rights, a fresh temp
+> folder, no forced encoding) main fails 592 — mostly portability problems where tests assume bash, symlink privilege
+> or UTF-8 output. The two product defects found there (install lock folder permissions, Windows context snapshot) are
+> fixed in 1.3.4; test portability is tracked in a separate issue (#28). **Windows is verified by a manual run over SSH** (the Windows PC is not always on,
 > so no self-hosted runner is registered). Before a release that touches paths, file I/O, encoding, subprocesses, the hook
 > entry point or install/upgrade/uninstall, someone has to make that run.
 

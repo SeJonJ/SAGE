@@ -1559,6 +1559,21 @@ class DestinationLock(Base):
             uninstall_executor._acquire_all((consumer.project,))
         self.assertEqual(str(caught.exception), "uninstall.lock_busy")
 
+    def test_a_lock_that_cannot_be_opened_is_not_reported_as_busy(self):
+        """#28 — 권한 문제를 「다른 명령이 실행 중」으로 안내하면 사용자는 기다리기만 한다."""
+        from unittest import mock
+        from sage.diagnostics import Diagnostic
+        consumer = self.fresh()
+        for raised in (install_transaction.InstallBusyError(Diagnostic(
+                           "install.lock_unavailable", path="locks", error="PermissionError: x")),
+                       PermissionError(13, "Access is denied")):
+            with self.subTest(raised=type(raised).__name__), \
+                    mock.patch.object(install_transaction.DestinationLock, "acquire",
+                                      side_effect=raised):
+                with self.assertRaises(ValueError) as caught:
+                    uninstall_executor._acquire_all((consumer.project,))
+                self.assertEqual(str(caught.exception), "uninstall.lock_unavailable")
+
     def test_uninstall_declares_no_lock_of_its_own(self):
         """전용 lock 파일이 다시 생기지 않는지 소스로 본다 — 값이 같아도 권위가 둘이면 갈라진다."""
         with open(os.path.join(REPO, "sage", "uninstall_executor.py"), encoding="utf-8") as h:

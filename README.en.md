@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:aa233b1dae5b4b2a4275da285ec5e112371bbf95b4acc19020184aee3e21553f -->
+<!-- sage-doc-source: README.md sha256:3d335664fd7f27ea4e61fe33cebc8589fc1cd636c8c5ad33727928a3c3ea3e85 -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)
@@ -131,9 +131,9 @@ sage upgrade --apply
 sage status
 ```
 
-`--check` only shows the plan. `--apply` is transactional and rolls back on failure. **Coming from 1.0, SAGE
-files gather into a single `sage_harness/` tree** — recreated and verified before the old one is removed, and it
-stops at files you added and hooks you wrote ([troubleshooting](docs/troubleshooting.en.md)).
+`--check` only shows the plan. `--apply` is transactional: on failure it rolls back only the paths SAGE manages and
+leaves other files, such as build output, alone. **Coming from 1.0, SAGE files gather into a single `sage_harness/` tree**
+— recreated and verified before the old one is removed, and it stops at files you added and hooks you wrote ([troubleshooting](docs/troubleshooting.en.md)).
 
 ## Remove SAGE safely
 
