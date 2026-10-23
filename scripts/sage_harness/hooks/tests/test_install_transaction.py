@@ -326,8 +326,10 @@ class TestLockRootPermissions(unittest.TestCase):
     """
 
     def _lock(self, temp_root):
+        # `Path` 를 쓰지 않는다. `os.name` 을 "nt" 로 바꾼 채 만들면 Python 3.11 까지의 pathlib 은
+        # `WindowsPath` 를 고르고 POSIX 에서 거부한다.
         with mock.patch("sage.install_transaction.tempfile.gettempdir", return_value=temp_root):
-            return tx.DestinationLock(Path(temp_root, "project"))
+            return tx.DestinationLock(os.path.join(temp_root, "project"))
 
     def _mkdir_calls(self, os_name):
         calls = []
