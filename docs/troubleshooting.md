@@ -176,6 +176,50 @@ sage doctor
 실행할 때만 `SAGE_BASH`에 Git Bash의 절대경로를 지정합니다. WSL launcher를 암묵적으로 선택하지
 않습니다.
 
+
+## `sage upgrade --apply` 가 큰 저장소에서 끝나지 않음, 또는 실패 뒤 SAGE 와 무관한 파일이 되돌아감
+
+1.3.3 까지 `upgrade --apply` 는 실패에 대비해 **프로젝트 전체 파일의 내용**을 메모리에 담았다가, 실패하면
+그 상태로 되돌렸습니다. 빌드 산출물·프로젝트 안 worktree·host 캐시가 크면 끝나지 않았고, 실패하면
+apply 도중 IDE·다른 세션이 만든·고친 파일까지 되돌리거나 지울 수 있었습니다.
+
+1.3.4 부터는 **SAGE 가 관리하는 경로만** 담고 되돌립니다 — `sage/`·`sage_harness/`·`docs/sage_harness/`·
+`docs/agent/`·`plan_docs/`, `.claude/`·`.codex/` 아래의 `agents/`·`skills/`·`hooks/` 와 host 설정 파일,
+루트 framework 문서(`AGENT_GUIDE.md` 등)·`.gitignore`, `.sage/` 의 사이클 선언·감사 기록 파일. 그 밖의 파일은
+실패해도 손대지 않습니다.
+
+- apply 중에는 `plan_docs/` 문서나 `.sage/` 감사 기록을 다른 세션에서 고치지 마세요. 이 둘은 되돌림 대상이라
+  실패하면 apply 시작 시점으로 돌아갑니다.
+- 범위 안 경로나 그 상위 폴더가 링크(symlink·junction)면 그 경로는 담지 않습니다. SAGE 는 링크를 지나는
+  자리에 쓰지 않습니다.
+
+## Windows에서 install·upgrade·generate·uninstall 이 잠금 폴더 권한으로 실패
+
+1.3.3 까지는 **관리자 권한 터미널**에서 SAGE 명령을 처음 실행하면 임시 폴더의 잠금 폴더
+(`%TEMP%\sage-install-locks`)가 관리자만 쓸 수 있게 만들어져, 그 뒤 같은 사용자의 일반 권한 명령이
+`PermissionError` 로 실패했습니다. 1.3.4 부터는 다른 이름(`sage-install-locks-v2`)의 폴더를 권한 지정 없이
+만들므로 그 상태에서도 동작합니다. 예전 폴더는 더 쓰지 않으니 관리자 권한으로 지워도 됩니다.
+
+잠금 폴더를 준비하거나 열 수 없으면 「다른 명령이 실행 중」이 아니라 「권한·경로 문제」로 안내하고 폴더
+경로와 원인을 함께 보여 줍니다. 그 폴더의 소유자와 권한을 확인하세요.
+
+## Windows에서 `sage context snapshot`·`restore` 가 거부됨
+
+1.3.3 까지는 Windows 에서 두 명령이 항상 `secure read failed ... Permission denied` 로 거부됐습니다. 1.3.4 부터는
+Windows 에서도 동작합니다. 그래도 거부되면 오류 끝에 `[report: os=… python=… stage=… error=… path=…]` 한 줄이
+붙습니다. 이슈를 올릴 때 이 줄을 함께 붙여 주세요 — 이 줄에는 프로젝트 기준 상대 경로만 들어갑니다. 오류
+문장의 앞부분에는 절대 경로가 들어 있으니 공개 이슈에 붙이기 전에 지우세요. 기능을 잠시 끄려면 profile 의
+`context_management.compaction.enabled: false` 로 둡니다. host 전환(Claude↔Codex)은 단계 문서(Cycle-Stem)로
+계속 이어집니다.
+
+## Windows에서 `sage uninstall --yes` 가 `.sage-install-backup-*` 를 남기고 PARTIAL 로 끝남
+
+Windows 에서는 요청한 제거가 모두 끝난 뒤에도 uninstall 이 만든 임시 보관소(`.sage-install-backup-<token>-*`)가
+프로젝트 루트와 `.claude\`·`.codex\` 아래에 남고, 결과가 `PARTIAL`, 종료 코드가 1 로 나올 수 있습니다(알려진 결함,
+[#30](https://github.com/SeJonJ/SAGE/issues/30)). 화면의 「직접 지워도 됩니다」 목록에 나온 경로는 지운 파일의 사본이라
+직접 지워도 됩니다. 남아 있어도 다시 `sage install`·`upgrade` 하는 데는 영향이 없습니다. 스크립트에서 uninstall 의 종료
+코드로 성공을 판단한다면 이 경우를 감안하세요.
+
 ## `--host`, `--kind`, `--skill-scope` 누락
 
 ```bash

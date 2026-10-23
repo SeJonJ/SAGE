@@ -24,9 +24,10 @@ local profile·policy·overlay 원본·authored asset·plan/evidence/audit/vault
 스크립트는 **어느 단계에서도 write target 이 아니다.**
 
 **실패하면 일괄 되돌린다.** 각 단계가 자기 트랜잭션을 갖고 있어도 단계 사이에서 실패하면 앞
-단계는 이미 커밋돼 있다. 그래서 upgrade 는 시작 전에 프로젝트 트리 전체를 스냅샷하고, 어느
-단계에서 실패하든 그 스냅샷으로 복원한다 — 부분 적용 상태는 사용자가 무엇을 믿어야 할지 알 수
-없게 만든다.
+단계는 이미 커밋돼 있다. 그래서 upgrade 는 시작 전에 위임 단계가 쓸 수 있는 SAGE 관리 경로를
+스냅샷하고(`_scope_entries`), 어느 단계에서 실패하든 그 스냅샷으로 복원한다 — 부분 적용 상태는
+사용자가 무엇을 믿어야 할지 알 수 없게 만든다. 프로젝트 전체를 담지 않는 것은 큰 저장소에서
+apply 가 끝나지 않고, 롤백이 SAGE 와 무관한 파일까지 되돌리기 때문이다.
 
 `--force` 는 "남의 파일을 덮어라"가 아니라 **"내가 소유하지 않은 drift 가 있어도 진행하라"**다.
 
@@ -443,27 +444,137 @@ def _print_report(plan, blockers, language, applied):
 # 스냅샷에서 뺄 것. `.git` 은 크고 upgrade 가 건드리지 않는다. 나머지는 재생성 가능한 캐시다.
 _SNAPSHOT_SKIP = {".git", "__pycache__", ".venv", "node_modules", ".mypy_cache", ".pytest_cache"}
 
+# 스냅샷 범위 — **위임 단계가 쓸 수 있는 SAGE 관리 경로만** 담는다.
+#
+# 프로젝트 전체를 담으면 빌드 산출물·프로젝트 안 worktree·host 캐시까지 메모리에 올라가 큰
+# 저장소에서 apply 가 끝나지 않고, 실패 롤백이 SAGE 와 무관한 업무 파일을 지우거나 이전 내용으로
+# 덮는다. `.claude/`·`.codex/` 를 통째로 넣지 않는 것도 같은 이유다 — host 가 그 아래에 worktree·
+# 캐시·플러그인을 둔다. `.sage/` 아래 폴더는 에이전트 증거 파일이라 넣지 않는다.
+#
+# 목록은 상수다. 위임 단계가 새 경로에 쓰기 시작하면 여기를 함께 고쳐야 한다 — 빠뜨린 경로는
+# 실패해도 되돌아가지 않는다. `test_upgrade` 의 쓰기 관측 시험이 fixture 가 덮는 경로에서 잡는다.
+_SCOPE_TREES = (
+    "sage",
+    asset_paths.SAGE_TREE,
+    asset_paths.LEGACY_SAGE_TREE,
+    os.path.join("docs", "sage_harness"),
+    os.path.join("docs", "agent"),
+    "plan_docs",
+    os.path.join(".claude", "agents"),
+    os.path.join(".claude", "skills"),
+    os.path.join(".claude", "hooks"),
+    os.path.join(".codex", "agents"),
+    os.path.join(".codex", "skills"),
+    os.path.join(".codex", "hooks"),
+)
+_SCOPE_FILES = (
+    "AGENT_GUIDE.md", "CLAUDE.md", "CODEX.md", "AGENTS.md", "verification-protocol.md",
+    ".gitignore",
+    # 구 레이아웃의 schema. 이행이 지우는 대상이다(`layout_migration`).
+    os.path.join(asset_paths.LEGACY_SCHEMA_REL, "manifest.schema.json"),
+    os.path.join(asset_paths.LEGACY_SCHEMA_REL, "profile.schema.json"),
+    os.path.join(asset_paths.LEGACY_SCHEMA_REL, "profile.local.schema.json"),
+    os.path.join(".claude", "settings.json"),
+    os.path.join(".codex", "hooks.json"),
+    os.path.join(".sage", "cycle.json"),
+)
+# 바로 아래 파일 중 user-owned 판정이 참인 것을 담는 폴더. 이름 목록이 아니라 판정을 쓰는 이유는
+# `_is_user_owned` 가 접두사 비교라 `verify-changes.sh.bak` 같은 이름도 지금 보호 대상이기 때문이다.
+_SCOPE_USER_OWNED_PARENTS = ("scripts", ".sage")
+# 바로 아래 SAGE 임시 이름을 담는 폴더. 위 트리·파일을 바꿀 때 임시 파일과 백업은 대상의 부모에
+# 생긴다 — 트리째 백업 이름으로 옮겨지는 은퇴 skill 처럼 폴더일 수도 있다.
+_SCOPE_TEMP_PARENTS = ("", "docs", "scripts", asset_paths.LEGACY_SCHEMA_REL,
+                       ".claude", ".codex", ".sage")
+
+
+# 선언 쓰기(`_atomic_write`)의 임시 이름 `.<이름>.<mkstemp 8자>.tmp`. `.tmp` 로 끝나는 이름을 다
+# 받으면 host 캐시 폴더 `.codex/.tmp` 가 통째로 들어온다.
+_DECLARATION_TEMP_RE = re.compile(r"^\..+\.[A-Za-z0-9_]{8}\.tmp$")
+
+
+def _is_sage_temp(name):
+    """SAGE 쓰기가 대상 옆에 잠시 두는 이름인가(`.sage-*`, `*.sage-tmp`, 선언 쓰기 임시 이름)."""
+    return (name.startswith(".sage-") or name.endswith(".sage-tmp")
+            or bool(_DECLARATION_TEMP_RE.match(name)))
+
+
+def _passes_link(root, rel):
+    """`rel` 까지 가는 길(자신 포함)에 다른 곳을 가리키는 성분(symlink·junction)이 있는가.
+
+    고정 경로마다 따로 걸으면, 시작점 자체가 링크일 때 `os.walk` 의 `followlinks=False` 로도
+    링크 너머를 읽는다. 루트에서 한 번 걷던 때는 생기지 않던 일이다.
+    """
+    cursor = root
+    for part in rel.split(os.sep):
+        cursor = os.path.join(cursor, part)
+        if asset_paths.points_elsewhere(cursor):
+            return True
+    return False
+
+
+def _scope_entries(root):
+    """스냅샷 범위의 (상대 경로, 재귀 여부). 시작점·조상이 링크면 담지 않는다.
+
+    symlink 를 지나는 경로에는 위임 단계도 쓰지 않는다 — install 이 symlink 조상을 지나는 렌더
+    경로를 거부한다(`install.core_render_path_symlink_untrusted`). Windows junction 은 install 가드가
+    보지 않아 그 아래에 쓸 수 있고, 그 경로는 실패해도 되돌아가지 않는다(알려진 한계).
+    """
+    entries = [(rel, True) for rel in _SCOPE_TREES]
+    entries += [(rel, False) for rel in _SCOPE_FILES]
+    for parent in _SCOPE_USER_OWNED_PARENTS:
+        for name in _list_names(root, parent):
+            rel = os.path.join(parent, name)
+            if _is_user_owned(rel):
+                entries.append((rel, False))
+    for parent in _SCOPE_TEMP_PARENTS:
+        for name in _list_names(root, parent):
+            if _is_sage_temp(name):
+                entries.append((os.path.join(parent, name) if parent else name, True))
+    return [(rel, recursive) for rel, recursive in entries
+            if os.path.lexists(os.path.join(root, rel)) and not _passes_link(root, rel)]
+
+
+def _list_names(root, parent):
+    path = os.path.join(root, parent) if parent else root
+    if parent and _passes_link(root, parent):
+        return []
+    try:
+        return sorted(os.listdir(path))
+    except OSError:
+        return []
+
 
 def _snapshot_tree(root):
     """(경로 → (mode, bytes)). 단계 사이 실패에서 되돌릴 유일한 근거다.
 
     각 단계(install·generate·sync-overlays)는 자기 트랜잭션을 갖지만, **단계와 단계 사이**에서
     실패하면 앞 단계는 이미 커밋돼 있다. 부분 적용 상태는 사용자가 무엇을 믿어야 할지 알 수
-    없게 만들므로, 전체를 한 단위로 되돌린다.
+    없게 만들므로, 범위 전체를 한 단위로 되돌린다. 범위는 `_scope_entries` 다.
     """
     captured = {}
-    for base, dirs, files in os.walk(root):
-        dirs[:] = [d for d in dirs if d not in _SNAPSHOT_SKIP]
-        for name in files:
-            path = os.path.join(base, name)
-            try:
-                if os.path.islink(path):
-                    continue          # 심링크는 대상이 바깥일 수 있어 되돌리기 대상이 아니다
-                with open(path, "rb") as handle:
-                    captured[os.path.relpath(path, root)] = (
-                        os.stat(path).st_mode & 0o777, handle.read())
-            except OSError:
-                continue
+
+    def capture(path):
+        try:
+            if asset_paths.points_elsewhere(path):
+                return        # 링크는 대상이 바깥일 수 있어 되돌리기 대상이 아니다
+            with open(path, "rb") as handle:
+                captured[os.path.relpath(path, root)] = (
+                    os.stat(path).st_mode & 0o777, handle.read())
+        except OSError:
+            return
+
+    for rel, recursive in _scope_entries(root):
+        start = os.path.join(root, rel)
+        if not os.path.isdir(start):
+            capture(start)
+            continue
+        if not recursive:
+            continue
+        for base, dirs, files in os.walk(start):
+            dirs[:] = [d for d in dirs if d not in _SNAPSHOT_SKIP
+                       and not asset_paths.points_elsewhere(os.path.join(base, d))]
+            for name in files:
+                capture(os.path.join(base, name))
     return captured
 
 
@@ -707,7 +818,7 @@ def _apply(root, plan, language):
     선언 write 와 위임 단계를 **하나의 단위**로 다룬다. 단계 사이에서 실패하면 앞 단계는 이미
     자기 트랜잭션을 커밋했으므로, 시작 전 스냅샷으로 전체를 되돌리는 것이 유일한 방법이다.
     """
-    from sage.install_transaction import DestinationLock, InstallBusyError
+    from sage.install_transaction import DestinationLock, InstallBusyError, InstallDriftError
 
     # **install 과 같은 lock 을 쥐면 안 된다.** upgrade 는 install 을 위임 단계로 부르는데,
     # 같은 destination lock 을 이미 들고 있으면 그 단계가 "다른 install 이 실행 중" 으로 실패한다.
@@ -715,13 +826,13 @@ def _apply(root, plan, language):
     # 배타이고, 각 단계는 자기 lock 을 정상적으로 얻는다.
     upgrade_lock_root = os.path.join(root, ".sage")
     os.makedirs(upgrade_lock_root, exist_ok=True)
+    lock = DestinationLock(upgrade_lock_root)
+    # 잡는 순간의 실패(다른 upgrade 실행 중, 잠금 폴더 권한)는 트레이스백이 아니라 안내로 끝낸다.
     try:
-        lock = DestinationLock(upgrade_lock_root)
-    except InstallBusyError as exc:
+        lock.acquire()
+    except (InstallBusyError, InstallDriftError) as exc:
         return 0, tr(language, "cli.upgrade.lock_failed",
                      error=_exception_text(language, exc)), True
-
-    lock.acquire()
     snapshot = _snapshot_tree(root)
     user_times = _capture_times(root, snapshot)
     applied = 0

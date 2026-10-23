@@ -153,7 +153,16 @@ class DestinationLock:
         except OSError:
             pass
         uid = os.geteuid() if hasattr(os, "geteuid") else None
-        lock_name = "sage-install-locks" if uid is None else f"sage-install-locks-{uid}"
+        # Windows 이름에 `-v2` 가 붙은 이유: 1.3.3 까지는 `mkdir(..., 0o700)` 으로 만들었고, Python
+        # 3.12.4 부터 Windows 에서 그 mode 가 「만든 주체만」 ACL 이 된다. 관리자 토큰이 처음 만든
+        # 폴더는 같은 사용자의 일반 토큰이 열지 못하고, 일반 토큰은 소유자가 아니라 ACL 도 못
+        # 고친다. 이름을 바꿔 그런 폴더를 가진 PC 가 손으로 지우지 않아도 풀리게 한다.
+        if uid is not None:
+            lock_name = f"sage-install-locks-{uid}"
+        elif os.name == "nt":
+            lock_name = "sage-install-locks-v2"
+        else:
+            lock_name = "sage-install-locks"
         lock_root = os.path.join(tempfile.gettempdir(), lock_name)
         self.lock_root = lock_root
         self.paths = tuple(sorted(
@@ -165,10 +174,21 @@ class DestinationLock:
 
     def _prepare_lock_root(self):
         try:
-            os.mkdir(self.lock_root, 0o700)
+            # Windows 에는 mode 를 주지 않는다. 0o700 은 아래 POSIX 권한 검사를 위한 값이고,
+            # Windows 에서는 관리자 토큰이 만들면 일반 토큰이 쓸 수 없는 폴더가 된다(위 이름 참고).
+            # mode 없이 만들면 사용자 프로필 아래 `%TEMP%` 의 상속 ACL 을 받는다.
+            if os.name == "nt":
+                os.mkdir(self.lock_root)
+            else:
+                os.mkdir(self.lock_root, 0o700)
         except FileExistsError:
             pass
-        current = os.lstat(self.lock_root)
+        except OSError as exc:
+            raise self._unavailable(exc) from exc
+        try:
+            current = os.lstat(self.lock_root)
+        except OSError as exc:
+            raise self._unavailable(exc) from exc
         if not stat.S_ISDIR(current.st_mode) or stat.S_ISLNK(current.st_mode):
             raise InstallBusyError(Diagnostic("install.lock_root_unsafe", path=self.lock_root))
         if hasattr(os, "geteuid") and current.st_uid != os.geteuid():
@@ -183,11 +203,24 @@ class DestinationLock:
             raise InstallDriftError(
                 f"install destination identity changed while acquiring lock: {self.destination}")
 
+    def _unavailable(self, exc):
+        """잠금 자리를 준비하거나 열 수 없다 — 「다른 명령이 실행 중」과 다른 원인이다.
+
+        권한 오류를 실행 중으로 안내하면 사용자는 기다리기만 하고, 트레이스백으로 내보내면
+        무엇을 고칠지 모른다. 경로와 원인을 함께 올린다.
+        """
+        return InstallBusyError(Diagnostic(
+            "install.lock_unavailable", path=self.lock_root,
+            error=f"{type(exc).__name__}: {exc.strerror or exc}"))
+
     def _acquire_one(self, path):
         flags = os.O_CREAT | os.O_RDWR
         if hasattr(os, "O_NOFOLLOW"):
             flags |= os.O_NOFOLLOW
-        fd = os.open(path, flags, 0o600)
+        try:
+            fd = os.open(path, flags, 0o600)
+        except OSError as exc:
+            raise self._unavailable(exc) from exc
         try:
             if os.name == "nt":
                 import msvcrt

@@ -253,6 +253,7 @@ SEVERITY = {
     "uninstall.fingerprint_changed": BLOCK,
     "uninstall.boundary_changed": BLOCK,
     "uninstall.lock_busy": BLOCK,
+    "uninstall.lock_unavailable": BLOCK,
     "uninstall.unsafe_platform": BLOCK,
     # 환경 미지원이 아니라 **지원 범위 밖**이다. 같은 code 로 접으면 고칠 수 없는 것을
     # 고치라는 안내가 되고, 실제로 할 수 있는 수동 정리는 화면에서 사라진다.
@@ -348,6 +349,7 @@ RECOVERY = {
     "uninstall.fingerprint_changed": (_UNINSTALL_CHECK,),
     "uninstall.boundary_changed": (_UNINSTALL_CHECK,),
     "uninstall.lock_busy": (_UNINSTALL_CHECK,),
+    "uninstall.lock_unavailable": (_UNINSTALL_CHECK,),
     "uninstall.unsafe_platform": (_UNINSTALL_CHECK, _UNINSTALL_MANUAL),
     # `unsafe_platform` 과 같은 두 단계다. 세 번째(recheck)를 붙이면 첫 단계와 **같은 명령**이
     # 한 번 더 찍히고, 확인 단계는 수동 안내가 이미 마지막 줄로 낸다.

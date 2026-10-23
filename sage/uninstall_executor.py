@@ -225,10 +225,15 @@ def _acquire_all(roots):
         lock = _tx.DestinationLock(root)
         try:
             lock.acquire()
-        except (_tx.InstallBusyError, _tx.InstallDriftError, OSError):
+        except (_tx.InstallBusyError, _tx.InstallDriftError, OSError) as exc:
             for earlier in reversed(held):
                 earlier.release()
-            raise ValueError("uninstall.lock_busy")
+            # 잠금 자리를 못 여는 것은 「다른 명령이 실행 중」이 아니다. 그렇게 안내하면 사용자는
+            # 끝나기를 기다리기만 하고, 권한 문제는 영영 풀리지 않는다.
+            diagnostic = getattr(exc, "diagnostic", None)
+            unavailable = (getattr(diagnostic, "code", None) == "install.lock_unavailable"
+                           or not isinstance(exc, (_tx.InstallBusyError, _tx.InstallDriftError)))
+            raise ValueError("uninstall.lock_unavailable" if unavailable else "uninstall.lock_busy")
         held.append(lock)
     return held
 

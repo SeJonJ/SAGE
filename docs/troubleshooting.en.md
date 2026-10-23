@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:713444ccab6a8075c293a108ccaf612d713a7dc2cceb228cf6df18bdbd18d38c -->
+<!-- sage-doc-source: troubleshooting.md sha256:fa0b912cbed2451eab315db44c7888c65ae6854aeca3b728d683da9b1caed9e9 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -182,6 +182,50 @@ sage doctor
 If the entrypoint is missing, reinstall `sage-harness` into the same Python environment. Set
 `SAGE_BASH` to an absolute Git Bash path only when running optional `.sh` developer regressions.
 SAGE does not select the WSL launcher implicitly.
+
+
+## `sage upgrade --apply` never finishes in a large repository, or a failure reverts files unrelated to SAGE
+
+Up to 1.3.3, `upgrade --apply` held **the contents of every file in the project** in memory so it could restore them on
+failure. Large build outputs, worktrees inside the project, or host caches kept it from finishing, and a failure could revert
+or delete files that an IDE or another session created or edited during the apply.
+
+From 1.3.4 it captures and restores **only paths SAGE manages** — `sage/`, `sage_harness/`, `docs/sage_harness/`,
+`docs/agent/`, `plan_docs/`, the `agents/`, `skills/` and `hooks/` folders and host settings under `.claude/` and `.codex/`,
+the root framework documents (`AGENT_GUIDE.md` and so on) and `.gitignore`, and the cycle declaration and audit files in
+`.sage/`. Other files are left alone even on failure.
+
+- Do not edit `plan_docs/` documents or `.sage/` audit records from another session during an apply. Both are restored, so a
+  failure takes them back to the moment the apply started.
+- A scope path whose own name or parent folder is a link (symlink or junction) is not captured. SAGE does not write through
+  links.
+
+## On Windows, install, upgrade, generate or uninstall fails on the lock folder's permissions
+
+Up to 1.3.3, if a SAGE command first ran from an **administrator terminal**, the lock folder under the temp folder
+(`%TEMP%\sage-install-locks`) was created for administrators only, and later commands from the same user's normal terminal
+failed with `PermissionError`. From 1.3.4 SAGE creates a folder with a different name (`sage-install-locks-v2`) without an
+explicit mode, so it works in that state. The old folder is no longer used and can be deleted with administrator rights.
+
+When the lock folder cannot be prepared or opened, SAGE reports a permission or path problem — not another running command —
+together with the folder path and the cause. Check that folder's owner and permissions.
+
+## On Windows, `sage context snapshot` or `restore` is rejected
+
+Up to 1.3.3 both commands were always rejected on Windows with `secure read failed ... Permission denied`. From 1.3.4 they work
+on Windows. If one is still rejected, the error ends with a `[report: os=… python=… stage=… error=… path=…]` line. Include that
+line when you open an issue — it carries only the project-relative path. The beginning of the error sentence contains an
+absolute path, so remove it before posting publicly. To switch the feature off for now, set
+`context_management.compaction.enabled: false` in the profile. Switching hosts (Claude↔Codex) continues through the phase
+documents (Cycle-Stem).
+
+## On Windows, `sage uninstall --yes` leaves `.sage-install-backup-*` behind and ends as PARTIAL
+
+On Windows, after every requested removal is done, the temporary backups uninstall created (`.sage-install-backup-<token>-*`)
+can remain in the project root and under `.claude\` and `.codex\`, and the result is `PARTIAL` with exit code 1 (known defect,
+[#30](https://github.com/SeJonJ/SAGE/issues/30)). The paths in the on-screen "you may delete these" list are copies of the
+removed files, so you can delete them yourself. Leaving them does not affect a later `sage install` or `upgrade`. If a script
+judges uninstall by its exit code, account for this case.
 
 ## Missing `--host`, `--kind`, or `--skill-scope`
 

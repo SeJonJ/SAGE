@@ -272,6 +272,7 @@ FRAGMENTS = {
     "hook.install.lock_root_foreign_owner": "The install lock root is owned by another user: {path}",
     "hook.install.lock_root_permissive": "The install lock root permissions are wider than 0700: {path}",
     "hook.install.destination_busy": "Another sage install is already running for this destination.",
+    "hook.install.lock_unavailable": "The install lock folder could not be prepared or opened: {path} ({error}). This is a permission or path problem, not another running command.",
     "hook.install.outputs_changed_before_commit": "Install outputs changed just before commit",
     "hook.runtime.not_mapping": "runtime must be a mapping (received: {received})",
     "hook.runtime.unknown_keys": "runtime contains unknown keys: {keys} (allowed: {allowed})",

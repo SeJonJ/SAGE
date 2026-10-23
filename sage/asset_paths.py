@@ -100,6 +100,26 @@ def is_reparse(path: str) -> bool:
     return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
 
 
+# reparse tag 의 name-surrogate 비트. 켜져 있으면 그 이름이 **다른 이름을 대신한다**(symlink·junction).
+_REPARSE_NAME_SURROGATE = 0x20000000
+
+
+def points_elsewhere(path: str) -> bool:
+    """이 이름이 다른 곳을 가리키는 링크(symlink·junction)인가.
+
+    `is_reparse` 보다 좁다. reparse point 에는 OneDrive 클라우드 파일처럼 다른 곳을 가리키지 않는
+    것도 있고, 그것까지 링크로 보면 그런 폴더 안의 프로젝트에서 읽을 파일이 통째로 빠진다. 읽기
+    대상을 고르는 자리(upgrade 스냅샷·context 읽기)는 이 판정을 쓴다.
+    """
+    if os.path.islink(path):
+        return True
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    return bool(getattr(info, "st_reparse_tag", 0) & _REPARSE_NAME_SURROGATE)
+
+
 def escapes_root(root: str, path: str) -> bool:
     """`root` 에서 `path` 까지 가는 길에 **다른 곳을 가리키는 성분**이 있는가.
 

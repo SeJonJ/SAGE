@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import stat
 import tempfile
@@ -16,6 +17,7 @@ from typing import Any
 import yaml
 
 from sage import _resources
+from sage.asset_paths import points_elsewhere
 from sage.runtime_hosts import active_host, configured_hosts, profile_issues as runtime_profile_issues
 from sage.diagnostics import Diagnostic
 
@@ -132,6 +134,11 @@ def _root_path(root: str | os.PathLike[str]) -> Path:
     return path.resolve(strict=True)
 
 
+def _is_link(path: Path) -> bool:
+    """symlink 이거나 Windows junction 인가. `is_symlink()` 는 junction 을 놓친다."""
+    return path.is_symlink() or points_elsewhere(str(path))
+
+
 def _assert_confined(root: Path, path: Path, label: str) -> None:
     try:
         relative = path.absolute().relative_to(root)
@@ -141,22 +148,22 @@ def _assert_confined(root: Path, path: Path, label: str) -> None:
     for part in relative.parts:
         current = current / part
         if current.exists() or current.is_symlink():
-            if current.is_symlink():
+            if _is_link(current):
                 raise ContextError(f"{label} uses a symlink path: {current}")
     if path.exists() and not path.resolve(strict=True).is_relative_to(root):
         raise ContextError(f"{label} resolves outside project root: {path}")
 
 
-def _read_regular(root: Path, path: Path, label: str, limit: int) -> bytes:
-    _assert_confined(root, path, label)
-    try:
-        relative = path.absolute().relative_to(root)
-    except ValueError as exc:
-        raise ContextError(f"{label} escapes project root: {path}") from exc
-    if not relative.parts:
-        raise ContextError(f"{label} must name a file below project root: {path}")
+# Windows 는 폴더를 `os.open` 으로 열 수 없고 `dir_fd` 도 없다. 부모 fd 를 따라 내려가는 읽기가
+# 첫 줄에서 실패해 Windows 의 context snapshot·restore 가 항상 거부됐다. 그래서 Windows 는 경로로
+# 열고 열기 전후의 파일 identity 를 대조한다. 시험이 이 분기를 POSIX 에서도 돌릴 수 있도록 모듈
+# 상수로 둔다.
+_WINDOWS_OPEN = os.name == "nt"
 
-    fd = None
+
+def _open_by_parent_fd(root: Path, relative: Path, path: Path, label: str,
+                       limit: int) -> tuple[int, os.stat_result]:
+    """POSIX: 루트부터 부모 fd 에 결속해 한 단계씩 내려간다 — 조상 교체 경쟁을 막는다."""
     directory_fd = None
     try:
         directory_flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
@@ -174,7 +181,54 @@ def _read_regular(root: Path, path: Path, label: str, limit: int) -> bytes:
         if before.st_size > limit:
             raise ContextError(f"{label} exceeds byte budget ({before.st_size} > {limit})")
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
-        fd = os.open(leaf, flags, dir_fd=directory_fd)
+        return os.open(leaf, flags, dir_fd=directory_fd), before
+    finally:
+        if directory_fd is not None:
+            os.close(directory_fd)
+
+
+def _open_by_path(root: Path, path: Path, label: str, limit: int) -> tuple[int, os.stat_result]:
+    """Windows: 경로로 연다. 열기 전 `lstat` 과 열린 `fstat` 의 identity 대조가 사이 교체를 잡는다.
+
+    남는 틈: 조상 확인과 `lstat` 사이에 조상을 링크로 바꿨다가 읽은 뒤 재확인 전에 되돌리면 밖의
+    파일을 읽는다. 같은 사용자 권한이 밀리초 창을 맞춰야 하는 경쟁이라 받아들인다(알려진 한계).
+    """
+    before = os.lstat(path)
+    if _is_link(path) or not stat.S_ISREG(before.st_mode):
+        raise ContextError(f"{label} is not a regular file: {path}")
+    if before.st_size > limit:
+        raise ContextError(f"{label} exceeds byte budget ({before.st_size} > {limit})")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0)
+    return os.open(path, flags), before
+
+
+def _windows_report(stage: str, relative: Path, exc: BaseException) -> str:
+    """이슈 보고에 붙일 한 줄. 사용자 이름·프로젝트 이름이 든 절대 경로는 넣지 않는다."""
+    errno_value = getattr(exc, "errno", None)
+    return (f"[report: os={platform.system()} {platform.version()}; "
+            f"python={platform.python_version()} {platform.machine()}; stage={stage}; "
+            f"error={type(exc).__name__}"
+            + (f" errno={errno_value}" if errno_value is not None else "")
+            + f"; path={relative.as_posix()}]")
+
+
+def _read_regular(root: Path, path: Path, label: str, limit: int) -> bytes:
+    _assert_confined(root, path, label)
+    try:
+        relative = path.absolute().relative_to(root)
+    except ValueError as exc:
+        raise ContextError(f"{label} escapes project root: {path}") from exc
+    if not relative.parts:
+        raise ContextError(f"{label} must name a file below project root: {path}")
+
+    fd = None
+    stage = "open"
+    try:
+        if _WINDOWS_OPEN:
+            fd, before = _open_by_path(root, path, label, limit)
+        else:
+            fd, before = _open_by_parent_fd(root, relative, path, label, limit)
+        stage = "read"
         opened = os.fstat(fd)
         if not stat.S_ISREG(opened.st_mode):
             raise ContextError(f"{label} is not a regular file: {path}")
@@ -196,16 +250,21 @@ def _read_regular(root: Path, path: Path, label: str, limit: int) -> bytes:
         if (after.st_size, after.st_mtime_ns, after.st_ctime_ns) != (
                 opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns):
             raise ContextError(f"{label} changed while being read: {path}")
+        if _WINDOWS_OPEN:
+            # 읽는 동안 조상이 링크로 바뀐 채 남아 있으면 읽은 것을 쓰지 않는다.
+            stage = "recheck"
+            _assert_confined(root, path, label)
         return b"".join(chunks)
     except ContextError:
         raise
     except OSError as exc:
-        raise ContextError(f"{label} secure read failed: {path}: {exc}") from exc
+        message = f"{label} secure read failed: {path}: {exc}"
+        if _WINDOWS_OPEN:
+            message += " " + _windows_report(stage, relative, exc)
+        raise ContextError(message) from exc
     finally:
         if fd is not None:
             os.close(fd)
-        if directory_fd is not None:
-            os.close(directory_fd)
 
 
 def _load_profile(root: Path) -> tuple[dict[str, Any], bytes]:
@@ -349,8 +408,12 @@ def _ensure_directory(root: Path, relative: str, label: str) -> Path:
     for part in Path(relative).parts:
         path = path / part
         if path.exists() or path.is_symlink():
-            if path.is_symlink() or not path.is_dir():
+            if _is_link(path) or not path.is_dir():
                 raise ContextError(f"{label} uses an unsafe existing path: {path}")
+        elif _WINDOWS_OPEN:
+            # Windows 에서 0o700 은 「만든 주체만」 ACL 이 된다 — 관리자로 처음 만들면 같은
+            # 사용자의 일반 권한이 그 아래에 쓰지 못한다. 프로젝트 폴더의 상속 ACL 을 받는다.
+            path.mkdir()
         else:
             path.mkdir(mode=0o700)
     _assert_confined(root, path, label)

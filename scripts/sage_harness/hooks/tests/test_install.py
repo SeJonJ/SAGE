@@ -55,6 +55,21 @@ class TestInstall(unittest.TestCase):
 
         self.assertIn(f'required_version: "{__version__}"', template)
 
+    def test_an_unavailable_lock_is_explained_not_a_traceback(self):
+        """#28 — 잠금 폴더를 못 열면 원인과 경로를 안내하고 1 로 끝난다. 아무것도 쓰지 않는다."""
+        from sage import install_transaction as tx
+        from sage.diagnostics import Diagnostic
+        raised = tx.InstallBusyError(Diagnostic("install.lock_unavailable", path="LOCKDIR",
+                                                error="PermissionError: Access is denied"))
+        with tempfile.TemporaryDirectory() as root:
+            err = io.StringIO()
+            with mock.patch.object(tx.DestinationLock, "acquire", side_effect=raised), \
+                    redirect_stderr(err):
+                self.assertEqual(install.run(Args("claude", root)), 1)
+            self.assertIn("LOCKDIR", err.getvalue())
+            self.assertIn("PermissionError", err.getvalue())
+            self.assertEqual(os.listdir(root), [], "잠금을 못 잡았는데 설치가 진행됐다")
+
     def test_new_profile_records_installed_sage_as_required_version(self):
         with tempfile.TemporaryDirectory() as root:
             self.assertEqual(0, install.run(Args("claude", root)))
