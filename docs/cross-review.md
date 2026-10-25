@@ -9,9 +9,14 @@ Phase 05는 구현을 **작성자와 분리된 리뷰어**에게 보여 주는 �
 |---|---|---|
 | 명령 | `sage review --packet-file F --host <active_host>` | `sage cross-check --packet-file F` |
 | 리뷰어 | 지금 쓰는 runtime의 **새 세션** (`claude -p` 또는 `codex exec`) | **반대 runtime** (claude host → `codex exec`, codex host → `claude -p`) |
-| 켜는 설정 | `options.cross_model: false`, 또는 `recommended` 정책의 로컬 opt-out | `options.cross_model: true` |
+| 켜는 설정 | 해석 후 `options.cross_model: false` | 해석 후 `options.cross_model: true` |
 | 걸러 내는 것 | 작성 세션의 맥락과 자기 확신 | 위에 더해 **한 모델이 공유하는 편향** |
 | 기록되는 모드 | `REVIEWER_ACTUAL: same_runtime` | `REVIEWER_ACTUAL: cross_model` |
+
+위 설정은 공유 정책과 로컬 설정을 해석한 값입니다. `required`는 항상 켜고, `recommended`는 기본으로
+켜되 로컬 `cross_model.enabled: false`로 끌 수 있으며, `off`는 항상 끕니다. 정책을 생략하면 로컬
+`cross_model.enabled`를 우선하고, 그것도 없으면 공유 `options.cross_model`을 씁니다. 따라서 템플릿의
+`options.cross_model: false`만 보고 비활성으로 판단하면 안 됩니다. 템플릿의 정책은 `recommended`입니다.
 
 교차 리뷰를 "이중 리뷰"라고도 부르는 이유는, 리뷰 루프(Loop A)에서 **호스트의 렌즈별 리뷰어와 반대 runtime
 peer가 같은 라운드에 함께 결함을 찾기** 때문입니다. 단일 리뷰는 호스트 쪽 리뷰만 있습니다.
@@ -122,14 +127,23 @@ macOS·Linux는 실행 중에 모아 둔 자손 목록으로 정리하고 Window
 | `parse_failed` | 리뷰어는 답했는데 결과를 읽지 못함 (원인 조사 대상) | × |
 | `cli_missing` | 리뷰어 CLI가 설치돼 있지 않음 | × |
 
-기본 동작은 **BLOCKED**입니다. 그 라운드만 같은 runtime 리뷰로 대신하려면 사람이 결정해서
-`sage cross-check --on-peer-failure same-runtime`으로 다시 실행합니다.
+기본 동작은 리뷰 미완료인 **BLOCKED**이며, 부분 finding이 있으면 **PARTIAL**로 보존합니다. 해당 호출에서
+같은 runtime 리뷰를 대신 시도하려면 사람이 결정해서 다음 옵션을 명시합니다.
 
-- 폴백은 라운드당 1회, 제한 시간은 원래의 절반입니다. `cross_model.policy: required`에서는 폴백하지 않습니다.
-- 결과는 `REVIEWER_ACTUAL: same_runtime`, `REVIEWER_STATUS: COMPLETE_DEGRADED`로 남아 교차 리뷰로 세지
-  않습니다.
-- 폴백 설정을 프로필 키로 두지 않은 이유는, 커밋되는 정책 파일에 상시 완화를 선언하지 않고 **그 라운드의
-  기록된 결정**으로만 남기기 위해서입니다.
+```bash
+sage cross-check --packet-file <packet> --on-peer-failure same-runtime
+```
+
+- 재실행해도 peer부터 다시 호출합니다. 이전 실패에서 폴백 단계만 이어서 실행하는 명령이 아닙니다.
+- 위 표의 허용 사유에 한해 **명령 호출당 최대 1회** 폴백합니다. 라운드별 재호출 횟수는 추적하지 않습니다.
+  제한 시간은 `max(1, timeout // 2)`초입니다. `cross_model.policy: required`에서는 폴백하지 않습니다.
+- 폴백 **성공 시** `REVIEWER_ACTUAL: same_runtime`, `REVIEWER_STATUS: COMPLETE_DEGRADED`로 남아 교차
+  리뷰로 세지 않습니다. 통제 위반까지 있으면 actual은 `same_runtime_degraded`입니다. 폴백도 실패하면
+  폴백 쪽 부분 finding이 있으면 `PARTIAL`, 없으면 `BLOCKED`이며 리뷰 완료로 세지 않습니다.
+  앞선 peer의 부분 finding은 폴백 실행 전에 별도로 출력됩니다.
+- 처음부터 정책에 따라 선택한 same-runtime 리뷰는 폴백이 아니며, 같은 runtime이라는 이유로 강등하지 않습니다.
+- 폴백 설정을 프로필 키로 두지 않은 이유는 커밋되는 정책 파일에 상시 완화를 선언하지 않기 위해서입니다.
+  CLI는 폴백 출처·사유 등 실행 증거를 출력하며, 별도 사용자 승인 기록을 검사하지는 않습니다.
 
 ## 사용량과 예산
 

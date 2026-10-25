@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:0527237dd10cc9819a1ec4760fc64cad890e3232dafc391c9a17d70b33e84bee -->
+<!-- sage-doc-source: cli-reference.md sha256:bdb9a1d006fbd9342d3e915e39260d872dd94e40f69ba056ea4e9e14e284115c -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for
@@ -327,7 +327,7 @@ switching. Close normally with `fast-cycle close` before `cycle clear`; abandon 
 | Command | Purpose |
 |---|---|
 | `sage review` | Start a fresh same-runtime headless reviewer |
-| `sage cross-check --packet-file FILE [--on-peer-failure block\|same-runtime]` | Start a cross-model reviewer in the opposite runtime. `same-runtime` replaces that round once with a same-runtime review when the reviewer fails mid-run (recorded as degraded) |
+| `sage cross-check --packet-file FILE [--on-peer-failure block\|same-runtime]` | Start a cross-model reviewer in the opposite runtime. `same-runtime` attempts at most one same-runtime fallback per invocation for eligible peer failures under a non-required policy (degraded even on success). A rerun calls the peer again first. [Conditions](cross-review.en.md#when-the-reviewer-fails) |
 | `sage review-loop open [--cycle-stem S --lenses CSV]` | Start a review loop. A run is always bound to a cycle — without `--cycle-stem` the declared cycle (`SAGE_CYCLE_STEM` > `.sage/cycle.json`) is used, and the open is refused when none resolves. Fast binds exact stem and lenses |
 | `sage review-loop round --findings-file FILE [--tokens N --peer-tokens "<REVIEWER_TOKENS value>"]` | Record the round sidecar (`sage.review-round/1`: verbatim findings, sources, refutation reasons, dispositions). Counts and the severity receipt are derived from it; its sha256 and the working-tree delta since the previous round are recorded too |
 | `sage review-loop round [... --lens-receipts CSV] [--survived-by-severity P0=N,P1=N,P2=N,P3=N] [--peer-tokens "<REVIEWER_TOKENS value>"]` | Record counts by hand without a sidecar (`sidecar: absent`): findings, rebuttals, fixes, Fast lens receipts, the per-severity residual receipt, and the reviewer's measured usage. The working-tree id and the delta since the previous round are recorded with or without a sidecar |

@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cross-review.md sha256:2c927d77910d4a8431a73e16ad7064e57c2f78ddd7e3d3c64cdce24649b0f00a -->
+<!-- sage-doc-source: cross-review.md sha256:036e9bbd2b3f95221d16d7b838cd12e2e5fa72546b8da5d797451d157041d7f1 -->
 # Phase 05 Review: Single Review and Cross Review
 
 [한국어](cross-review.md) | [Documentation index](README.en.md)
@@ -11,9 +11,16 @@ that is gives two modes.
 |---|---|---|
 | Command | `sage review --packet-file F --host <active_host>` | `sage cross-check --packet-file F` |
 | Reviewer | A **fresh session** of the runtime you are using (`claude -p` or `codex exec`) | **The opposite runtime** (claude host → `codex exec`, codex host → `claude -p`) |
-| Enabled by | `options.cross_model: false`, or a local opt-out under a `recommended` policy | `options.cross_model: true` |
+| Enabled by | Effective `options.cross_model: false` | Effective `options.cross_model: true` |
 | What it filters out | The writing session's context and self-confidence | All of that, plus **biases a single model shares with itself** |
 | Recorded mode | `REVIEWER_ACTUAL: same_runtime` | `REVIEWER_ACTUAL: cross_model` |
+
+These are effective values after shared policy and local settings are resolved. `required` always
+enables cross review; `recommended` enables it by default but allows a local
+`cross_model.enabled: false` opt-out; `off` always disables it. Without a policy, local
+`cross_model.enabled` takes precedence, falling back to shared `options.cross_model` when absent.
+The template's `options.cross_model: false` alone therefore does not disable cross review: its
+policy is `recommended`.
 
 Cross review is also called "dual review" because in the review loop (Loop A) **the host's per-lens
 reviewers and the opposite-runtime peer look for defects in the same round**. Single review has only
@@ -135,15 +142,27 @@ flags it as degraded. A fallback or a control violation therefore cannot pass as
 | `parse_failed` | The reviewer answered but the result could not be read (investigate) | no |
 | `cli_missing` | The reviewer CLI is not installed | no |
 
-The default is **BLOCKED**. To replace just that round with a same-runtime review, a human decides
-and reruns `sage cross-check --on-peer-failure same-runtime`.
+The default is an incomplete review: **BLOCKED**, or **PARTIAL** when findings were preserved.
+To attempt a same-runtime replacement for this invocation, a human explicitly chooses the option:
 
-- The fallback runs once per round with half the original time limit. It never runs under
+```bash
+sage cross-check --packet-file <packet> --on-peer-failure same-runtime
+```
+
+- A rerun calls the peer again first. It does not resume just the fallback stage of a previous failure.
+- Only the allowed reasons above permit **at most one fallback per command invocation**. There is no
+  per-round retry counter. Its timeout is `max(1, timeout // 2)` seconds. No fallback runs under
   `cross_model.policy: required`.
-- The result is recorded as `REVIEWER_ACTUAL: same_runtime` and `REVIEWER_STATUS: COMPLETE_DEGRADED`
-  and does not count as a cross review.
-- The fallback is not a profile key on purpose: a committed policy file should not declare a
-  standing relaxation, so the relaxation exists only as **that round's recorded decision**.
+- A **successful** fallback records `REVIEWER_ACTUAL: same_runtime` and
+  `REVIEWER_STATUS: COMPLETE_DEGRADED`; it does not count as a cross review. If controls were also
+  violated, the actual mode is `same_runtime_degraded`. A failed fallback is PARTIAL if the
+  fallback preserved partial findings, otherwise BLOCKED; neither counts as a completed review.
+  Any peer partial findings were printed separately before the fallback ran.
+- A same-runtime review selected intentionally by policy is not a fallback and is not degraded
+  merely because it uses the same runtime.
+- The fallback is not a profile key because a committed policy file should not declare a standing
+  relaxation. The CLI emits execution evidence such as the fallback source and reason; it does not
+  validate a separate human-approval record.
 
 ## Usage and budget
 

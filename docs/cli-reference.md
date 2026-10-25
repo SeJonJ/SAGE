@@ -298,7 +298,7 @@ Fast 명령은 `pdca.fast_cycle.enabled: true`인 L2/L3에만 열립니다. 실�
 | 명령 | 역할 |
 |---|---|
 | `sage review` | 새 same-runtime headless reviewer 실행 |
-| `sage cross-check --packet-file FILE [--on-peer-failure block\|same-runtime]` | 반대 runtime의 cross-model reviewer 실행. `same-runtime`은 리뷰어가 실행 중 실패했을 때 그 라운드만 같은 runtime 리뷰로 1회 대신합니다(강등으로 기록) |
+| `sage cross-check --packet-file FILE [--on-peer-failure block\|same-runtime]` | 반대 runtime의 cross-model reviewer 실행. `same-runtime`은 required가 아닌 정책에서 허용된 peer 실패에 한해 호출당 최대 1회 같은 runtime 리뷰를 시도합니다(성공해도 강등). 재실행 시 peer부터 다시 호출합니다. [조건](cross-review.md#리뷰어가-실패하면) |
 | `sage review-loop open [--cycle-stem S --lenses CSV]` | review loop 시작. run 은 항상 사이클에 묶인다 — `--cycle-stem` 이 없으면 선언된 사이클(`SAGE_CYCLE_STEM` > `.sage/cycle.json`)을 쓰고, 없으면 거부. Fast는 stem·렌즈를 exact 결속 |
 | `sage review-loop round --findings-file FILE [--tokens N --peer-tokens "<REVIEWER_TOKENS 값>"]` | 라운드 사이드카(`sage.review-round/1`: 지적 원문·출처·반박 사유·처분)를 기록. 개수와 심각도 영수증을 사이드카에서 산출하고, sha256 과 직전 라운드 대비 작업 트리 delta 를 함께 남긴다 |
 | `sage review-loop round [... --lens-receipts CSV] [--survived-by-severity P0=N,P1=N,P2=N,P3=N] [--peer-tokens "<REVIEWER_TOKENS 값>"]` | 사이드카 없이 개수를 직접 기록(`sidecar: absent`). finding, 반박, 수정 결과와 Fast 렌즈 수행 영수증, 심각도별 잔여 영수증, 리뷰어 실측 사용량. 작업 트리 식별자와 직전 라운드 대비 delta 는 사이드카 유무와 관계없이 남는다 |

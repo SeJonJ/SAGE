@@ -17,8 +17,22 @@ L3 changes require an independent review before they are considered done.
    `runtime.active_host` that disagrees with the running process is reported and ignored, so a
    host can never review its own work; when the running host cannot be determined, the profile
    value is the fallback. The same-runtime command must match the running host and must emit
-   process/host/model/mode/status evidence. A missing
-   CLI, timeout, nonzero exit, or unparseable output is BLOCKED, not a successful fallback.
+   process/host/model/mode/status evidence. By default, a missing CLI, timeout,
+   nonzero exit, or unparseable output leaves the review incomplete: BLOCKED, or
+   PARTIAL when findings were preserved. A human may explicitly choose
+   `sage cross-check --packet-file <packet> --on-peer-failure same-runtime` for
+   this invocation. Unless policy is `required`, only `timeout`, `usage_limit`,
+   `exit_nonzero`, and `startup_failed` permit a fallback; a missing CLI,
+   rejected control flags, or unparseable output do not. Each invocation attempts
+   the peer first, then at most one fresh host process with timeout
+   `max(1, timeout // 2)` seconds. No per-round retry counter is enforced.
+   A successful fallback is COMPLETE_DEGRADED with actual mode same_runtime
+   (same_runtime_degraded if controls were violated). A failed fallback ends with
+   PARTIAL if the fallback preserved partial findings, otherwise BLOCKED; any
+   peer partial findings were printed separately before the fallback ran.
+   An intentional same-runtime selection is not degraded
+   merely because it uses the same runtime. The CLI records fallback evidence;
+   it does not validate a separate human-approval record.
 3. The review outcome is recorded in a review/plan document.
 
 ## Acceptance evidence gate

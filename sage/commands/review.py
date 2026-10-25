@@ -1,13 +1,14 @@
 """sage review / sage cross-check — Phase 05 리뷰 오케스트레이션 (7차 배치2).
 
-두 명령은 sage-team 이 Phase 05 에서 profile.options.cross_model 에 따라 택일 호출한다:
+두 명령은 sage-team 이 Phase 05 에서 공유 정책·로컬 설정을 해석한 profile.options.cross_model 에 따라 택일 호출한다:
 - cross_model=false → `sage review`      : active host의 새 headless process에서 same-runtime 리뷰.
 - cross_model=true  → `sage cross-check`  : 반대 런타임 CLI 를 **직접 호출**해 독립 리뷰 획득(cross-model).
 
 둘 다 `REVIEWER_ACTUAL: <mode>` 줄을 출력하고 마지막 줄은 `REVIEWER_STATUS` 다 — sage-team 이 ACTUAL 을 캡처해
 `sage review-loop close --reviewer-actual <mode>` 로 넘기면 의도(open 의 --reviewer-requested)와 대조해
-degraded 가 판정된다(배치3). cross-model 요청이 peer에 도달하지 못하면 same-runtime으로 완화하지 않고
-`REVIEWER_STATUS: BLOCKED`와 nonzero exit를 반환한다.
+degraded 가 판정된다(배치3). 기본적으로 peer 실패는 BLOCKED(부분 finding 이 있으면 PARTIAL)와
+nonzero exit를 반환한다. `--on-peer-failure same-runtime`을 명시한 호출에서는 required 정책이
+아닌 경우 지정된 실패 사유에 한해 host 의 새 프로세스로 최대 1회 폴백하며, 성공해도 COMPLETE_DEGRADED다.
 
 gstack 의존 없음: claude-host→`codex exec`, codex-host→`claude -p` 를 SAGE 가 직접 호출(gstack wrapper
 기법만 차용 — read-only 샌드박스·stdin 차단·timeout·--json 최종 메시지 파싱).
@@ -632,7 +633,8 @@ def _fallback_same_runtime(args, profile, current, run, root):
     """peer 런타임 실패 → 실행 중인 host 의 새 프로세스로 1회만 리뷰(재귀 없음).
 
     프로필 키가 아니라 호출 단위 옵션인 이유: `cross_model.on_unavailable` 은 `block` 고정이 의도된
-    설계다. 커밋되는 정책 파일에 상시 완화를 두지 않고, 완화는 그 라운드의 기록된 결정으로만 남긴다.
+    설계다. 커밋되는 정책 파일에 상시 완화를 두지 않고, 호출 옵션과 폴백 실행 증거로 남긴다.
+    라운드별 재호출 횟수나 별도 사용자 승인 기록을 검사하지는 않는다.
     강등은 REVIEWER_ACTUAL 이 요청과 달라 ci_authority 가 잡는다 — 교차 리뷰로 위장되지 않는다.
     """
     language = language_of(args)
@@ -641,7 +643,7 @@ def _fallback_same_runtime(args, profile, current, run, root):
         return _blocked_peer("sage cross-check", run, language,
                              tr(language, "cli.review.fallback_policy_required",
                                 err=render_issue(language, run.error)))
-    # 폴백까지 합친 대기가 두 배가 되지 않게 절반으로 제한한다(하한을 두면 짧은 timeout 에서 절반을 넘는다).
+    # 폴백 제한 시간은 원래 값의 절반을 내림하되 최소 1초다(원래 값이 1초면 절반을 넘는다).
     timeout = max(1, int(args.timeout) // 2)
     print(tr(language, "cli.review.fallback_same_runtime", peer=run.peer, host=current,
              reason=run.reason, timeout=timeout), file=sys.stderr)

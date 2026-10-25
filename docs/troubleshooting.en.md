@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:fa0b912cbed2451eab315db44c7888c65ae6854aeca3b728d683da9b1caed9e9 -->
+<!-- sage-doc-source: troubleshooting.md sha256:16ac5072d78c0a29377da28e7465c42dc43262aab0e287c36a23c52a26396840 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -755,7 +755,7 @@ when the process exits; there is no lock file for you to clean up.
 | `cli_missing` | Use `sage doctor` to confirm the opposite runtime CLI is installed |
 | `flags_rejected` | The reviewer CLI does not know SAGE's control flags. Update the CLI (claude 2.1.275, codex 0.155.1 or later) |
 | `startup_failed` | The reviewer could not start. Check login and authentication in the opposite runtime |
-| `usage_limit` | The opposite runtime's usage limit is exhausted. Rerun after the reset, or replace this round with `--on-peer-failure same-runtime` |
+| `usage_limit` | The opposite runtime's usage limit is exhausted. Rerun after the reset, or explicitly choose `--on-peer-failure same-runtime` for that invocation under a non-required policy (a rerun still calls the peer first) |
 | `timeout` | The time limit was exceeded; findings emitted so far remain as `PARTIAL`. Shrink the packet (propositions and context map) or raise `--timeout` |
 | `exit_nonzero` | The reviewer exited abnormally mid-review. Check the stderr summary and rerun |
 | `parse_failed` | The reviewer answered but the result could not be read. Do not cover it with a fallback; check the output format |
