@@ -4,14 +4,14 @@
 # 전문/주석: 마스터 설계 §6.
 
 sage:
-  required_version: "1.3.4" # 프로젝트가 요구하는 exact SAGE 버전. local에서 변경 불가
+  required_version: "1.3.5" # 프로젝트가 요구하는 exact SAGE 버전. local에서 변경 불가
 
 project:
   name: ""
   prefix: "sage"
 
 options:                         # 옵션 플래그 — generator가 읽어 산출물 가감
-  cross_model: false             # reviewer 슬롯을 opposite-runtime reviewer로 승격 + opposite 산출물
+  cross_model: false             # 정책·로컬 enabled가 없을 때의 호환 기본값. 실제 모드는 해석 후 결정
   codegraph:   optional
   obsidian:    optional
 
@@ -173,7 +173,7 @@ team:                            # CORE 로스터(team.core). 역할명은 스�
   # codex host 는 .codex/agents/*.md 에 해석 기전이 없어 무동작.
   #   model  : opus | sonnet | haiku | fable | inherit | 전체 모델 id   (미설정 → host CLI 기본 모델)
   #   effort : low | medium | high | xhigh | max | 양의 정수            (미설정 → high)
-  # 예) reviewer: { enabled: true, runtime: { model: opus, effort: max }, cross_model: {...} }
+  # 예) reviewer: { enabled: true, runtime: { model: opus, effort: max } }
   core:
     # owns: 는 현재 어떤 코드도 값을 읽지 않는 죽은 필드다(알려진 키라 통과만 될 뿐 무동작).
     # 실제 컴포넌트→경로 소유는 profile.components[].paths 가 담당하고, `sage generate --kind roster`
@@ -182,14 +182,13 @@ team:                            # CORE 로스터(team.core). 역할명은 스�
     implementer-a: { enabled: true }   # 컴포넌트 소유는 profile.components[].paths 로 지정
     implementer-b: { enabled: true }   # 단일 컴포넌트면 enabled:false 로 끔
     qa:            { enabled: true }
-    reviewer: { enabled: true,
-                cross_model: { capability: from_options.cross_model,
-                               on_unavailable: block } }
+    reviewer:      { enabled: true }
   optional_reviewers: []         # roster 밖 온디맨드 (external-consultant류)
   extensions: []
 
 cross_model:                     # opposite-runtime 무상관 검증. 권장 optional
-  policy: recommended            # required | recommended | off. local은 required를 완화할 수 없음
+  policy: recommended            # required=항상 on / recommended=기본 on, local enabled:false로 해제 / off=항상 off
+                                 # 정책이 없으면 local cross_model.enabled → options.cross_model 순으로 해석
   peer: opposite_runtime         # host=claude → codex / host=codex → claude (하드코딩 금지)
   on_unavailable: block
   # reviewer: { host: codex, model: gpt-5.6-terra } # host = 이 model 을 쓸 peer. model id 는 런타임

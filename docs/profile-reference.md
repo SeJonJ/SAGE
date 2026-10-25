@@ -46,7 +46,7 @@ sage doctor --profile sage/project-profile.yaml
 
 ```yaml
 sage:
-  required_version: "1.3.4"
+  required_version: "1.3.5"
 
 project:
   name: "weatherapp"
@@ -72,15 +72,29 @@ cross_model:
 ```
 
 `active_host: auto`는 현재 실행 환경에서 host를 감지합니다. Phase 05 cross-model review는 실제
-active host를 제외한 runtime을 선택합니다. peer CLI에 도달하지 못하면 required 정책은 BLOCKED입니다.
+active host를 제외한 runtime을 선택합니다. 해석 결과 교차 리뷰가 켜진 상태에서 peer CLI가 미가용이면
+정책이 `required`인지 `recommended`인지와 무관하게 BLOCKED입니다.
 
-`cross_model.policy`는 `required | recommended | off`입니다. `required`는 로컬 profile에서
-`cross_model.enabled: false`로 완화할 수 없습니다(local이 공유 정책을 완화 불가). `on_unavailable`은
-peer CLI에 도달하지 못했을 때의 처리이며 `block`만 허용됩니다. 커밋되는 정책 파일에 상시 완화를 두지
-않기 위해서입니다. 리뷰어가 실행 중 실패한 라운드를 같은 runtime 리뷰로 대신하려면, 그 라운드에서
-`sage cross-check --on-peer-failure same-runtime`을 씁니다(강등으로 기록). `effort`는 peer CLI에 넘길
-추론 강도이고 미설정이면 `high`입니다. 리뷰어가 어떻게 실행되고 측정되는지는 [교차 리뷰](cross-review.md)에
-있습니다.
+공유 정책과 로컬 설정을 해석한 결과가 유효한 `options.cross_model` 값이 됩니다.
+
+| `cross_model.policy` | 활성화 기준 |
+|---|---|
+| `required` | 항상 활성화. 로컬 `cross_model.enabled: false`로 완화 불가 |
+| `recommended` | 기본 활성화. 로컬 `cross_model.enabled: false`로 해제 가능 |
+| `off` | 항상 비활성화 |
+| 생략 | 로컬 `cross_model.enabled` 우선, 없으면 공유 `options.cross_model` 사용 |
+
+따라서 템플릿의 `options.cross_model: false`여도 `policy: recommended`이고 로컬 opt-out이 없으면
+교차 리뷰가 켜집니다. `team.core.reviewer.cross_model`은 기존 프로필 호환을 위해 허용하는 무동작
+필드이며, 리뷰 모드나 폴백을 설정하지 않습니다. 기존 프로필에서 이 블록은 제거해도 됩니다.
+
+최상위 `cross_model.on_unavailable`은 peer 미가용 시의 처리이며 `block`만 허용됩니다. 커밋되는
+정책 파일에 상시 완화를 두지 않기 위해서입니다. `required`가 아닌 정책에서 지정된 peer 실패를
+같은 runtime 리뷰로 대신 시도하려면 해당 호출에
+`sage cross-check --packet-file <packet> --on-peer-failure same-runtime`을 명시합니다. peer부터
+다시 호출하며, 폴백은 호출당 최대 한 번입니다. 성공해도 강등으로 기록하고, `required`에서는 허용하지
+않습니다. `effort`는 peer CLI에 넘길 추론 강도이고 미설정이면 `high`입니다. 허용되는 실패 사유와
+실행·측정 방식은 [교차 리뷰](cross-review.md)에 있습니다.
 
 ### Risk
 

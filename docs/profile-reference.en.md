@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:2912c3a92dcdd0923b8ac97edb8d24eeea5a46e454641568de3b5b740808612f -->
+<!-- sage-doc-source: profile-reference.md sha256:180431ba4fc1538d67a91230617f1387e87426937b2a7b4292cbf2dc7e6019c7 -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -49,7 +49,7 @@ sage doctor --profile sage/project-profile.yaml
 
 ```yaml
 sage:
-  required_version: "1.3.4"
+  required_version: "1.3.5"
 
 project:
   name: "weatherapp"
@@ -75,16 +75,32 @@ cross_model:
 ```
 
 `active_host: auto` detects the host from the current execution environment. Phase 05 cross-model
-review selects a runtime other than the actual active host. If the peer CLI cannot be reached, a
-required review policy produces BLOCKED.
+review selects a runtime other than the actual active host. When cross review is effectively
+enabled and the peer CLI is unavailable, the result is BLOCKED under both `required` and
+`recommended` policies.
 
-`cross_model.policy` is `required | recommended | off`. `required` cannot be weakened by a local
-`cross_model.enabled: false` (a local profile can never weaken shared policy). `on_unavailable`
-governs what happens when the peer CLI cannot be reached, and only `block` is allowed, so that a
-committed policy file never declares a standing relaxation. To replace a round whose reviewer failed
-mid-run with a same-runtime review, use `sage cross-check --on-peer-failure same-runtime` for that
-round (recorded as degraded). `effort` is the reasoning effort passed to the peer CLI and defaults to
-`high`. How the reviewer runs and is measured is in [Cross review](cross-review.en.md).
+Resolving shared policy and local settings produces the effective `options.cross_model` value.
+
+| `cross_model.policy` | Enablement |
+|---|---|
+| `required` | Always enabled; a local `cross_model.enabled: false` cannot relax it |
+| `recommended` | Enabled by default; a local `cross_model.enabled: false` can opt out |
+| `off` | Always disabled |
+| Absent | Local `cross_model.enabled` takes precedence, otherwise shared `options.cross_model` |
+
+Thus the template's `options.cross_model: false` still enables cross review when its policy is
+`recommended` and no local opt-out exists. `team.core.reviewer.cross_model` is an inert field
+accepted for compatibility with existing profiles; it does not configure review mode or fallback.
+This block can be removed from existing profiles.
+
+Top-level `cross_model.on_unavailable` governs peer unavailability and only allows `block`, so a
+committed policy file never declares a standing relaxation. Under a policy other than `required`,
+explicitly choose `sage cross-check --packet-file <packet> --on-peer-failure same-runtime` for an
+invocation to attempt a same-runtime replacement for eligible peer failures. The command calls the
+peer again first, then attempts at most one fallback per invocation. Even a successful fallback is
+recorded as degraded; policy `required` never allows it. `effort` is the reasoning effort passed to
+the peer CLI and defaults to `high`. Eligible failure reasons and execution and measurement details
+are in [Cross review](cross-review.en.md).
 
 ### Risk
 
