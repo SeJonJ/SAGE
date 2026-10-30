@@ -6,6 +6,13 @@ a runtime fallback, because a fallback would ship the gap to users instead of su
 """
 
 MESSAGES = {
+    "cli.uninstall.personal_overlay_preserved": "Preserved user-owned personal overlay originals",
+    "cli.overlay_local.help": "Read validated personal overlay guidance as read-only JSON",
+    "cli.overlay_local.error": "Personal overlay validation failed: {code} ({path}). Fix the input or upgrade the CLI. Do not bypass validation by reading the raw file.",
+    "cli.overlay_local.invalid_scope": "Overlay scope in proposal[{index}] must be the string personal or project.",
+    "cli.overlay_local.scope": "      Scope: {scope}",
+    "cli.overlay_local.legacy_scope": "      Legacy proposal has no scope; showing the personal default candidate. Existing applied files are not moved.",
+    "cli.overlay_local.upgrade_notice": "Shared overlays were preserved. Move personal work habits or tool-environment guidance to sage/asset_overrides.local/ if needed. Nothing was moved automatically.",
     "cli.root.description": (
         "SAGE installs and verifies rule files, hooks and agent specs in a Claude or Codex project."
     ),
@@ -615,12 +622,12 @@ MESSAGES = {
     "cli.absorb.msg26": "\n【 Semantic gap → agent / skill (the path depends on the asset) 】",
     "cli.absorb.msg27": "  To apply: do not edit CORE renders directly. Author only COMPOSE_ALLOWED assets, via `/sage-asset-override`.",
     "cli.absorb.msg28": "        Gate-bearing CORE assets do not support overlays until an independent oracle guarantees them, and new project assets go through `/sage-asset`.",
-    "cli.absorb.msg29": "        An eligible overlay is materialized into the render, gated by `sage validate`, and preserved across install --force.",
+    "cli.absorb.msg29": "        Validate personal guidance with overlay-local and read it at execution time; sync then validate project guidance. Both survive install --force.",
     "cli.absorb.msg30": "        If the content should become general, promote it into the spec/CORE as a separate change afterwards.",
     "cli.absorb.msg31": "\n⚠️  {count} proposals have an unknown or missing target — target must be one of {{profile,hook,agent,skill}} to be classified:",
     "cli.absorb.msg32": "(no proposed changes)",
     "cli.absorb.msg33": "  · {arg} (not a dict — each proposal must be an object)",
-    "cli.absorb.msg34": "\nNothing is applied automatically (SSOT protection). Have a human review and apply the candidates above, then close the loop with generate/validate.",
+    "cli.absorb.msg34": "\nNothing is applied automatically (SSOT protection). Have a human review and apply scoped candidates, then check personal guidance with overlay-local, shared overlays with sync/validate, and other assets with the existing generate/validate flow.",
     "cli.absorb.msg35": "[sage absorb] --kind and --id are required (or --from-retro <note>)",
     "cli.absorb.msg36": "[sage absorb] TOOL ERROR: manifest not found",
     "cli.absorb.overlay_target_needs_id": "target confirmation needed: {hint} (specify asset_id, then verify COMPOSE_ALLOWED)",

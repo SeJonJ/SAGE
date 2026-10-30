@@ -15,6 +15,7 @@ gstack 의존 없음: claude-host→`codex exec`, codex-host→`claude -p` 를 S
 """
 
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -293,16 +294,12 @@ def _blocking_layer_issues(layers):
 
 
 def _find_root(explicit):
-    if explicit:
-        return os.path.abspath(explicit)
-    cur = os.getcwd()
-    while True:
-        if os.path.exists(os.path.join(cur, "sage", "project-profile.yaml")):
-            return cur
-        parent = os.path.dirname(cur)
-        if parent == cur:
-            return os.getcwd()
-        cur = parent
+    from sage.overlay_local import OverlayLocalError, discover_root
+    try:
+        return discover_root(explicit)
+    except OverlayLocalError:
+        # Preserve legacy no-profile diagnostics without inheriting another Git repo.
+        return os.path.realpath(explicit or os.getcwd())
 
 
 def _read_packet(path, command, language=None):
@@ -407,6 +404,10 @@ def _run_same_runtime(profile, host, packet_file, timeout, command="sage review"
     prompt = _read_packet(packet_file, command, language)
     if prompt is None:
         return _blocked_review(command, tr(language, "cli.review.blocked_packet_required"), 2)
+    prompt = _personal_reviewer_packet(root or os.getcwd(), prompt, language, command,
+                                      failed_run=failed_run)
+    if prompt is None:
+        return 2
     model = _same_runtime_model(profile)
     run = _call_peer(host, prompt, timeout, root or os.getcwd(), model=model, legacy_effort=False)
     if not run.ok:
@@ -446,6 +447,24 @@ def _run_same_runtime(profile, host, packet_file, timeout, command="sage review"
     print(f"REVIEWER_ACTUAL: same_runtime{'_degraded' if degraded else ''}")
     print(f"REVIEWER_STATUS: {'COMPLETE_DEGRADED' if (degraded or fallback_from) else 'COMPLETE'}")
     return 0
+
+
+def _personal_reviewer_packet(root, prompt, language, command, failed_run=None):
+    from sage.overlay_local import OverlayLocalError, reviewer_packet
+    try:
+        prompt, reference = reviewer_packet(root, prompt)
+    except OverlayLocalError as error:
+        if failed_run is not None:
+            print(f"REVIEWER_PEER_TOKENS: {failed_run.tokens_line()}")
+            print(f"REVIEWER_FALLBACK_FROM: {failed_run.peer}")
+            print(f"REVIEWER_FALLBACK_REASON: {failed_run.reason}")
+            _print_run_telemetry(failed_run)
+        _blocked_review(command, tr(language, 'cli.overlay_local.error',
+                                    code=error.code, path=error.path), 2)
+        return None
+    if reference is not None:
+        print('SAGE_LOCAL_OVERLAY_REF: ' + json.dumps(reference, ensure_ascii=False))
+    return prompt
 
 
 def run_review(args):
@@ -592,6 +611,9 @@ def run_cross_check(args):
     if prompt is None:
         return _blocked_review("sage cross-check",
                                tr(language_of(args), "cli.review.blocked_packet_required"), 2)
+    prompt = _personal_reviewer_packet(root, prompt, language_of(args), 'sage cross-check')
+    if prompt is None:
+        return 2
 
     if model_note_suffix:
         print(f"[sage cross-check] ⚠️  {render_issue(language_of(args), model_note_suffix)}",

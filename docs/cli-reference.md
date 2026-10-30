@@ -3,6 +3,44 @@
 [English](cli-reference.en.md) | [문서 인덱스](README.md) | 실행 환경의 정확한 옵션은
 `sage <command> --help`
 
+## 개인 overlay
+
+공유 `sage/asset_overrides/{agents,skills}/<id>.md`는 기존처럼 커밋하고 렌더에 합성합니다.
+개인 작업 습관·도구 환경은 Git 제외 `sage/asset_overrides.local/{agents,skills}/<id>.md`에 둡니다.
+개인 층은 같은 체크아웃에서만 적용하며 HOME 전역 층은 없습니다.
+
+```bash
+sage overlay-local --kind agent --id reviewer --root <project-root>
+sage overlay-local --kind skill --id sage-review --root <project-root>
+```
+
+이 명령은 읽기 전용입니다. 성공하면 `kind`, `id`, 상대 `path`, `sha256`, `content` JSON을
+반환하고, 해당 파일이 없거나 공백뿐이면 `null`, exit 0입니다. SHA-256은 실제 반환할 LF 정규화
+UTF-8 본문에서 계산합니다. JSON `kind`는 내부 복수형 `agents` 또는 `skills`입니다. 자동 탐색은 Git 경계를 넘지 않으며, 명시한 `--root`에서 다른
+프로젝트로 올라가지 않습니다. 현재 `COMPOSE_ALLOWED` 8개 자산만 허용하고 같은 완화·예약
+토큰·경로 검사를 수행합니다. 알려진 개인 inventory의 blocked/unknown/비정규 파일명·symlink·
+판독 오류도 실패입니다. 실패는 본문 없이 stderr와 nonzero로 알립니다. 오류·구버전 CLI는
+입력 수정/업그레이드로 해결하고 raw 파일 직접 읽기로 우회하지 않습니다.
+
+개인 내용은 공유/전역 CORE 렌더·manifest에 기록하지 않습니다. 기존 shared validate/sync는
+개인 층을 읽지 않습니다. headless review는 개인 reviewer가 있을 때 같은 대상의 공유 지침
+다음 개인 지침을 packet에 한 번씩 추가합니다. 개인 `sage-review` skill은 호스트 운영용으로
+reviewer persona에 섞지 않습니다. `SAGE_LOCAL_OVERLAY_REF`는 본문 없는 관측 참조입니다.
+
+retro/저작은 제안마다 `scope: personal|project`를 확인하며 personal이 기본입니다. scope 없는
+과거 제안은 personal 기본 후보로 표시하고 기존 적용 파일을 옮기지 않습니다. 잘못된 scope는
+실패하고 미승인 제안은 후보를 출력하지 않습니다. hook/profile 제안은 기존 경로를 유지합니다.
+05에는 실제 조회/전달 시 관측한 대상·상대경로·해시·전달 경로만 기록합니다. 다른 검증 파일을
+활성으로 간주하거나 종료 시 재검색해 과거 해시를 만들지 않습니다. 미사용 확인은 none,
+기록 유실은 UNRECORDED입니다. 본문·비밀값·사용자 절대 경로는 공유 보고서에 넣지 않습니다.
+일반 agent 준수·기록은 기존 지침 계약이며, 사이클 잠금·완전 재현·새 승인 게이트를 제공하지 않습니다.
+
+install/upgrade는 개인 경로 ignore를 추가하고 원문을 보존합니다. uninstall도 사용자 원문을
+보존하고 개인 경로 ignore 한 줄을 관리 블록 밖에 남깁니다. 이미 추적한 파일은 ignore로 untrack되지 않습니다. upgrade는 공유 overlay가 있으면
+수동 이동 안내만 하며 자동 분류·이행·삭제·Git index 변경·미이행 차단을 하지 않습니다.
+옮길 때는 사람이 공유 원문의 개인 절을 제거하고 개인 파일로 옮긴 뒤 shared sync와 개인 검사를
+각각 수행합니다. 안내 읽음 상태를 저장하지 않아 다음 upgrade에도 같은 안내가 나올 수 있습니다.
+
 ## 설치와 생성
 
 | 명령 | 역할 |

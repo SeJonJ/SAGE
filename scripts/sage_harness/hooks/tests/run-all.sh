@@ -441,5 +441,9 @@ echo "### 85. Phase 05 리뷰 규칙 2단계 (차단 기준 수렴·크리티컬
 python3 "$HERE/test_review_blocking_convergence.py" || rc=1
 
 echo ""
+echo "### 86. personal overlay consumer behavior"
+python3 "$HERE/test_overlay_local.py" || rc=1
+
+echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi
 exit "$rc"

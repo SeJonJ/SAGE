@@ -726,9 +726,11 @@ def _finalize_layout(root, plan, language):
 # install 단독 실행에서는 사용자가 `--force` 를 직접 친 것이라 그 계약이 성립하지만, upgrade 는
 # 사용자가 "버전을 맞춰라" 라고 한 것이지 "내 검증 스크립트를 버려라" 라고 한 것이 아니다.
 # 위임한다고 해서 위임처의 계약이 이쪽 계약을 덮어쓰지는 않는다.
+_PERSONAL_OVERLAY_PREFIX = os.path.join("sage", "asset_overrides.local") + os.sep
 _USER_OWNED_PREFIXES = (
     os.path.join("sage", "project-profile.local.yaml"),
     os.path.join("sage", "asset_overrides") + os.sep,
+    _PERSONAL_OVERLAY_PREFIX,
     "plan_docs" + os.sep,
     os.path.join(".sage", "override.jsonl"),
     os.path.join(".sage", "acceptance-waivers.jsonl"),
@@ -769,6 +771,11 @@ def _restore_user_owned(root, snapshot, times=None, skip=frozenset()):
     current = _snapshot_tree(root)
     for rel in sorted(set(snapshot) | set(current)):
         if rel in skip:
+            continue
+        # No delegated step owns personal overlays. A difference here can be a
+        # normal editor save: preserve it rather than restoring a stale snapshot
+        # or deleting a newly authored file after a successful upgrade.
+        if rel.replace("/", os.sep).startswith(_PERSONAL_OVERLAY_PREFIX):
             continue
         if not _is_user_owned(rel):
             continue
@@ -1015,6 +1022,10 @@ def run(args):
         return EXIT_UNSAFE
     if apply_error or blockers:
         return EXIT_BLOCKED
+    if args.apply:
+        from sage.overlay_classify import overlay_files
+        if overlay_files(root):
+            print(tr(language, 'cli.overlay_local.upgrade_notice'))
     return EXIT_OK
 
 

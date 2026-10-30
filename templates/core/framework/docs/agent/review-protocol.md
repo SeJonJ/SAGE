@@ -35,6 +35,25 @@ L3 changes require an independent review before they are considered done.
    it does not validate a separate human-approval record.
 3. The review outcome is recorded in a review/plan document.
 
+## Personal overlay observations in Phase 05
+
+Keep a small table with target, relative source path, observed SHA-256, and delivery
+(`host`, `worker`, or `reviewer packet`). Use actual `overlay-local` responses and
+`SAGE_LOCAL_OVERLAY_REF` lines emitted by the review CLI. Only delivered guidance counts;
+other files scanned for validation are not active. Deduplicate the same path/hash, but
+record both hashes if the file changed between calls. Never rescan current files to invent
+past usage. Record `none` only when absence of personal usage was confirmed; if references were
+lost, record `UNRECORDED`. Do not put personal bodies, secrets, or user absolute paths in
+shared Phase 05 documents. This is an agent-authored observation, not a new gate, approval
+receipt, immutable snapshot, or complete replay record.
+
+Never preappend shared or personal reviewer additions to a headless review packet:
+the CLI is their sole loader, even when a host delegates the reviewer.
+The headless CLI validates personal inputs before peer execution. If a personal reviewer
+exists, it appends same-target shared additions followed by personal additions once each.
+The host's personal `skills/sage-review.md` is not reviewer persona text. Each fallback
+starts from the original packet; existing mode/status/fallback policy stays unchanged.
+
 ## Acceptance evidence gate
 
 Review is not only a code-quality check. It must verify whether explicit user

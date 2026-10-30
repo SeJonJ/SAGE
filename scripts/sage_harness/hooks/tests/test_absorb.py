@@ -199,7 +199,7 @@ class TestAbsorbFromRetro(unittest.TestCase):
             self.assertIn("기계적 누락 → profile / hook", out)
             self.assertIn("risk.l3_content_keywords", out)
             self.assertIn("의미적 누락 → agent / skill (자산별 반영 경로 판정)", out)
-            self.assertIn("대상 확인 필요: sage/asset_overrides/agents/<agent-id>.md", out)
+            self.assertIn("대상 확인 필요: sage/asset_overrides.local/agents/<agent-id>.md", out)
             self.assertIn("install --force", out)
             self.assertIn("자동 반영하지 않음", out)
 
@@ -212,8 +212,8 @@ class TestAbsorbFromRetro(unittest.TestCase):
             self.assertEqual(rc, 0, out)
             self.assertIn("overlay 미지원: agents/qa", out)
             self.assertIn("overlay 미지원: skills/sage-profile-modify", out)
-            self.assertNotIn("sage/asset_overrides/agents/qa.md", out)
-            self.assertNotIn("sage/asset_overrides/skills/sage-profile-modify.md", out)
+            self.assertNotIn("sage/asset_overrides.local/agents/qa.md", out)
+            self.assertNotIn("sage/asset_overrides.local/skills/sage-profile-modify.md", out)
 
     def test_fb23_reclassified_agent_skill_suggest_overlay_path(self):
         # FB23: oracle-backed 재분류 자산(leader·sage-team)은 canonical overlay 경로를 제안한다.
@@ -222,8 +222,8 @@ class TestAbsorbFromRetro(unittest.TestCase):
                      '{"target":"skill","id":"sage-team","proposed_change":"완료보고 보강"}]')
             rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals=props)))
             self.assertEqual(rc, 0, out)
-            self.assertIn("sage/asset_overrides/agents/leader.md", out)
-            self.assertIn("sage/asset_overrides/skills/sage-team.md", out)
+            self.assertIn("sage/asset_overrides.local/agents/leader.md", out)
+            self.assertIn("sage/asset_overrides.local/skills/sage-team.md", out)
             self.assertNotIn("overlay 미지원: agents/leader", out)
 
     def test_eligible_agent_proposal_suggests_canonical_overlay_path(self):
@@ -232,7 +232,7 @@ class TestAbsorbFromRetro(unittest.TestCase):
                      '"proposed_change":"백엔드 체크리스트 추가"}]')
             rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals=props)))
             self.assertEqual(rc, 0, out)
-            self.assertIn("eligible overlay 후보: sage/asset_overrides/agents/implementer-a.md", out)
+            self.assertIn("eligible overlay 후보: sage/asset_overrides.local/agents/implementer-a.md", out)
 
     def test_overlay_resolution_follows_language(self):
         """overlay 안내 문구도 language_of() 를 따른다."""
@@ -243,9 +243,9 @@ class TestAbsorbFromRetro(unittest.TestCase):
             rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals=props),
                                       _language_context=LanguageContext(language="en", source="cli")))
             self.assertEqual(rc, 0, out)
-            self.assertIn("eligible overlay candidate: sage/asset_overrides/agents/implementer-a.md", out)
+            self.assertIn("eligible overlay candidate: sage/asset_overrides.local/agents/implementer-a.md", out)
             self.assertIn("overlay unsupported: agents/qa", out)
-            self.assertIn("target confirmation needed: sage/asset_overrides/agents/<agent-id>.md", out)
+            self.assertIn("target confirmation needed: sage/asset_overrides.local/agents/<agent-id>.md", out)
             self.assertNotIn("eligible overlay 후보", out)
             self.assertNotIn("overlay 미지원", out)
             self.assertNotIn("대상 확인 필요", out)
@@ -256,7 +256,7 @@ class TestAbsorbFromRetro(unittest.TestCase):
                      '{"target":"skill","asset_id":"../sage-profile-modify!!","proposed_change":"정규화"}]')
             rc, out = run_absorb(Args(from_retro=_retro_note(d, "true", proposals=props)))
             self.assertEqual(rc, 0, out)
-            self.assertIn("대상 확인 필요: sage/asset_overrides/agents/<agent-id>.md", out)
+            self.assertIn("대상 확인 필요: sage/asset_overrides.local/agents/<agent-id>.md", out)
             self.assertIn("overlay 미지원: skills/sage-profile-modify", out)
 
     def test_proposals_anchored_to_heading_not_decoy(self):
