@@ -2,6 +2,23 @@
 
 [English](troubleshooting.en.md) | [문서 인덱스](README.md)
 
+## 개인 지침이 공동 개발자에게도 적용됩니다
+
+개인 절이 공유 `sage/asset_overrides/`에 남아 있으면 기존대로 팀에 적용됩니다.
+upgrade는 자동으로 옮기지 않습니다. 사람이 개인 절을 `sage/asset_overrides.local/`의 같은
+kind/id 파일로 옮기고 공유 원문에서 제거한 뒤 `sage sync-overlays`를 실행하세요.
+개인 파일은 `sage overlay-local --kind agent|skill --id <id> --root <project-root>`로 검사합니다.
+읽기 실패는 raw 파일로 우회하지 않습니다. [개인 overlay 계약](cli-reference.md#개인-overlay)을 참고하세요.
+
+개인 디렉터리의 실제 이름도 소문자 `sage/asset_overrides.local/`을 사용하세요. 대소문자를
+구분하지 않는 파일시스템에서 다른 철자를 사용하고 Git의 `core.ignorecase=false`를 설정한
+경우에는 기본 ignore에서 빠질 수 있습니다. `git check-ignore -v -- <실제-개인-파일-경로>`로
+제외 여부를 확인하고, 필요하면 해당 실제 경로의 사용자 ignore 규칙을 직접 추가하세요.
+
+`upgrade --apply` 전에는 개인 파일 편집을 마치고 저장·백업하세요. 기존 실패 rollback은
+시작 전 snapshot으로 복구하므로, 실행 중 동시 저장·생성·삭제한 개인 변경이 되돌아갈 수
+있습니다. 성공 upgrade의 개인 변경 보존을 실패 rollback의 동시 편집 보장으로 해석하지 마세요.
+
 ## 기존 `CLAUDE.md` · `AGENTS.md` 와 충돌해 설치가 멈춤
 
 ```

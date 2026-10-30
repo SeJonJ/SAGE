@@ -223,6 +223,68 @@ class TestApplyIsSurgical(unittest.TestCase):
 
 
 class TestOwnershipBoundary(unittest.TestCase):
+    def test_concurrent_personal_changes_survive_successful_upgrade(self):
+        from unittest import mock
+        import io
+        from contextlib import redirect_stdout
+        with tempfile.TemporaryDirectory() as root:
+            _install(root)
+            personal = Path(root, 'sage/asset_overrides.local/agents/reviewer.md')
+            personal.parent.mkdir(parents=True)
+            personal.write_text('ORIGINAL', encoding='utf-8')
+            removed = personal.with_name('implementer-a.md')
+            removed.write_text('USER_WILL_REMOVE', encoding='utf-8')
+            created = personal.with_name('leader.md')
+            real_steps = up._managed_steps
+
+            def scheduled_steps(*args):
+                for name, step in real_steps(*args):
+                    def scheduled(name=name, step=step):
+                        code = step()
+                        if name == 'validate' and code == 0:
+                            personal.write_text('USER_SAVED_DURING_UPGRADE', encoding='utf-8')
+                            created.write_text('USER_CREATED_DURING_UPGRADE', encoding='utf-8')
+                            removed.unlink()
+                        return code
+                    yield name, scheduled
+
+            with mock.patch.object(up, '_managed_steps', side_effect=scheduled_steps), \
+                    redirect_stdout(io.StringIO()):
+                self.assertEqual(_run(root, apply=True), up.EXIT_OK)
+            self.assertEqual(personal.read_text(), 'USER_SAVED_DURING_UPGRADE')
+            self.assertEqual(created.read_text(), 'USER_CREATED_DURING_UPGRADE')
+            self.assertFalse(removed.exists())
+
+    def test_personal_original_survives_upgrade_with_notice_only_for_shared(self):
+        import io
+        from contextlib import redirect_stdout
+        with tempfile.TemporaryDirectory() as root:
+            _install(root)
+            personal = Path(root, 'sage/asset_overrides.local/agents/reviewer.md')
+            shared = Path(root, 'sage/asset_overrides/agents/reviewer.md')
+            for p, body in [(personal, b'Personal examples.\r\n'), (shared, b'Team examples.\n')]:
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_bytes(body)
+            originals = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in (personal, shared)}
+            ignore = Path(root, '.gitignore')
+            # Old-version bytes, not an already-correct new install.
+            ignore.write_text('USER_RULE\n' + ignore.read_text().replace('/sage/asset_overrides.local/\n', ''))
+            self.assertNotIn('/sage/asset_overrides.local/', ignore.read_text())
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(_run(root, apply=True), up.EXIT_OK)
+            self.assertIn('자동 이동하지 않았습니다', out.getvalue())
+            self.assertIn('/sage/asset_overrides.local/', Path(root, '.gitignore').read_text())
+            self.assertIn('USER_RULE', ignore.read_text())
+            for p, before in originals.items():
+                self.assertEqual((p.read_bytes(), p.stat().st_mtime_ns), before)
+            shared.unlink()
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(_run(root, apply=True), up.EXIT_OK)
+            self.assertNotIn('자동 이동하지 않았습니다', out.getvalue())
+            self.assertEqual(personal.read_bytes(), originals[personal][0])
+
     def test_unowned_drift_blocks_a_normal_apply(self):
         root = _install(tempfile.mkdtemp(), real=False, manifest={
             "sage_version": "0.0.1", "generator_version": __version__,
@@ -308,6 +370,9 @@ class TestManagedAssetDelivery(unittest.TestCase):
     def test_the_whole_operation_rolls_back_when_a_later_step_fails(self):
         """단계 사이 실패는 앞 단계가 이미 커밋된 상태다 — 전체를 되돌려야 한다."""
         root, _ = self._aged_install()
+        personal = Path(root, 'sage/asset_overrides.local/agents/reviewer.md')
+        personal.parent.mkdir(parents=True)
+        personal.write_bytes(b'User original.\r\n')
         before = _tree(root)
         real = up._managed_steps
 

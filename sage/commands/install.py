@@ -160,7 +160,7 @@ def _render_local_profile_gitignore(current):
         current,
         _LOCAL_PROFILE_IGNORE_START,
         _LOCAL_PROFILE_IGNORE_END,
-        (_LOCAL_PROFILE_IGNORE_ENTRY,),
+        (_LOCAL_PROFILE_IGNORE_ENTRY, '/sage/asset_overrides.local/'),
         "SAGE LOCAL PROFILE",
     )
     return _render_gitignore_block(

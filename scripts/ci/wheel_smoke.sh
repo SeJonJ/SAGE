@@ -798,7 +798,8 @@ import io, os, sys
 proj = sys.argv[1]
 path = os.path.join(proj, ".gitignore")
 body = io.open(path, encoding="utf-8").read() if os.path.exists(path) else ""
-expected = "build/\n\n\n# 사용자 규칙\n*.log\n"
+# 개인 원문이 나중에 생겨도 공유되지 않도록 이 ignore 한 줄은 제거 후 보존한다.
+expected = "build/\n\n\n# 사용자 규칙\n*.log\n/sage/asset_overrides.local/\n"
 if body != expected:
     print(f"❌ .gitignore 사용자 구간이 바뀌었다\n  기대: {expected!r}\n  실제: {body!r}")
     raise SystemExit(1)

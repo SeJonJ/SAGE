@@ -8,6 +8,7 @@
 |---|---|
 | 처음 설치하는 사용자 | [퀵스타트](quickstart.md) |
 | 매일 CLI를 사용하는 개발자 | [CLI 레퍼런스](cli-reference.md) |
+| 팀 공유 지침과 Git 제외 개인 지침을 나누는 개발자 | [개인 overlay·수동 이행](cli-reference.md#개인-overlay) |
 | 프로젝트 정책을 설정하는 관리자 | [Profile 레퍼런스](profile-reference.md) |
 | Phase 05 리뷰 방식과 비용을 이해하려는 개발자 | [교차 리뷰](cross-review.md) |
 | 설치·실행 오류를 해결하는 사용자 | [문제 해결](troubleshooting.md) |

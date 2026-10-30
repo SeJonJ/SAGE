@@ -30,6 +30,7 @@ import tempfile
 import textwrap
 import types
 import unittest
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(HERE))))
@@ -570,6 +571,75 @@ class CommandSurface(Base):
 class Preservation(Base):
     """사용자 자산은 byte 하나 바뀌지 않는다."""
 
+    def test_personal_case_alias_matches_loader_and_uninstall_ownership(self):
+        from sage.overlay_local import load_local
+        consumer = self.fresh()
+        upper = Path(consumer.project, 'sage/Asset_Overrides.Local/agents/reviewer.md')
+        canonical = Path(consumer.project, 'sage/asset_overrides.local/agents/reviewer.md')
+        upper.parent.mkdir(parents=True)
+        upper.write_bytes(b'CASE_PRIVATE\r\n')
+        alias = canonical.exists()
+        if not alias:
+            # On case-sensitive filesystems this is a different SAGE-owned
+            # sibling, while only the canonical directory is personal input.
+            canonical.parent.mkdir(parents=True)
+            canonical.write_bytes(b'CANONICAL_PRIVATE\r\n')
+        original = canonical.read_bytes()
+        loaded = load_local(consumer.project, 'agents', 'reviewer')
+        self.assertEqual(loaded['content'], original.decode().replace('\r\n', '\n'))
+        result = sage('uninstall', '--dest', consumer.project, '--yes', env=consumer.env)
+        self.assertIn(result.returncode, (0, 1), result.stdout + result.stderr)
+        self.assertTrue(canonical.exists(), 'A loader-accepted personal original was removed')
+        self.assertEqual(canonical.read_bytes(), original)
+        self.assertEqual(upper.exists(), alias)
+        second = sage('uninstall', '--dest', consumer.project, '--yes', env=consumer.env)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertEqual(canonical.read_bytes(), original)
+
+    def test_personal_created_during_plan_is_preserved_by_block_and_retry(self):
+        from unittest import mock
+        consumer = self.fresh()
+        personal = Path(consumer.project, 'sage/asset_overrides.local/agents/reviewer.md')
+        self.assertFalse(personal.exists())
+        manifest = Path(uninstall_plan.manifest_path(consumer.project))
+        original_manifest = manifest.read_bytes()
+        real_actions = uninstall_plan._project_actions
+
+        def scheduled(*args, **kwargs):
+            actions = real_actions(*args, **kwargs)
+            personal.parent.mkdir(parents=True)
+            personal.write_bytes(b'USER_CREATED_DURING_PLAN\r\n')
+            return actions
+
+        with mock.patch.object(uninstall_plan, '_project_actions', side_effect=scheduled):
+            plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        self.assertEqual(plan.status, uninstall_plan.BLOCKED)
+        self.assertEqual(plan.blocked_reason, 'uninstall.fingerprint_changed')
+        self.assertEqual(plan.write_targets(), ())
+        self.assertEqual(manifest.read_bytes(), original_manifest)
+        self.assertEqual(personal.read_bytes(), b'USER_CREATED_DURING_PLAN\r\n')
+        retry = sage('uninstall', '--dest', consumer.project, '--yes', env=consumer.env)
+        self.assertIn(retry.returncode, (0, 1), retry.stdout + retry.stderr)
+        self.assertEqual(personal.read_bytes(), b'USER_CREATED_DURING_PLAN\r\n')
+        self.assertFalse(manifest.exists())
+
+    def test_personal_overlay_is_user_data_without_partial_remnant(self):
+        consumer = self.fresh()
+        baseline = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        preserved_before = {a.path for a in baseline.of_kind(uninstall_plan.PRESERVE)}
+        personal = Path(consumer.project, 'sage/asset_overrides.local/agents/reviewer.md')
+        personal.parent.mkdir(parents=True)
+        personal.write_bytes(b'Personal original.\r\n')
+        plan = uninstall_plan.build(consumer.project, uninstall_plan.SCOPE_PROJECT)
+        self.assertEqual({a.path for a in plan.of_kind(uninstall_plan.PRESERVE)}, preserved_before)
+        result = sage('uninstall', '--dest', consumer.project, '--yes', env=consumer.env)
+        self.assertEqual(result.returncode, baseline.exit_code, result.stdout + result.stderr)
+        self.assertEqual(personal.read_bytes(), b'Personal original.\r\n')
+        self.assertIn('/sage/asset_overrides.local/', Path(consumer.project, '.gitignore').read_text())
+        Path(consumer.project, 'sage', '.DS_Store').write_bytes(b'Finder metadata')
+        second = sage('uninstall', '--dest', consumer.project, '--yes', env=consumer.env)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+
     def test_user_assets_survive_a_full_uninstall(self):
         consumer = self.fresh()
         os.makedirs(os.path.join(consumer.project, "plan_docs", "00-base_plan"))
@@ -577,9 +647,11 @@ class Preservation(Base):
             os.path.join(consumer.project, "plan_docs", "00-base_plan", "plan.md"): "plan\n",
             os.path.join(consumer.project, "app.py"): "print('hi')\n",
             os.path.join(consumer.project, "AGENT_GUIDE.md"): None,
+            os.path.join(consumer.project, "sage", "asset_overrides.local", "agents", "reviewer.md"): "Personal original.\n",
         }
         for path, body in keep.items():
             if body is not None:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, "w", encoding="utf-8") as handle:
                     handle.write(body)
         before = {}
@@ -593,6 +665,11 @@ class Preservation(Base):
             self.assertTrue(os.path.isfile(path), f"보존 대상이 사라졌다: {path}")
             with open(path, "rb") as handle:
                 self.assertEqual(handle.read(), blob, path)
+        self.assertFalse(os.path.exists(os.path.join(consumer.project, 'sage', 'project-profile.yaml')))
+        self.assertIn('/sage/asset_overrides.local/', Path(consumer.project, '.gitignore').read_text())
+        Path(consumer.project, 'sage', '.DS_Store').write_bytes(b'Finder metadata')
+        second = sage('uninstall', '--dest', consumer.project, '--yes', env=consumer.env)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
 
 
 class GlobalFamily(Base):

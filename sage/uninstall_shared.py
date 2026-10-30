@@ -556,6 +556,8 @@ def classify_gitignore_text(text):
 
     result = text
     removed = 0
+    personal_ignore = '/sage/asset_overrides.local/'
+    keep_personal_ignore = False
     for label, start_marker, end_marker in GITIGNORE_BLOCKS:
         span = _block_span(result, start_marker, end_marker)
         if span is None:
@@ -563,6 +565,8 @@ def classify_gitignore_text(text):
         if isinstance(span, str):
             return Outcome(PRESENT, [damage_marker(span, label)])
         start, end = span
+        if personal_ignore in result[start:end].splitlines():
+            keep_personal_ignore = True
         # **이음매만 다룬다.** install 은 `<앞 내용>` + 빈 줄 하나 + `<블록>\n` 을 썼으므로,
         # 그 셋만 정확히 되돌린다.
         before, after = result[:start], result[end:]
@@ -575,6 +579,12 @@ def classify_gitignore_text(text):
 
     if not removed:
         return Outcome(ABSENT)
+
+    # Personal originals survive removal. Retain this one ignore rule outside
+    # managed blocks so a later `git add -A` does not publish private guidance.
+    # No filesystem lookup is needed: planning and execution use identical bytes.
+    if keep_personal_ignore and personal_ignore not in result.splitlines():
+        result += ('' if not result or result.endswith('\n') else '\n') + personal_ignore + '\n'
 
     # 파일 전체를 정규화하지 않는다. 연속 빈 줄을 뭉치거나 앞뒤 개행을 다듬으면 우리가 쓰지
     # 않은 줄까지 바뀌고, 사용자는 제거와 무관한 diff 를 받는다. 의미가 보존되는 것과 바이트를

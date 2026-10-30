@@ -160,6 +160,19 @@ _RETRO_MECHANICAL = {"profile", "hook"}   # 결정론 강제 — profile 키 / h
 _RETRO_SEMANTIC = {"agent", "skill"}      # interpretive — spec intent/advisory_scope 보강
 
 
+def _proposal_scope(p):
+    """Legacy proposals default to personal; explicit malformed scope is an error.
+
+    hook/profile proposals retain their existing mechanical route.
+    """
+    if p.get('target') not in ('agent', 'skill'):
+        return None
+    scope = p.get('scope', 'personal')
+    if not isinstance(scope, str) or scope not in ('personal', 'project'):
+        raise ValueError('invalid_overlay_scope')
+    return scope
+
+
 def _overlay_hint(p):
     """agent/skill retro proposal 의 overlay 후보 경로(eligibility 판정 전 표시용).
 
@@ -175,7 +188,8 @@ def _overlay_hint(p):
         safe = "".join(ch if (ch.isalnum() or ch in "._-") else "-" for ch in os.path.basename(aid))
         safe = safe.strip(".-") or f"<{target}-id>"
     subdir = "agents" if target == "agent" else "skills"
-    return f"sage/asset_overrides/{subdir}/{safe}.md"
+    directory = 'asset_overrides.local' if _proposal_scope(p) == 'personal' else 'asset_overrides'
+    return f"sage/{directory}/{subdir}/{safe}.md"
 
 
 def _overlay_resolution(p, language=None):
@@ -327,6 +341,14 @@ def _absorb_from_retro(args) -> int:
     if err:
         print(f"[sage absorb] {err}", file=sys.stderr)
         return 2
+    for index, proposal in enumerate(proposals):
+        if isinstance(proposal, dict):
+            try:
+                _proposal_scope(proposal)
+            except ValueError:
+                print(tr(language_of(args), 'cli.overlay_local.invalid_scope', index=index),
+                      file=sys.stderr)
+                return 2
 
     print(tr(language_of(args), "cli.absorb.msg18", os_path=os.path.basename(path)))
     # target 이 str 일 때만 분류 — list/dict 등 unhashable target 의 set membership 크래시 방지(codex B).
@@ -364,6 +386,9 @@ def _absorb_from_retro(args) -> int:
         print(tr(language_of(args), "cli.absorb.msg26"))
         for p in sem:
             _show(p)
+            print(tr(language_of(args), 'cli.overlay_local.scope', scope=_proposal_scope(p)))
+            if 'scope' not in p:
+                print(tr(language_of(args), 'cli.overlay_local.legacy_scope'))
             print(f"      {_overlay_resolution(p, language_of(args))}")
         print(tr(language_of(args), "cli.absorb.msg27"))
         print(tr(language_of(args), "cli.absorb.msg28"))

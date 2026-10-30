@@ -263,10 +263,12 @@ _DISTILLER_PROMPT = """\
 - `hook` = pre-implementation-gate 등 결정론 게이트(phase/risk 순서 강제) — **실제 결정론 차단은 여기**. 단 "범용 코드 안티패턴 grep" 전용 필드는 현재 없으므로, 그런 하드 차단이 필요하면 hook/전략 신설이 별도 과제다.
 - `agent|skill` = 페르소나/체크리스트로 판단 유도(패턴화 불가한 것).
 - `sage/asset_overrides/agents/*.md` · `sage/asset_overrides/skills/*.md` = 프로젝트 로컬 overlay. SAGE 가 `COMPOSE_ALLOWED` 자산의 overlay 만 CORE 렌더에 관리 블록으로 물리화(install/sync)하고 `sage validate` 가 게이트한다. `sage install --force` 가 ship 하지 않아 loop 학습이 보존된다. eligible 자산 개선은 CORE 렌더 직접수정이 아니라 `/sage-asset-override` overlay 로 제안한다. 게이트-보유/blocked 자산은 overlay 를 제안하지 말고 profile/convention/project-local doc 또는 별도 CORE/spec 변경으로 라우팅한다.
+[SCOPE] agent/skill 제안마다 personal(기본) 또는 project를 사람이 확인한다. 개인 작업 습관·도구 환경은 personal, 팀 공통 규칙만 project다. 개인 경로는 sage/asset_overrides.local/{agents,skills}/<id>.md이고 실행 시 overlay-local로 검사한다. hook/profile은 기존 경로다.
 [VERIFY] 제안한 target 이 실제로 그 결함을 다음부터 잡을 수 있는지, 해당 메커니즘의 소스(전략 스크립트/profile 스키마)를 확인한 뒤 확정하라.
 [OUTPUT] 제안 목록(자동반영 아님):
 [{ "pattern":"...", "evidence":["finding 근거/파일:라인"], "target":"hook|profile|agent|skill",
-   "asset_id":"해당 agent/skill id(있을 때)", "proposed_change":"구체 patch 문구(profile 키/overlay 문장/hook spec 변경 등)", "confidence":"high|med|low" }]
+   "asset_id":"해당 agent/skill id(있을 때)", "scope":"personal|project (agent/skill만, 기본 personal; 제안별 사람 확인)",
+   "proposed_change":"구체 patch 문구(profile 키/overlay 문장/hook spec 변경 등)", "confidence":"high|med|low" }]
 """
 
 
@@ -401,6 +403,11 @@ def _check_note(path, root, run_id=None, language=None):
                                    target=p.get("target"), targets=list(_PROPOSAL_TARGETS)))
             if not str(p.get("proposed_change") or "").strip():
                 problems.append(tr(language, "cli.retro.problem_proposal_empty_change", i=i))
+            from sage.commands.absorb import _proposal_scope
+            try:
+                _proposal_scope(p)
+            except ValueError:
+                problems.append(tr(language, 'cli.overlay_local.invalid_scope', index=i))
 
     if problems:
         print(tr(language, "cli.retro.msg03", os_path=os.path.basename(path)), file=sys.stderr)

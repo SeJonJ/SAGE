@@ -1,7 +1,27 @@
-<!-- sage-doc-source: troubleshooting.md sha256:16ac5072d78c0a29377da28e7465c42dc43262aab0e287c36a23c52a26396840 -->
+<!-- sage-doc-source: troubleshooting.md sha256:f8cb3b55a4eefb67c1f01301dc83decd94352b4e0bad9cad112f4404809a0f74 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
+
+## Personal guidance also affects a teammate
+
+Personal sections left in shared `sage/asset_overrides/` still apply to the team. Upgrade does
+not move them automatically. A person moves those sections to the same kind/id under
+`sage/asset_overrides.local/`, removes them from the shared original, then runs
+`sage sync-overlays`. Validate the personal file with
+`sage overlay-local --kind agent|skill --id <id> --root <project-root>`. Do not bypass a loader
+failure by reading raw files. See the [personal overlay contract](cli-reference.en.md#personal-overlays).
+
+Use the lowercase spelling `sage/asset_overrides.local/` for the actual directory name. On a
+case-insensitive filesystem, a differently cased name combined with Git's nondefault
+`core.ignorecase=false` can bypass the default ignore rule. Check the actual file with
+`git check-ignore -v -- <actual-personal-file-path>` and, if needed, add a matching user-owned
+ignore rule yourself.
+
+Before `upgrade --apply`, finish editing personal files, save them, and keep a backup. The existing
+failure rollback restores the pre-upgrade snapshot, so personal edits, creations, or deletions made
+while it runs can be reverted. Successful-upgrade preservation does not guarantee that concurrent
+edits survive rollback after an upgrade failure.
 
 ## Install stops on a conflict with an existing `CLAUDE.md` or `AGENTS.md`
 

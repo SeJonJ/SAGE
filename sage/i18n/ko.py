@@ -9,6 +9,13 @@
 """
 
 MESSAGES = {
+    "cli.uninstall.personal_overlay_preserved": "사용자 소유 개인 overlay 원문 보존",
+    "cli.overlay_local.help": "검사된 개인 overlay를 읽기 전용 JSON으로 조회",
+    "cli.overlay_local.error": "개인 overlay 검사 실패: {code} ({path}). 입력을 수정하거나 CLI를 업그레이드하세요. 원문 직접 읽기로 우회하지 마세요.",
+    "cli.overlay_local.invalid_scope": "제안[{index}]의 overlay scope는 personal 또는 project 문자열이어야 합니다.",
+    "cli.overlay_local.scope": "      적용 범위: {scope}",
+    "cli.overlay_local.legacy_scope": "      과거 제안에 scope가 없어 personal 기본 후보로 안내합니다. 기존 적용 파일은 옮기지 않습니다.",
+    "cli.overlay_local.upgrade_notice": "공유 overlay는 유지했습니다. 개인 작업 습관·도구 환경 지침은 필요하면 sage/asset_overrides.local/로 옮겨 주세요. 자동 이동하지 않았습니다.",
     # 최초 발견 — 인자 없이 `sage` 를 쳤을 때. 유일하게 한영을 함께 내는 자리라 catalog 를
     # 거치지 않고 고정 문자열이지만, key 는 inventory 대조를 위해 여기에도 등록한다.
     "cli.root.description": (
@@ -632,12 +639,12 @@ MESSAGES = {
     "cli.absorb.msg26": "\n【 의미적 누락 → agent / skill (자산별 반영 경로 판정) 】",
     "cli.absorb.msg27": "  적용: CORE 렌더 직접수정 금지. COMPOSE_ALLOWED 자산만 `/sage-asset-override` 로 작성하세요.",
     "cli.absorb.msg28": "        gate-bearing CORE 자산은 독립 oracle 보증 전까지 overlay 미지원이며, 새 프로젝트 자산은 `/sage-asset` 경로입니다.",
-    "cli.absorb.msg29": "        eligible overlay는 렌더에 물리화되고 `sage validate`가 게이트하며 install --force에도 보존됩니다.",
+    "cli.absorb.msg29": "        personal은 overlay-local로 검사해 실행 시 읽고, project는 sync 후 validate합니다. 두 범위 모두 install --force에 보존됩니다.",
     "cli.absorb.msg30": "        범용화할 내용이면 이후 spec/CORE 반영은 별도 변경으로 승격하세요.",
     "cli.absorb.msg31": "\n⚠️  target 미지/누락 {count}건 — target ∈ {{profile,hook,agent,skill}} 이어야 분류됨:",
     "cli.absorb.msg32": "(변경안 없음)",
     "cli.absorb.msg33": "  · {arg} (dict 아님 — 제안 항목은 객체여야)",
-    "cli.absorb.msg34": "\n자동 반영하지 않음(SSOT 보호). 위 후보를 사람이 검토·적용 후 generate/validate 로 닫으세요.",
+    "cli.absorb.msg34": "\n자동 반영하지 않음(SSOT 보호). 사람이 범위별 후보를 검토·적용하고, 개인은 overlay-local, 공유 overlay는 sync/validate, 나머지는 기존 generate/validate로 확인하세요.",
     "cli.absorb.msg35": "[sage absorb] --kind 와 --id 가 필요합니다 (또는 --from-retro <노트>)",
     "cli.absorb.msg36": "[sage absorb] TOOL ERROR: manifest 미발견",
     "cli.absorb.overlay_target_needs_id": "대상 확인 필요: {hint} (asset_id 지정 후 COMPOSE_ALLOWED 검증)",

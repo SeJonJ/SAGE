@@ -543,13 +543,44 @@ def sage_traces(dest):
     uninstall 직후 두 번째 실행이 `BLOCKED` 가 되고, 그러면 멱등 계약이 깨진다 — 정상적으로
     끝낸 사용자가 다음 실행에서 "안전한 계획을 만들 수 없다" 는 말을 듣는다.
     """
-    found = [path for path in _managed.sage_tree_paths(dest) if os.path.isdir(path)]
+    found = [path for path in _managed.sage_tree_paths(dest)
+             if os.path.isdir(path) and not _personal_overlay_only(dest, path)]
     # **우리가 영원히 손대지 않을 파일은 흔적이 아니다.** 손상된 host JSON 은 언제나 보존이고,
     # 그것을 흔적으로 세면 첫 제거를 정상적으로 끝낸 사용자가 다음 실행마다 `BLOCKED` 를 받는다 —
     # 고칠 방법도 우리가 주지 않으면서. 흔적은 "증명만 있으면 처리할 것" 이어야 한다.
     damaged = {path for path, _outcome in damaged_registrations(dest)}
     found.extend(path for path in active_registrations(dest) if path not in damaged)
     return tuple(found)
+
+
+def _is_personal_overlay_name(sage_root, name):
+    """Preserve canonical input and aliases of that same filesystem object.
+
+    A case-sensitive filesystem can have a distinct similarly named sibling;
+    casefold alone must not expand ownership to that different object.
+    """
+    canonical = 'asset_overrides.local'
+    if name == canonical:
+        return True
+    if name.casefold() != canonical:
+        return False
+    try:
+        return os.path.samefile(os.path.join(sage_root, name),
+                                os.path.join(sage_root, canonical))
+    except OSError:
+        return False
+
+
+def _personal_overlay_only(root, path):
+    """A preserved personal directory alone is not an installed SAGE trace."""
+    if path != os.path.join(root, 'sage') or os.path.islink(path):
+        return False
+    try:
+        names = set(os.listdir(path))
+        personal = {name for name in names if _is_personal_overlay_name(path, name)}
+        return bool(personal) and names <= personal | {'.DS_Store'}
+    except OSError:
+        return False
 
 
 # --- 소유권 판정 -------------------------------------------------------------
@@ -815,6 +846,23 @@ def _project_actions(dest, manifest):
                                   "uninstall.receipt_retained_for_residual"))
             continue
         group = "manifest-tree" if path == manifest_tree else "tree"
+        personal = os.path.join(root, 'sage', 'asset_overrides.local')
+        if path == os.path.join(root, 'sage') and os.path.lexists(personal):
+            # Keep the user's original out of the recursive DELETE write set.
+            # All siblings retain the existing SAGE-namespace ownership rule.
+            try:
+                children = sorted(os.listdir(path))
+            except OSError:
+                actions.append(Action(PRESERVE, SCOPE_PROJECT, path,
+                                      'uninstall.personal_overlay_preserved'))
+                continue
+            # Like plan_docs, personal originals are user assets, not unresolved
+            # installed remnants. Their presence alone must not yield PARTIAL.
+            for name in children:
+                if not _is_personal_overlay_name(path, name):
+                    actions.append(Action(DELETE, SCOPE_PROJECT, os.path.join(path, name),
+                                          'uninstall.sage_tree', group=group))
+            continue
         actions.append(Action(DELETE, SCOPE_PROJECT, path, "uninstall.sage_tree", group=group))
 
     # framework 배포본. 소유권 근거는 **manifest 가 배치를 기록했다** 는 사실이고, 내용이
@@ -1029,8 +1077,19 @@ def build(dest, scope, environ=None):
     status = PARTIAL if preserved else COMPLETE
     if not actions:
         status = COMPLETE
-    return UninstallPlan(scope, dest, _ordered(actions), status, None, notices,
+    plan = UninstallPlan(scope, dest, _ordered(actions), status, None, notices,
                          global_root=global_root)
+    # Ownership was selected before capturing the baseline. A first personal
+    # overlay created in that interval must not become part of DELETE sage.
+    # Later additions are covered by the executor's existing fingerprint check.
+    if scope in (SCOPE_PROJECT, SCOPE_ALL):
+        sage_root = os.path.join(dest, 'sage')
+        if (any(a.kind == DELETE and a.path == sage_root and a.group != 'prune'
+                for a in plan.actions)
+                and os.path.lexists(os.path.join(sage_root, 'asset_overrides.local'))):
+            return UninstallPlan(scope, dest, (), BLOCKED, 'uninstall.fingerprint_changed',
+                                 notices, global_root=global_root)
+    return plan
 
 
 def _ordered(actions):

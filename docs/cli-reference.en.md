@@ -1,8 +1,51 @@
-<!-- sage-doc-source: cli-reference.md sha256:bdb9a1d006fbd9342d3e915e39260d872dd94e40f69ba056ea4e9e14e284115c -->
+<!-- sage-doc-source: cli-reference.md sha256:c4c4257059a635e04e6cdb1849f5ca90988991c2134523dc884bc82ea1385443 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for
 the exact options available in your environment
+
+## Personal overlays
+
+Keep committing shared `sage/asset_overrides/{agents,skills}/<id>.md` files and composing their
+renders as before. Put developer habits and tool-environment guidance in Git-ignored
+`sage/asset_overrides.local/{agents,skills}/<id>.md`. Personal guidance belongs to one checkout;
+there is no HOME-wide personal layer.
+
+```bash
+sage overlay-local --kind agent --id reviewer --root <project-root>
+sage overlay-local --kind skill --id sage-review --root <project-root>
+```
+
+This read-only command returns JSON with `kind`, `id`, relative `path`, `sha256`, and `content`.
+A missing or whitespace-only selected file returns `null`, exit 0. SHA-256 covers the exact
+LF-normalized UTF-8 content returned. JSON `kind` uses the internal plural `agents` or `skills`. Automatic discovery stops at Git boundaries; an explicit
+`--root` never climbs into another project. Only the current eight `COMPOSE_ALLOWED` assets are
+eligible, using the same relaxation, reserved-token, and path checks. Blocked/unknown assets,
+noncanonical filenames, symlinks, and unreadable files elsewhere in the known personal inventory
+also fail. Errors return nonzero and body-free stderr. Fix inputs or upgrade an older CLI;
+never bypass errors by reading raw personal files.
+
+Personal bodies never enter shared/global CORE renders or manifests. Existing shared
+validate/sync does not read this layer. When personal reviewer guidance exists, headless review
+appends same-target shared additions then personal additions once each to the packet. The host's
+personal `sage-review` skill is not reviewer persona text. `SAGE_LOCAL_OVERLAY_REF` emits a
+body-free observation reference.
+
+Retro/authoring confirms `scope: personal|project` per proposal, defaulting to personal. Legacy
+proposals without scope show the personal default candidate without moving applied files.
+Invalid scope fails; unapproved proposals produce no candidates. Hook/profile routes are unchanged.
+Phase 05 records only target, relative path, hash observed at the actual read/delivery, and delivery
+route. Other scanned files are not active. Never reconstruct past hashes by rescanning current
+files. Confirmed absence is none; lost observations are UNRECORDED. Keep bodies, secrets, and user
+absolute paths out of shared reports. Ordinary agent compliance and recording remain instruction
+contracts; there is no cycle lock, full replay guarantee, or new approval gate.
+
+Install/upgrade adds ignore rules and preserves personal originals. Uninstall preserves them too and retains the personal-path ignore rule outside its managed blocks.
+Ignore does not untrack already committed files. Upgrade only advises manual moves when shared
+overlays exist: no classification, migration, deletion, index mutation, or blocking for unmoved
+content. To move sections, a person removes personal guidance from shared originals, writes the
+personal file, syncs shared renders, and validates personal guidance separately. There is no notice
+acknowledgment state, so later upgrades can repeat the notice.
 
 ## Installation and generation
 
