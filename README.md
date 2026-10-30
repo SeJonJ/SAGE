@@ -7,8 +7,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/sage-harness/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**Claude Code나 Codex 같은 AI 코딩 에이전트가 계획 없이 위험한 코드를 고치거나, 리뷰 없이 "완료"라고
-보고하지 않도록 자동으로 확인하고 막는 도구입니다.**
+**Claude Code나 Codex 같은 AI 코딩 에이전트가 계획 없이 위험한 코드를 고치거나, 리뷰 없이 "완료"라고 보고하지 않도록 자동으로 확인하고 막는 도구입니다.**
 
 ## 왜 필요한가
 
@@ -59,8 +58,7 @@ sage validate --kind all
 sage install --host claude
 ```
 
-설치가 끝나면 **Claude Code 안에서** `/sage-init`을 실행해 이 프로젝트의 설정(profile)을 대화로
-채웁니다. 그다음 터미널로 돌아와 마무리합니다.
+설치가 끝나면 **Claude Code 안에서** `/sage-init`을 실행해 이 프로젝트의 설정(profile)을 대화로 채웁니다. 그다음 터미널로 돌아와 마무리합니다.
 
 ```bash
 sage generate --kind hook --write --target claude
@@ -78,6 +76,7 @@ sage validate --kind all
 | 특정 경로가 왜 차단되는지 확인 | `sage explain --path PATH` |
 | 리뷰·우회·유예 감사 기록 조회 | `sage audit show` |
 | 정의와 생성 자산의 무결성 검사 | `sage validate --kind all` |
+| 공유 지침과 개인 지침을 분리·검사 | `sage overlay-local --kind agent --id reviewer` |
 | 다른 SAGE 버전으로 안전하게 이동 | `sage upgrade --check` → `sage upgrade --apply` |
 | 설치한 프로젝트·전역 자산 제거 | `sage uninstall --check` → `sage uninstall --yes` |
 | 계획·구현·독립 리뷰·완료 증거 결속 | 표준 PDCA, Fast Cycle, Done Criteria |
@@ -173,7 +172,8 @@ hook / agent / skill spec    <------------------>   .claude / .codex
 
 - **PDCA** — 계획 → 구현 → 독립 리뷰([단일·교차 리뷰](docs/cross-review.md)) → 완료보고를 결속합니다.
 - **완료 기준(Done Criteria)** — 요구별 증거를 추적하고, 기준이 바뀌면 해당 단계를 다시 검증합니다.
-- **profile** — 팀 공유 정책과 개인 환경 설정을 분리합니다.
+- **profile·overlay** — 팀 공유와 개인 설정·지침을 분리합니다. 공유 지침은 `sage/asset_overrides/`,
+  개인 지침은 Git 제외 `sage/asset_overrides.local/`에 둡니다([조회·수동 이행](docs/cli-reference.md#개인-overlay)).
 - **Fast Cycle** — 명시적으로 켠 경우 문서 수를 줄이되 전환 과정을 감사 기록에 남깁니다.
 - **조기 완료 승인** — 사용자가 남은 위험을 명시적으로 인수했을 때만 일반 승인과 구분해 기록합니다.
 

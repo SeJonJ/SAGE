@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:3d335664fd7f27ea4e61fe33cebc8589fc1cd636c8c5ad33727928a3c3ea3e85 -->
+<!-- sage-doc-source: README.md sha256:09e08bc55042767cfb6b2423908e61a2e5c1127996b9b3a8869640960368e30e -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)
@@ -8,8 +8,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/sage-harness/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**A tool that automatically checks and blocks AI coding agents — Claude Code or Codex — from editing
-risky code without a plan, or reporting "done" without a review.**
+**A tool that automatically checks and blocks AI coding agents — Claude Code or Codex — from editing risky code without a plan, or reporting "done" without a review.**
 
 ## Why you need this
 
@@ -59,8 +58,7 @@ sage validate --kind all
 sage install --host claude
 ```
 
-Once installed, run `/sage-init` **inside Claude Code** to fill in this project's configuration
-(profile) through conversation. Then come back to the terminal to finish:
+Once installed, run `/sage-init` **inside Claude Code** to fill in this project's configuration (profile) through conversation. Then come back to the terminal to finish:
 
 ```bash
 sage generate --kind hook --write --target claude
@@ -79,6 +77,7 @@ When a shared profile exists, run `sage-init-local` instead of `sage-init`. If `
 | Explain why a path is blocked | `sage explain --path PATH` |
 | Inspect review, override, and waiver audit records | `sage audit show` |
 | Verify definitions and generated assets | `sage validate --kind all` |
+| Separate and check shared and personal guidance | `sage overlay-local --kind agent --id reviewer` |
 | Move safely between SAGE versions | `sage upgrade --check` → `sage upgrade --apply` |
 | Remove installed project and global assets | `sage uninstall --check` → `sage uninstall --yes` |
 | Bind planning, implementation, independent review, and evidence | Standard PDCA, Fast Cycle, Done Criteria |
@@ -175,7 +174,8 @@ fail-open/fail-closed policy.
 
 - **PDCA** binds planning → implementation → independent review ([single and cross review](docs/cross-review.en.md)) → completion reporting.
 - **completion criteria (Done Criteria)** track evidence and revalidate affected phases on change.
-- **Profile** separates team policy from machine-local settings.
+- **Profile and overlays** separate shared and personal settings and guidance. Shared guidance lives in `sage/asset_overrides/`;
+  personal guidance stays in Git-ignored `sage/asset_overrides.local/` ([lookup and manual migration](docs/cli-reference.en.md#personal-overlays)).
 - **Fast Cycle** reduces document count only when enabled and records the transition in the audit.
 - **Early completion** logs explicit user acceptance of residual risk, apart from normal approval.
 
