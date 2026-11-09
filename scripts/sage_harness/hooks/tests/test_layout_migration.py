@@ -649,7 +649,7 @@ class UserExtensionsStayPut(unittest.TestCase):
             self.assertFalse(Path(dest, "sage_harness").exists())
 
     def test_invalid_custom_strategy_is_not_silently_deferred(self):
-        for damage in ("missing", "syntax", "parent_link"):
+        for damage in ("missing", "syntax", "parent_link", "compiler_recursion"):
             with self.subTest(damage=damage), tempfile.TemporaryDirectory() as dest:
                 _legacy_project(dest)
                 profile = Path(dest, "sage", "project-profile.yaml")
@@ -657,6 +657,8 @@ class UserExtensionsStayPut(unittest.TestCase):
                 directory = Path(dest, ap.LEGACY_HOOKS_REL, "strategies", "pre_implementation_gate")
                 if damage == "syntax":
                     (directory / "project_strategy.py").write_text("return 1\n")
+                elif damage == "compiler_recursion":
+                    (directory / "project_strategy.py").write_text("value = " + "+" * 3000 + "1\n")
                 elif damage == "parent_link":
                     original = directory.with_name("original")
                     directory.rename(original); directory.symlink_to(original, target_is_directory=True)
@@ -665,6 +667,20 @@ class UserExtensionsStayPut(unittest.TestCase):
                 done = _sage(["upgrade", "--apply", "--force", "--root", dest], cwd=REPO)
                 self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
                 self.assertEqual(self._bytes(dest), before)
+                self.assertNotIn("Traceback", done.stderr)
+                report = next(Path(dest, ".sage", "upgrades").glob("*.json"))
+                self.assertEqual(json.loads(report.read_text())["outcome"], "blocked")
+
+    def test_source_compiler_resource_errors_become_diagnostics(self):
+        from unittest import mock
+        from sage.commands.upgrade import _python_source_error
+        with tempfile.TemporaryDirectory() as dest:
+            source = Path(dest, "strategy.py")
+            source.write_text("value = 1\n", encoding="utf-8")
+            for error in (RecursionError, MemoryError):
+                with self.subTest(error=error.__name__), mock.patch(
+                        "sage.commands.upgrade.compile", side_effect=error, create=True):
+                    self.assertEqual(_python_source_error(source), "unreadable_python_source")
 
     def test_the_project_hook_still_runs_from_the_old_tree(self):
         """차단한 설치본은 **계속 동작해야 한다.** 멈춰 세운 대가가 기능 정지면 안 된다."""

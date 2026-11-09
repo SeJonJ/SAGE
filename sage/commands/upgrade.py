@@ -377,7 +377,8 @@ def _python_source_error(path):
     try:
         with tokenize.open(path) as handle:
             compile(handle.read(), os.path.basename(path), "exec")
-    except (OSError, UnicodeError, SyntaxError, LookupError, ValueError):
+    except (OSError, UnicodeError, SyntaxError, LookupError, ValueError,
+            RecursionError, MemoryError):
         return "unreadable_python_source"
     return ""
 
