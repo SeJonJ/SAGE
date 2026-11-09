@@ -13,7 +13,7 @@ Status: LOCAL_VERIFICATION_EXECUTED — Windows baseline failures / candidate CI
 | I3 | PASS | 통합3회귀와 실제v1.0설치→최종wheel3조합, 양hosthook_entry·2/4catalog·legacy유지·reapply |
 | I4 | PASS | 기존89upgrade/53layout, 새dual-local/globalprimary+secondarylocal후반실패 bytes/mode복원 |
 | I5 | PASS | 전체4149Ran(13skip), 실패오류0/exit0; wheel217동일, sdist검사 |
-| I6 | NOT_TESTED | 독립 L3 검토 예정 |
+| I6 | BLOCKED | 재개 R1 완료; 최소 수정·테스트 이식성 수리 후 최종 후보 독립 검토 미완료 |
 
 독립QA 원문 qa-independent.json은 전체 runner 종료 전 I5를PARTIAL로 보존한다. 위I5는 이후full-summary.json의 실제exit0/ALL PASS와 loghash를 따른다. local 결과를 원격CI/다른OSmatrix/native모델재실행으로 승격하지 않는다. 제품 결함은 이번 기능·QA 단계에서 확인되지 않았다. release/mainmerge는 아직 미실행이다.
 
@@ -36,3 +36,8 @@ qa-independent.json LOCAL_QA_COMPLETE가 whole4149/13skip/0fail·exit0 및sdist/
 - #36원본10파일drift0,stash/namedref유지,guard19경로. 독립리뷰BLOCKED/새model review0/통합06미작성/commit·push·mainmerge·release미실행.
 
 근거: sibling evidence root `overlay-issue36-platform-20261107/REPORT.md`, platform-summary.json, windows-evidence.zip322파일SHA, mac-stage-reviewed.json, ci-stage-reviewed.json. 예산·원본stash·guard는기존통합evidence root를유지한다.
+
+
+## 2026-11-10 변경분 QA 보완
+
+컴파일 resource 예외 진단 수정은 layout54/upgrade92 및 fresh isolated wheel consumer PASS. 당시 wheel SHA256은41bae5bd10c0e6386b7beaa01f48d02d5c3f163437b949e04de4563b7966eba7이다. 이어 CI42657175958은3.10/3.11 PASS,3.12 새 recursion fixture1건 FAIL,Windows self-hosted skipped다. 이 실패는 유효한 코드를 반드시 오류로 가정한 테스트 때문으로 확인했다. 제품 수정은 유지하고 public CLI main에 RecursionError/MemoryError를 주입하여 파일 불변과 단일 blocked 보고서를 확인하도록 테스트만 바꿨다. 로컬 layout54 재검증 PASS. 변경된 테스트를 포함한 정확한 최종 commit의 CI는 후속 결과를 따른다. 미완료 I6과 기존 Windows P1을 PASS로 올리지 않는다.
