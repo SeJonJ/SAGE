@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARCHITECTURE.md sha256:d3fac3bd378d2ee81580475e62045a8acdbdb8e942b52cca3f2831f844a925f5 -->
+<!-- sage-doc-source: ARCHITECTURE.md sha256:a29a383e431d1a00fa88939fb9e629c0cd0403183477d9091591d7faf8c3f16c -->
 # SAGE Architecture
 
 [한국어](ARCHITECTURE.md) | [Documentation index](README.en.md)
@@ -32,6 +32,10 @@ The direction depends on what failed. The governing principle is **never disable
 | L3 strategy crash | **fail-closed** and keep BLOCK | If a high-risk path cannot be evaluated, block it safely |
 | Glob outside the root or using an absolute path | Reject | Preserve project independence |
 
+Overlay input validation in an installed SAGE checkout has the specific UPS/PreToolUse
+fail-closed contract below, independently of this general failure policy. Damaged SAGE markers
+do not count as a non-SAGE checkout.
+
 The source contract is the "preservation principles" comment at the top of
 `scripts/sage_harness/hooks/runtime/hook_runtime.py` and the profile-loading and L3-strategy-loading
 paths.
@@ -50,12 +54,78 @@ by runtime and event together.
 |---|---|---|
 | Block (exit 2) | stderr — stdout is ignored | stderr |
 | PreToolUse pass (exit 0) | `hookSpecificOutput.additionalContext` | same |
-| UserPromptSubmit (exit 0) | plain stdout — becomes context directly | `hookSpecificOutput` |
+| UserPromptSubmit (exit 0) | single `hookSpecificOutput` JSON | `hookSpecificOutput` JSON |
 | Stop block | exit 2 with stderr | exit 0 with `decision: block` |
 
 In Claude Code the events whose exit-0 plain stdout is promoted to context are `UserPromptSubmit`,
 `UserPromptExpansion`, and `SessionStart`; every other event writes to the debug log only. Message
 text is owned solely by `runtime/messages.py`; `io_claude` and `io_codex` decide only the channel.
+
+## Target-specific overlay context delivery
+
+Claude Code and Codex automatically supply shared/personal bodies for seven root skills:
+`sage-cycle`, `sage-plan`, `sage-team`, `sage-review`, `sage-cycle-fast`, `sage-plan-fast`, and
+`sage-team-fast`, using a schema-2 catalog. Startup SessionStart defers bodies to the following
+UserPromptSubmit; resume/fork/compact supplies the current catalog because continuation may
+occur without a new user message. Verified hosts are Claude Code 2.1.318 and Codex CLI 0.166.0.
+Isolated-consumer tests used the native hosts and local mock endpoints to check delivery of all
+14 source bodies/hashes, manual compaction/resume paths, size/blocking behavior and external
+repair recovery. Mock-directed Skill/read-tool entry tests native transport, not a real model's
+spontaneous selection. Separate finite samples with actual `claude-opus-5-5`/`gpt-6.1-sol` models
+observed standard two-source/Fast four-source application, current-view retention and subsequent
+verification responses after manual/automatic compaction. These results do not guarantee all
+host versions, future models/sessions, arbitrary long-term stability, or every worker's own
+compaction/fork recovery.
+
+Each `skills/<id>/shared|personal` source appears once; targets are ordered source references.
+Standard uses shared standard → personal standard. Fast uses shared standard → shared Fast →
+personal standard → personal Fast. Bodies for all seven targets are visible in the root context,
+but each CORE applies only its fixed-id view. Mandatory CORE/project policy/independent gates
+precede shared guidance, which precedes personal guidance. Catalog presence is no invocation,
+Fast conversion, or human approval. Scope compliance was observed within the finite model
+behavior samples described above.
+The current boundary's empty catalog also replaces earlier guidance; personal files never
+implicitly transfer between checkouts.
+
+Four workers retain shared physical composition and role-specific body/ref packets. Do not
+newly attach the root catalog to workers. A host's role-specific loader call and the headless
+reviewer CLI's single automatic load are separate routes. Install/sync removes only verified,
+owned legacy overlay spans for the seven skills and preserves originals. Damaged or unowned
+spans conflict; CORE/user bytes remain intact. Personal bodies never enter global/local SKILL.md,
+manifests, or permanent caches.
+
+Invalid inventory, size excess, damaged SAGE markers, and validator exceptions never produce a
+partial normal catalog. SessionStart emits body-free diagnostics; UserPromptSubmit natively
+blocks; PreToolUse on every supported tool natively denies/exits 2. Non-SAGE checkouts pass
+through. Repair inputs in an external terminal/editor, then send the next message for a fresh
+check. For `profile_yaml_json_mismatch`, run `sage generate --kind hook --write --target <claude|codex|both>`
+from the project root in a terminal outside the blocked session to reconcile YAML and compiled
+JSON. Preserve the installed host target: `claude` for Claude-only, `codex` for Codex-only, and
+`both` for cross-model/dual-host installations. For
+`render_sync_required` affecting physical worker renders or routing changes, run
+`sage sync-overlays` outside the session. When both states follow a profile edit, generate first,
+then sync. Editing a context-only root-skill source does not always require physical sync.
+`sage doctor` provides read-only input, host-budget and render-synchronization diagnostics; it
+does not repair them. Check diagnostics after repair and the next message's fresh validation.
+This does not guarantee blocking when hooks are skipped, untrusted, or timed out with
+continuation, or for arbitrary execution outside the host.
+
+Common ceilings remain UTF-8 10,000 bytes per source and UTF-8 49,152 bytes for the catalog,
+including its wrapper and JSON escaping. Claude additionally permits at most 7,500 UTF-16 code
+units per catalog, reserving 2,500 for reentry and declared-risk text. The final merged single
+`additionalContext` string must also fit 10,000 units. Astral characters such as emoji occupy two
+units; bytes, UTF-16 units and tokens are different measures. Codex retains the common ceilings
+and `additionalContextLimit=60000`.
+
+These host budgets address observed file/preview replacement of the former 49,152-byte catalog
+in Claude Code 2.1.318. [Claude's documented string limit](https://code.claude.com/docs/en/hooks#json-output)
+is 10,000 characters per field, with no setting to raise it. SAGE's 7,500-unit catalog budget
+reserves room for other context. Even one 10,000-byte source within the common ceiling can exceed
+Claude's serialized budget: this is a new support restriction for existing inputs. `sage doctor`
+separates common input validity from each host's catalog budget. Excess produces body-free
+diagnostics and native blocking; never substitute truncation, splitting, preview or model fetch.
+Configuration and budget checks do not prove model delivery/application, multi-turn accumulation
+or automatic-compaction cost.
 
 ## OS boundary and the two judgement axes (`sage uninstall`)
 

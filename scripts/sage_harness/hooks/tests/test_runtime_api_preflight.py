@@ -27,8 +27,10 @@ from sage.runtime_api import HOOK_RUNTIME_API  # noqa: E402
 
 CORE = os.path.join(REPO, "scripts", "sage_harness", "hooks")
 
-GATE_HOOKS = ("pre-implementation-gate", "pre-phase4-checklist-gate")
-BASELINE_HOOKS = ("post-tool-logger", "capture-declared-risk")
+GATE_HOOKS = ("pre-implementation-gate", "pre-phase4-checklist-gate", "capture-declared-risk")
+# API 2 makes UPS an overlay input guard. It must reject incompatible runtimes;
+# SessionStart and the logger still provide non-enforcing diagnostics.
+BASELINE_HOOKS = ("post-tool-logger", "session-start-snapshot")
 
 
 def _source_env():
@@ -333,7 +335,7 @@ class TestBothHostsAcrossEveryBuiltInHook(unittest.TestCase):
     def test_enforcing_hooks_block_and_the_rest_pass_on_both_hosts(self):
         expected = {"pre-implementation-gate": 2, "pre-phase4-checklist-gate": 2,
                     "generated-artifact-write-guard": 2,
-                    "capture-declared-risk": 0, "post-tool-logger": 0,
+                    "capture-declared-risk": 2, "post-tool-logger": 0,
                     "session-start-snapshot": 0, "stop-compliance-report": 2}
         for (hook, runtime), r in self._matrix(_manifest(required=HOOK_RUNTIME_API + 1)).items():
             want = 0 if (runtime == "codex" and hook == "stop-compliance-report") \
@@ -411,7 +413,7 @@ class TestDesignScenarioMatrix(unittest.TestCase):
     # 5. logger/baseline 비호환 → rc 0 + 시끄러운 WARN
     def test_scenario_5_baseline_warns_loudly_with_rc_zero(self):
         for runtime in self.HOSTS:
-            for hook in ("post-tool-logger", "capture-declared-risk"):
+            for hook in ("post-tool-logger", "session-start-snapshot"):
                 with self.subTest(runtime=runtime, hook=hook):
                     r = self._one(hook, _manifest(required=HOOK_RUNTIME_API + 1), runtime)
                     self.assertEqual(r.returncode, 0, r.stderr)

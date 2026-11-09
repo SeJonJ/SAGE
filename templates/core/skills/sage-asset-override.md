@@ -43,7 +43,12 @@ step). The overlay-authoring counterpart to /sage-asset (new assets) and
 6. Write the chosen personal/shared path for its kind/id directly (no `sage generate`).
 7. Personal: run `sage overlay-local --kind agent|skill --id <id> --root <project-root>`
    and inspect the validated content/hash. Do not sync personal guidance into a render.
-   Project: run `sage sync-overlays`, then `sage validate --strict`. Both survive reinstall.
+   Project: for physical worker/routing changes, run `sage sync-overlays` in a terminal
+   outside the guarded AI session, in the project root, then `sage validate --strict`.
+   `render_sync_required` blocks in-session Bash until that external repair; keep guards
+   enabled and let the next boundary validate the repaired state. A valid context-only
+   root-skill source needs no physical render sync; it is supplied at the next catalog
+   boundary. Validate it without editing CORE. Both scopes survive reinstall.
    Never bypass a failed loader by reading the personal file directly.
 
 ## advisory_scope

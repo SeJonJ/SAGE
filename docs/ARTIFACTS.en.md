@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARTIFACTS.md sha256:37125b77f3dbb1f17f2295f1b0def0776c077e214d46b36dd0bdca465f67bffb -->
+<!-- sage-doc-source: ARTIFACTS.md sha256:8d000abb96e9718755b1b38d92ee03e05581b4d1c57c9dba584368216b7e0cf8 -->
 # SAGE Artifact Map
 
 [한국어](ARTIFACTS.md) | [Documentation index](README.en.md)
@@ -207,6 +207,14 @@ Key properties:
   agent or skill, it points to this path instead of modifying CORE directly. Hooks are
   deterministic, so an overlay file alone cannot change hook behavior; hook changes go through
   specs.
+
+Delivery depends on the target. Four eligible workers compose shared sources into physical renders
+and receive personal sources in role-specific packets. Seven root skills (`sage-cycle`, `sage-plan`,
+`sage-team`, `sage-review`, and the cycle/plan/team Fast variants) receive both layers through a
+context catalog. Install/sync removes proven-owned old root-skill overlay spans while retaining
+their sources. Personal sources live in `sage/asset_overrides.local/` and stay out of Git, shared/global
+renders, and manifests. See the [delivery contract](ARCHITECTURE.en.md#target-specific-overlay-context-delivery)
+for the Standard two-source/Fast four-source order and size limits.
 
 This generalizes the existing `sage/conventions/*.md` and convention-checker pattern across asset
 types.

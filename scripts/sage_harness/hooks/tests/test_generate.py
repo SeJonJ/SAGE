@@ -60,7 +60,7 @@ def make_root(d, with_adapter=True):
     Path(os.path.join(d, "docs", "sage_harness", "hooks", "bbb-hook.md")).write_text(SPEC_B)
     for fn in ("run_hook.py", "hook_runtime.py", "loop_audit.py", "retro_audit.py",
                "acceptance_waiver.py", "override_audit.py", "messages.py", "recovery.py", "cycle_state.py",
-               "document_language.py", "prose_language.py", "compact_reentry.py",
+               "document_language.py", "prose_language.py", "compact_reentry.py", "overlay_context.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(d, "sage_harness", "hooks", "runtime", fn)).write_text(f"# {fn}\n")
     shutil.copyfile(
@@ -86,6 +86,29 @@ def make_root(d, with_adapter=True):
         for hid in ("aaa-hook", "bbb-hook"):
             for rt in ("claude", "codex"):
                 Path(os.path.join(d, "sage_harness", "hooks", "adapters", rt, f"{hid}.sh")).write_text("#!/bin/bash\n")
+
+
+class TestOverlayNativeRegistration(unittest.TestCase):
+    def test_native_guard_all_tools_and_codex_catalog_handler_limit(self):
+        for host in ("claude", "codex"):
+            with self.subTest(host=host), tempfile.TemporaryDirectory() as root:
+                make_root(root)
+                for hid, event in (("generated-artifact-write-guard", "PreToolUse"),
+                                   ("session-start-snapshot", "SessionStart"),
+                                   ("capture-declared-risk", "UserPromptSubmit")):
+                    spec = SPEC_A.replace("aaa-hook", hid).replace("PreToolUse", event)
+                    Path(root, "docs/sage_harness/hooks", hid + ".md").write_text(spec)
+                    Path(root, "sage_harness/hooks/adapters", host, hid + ".sh").write_text("#!/bin/sh\n")
+                reg, missing = gen._build_registration(root, host,
+                    ["generated-artifact-write-guard", "session-start-snapshot", "capture-declared-risk"])
+                self.assertEqual(missing, [])
+                self.assertEqual(reg["PreToolUse"][0]["matcher"], "*")
+                for event in ("SessionStart", "UserPromptSubmit"):
+                    handler = reg[event][0]["hooks"][0]
+                    if host == "codex":
+                        self.assertEqual(handler["additionalContextLimit"], 60000)
+                    else:
+                        self.assertNotIn("additionalContextLimit", handler)
 
 
 class Args:

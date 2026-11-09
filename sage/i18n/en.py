@@ -6,6 +6,7 @@ a runtime fallback, because a fallback would ship the gap to users instead of su
 """
 
 MESSAGES = {
+    "cli.overlay.context_upgrade_required": "Preserved the legacy shared additions for {id}: the installed CORE and hook runtime must both support context catalogs. Upgrade them together, then retry.",
     "cli.uninstall.personal_overlay_preserved": "Preserved user-owned personal overlay originals",
     "cli.overlay_local.help": "Read validated personal overlay guidance as read-only JSON",
     "cli.overlay_local.error": "Personal overlay validation failed: {code} ({path}). Fix the input or upgrade the CLI. Do not bypass validation by reading the raw file.",
@@ -1185,10 +1186,12 @@ MESSAGES = {
     "cli.upgrade.note_migration_preserve_content_differs": '   kept: {path} — differs from the current release. We cannot tell an edit from an older install, so it stays.',
     "cli.upgrade.note_migration_preserve_symlink": '   kept: {path} — a symlink. Its target may lie outside the project, so it stays.',
     "cli.upgrade.blocker_migration_unexpected_current": 'Migration stopped — the new path holds a file this release did not place: {name}\n  Both trees are present, but the new one cannot be proven to belong to this release.\n  An interrupted migration would leave files identical to the release. Nothing is merged on\n  guesswork — which tree is authoritative is not the tool\'s call. Check that file and re-run.',
-    "cli.upgrade.blocker_migration_project_hook": 'Migration stopped — a project hook is in use: {name}\n  This release does not migrate installations that have project hooks.\n  This installation keeps working on the old layout, so there is nothing you need to do.\n  Do not move the files to the new layout yourself — migration stays blocked while the registration remains, and there is no command to unregister it.',
+    "cli.upgrade.note_migration_deferred": "Layout migration is deferred for project extensions: {names}\n  Versions and managed assets are updated at `scripts/sage_harness/`. Project extensions are not moved.",
+    "cli.upgrade.blocker_migration_extension_invalid": "Upgrade blocked: cannot verify project extension {name} ({reason}). Check its code and spec at the existing path, including CORE ID conflicts.",
+    "cli.upgrade.blocker_migration_project_hook": "A project hook cannot be migrated automatically: {name}\n  On a valid legacy layout, migration is deferred while versions are updated. Resolve any accompanying blockers first.\n  Do not move project code to the new layout yourself.",
     "cli.upgrade.blocker_migration_project_hook_missing_core": 'Migration stopped — a registered project hook has no code at the old path: {name}\n  The registration is there but the deciding code is not. Migrating now would make one gate\n  disappear silently. Put the code back at the old path (`scripts/sage_harness/hooks/`).\n  Moving it to the new layout does not clear this block, and there is no command to unregister it.',
     "cli.upgrade.blocker_migration_project_hook_irregular": "Migration stopped — a registered project hook's code is not a regular file: {name}\n  A symlink may point outside the project, so it is left untouched.\n  Check that path and run again.",
-    "cli.upgrade.blocker_migration_custom_strategy": 'Migration stopped — a review strategy outside the built-in set is in use: {name}\n  This release does not migrate installations that use a custom strategy.\n  This installation keeps working on the old layout.\n  Moving the files to the new layout does not clear this block, so do not move them yourself.',
+    "cli.upgrade.blocker_migration_custom_strategy": "A review strategy cannot be migrated automatically: {name}\n  On a valid legacy layout, migration is deferred while versions are updated. Missing code, damage, or path conflicts block the upgrade.\n  Do not move project code to the new layout yourself.",
     "cli.upgrade.migration_not_activated": '⛔ Could not switch the active path, so nothing was removed from the old layout.\n  You are exactly where you were before. Check the cause and run again.',
     "cli.upgrade.migration_empty_dir": '   an empty directory remains: {path} — remove it yourself if you do not need it.',
     "cli.upgrade.note_migration_resume": "Finishing an interrupted migration — the new tree is confirmed to be this release's.",
@@ -1200,6 +1203,7 @@ MESSAGES = {
     "cli.upgrade.migration_item": "     - {path}",
     "cli.upgrade.migration_more": "     … and {count} more (full list in the report JSON)",
     "cli.upgrade.migration_runtime_unloadable": "⛔ The new hook runtime does not load without the engine, so nothing was removed.\n  You are exactly where you were before. Cause: {detail}",
+    "cli.upgrade.post_commit_failed": 'Asset updates were committed, but post-commit processing failed. Updated assets and remaining recovery backups are preserved. Error: {error}. Inspect the state and rerun upgrade.',
     "cli.upgrade.migration_incomplete": "⛔ Placement and validation finished, but the active-path switch did not complete.\n  The new tree is intact and so is the old one — nothing was rolled back.\n  Check the cause and run the same command again; it picks up from there.",
     "cli.upgrade.migration_cleanup_only": "   cleaning up leftovers from the old path: {count} — the active path is already `sage_harness/hooks`.",
     "cli.upgrade.migration_removed": '   legacy layout cleaned: {count} files removed',

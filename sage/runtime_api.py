@@ -28,7 +28,11 @@ import re
 #   - `sage-hook` dispatch·profile preflight 의 입력 계약이 비호환으로 바뀐다
 #   - 기존 runtime 이 새 project hook 을 안전하게 실행할 수 없다
 # 문구 변경, 새 진단 code, 호환 optional field 만으로는 올리지 않는다.
-HOOK_RUNTIME_API = 1
+# API 2: installed context delivery requires sage.overlay_delivery and the
+# event-aware entry/dispatch contract. API 1 packages must reject it pre-import.
+# API 3: installed policy identity and event catalog root may differ. Dispatch
+# must accept overlay_root without moving baseline/risk/Stop state into it.
+HOOK_RUNTIME_API = 3
 
 # 요구 SAGE **버전** 의 정본은 여기가 아니라 shared profile 의 exact `sage.required_version` 이다.
 # manifest 에 최소 버전을 함께 저장하지 않는 이유는 정본이 둘이 되면 갈렸을 때 판정할 근거가

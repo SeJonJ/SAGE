@@ -731,24 +731,108 @@ class TestTheHostedMatricesKeepTheirPosixCoverage(unittest.TestCase):
         self.assertEqual(self.jobs["packaging"]["runs-on"], "ubuntu-latest")
 
 
-class TestTheEngineIsNotStaleAgainstItself(unittest.TestCase):
-    """레포 자신의 manifest 가 자기 소스와 맞는가.
+class TestConsumerIntegrity(unittest.TestCase):
+    """CI와 같은 격리 wheel consumer에서 validator 제품 동작을 확인한다."""
 
-    hook runtime 이나 게이트 core 를 고치면 `hook_runtime_hash`·`canonical_hash` 가 낡는다.
-    CI 는 그걸 `sage validate --check --schema` 로 잡지만 로컬 하네스는 보지 않았고, 그래서 이
-    브랜치에서만 재스탬프 커밋이 7번 나왔다 — 매번 push 한 뒤 원격에서 처음 알았다는 뜻이다.
+    def test_fresh_wheel_validates_and_runtime_drift_is_rejected(self):
+        base = REPO.parent / "overlay-context-phase04-ci"
+        base.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=base) as tmp:
+            work = Path(tmp) / "run"
+            poison = Path(tmp) / "poison"
+            poison.mkdir()
+            (poison / "sage.py").write_text("raise RuntimeError('source import leak')\n")
+            env = dict(os.environ, PYTHONPATH=str(poison), SAGE_RESOURCE_ROOT=str(poison),
+                       SAGE_PROJECT_ROOT=str(REPO))
+            done = subprocess.run(
+                [sys.executable, "-I", str(REPO / "scripts/ci/check_consumer_integrity.py"),
+                 "--source", str(REPO), "--work-dir", str(work)],
+                cwd=str(REPO), env=env, capture_output=True, text=True)
+            self.assertEqual(done.returncode, 0, done.stdout[-3000:] + done.stderr[-3000:])
+            report = json.loads((work / "report.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "PASS")
+            self.assertTrue(report["engine_sentinels_unchanged"])
+            self.assertTrue(report["wheel_resources_checked"])
+            exits = {step["name"]: step["returncode"] for step in report["steps"]}
+            self.assertEqual(exits["bootstrap-block"], 2)
+            self.assertEqual(exits["validate-clean"], 0)
+            self.assertEqual(exits["validate-drift"], 3)
 
-    이 검사는 CI 와 **같은 명령**을 돌린다. 하네스가 초록인데 CI 가 빨간 구간을 없애는 것이
-    목적이라, 여기서만 통과하는 완화된 판정을 따로 만들지 않는다."""
+    def test_independent_bundle_check_rejects_a_missing_runtime(self):
+        import zipfile
+        helper = REPO / "scripts/ci/check_consumer_integrity.py"
+        self.assertTrue(helper.is_file(), "isolated consumer helper is not implemented")
+        module = _load(helper, "_consumer_integrity")
+        base = REPO.parent / "overlay-context-phase04-ci"
+        base.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=base) as tmp:
+            wheel = Path(tmp) / "broken.whl"
+            with zipfile.ZipFile(wheel, "w") as archive:
+                archive.writestr("sage/__init__.py", "__version__ = 'test'\n")
+            with self.assertRaisesRegex(RuntimeError, "bundle"):
+                module.check_wheel_bundle(wheel)
 
-    def test_self_validate_is_clean(self):
-        done = subprocess.run([sys.executable, "-m", "sage", "validate", "--check", "--schema"],
-                              cwd=str(REPO), capture_output=True, text=True,
-                              env=dict(os.environ, PYTHONPATH=str(REPO)))
-        self.assertEqual(done.returncode, 0,
-                         "레포가 자기 manifest 와 어긋난다 — 재계산한 해시를 "
-                         "docs/sage_harness/.manifest.json 에 반영하세요.\n"
-                         + done.stdout[-2000:] + done.stderr[-2000:])
+    def test_subprocess_failure_is_not_reported_as_success(self):
+        helper = REPO / "scripts/ci/check_consumer_integrity.py"
+        self.assertTrue(helper.is_file(), "isolated consumer helper is not implemented")
+        module = _load(helper, "_consumer_integrity")
+        base = REPO.parent / "overlay-context-phase04-ci"
+        base.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=base) as tmp:
+            report = {"steps": []}
+            with self.assertRaisesRegex(RuntimeError, "exit 7"):
+                module.run_step("failure", [sys.executable, "-I", "-c", "raise SystemExit(7)"],
+                                Path(tmp), dict(os.environ), Path(tmp), report)
+            self.assertEqual(report["steps"][0]["returncode"], 7)
+
+    def test_work_inside_engine_is_rejected_before_writing(self):
+        module = _load(REPO / "scripts/ci/check_consumer_integrity.py", "_consumer_integrity")
+        base = REPO.parent / "overlay-context-phase04-ci"
+        base.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=base) as tmp:
+            source = Path(tmp)
+            work = source / "generated"
+            with self.assertRaisesRegex(RuntimeError, "outside"):
+                module.check(source, work)
+            self.assertFalse(work.exists())
+
+    def test_engine_sentinels_detect_created_profile_and_changed_manifest(self):
+        module = _load(REPO / "scripts/ci/check_consumer_integrity.py", "_consumer_integrity")
+        base = REPO.parent / "overlay-context-phase04-ci"
+        base.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=base) as tmp:
+            source = Path(tmp)
+            manifest = source / "docs/sage_harness/.manifest.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text("original\n")
+            before = module.engine_sentinels(source)
+            manifest.write_text("changed\n")
+            self.assertNotEqual(before, module.engine_sentinels(source))
+            manifest.write_text("original\n")
+            (source / "sage").mkdir()
+            (source / "sage/project-profile.yaml").write_text("project: {}\n")
+            self.assertNotEqual(before, module.engine_sentinels(source))
+
+    def test_independent_bundle_check_rejects_record_tampering(self):
+        import zipfile
+        module = _load(REPO / "scripts/ci/check_consumer_integrity.py", "_consumer_integrity")
+        base = REPO.parent / "overlay-context-phase04-ci"
+        base.mkdir(exist_ok=True)
+        names = ["sage/cli.py", "sage/overlay_delivery.py",
+                 "sage/_bundle/templates/core/framework/AGENT_GUIDE.md",
+                 "sage/_bundle/schema/manifest.schema.json",
+                 "sage/_bundle/docs/sage_harness/.manifest.json",
+                 "sage/_bundle/scripts/sage_harness/hooks/pre_implementation_gate_core.py",
+                 "sage/_bundle/scripts/sage_harness/hooks/runtime/overlay_context.py"]
+        with tempfile.TemporaryDirectory(dir=base) as tmp:
+            wheel = Path(tmp) / "tampered.whl"
+            with zipfile.ZipFile(wheel, "w") as archive:
+                for name in names:
+                    archive.writestr(name, "changed bytes")
+                archive.writestr("sage_harness-0.dist-info/RECORD", "".join(
+                    name + ",sha256=incorrect,13\n" for name in names))
+            with self.assertRaisesRegex(RuntimeError, "RECORD mismatch"):
+                module.check_wheel_bundle(wheel)
 
 
 class TestReadinessDocument(unittest.TestCase):

@@ -33,7 +33,9 @@ class TestRosterConsistency(unittest.TestCase):
                     spec_path = Path(REPO, "templates", "core", "framework", ".claude", "skills",
                                      asset_id, "SKILL.md")
                 spec = spec_path.read_text(encoding="utf-8")
-                if (kind, asset_id) in ocl.COMPOSE_ALLOWED:
+                if kind == "skills" and asset_id in ocl.ROOT_CONTEXT_SKILL_IDS:
+                    self.assertIn("schema-version-2 catalog", spec, f"{kind}/{asset_id}")
+                elif (kind, asset_id) in ocl.COMPOSE_ALLOWED:
                     self.assertIn("- overlay: optional", spec, f"{kind}/{asset_id}")
                 else:
                     self.assertTrue("- self_overlay: unsupported" in spec
@@ -87,6 +89,25 @@ class TestClassify(unittest.TestCase):
         self.assertTrue(ocl.is_core("agents", "reviewer"))
         self.assertFalse(ocl.is_core("agents", "reviwer"))
         self.assertTrue(ocl.is_core("skills", "sage-init"))
+
+
+class TestContextDeliveryPolicy(unittest.TestCase):
+    def test_root_seven_eligible_but_never_physically_composed(self):
+        targets = {"sage-cycle", "sage-plan", "sage-team", "sage-review",
+                   "sage-cycle-fast", "sage-plan-fast", "sage-team-fast"}
+        self.assertEqual(set(ocl.ROOT_CONTEXT_SKILL_IDS), targets)
+        with tempfile.TemporaryDirectory() as root:
+            directory = Path(root, "sage/asset_overrides/skills")
+            directory.mkdir(parents=True)
+            for sid in targets:
+                (directory / f"{sid}.md").write_text("Use project evidence.")
+                self.assertEqual(ocl.classify("skills", sid), "compose")
+                self.assertEqual(ocl.delivery_mode("skills", sid), "context")
+                self.assertEqual(ocl.expected_block("skills", sid, root), ("", None))
+                expected = (sid[:-5], sid) if sid.endswith("-fast") else (sid,)
+                self.assertEqual(ocl.ROOT_CONTEXT_TARGET_SOURCES[sid], expected)
+        self.assertEqual(ocl.delivery_mode("agents", "leader"), "physical")
+        self.assertEqual(ocl.delivery_mode("agents", "qa"), "blocked")
 
 
 class TestExpectedBlock(unittest.TestCase):

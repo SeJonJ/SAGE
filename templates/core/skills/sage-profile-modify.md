@@ -9,8 +9,8 @@ kind: skill
 ## intent
 Modify an already-bootstrapped sage/project-profile.yaml through conversation: read the
 current value, propose a diff, WARN about governance-gate consequences, edit the YAML
-directly (profile is hand-authored SSOT, not a generated artifact — no `sage generate`),
-then re-validate. The profile-editing counterpart to /sage-init (first authoring) and
+directly (profile is hand-authored SSOT); then compile its generated runtime JSON
+and re-validate. Generation does not author the YAML. The profile-editing counterpart to /sage-init (first authoring) and
 /sage-asset (assets).
 
 ## when_to_use
@@ -46,14 +46,18 @@ then re-validate. The profile-editing counterpart to /sage-init (first authoring
 4. Propose before→after diff and **state the gate consequence** in plain terms
    (loosen/tighten); get explicit approval. (Consequence warnings are mandatory.)
 5. Edit profile.yaml in place — change only approved values, never add/remove schema keys.
-6. If a routing-block source changed (`governance_docs` or `risk.domains`), run
-   `sage sync-overlays` first to re-materialize the AGENT_GUIDE routing block — else
-   `validate` reports drift. Then re-validate: `sage validate --schema --kind all` +
-   `sage doctor`; never bypass a FAIL. (components[] change may need
-   `sage generate --kind roster` — an asset step.)
+6. After saving shared YAML, hand off to a terminal outside the guarded AI session,
+   in this project root: `sage generate --kind hook --write --target <claude|codex|both>`
+   using the already installed host target (both for cross-model projects). This compiles
+   runtime JSON; never edit JSON directly. Then, if `governance_docs` or `risk.domains`
+   changed, run `sage sync-overlays` there to refresh routing. Run
+   `sage validate --schema --kind all` and `sage doctor`; never bypass a FAIL.
+   The next session boundary must validate the repaired state before guarded work resumes.
+   A rejected in-session Bash call cannot perform this external recovery.
+   components[] changes may also need `sage generate --kind roster` — an asset step.
 
 ## advisory_scope
-- role_boundary: edits the profile (SSOT) directly, NOT via generate (that is for assets);
+- role_boundary: edits YAML (SSOT) directly; generate only compiles derived runtime artifacts;
   does not add/remove schema keys; does not bypass a validate FAIL; does not bootstrap
   (routes to /sage-init when unbootstrapped)
 - uses: sage sync-overlays (routing-block source edits) / sage validate / sage doctor,

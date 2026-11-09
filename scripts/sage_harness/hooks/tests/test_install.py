@@ -49,6 +49,62 @@ def _tree_snapshot(root):
     return snapshot
 
 
+class TestOverlayContextInstall(unittest.TestCase):
+    def test_force_upgrade_context_capability_staging_and_rollback(self):
+        from contextlib import redirect_stdout
+        from sage import overlay_common as oc
+        for fail in (False, True):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as root, redirect_stdout(io.StringIO()):
+                self.assertEqual(install.run(Args("claude", root)), 0)
+                source = Path(root, "sage/asset_overrides/skills/sage-team.md")
+                source.parent.mkdir(parents=True)
+                source.write_text("LEGACY_SHARED_RULE\n")
+                render = Path(root, ".claude/skills/sage-team/SKILL.md")
+                render.write_text("# Old CORE\n" + oc.compose_block("LEGACY_SHARED_RULE", "skills", "sage-team"))
+                runtime = Path(root, "sage_harness/hooks/runtime/hook_runtime.py")
+                runtime.write_text("# Old pre-catalog runtime\n")
+                before = _tree_snapshot(root)
+                with redirect_stderr(io.StringIO()):
+                    if fail:
+                        with mock.patch.object(install, "_manifest", side_effect=RuntimeError("late manifest failure")):
+                            self.assertEqual(install.run(Args("claude", root, force=True)), 1)
+                    else:
+                        self.assertEqual(install.run(Args("claude", root, force=True)), 0)
+                self.assertEqual(source.read_text(), "LEGACY_SHARED_RULE\n")
+                if fail:
+                    self.assertEqual(_tree_snapshot(root), before)
+                else:
+                    self.assertIn("Current overlay target: `sage-team`", render.read_text())
+                    self.assertNotIn("LEGACY_SHARED_RULE", render.read_text())
+                    self.assertIn("overlay_context.current", runtime.read_text())
+
+    def test_force_upgrade_refuses_unowned_context_span_before_overwrite(self):
+        from contextlib import redirect_stdout
+        from sage import overlay_common as oc
+        with tempfile.TemporaryDirectory() as root, redirect_stdout(io.StringIO()):
+            self.assertEqual(install.run(Args("claude", root)), 0)
+            render = Path(root, ".claude/skills/sage-plan/SKILL.md")
+            before = render.read_text() + oc.compose_block("foreign", "skills", "sage-team")
+            render.write_text(before)
+            with redirect_stderr(io.StringIO()):
+                self.assertEqual(install.run(Args("claude", root, force=True)), 1)
+            self.assertEqual(render.read_text(), before)
+
+    def test_upgrade_inheritance_notice_lists_paths_without_bodies(self):
+        from contextlib import redirect_stdout
+        with tempfile.TemporaryDirectory() as root:
+            directory = Path(root, "sage/asset_overrides/skills")
+            directory.mkdir(parents=True)
+            (directory / "sage-plan.md").write_text("PRIVATE_BODY_MARKER")
+            output = io.StringIO()
+            with redirect_stdout(output):
+                install._report_fast_overlay_inheritance(root)
+            text = output.getvalue()
+            self.assertIn("sage-plan-fast", text)
+            self.assertIn("sage/asset_overrides/skills/sage-plan.md", text)
+            self.assertNotIn("PRIVATE_BODY_MARKER", text)
+
+
 class TestInstall(unittest.TestCase):
     def test_bundled_profile_template_matches_package_version(self):
         template = Path(REPO, "templates", "project-profile.yaml").read_text(encoding="utf-8")
@@ -953,7 +1009,7 @@ class TestInstall(unittest.TestCase):
             expected_sha = hashlib.sha256(expected_text.encode("utf-8")).hexdigest()
             actual_sha = hashlib.sha256(b"UNTRUSTED_EXISTING_RENDER\n").hexdigest()
             self.assertIn("claude/agents/leader", output)
-            self.assertIn(".claude/agents/leader.md", output)
+            self.assertIn(os.path.join(".claude", "agents", "leader.md"), output)
             self.assertIn("reason:   신뢰 anchor가 없는 기존 CORE render가 현재 배포 base와 다름", output)
             self.assertIn(f"expected_sha256: {expected_sha}", output)
             self.assertIn(f"actual_sha256:   {actual_sha}", output)

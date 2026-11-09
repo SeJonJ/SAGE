@@ -97,6 +97,11 @@ MESSAGES = {
 # 판정 문장이 아니라 그 문장을 **감싸는 조각**이다. message_key 와 섞으면 build-time oracle
 # (core 가 낼 수 있는 key 집합과의 대조)이 조각까지 message_key 로 세어 무너진다.
 FRAGMENTS = {
+    "hook.overlay_delivery.repair_profile": "[SAGE overlay] {issue}\n외부 터미널에서 현재 프로젝트의 `sage generate --kind hook --write --target {target}`를 실행해 profile 산출물을 다시 생성하세요. 기존 설치 host를 유지하며, 양쪽 host를 쓰는 설치는 both를 선택하세요. 이후 렌더 동기화가 필요하면 외부에서 `sage sync-overlays`를 실행한 뒤 다시 요청하세요.",
+    "hook.overlay_delivery.repair_render": "[SAGE overlay] {issue}\n외부 터미널에서 현재 프로젝트의 `sage sync-overlays`를 실행한 뒤 다시 요청하세요.",
+    "hook.overlay_delivery.repair_upgrade": "[SAGE overlay] {issue}\n구형 공유 지침을 보존했습니다. 외부 터미널에서 현재 프로젝트의 `sage upgrade --apply`로 CORE와 hook runtime을 함께 업그레이드한 뒤 다시 요청하세요.",
+    "hook.overlay.context_upgrade_required": "{id}의 구형 공유 추가 지침을 보존했습니다. 설치된 CORE와 hook runtime에 문맥 catalog 전달 지원이 함께 필요합니다. 함께 업그레이드한 뒤 다시 시도하세요.",
+    "hook.overlay_delivery.input_error": "[SAGE overlay] {issue}\n외부 터미널/에디터에서 입력·설치를 고친 뒤 다시 요청하세요.",
     # 판정 줄에 이어 붙는 해소 안내. 본문만 번역하고 이걸 두면 en 출력의 절반이
     # 한국어로 남아, 번역하지 않은 것보다 읽기 어려운 줄이 된다.
     # key 는 `hint.<message_key>` 규약이다 — 표를 한 벌 더 두지 않기 위해서다.
@@ -252,7 +257,7 @@ FRAGMENTS = {
     "hook.entry.compiled_profile_unreadable": "컴파일된 프로필을 읽지 못했습니다 ({path})",
     "hook.entry.profile_not_mapping": "프로필 최상위는 객체(mapping)여야 합니다.",
     "hook.entry.raw_risk_type": "프로필의 raw risk 필드 타입이 잘못됐습니다",
-    "hook.entry.profile_pair_mismatch": "project-profile.yaml 과 project-profile.json 이 다릅니다. `sage generate` 를 다시 실행하세요.",
+    "hook.entry.profile_pair_mismatch": "project-profile.yaml 과 project-profile.json 이 다릅니다. 현재 프로젝트의 외부 터미널에서 `sage generate --kind hook --write --target <claude|codex|both>`를 실행하세요. 기존 설치 host를 유지하고 양쪽 host를 쓰는 설치는 both를 선택하세요. 이후 렌더 동기화가 필요하면 외부에서 `sage sync-overlays`를 실행한 뒤 다시 요청하세요.",
     "hook.entry.stop_retry_pass": "[sage-hook] {hook} 재시도(stop_hook_active) — 프로필 문제로 차단하지 않고 통과: {detail}",
     "hook.entry.core_load_failed": "⛔ [sage-hook] hook 코어를 로드하지 못했습니다 ({path})",
     "hook.entry.dispatch_failed": "⛔ [sage-hook] hook dispatch 에 실패했습니다 ({hook})",

@@ -9,6 +9,7 @@ bash·python 경로 추측 없이 어느 OS 에서도 동일하게 hook 이 돈�
 """
 import argparse
 import importlib.util
+import inspect
 import json
 import os
 import subprocess
@@ -26,7 +27,7 @@ _GATE_HOOKS = {
     "pre-phase4-checklist-gate",
     "stop-compliance-report",
 }
-_FAIL_CLOSED_HOOKS = _GATE_HOOKS | {"generated-artifact-write-guard"}
+_FAIL_CLOSED_HOOKS = _GATE_HOOKS | {"generated-artifact-write-guard", "capture-declared-risk"}
 _BASELINE_HOOKS = {
     "capture-declared-risk",
     "session-start-snapshot",
@@ -34,7 +35,7 @@ _BASELINE_HOOKS = {
 # 아무 정책도 집행하지 않는 **built-in** hook. manifest 를 못 읽어 소유권을 판별할 수 없을 때
 # 통과시켜도 되는 것은 이 닫힌 목록뿐이다. 열린 목록(= "fail-closed 목록에 없으면 통과")으로
 # 두면 이름을 모르는 project 정책 hook 까지 함께 통과한다 — 집행 우회다.
-_NON_ENFORCING_HOOKS = _BASELINE_HOOKS | {"post-tool-logger"}
+_NON_ENFORCING_HOOKS = {"session-start-snapshot", "post-tool-logger"}
 _PROFILE_HOOKS = _GATE_HOOKS | _BASELINE_HOOKS | {"post-tool-logger"}
 _PROFILE_REQUIRED_HOOKS = _GATE_HOOKS | _BASELINE_HOOKS
 
@@ -84,6 +85,37 @@ def _resolve_root(runtime, explicit):
     except Exception:
         pass
     return os.getcwd()
+
+
+def _resolve_event_root(runtime, explicit, raw_text):
+    """A current host cwd outranks inherited startup-root environment variables."""
+    if explicit:
+        return os.path.abspath(explicit)
+    try:
+        raw = json.loads(raw_text or "{}")
+        cwd = raw.get("cwd") if isinstance(raw, dict) else None
+    except (ValueError, TypeError):
+        cwd = None
+    if not isinstance(cwd, str) or not os.path.isabs(cwd) or not os.path.isdir(cwd):
+        return _resolve_root(runtime, explicit)
+    start = current = os.path.realpath(cwd)
+    from sage.commands.doctor import _is_repo_boundary
+    while True:
+        if _has_project_markers(current):
+            return current
+        if os.path.lexists(os.path.join(current, ".git")) or _is_repo_boundary(current):
+            return current
+        parent = os.path.dirname(current)
+        if parent == current:
+            return start
+        current = parent
+
+
+def _has_project_markers(root):
+    """Identity evidence, including damaged installs; not a profile validity check."""
+    return bool(root) and any(os.path.lexists(os.path.join(root, marker)) for marker in (
+        "sage/project-profile.yaml", "sage/project-profile.json",
+        "docs/sage_harness/.manifest.json"))
 
 
 def _resolve_core_dir(root, explicit):
@@ -460,10 +492,17 @@ def main():
     ap.add_argument("--core-dir", default=None, help=help_say("hook.entry.usage_core_dir"))
     ap.add_argument("--path", default=None, help=help_say("hook.entry.usage_path"))
     a = ap.parse_args()
-    root = _resolve_root(a.runtime, a.root)
-    os.environ.setdefault(_PROJECT_ROOT_ENV, root)
-    core_dir = _resolve_core_dir(root, a.core_dir)
     raw_text = sys.stdin.read() if not sys.stdin.isatty() else ""
+    inherited_root = os.environ.get(_PROJECT_ROOT_ENV) or os.environ.get(_ROOT_ENV[a.runtime])
+    catalog_root = _resolve_event_root(a.runtime, a.root, raw_text)
+    root = catalog_root
+    if (a.root is None and _has_project_markers(inherited_root)
+            and not _has_project_markers(catalog_root)):
+        # A nested non-SAGE boundary owns catalog discovery, not the installed
+        # host's policy state. A real SAGE checkout or explicit root still wins.
+        root = os.path.realpath(inherited_root)
+    os.environ[_PROJECT_ROOT_ENV] = root
+    core_dir = _resolve_core_dir(root, a.core_dir)
     _notify_version_contract(root, a.hook, core_dir)
     project_state = (_project_hook_state(root, a.hook)
                      if a.hook not in _FAIL_CLOSED_HOOKS else "unknown")
@@ -496,10 +535,23 @@ def main():
                        evidence=f"{type(e).__name__}: {e}"),
             core_dir, root, blocking_exit=2 if fail_closed else 0)
     try:
+        context_args = {}
+        if catalog_root != root and a.hook in (
+                "capture-declared-risk", "session-start-snapshot", "generated-artifact-write-guard"):
+            parameter = inspect.signature(run_hook.dispatch).parameters.get("overlay_root")
+            if parameter is None or parameter.kind not in (
+                    inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
+                return _render_bootstrap_block(
+                    a.runtime, a.hook,
+                    Diagnostic("entry.dispatch_failed", hook=a.hook,
+                               evidence="runtime API 3 overlay_root support is required; "
+                                        "upgrade project hooks with sage upgrade --apply"),
+                    core_dir, root, blocking_exit=2 if fail_closed else 0)
+            context_args["overlay_root"] = catalog_root
         if a.path is None:
-            return run_hook.dispatch(a.runtime, a.hook, root, core_dir, raw_text)
+            return run_hook.dispatch(a.runtime, a.hook, root, core_dir, raw_text, **context_args)
         return run_hook.dispatch(
-            a.runtime, a.hook, root, core_dir, raw_text, direct_path=a.path)
+            a.runtime, a.hook, root, core_dir, raw_text, direct_path=a.path, **context_args)
     except Exception as e:
         return _render_bootstrap_block(
             a.runtime, a.hook,

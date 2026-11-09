@@ -45,8 +45,8 @@ preference. Full rules: `docs/agent/language-policy.md`.
 ## What this skill is NOT
 
 The profile is **hand-authored SSOT**, not a generated artifact — so this skill edits
-the YAML **directly** and re-validates. It does **not** run `sage generate` (that is for
-assets, where the write-guard forces spec→generate). `/sage-asset` is for changing
+the YAML **directly**. After saving, `sage generate --kind hook --write` compiles the
+derived runtime JSON; it does not author or replace the YAML. `/sage-asset` is for changing
 hooks/agents/skills; this skill is only for the profile's values.
 
 ## Hard rules
@@ -187,18 +187,23 @@ preserving the fixed schema keys. Do not reformat unrelated sections.
 
 ## Step 4 — Re-validate (always)
 
-If you changed a routing-block source (`governance_docs` or `risk.domains`), first
-re-materialize the AGENT_GUIDE routing block with `sage sync-overlays` — otherwise
-`validate` reports drift.
+After saving the shared YAML, hand off to a **terminal outside the guarded AI
+session**, in this project root. A profile-pair mismatch blocks in-session Bash, so
+retrying that tool cannot repair it. Keep the guards enabled and leave generated JSON
+untouched. Use the already installed host target (`both` for cross-model projects).
+Compile JSON first; refresh routing second if its source changed:
 
 ```
+sage generate --kind hook --write --target <claude|codex|both>
 sage sync-overlays          # only if governance_docs / risk.domains changed
 sage validate --schema --kind all
 sage doctor
 ```
 `validate` re-checks schema + semantics (typo / missing-tier / silent-disable);
 `doctor` re-checks option dependencies (cross_model reachability, vault_path,
-review_loop) and reviewer resolution. A FAIL points at the value to fix — **fix and
+review_loop), reviewer resolution and read-only render-sync status. At the next
+session boundary, validation must accept the repaired state before guarded work resumes.
+A FAIL points at the value to fix — **fix and
 re-run, never bypass**. If you changed `components[]`, note that
 `sage generate --kind roster` may be needed to scaffold new `implementer-<id>` specs
 (that is an asset step — hand off or route to `/sage-asset`).
@@ -206,7 +211,7 @@ re-run, never bypass**. If you changed `components[]`, note that
 ## Done
 
 The change is complete when the profile reflects the user's intent, the consequence was
-surfaced and accepted, the routing block was re-synced if `governance_docs`/`risk.domains`
+surfaced and accepted, derived runtime JSON was regenerated outside the session, the routing block was re-synced if `governance_docs`/`risk.domains`
 changed (`sage sync-overlays`), and `sage validate` passes (or only WARNs the user accepted). If
 the change tuned the review loop, the next Phase-05 run picks it up; if it touched a
-gate-affecting section, the new gate behavior is live immediately.
+gate-affecting section, the compiled new behavior is available after successful recovery.

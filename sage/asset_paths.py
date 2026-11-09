@@ -341,6 +341,9 @@ def hook_runtime_files(root: str, layout: str = LAYOUT_CONSUMER_CURRENT) -> dict
             # 아니지만 hook_runtime 이 import 한다. 누락되면 압축 뒤 문맥이 실패 한 줄로 바뀌고,
             # 추적하지 않으면 어느 사이클 briefing 을 가리키는지를 조용히 바꿔도 hash 가 PASS 한다.
             os.path.join(runtime, "compact_reentry.py"),
+            # Context delivery and its native fail-closed boundary are required
+            # runtime code; missing/tampered helpers must never be hash-clean.
+            os.path.join(runtime, "overlay_context.py"),
         ] + strategy_files,
         "claude": [os.path.join(runtime, "io_claude.py")],
         "codex": [os.path.join(runtime, "io_codex.py")],

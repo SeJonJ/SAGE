@@ -343,6 +343,15 @@ Call out anything you inferred rather than were told, so the user can correct it
 
 After approval, ask the user how to generate the registration artifacts:
 
+If active hooks reject in-session tools because the shared YAML/compiled JSON pair
+differs or a physical render is pending, hand off the commands below to a **terminal
+outside the guarded AI session**, in this project root. Compile JSON first, sync
+routing next, then validate and run `sage doctor`. Use the already installed host
+target (`codex` for Codex-only, `both` for cross-model). Earlier Auto approval cannot
+make a blocked Bash tool perform this recovery. Keep guards enabled, leave generated
+JSON untouched, and resume after the next boundary validates the repaired state.
+Otherwise the approved Auto/Manual choice applies.
+
 **Auto** — you run the handoff now (`--target` = this project's host runtime; use
 `--target both` for cross-model):
 ```
@@ -350,6 +359,7 @@ sage generate --kind hook --write --target <claude|codex|both>
 sage generate --kind roster --write                   # only if components[] is set
 sage sync-overlays                                    # profile(risk.domains + governance_docs)을 AGENT_GUIDE 라우팅 블록에 반영
 sage validate --check --schema --kind all
+sage doctor
 ```
 
 **Manual** — you print the exact commands and let the user/agent run them.

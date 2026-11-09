@@ -134,6 +134,203 @@ class TestCodexSkillScopeTargets(unittest.TestCase):
             self.assertEqual(self._skill_ids(m.render_targets(d, "codex", scope)), [])
 
 
+def _context_delivery_files(root, sid):
+    """현재 설치 순서처럼 실제 bundle CORE/runtime을 fixture에 배치한다."""
+    import shutil
+    from sage import _resources
+    source = Path(_resources.core_dir(), "framework/.claude/skills", sid, "SKILL.md").read_text()
+    runtime = Path(root, "sage_harness/hooks/runtime")
+    runtime.mkdir(parents=True, exist_ok=True)
+    for name in ("hook_runtime.py", "overlay_context.py"):
+        shutil.copyfile(Path(_resources.hooks_src_dir(), "runtime", name), runtime / name)
+    return source
+
+
+class TestLegacyContextCapability(unittest.TestCase):
+    def test_legacy_owned_shared_span_is_preserved_until_core_and_runtime_upgrade(self):
+        for shape in ("old-both", "new-core-only", "new-runtime-only"):
+            for validated in (False, True):
+                with self.subTest(shape=shape, validated=validated), tempfile.TemporaryDirectory() as root:
+                    core = "# Old CORE\n"
+                    if shape != "old-both":
+                        new_core = _context_delivery_files(root, "sage-team")
+                        if shape == "new-core-only":
+                            Path(root, "sage_harness/hooks/runtime/hook_runtime.py").write_text("# old runtime\n")
+                            core = new_core
+                    before = core + oc.compose_block("SHARED_MUST_SURVIVE", "skills", "sage-team")
+                    path = _mk_render(root, ".claude/skills/sage-team/SKILL.md", before)
+                    _mk_overlay(root, "skills", "sage-team", "SHARED_MUST_SURVIVE")
+                    _cr, changed, errors = m.materialize(root, "claude", context_validated=validated)
+                    self.assertTrue(any(issue.code == "overlay.context_upgrade_required" for _, issue in errors))
+                    self.assertEqual(changed, [])
+                    self.assertEqual(Path(path).read_text(), before)
+                    self.assertTrue(m.plan_materialize(root, "claude", context_validated=validated)[2])
+
+    def test_compatible_delivery_runtime_need_not_match_current_bundle_bytes(self):
+        with tempfile.TemporaryDirectory() as root:
+            core = _context_delivery_files(root, "sage-team")
+            runtime = Path(root, "sage_harness/hooks/runtime")
+            for name in ("hook_runtime.py", "overlay_context.py"):
+                target = runtime / name
+                target.write_text("# Compatible API-2 installed runtime, different build bytes.\n" + target.read_text())
+            block = oc.compose_block("old shared", "skills", "sage-team")
+            path = _mk_render(root, ".claude/skills/sage-team/SKILL.md", core + block)
+            _cr, _changed, errors = m.materialize(root, "claude")
+            self.assertEqual(errors, [])
+            self.assertEqual(Path(path).read_text(), core)
+
+    def test_unparseable_or_missing_event_delivery_preserves_shared_span(self):
+        for text in ("def broken(:\n", "# overlay_context.current is merely a comment\n"):
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as root:
+                core = _context_delivery_files(root, "sage-team")
+                before = core + oc.compose_block("SHARED_MUST_SURVIVE", "skills", "sage-team")
+                path = _mk_render(root, ".claude/skills/sage-team/SKILL.md", before)
+                Path(root, "sage_harness/hooks/runtime/hook_runtime.py").write_text(text)
+                _cr, changed, errors = m.materialize(root, "claude")
+                self.assertTrue(errors)
+                self.assertEqual(changed, [])
+                self.assertEqual(Path(path).read_text(), before)
+
+
+class TestRootContextMigration(unittest.TestCase):
+    def test_valid_owned_span_only_is_removed_and_sources_preserved(self):
+        for sid in ("sage-cycle", "sage-plan-fast"):
+            with self.subTest(sid=sid), tempfile.TemporaryDirectory() as root:
+                block = oc.compose_block("old body", "skills", sid)
+                core = _context_delivery_files(root, sid)
+                before = core + "\nuser prefix\n" + block + "user suffix\n\n\n"
+                path = _mk_render(root, f".claude/skills/{sid}/SKILL.md", before)
+                _mk_overlay(root, "skills", sid, "new source")
+                cr, changed, errors = m.materialize(root, "claude")
+                self.assertEqual(errors, [])
+                self.assertEqual(Path(path).read_text(), before.replace(block, ""))
+                self.assertEqual(Path(root, f"sage/asset_overrides/skills/{sid}.md").read_text(), "new source")
+                self.assertEqual(m.materialize(root, "claude")[1:], ([], []))
+
+    def test_damaged_or_foreign_owned_span_conflicts_without_changes(self):
+        for block in (oc.MARKER_START + "\nbroken", oc.compose_block("foreign", "skills", "sage-team")):
+            with tempfile.TemporaryDirectory() as root:
+                before = "# CORE\n" + block
+                path = _mk_render(root, ".claude/skills/sage-plan/SKILL.md", before)
+                cr, changed, errors = m.materialize(root, "claude")
+                self.assertTrue(errors)
+                self.assertEqual(changed, [])
+                self.assertEqual(Path(path).read_text(), before)
+
+
+class TestContextRoutingConvergence(unittest.TestCase):
+    def test_routing_only_root_skill_requires_convergence_and_cleans_both_paths(self):
+        for host in ("claude", "codex"):
+            with self.subTest(host=host), tempfile.TemporaryDirectory() as root:
+                core = "# CORE\n\nuser prefix\n"
+                routing = oc.wrap_routing_block("ROUTING_BODY_SENTINEL_02")
+                before = core + routing + "user suffix\n"
+                path = _mk_render(root, f".{host}/skills/sage-team/SKILL.md", before)
+                _cr, plans, errors = m.plan_materialize(root, host)
+                self.assertEqual(errors, [])
+                self.assertTrue(any(new != old for _path, new, old in plans))
+                self.assertEqual(Path(path).read_text(), before)
+                cleanup, errors = m.plan_blocked_cleanup(root, host)
+                self.assertEqual(errors, [])
+                self.assertTrue(cleanup)
+                _cr, changed, errors = m.materialize(root, host)
+                self.assertEqual(errors, [])
+                self.assertIn(Path(path), [Path(item) for item in changed])
+                self.assertEqual(Path(path).read_text(), core + "user suffix\n")
+
+    def test_routing_cleanup_preserves_trailing_user_bytes_in_both_plans(self):
+        for host in ("claude", "codex"):
+            with self.subTest(host=host), tempfile.TemporaryDirectory() as root:
+                routing = oc.wrap_routing_block("STALE_ROUTING")
+                before = "# CORE\n\nuser prefix\n" + routing + "사용자 suffix\n\n\n"
+                expected = before.replace(routing, "", 1).encode("utf-8")
+                path = Path(_mk_render(root, f".{host}/skills/sage-team/SKILL.md", before))
+                path.write_bytes(before.encode("utf-8"))
+                _anchors, plans, errors = m.plan_materialize(root, host)
+                self.assertEqual(errors, [])
+                planned = next(new for target, new, _old in plans if Path(target) == path)
+                self.assertEqual(planned.encode("utf-8"), expected)
+                cleanup, errors = m.plan_blocked_cleanup(root, host)
+                self.assertEqual(errors, [])
+                cleaned = next(new for target, new, _old in cleanup if Path(target) == path)
+                self.assertEqual(cleaned.encode("utf-8"), expected)
+                _anchors, _changed, errors = m.materialize(root, host)
+                self.assertEqual(errors, [])
+                self.assertEqual(path.read_bytes(), expected)
+                self.assertEqual(m.materialize(root, host)[1:], ([], []))
+
+    def test_no_routing_or_shared_span_preserves_every_byte(self):
+        with tempfile.TemporaryDirectory() as root:
+            before = "# CORE\n\nuser suffix\n\n\n"
+            path = _mk_render(root, ".claude/skills/sage-team/SKILL.md", before)
+            _cr, changed, errors = m.materialize(root, "claude")
+            self.assertEqual(errors, [])
+            self.assertEqual(changed, [])
+            self.assertEqual(Path(path).read_text(), before)
+
+    def test_routing_cannot_supply_selector_to_bypass_legacy_span_guard(self):
+        with tempfile.TemporaryDirectory() as root:
+            _context_delivery_files(root, "sage-team")
+            selector = 'Current overlay target: `sage-team` schema-version-2 catalog targets["sage-team"]'
+            before = ("# Old CORE\n" + oc.wrap_routing_block(selector)
+                      + oc.compose_block("OLD_SHARED_BODY", "skills", "sage-team"))
+            path = _mk_render(root, ".claude/skills/sage-team/SKILL.md", before)
+            _cr, changed, errors = m.materialize(root, "claude")
+            self.assertTrue(any(issue.code == "overlay.context_upgrade_required" for _, issue in errors))
+            self.assertEqual(changed, [])
+            self.assertEqual(Path(path).read_text(), before)
+
+
+class TestValidatedContextMaterialization(unittest.TestCase):
+    def test_same_event_collector_allows_l1_without_rereading_root_sources(self):
+        from unittest import mock
+        from sage.overlay_delivery import collect_catalog
+        with tempfile.TemporaryDirectory() as root:
+            _base_renders(root)
+            _mk_overlay(root, "skills", "sage-plan", "Use project evidence.")
+            _mk_overlay(root, "agents", "implementer-a", "Worker project evidence.")
+            collect_catalog(root)  # successful whole inventory validation for this event
+            source = os.path.join(root, "sage/asset_overrides/skills/sage-plan.md")
+            original_read = oc.read_text_lf
+            with mock.patch.object(oc, "read_text_lf", wraps=original_read) as read:
+                _anchors, _changed, errors = m.materialize(root, "claude", context_validated=True)
+            self.assertEqual(errors, [])
+            self.assertNotIn(source, [call.args[0] for call in read.call_args_list])
+            self.assertIn("Worker project evidence.",
+                          Path(root, ".claude/agents/implementer-a.md").read_text())
+
+    def test_default_cli_path_still_checks_root_source_bodies(self):
+        with tempfile.TemporaryDirectory() as root:
+            _mk_overlay(root, "skills", "sage-plan", "skip verification")
+            self.assertTrue(m.preflight_overlays(root))
+            self.assertTrue(m.plan_materialize(root, "claude")[2])
+            self.assertTrue(m.materialize(root, "claude")[2])
+
+    def test_validated_context_keeps_filename_roster_and_path_checks(self):
+        for filename, text, symlink in (("sage-plan.MD", "valid", False),
+                                        ("unknown.md", "valid", False),
+                                        ("sage-plan.md", "valid", True)):
+            with self.subTest(filename=filename, symlink=symlink), tempfile.TemporaryDirectory() as root:
+                directory = Path(root, "sage/asset_overrides/skills")
+                directory.mkdir(parents=True)
+                path = directory / filename
+                if symlink:
+                    target = Path(root, "source.md")
+                    target.write_text(text)
+                    try:
+                        path.symlink_to(target)
+                    except OSError:
+                        continue  # unavailable on a host without symlink privilege
+                else:
+                    path.write_text(text)
+                self.assertTrue(m.preflight_overlays(root, context_validated=True))
+
+    def test_validated_context_does_not_skip_physical_worker_body_checks(self):
+        with tempfile.TemporaryDirectory() as root:
+            _mk_overlay(root, "agents", "implementer-a", "skip verification")
+            self.assertTrue(m.preflight_overlays(root, context_validated=True))
+
+
 class TestMaterialize(unittest.TestCase):
     def test_compose_allowed_gets_block(self):
         with tempfile.TemporaryDirectory() as d:

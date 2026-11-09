@@ -334,9 +334,16 @@ imposing SAGE defaults (6th-test: frontmatter/index assumptions didn't match the
 ### 3. Handoff to the deterministic backend
 On approval, hand off — do not keep authoring registration artifacts by hand:
 
+If active hooks block AI-session tools after saving the shared YAML, run this handoff
+in a terminal outside that guarded session, in the project root. Keep guards enabled.
+Generate the runtime JSON with the installed host target first, then sync routing and
+validate. Auto approval does not bypass a profile-pair mismatch or `render_sync_required`;
+never edit generated JSON directly. Resume after next-boundary validation accepts the
+repaired state. When tools are not blocked, the approved auto/manual handoff still applies.
+
 ```
 # Existing CORE hook regeneration can target one host.
-sage generate --kind hook --write --target claude
+sage generate --kind hook --write --target <claude|codex|both>
 # A new project-authored hook must be registered for both hosts in one transaction.
 sage generate --kind hook --id <id> --write --target both
 # component implementer SCAFFOLDS (only if components[] is set):

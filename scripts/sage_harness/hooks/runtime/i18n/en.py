@@ -93,6 +93,11 @@ MESSAGES = {
 # 판정 문장이 아니라 그 문장을 **감싸는 조각**이다. message_key 와 섞으면 build-time oracle
 # (core 가 낼 수 있는 key 집합과의 대조)이 조각까지 message_key 로 세어 무너진다.
 FRAGMENTS = {
+    "hook.overlay_delivery.repair_profile": "[SAGE overlay] {issue}\nIn an external terminal, run `sage generate --kind hook --write --target {target}` in the current project to regenerate the profile artifacts. Preserve the installed host selection; choose both for an installation using both hosts. If render synchronization is then required, run `sage sync-overlays` externally before retrying.",
+    "hook.overlay_delivery.repair_render": "[SAGE overlay] {issue}\nIn an external terminal, run `sage sync-overlays` in the current project, then retry.",
+    "hook.overlay_delivery.repair_upgrade": "[SAGE overlay] {issue}\nLegacy shared guidance was preserved. In an external terminal, run `sage upgrade --apply` in the current project to upgrade CORE and the hook runtime together, then retry.",
+    "hook.overlay.context_upgrade_required": "Preserved the legacy shared additions for {id}: the installed CORE and hook runtime must both support context catalogs. Upgrade them together, then retry.",
+    "hook.overlay_delivery.input_error": "[SAGE overlay] {issue}\nRepair input/installation in an external terminal/editor, then retry.",
     # 판정 줄에 이어 붙는 해소 안내. 본문만 번역하고 이걸 두면 en 출력의 절반이
     # 한국어로 남아, 번역하지 않은 것보다 읽기 어려운 줄이 된다.
     # key 는 `hint.<message_key>` 규약이다 — 표를 한 벌 더 두지 않기 위해서다.
@@ -246,7 +251,7 @@ FRAGMENTS = {
     "hook.entry.compiled_profile_unreadable": "The compiled profile could not be read ({path})",
     "hook.entry.profile_not_mapping": "The profile root must be an object (mapping).",
     "hook.entry.raw_risk_type": "A raw risk field in the profile has the wrong type",
-    "hook.entry.profile_pair_mismatch": "project-profile.yaml and project-profile.json disagree. Run `sage generate` again.",
+    "hook.entry.profile_pair_mismatch": "project-profile.yaml and project-profile.json disagree. In an external terminal for the current project, run `sage generate --kind hook --write --target <claude|codex|both>`. Preserve the installed host selection; choose both for an installation using both hosts. If render synchronization is then required, run `sage sync-overlays` externally before retrying.",
     "hook.entry.stop_retry_pass": "[sage-hook] {hook} retry (stop_hook_active) — passing instead of blocking on a profile problem: {detail}",
     "hook.entry.core_load_failed": "⛔ [sage-hook] the hook core could not be loaded ({path})",
     "hook.entry.dispatch_failed": "⛔ [sage-hook] hook dispatch failed ({hook})",

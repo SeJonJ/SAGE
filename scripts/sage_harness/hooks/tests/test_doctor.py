@@ -37,6 +37,241 @@ def run_doctor(profile_path):
     return rc, out.getvalue()
 
 
+class TestOverlayDeliveryDoctor(unittest.TestCase):
+    def test_nested_null_hooks_is_invalid_registration_without_crash(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root, ".codex/hooks.json")
+            path.parent.mkdir()
+            path.write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": None}]}}))
+            output = io.StringIO()
+            with redirect_stdout(output):
+                doctor._report_overlay_delivery(root, {"runtime": {"host": "codex"}}, {})
+            self.assertIn("[codex] native_registration=invalid", output.getvalue())
+
+    def test_malformed_registration_shapes_have_body_free_invalid_diagnostics(self):
+        malformed = [None, [], "PRIVATE_DO_NOT_PRINT", {"hooks": None},
+                     {"hooks": []}, {"hooks": {"SessionStart": None}},
+                     {"hooks": {"SessionStart": {}}},
+                     {"hooks": {"SessionStart": [None]}},
+                     {"hooks": {"SessionStart": ["PRIVATE_DO_NOT_PRINT"]}},
+                     {"hooks": {"SessionStart": [{"hooks": None}]}},
+                     {"hooks": {"SessionStart": [{"hooks": {}}]}},
+                     {"hooks": {"SessionStart": [{"hooks": "PRIVATE_DO_NOT_PRINT"}]}},
+                     {"hooks": {"SessionStart": [{"hooks": [None]}]}},
+                     {"hooks": {"SessionStart": [{"hooks": ["PRIVATE_DO_NOT_PRINT"]}]}},
+                     {"hooks": {"SessionStart": [{"matcher": [], "hooks": []}]}}]
+        for host in ("claude", "codex"):
+            for shape in malformed:
+                with self.subTest(host=host, shape=type(shape).__name__), tempfile.TemporaryDirectory() as root:
+                    path = Path(root, ".claude/settings.json" if host == "claude" else ".codex/hooks.json")
+                    path.parent.mkdir()
+                    path.write_text(json.dumps(shape))
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        doctor._report_overlay_delivery(root, {"runtime": {"host": host}}, {})
+                    self.assertIn(f"[{host}] native_registration=invalid", output.getvalue())
+                    self.assertNotIn("PRIVATE_DO_NOT_PRINT", output.getvalue())
+
+    def test_empty_valid_registration_remains_incomplete_information(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root, ".codex/hooks.json")
+            path.parent.mkdir()
+            path.write_text('{"hooks": {}}')
+            output = io.StringIO()
+            with redirect_stdout(output):
+                doctor._report_overlay_delivery(root, {"runtime": {"host": "codex"}}, {})
+            self.assertIn("[codex] native_registration=incomplete", output.getvalue())
+
+    def test_render_sync_diagnostic_matches_current_without_writes(self):
+        from sage import overlay_common as common
+        overlay, _catalog = TestOverlayErrorLanguage._runtime_modules()
+        for state in ("current", "required", "invalid", "profile-pair"):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as root:
+                Path(root, "sage").mkdir()
+                Path(root, "sage/project-profile.yaml").write_text("{}\n")
+                render = Path(root, ".claude/agents/implementer-a.md")
+                render.parent.mkdir(parents=True)
+                render.write_text("# CORE\n")
+                if state == "required":
+                    source = Path(root, "sage/asset_overrides/agents/implementer-a.md")
+                    source.parent.mkdir(parents=True)
+                    source.write_text("PRIVATE_WORKER_BODY")
+                elif state == "invalid":
+                    render.write_text("# CORE\n" + common.MARKER_START)
+                elif state == "profile-pair":
+                    Path(root, "sage/project-profile.json").write_text('{"project":{"name":"different"}}')
+                before = {str(path): path.read_bytes() for path in Path(root).rglob("*") if path.is_file()}
+                _context, issue = overlay.current(root, "{}", runtime="claude")
+                output = io.StringIO()
+                with redirect_stdout(output), mock.patch("sage.overlay_materialize.apply_materialization") as apply:
+                    doctor._report_overlay_delivery(root, {"runtime": {"host": "claude"}}, {})
+                apply.assert_not_called()
+                expected = "CURRENT" if issue is None else ("REQUIRED" if issue == "overlay_delivery.render_sync_required" else "INVALID")
+                self.assertIn(f"[claude] render_sync={expected}", output.getvalue())
+                if issue:
+                    self.assertIn("code=" + issue.split()[0], output.getvalue())
+                self.assertNotIn("PRIVATE_WORKER_BODY", output.getvalue())
+                self.assertEqual(before, {str(path): path.read_bytes() for path in Path(root).rglob("*") if path.is_file()})
+
+    def test_byte_valid_catalog_is_reported_exceeded_for_claude_only(self):
+        base = Path(REPO).parent / 'overlay-context-phase04-budget'
+        base.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=base) as root:
+            private = Path(root, 'sage/asset_overrides.local/skills')
+            private.mkdir(parents=True)
+            Path(root, 'sage/project-profile.yaml').write_text('{}\n', encoding='utf-8')
+            (private / 'sage-plan.md').write_text('PRIVATE_DO_NOT_PRINT' + 'x' * 8000, encoding='utf-8')
+            output = io.StringIO()
+            with redirect_stdout(output):
+                doctor._report_overlay_delivery(
+                    root, {'runtime': {'installed_hosts': ['claude', 'codex'], 'active_host': 'auto'}}, {})
+            text = output.getvalue()
+            self.assertIn('catalog_input=VALID', text)
+            self.assertIn('[claude] catalog_budget=EXCEEDED', text)
+            self.assertIn('[codex] catalog_budget=SUPPORTED', text)
+            self.assertIn('limit=7500 unit=utf16_code_units', text)
+            self.assertNotIn('catalog=VALID', text)
+            self.assertNotIn('PRIVATE_DO_NOT_PRINT', text)
+
+    def test_budget_and_registration_diagnostics_never_expose_personal_bodies(self):
+        with tempfile.TemporaryDirectory() as root:
+            private = Path(root, "sage/asset_overrides.local/skills")
+            private.mkdir(parents=True)
+            (private / "sage-plan.md").write_text("PRIVATE_DO_NOT_PRINT")
+            output = io.StringIO()
+            with redirect_stdout(output):
+                doctor._report_overlay_delivery(root, {"runtime": {"host": "codex"}}, {})
+            text = output.getvalue()
+            self.assertIn("source_utf8_bytes=10000", text)
+            self.assertIn("catalog_utf8_bytes=49152", text)
+            self.assertIn("additionalContextLimit=60000", text)
+            self.assertIn("native_registration=missing", text)
+            self.assertIn("host_support=UNVERIFIED", text)
+            self.assertNotIn("PRIVATE_DO_NOT_PRINT", text)
+
+    def test_invalid_private_input_reports_only_code_and_path(self):
+        with tempfile.TemporaryDirectory() as root:
+            private = Path(root, "sage/asset_overrides.local/skills")
+            private.mkdir(parents=True)
+            (private / "sage-plan.md").write_text("PRIVATE_DO_NOT_PRINT" * 1000)
+            output = io.StringIO()
+            with redirect_stdout(output):
+                doctor._report_overlay_delivery(root, {"runtime": {"host": "claude"}}, {})
+            text = output.getvalue()
+            self.assertIn("catalog=INVALID", text)
+            self.assertNotIn("PRIVATE_DO_NOT_PRINT", text)
+
+
+class TestOverlayErrorLanguage(unittest.TestCase):
+    @staticmethod
+    def _runtime_modules():
+        import importlib
+        runtime = str(Path(REPO, "scripts/sage_harness/hooks/runtime"))
+        with mock.patch.object(sys, "path", [runtime] + sys.path):
+            return importlib.import_module("overlay_context"), importlib.import_module("i18n")
+
+    def test_overlay_error_uses_hook_local_language_owner(self):
+        overlay, catalog = self._runtime_modules()
+        for language in ("ko", "en"):
+            with self.subTest(language=language), tempfile.TemporaryDirectory() as root:
+                path = Path(root, "sage/project-profile.local.yaml")
+                path.parent.mkdir()
+                path.write_text(f"interface:\n  language: {language}\n")
+                actual = overlay.error_message("overlay.marker_unpaired", root=root)
+                expected = catalog.frag(language, "hook.overlay_delivery.input_error").format(
+                    issue="overlay.marker_unpaired")
+                self.assertEqual(actual, expected)
+                if language == "en":
+                    self.assertNotRegex(actual, "[가-힣]")
+                else:
+                    self.assertNotIn("Repair input/installation", actual)
+
+    def test_issue_specific_external_recovery_commands_in_selected_language(self):
+        overlay, _catalog = self._runtime_modules()
+        cases = (("materialize.profile_yaml_json_mismatch path=sage/project-profile.yaml", "sage generate --kind hook --write"),
+                 ("overlay_delivery.render_sync_required", "sage sync-overlays"),
+                 ("overlay.context_upgrade_required", "sage upgrade --apply"))
+        for language in ("ko", "en"):
+            with self.subTest(language=language), tempfile.TemporaryDirectory() as root:
+                path = Path(root, "sage/project-profile.local.yaml")
+                path.parent.mkdir()
+                path.write_text(f"interface:\n  language: {language}\n")
+                for issue, command in cases:
+                    with self.subTest(issue=issue):
+                        actual = overlay.error_message(issue, root=root)
+                        self.assertIn(command, actual)
+                        if language == "en":
+                            self.assertNotRegex(actual, "[가-힣]")
+                            self.assertIn("external terminal", actual)
+                        else:
+                            self.assertIn("외부 터미널", actual)
+                            self.assertNotIn("Repair input/installation", actual)
+
+    def test_profile_repair_preserves_installed_hook_targets(self):
+        overlay, _catalog = self._runtime_modules()
+        cases = (({"installed_hosts": ["claude"]}, "claude"),
+                 ({"installed_hosts": ["codex"]}, "codex"),
+                 ({"installed_hosts": ["claude", "codex"]}, "both"),
+                 ({"host_runtime": "codex"}, "codex"),
+                 ({"installed_hosts": None}, "<claude|codex|both>"))
+        for manifest, target in cases:
+            with self.subTest(manifest=manifest), tempfile.TemporaryDirectory() as root:
+                path = Path(root, "docs/sage_harness/.manifest.json")
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps(manifest))
+                actual = overlay.error_message("materialize.profile_yaml_json_mismatch", root=root)
+                self.assertIn(f"sage generate --kind hook --write --target {target}", actual)
+
+    def test_entry_profile_pair_mismatch_has_external_targeted_recovery_on_both_hosts(self):
+        import subprocess
+        from sage.runtime_api import HOOK_RUNTIME_API
+        for host in ("claude", "codex"):
+            with self.subTest(host=host), tempfile.TemporaryDirectory() as root:
+                sage = Path(root, "sage")
+                sage.mkdir()
+                (sage / "project-profile.yaml").write_text('project: {name: PRIVATE_PROFILE_MARKER}\nrisk: {l0_pass_globs: ["*.md"]}\n')
+                (sage / "project-profile.json").write_text('{"project":{"name":"different"}}')
+                (sage / "project-profile.local.yaml").write_text("interface:\n  language: en\n")
+                manifest = Path(root, "docs/sage_harness/.manifest.json")
+                manifest.parent.mkdir(parents=True)
+                manifest.write_text(json.dumps({"runtime_api": {"required": HOOK_RUNTIME_API}, "assets": {}}))
+                env = dict(os.environ, PYTHONPATH=REPO)
+                result = subprocess.run([sys.executable, "-m", "sage.hook_entry", "--runtime", host,
+                    "--hook", "pre-implementation-gate", "--root", root,
+                    "--core-dir", str(Path(REPO, "scripts/sage_harness/hooks"))],
+                    input=json.dumps({"cwd": root, "tool_name": "Read", "tool_input": {"file_path": "a.txt"}}),
+                    text=True, capture_output=True, cwd=root, env=env)
+                text = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 2, text)
+                self.assertIn("entry.profile_pair_mismatch", text)
+                self.assertIn("external terminal", text)
+                self.assertIn("sage generate --kind hook --write --target <claude|codex|both>", text)
+                self.assertNotIn("PRIVATE_PROFILE_MARKER", text)
+                self.assertNotRegex(text, "[가-힣]")
+
+    def test_missing_root_uses_default_without_reading_cwd_profile(self):
+        overlay, catalog = self._runtime_modules()
+        with mock.patch.object(catalog.context, "resolve", side_effect=AssertionError("no root")):
+            actual = overlay.error_message("overlay.marker_unpaired")
+        self.assertIn("외부 터미널", actual)
+        self.assertNotIn("Repair input/installation", actual)
+
+    def test_error_localization_preserves_body_free_validator_failure(self):
+        overlay, _catalog = self._runtime_modules()
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root, "sage/project-profile.yaml")
+            path.parent.mkdir()
+            path.write_text("{}\n")
+            Path(root, "sage/project-profile.local.yaml").write_text("interface:\n  language: en\n")
+            with mock.patch("sage.overlay_delivery.collect_catalog", side_effect=ValueError("PRIVATE_EXCEPTION_MARKER")):
+                context, issue = overlay.current(root, "{}", runtime="codex")
+            actual = overlay.error_message(issue, root=root)
+            self.assertEqual(context, "")
+            self.assertIn("overlay_delivery.validator_unavailable", actual)
+            self.assertNotIn("PRIVATE_EXCEPTION_MARKER", actual)
+            self.assertNotRegex(actual, "[가-힣]")
+
+
 class TestDoctor(unittest.TestCase):
     @unittest.skipUnless(_HAS_YAML, "pyyaml 필요")
     def test_version_contract_reports_four_distinct_axes(self):

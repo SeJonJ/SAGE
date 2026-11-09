@@ -1,4 +1,4 @@
-<!-- sage-doc-source: release-readiness.md sha256:b131a6baee63a51f1f8c72e9b5c6205bace4026872178cd87aa68d8b1b312fd6 -->
+<!-- sage-doc-source: release-readiness.md sha256:a9bcc831dc92be980afb9493c5305e81201d3ab7f4f6cd11deb3b4e16c1f0714 -->
 # Release readiness
 
 This document records **how readiness is decided**, not what it currently is. The current answer
@@ -42,6 +42,12 @@ spread to other clones. So this check asks not "does it build" but **"does the a
 same thing the repository claims"**.
 
 ## Platform contract
+
+A successful PR CI run proves that commit passed its automated checks; it does not replace
+independent L3 review or release approval. The engine checkout's own `validate` is not approval
+authority. Build a separate wheel and install it in a fresh consumer to check bundle integrity and
+CLI product behavior. See the [verification index](plan_docs/README.md) for the overlay/Issue #36
+candidate's platform evidence and remaining conditions, and compare CI against the PR's current commit.
 
 `scripts/ci/platform_smoke.py` verifies the same items on Linux, macOS and Windows 11 desktop. The
 two POSIX platforms run in the hosted matrix on every PR; Windows runs in the **self-hosted job**

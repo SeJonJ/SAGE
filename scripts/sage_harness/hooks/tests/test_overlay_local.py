@@ -289,11 +289,11 @@ class LocalOverlayTests(unittest.TestCase):
     def test_all_currently_eligible_targets_and_no_new_eligibility(self):
         from sage.overlay_classify import COMPOSE_ALLOWED
         from sage.overlay_local import load_local, OverlayLocalError
-        self.assertEqual(len(COMPOSE_ALLOWED), 8)
+        self.assertEqual(len(COMPOSE_ALLOWED), 11)
         for kind, aid in COMPOSE_ALLOWED:
             self.put(kind, aid + '.md', aid)
             self.assertEqual(load_local(str(self.root), kind, aid)['content'], aid)
-        for kind, aid in [('agents', '../reviewer'), ('agents', 'qa'), ('skills', 'sage-team-fast'),
+        for kind, aid in [('agents', '../reviewer'), ('agents', 'qa'), ('skills', 'sage-review-fast'),
                           ('skills', 'sage-asset-override'), ('framework', 'AGENTS')]:
             with self.subTest(kind=kind, aid=aid), self.assertRaises(OverlayLocalError):
                 load_local(str(self.root), kind, aid)

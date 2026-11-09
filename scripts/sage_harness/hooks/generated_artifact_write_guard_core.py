@@ -14,7 +14,8 @@ _MOVE_PATH = re.compile(r"^\*\*\* Move to: (.+)$")
 _FRAMEWORK_DOCS = {"agent_guide.md", "claude.md", "codex.md", "agents.md"}
 _OVERLAY_AGENTS = {"implementer-a.md", "implementer-b.md", "leader.md", "reviewer.md"}
 _BLOCKED_AGENTS = {"qa.md", "convention-checker.md"}
-_OVERLAY_SKILLS = {"sage-cycle", "sage-plan", "sage-review", "sage-team"}
+_OVERLAY_SKILLS = {"sage-cycle", "sage-plan", "sage-review", "sage-team",
+                   "sage-cycle-fast", "sage-plan-fast", "sage-team-fast"}
 _BLOCKED_SKILLS = {"sage-init", "sage-asset", "sage-profile-modify", "sage-asset-override"}
 # 사이클 선언 파일. `.mcp.json` 처럼 basename 으로 매칭하면 프로젝트의 아무 cycle.json 이나
 # 걸리므로 **경로 꼬리**로 판정한다.

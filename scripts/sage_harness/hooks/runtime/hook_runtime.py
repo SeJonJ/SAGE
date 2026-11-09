@@ -10,11 +10,13 @@ core.decide 호출을 여기로 1회만 들어올린다(verbatim lift — 동작
 - root 밖/절대경로 glob 거부(독립성). L3 전략 크래시는 surface + fail-closed(None → core BLOCK 유지, F8b).
 """
 import calendar
+import contextlib
 import errno
 import fnmatch
 import glob
 import hashlib
 import importlib.util
+import io as text_io
 import json
 import os
 import posixpath
@@ -113,6 +115,7 @@ def make_rel(root):
     실제 root 밖 대상은 프로젝트 상대 namespace에서 명시적으로 제외한다.
     """
     root_abs = os.path.abspath(root)
+    root_real = os.path.realpath(root_abs)
 
     def rel(p):
         if not p:
@@ -122,7 +125,13 @@ def make_rel(root):
             target = supplied if os.path.isabs(supplied) else os.path.join(root_abs, supplied)
             target_abs = os.path.abspath(target)
             if os.path.commonpath((root_abs, target_abs)) != root_abs:
-                return "<outside-project>"
+                # Event roots are canonical, while a host can retain a symlink
+                # spelling in its tool path. Do not exempt that same checkout
+                # from risk/phase gates merely because the strings differ.
+                target_real = os.path.realpath(target)
+                if os.path.commonpath((root_real, target_real)) != root_real:
+                    return "<outside-project>"
+                return _canon_relkey(os.path.relpath(target_real, root_real))
             relative = os.path.relpath(target_abs, root_abs)
             return "" if relative == "." else _canon_relkey(relative)
         except Exception:
@@ -133,8 +142,8 @@ def make_rel(root):
 def _outside_confirmed(root, p):
     """`make_rel` 이 밖이라고 본 경로가 **확실히** 프로젝트 밖인가 — 세션 선언 면제 판단 전용.
 
-    `make_rel` 은 문자열만 비교해 별칭·대소문자 변형으로 쓴 프로젝트 파일도 밖으로 본다. 그 판정은
-    여기서 바꾸지 않는다(경로 표기 정규화는 별도 과제). 이 함수는 의심이 하나라도 있으면 거짓을
+    `make_rel` 에서도 안으로 확정하지 못한 대소문자·하드 링크 등의 별칭은 밖으로 남을 수 있다.
+    이 함수는 그 판정을 느슨하게 만들지 않으며, 의심이 하나라도 있으면 거짓을
     돌려줄 뿐이다. 틀리는 방향은 둘이고 둘 다 지금보다 느슨해지지 않는다 — 진짜 밖인데 거짓이면
     지금처럼 선언으로 상향되고, 프로젝트 파일인데 참이면(`realpath` 가 못 푸는 bind mount 같은
     별칭) 그 쓰기는 선언 없는 세션에서도 이미 통과한다.
@@ -863,22 +872,73 @@ def run_generated_artifact_write_guard(raw_text, core_dir, direct_path=None):
         return 2
 
 
-def run_capture_declared_risk(io, root, core_dir, raw_text):
-    """capture-declared-risk 오케스트레이터(UserPromptSubmit). risk 포착은 비차단, parse 실패 silent.
-
-    SessionStart 누락·지연에 대비해 같은 입력의 session_id 로 06 baseline 을 먼저 write-once 확보한다.
-    단 first-opportunity claim I/O 실패는 늦은 baseline 방지를 증명할 수 없어 exit 2로 작업 시작을 막는다.
-    cleanup(만료 state 삭제)·state write 는 런타임 무관 공유. 포착 메시지 렌더만 io 위임.
-    """
-    hid = "capture-declared-risk"
+def run_capture_declared_risk(io, root, core_dir, raw_text, *, overlay_root=None):
+    """Refresh root overlays and fold risk capture into one native response."""
+    import overlay_context
+    # The first-opportunity baseline is independent of overlay validity.
     snapshot_rc = _ensure_session_06_snapshot(io, root, core_dir, raw_text)
     if snapshot_rc:
         return snapshot_rc
+    catalog_root = root if overlay_root is None else overlay_root
+    replace_absent = (overlay_root is not None and catalog_root != root
+                      and overlay_context.installed(root)
+                      and not overlay_context.installed(catalog_root))
+    context, issue = overlay_context.current(
+        catalog_root, raw_text, runtime=io.RUNTIME, empty_if_absent=replace_absent)
+    if issue:
+        message = overlay_context.error_message(issue, root=root)
+        io.render_overlay_block("UserPromptSubmit", message)
+        return 2
+    if not overlay_context.installed(catalog_root) and not context:
+        return _capture_declared_risk(io, root, core_dir, raw_text)
+    pending_issue = []
+    def before_commit(risk_output):
+        text = overlay_context.merge_output(risk_output, context)
+        issue = overlay_context.output_issue(text, io.RUNTIME)
+        if issue:
+            pending_issue.append(issue)
+        return issue is None
+    captured = text_io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        rc = _capture_declared_risk(io, root, core_dir, raw_text, before_commit=before_commit)
+    if rc:
+        if pending_issue:
+            io.render_overlay_block("UserPromptSubmit",
+                                    overlay_context.error_message(pending_issue[0], root=root))
+        return rc
+    text = overlay_context.merge_output(captured.getvalue(), context)
+    issue = overlay_context.output_issue(text, io.RUNTIME)
+    if issue:
+        io.render_overlay_block("UserPromptSubmit", overlay_context.error_message(issue, root=root))
+        return 2
+    if text:
+        io.render_context("UserPromptSubmit", text)
+    return rc
+
+
+def check_overlay_tool_input(io, root, raw_text, *, overlay_root=None):
+    """Disk validation is a tool precondition, not proof of model delivery."""
+    import overlay_context
+    catalog_root = root if overlay_root is None else overlay_root
+    _context, issue = overlay_context.current(catalog_root, raw_text, runtime=io.RUNTIME)
+    if issue:
+        io.render_overlay_block("PreToolUse", overlay_context.error_message(issue, root=root))
+        return 2
+    return 0
+
+
+def _capture_declared_risk(io, root, core_dir, raw_text, *, before_commit=None):
+    """capture-declared-risk 오케스트레이터(UserPromptSubmit). risk 포착은 비차단, parse 실패 silent.
+
+    호출자가 overlay 검사 전 06 baseline 을 확보한다. risk 출력은 선택적으로 commit 전 검사하며,
+    검사에 실패하면 cleanup·capture·clear 상태 변경 없이 exit 2로 반환한다.
+    cleanup(만료 state 삭제)·state write 는 런타임 무관 공유. 포착 메시지 렌더만 io 위임.
+    """
+    hid = "capture-declared-risk"
     raw = parse_input_fail_open(hid, raw_text, surface=False)
     if raw is None:
         return 0
     log_dir = os.path.join(root, io.HOST_DIR, "logs")
-    os.makedirs(log_dir, exist_ok=True)
 
     sys.path.insert(0, core_dir)
     import capture_declared_risk_core as core
@@ -886,6 +946,25 @@ def run_capture_declared_risk(io, root, core_dir, raw_text):
              "session_id": raw.get("session_id", "") or "", "prompt": raw.get("prompt", "") or "",
              "now_utc": os.environ.get("SAGE_NOW_UTC") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     decision = core.decide(event)
+
+    # Render exactly once before any risk cleanup/write/delete. The same bytes
+    # checked against the merged host budget are emitted after a successful IO.
+    prepared = None
+    if before_commit is not None:
+        prepared_output = text_io.StringIO()
+        with contextlib.redirect_stdout(prepared_output):
+            if decision["action"] == "capture":
+                io.render_declared_capture(decision["level"], root)
+            elif decision.get("message_key") in ("risk_declaration_ambiguous", "risk_declaration_marker_position"):
+                io.render_declared_ambiguous(root, decision["message_key"])
+            elif decision["action"] == "clear":
+                existed = os.path.exists(os.path.join(log_dir, decision["state_file"]))
+                io.render_declared_clear(existed, root)
+        prepared = prepared_output.getvalue()
+        if not before_commit(prepared):
+            return 2
+
+    os.makedirs(log_dir, exist_ok=True)
 
     c = decision["cleanup"]
     now = time.time()
@@ -901,14 +980,20 @@ def run_capture_declared_risk(io, root, core_dir, raw_text):
         try:
             with open(path, "w", encoding="utf-8") as fh:
                 json.dump(decision["state"], fh, ensure_ascii=False)
-            io.render_declared_capture(decision["level"], root)
+            if prepared is None:
+                io.render_declared_capture(decision["level"], root)
+            else:
+                print(prepared, end="")
         except Exception:
             pass
     elif decision.get("message_key") in ("risk_declaration_ambiguous", "risk_declaration_marker_position"):
         # 기각을 알리는 것뿐이므로 상태 파일은 건드리지 않는다. UserPromptSubmit 은 exit 0 stdout 이
         # 컨텍스트로 올라가는 이벤트라 양 런타임에서 실제로 보인다.
         try:
-            io.render_declared_ambiguous(root, decision["message_key"])
+            if prepared is None:
+                io.render_declared_ambiguous(root, decision["message_key"])
+            else:
+                print(prepared, end="")
         except Exception:
             pass
     elif decision["action"] == "clear":
@@ -919,7 +1004,10 @@ def run_capture_declared_risk(io, root, core_dir, raw_text):
             existed = os.path.exists(path)
             if existed:
                 os.remove(path)
-            io.render_declared_clear(existed, root)
+            if prepared is None:
+                io.render_declared_clear(existed, root)
+            else:
+                print(prepared, end="")
         except Exception as exc:
             print(f"[{hid}] 선언 해제 실패 — 수동으로 {path} 를 지우세요: "
                   f"{type(exc).__name__}: {exc}", file=sys.stderr)
@@ -1837,7 +1925,7 @@ def _overlay_say(root, diagnostic):
         return str(diagnostic)
 
 
-def _session_start_overlay_l1(io, root):
+def _session_start_overlay_l1(io, root, *, context_validated=False):
     """SessionStart — CORE 렌더의 오버레이 관리 블록을 재수렴한다.
 
     현재 오버레이 파일 기준으로 각 CORE 렌더 블록을 재합성해, sync 를 따로 안 돌려도 새 세션이 fresh
@@ -1866,12 +1954,18 @@ def _session_start_overlay_l1(io, root):
                     manifest = {"core_skill_receipts": None}
             skill_scope = overlay_materialize.resolve_codex_skill_scope(
                 root, manifest=manifest)
+        # A standalone non-SAGE compact helper may find an older package on
+        # sys.path. Require the new callable only after this event actually
+        # used the new collector, not for the legacy convenience-only path.
+        kwargs = {"context_validated": True} if context_validated else {}
         _anchors, changed, errors = overlay_materialize.materialize(
-            root, io.RUNTIME, skill_scope)
+            root, io.RUNTIME, skill_scope, **kwargs)
     except Exception as e:
-        print(f"[session-start-overlay] WARN: overlay convenience sync 실패: {type(e).__name__}: {e}",
+        # Do not quote the exception: a parser/decoder may include source text.
+        print(f"[session-start-overlay] BLOCK: overlay_delivery.render_sync_failed "
+              f"({type(e).__name__}); repair input/permissions outside this session.",
               file=sys.stderr)
-        return 0
+        return 2
     if errors:
         for path, message in errors:
             print(f"[session-start-overlay] BLOCK: {path}: {_overlay_say(root, message)}",
@@ -1963,22 +2057,51 @@ def _ensure_session_06_snapshot(io, root, core_dir, raw_text):
             _mark_snapshot_opportunity_resolved(claim_path, session_id, resolved)
 
 
-def run_session_start_snapshot(io, root, core_dir, raw_text):
+def run_session_start_snapshot(io, root, core_dir, raw_text, *, overlay_root=None):
     """session-start-snapshot 오케스트레이터(SessionStart). 이번 세션의 06 baseline(존재+해시)을 기록한다.
 
     Stop 훅의 retro_gate 가 이 baseline 대비 변경분으로 **작성 도구와 무관하게** 이번 세션 작성 06 을 감지
     (W2/P0-b). 게이트 아님 → parse 실패 silent. 스냅샷은 세션당 **1회만** 쓴다: resume/재-SessionStart 가
     세션 도중 baseline 을 덮으면 그 전 변경이 baseline 에 흡수돼 감지에서 사라진다(write-once 로 방지).
     Codex lifecycle 이상으로 SessionStart가 누락돼도 UserPromptSubmit 경로가 같은 helper를 재호출한다."""
-    # 오버레이 블록 재수렴(L1)은 retro-gate·profile·parse 와 독립인 편의 스텝이라 early-return 앞에서 먼저 돈다.
-    overlay_rc = _session_start_overlay_l1(io, root)
-    if overlay_rc:
-        return overlay_rc
+    import overlay_context
+    # L1 failure must not skip the independent baseline or compact reentry.
+    catalog_root = root if overlay_root is None else overlay_root
+    replace_absent = (overlay_root is not None and catalog_root != root
+                      and overlay_context.installed(root)
+                      and not overlay_context.installed(catalog_root))
+    context, issue = overlay_context.current(
+        catalog_root, raw_text, runtime=io.RUNTIME, validate_materialization=False,
+        empty_if_absent=replace_absent)
+    overlay_rc = _session_start_overlay_l1(
+        io, root, context_validated=(catalog_root == root
+                                    and overlay_context.installed(root) and issue is None))
+    if issue:
+        print(overlay_context.error_message(issue, root=root), file=sys.stderr)
+    if issue or (overlay_rc and not replace_absent):
+        context = ""
     rc = _ensure_session_06_snapshot(io, root, core_dir, raw_text)
     # 압축 직후에만 재진입 문맥을 넣는다. 06 baseline 은 session_id 가 같아 write-once 로 그대로다.
-    # baseline 이 실패(rc≠0)해도 문맥은 낸다 — 그 실패는 이미 stderr 로 드러났고, 문맥까지 빠지면
-    # 압축 뒤 에이전트가 어디서 이어 가야 하는지 모른다.
-    _emit_compact_reentry(io, root, raw_text)
+    # baseline 실패의 원래 nonzero 계약은 유지한다. 문맥 출력은 그 경우 best-effort이며,
+    # overlay 경고만으로는 native host가 reentry stdout을 버리게 하지 않는다.
+    captured = text_io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        _emit_compact_reentry(io, root, raw_text)
+    raw = parse_input_fail_open("session-start-snapshot", raw_text, surface=False)
+    if not isinstance(raw, dict) or raw.get("source") not in ("resume", "fork", "compact"):
+        context = ""  # Startup's first full copy belongs to UserPromptSubmit.
+    text = overlay_context.merge_output(captured.getvalue(), context)
+    if overlay_context.installed(root):
+        merged_issue = overlay_context.output_issue(text, io.RUNTIME)
+        if merged_issue:
+            print(overlay_context.error_message(merged_issue, root=root), file=sys.stderr)
+            # Reentry is independently bounded. Keep it even when a catalog
+            # plus another context producer exceeds the native event ceiling.
+            text = overlay_context.merge_output(captured.getvalue(), "")
+    if text:
+        io.render_session_context(text)
+    # SessionStart overlay failures are diagnostic; UPS/PreToolUse enforce the
+    # current input before product work. Only the independent baseline can block.
     return rc
 
 

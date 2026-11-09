@@ -193,6 +193,13 @@ CORE 부트스트랩 자산(6 에이전트·13 스킬)은 `sage install`이 손�
   경로를 제시합니다. 단 hook은 결정론이라 오버레이 파일만으로 실행 동작이 바뀌지 않습니다(hook
   변경은 spec 경유).
 
+공급 방식은 대상에 따라 다릅니다. 허용된 worker 4종은 공유 원문을 물리 렌더에 합성하며 개인
+원문은 역할별 packet으로 전달합니다. root 스킬 7종(`sage-cycle`, `sage-plan`, `sage-team`,
+`sage-review`와 cycle/plan/team의 Fast 판)은 공유·개인 원문 모두 문맥 catalog로 전달합니다.
+소유가 확인된 root 스킬의 이전 관리 overlay span은 설치·sync에서 제거하고 원문은 보존합니다.
+개인 원문은 `sage/asset_overrides.local/`에 두며 Git·공유/전역 렌더·manifest에 싣지 않습니다.
+표준 2개/Fast 4개 출처의 순서와 크기 제한은 [문맥 공급 계약](ARCHITECTURE.md#대상별-overlay-문맥-공급)을 따릅니다.
+
 기존 `sage/conventions/*.md` + convention-checker 패턴을 자산 전반으로 일반화한 것입니다.
 
 ---

@@ -2,6 +2,73 @@
 
 [English](troubleshooting.en.md) | [문서 인덱스](README.md)
 
+## 대상별 overlay 문맥 공급
+
+Claude Code와 Codex는 root 스킬 `sage-cycle`, `sage-plan`, `sage-team`, `sage-review`,
+`sage-cycle-fast`, `sage-plan-fast`, `sage-team-fast`의 공유/개인 원문을 schema 2 catalog로
+자동 공급합니다. SessionStart startup은 본문을 뒤따르는 UserPromptSubmit에 맡기며,
+resume/fork/compact는 사용자 메시지 없이도 진행할 수 있어 현재 묶음을 다시 공급합니다.
+검증한 호스트는 Claude Code 2.1.318과 Codex CLI 0.166.0입니다. 격리 consumer에서
+14개 source의 원문/hash 전달, 수동 압축·resume 경로와 한도/차단·외부 수리 복귀를 native
+호스트와 로컬 mock endpoint로 확인했습니다. mock가 유도한 Skill/read-tool 진입은 실제 도구
+경로의 전송 시험이며 실제 모델의 자발적 선택 시험은 아닙니다. 별도 실제 모델
+`claude-opus-5-5`/`gpt-6.1-sol`의 유한 표본에서는 표준 두 출처·Fast 네 출처의 적용,
+수동·자동 압축 뒤 현재 view 유지와 후속 검증 응답을 관측했습니다. 모든 호스트 버전·미래
+모델/세션의 준수, 임의 장기 안정성, 모든 worker의 자체 압축/fork 복구를 보장하지 않습니다.
+
+source는 `skills/<id>/shared|personal`별 한 번만 실리고 target은 source 참조 배열입니다.
+표준은 공유 표준 → 개인 표준, Fast는 공유 표준 → 공유 Fast → 개인 표준 → 개인 Fast입니다.
+7종 모두 같은 root 문맥에 노출되지만 각 CORE는 자신의 고정 id view만 적용합니다.
+필수 CORE·프로젝트 정책·독립 gate > 공유 > 개인 우선순위이며 묶음의 존재는 호출·Fast
+전환·사람 승인이 아닙니다. 다른 target 적용 방지는 위 유한 모델 행동 표본의 범위에서 확인한 계약입니다.
+현재 경계의 빈 catalog도 이전 지침을 대체하며 다른 checkout의 개인 파일은 상속하지 않습니다.
+
+worker 4종의 공유 물리 합성과 역할별 본문/ref packet은 유지합니다. root 7종 묶음을 worker에
+새로 붙이지 않습니다. 일반 worker의 역할별 loader 호출과 headless reviewer CLI의 1회 자동
+로딩은 별도 경로입니다. 7종의 소유가 확인된 기존 관리 overlay span은 설치/sync에서 제거하고
+원문은 보존합니다. 손상 span·소유 불명은 충돌이며 CORE/사용자 바이트를 지우지 않습니다.
+개인 원문을 global/local SKILL.md·manifest·영구 cache에 굽지 않습니다.
+
+잘못된 inventory·한도 초과·손상 SAGE 마커·검증 예외는 정상 부분 catalog를 만들지 않습니다.
+SessionStart는 본문 없는 진단, UserPromptSubmit은 native block, 모든 지원 도구의 PreToolUse는
+native deny/exit 2입니다. 비SAGE checkout은 통과합니다. 복구는 호스트 밖 터미널/에디터에서
+입력을 고친 뒤 다음 메시지에서 재검사하는 경로입니다. `profile_yaml_json_mismatch`는 프로젝트
+root의 세션 밖 터미널에서 `sage generate --kind hook --write --target <claude|codex|both>`로
+YAML/compiled JSON을 정합화합니다. 설치된 host target을 유지하세요: Claude-only는 `claude`,
+Codex-only는 `codex`, 교차 모델/양 host 설치는 `both`입니다. 물리 worker 렌더나 routing 변경의 `render_sync_required`는 세션 밖에서
+`sage sync-overlays`로 동기화합니다. profile 수정 뒤 두 상태가 함께 있으면 generate 후 sync
+순서로 실행하세요. context 전용 root 스킬 원문 편집이 항상 물리 sync를 요구하는 것은 아닙니다.
+`sage doctor`는 입력·host 예산·렌더 동기화 상태를 확인하는 읽기 전용 진단이며 직접 수리하지
+않습니다. 수리 후 진단과 다음 메시지의 재검사를 확인하세요. hook 미실행, 신뢰 거부·timeout
+continue, 호스트 밖 임의 실행까지 차단한다고 보장하지 않습니다.
+
+공통 한도는 source별 UTF-8 10,000 bytes, wrapper·JSON escape를 포함한 catalog UTF-8
+49,152 bytes입니다. Claude catalog는 추가로 7,500 UTF-16 code units 이하이어야 합니다.
+reentry·declared-risk 여유 2,500 units를 남기며 최종 병합된 한 `additionalContext` 문자열도
+10,000 units 이하로 검사합니다. astral 이모지는 2 units입니다. Codex는 공통 한도와
+`additionalContextLimit=60000`을 유지합니다. byte·UTF-16 units·token을 같은 수로 해석하지 마세요.
+
+실제 Claude Code 2.1.318에서 기존 최대 catalog가 파일/preview로 바뀌었습니다.
+[공식 문서](https://code.claude.com/docs/en/hooks#json-output)도 각 문자열 필드의 10,000자 제한과
+이를 올릴 설정이 없음을 설명합니다. 공통 ceiling에 맞는 단일 10,000-byte source도 wrapper와
+다른 source를 더한 Claude 결과에서는 거부될 수 있습니다. 이는 기존 입력의 새 지원 제한입니다.
+`sage doctor`의 `catalog_input=VALID`와 `[claude|codex] catalog_budget=SUPPORTED|EXCEEDED`를
+구분하고 실제 호스트의 관측치·한도·단위를 확인하세요. 한도 오류는 외부 에디터에서 입력을
+지원 범위로 조정한 뒤 다시 검사합니다. 본문을 자동 축약·분할하거나 preview/모델 fetch로
+후퇴하지 않습니다. 설치·설정·예산 진단은 실제 전달/적용이나 누적 압축 비용 검증 완료와 다릅니다.
+
+## Windows에서 Phase 04 체크리스트가 차단되지 않음
+
+Windows에서는 미완료 03 문서가 있어도 `03-implementation document not found` 경고와 함께
+통과할 수 있는 기존 결함(`WIN-PHASE4-01`)이 확인됐습니다. 경로 목록의 역슬래시와 게이트가
+비교하는 슬래시 표기가 달라 문서를 찾지 못합니다. 이전 버전과 현재 후보의 소스, 설치 wheel의
+Claude·Codex 양쪽 진입점에서 재현됐으며 이 overlay·업그레이드 수정에는 포함하지 않았습니다.
+
+이 단계의 자동 통과를 체크리스트 충족 증거로 사용하지 마세요. 해당 사이클의 03 문서와 미완료
+항목을 직접 확인하고, 수정·검증되기 전까지 Windows Phase 04 게이트가 검증됐다고 보고하지 않습니다.
+Windows 전체 회귀의 기존 실패 및 간헐적인 테스트 준비 폴더 `WinError 5`는
+[플랫폼 검증 기록](plan_docs/04/platform-validation.md)에서 별도로 구분합니다.
+
 ## 개인 지침이 공동 개발자에게도 적용됩니다
 
 개인 절이 공유 `sage/asset_overrides/`에 남아 있으면 기존대로 팀에 적용됩니다.
@@ -18,6 +85,29 @@ kind/id 파일로 옮기고 공유 원문에서 제거한 뒤 `sage sync-overlay
 `upgrade --apply` 전에는 개인 파일 편집을 마치고 저장·백업하세요. 기존 실패 rollback은
 시작 전 snapshot으로 복구하므로, 실행 중 동시 저장·생성·삭제한 개인 변경이 되돌아갈 수
 있습니다. 성공 upgrade의 개인 변경 보존을 실패 rollback의 동시 편집 보장으로 해석하지 마세요.
+
+## 업그레이드 실패 후 Codex 전역 스킬 상태
+
+Codex global scope 업그레이드는 설치·hook 생성·overlay·검증과 사용자 파일 복원이 끝날
+때까지 전역 SAGE 스킬의 변경 기록과 잠금을 유지합니다. 그 전에 실패하면 기존 전역
+`SKILL.md`의 바이트·권한·존재 상태와 소유가 확인된 은퇴 스킬을 복원합니다. 이번에 만든
+파일은 제거하며, 무관한 전역 스킬과 소유가 확인되지 않은 동명 스킬은 보존합니다.
+기존 `CODEX_HOME` 자체가 심볼릭 링크인 구성은 지원하며, 실행 중 링크 대상 교체는 거부합니다.
+프로젝트와 Codex 전역 home 경로가 겹치면 변경 전에 중단합니다. 별도 전역 home이나
+project-local scope를 선택하세요.
+전역 스킬 쓰기나 소유가 확인된 은퇴 스킬 제거가 실패하면 upgrade도 실패합니다.
+단독 `sage install`의 전역 쓰기 오류 경고·비치명적 처리 계약은 유지합니다.
+
+복원 전에 외부 수정·삭제, 백업 변조, 부모 디렉터리 교체를 발견하면 해당 경로를
+덮어쓰지 않습니다. exit 2와 복원 미완료 메시지에 남은 백업 위치가 표시됩니다.
+해당 파일과 백업을 보존하고 변경 내용을 비교한 뒤 수동 복구하세요. 잠금은 같은 전역
+경로를 사용하는 SAGE 설치를 배제하며, 일반 편집기의 변경을 막는 잠금은 아닙니다.
+
+모든 가역 단계가 성공하면 전역 변경을 commit하고 레이아웃 활성 전환·정리로 넘어갑니다.
+그 뒤 정리 실패는 갱신 상태를 유지하고 원인을 해결한 뒤 재실행합니다. 성공한 commit의
+백업 정리 실패는 경고·잔여 백업으로 남으며 프로젝트만 이전 버전으로 되돌리지 않습니다.
+프로세스 강제 종료·전원 장애의 자동 복구나 프로젝트 snapshot의 일반 동시 편집 보호를
+보장하는 기능은 아닙니다.
 
 ## 기존 `CLAUDE.md` · `AGENTS.md` 와 충돌해 설치가 멈춤
 
@@ -54,7 +144,7 @@ sage install --host claude --dest .
 # 백업의 프로젝트 지침을 sage/asset_overrides/agents/leader.md 로 옮긴다
 ```
 
-overlay는 CORE 렌더 **위에 덧대어** 합성되고 `sage install --force`가 지우지 않습니다. 다만
+worker의 공유 overlay는 CORE 렌더 말미에 합성되고(root 스킬 7종은 위의 문맥 공급 경로를 사용), `sage install --force`가 지우지 않습니다. 다만
 AGENT_GUIDE·phase·리뷰·검증 게이트를 완화할 수는 없습니다.
 
 어느 경로인지는 **오류 메시지가 자산마다 갈라서** 알려주므로, 화면에 나온 안내를 그대로 따르면
@@ -105,21 +195,41 @@ sage upgrade --apply    # 이행
 | 고친 `verify-changes.sh` | 그대로 둡니다 — 수정본인지 구버전인지 구별할 수 없습니다 |
 | `scripts/`·`schema/` | **남을 수 있습니다.** 비어도 자동으로 지우지 않으며, 안전하게 확인된 빈 구 디렉터리만 결과에 표시합니다 |
 
-### 이행이 멈추는 경우
+### 사용자 확장이 있으면 이행만 보류합니다
 
 ```
-자동 이행을 멈췄습니다 — 사용 중인 project hook 이 있습니다: hooks/my-guard
+사용자 확장으로 레이아웃 이행을 보류합니다: hooks/my-guard
 ```
 
-직접 작성한 project hook 이나 review strategy 가 있으면 **첫 변경 전에 멈춥니다.** 그 코드는
-프로젝트가 쓴 것이라 패키지가 다시 만들 수 없고, 어느 자리로 가야 하는지도 도구가 정하지
-않습니다. 자동으로 옮기지도, 조용히 끄지도 않습니다.
+정상적인 구 레이아웃에 직접 작성한 project hook이나 review strategy가 있으면 **경로 이행만
+보류하고 기존 `scripts/sage_harness/`에서 버전과 관리 자산을 갱신합니다.** 사용자 코드를
+옮기거나 비활성화하지 않습니다. `sage upgrade --check`로 계획과 차단 사유를 먼저 확인하고,
+`--apply`로 적용하세요. installed/generated 버전 차이 때문에 `--force`가 필요하다는 안내가
+나오면 계획을 확인한 뒤 `sage upgrade --apply --force`로 진행합니다. 기존 버전 차이의
+명시적 확인 절차는 유지하며, `--force`도 코드 손상이나 경로 충돌을 무시하지 않습니다.
 
-**이 릴리즈는 사용자 확장 자산의 자동 이행을 지원하지 않습니다.** 해당 설치본은 **구 위치에서
-그대로 계속 동작합니다** — 게이트도, 등록도, 검증도 이전과 같습니다. 손수 옮기실 필요는 없고,
-권하지도 않습니다(아래). **옮겨도 등록이 남아 있는 한 이행은 계속 멈추고, 등록을 해제하는 명령은
-없습니다.** 이미 옮겼다면 코드를 구 위치(`scripts/sage_harness/hooks/`)로 되돌리세요. 사용자 확장의
-자동 이행은 후속 릴리즈의 범위입니다.
+성공 시 `required_version`, compiled profile, 설치 CORE와 hook 산출물이 현재 엔진 버전에
+맞춰집니다. 화면과 JSON 보고서의 `migration.mode: deferred`는 **버전 갱신과 경로 이행이
+별개**임을 나타냅니다. 이 상태에서는 새 트리를 만들거나 구 파일을 삭제하지 않습니다.
+
+코드 누락·비정상 파일·손상된 spec/adapter·사용자 Python 구문 오류·구/신 경로 충돌 등은
+전체 갱신을 차단합니다. strategy 정적 검사는 파일·경로·구문 검사이며, 임의 사용자 코드의
+실행 성공을 보장하지 않습니다. 다른 차단 사유가 함께 있으면 그 사유를 먼저 해결하세요.
+
+사용자 hook ID가 현재 번들 CORE 이름과 겹치면 사용자 코드를 덮어쓰지 않고 차단합니다.
+`scripts/verify-changes.sh`처럼 기존에 사용자 소유로 보호하던 파일은 이전 바이트를 보존합니다.
+따라서 “관리 자산 갱신”이 이 파일이나 사용자 소스를 덮어쓴다는 뜻은 아닙니다.
+Python 구문 검사는 **CLI 인터프리터 기준**이며 hook의 `SAGE_PYTHON`이 다른 버전이면 그 환경의
+실제 실행도 별도로 확인해야 합니다.
+
+JSON의 `migration.blockers`는 경로 이행 수준의 사유입니다. 전체 적용 결과는 `outcome`,
+이행 실행 여부는 `migration.mode`로 구분하세요. 보류 시 `remove`는 빈 목록이고
+`deferred_reasons`에 보류 사유가 남습니다. 구 레이아웃이 유지되므로 이미 최신 버전이어도
+`--check`는 `ready`로 보고할 수 있고 `--apply`는 기존처럼 관리 자산 갱신 단계를 재실행합니다.
+
+사용자 확장의 자동 이동은 지원하지 않습니다. 이미 손수 옮겼다면 기존 위치로 복구하세요.
+YAML의 `required_version`만 먼저 바꾸거나 hook 재생성만 먼저 실행하면 YAML/JSON 불일치나
+구 런타임 파일 누락으로 실패할 수 있으므로 전체 갱신 명령을 사용하세요.
 
 ### 직접 옮기지 마세요
 

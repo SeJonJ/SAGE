@@ -105,10 +105,9 @@ class WhatGetsRemoved(unittest.TestCase):
         with tempfile.TemporaryDirectory() as dest:
             _legacy_project(dest)
             verify = Path(dest, "scripts", "verify-changes.sh")
-            verify.write_text(
-                verify.read_text(encoding="utf-8").replace(
-                    "sage_harness/verify-changes.sh", "scripts/verify-changes.sh"),
-                encoding="utf-8")
+            verify.write_bytes(
+                verify.read_bytes().replace(
+                    b"sage_harness/verify-changes.sh", b"scripts/verify-changes.sh"))
             plan = lm.plan(dest, manifest=_manifest(dest))
             self.assertIn(os.path.join("scripts", "verify-changes.sh"), plan["remove"])
 
@@ -432,15 +431,7 @@ class RuntimeMustLoadBeforeAnythingIsRemoved(unittest.TestCase):
 
 
 class UserExtensionsStayPut(unittest.TestCase):
-    """등록된 project hook 이 있으면 **첫 변경 전에 멈춘다.** 그리고 그게 전부다.
-
-    한때 `--unregister` 로 출구를 열어 봤다. 그 명령은 adapter 를 지우고 manifest 를
-    갱신해야 하는데, 두 변경 모두 `InstallTransaction` 밖에서 경로로 이뤄졌다 — 이 사이클이
-    이미 두 번 고친 결함(조상이 밖을 가리키면 삭제가 프로젝트 밖에 닿는다)을 세 번째로
-    만들었다. 사용자 코드의 생명주기를 여는 일은 이 릴리즈의 범위가 아니다.
-
-    그래서 계약은 하나로 줄었다 — **차단하고, 구 레이아웃에서 계속 동작한다.**
-    """
+    """사용자 확장은 제자리에 두고 관리 자산만 갱신한다(#36)."""
 
     def _with_project_hook(self, dest):
         _legacy_project(dest)
@@ -455,7 +446,7 @@ class UserExtensionsStayPut(unittest.TestCase):
                       "--target", "both", "--root", dest, "--dest", dest], cwd=REPO)
         assert done.returncode == 0, done.stderr
 
-    def test_migration_stops_and_changes_nothing(self):
+    def test_upgrade_preserves_extensions_and_defers_only_migration(self):
         with tempfile.TemporaryDirectory() as dest:
             self._with_project_hook(dest)
             core = Path(dest, ap.LEGACY_HOOKS_REL, "my_guard_core.py")
@@ -463,18 +454,224 @@ class UserExtensionsStayPut(unittest.TestCase):
             before = (core.read_text(encoding="utf-8"), spec.read_text(encoding="utf-8"))
 
             done = _sage(["upgrade", "--apply", "--root", dest], cwd=REPO)
-            self.assertEqual(done.returncode, 1)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
             self.assertEqual((core.read_text(encoding="utf-8"),
                               spec.read_text(encoding="utf-8")), before)
-            # 구 레이아웃 그대로여야 한다 — 차단은 되돌리는 것이 아니라 시작하지 않는 것이다.
+            # 갱신은 성공하지만 사용자 확장 경로는 그대로다.
             self.assertEqual(ap.detect_layout(dest), ap.LAYOUT_CONSUMER_LEGACY)
             self.assertTrue(Path(dest, ap.LEGACY_HOOKS_REL, ap.SENTINEL_REL).is_file())
+
+    def _aged_project(self, dest):
+        self._with_project_hook(dest)
+        profile = Path(dest, "sage", "project-profile.yaml")
+        profile.write_text(profile.read_text(encoding="utf-8") +
+                           '\nsage:\n  required_version: "0.0.1"\n', encoding="utf-8")
+        done = _sage(["generate", "--kind", "hook", "--write", "--target", "both",
+                      "--root", dest, "--dest", dest], cwd=REPO)
+        assert done.returncode == 0, done.stderr
+        manifest = _manifest(dest)
+        manifest.update(sage_version="0.0.1", generator_version="0.0.1")
+        Path(dest, "docs", "sage_harness", ".manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8")
+
+    def test_old_version_is_updated_without_creating_the_new_tree(self):
+        from sage import __version__
+        import yaml
+        with tempfile.TemporaryDirectory() as dest:
+            self._aged_project(dest)
+            check = _sage(["upgrade", "--check", "--root", dest], cwd=REPO)
+            self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+            # --force remains necessary for pre-existing installed/generated drift.
+            no_force = _sage(["upgrade", "--apply", "--root", dest], cwd=REPO)
+            self.assertEqual(no_force.returncode, 1)
+            for _ in range(2):
+                done = _sage(["upgrade", "--apply", "--force", "--root", dest], cwd=REPO)
+                self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+                self.assertFalse(Path(dest, "sage_harness").exists())
+                profile = yaml.safe_load(Path(dest, "sage", "project-profile.yaml").read_text())
+                compiled = json.loads(Path(dest, "sage", "project-profile.json").read_text())
+                self.assertEqual(profile["sage"]["required_version"], __version__)
+                self.assertEqual(compiled["sage"]["required_version"], __version__)
+                manifest = _manifest(dest)
+                self.assertEqual(manifest["sage_version"], __version__)
+                self.assertEqual(manifest["generator_version"], __version__)
+            reports = [json.loads(p.read_text()) for p in Path(dest, ".sage", "upgrades").glob("*.json")]
+            applied = [r for r in reports if r["outcome"] == "applied"]
+            self.assertEqual(len(applied), 2)
+            self.assertTrue(all(r["migration"]["mode"] == "deferred" for r in applied))
+            self.assertTrue(all(r["migration"]["remove"] == [] for r in applied))
+            self.assertTrue(all(r["migration"]["deferred_reasons"] ==
+                                [{"kind": "project_hook", "name": "hooks/my-guard"}]
+                                for r in applied))
+            self.assertTrue(all(Path(r["migration"]["active_path_to"]).parts ==
+                                ("scripts", "sage_harness", "hooks") for r in applied))
+            self.assertNotIn("sage_harness/hooks\n", done.stdout)
+
+    def test_an_extension_does_not_hide_an_occupied_target(self):
+        with tempfile.TemporaryDirectory() as dest:
+            self._with_project_hook(dest)
+            mine = Path(dest, "sage_harness", "notes.txt")
+            mine.parent.mkdir(); mine.write_text("user data")
+            done = _sage(["upgrade", "--apply", "--force", "--root", dest], cwd=REPO)
+            self.assertEqual(done.returncode, 1)
+            self.assertEqual(mine.read_text(), "user data")
+            self.assertEqual(ap.detect_layout(dest), ap.LAYOUT_CONSUMER_LEGACY)
+
+    @staticmethod
+    def _bytes(dest):
+        return {p.relative_to(dest).as_posix(): p.read_bytes() for p in Path(dest).rglob("*")
+                if p.is_file() and "__pycache__" not in p.parts
+                and not p.relative_to(dest).as_posix().startswith(".sage/upgrades/")}
+
+    def test_invalid_project_sources_block_before_version_writes(self):
+        for damage in ("syntax", "adapter", "missing_core", "spec_link"):
+            with self.subTest(damage=damage), tempfile.TemporaryDirectory() as dest:
+                self._aged_project(dest)
+                core = Path(dest, ap.LEGACY_HOOKS_REL, "my_guard_core.py")
+                if damage == "syntax":
+                    core.write_text('CONTRACT_VERSION = "1"\ndef broken(:\n')
+                elif damage == "adapter":
+                    self._adapter(dest, "claude").write_text("echo noncanonical\n")
+                elif damage == "missing_core":
+                    core.unlink()
+                else:
+                    spec = Path(dest, "docs", "sage_harness", "hooks", "my-guard.md")
+                    original = spec.with_suffix(".source")
+                    spec.rename(original); spec.symlink_to(original)
+                before = self._bytes(dest)
+                done = _sage(["upgrade", "--apply", "--force", "--root", dest], cwd=REPO)
+                self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+                self.assertEqual(self._bytes(dest), before)
+                report = next(Path(dest, ".sage", "upgrades").glob("*.json"))
+                self.assertEqual(json.loads(report.read_text())["outcome"], "blocked")
+
+    def test_project_id_collision_with_new_core_is_blocked_without_data_loss(self):
+        from sage.project_hook_contract import adapter_body
+        with tempfile.TemporaryDirectory() as dest:
+            self._aged_project(dest)
+            hook_id = "pre-implementation-gate"
+            spec = Path(dest, "docs", "sage_harness", "hooks", hook_id + ".md")
+            spec.write_text(Path(dest, "docs", "sage_harness", "hooks", "my-guard.md")
+                            .read_text().replace("my-guard", hook_id))
+            core = Path(dest, ap.LEGACY_HOOKS_REL, "pre_implementation_gate_core.py")
+            core.write_text('CONTRACT_VERSION = "1"\ndef decide(event, profile, snapshot):\n    return {"status": "block", "exit_code": 2, "message": "authored-collision"}\n')
+            for host in ("claude", "codex"):
+                self._adapter(dest, host, hook_id).write_text(adapter_body(host, hook_id, ap.LEGACY_HOOKS_REL))
+            manifest = _manifest(dest)
+            manifest["assets"]["hooks/" + hook_id] = {"origin": "project", "form": "core_adapter"}
+            Path(dest, "docs", "sage_harness", ".manifest.json").write_text(json.dumps(manifest))
+            before = self._bytes(dest)
+            done = _sage(["upgrade", "--apply", "--force", "--root", dest], cwd=REPO)
+            self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+            self.assertEqual(self._bytes(dest), before)
+            report = next(Path(dest, ".sage", "upgrades").glob("*.json"))
+            self.assertEqual(json.loads(report.read_text())["outcome"], "blocked")
+
+    def test_blocked_current_cleanup_reports_the_unchanged_current_path(self):
+        with tempfile.TemporaryDirectory() as dest, tempfile.TemporaryDirectory() as outside:
+            done = _sage(["install", "--host", "claude", "--dest", dest], cwd=REPO)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            Path(dest, "sage", "project-profile.yaml").write_text(PROFILE)
+            Path(outside, "manifest.schema.json").write_bytes(
+                Path(REPO, "schema", "manifest.schema.json").read_bytes())
+            Path(dest, "schema").symlink_to(outside, target_is_directory=True)
+            done = _sage(["upgrade", "--check", "--root", dest], cwd=REPO)
+            self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+            report = next(Path(dest, ".sage", "upgrades").glob("*.json"))
+            migration = json.loads(report.read_text())["migration"]
+            self.assertEqual(migration["mode"], "blocked")
+            self.assertEqual(Path(migration["active_path_from"]).parts, ("sage_harness", "hooks"))
+            self.assertEqual(Path(migration["active_path_to"]).parts, ("sage_harness", "hooks"))
+
+    def test_english_check_and_authored_verify_script_preservation(self):
+        with tempfile.TemporaryDirectory() as dest:
+            self._with_project_hook(dest)
+            verify = Path(dest, "scripts", "verify-changes.sh")
+            script = "#!/bin/sh\n# Project verification policy\nexit 7\n"
+            verify.write_text(script)
+            check = _sage(["--lang", "en", "upgrade", "--check", "--root", dest], cwd=REPO)
+            self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+            self.assertIn("Layout migration is deferred", check.stdout)
+            self.assertNotIn("nothing you need to do", check.stdout + check.stderr)
+            done = _sage(["upgrade", "--apply", "--root", dest], cwd=REPO)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertEqual(verify.read_text(), script)
+
+    def test_missing_adapter_is_recreated_at_the_old_path(self):
+        with tempfile.TemporaryDirectory() as dest:
+            self._aged_project(dest)
+            self._adapter(dest, "codex").unlink()
+            done = _sage(["upgrade", "--apply", "--force", "--root", dest], cwd=REPO)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertTrue(self._adapter(dest, "codex").is_file())
+            self.assertFalse(Path(dest, "sage_harness").exists())
+
+    def test_late_failure_restores_old_versions_and_registration(self):
+        from unittest import mock
+        from sage.commands import upgrade as up
+        with tempfile.TemporaryDirectory() as dest:
+            self._aged_project(dest)
+            before = self._bytes(dest)
+            plan, blockers = up._plan(dest, "ko")
+            self.assertEqual(blockers, [])
+            real_steps = up._managed_steps
+            def fail_overlays(*args):
+                return [(name, (lambda: 1) if name == "overlays" else call)
+                        for name, call in real_steps(*args)]
+            with mock.patch.object(up, "_managed_steps", side_effect=fail_overlays):
+                count, error, restored = up._apply(dest, plan, "ko")
+            self.assertEqual(count, 0)
+            self.assertTrue(error)
+            self.assertTrue(restored)
+            self.assertEqual(self._bytes(dest), before)
+            self.assertFalse(Path(dest, "sage_harness").exists())
+
+    def test_custom_strategy_alias_survives_and_really_executes(self):
+        with tempfile.TemporaryDirectory() as dest:
+            _legacy_project(dest)
+            profile = Path(dest, "sage", "project-profile.yaml")
+            profile.write_text(profile.read_text().replace("claude_grep_first", "project_strategy"))
+            strategy = Path(dest, ap.LEGACY_HOOKS_REL, "strategies", "pre_implementation_gate",
+                            "project_strategy.py")
+            body = 'find_l3_review = lambda signals, snapshot: {"found": False, "path": "project-strategy-alive"}\n'
+            strategy.write_text(body)
+            done = _sage(["upgrade", "--apply", "--root", dest], cwd=REPO)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertEqual(strategy.read_text(), body)
+            core_dir = str(Path(dest, ap.LEGACY_HOOKS_REL))
+            script = ("import sys, json; sys.path.insert(0, sys.argv[1] + '/runtime'); "
+                      "import hook_runtime as hr; print(json.dumps(hr.run_strategy('pre-implementation-gate', "
+                      "{'risk': {'l3_review_strategy': 'project_strategy'}}, sys.argv[1], [], {}, {})))")
+            result = subprocess.run([sys.executable, "-c", script, core_dir],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout), {"found": False, "path": "project-strategy-alive"})
+            self.assertFalse(Path(dest, "sage_harness").exists())
+
+    def test_invalid_custom_strategy_is_not_silently_deferred(self):
+        for damage in ("missing", "syntax", "parent_link"):
+            with self.subTest(damage=damage), tempfile.TemporaryDirectory() as dest:
+                _legacy_project(dest)
+                profile = Path(dest, "sage", "project-profile.yaml")
+                profile.write_text(profile.read_text().replace("claude_grep_first", "project_strategy"))
+                directory = Path(dest, ap.LEGACY_HOOKS_REL, "strategies", "pre_implementation_gate")
+                if damage == "syntax":
+                    (directory / "project_strategy.py").write_text("return 1\n")
+                elif damage == "parent_link":
+                    original = directory.with_name("original")
+                    directory.rename(original); directory.symlink_to(original, target_is_directory=True)
+                    (directory / "project_strategy.py").write_text("find_l3_review = lambda a,b: {}\n")
+                before = self._bytes(dest)
+                done = _sage(["upgrade", "--apply", "--force", "--root", dest], cwd=REPO)
+                self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+                self.assertEqual(self._bytes(dest), before)
 
     def test_the_project_hook_still_runs_from_the_old_tree(self):
         """차단한 설치본은 **계속 동작해야 한다.** 멈춰 세운 대가가 기능 정지면 안 된다."""
         with tempfile.TemporaryDirectory() as dest:
             self._with_project_hook(dest)
-            _sage(["upgrade", "--apply", "--root", dest], cwd=REPO)
+            done = _sage(["upgrade", "--apply", "--root", dest], cwd=REPO)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
             self.assertEqual(hook_entry._resolve_core_dir(dest, None),
                              ap.legacy_hooks_dir(dest))
 
@@ -500,9 +697,8 @@ class UserExtensionsStayPut(unittest.TestCase):
         with tempfile.TemporaryDirectory() as dest:
             self._with_project_hook(dest)
             for host, root_env in (("claude", "CLAUDE_PROJECT_DIR"), ("codex", "CODEX_PROJECT_ROOT")):
-                self._adapter(dest, host).write_text(
-                    self._V1_0_ADAPTER.format(root_env=root_env, host=host, hook_id="my-guard"),
-                    encoding="utf-8")
+                self._adapter(dest, host).write_bytes(
+                    self._V1_0_ADAPTER.format(root_env=root_env, host=host, hook_id="my-guard").encode("utf-8"))
             before = {host: self._adapter(dest, host).read_bytes() for host in ("claude", "codex")}
             hashes = _manifest(dest)["assets"]["hooks/my-guard"]["adapter_hash"]
 
@@ -525,6 +721,8 @@ class UserExtensionsStayPut(unittest.TestCase):
             done = _sage(["generate", "--kind", "hook", "--id", "my-guard", "--write",
                           "--target", "both", "--root", dest, "--dest", dest], cwd=REPO)
             self.assertEqual(done.returncode, 0, done.stderr)
+            upgraded = _sage(["upgrade", "--apply", "--root", dest], cwd=REPO)
+            self.assertEqual(upgraded.returncode, 0, upgraded.stdout + upgraded.stderr)
             events = {
                 "claude": {"tool_name": "Write", "tool_input": {"file_path": "app/core/a.src"}},
                 "codex": {"tool_name": "apply_patch",

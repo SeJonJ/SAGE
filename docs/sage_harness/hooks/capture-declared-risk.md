@@ -6,6 +6,13 @@ runtime_bindings:
   codex: { event: UserPromptSubmit, matcher: "", timeout: 5 }
 ---
 ## intent
+The UserPromptSubmit adapter also validates and supplies the current root schema-2 overlay
+catalog. Shared/personal input errors, inventory damage, size excess, and validator exceptions
+return body-free native `decision: block`; no partial normal catalog is emitted. This preceding
+input check does not weaken risk capture or the write-once Phase 06 baseline. Successful output
+combines the catalog, baseline/reentry notices and risk-capture context into one host JSON object,
+not consecutive JSON documents or separate plain text. The risk-decision core remains pure.
+
 Capture an explicit risk level declaration (L0–L3) from the user prompt and store it per session.
 pre-implementation-gate reads it and applies the gate at an effective level of
 max(detected, declared) — a declaration can only raise the level, so the safety floor holds.
@@ -52,12 +59,11 @@ A profile or baseline publish failure after the claim exists preserves the claim
 degraded and fail-closed at Stop.
 
 ## runtime_bindings
-- claude: { event: UserPromptSubmit, input: stdin JSON(prompt, session_id), output: plain text on stdout }
-  UserPromptSubmit promotes plain stdout on exit 0 into context, so no envelope is needed —
-  unlike PreToolUse.
+- claude: { event: UserPromptSubmit, input: stdin JSON(prompt, session_id), output: single hookSpecificOutput JSON on stdout }
+  The adapter uses the context JSON envelope to assemble all successful notices and catalog together.
 - codex:  { event: UserPromptSubmit, input: stdin JSON(prompt, session_id), output: hookSpecificOutput JSON }
-- on_fail: capture and noop exit 0. Only a failure to create the shared baseline helper's
-  first-opportunity claim exits 2.
+- on_fail: risk capture/noop retains its existing result; baseline claim failure remains exit 2.
+  Overlay input failure instead blocks through the native UserPromptSubmit decision with no body.
 
 ## canonical
 sage_harness/hooks/capture_declared_risk_core.py  →  decide(event) -> decision
@@ -85,7 +91,7 @@ sage_harness/hooks/capture_declared_risk_core.py  →  decide(event) -> decision
   state file is left alone and the position notice is rendered.
 - Three adapter responsibilities:
   1. Extract input: runtime stdin JSON → the standard event.
-  2. Render output: claude plain text, codex hookSpecificOutput JSON. The message text is part of
+  2. Render output: one host JSON envelope on both hosts, containing accumulated context. The message text is part of
      the runtime protocol and belongs to the adapter.
   3. Bind paths and env, and perform file IO: CLAUDE_PROJECT_DIR/.claude/logs versus
      CODEX_PROJECT_ROOT/.codex/logs.
@@ -95,7 +101,7 @@ sage_harness/hooks/capture_declared_risk_core.py  →  decide(event) -> decision
 
 ## reverse_extract classification (7 categories)
 - token_adapter: the PROJECT_ROOT env var name and the log path (`.claude` versus `.codex`).
-- output_adapter: plain text versus hookSpecificOutput JSON, and the message text including
+- output_adapter: host context JSON assembly, and the message text including
   emoji and punctuation.
 - algorithm (shared): the level regexes, cleanup and state — promoted into the core.
 - noise (normalized away): comments, quote style, import order.

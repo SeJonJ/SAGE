@@ -121,7 +121,15 @@ Inspect its validated content and hash; keep the returned reference for the hand
 or unsupported command requires an input fix/CLI upgrade. Never bypass it by reading raw input.
 Personal text is read at execution time; do not sync it into a shared/global render or manifest.
 
-For project guidance run `sage sync-overlays`, then `sage validate --schema --kind all --strict`.
+For project guidance that changes physical worker/routing renders, run
+`sage sync-overlays`, then `sage validate --schema --kind all --strict`, in a **terminal
+outside the guarded AI session**, in this project root. If `render_sync_required`
+blocks in-session Bash, external sync is the recovery; keep the guards enabled. The
+next session boundary validates the repaired state before guarded work resumes.
+
+A valid context-only root-skill source needs no physical render sync: it is supplied
+at the next catalog boundary. Run strict validation without editing CORE. Personal
+guidance likewise needs no physical sync; use the validated loader above.
 Both scopes survive `sage install --force`. Blocked targets stay blocked in both scopes.
 
 ## Done

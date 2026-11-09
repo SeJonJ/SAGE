@@ -9,6 +9,7 @@
 """
 
 MESSAGES = {
+    "cli.overlay.context_upgrade_required": "{id}의 구형 공유 추가 지침을 보존했습니다. 설치된 CORE와 hook runtime에 문맥 catalog 전달 지원이 함께 필요합니다. 함께 업그레이드한 뒤 다시 시도하세요.",
     "cli.uninstall.personal_overlay_preserved": "사용자 소유 개인 overlay 원문 보존",
     "cli.overlay_local.help": "검사된 개인 overlay를 읽기 전용 JSON으로 조회",
     "cli.overlay_local.error": "개인 overlay 검사 실패: {code} ({path}). 입력을 수정하거나 CLI를 업그레이드하세요. 원문 직접 읽기로 우회하지 마세요.",
@@ -1202,10 +1203,12 @@ MESSAGES = {
     "cli.upgrade.note_migration_preserve_content_differs": '   보존: {path} — 현재 배포본과 내용이 다릅니다. 사용자 수정인지 구버전인지 구별할 수 없어 지우지 않습니다.',
     "cli.upgrade.note_migration_preserve_symlink": '   보존: {path} — symlink 입니다. 대상이 프로젝트 밖일 수 있어 손대지 않습니다.',
     "cli.upgrade.blocker_migration_unexpected_current": '자동 이행을 멈췄습니다 — 신 경로에 배포본이 만들지 않은 파일이 있습니다: {name}\n  구·신 트리가 함께 있는데 신 트리가 이 배포본의 것이라고 증명되지 않습니다.\n  중단된 이행이라면 파일이 배포본과 같아야 합니다. 임의로 병합하지 않습니다 —\n  어느 쪽이 정본인지는 도구가 정할 문제가 아닙니다. 해당 파일을 확인한 뒤 다시 실행하세요.',
-    "cli.upgrade.blocker_migration_project_hook": '자동 이행을 멈췄습니다 — 사용 중인 project hook 이 있습니다: {name}\n  이번 릴리즈는 project hook 이 있는 설치본의 자동 이행을 지원하지 않습니다.\n  이 설치본은 구 레이아웃에서 그대로 계속 동작하므로 따로 할 일은 없습니다.\n  파일을 신 경로로 직접 옮기지 마세요 — 등록이 남아 있는 한 이행은 계속 막히고, 등록을 해제하는 명령도 없습니다.',
+    "cli.upgrade.note_migration_deferred": "사용자 확장으로 레이아웃 이행을 보류합니다: {names}\n  기존 `scripts/sage_harness/` 경로에서 버전과 관리 자산을 갱신합니다. 사용자 확장은 옮기지 않습니다.",
+    "cli.upgrade.blocker_migration_extension_invalid": "사용자 확장을 확인할 수 없어 업그레이드를 차단합니다: {name} ({reason}). 기존 경로의 코드·spec과 CORE ID 충돌을 확인하세요.",
+    "cli.upgrade.blocker_migration_project_hook": "자동 이행 대상이 아닌 project hook이 있습니다: {name}\n  정상 구 레이아웃은 이행을 보류하고 버전을 갱신합니다. 다른 차단 사유가 함께 있으면 먼저 해결하세요.\n  사용자 코드를 신 경로로 직접 옮기지 마세요.",
     "cli.upgrade.blocker_migration_project_hook_missing_core": '자동 이행을 멈췄습니다 — 등록된 project hook 의 코드가 구 경로에 없습니다: {name}\n  등록은 남아 있는데 판정 코드가 없는 상태입니다. 이대로 이행하면 게이트 하나가\n  조용히 사라집니다. 코드를 구 경로(`scripts/sage_harness/hooks/`)로 되돌리세요.\n  신 경로로 옮긴 경우에도 이 차단은 풀리지 않으며, 등록을 해제하는 명령은 없습니다.',
     "cli.upgrade.blocker_migration_project_hook_irregular": '자동 이행을 멈췄습니다 — 등록된 project hook 의 코드가 정규 파일이 아닙니다: {name}\n  symlink 는 대상이 프로젝트 밖일 수 있어 손대지 않습니다.\n  해당 경로를 확인한 뒤 다시 실행하세요.',
-    "cli.upgrade.blocker_migration_custom_strategy": '자동 이행을 멈췄습니다 — 내장 목록에 없는 review strategy 를 쓰고 있습니다: {name}\n  이번 릴리즈는 custom strategy 가 있는 설치본의 자동 이행을 지원하지 않습니다.\n  이 설치본은 구 레이아웃에서 그대로 계속 동작합니다.\n  파일을 신 경로로 옮겨도 이 차단은 풀리지 않으니 직접 옮기지 마세요.',
+    "cli.upgrade.blocker_migration_custom_strategy": "자동 이행 대상이 아닌 review strategy가 있습니다: {name}\n  정상 구 레이아웃은 이행을 보류하고 버전을 갱신합니다. 코드 누락·손상·경로 충돌은 전체 갱신을 차단합니다.\n  사용자 코드를 신 경로로 직접 옮기지 마세요.",
     "cli.upgrade.migration_not_activated": '⛔ 활성 경로 전환에 실패해 구 자산을 하나도 지우지 않았습니다.\n  이행 전과 같은 상태입니다. 원인을 확인한 뒤 다시 실행하세요.',
     "cli.upgrade.migration_empty_dir": '   빈 디렉터리가 남았습니다: {path} — 필요 없으면 직접 지우세요.',
     "cli.upgrade.note_migration_resume": '중단된 이행을 이어서 마칩니다 — 신 트리는 이 배포본이 배치한 것으로 확인됐습니다.',
@@ -1217,6 +1220,7 @@ MESSAGES = {
     "cli.upgrade.migration_item": "     - {path}",
     "cli.upgrade.migration_more": "     … 외 {count}건 (전체 목록은 보고서 JSON)",
     "cli.upgrade.migration_runtime_unloadable": "⛔ 신 경로의 hook 런타임이 엔진 없이 로드되지 않아 구 자산을 지우지 않았습니다.\n  이행 전과 같은 상태입니다. 원인: {detail}",
+    "cli.upgrade.post_commit_failed": '자산 갱신은 커밋됐지만 후속 처리에 실패했습니다. 갱신 상태와 남은 복구 백업은 유지됩니다. 오류: {error}. 상태를 확인한 뒤 upgrade를 다시 실행하세요.',
     "cli.upgrade.migration_incomplete": "⛔ 배치·검증은 끝났지만 활성 전환을 완료하지 못했습니다.\n  신 경로는 그대로 있고 구 경로도 그대로입니다 — 되돌리지 않았습니다.\n  원인을 확인한 뒤 같은 명령을 다시 실행하면 이어집니다.",
     "cli.upgrade.migration_cleanup_only": "   구 경로 잔재 정리: {count}건 — 활성 경로는 이미 `sage_harness/hooks` 입니다.",
     "cli.upgrade.migration_removed": '   구 레이아웃 정리: {count}개 파일 제거',

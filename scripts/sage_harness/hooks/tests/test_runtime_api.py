@@ -11,6 +11,7 @@ import 하면, 옛 `sage-hook` 은 그걸 `ModuleNotFoundError` 로 만난다. t
 import os
 import sys
 import unittest
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))))))
@@ -26,8 +27,23 @@ def _manifest(**kw):
 
 
 class TestCurrentApi(unittest.TestCase):
-    def test_first_api_is_one(self):
-        self.assertEqual(HOOK_RUNTIME_API, 1)
+    def test_split_context_install_is_rejected_by_api_two_before_loading_core(self):
+        from sage.commands import install
+        from sage import runtime_api
+        manifest = install._manifest('claude')
+        with mock.patch.object(runtime_api, 'HOOK_RUNTIME_API', 2):
+            status, _ = runtime_api.compatibility(manifest)
+        self.assertEqual(status, 'too_old')
+
+    def test_catalog_install_is_rejected_by_api_one_before_loading_core(self):
+        from sage.commands import install
+        from sage import runtime_api
+        manifest = install._manifest('claude')
+        # The installed runtime now requires sage.overlay_delivery, unavailable
+        # in API one packages. Use the real installer marker, not a literal two.
+        with mock.patch.object(runtime_api, 'HOOK_RUNTIME_API', 1):
+            status, evidence = runtime_api.compatibility(manifest)
+        self.assertEqual(status, 'too_old')
 
     def test_api_is_a_plain_int_not_a_bool(self):
         # bool 은 int 의 서브클래스다. 상수가 True 로 흘러들면 비교가 조용히 성립한다.

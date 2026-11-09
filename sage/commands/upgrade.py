@@ -159,16 +159,21 @@ def _plan(root, language):
     # 증명할 수 있는 파일만** 지운다. 증명은 이름(번들 목록)과 바이트(공유 디렉터리의 낱개
     # 파일) 둘로 한다.
     #
-    # 사용자가 쓴 project hook 과 custom strategy 는 **자동으로 옮기지 않는다.** 재생성할 수
-    # 없고, 어느 자리로 가야 하는지도 사용자가 정한다. 발견하면 첫 mutation 전에 차단한다 —
-    # 조용히 비활성화되는 길을 두면, 사용자는 켜 둔 줄 아는 게이트가 실제로는 꺼진 상태를
-    # 갖게 된다.
+    # 사용자 확장은 옮기지 않는다. 정상 legacy 확장만 있으면 이행을 보류하고
+    # 구 경로에서 갱신한다. 누락 코드·경로 충돌 등 실제 오류는 전체 적용을 막는다.
     migration = layout_migration.plan(root, manifest=manifest, profile=profile)
-    if migration["needed"]:
-        if migration["blockers"]:
-            for kind, name in migration["blockers"]:
-                blockers.append(tr(language, f"cli.upgrade.blocker_migration_{kind}", name=name))
-        elif migration["in_transition"]:
+    migration_mode, extension_errors = _migration_mode(root, migration)
+    if migration_mode == "deferred":
+        notes.append(tr(language, "cli.upgrade.note_migration_deferred",
+                        names=", ".join(name for _kind, name in migration["blockers"])))
+    elif migration_mode == "blocked":
+        for kind, name in migration["blockers"]:
+            blockers.append(tr(language, f"cli.upgrade.blocker_migration_{kind}", name=name))
+        for name, reason in extension_errors:
+            blockers.append(tr(language, "cli.upgrade.blocker_migration_extension_invalid",
+                               name=name, reason=reason))
+    elif migration_mode == "execute":
+        if migration["in_transition"]:
             notes.append(tr(language, "cli.upgrade.note_migration_resume"))
         else:
             notes.append(tr(language, "cli.upgrade.note_migration_planned",
@@ -238,8 +243,22 @@ def _plan(root, language):
     scope = None
     if isinstance(receipts, dict) and isinstance(receipts.get(host), dict):
         scope = receipts[host].get("scope")
-    if host == "codex" and scope not in ("global", "project-local", "disabled"):
+    installed_hosts = (manifest or {}).get("installed_hosts")
+    if not isinstance(installed_hosts, list):
+        installed_hosts = [host]
+    codex_receipt = receipts.get("codex") if isinstance(receipts, dict) else None
+    codex_scope = codex_receipt.get("scope") if isinstance(codex_receipt, dict) else None
+    if ((host == "codex" or "codex" in installed_hosts)
+            and codex_scope not in ("global", "project-local", "disabled")):
         blockers.append(tr(language, "cli.upgrade.blocker_no_scope_receipt"))
+
+    # 기존 primary 동작은 유지한다. secondary는 기존 root 스냅샷 안의 local 표면만
+    # 먼저 갱신한다. secondary global은 upgrade가 외부 쓰기를 새로 소유하지 않는다.
+    core_installations = [{"host": host, "scope": scope}]
+    if host == "claude" and "codex" in installed_hosts and codex_scope == "project-local":
+        core_installations.append({"host": "codex", "scope": codex_scope})
+    elif host == "codex" and "claude" in installed_hosts:
+        core_installations.append({"host": "claude", "scope": None})
 
     project = (profile or {}).get("project") if isinstance(profile, dict) else None
     prefix = project.get("prefix") if isinstance(project, dict) else None
@@ -261,6 +280,7 @@ def _plan(root, language):
         "host_runtime": host,
         "bootstrapped": bootstrapped,
         "skill_scope": scope,
+        "core_installations": core_installations,
         "prefix": prefix if isinstance(prefix, str) and prefix else None,
         "writes": writes,
         "unowned_drift": unowned,
@@ -269,7 +289,104 @@ def _plan(root, language):
         # apply 시점에 다시 계산하면 그 사이 바뀐 트리를 근거로 지우게 되고, 사용자가 승인한
         # 것과 실제로 일어난 것이 갈린다.
         "migration": migration,
+        "migration_mode": migration_mode,
     }, blockers
+
+
+def _migration_mode(root, migration):
+    """Separate an extension's move deferral from an unsafe installation.
+
+    Planning never imports or executes project code. Keep the original migration
+    evidence intact; only a pure legacy tree with *only* valid extensions may defer.
+    """
+    if not migration["needed"]:
+        return "none", []
+    reasons = migration["blockers"]
+    if not reasons:
+        return "execute", []
+    if (migration["layout"] != asset_paths.LAYOUT_CONSUMER_LEGACY
+            or any(kind not in {"project_hook", "custom_strategy"} for kind, _ in reasons)):
+        return "blocked", []
+    from sage.project_hook_contract import adapter_body, inspect_project_hook, strict_hook_id
+    errors = []
+    for kind, name in reasons:
+        if kind == "project_hook":
+            hook_id = name.removeprefix("hooks/")
+            if not name.startswith("hooks/") or not strict_hook_id(hook_id):
+                errors.append((name, "invalid_hook_id"))
+                continue
+            from sage import _resources
+            core_name = hook_id.replace("-", "_") + "_core.py"
+            if core_name in _resources.installable_hook_relpaths():
+                # An older project ID may have become a bundled CORE name. Force
+                # install would overwrite its authored sources before generate.
+                errors.append((name, "project_hook_collides_with_core"))
+                continue
+            paths = (os.path.join(root, "docs", "sage_harness", "hooks", hook_id + ".md"),
+                     os.path.join(root, asset_paths.LEGACY_HOOKS_REL,
+                                  hook_id.replace("-", "_") + "_core.py"))
+            if any(asset_paths.escapes_root(root, path) for path in paths):
+                errors.append((name, "unsafe_path"))
+                continue
+            reason = _python_source_error(paths[1])
+            if reason:
+                errors.append((name, reason))
+                continue
+            _metadata, issues = inspect_project_hook(root, hook_id)
+            if issues:
+                errors.append((name, issues[0].code))
+                continue
+            for runtime in ("claude", "codex"):
+                adapter = os.path.join(root, asset_paths.LEGACY_HOOKS_REL,
+                                       "adapters", runtime, hook_id + ".sh")
+                if asset_paths.escapes_root(root, adapter):
+                    errors.append((name, "unsafe_adapter_path"))
+                elif os.path.lexists(adapter):
+                    if not os.path.isfile(adapter):
+                        errors.append((name, "irregular_adapter"))
+                        continue
+                    try:
+                        with open(adapter, encoding="utf-8") as handle:
+                            body = handle.read()
+                        if body != adapter_body(runtime, hook_id, asset_paths.LEGACY_HOOKS_REL):
+                            errors.append((name, "noncanonical_adapter"))
+                    except (OSError, UnicodeError):
+                        errors.append((name, "unreadable_adapter"))
+        else:
+            reason = _strategy_error(root, name)
+            if reason:
+                errors.append((name, reason))
+    return ("blocked" if errors else "deferred"), errors
+
+
+def _strategy_error(root, name):
+    """Read-only structural checks; runtime compatibility is a separate product test."""
+    if not name.isidentifier():
+        return "invalid_module_name"
+    path = os.path.join(root, asset_paths.LEGACY_HOOKS_REL, "strategies",
+                        "pre_implementation_gate", name + ".py")
+    if asset_paths.escapes_root(root, path) or not os.path.isfile(path):
+        return "missing_or_unsafe_strategy"
+    return _python_source_error(path)
+
+
+def _python_source_error(path):
+    # Compile but never execute authored code during the read-only plan. This also
+    # accepts imported/aliased callables, as the runtime's existing contract does.
+    import tokenize
+    try:
+        with tokenize.open(path) as handle:
+            compile(handle.read(), os.path.basename(path), "exec")
+    except (OSError, UnicodeError, SyntaxError, LookupError, ValueError):
+        return "unreadable_python_source"
+    return ""
+
+
+def _migration_executes(plan):
+    # Existing direct callers without the new policy field retain their old meaning.
+    if "migration_mode" in plan:
+        return plan["migration_mode"] == "execute"
+    return bool((plan.get("migration") or {}).get("needed"))
 
 
 def _required_version_sites(raw):
@@ -407,10 +524,10 @@ def _print_report(plan, blockers, language, applied):
     for note in plan["notes"]:
         print(note)
     migration = plan.get("migration") or {"needed": False}
-    if migration["needed"] and migration.get("cleanup_only"):
+    if _migration_executes(plan) and migration.get("cleanup_only"):
         print(tr(language, "cli.upgrade.migration_cleanup_only",
                  count=len(migration["remove"])))
-    elif migration["needed"]:
+    elif _migration_executes(plan):
         # **활성 경로가 먼저다.** 이행의 결과는 "몇 개를 지웠는가" 가 아니라 "어느 코드가
         # 게이트가 되는가" 다. 파일 목록보다 이것이 앞에 와야 사용자가 결과를 예측한다.
         print(tr(language, "cli.upgrade.migration_path_from",
@@ -632,6 +749,7 @@ def _managed_steps(root, plan, language):
     """
     host = plan["host_runtime"]
     scope = plan.get("skill_scope")
+    installations = plan.get("core_installations", [{"host": host, "scope": scope}])
     migration = plan.get("migration") or {"needed": False}
     steps = []
 
@@ -639,10 +757,15 @@ def _managed_steps(root, plan, language):
         from sage.commands import install
         # `--skill-scope` 는 codex 전용이다. claude 에 넘기면 install 이 usage 오류로 끝나고,
         # upgrade 는 "CORE 배포 실패" 로 읽어 전체를 되돌린다 — 원인이 두 단계 떨어져 보인다.
-        args = _StepArgs(host=host, dest=root, prefix=plan.get("prefix") or "sage",
-                         force=True, no_global_skill=False,
-                         skill_scope=(scope if host == "codex" else None))
-        return install.run(args)
+        for target in installations:
+            target_host = target["host"]
+            args = _StepArgs(host=target_host, dest=root, prefix=plan.get("prefix") or "sage",
+                             force=True, no_global_skill=False,
+                             skill_scope=(target["scope"] if target_host == "codex" else None))
+            result = install.run(args)
+            if result:
+                return result
+        return 0
 
     def regenerate_hooks():
         from sage.commands import generate
@@ -680,7 +803,7 @@ def _finalize_layout(root, plan, language):
     `(성공 여부, 적용 수)`.
     """
     migration = plan.get("migration") or {"needed": False}
-    if not migration["needed"]:
+    if not _migration_executes(plan):
         return True, 0
 
     # **지우기 전에 신 경로가 실제로 로드되는지 본다.** `validate` 는 해시와 스키마를 보지만,
@@ -823,7 +946,8 @@ def _apply(root, plan, language):
     """(applied_count, error, rollback_complete).
 
     선언 write 와 위임 단계를 **하나의 단위**로 다룬다. 단계 사이에서 실패하면 앞 단계는 이미
-    자기 트랜잭션을 커밋했으므로, 시작 전 스냅샷으로 전체를 되돌리는 것이 유일한 방법이다.
+    프로젝트 트랜잭션을 커밋했으므로 root는 스냅샷으로 복원한다. Codex global은 별도
+    journal과 lock을 가역 단계 전체 동안 유지한다. 활성 전환 뒤에는 재실행으로 수렴한다.
     """
     from sage.install_transaction import DestinationLock, InstallBusyError, InstallDriftError
 
@@ -840,70 +964,89 @@ def _apply(root, plan, language):
     except (InstallBusyError, InstallDriftError) as exc:
         return 0, tr(language, "cli.upgrade.lock_failed",
                      error=_exception_text(language, exc)), True
-    snapshot = _snapshot_tree(root)
-    user_times = _capture_times(root, snapshot)
+    from sage.commands import install
+    from sage.upgrade_transaction import GlobalSkillUpgrade, GlobalRollbackError
+    global_scope = (GlobalSkillUpgrade(install._codex_skills_root(), root)
+                    if plan.get("host_runtime") == "codex" and plan.get("skill_scope") == "global"
+                    else contextlib.nullcontext())
+    snapshot = None
     applied = 0
+    activation_started = False
     try:
-        # required_version 을 쓰면 뒤이은 core-assets 단계가 project-profile.json 도 같은
-        # 값으로 요구한다. 이미 어긋난 pair 를 upgrade 가 조용히 덮어 고치면 사용자가 만든(또는
-        # 다른 도구가 남긴) drift 가 사라진다 — 그건 upgrade 의 write target 이 아니므로, 쓰기
-        # 시작 전에 기존 pair 부터 fail-closed 로 검증한다.
-        needs_profile_refresh = any(item["kind"] == "required_version" for item in plan["writes"])
-        if needs_profile_refresh:
-            from sage import overlay_materialize
-            _existing_profile, profile_issue = overlay_materialize.load_profile(root)
-            if profile_issue is not None:
-                raise RuntimeError(render_issue(language, profile_issue))
-        for item in plan["writes"]:
-            _write_declaration(root, item, language)
-            applied += 1
-        if needs_profile_refresh:
-            _refresh_compiled_profile_json(root, language)
-        # 이행 중이면 단계들이 신 레이아웃을 보고 돌아야 한다. 전환 구간의 판정은 `CONFLICT`
-        # 이고, 거기에 맡기면 **이행을 끝내는 데 필요한 단계가 스스로 멈춘다.**
-        #
-        # 범위는 여기서만 연다. 이행을 아는 명령이 이행 상태를 다룬다 — 다른 명령에게 공존은
-        # 그냥 `CONFLICT` 이고, 그래서 fail-closed 한다.
-        migrating = bool((plan.get("migration") or {}).get("needed"))
-        with (asset_paths.layout_override(root, asset_paths.LAYOUT_CONSUMER_CURRENT)
-              if migrating else contextlib.nullcontext()):
-            for name, run_step in _managed_steps(root, plan, language):
-                code = run_step()
-                if code not in _STEP_OK[name]:
-                    raise RuntimeError(tr(language, "cli.upgrade.step_exit_nonzero",
-                                          name=name, code=code))
+        # Acquire the shared global lock before the first project declaration write.
+        with global_scope as global_upgrade:
+            snapshot = _snapshot_tree(root)
+            user_times = _capture_times(root, snapshot)
+            # required_version 을 쓰면 뒤이은 core-assets 단계가 project-profile.json 도 같은
+            # 값으로 요구한다. 이미 어긋난 pair 를 upgrade 가 조용히 덮어 고치면 사용자가 만든(또는
+            # 다른 도구가 남긴) drift 가 사라진다 — 그건 upgrade 의 write target 이 아니므로, 쓰기
+            # 시작 전에 기존 pair 부터 fail-closed 로 검증한다.
+            needs_profile_refresh = any(item["kind"] == "required_version" for item in plan["writes"])
+            if needs_profile_refresh:
+                from sage import overlay_materialize
+                _existing_profile, profile_issue = overlay_materialize.load_profile(root)
+                if profile_issue is not None:
+                    raise RuntimeError(render_issue(language, profile_issue))
+            for item in plan["writes"]:
+                _write_declaration(root, item, language)
                 applied += 1
-        # 이행이 **계획으로 증명하고 지운** 경로는 복원 대상이 아니다.
-        #
-        # `_USER_OWNED_PREFIXES` 에 `scripts/verify-changes.sh` 가 있어, 그대로 두면 이행이 지운
-        # 파일을 마지막에 되살린다. 전역 목록을 실행 중에 바꾸지 않는다 — run 마다 고정된
-        # **정확한 경로 집합**만 예외로 둔다. prefix 로 다루면 그 아래 새로 생긴 것까지 함께
-        # 예외가 되고, 그건 계획이 증명한 범위를 넘는다.
-        migration_owned = frozenset((plan.get("migration") or {}).get("remove") or ())
-        reverted = _restore_user_owned(root, snapshot, user_times, skip=migration_owned)
-        for rel in reverted:
-            print(tr(language, "cli.upgrade.user_owned_restored", path=rel))
+            if needs_profile_refresh:
+                _refresh_compiled_profile_json(root, language)
+            # 이행 중이면 단계들이 신 레이아웃을 보고 돌아야 한다. 전환 구간의 판정은 `CONFLICT`
+            # 이고, 거기에 맡기면 **이행을 끝내는 데 필요한 단계가 스스로 멈춘다.**
+            #
+            # 범위는 여기서만 연다. 이행을 아는 명령이 이행 상태를 다룬다 — 다른 명령에게 공존은
+            # 그냥 `CONFLICT` 이고, 그래서 fail-closed 한다.
+            migrating = _migration_executes(plan)
+            with (asset_paths.layout_override(root, asset_paths.LAYOUT_CONSUMER_CURRENT)
+                  if migrating else contextlib.nullcontext()):
+                for name, run_step in _managed_steps(root, plan, language):
+                    code = run_step()
+                    if code not in _STEP_OK[name]:
+                        raise RuntimeError(tr(language, "cli.upgrade.step_exit_nonzero",
+                                              name=name, code=code))
+                    applied += 1
+            # 이행이 **계획으로 증명하고 지운** 경로는 복원 대상이 아니다.
+            #
+            # `_USER_OWNED_PREFIXES` 에 `scripts/verify-changes.sh` 가 있어, 그대로 두면 이행이 지운
+            # 파일을 마지막에 되살린다. 전역 목록을 실행 중에 바꾸지 않는다 — run 마다 고정된
+            # **정확한 경로 집합**만 예외로 둔다. prefix 로 다루면 그 아래 새로 생긴 것까지 함께
+            # 예외가 되고, 그건 계획이 증명한 범위를 넘는다.
+            migration_owned = (frozenset((plan.get("migration") or {}).get("remove") or ())
+                               if migrating else frozenset())
+            reverted = _restore_user_owned(root, snapshot, user_times, skip=migration_owned)
+            for rel in reverted:
+                print(tr(language, "cli.upgrade.user_owned_restored", path=rel))
+            if global_upgrade is not None:
+                for message in global_upgrade.commit():
+                    print(tr(language, "cli.install.msg30", message=message), file=sys.stderr)
+            # Global and project are now current. Beyond this irreversible boundary,
+            # incomplete layout cleanup converges by reapply; never restore only global.
+            activation_started = True
+            ok, extra = _finalize_layout(root, plan, language)
+            if not ok:
+                return applied, tr(language, "cli.upgrade.migration_incomplete"), True
+            return applied + extra, "", True
     except BaseException as exc:
-        restored, problems = _restore_tree(root, snapshot, language)
+        if snapshot is None and isinstance(exc, InstallBusyError):
+            return 0, tr(language, "cli.upgrade.lock_failed",
+                         error=_exception_text(language, exc)), True
+        global_transaction = getattr(global_scope, "transaction", None)
+        if activation_started or (global_transaction is not None and global_transaction.committed):
+            return applied, tr(language, "cli.upgrade.post_commit_failed",
+                               error=f"{type(exc).__name__}: {exc}"), True
+        restored, problems = (_restore_tree(root, snapshot, language)
+                              if snapshot is not None else (True, []))
+        if isinstance(exc, GlobalRollbackError):
+            problems.extend(exc.problems)
+            restored = False
         detail = f"{type(exc).__name__}: {exc}"
-        lock.release()
         if not restored:
             return 0, tr(language, "cli.upgrade.rollback_failed",
                          error=detail, rollback="; ".join(problems[:3])), False
         return 0, tr(language, "cli.upgrade.apply_failed", error=detail), True
-
-    # --- 활성 전환 구간 ---------------------------------------------------
-    #
-    # **여기부터 스냅샷 복원을 타지 않는다.** 위의 `try` 를 여기까지 늘리면, 전환 뒤 어떤 실패도
-    # `_restore_tree` 를 부르고 그것이 구 파일을 되살려 **방금 없앤 공존을 다시 만든다.**
-    # 실패는 보고하고 재실행으로 수렴시킨다 — 각 단계가 멱등이라 그것으로 닫힌다.
-    try:
-        ok, extra = _finalize_layout(root, plan, language)
     finally:
         lock.release()
-    if not ok:
-        return applied, tr(language, "cli.upgrade.migration_incomplete"), True
-    return applied + extra, "", True
 
 
 def _refresh_compiled_profile_json(root, language):
@@ -1051,11 +1194,19 @@ def _finish_report(root, plan, blockers, language, applied, mode, outcome):
         # **exact 목록은 여기 남는다.** 화면은 앞 8건만 펼치므로, 무엇이 지워졌는지 나중에
         # 확인할 자리가 없으면 "60건 제거" 라는 숫자만 남는다. 경로는 전부 root 상대다.
         payload["migration"] = {
+            "mode": plan.get("migration_mode", "execute"),
             "layout": migration["layout"],
             "in_transition": migration["in_transition"],
-            "active_path_from": asset_paths.LEGACY_HOOKS_REL,
-            "active_path_to": asset_paths._HOOKS_REL,
-            "remove": list(migration["remove"]),
+            "active_path_from": (asset_paths._HOOKS_REL
+                                 if migration["layout"] == asset_paths.LAYOUT_CONSUMER_CURRENT
+                                 else asset_paths.LEGACY_HOOKS_REL),
+            "active_path_to": (asset_paths._HOOKS_REL
+                               if (_migration_executes(plan) or migration["layout"] ==
+                                   asset_paths.LAYOUT_CONSUMER_CURRENT)
+                               else asset_paths.LEGACY_HOOKS_REL),
+            "remove": list(migration["remove"]) if _migration_executes(plan) else [],
+            "deferred_reasons": ([{"kind": k, "name": n} for k, n in migration["blockers"]]
+                                 if plan.get("migration_mode") == "deferred" else []),
             "preserve": [{"path": rel, "reason": reason}
                          for rel, reason in migration["preserve"]],
             "blockers": [{"kind": kind, "name": name}
