@@ -1,0 +1,1816 @@
+{
+  "schema_version": 1,
+  "cycle_stem": "overlay-issue36-integration",
+  "method": "external checkpointed delta review; SAGE engine review-loop not invoked per user instruction",
+  "reviewed_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+  "reviewed_source_manifest_sha256": "be06cddc44ef7369ae3b9531cea6e60d4924c1c24c23afab516ef3f256dfcb61",
+  "current_product_hash": "sha256:e5f5b25a2a63daa09c0723a0a941ec3d0018f4e9503d898e3afe3deb05f8db7f",
+  "product_hash_encoding": "sha256 of sorted compact JSON logical-path to sha256 map",
+  "product_files": {
+    "engine/__init__.py": "4a4155f350a40d7f6df5d5c991b7f57ba49c89158051933abb4f96a0e63ff581",
+    "engine/__main__.py": "116de37e84fe8145bdef06df65a86b8ed0ca214e53d48789b5d352d81cca7dbd",
+    "engine/_hook_contract.py": "dc90afc8bc0ddb0793aec64a7356197660b330d785f76d2a1743d9540f104b25",
+    "engine/_resources.py": "f4fcf35d9e74446f919adba7a3d9d39f17318fefb8c676015c319b2442e2d8df",
+    "engine/asset_paths.py": "62de0effe1c4f15241ca2473887d03ca21d2150172c1398851b8c54ec4fa3f92",
+    "engine/audit_sources.py": "e2ad047d3a58d53a50d8a15fad0476d9aba685c616b48fc1e09631daca2ee910",
+    "engine/audit_view.py": "45909b3a677acf11a46176506834568527764da887cb65be54fbb50b37cf9e9b",
+    "engine/build_identity.py": "225293639f94514e7cf9a422cbe8d45a9f5eb30504fcff9550259c7681c06dbd",
+    "engine/checklist_contract.py": "89e12111ab4905a1079ce2c3ef047e3ccd7637843bf40750494a0b61d7b54e8c",
+    "engine/ci_authority.py": "552a4953ba211059ed736de0f217199151ac4f829aca69915f28f871b008ea30",
+    "engine/cli.py": "4a5b635ec089b96335643f29d3d79e8db576177fed6dbdd9a8acdc49fc32388d",
+    "engine/commands/__init__.py": "92d2953a37382196235869b972dbfc9c1104770ea1f08fd190ffdc1e46b40001",
+    "engine/commands/_common.py": "4b8c866de3cba876e9d5349382b6c86e57b1d4db321dfb70bbf6745c8aabe691",
+    "engine/commands/_vault.py": "0f468e192ffd29c42854ce45ed0fc707999070c149f033a42aeec9e34396c363",
+    "engine/commands/absorb.py": "71c9b482de796b26b472b396438e20fec18b71483c950d266bd35c2d026183c8",
+    "engine/commands/acceptance_waiver.py": "b55967ea2bfebdf632432f66ff6aab63b93161ac3816f09469a6da85d58ac65e",
+    "engine/commands/asset_check.py": "224a849db708745fdf6f07a388cd7070d501fa6770c6af89ba54318cc9aa1e97",
+    "engine/commands/audit.py": "8e3ede900bb2192ea958719a94c9e92f63401529946d22685f0e8ade6da29f5b",
+    "engine/commands/authority.py": "d0ff40724054bcfd6bbe84f1864e4390211bbe72b8942fceb075c6fc1a60e743",
+    "engine/commands/change.py": "4f5e3667aea7e24200e0c4528ab7bc7bae11d587579b714ebb34ce2b615ddddc",
+    "engine/commands/context.py": "473a2c70781952de84869e86ba84092321b7ce6ed32cd3d3bc3a6b3ec5344e81",
+    "engine/commands/cycle.py": "a14b0b04d7696ce67ea265ef09ac4885d6a9315b8c9c340acb241cfdd6e1bcdd",
+    "engine/commands/doctor.py": "6de4acbe05ea8c06a7da9ebbb5a2866c364fd1a32c4d55c52b51a9ff3f5c707b",
+    "engine/commands/explain.py": "0deab4fa7a696a0fe61325e22103de866b667c9193816db9928b99b2ddcd466d",
+    "engine/commands/fast_cycle.py": "92b094a302a4df5625a0b031b6eb3b1bc810fd9b8ee9fd7ade8b3fe285acb92d",
+    "engine/commands/feedback.py": "a020f0535b0f53de889d3a37babead3dec433f86250e5b6dcfb2a7c0165c8eb3",
+    "engine/commands/generate.py": "ef761fb648fa13a9b7d8968a6df28ebaf4884b8692b8df253b84deb1a5dd156b",
+    "engine/commands/install.py": "8ba34b1462c38c8b4f3822ea44e85c2a0043a9cfa9500c4828c5135a1816459a",
+    "engine/commands/knowledge.py": "28ff6d41f59227d48c8eddf888626ea3d4be361052cb05d0e207f3fdf247eb51",
+    "engine/commands/models.py": "8277f44c9d6cfd89119e8649d0e73652eb3787868a6c3f602775d85b7ddb622c",
+    "engine/commands/overlay_local.py": "fcdb54ab2b915c1df5c71f97017183836cafe24e159a2fc400abaab0ecc512f3",
+    "engine/commands/override.py": "c2d72d0524f5774cad17c1bb89f13fe5a6797491da28ab7dc2e955d6079a7204",
+    "engine/commands/retro.py": "8de08f383b8e7baf22ccdd68f6b6e8c397900bd0bd29a87000ee92096ad45085",
+    "engine/commands/review.py": "0d2600e9447b54aaa0affd9d04ad4718fead2b1099d83da5f66a64547f9a4ff0",
+    "engine/commands/review_loop.py": "e85c9ce813521fb53f075c035a2aa6b7d83d276af8c8d5e65c772eac04b5211a",
+    "engine/commands/status.py": "a774c7a63d057bd787cb2784fe17dd18c0a998bee47108f11cb4708a9760eeaf",
+    "engine/commands/sync_overlays.py": "a1489a393740a8508b58c31365632653926518e0ad239145856a5de929dd9a4f",
+    "engine/commands/uninstall.py": "40d4d81bfa0fda4f309fca740c226a371eb82b6c645474ea74bf26078db3945a",
+    "engine/commands/upgrade.py": "b8b50b17d7ce49a3c5b7f11981f79c825ead1421bbb4cddb559b6f8f091e16f2",
+    "engine/commands/validate.py": "2729d6bbba448aaf9c7b2ef104ed58d0f8846da8b662f5205795c10c8ac31211",
+    "engine/context_packet.py": "2107bf270ab057b983f6c6ca5665f79e05b608b763e3b9702c57e355b30539f4",
+    "engine/diagnostic_collectors.py": "a81a87f54f1193ce8e7d10e3a95d88f9bddde340105602ffc3d95bc28ab7e4ca",
+    "engine/diagnostic_contract.py": "2f640d09f01d5b304fcb34360615815dcd5bc560c01e5ceb03c1ad3cba353361",
+    "engine/diagnostics.py": "ba362f537c1b88d1a30a45c11f9177185b39473806f9c457d3102ec263ede000",
+    "engine/done_criteria_contract.py": "666e2f2b1ae32f1bb614e962181c12dfe854ff9eda11531f7ba285507fe36168",
+    "engine/fast_cycle_contract.py": "b3a0242b5d695b14f43b2720c004058e79718970d1334bc99637edf5ede059a4",
+    "engine/fast_cycle_sources.py": "ad4a2d2e20016af51b176a7087c618bc306bf165dfbf8662e72e854992b47a2f",
+    "engine/feedback.py": "3523d1f29e364c00dc551bb64feace98517abcc6715f3c45de9ac9296c517b41",
+    "engine/gate_readiness.py": "af484ee683308ac0110e91c985fa8843f6504c01c9458b2caf0897d8f50b7297",
+    "engine/hook_entry.py": "34ca7c82af4caa249a3345b67bdf4b999188a60e32d40836764ab4376781a7e6",
+    "engine/hook_launcher.py": "3ed343d4ac0e14b57a41d04fc1f39f99a78772ed433e3f264e56c06dc5d71853",
+    "engine/hook_runtime_hash.py": "f5b41c144b8592a0c9a79b904b277bf30189d11a2d7ce32b8664935c80ca18d9",
+    "engine/i18n/__init__.py": "31daa2f620c37aee2a41c4761d0bd4694351f2546ba4635de661c811547e19de",
+    "engine/i18n/context.py": "cd733eac7f6bb604dfa242472e0b9176d98b51f23f654d2b79322f8d61fc2579",
+    "engine/i18n/en.py": "bd2f50120460c409ffe2f47dea5af086c23326bf928494819924ee04db49a10f",
+    "engine/i18n/ko.py": "768b18d9b1810df0c305dc0d4465095fcbd576643909254e724115638ae617c2",
+    "engine/i18n/parser.py": "a3341eb63121c191859792a4a52ad45dc1145738585e940fa902f3e3b0e2c08c",
+    "engine/i18n/validation.py": "549dc9ec39ed8221749d106bcb55b59326d9758407f7383b7113c36e0612d314",
+    "engine/install_transaction.py": "fc6bd6d7e36659f2b5650607e1b487278795b182f532d038bdde334dbed33795",
+    "engine/layout_migration.py": "face49140bf74d22d42b240ffeec171e6f57eb845a494b2c911c79dda7e35e0f",
+    "engine/managed_assets.py": "508a978b0a8b7b405b960101ed62a27f9344043ea989327c12458c48a12a5d9e",
+    "engine/manifest_contract.py": "011b9a82d26c677979db22e0a11b034f0ad7e5d901cef6c18da8876ee2940c9f",
+    "engine/manifest_io.py": "8a7d749f7ae63e11b83b81f355cb0a1806a8744b135fc0cab4418f7e8c29a9ca",
+    "engine/mcp_common.py": "92ccee11b04e7412a59b3968a59670087372345756b824e57f06a3f2bfba0e70",
+    "engine/model_catalog.py": "4284e472a98aae32862b646051832b322c2aefc622eeb94f6c8bd3cfe7606918",
+    "engine/model_routing.py": "4bbaca0a66bcf58131992aa08235d33846db2d1b0c9f91196dfd05e11917835b",
+    "engine/overlay_classify.py": "9efabbce84f5005463d93b47d3d789c81ad2a6ee8942c9c9faeb2dba51fbd51d",
+    "engine/overlay_common.py": "abc18e440c805068e1d4f6129cd714ab5567180b950dfaae86da08497c6492f1",
+    "engine/overlay_delivery.py": "bbc9ffcd59a422b695b2d4e3c76fe7df8ac53c63831d71a25ff97f311648c7d7",
+    "engine/overlay_lint.py": "11da338962cc8bd06c8f0718501b538a600f4b02b76d51e5e110f61b5cd4e1bf",
+    "engine/overlay_local.py": "84082098a6f961971826940244d8336c2a942d55d7ba748c22cf7ebf442694a8",
+    "engine/overlay_materialize.py": "5c5188b17a09374f1646d57f92fe07bd2c7680acb5899f9eb1a24cd363e2f86e",
+    "engine/peer_process.py": "f2280db6916815bc4f5e73f3cbc91d9b49b4498be1baba4b6ffa6f32678870ff",
+    "engine/profile_compile.py": "0fba517e5ada5cc728854ffc33e68b059e88adf3de3c1cd0354f87ca10e17188",
+    "engine/profile_layers.py": "7bef12f614407c27d0ecbc228cd1dae0663ecf25bdbb3b7c790f9774e14212e2",
+    "engine/profile_validate.py": "82e4309bda20f1a565f98893af99abed58fb1e836196498cbc20aee8edadf3fd",
+    "engine/project_hook_contract.py": "d398e031f4f48012181b52724eb3e7318861859a93d00b375cb3cdff67ad6b3e",
+    "engine/routing_block.py": "2c040542b6d4b7a273ae64257a49914c0efa8320bf88465a6c67c0148fd0ebec",
+    "engine/runtime_api.py": "d379f1f5eb79cf4c9a5f5963b6a2b590dd5213ec3d70af84b564a751398a102a",
+    "engine/runtime_hosts.py": "f720de0618093530d8693827576f7bca2f0c1e57c1dd82a30b61fafc8d5be309",
+    "engine/uninstall_cleanup.py": "9df85cd8a62705af9b8398c75b2caf858404d3f52aaa2af5c2160e3022843140",
+    "engine/uninstall_executor.py": "e44f5e1f3b446b2b652c5a3df5653af7310c2a9e1957e15636e6f63cf6bb9d4d",
+    "engine/uninstall_fs.py": "ca42bec919aa6d6944e9df972a04825d1ceb5c391e9be3f43e704073a7606924",
+    "engine/uninstall_plan.py": "d200016b37d807187e2da1b766ef3b990962a937329433981ad798cdd1bbb22e",
+    "engine/uninstall_posix_fs.py": "105da5facae645bcb2ed79383639bf4a72b878431babbf89ad961038b9122c22",
+    "engine/uninstall_shared.py": "b1e282d81a18bef3713d5fba81416612634ca442fd6022b0fada113094aef571",
+    "engine/uninstall_windows_fs.py": "b5710d5024bdd4b153226d5f6bd843889056099239da77afa7365c3386787a3f",
+    "engine/upgrade_transaction.py": "88af3c2e3b91c57adc39a559d647e8c73cf6d163065a8a96dfeff5b8967f1b4f",
+    "engine/version_contract.py": "5eada095a69e4158c159d8237cd962ae766942a9633af29fbdd755d50fe5526c",
+    "templates/agent.spec.md": "f57150d484dd20cfec26a617fa2eae9ff1577a6fdabc76770dde554ef4aad70c",
+    "templates/claims.yml": "aed0a41fba4107ec101eb72aac21da7b9d934d6d63df007a95cacbe711f87898",
+    "templates/hook.spec.md": "5f4b2f07285b5c44eed9b847e283affc9226c9c10f7c15fd004c14a711cfb17a",
+    "templates/project-profile.yaml": "3409cb71d6a584449f37d7d85e5abc94ca12e22c9d52c53da9842303821ba54f",
+    "templates/skill.spec.md": "9cca24dc4b59dea14305d7b73e2412f221403200104cd0931b124e1e1f3960ee",
+    "core/agents/convention-checker.md": "fa90d96b4cff6498cda02fc10a12abc81094162e5411195f44b396f5760aa8c4",
+    "core/agents/implementer-a.md": "90a3fda58e5b1a954216a52f4c4a7578f93203788909735299d3a5d0d5bb68c9",
+    "core/agents/implementer-b.md": "91c635c7caa78a77a4c60f0ab0c90ccb31d1eb31e830ad4158c542723458e1ff",
+    "core/agents/leader.md": "df15cc98ee1b7e92aa627524a74ffacbac06047c6e90f7c08909815c84438bec",
+    "core/agents/qa.md": "89935ce6a87d3b94e6bfcac8777b661aa57c0ff83bcf285f4a90d21f8b28bb20",
+    "core/agents/reviewer.md": "5f31809343c953b1ae2d0e5d1daeef54e0daf252eee52e5dd0288328d92ccd3a",
+    "core/framework/.claude/agents/convention-checker.md": "84156230368c6491e8f3acf702b2a6efe6e794cf2131784d41019b7feae2d4a9",
+    "core/framework/.claude/agents/implementer-a.md": "7f2e453153faf274f2cce94bbe554749e07e91fe7769a87914b48b9e361de321",
+    "core/framework/.claude/agents/implementer-b.md": "87f1b65526689ef378f26417e1b312bc7b6431f57a264ad3c8bb93f97aeae055",
+    "core/framework/.claude/agents/leader.md": "5872a6e8c9d4c9f8391ec319abdd4d0f01e5c05b796dda56882aa62ce9c551c0",
+    "core/framework/.claude/agents/qa.md": "f8bd65e245eab1090ad702e22c5d81d81c1a214aed5a592e41bdd6a79cad8daa",
+    "core/framework/.claude/agents/reviewer.md": "a019a0abeeeb73eda4636b3144bfe3fe325e8ddf75e434b88eb2ddd4ec6e36fc",
+    "core/framework/.claude/skills/sage-asset/SKILL.md": "d869e18b49905665e44b1e18961b3ae32a5dbeb96262399dfa0e2b5cf9951125",
+    "core/framework/.claude/skills/sage-asset-override/SKILL.md": "85edc1cb15696fa31883b3018ec8461297ad1da04a50d302defe249e26397a35",
+    "core/framework/.claude/skills/sage-cycle/SKILL.md": "5c590b8c08e584066fa0cea835807c919d0397296244743a4afa3ef70bca7342",
+    "core/framework/.claude/skills/sage-cycle-fast/SKILL.md": "5dcdcb513420c423905a550342444d124e89fce803d5b36317a61f40d082225a",
+    "core/framework/.claude/skills/sage-feedback/SKILL.md": "9439f81382ff5364d1a7165d1b34ebf28c7b0d2ed7c8b98b02221d6754bfab45",
+    "core/framework/.claude/skills/sage-init/SKILL.md": "b65e30ac458f6fa539ea0a35b0e5f5781d085b0a45bb02e09ccb2272869e0566",
+    "core/framework/.claude/skills/sage-init-local/SKILL.md": "ad47bffe720a7b5f17526948d8c10093d36390e2431cc74fc8b5b3f56cf15600",
+    "core/framework/.claude/skills/sage-plan/SKILL.md": "cb106fae8d59ca997822440c2d7882c7b5a05c5275898c3f00c4eb5897c5b0f4",
+    "core/framework/.claude/skills/sage-plan-fast/SKILL.md": "50436731a6f3ce3bc5d5ae89acd23f6905c50ec1aa516c2ce680253f87dc15cb",
+    "core/framework/.claude/skills/sage-profile-modify/SKILL.md": "5fb5650a41c81c9358cff601bc4034eb50ecc5fe342054ab6ce4d246ea093994",
+    "core/framework/.claude/skills/sage-review/SKILL.md": "fd00d691817feb6994362ab17ba5da55b14ccae9525ef59a1a6d79a6031884d5",
+    "core/framework/.claude/skills/sage-team/SKILL.md": "5e79b5779adbe2c2694beed898be48ab48d3107cbc8087669f888a7c9596f2cb",
+    "core/framework/.claude/skills/sage-team-fast/SKILL.md": "57b93bbb81e7367ed559d56dbe01699ef5789d7d582b7e1c23b7794e322f77f8",
+    "core/framework/AGENTS.md": "4882e9a3f74eba56fbd1539923f8a78f9bed61c7d28c2e48462f2f18f5cb9b96",
+    "core/framework/AGENT_GUIDE.md": "0145dbfa6f8fbb430c3ff9381315e90f17eece7ceaa9595f82582d37091a1893",
+    "core/framework/CLAUDE.md": "87445df1e338ef31bae3a5e4679f75b7a6bbedfa639b54b903322bfeda3811cd",
+    "core/framework/CODEX.md": "716cefc65ec3caa0eb23504ae942f3eb5e1f76e5ad76a92e7a713e7987ce1d5d",
+    "core/framework/docs/agent/bootstrap-authoring.md": "f02964b94badc97bc7d4a757353e5c93ecd8dc6d2cea8cbf902d12dd6693b54d",
+    "core/framework/docs/agent/context-management.md": "c74778d58cc566de2ff1f25df1bbd8e73b03c74db48bebb7ae59bebce27bb20a",
+    "core/framework/docs/agent/language-policy.md": "695373d0a620e7b0a80ea9fb3ab33784622b02e89d9373b2548546e97d24ad1f",
+    "core/framework/docs/agent/output-contract.md": "e42f8421ee49da963294ba2c1ff8366c579da7e088c2ffe696895e0a7723a328",
+    "core/framework/docs/agent/pdca-templates.md": "694682df4484684e186072f550cbc296089f82b9838067a41f455836634ca74c",
+    "core/framework/docs/agent/plan-interview.md": "4f1230f2a8d6a395ce4b763b0e0e61f819bbdb40ed79da94549315668f837f10",
+    "core/framework/docs/agent/review-protocol.md": "7b653740ebda7f37f5afb8f5d097388afefee8ef2a03ebf8ff395e8aacadcf01",
+    "core/framework/docs/agent/risk-classification.md": "8ce75183bbef1aa7d574a4122cec7350bc5e45d217554d748c3779302042fcfd",
+    "core/framework/docs/agent/sage-authoritative-gate.yml.example": "1424f06c366a779578bafed11c55767ab0679c7ffda7ae50f9bdb7c457b7bbc1",
+    "core/framework/scripts/verify-changes.sh": "6d71cc473022fd74b5f64c750abc2fc91687c06d76b2f4e69207e87b1305ba9b",
+    "core/framework/verification-protocol.md": "9cf43b54dc8fcb3433b6122fb355e6088f505843f529454a528ab776ff0f8555",
+    "core/skills/sage-asset-override.md": "c16bf712edcc359c3819ad5c6d5b6c01e12a1224bcd94665742dab8823f54fb2",
+    "core/skills/sage-asset.md": "7822f38cb604cc3ade05cb338a4539d289f824415906fe193e7ed2e74e4f06c8",
+    "core/skills/sage-cycle-fast.md": "5538f883108e0e151dd6dbf5e0abd6a8c715e15e358f92551d234f8ad410fd23",
+    "core/skills/sage-cycle.md": "428b650c7d88e5ccadb25a475f29e4ad6aba94721eda300d5a1bb719b71c9620",
+    "core/skills/sage-feedback.md": "134fb9a21ba38cd1e7e802b56979fa8990456d195b46c28c91b5b91ef47cc913",
+    "core/skills/sage-init-local.md": "a94ece247f519bbbac9ba4362eb78d6505dba060de5b8f9b516b0208dcf519b9",
+    "core/skills/sage-init.md": "bd7db5c82d90b8e2e156eaa29b874aa9c6fffb54558a5e2e693d8bc275d09026",
+    "core/skills/sage-plan-fast.md": "35a249ef7abe6e3b1b8f65d382c904a34d536584c557ebb56b1e3696f8fe99dc",
+    "core/skills/sage-plan.md": "18e4283ebcef635dca6be2edef200bf9c95fd07d382489d8f5db173e88ab4521",
+    "core/skills/sage-profile-modify.md": "6bf675258116842a9de30da0c79ff190a3ee426ee8c27d1a6b1530672c89e0f6",
+    "core/skills/sage-review.md": "830715d5800ee34ec138bcabfe192dc88937d7895ce63cd133e61b796345565f",
+    "core/skills/sage-team-fast.md": "1093667a33e0e6b5c45acf80905f7bc3794a91bfec84007508262e82df7d3f54",
+    "core/skills/sage-team.md": "6b1020700b0fc6230b60f1185ef3d2fa78d7fdee2dde5b46ceeb5797ea80252a",
+    "schema/manifest.schema.json": "593e6714600b6bd06a560ee24c4ac762196d3bd14b6b4580384c114118ad9b17",
+    "schema/profile.local.schema.json": "3b75a6b697f9db20a2c844cb1e70a813c0d1cbd04e1484d98456aa7722c17398",
+    "schema/profile.schema.json": "b5cfba1d7c8872524a662344ca75312fca8eb0e5c20efeea59224f282b278539",
+    "hooks/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "hooks/adapters/claude/capture-declared-risk.sh": "dd4155c7a38974f513d9fdadeccbe9b914e9a2dd40ab5b6002dc976699be4b56",
+    "hooks/adapters/claude/generated-artifact-write-guard.sh": "ec506d9e4e881f66ca7f8a8a4081b517c0b86d2cdafdf9e9f7f6a869e5facf93",
+    "hooks/adapters/claude/post-tool-logger.sh": "c843bd1070c9de59b01123c1de72332e77e265f9107051f9e094012f40b085e1",
+    "hooks/adapters/claude/pre-implementation-gate.sh": "54e765c0dad01e4c5bce287e95c29564eb4d77995dbafa7681413090f7574486",
+    "hooks/adapters/claude/pre-phase4-checklist-gate.sh": "9b02157df8b4e4db0ce4e96edabc68601f781bccba802ca7b2f81c1f85d7955c",
+    "hooks/adapters/claude/session-start-snapshot.sh": "0913cee5abff18c7dc7b09025f1d6e9844392d8a48311d38065f5f5b2b7db313",
+    "hooks/adapters/claude/stop-compliance-report.sh": "031dcf4cee2de44cd3f5af5e4e38e95aa511704cfaa55b29f84d5d0b2bc7f8d0",
+    "hooks/adapters/codex/capture-declared-risk.sh": "dfd1c978994ea5bd6da91b39ae7940d8daebb69b81123ebf19d153f668249687",
+    "hooks/adapters/codex/generated-artifact-write-guard.sh": "eef506545ad80aa90064de2471fce4350ce5454730d2473d988a6d1593b995de",
+    "hooks/adapters/codex/post-tool-logger.sh": "b37349688572c5e6925b32689517e3ecd4c714b2b59dba890f1ffb980adb1ed9",
+    "hooks/adapters/codex/pre-implementation-gate.sh": "c0fd9948b1af347c797bcd460671c7a33b8a98d7cc6d8b3464773a4acf031ded",
+    "hooks/adapters/codex/pre-phase4-checklist-gate.sh": "90a0205df56a47207e6e610a4a7f32dea87b2a42d893eef4ec59529f65e1747a",
+    "hooks/adapters/codex/session-start-snapshot.sh": "080cb526553aa3ee9e6383e0664e5f2a35cdffdde426b7b6f0aa9936c4615527",
+    "hooks/adapters/codex/stop-compliance-report.sh": "1e3437fb58f182aa65a1c36669f008db6c61d9ca92a3b9b6c8d1cb0e4d4e79b1",
+    "hooks/capture_declared_risk_core.py": "39cfd66c21503a682efc92f10a58ab0334f85ed65299c34f0ad998b1d3a518c4",
+    "hooks/cycle_binding.py": "44188b620cf98492ad3c9d4aa1ab782be34b56cc96adb42f8b28d003b4c8f10d",
+    "hooks/done_criteria_contract.py": "74a98297495ab24e12b2cf6321c841f8e20d59e82426c9a8aaa044ef314d9fe6",
+    "hooks/fast_cycle_contract.py": "b1d86a70b6745cfa6acc6896195ab47e24db65299dc489cfff25476f75c6b90a",
+    "hooks/fast_cycle_sources.py": "d97ab186a3bb19afcb60da58fb095ffe2712bfac382de5b410073e3219fd7050",
+    "hooks/generated_artifact_write_guard_core.py": "a4268b26095fa69b01b4c3d34b0c084f943f4e11523a351d792fccfb3f41f9c3",
+    "hooks/path_risk.py": "3dfb0f86506bebf7d814922ef47534b459e2353be4115473d1416ccb672b171d",
+    "hooks/policies/knowledge_capture.py": "dc2e5fcd1f545a764448740c31429813fe32a595dc7f46f8716f8c0d62e0c978",
+    "hooks/policies/output_contract_check.py": "704991f9634bca29efc5ecd702c6d60ee6109e60f63e6a96a9161be3794238f8",
+    "hooks/policies/retro_gate.py": "3120e43e3c60bfeda7dfc450f95e4245727152d6036b62a36878b265d4c59a07",
+    "hooks/policies/writeback_depth_gate.py": "196d8a6153af5820907bdd7f5b606c6f8dacb9a77bba3a369142d679070b0244",
+    "hooks/post_tool_logger_core.py": "69e89672b17bbaf723bb9633518fc4ca8fdae4b376499c21edfe400d642f7f48",
+    "hooks/pre_implementation_gate_core.py": "b63c9d7f0c4bf355ba562572e5167167d2a4c44962ad228979701f1a1ac78dc5",
+    "hooks/pre_phase4_checklist_gate_core.py": "fcaa8ffa11c08e0f63cdd57853c34fe71fe3a09a4ef953dcc4165423116ddf89",
+    "hooks/risk_declaration.py": "138e7e1bf698b293d900e0e0515a2dae32b97af05f228e97efdf3e44fdb4b1a8",
+    "hooks/runtime/acceptance_waiver.py": "1847fb8231467eeecee30b3600faf9afac75acf5d420a1d9154c4e303869dc6f",
+    "hooks/runtime/checklist_contract.py": "dcdfbb679dde680a28ac5e65692022d32bb96fdb156a7b1ca30a668b3b3b0b07",
+    "hooks/runtime/compact_reentry.py": "1aae85a24fee0af1fd2230ef99e177b4252a88eb44e32c6def7773e6cfe5f2b7",
+    "hooks/runtime/cycle_state.py": "65d6e3f0e89f684c04ef4d8123796bf6c230e2fdd914879b9a974bb348f1b70f",
+    "hooks/runtime/document_language.py": "a5a63462373cbd1f5f8c8eb08bafe1b01fd13902376b9e018f7d2c473368f733",
+    "hooks/runtime/fast_cycle_audit.py": "3a8afff37e31d8f157333ae1440ec4597a7d5edfb9ced053854b18d6ed9e226f",
+    "hooks/runtime/feedback_markers.py": "8f77faf13953464861517a033686e2f2e2a0ac8d27f77a1e336d6c45575108a3",
+    "hooks/runtime/hook_runtime.py": "36d0d6612e4c1da7887ba65b74f80cfdbf6c7f2a9329cd4215cc31c43e39dcf9",
+    "hooks/runtime/i18n/__init__.py": "1ff5d53fa14ce10153f0deb76ac49ca8b0fbc9d7e6390a1d675e2dffbf81e253",
+    "hooks/runtime/i18n/context.py": "871977bcaa08c9ad09d670bdaef7d20f09d14d42638299baf3481919d0b529f7",
+    "hooks/runtime/i18n/en.py": "4a05c8a4eaa4535819a383944f933e091a81496a5b08d371910eb808a41718f1",
+    "hooks/runtime/i18n/ko.py": "d2ec1ec2ee29113d9e26bacda60db57a4e252dbe310100c75fbe5703588e675e",
+    "hooks/runtime/io_claude.py": "a3c91bbcc569335954b6d9da27e7791b5795eb4ae9a5a428c3abc2cd8d916a1d",
+    "hooks/runtime/io_codex.py": "d767b14a9f16a9690481b6e0bff340f78465e776c73bf5ba5af29d03acf3ca91",
+    "hooks/runtime/loop_audit.py": "f4d66e0169753d14b29cdc661afea1f2a7268708b7a00ddea219f0b49f3606bf",
+    "hooks/runtime/messages.py": "1757c7370502a37268b91819a209244e08049b34e60adce9460ae687b1b766d8",
+    "hooks/runtime/overlay_context.py": "e9f7f6b9504faf6d5301a34fecf5d8e4585969ffaefe540b6fbd0142022cfb01",
+    "hooks/runtime/override_audit.py": "6bc0038ad80006d3bfa3078fa7873cf112358e64f3c76cfc74c8db3a47546faa",
+    "hooks/runtime/prose_language.py": "f992990bd17bd2ff103263be527839c51bfe0789b36d664e42f2ce91ffa57a6b",
+    "hooks/runtime/recovery.py": "11052df208d9d60f67c0d66f3402ebfd13b5d435df258a7f6e64605b0db76fa3",
+    "hooks/runtime/retro_audit.py": "40b7971effcd92385badaced45e928d3b4093d0eba5fc5db0fa63727c07ec584",
+    "hooks/runtime/review_rounds.py": "007d6fb7edd8cbb888e4719a1349239d0f83c976974f44c6accc45fbdead2ef1",
+    "hooks/runtime/run_hook.py": "8f9c391640f341373a3137f5a8b7e048b1c4c75ddd9a1aff123e6262639d4eb2",
+    "hooks/session_start_snapshot_core.py": "bdeb1dcf32159149493882ee8e87bb4ca4de33154f6c205333995b88543d1277",
+    "hooks/stop_compliance_report_core.py": "9722b3c9694ea0649208fb0ae021467cd872ded6b4328794aa8b08dc5690fcb6",
+    "hooks/strategies/README.md": "eb992965605e8c2fc45f16ce37d6319101a6667f15b5873878d0eec4ad519b55",
+    "hooks/strategies/pre_implementation_gate/claude_grep_first.py": "53bf2cf2a852df58b5b14c87484d00065ad062723f22ffe3a2174f19cb0bc116",
+    "hooks/strategies/pre_implementation_gate/codex_feature_signal.py": "224eaab4fb21f1ef4a3ad411911299b49a6e0a05c63d62d8c9abb258db447b4c",
+    "hooks/strategies/pre_implementation_gate/cycle_domain_review.py": "b7bca0eac2044a22c50abc2e5c6bb9a0c71a31c93d663a60341985f252410f7e",
+    "hook-specs/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "hook-specs/capture-declared-risk.md": "ad1a12966b60f724a6c5bbf2e7a3055916131dad14f49c2cbdda1acfac5491e4",
+    "hook-specs/generated-artifact-write-guard.md": "1256e41bbe768ddbeb41ac27bd60234bf6f1d909629f5a44ea4cf86fe6dd9c08",
+    "hook-specs/post-tool-logger.md": "d279189ac72351cd8d73150daacec1b69211ef740f36946ca1c934ec3b1f0640",
+    "hook-specs/pre-implementation-gate.md": "221555afa234c47691daba0af2229627acb46786b0548393e353794030b088be",
+    "hook-specs/pre-phase4-checklist-gate.md": "45490af1b9f5cfa4b398618a1de95ecb5d12e309f169c386849c93721233906e",
+    "hook-specs/session-start-snapshot.md": "e684c7c25d9651ced15bac0ca5cf1d927dc1e4a5d1c0c29ccedf98ba0524fa9b",
+    "hook-specs/stop-compliance-report.md": "d0574319566aedf522f0e18923dad8fa110f339c004c526bd4ea8317a553230e"
+  },
+  "product_bridge": {
+    "unchanged_vs_checkpoint5523148": 216,
+    "changed_product": [
+      "engine/commands/upgrade.py"
+    ],
+    "current_test_file_sha256": "8503992993929e06e8dcedfe1479a4b303f1dc5ea43cbf082fe84ebc5610a5ad",
+    "current_upgrade_file_sha256": "b8b50b17d7ce49a3c5b7f11981f79c825ead1421bbb4cddb559b6f8f091e16f2"
+  },
+  "decision": {
+    "result": "APPROVED",
+    "reason": "CONVERGED",
+    "phase00_hash": "sha256:37a471995680a0ed224220ac45e06e6fb7ffd0962f755f5f92e68e745d8f89e7",
+    "done_criteria_revision": 1,
+    "inherited_completed_cycle_rounds": 3,
+    "completed_resume_rounds": 2,
+    "total_completed_cycle_rounds": 5,
+    "configured_cycle_cap": 5,
+    "required_unresolved_findings": 0,
+    "remaining_preexisting_out_of_scope": [
+      "WIN-PHASE4-01"
+    ],
+    "refutation_rule": "2 of 2 independent refuters required"
+  },
+  "budget": {
+    "old_ledger": 1953432,
+    "old_cap": 1800000,
+    "old_overrun": 153432,
+    "new_ledger": 365312,
+    "new_cap": 400000,
+    "remaining": 34688,
+    "discarded_and_failed_calls_included": true,
+    "cache_read_excluded_consistently": true,
+    "root_implementation_QA_usage_outside_review_ledger": "UNMEASURED, not zero"
+  },
+  "round1_active_receipts": [
+    {
+      "call": "correctness-coverage",
+      "role": "correctness",
+      "source_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+      "session_id": "01a1c118-d65d-7ab3-af9b-c09bc6c9563e",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 4947,
+      "prompt_sha256": "a46389c0d224a0239f6dc659e4549eca1936be546be696297e6f75284e6df8b7",
+      "metadata_sha256": "ddeec6b020d175d0cf1cb60897aedf58bd30477ae5163f843310428dacd4f30d",
+      "raw_report_sha256": "d82521dc016ffb47bd47deee16639d6c322e12e6edc578c93def0a61fdea23fe",
+      "report_raw": "{\n  \"subject_commit\": \"552314884423406770302c3cfa8ba287d4aa57c6\",\n  \"verdict\": \"CLEAR\",\n  \"coverage\": \"Previously inspected the supplied 12 documentation and three test diffs and raw excerpts; found no new correctness defect. Now inspected the substantive historical correctness report, complete checklist core, build_checklist_snapshot, and upgrade._managed_steps. Inherited the remaining frozen production review from that historical report; did not reread unchanged files. The previously blocking dependency is resolved. No tools used; execution results remain supplied observations.\",\n  \"findings\": [\n    {\n      \"id\": \"WIN-PHASE4-01\",\n      \"severity\": \"P2\",\n      \"file\": \"scripts/sage_harness/hooks/runtime/hook_runtime.py\",\n      \"line\": 1066,\n      \"claim\": \"The existing Windows checklist gate can allow an unfinished implementation checklist with a missing-document warning.\",\n      \"evidence\": \"os.path.relpath supplies backslash-separated snapshot keys on Windows. The core constructs slash-separated exact paths and splits stems only on '/'; ordinary matching 03 documents can therefore remain unmatched, producing gate_warn_no_impl with exit_code 0. Both functions are supplied as byte-identical to base. The deployment function regenerates ordinary hooks for both hosts; no new checklist input class or integration-specific reach expansion is established. This is a preserved baseline defect, not a newly introduced integration defect.\",\n      \"scope\": \"within_design\",\n      \"preexisting\": true,\n      \"exposure\": \"unchanged\"\n    }\n  ],\n  \"unexplored\": [\n    {\n      \"blocking\": false,\n      \"item\": \"Windows 3.11 fixture WinError 5 retains an unknown cause. Preserve the original preparation-stage failure and residual uncertainty despite successful reruns.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"Supplied installed-wheel and protocol results do not establish fresh native Claude/Codex model-session behavior.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"I6 and whole-round refuters remain pending separately. This correctness verdict does not establish overall approval or authorize release.\"\n    }\n  ]\n}",
+      "report": {
+        "subject_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+        "verdict": "CLEAR",
+        "coverage": "Previously inspected the supplied 12 documentation and three test diffs and raw excerpts; found no new correctness defect. Now inspected the substantive historical correctness report, complete checklist core, build_checklist_snapshot, and upgrade._managed_steps. Inherited the remaining frozen production review from that historical report; did not reread unchanged files. The previously blocking dependency is resolved. No tools used; execution results remain supplied observations.",
+        "findings": [
+          {
+            "id": "WIN-PHASE4-01",
+            "severity": "P2",
+            "file": "scripts/sage_harness/hooks/runtime/hook_runtime.py",
+            "line": 1066,
+            "claim": "The existing Windows checklist gate can allow an unfinished implementation checklist with a missing-document warning.",
+            "evidence": "os.path.relpath supplies backslash-separated snapshot keys on Windows. The core constructs slash-separated exact paths and splits stems only on '/'; ordinary matching 03 documents can therefore remain unmatched, producing gate_warn_no_impl with exit_code 0. Both functions are supplied as byte-identical to base. The deployment function regenerates ordinary hooks for both hosts; no new checklist input class or integration-specific reach expansion is established. This is a preserved baseline defect, not a newly introduced integration defect.",
+            "scope": "within_design",
+            "preexisting": true,
+            "exposure": "unchanged"
+          }
+        ],
+        "unexplored": [
+          {
+            "blocking": false,
+            "item": "Windows 3.11 fixture WinError 5 retains an unknown cause. Preserve the original preparation-stage failure and residual uncertainty despite successful reruns."
+          },
+          {
+            "blocking": false,
+            "item": "Supplied installed-wheel and protocol results do not establish fresh native Claude/Codex model-session behavior."
+          },
+          {
+            "blocking": false,
+            "item": "I6 and whole-round refuters remain pending separately. This correctness verdict does not establish overall approval or authorize release."
+          }
+        ],
+        "blocking_unexplored": [],
+        "find_status": "HAS_FINDINGS",
+        "raw_clear_is_empty": false
+      }
+    },
+    {
+      "call": "security-coverage",
+      "role": "security",
+      "source_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+      "session_id": "01a1c119-c625-7941-9456-8707cbdcab31",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 5894,
+      "prompt_sha256": "e3b24e0c5867227c19dc09a7ce05cecda51dfb813b31468f8d98ff38355683e2",
+      "metadata_sha256": "f863ab7f3492e33d60008fb30927c183f467dd01e4420e7596047ff25c4df493",
+      "raw_report_sha256": "1ddbdf9ac76573e03b4b71dfe4086340183ef763a8179fb575ca1ab33ebad4fb",
+      "report_raw": "{\n  \"subject_commit\": \"552314884423406770302c3cfa8ba287d4aa57c6\",\n  \"verdict\": \"CLEAR\",\n  \"coverage\": \"Previously inspected the supplied 12-doc/3-test delta and found no new security defect. Now inspected the complete raw checklist gate, build_checklist_snapshot, and _managed_steps. Inherited the substantive historical security analysis of integration, restoration, and activation boundaries, plus the stated frozen-file identities; did not reread unchanged production files. The prior blocking dependency is resolved. No new or reach-expanded security defect is established; the existing Windows defect remains advisory. This checkpoint is not overall approval.\",\n  \"findings\": [\n    {\n      \"id\": \"WIN-PHASE4-01\",\n      \"severity\": \"P2\",\n      \"file\": \"scripts/sage_harness/hooks/pre_phase4_checklist_gate_core.py\",\n      \"line\": 33,\n      \"claim\": \"Windows Phase 04 checklist enforcement can fail open for ordinary in-project paths, allowing unfinished implementation through with a warning.\",\n      \"evidence\": \"build_checklist_snapshot emits native relative paths at hook_runtime.py:1066. The gate splits stems only on '/', and its constructed exact paths also use '/'; Windows candidates therefore fail matching, leaving impl_match unset and producing exit_code 0. Supplied baseline/candidate reproductions cover both hosts. Gate and snapshot bodies are unchanged; the deployment function delegates installation and hook regeneration without changing this matching behavior. The current doc/test supplement changes neither execution nor reach.\",\n      \"scope\": \"within_design\",\n      \"preexisting\": true,\n      \"exposure\": \"unchanged\"\n    }\n  ],\n  \"unexplored\": [\n    {\n      \"blocking\": false,\n      \"item\": \"The original Windows 3.11 fixture WinError 5 remains unexplained. It preceded product assertions; passing reruns do not establish resolution.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"CI/platform outcomes remain supplied evidence rather than independently executed checks. Fresh model sessions remain unrun, and I6/refuter receipts remain separately pending.\"\n    }\n  ]\n}",
+      "report": {
+        "subject_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+        "verdict": "CLEAR",
+        "coverage": "Previously inspected the supplied 12-doc/3-test delta and found no new security defect. Now inspected the complete raw checklist gate, build_checklist_snapshot, and _managed_steps. Inherited the substantive historical security analysis of integration, restoration, and activation boundaries, plus the stated frozen-file identities; did not reread unchanged production files. The prior blocking dependency is resolved. No new or reach-expanded security defect is established; the existing Windows defect remains advisory. This checkpoint is not overall approval.",
+        "findings": [
+          {
+            "id": "WIN-PHASE4-01",
+            "severity": "P2",
+            "file": "scripts/sage_harness/hooks/pre_phase4_checklist_gate_core.py",
+            "line": 33,
+            "claim": "Windows Phase 04 checklist enforcement can fail open for ordinary in-project paths, allowing unfinished implementation through with a warning.",
+            "evidence": "build_checklist_snapshot emits native relative paths at hook_runtime.py:1066. The gate splits stems only on '/', and its constructed exact paths also use '/'; Windows candidates therefore fail matching, leaving impl_match unset and producing exit_code 0. Supplied baseline/candidate reproductions cover both hosts. Gate and snapshot bodies are unchanged; the deployment function delegates installation and hook regeneration without changing this matching behavior. The current doc/test supplement changes neither execution nor reach.",
+            "scope": "within_design",
+            "preexisting": true,
+            "exposure": "unchanged"
+          }
+        ],
+        "unexplored": [
+          {
+            "blocking": false,
+            "item": "The original Windows 3.11 fixture WinError 5 remains unexplained. It preceded product assertions; passing reruns do not establish resolution."
+          },
+          {
+            "blocking": false,
+            "item": "CI/platform outcomes remain supplied evidence rather than independently executed checks. Fresh model sessions remain unrun, and I6/refuter receipts remain separately pending."
+          }
+        ],
+        "blocking_unexplored": [],
+        "find_status": "HAS_FINDINGS",
+        "raw_clear_is_empty": false
+      }
+    },
+    {
+      "call": "concurrency",
+      "role": "concurrency",
+      "source_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+      "session_id": "01a1c120-68b5-7042-944b-0e84fc858efe",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 23076,
+      "prompt_sha256": "4127ef0eeb8fb560ebc9646ef644cadb0edb1beb2ef42bcdadd576a123a6e597",
+      "metadata_sha256": "c67de8f75aecdcb4f7120bde89eaa84ab94a527b0bb3db9b02449aa830aff665",
+      "raw_report_sha256": "dd6ae753a263028e664a6ed1a1e5844c20f9e5766fecaa8d3a226661cd032b38",
+      "report_raw": "{\n  \"subject_commit\": \"552314884423406770302c3cfa8ba287d4aa57c6\",\n  \"verdict\": \"CLEAR\",\n  \"coverage\": \"Delta-only concurrency checkpoint. Inspected all 12 supplied user-document diffs, three test diffs and their raw excerpts, the complete checklist core, build_checklist_snapshot, and _managed_steps. Inherited the substantive historical same-lens transaction review; did not reread unchanged transaction or overlay implementations. No new concurrency defect established. Documentation preserves external-edit rollback limits, and test corrections establish no concurrent execution failure. CI/platform results are supplied evidence, not independently executed checks. CLEAR applies to this checkpoint only; overall acceptance remains BLOCKED pending I6 receipts.\",\n  \"findings\": [\n    {\n      \"id\": \"WIN-PHASE4-01\",\n      \"severity\": \"P2\",\n      \"file\": \"scripts/sage_harness/hooks/runtime/hook_runtime.py\",\n      \"line\": 1066,\n      \"claim\": \"Windows checklist snapshots use native backslash paths that the checklist core cannot reliably match, allowing an unfinished implementation checklist to produce a warning instead of blocking.\",\n      \"evidence\": \"Snapshot construction stores os.path.relpath results unchanged. The supplied core constructs slash-separated exact paths and splits stems only on '/'; ordinary Windows 03 paths therefore fail matching. Supplied evidence reproduces this on baseline and candidate sources and installed entrypoints for both hosts. Both relevant implementations are byte-identical to baseline. _managed_steps regenerates both hosts' hooks but establishes no new gate input or changed reach for these ordinary paths. This is an unchanged functional defect, not evidence of a concurrency regression.\",\n      \"scope\": \"within_design\",\n      \"preexisting\": true,\n      \"exposure\": \"unchanged\"\n    }\n  ],\n  \"unexplored\": [\n    {\n      \"blocking\": false,\n      \"item\": \"Windows 3.11 fixture os.rename WinError 5 remains unexplained. It occurred before product assertions; successful reruns do not resolve its cause or establish a product race.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"Historical limitations concerning general concurrent project edits and Windows junctions remain inherited; the current delta supplies no additional protection or counterexample.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"Fresh native application/model sessions were not verified. Pending role/refuter receipts and release approval are separate acceptance requirements; this checkpoint does not complete or waive them.\"\n    }\n  ]\n}",
+      "report": {
+        "subject_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+        "verdict": "CLEAR",
+        "coverage": "Delta-only concurrency checkpoint. Inspected all 12 supplied user-document diffs, three test diffs and their raw excerpts, the complete checklist core, build_checklist_snapshot, and _managed_steps. Inherited the substantive historical same-lens transaction review; did not reread unchanged transaction or overlay implementations. No new concurrency defect established. Documentation preserves external-edit rollback limits, and test corrections establish no concurrent execution failure. CI/platform results are supplied evidence, not independently executed checks. CLEAR applies to this checkpoint only; overall acceptance remains BLOCKED pending I6 receipts.",
+        "findings": [
+          {
+            "id": "WIN-PHASE4-01",
+            "severity": "P2",
+            "file": "scripts/sage_harness/hooks/runtime/hook_runtime.py",
+            "line": 1066,
+            "claim": "Windows checklist snapshots use native backslash paths that the checklist core cannot reliably match, allowing an unfinished implementation checklist to produce a warning instead of blocking.",
+            "evidence": "Snapshot construction stores os.path.relpath results unchanged. The supplied core constructs slash-separated exact paths and splits stems only on '/'; ordinary Windows 03 paths therefore fail matching. Supplied evidence reproduces this on baseline and candidate sources and installed entrypoints for both hosts. Both relevant implementations are byte-identical to baseline. _managed_steps regenerates both hosts' hooks but establishes no new gate input or changed reach for these ordinary paths. This is an unchanged functional defect, not evidence of a concurrency regression.",
+            "scope": "within_design",
+            "preexisting": true,
+            "exposure": "unchanged"
+          }
+        ],
+        "unexplored": [
+          {
+            "blocking": false,
+            "item": "Windows 3.11 fixture os.rename WinError 5 remains unexplained. It occurred before product assertions; successful reruns do not resolve its cause or establish a product race."
+          },
+          {
+            "blocking": false,
+            "item": "Historical limitations concerning general concurrent project edits and Windows junctions remain inherited; the current delta supplies no additional protection or counterexample."
+          },
+          {
+            "blocking": false,
+            "item": "Fresh native application/model sessions were not verified. Pending role/refuter receipts and release approval are separate acceptance requirements; this checkpoint does not complete or waive them."
+          }
+        ],
+        "blocking_unexplored": [],
+        "find_status": "HAS_FINDINGS",
+        "raw_clear_is_empty": false
+      }
+    },
+    {
+      "call": "convention",
+      "role": "convention",
+      "source_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+      "session_id": "01a1c11e-007c-74c3-97f2-5d0c445a2a57",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 23668,
+      "prompt_sha256": "0e689343e15ad5a530a61f83fff6fd6fd768eaacd2bb6009b4ea7f1ed4b36827",
+      "metadata_sha256": "658a5cad4d4e26feba637ea9812d86ca4ff1cf08df4ac2390e2867395170260b",
+      "raw_report_sha256": "fb5823dc878bf33329e9f6f8464141d62c19c008de6d3e22c3e9b70095a33fe2",
+      "report_raw": "{\n  \"subject_commit\": \"552314884423406770302c3cfa8ba287d4aa57c6\",\n  \"verdict\": \"CLEAR\",\n  \"coverage\": \"CLEAR is limited to this convention supplement. Inspected the supplied 12 user-document diffs, three test diffs and raw excerpts, complete checklist core, snapshot builder, deployment function, and platform/approval evidence. Inherited the historical convention receipt for integration flows, restoration, and prior documentation; did not reread unchanged production files. The current tests retain their behavioral assertions while correcting platform assumptions. Documentation distinguishes known defects, verification, and approval. No tools or tests executed; supplied CI, hashes, and platform results were not independently verified.\",\n  \"findings\": [\n    {\n      \"id\": \"WIN-PHASE4-01\",\n      \"severity\": \"P1\",\n      \"file\": \"scripts/sage_harness/hooks/runtime/hook_runtime.py\",\n      \"line\": 1066,\n      \"claim\": \"Windows checklist discovery can allow Phase 04 despite unfinished implementation items. This is a significant existing enforcement defect, with unchanged exposure in the reviewed delta.\",\n      \"evidence\": \"The snapshot uses os.path.relpath without slash normalization. On Windows its backslash candidates disagree with the core's slash-built exact path and slash-only stem extraction, yielding no implementation match and warn/exit 0. The supplied core and snapshot body are byte-identical to base. Deployment regenerates the existing hook pipeline; the ordinary 03/04 input does not depend on the new overlay or migration features. Baseline/candidate and installed dual-host reproductions support this classification. Current documentation accurately discloses the defect; it does not repair it.\",\n      \"scope\": \"within_design\",\n      \"preexisting\": true,\n      \"exposure\": \"unchanged\"\n    }\n  ],\n  \"unexplored\": [\n    {\n      \"blocking\": false,\n      \"item\": \"Windows 3.11 fixture rename WinError 5 remains unexplained. It occurred before the product assertion; successful reruns establish neither root cause nor resolution.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"Actual fresh Claude/Codex model sessions were not demonstrated by the supplied installed-CLI/protocol evidence.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"Aggregate I6 completion requires actual six-role and two-refuter receipts. This role supplement does not complete that procedure or change the stated overall BLOCKED status, authorize release, or waive budget and round limits.\"\n    }\n  ]\n}",
+      "report": {
+        "subject_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+        "verdict": "CLEAR",
+        "coverage": "CLEAR is limited to this convention supplement. Inspected the supplied 12 user-document diffs, three test diffs and raw excerpts, complete checklist core, snapshot builder, deployment function, and platform/approval evidence. Inherited the historical convention receipt for integration flows, restoration, and prior documentation; did not reread unchanged production files. The current tests retain their behavioral assertions while correcting platform assumptions. Documentation distinguishes known defects, verification, and approval. No tools or tests executed; supplied CI, hashes, and platform results were not independently verified.",
+        "findings": [
+          {
+            "id": "WIN-PHASE4-01",
+            "severity": "P1",
+            "file": "scripts/sage_harness/hooks/runtime/hook_runtime.py",
+            "line": 1066,
+            "claim": "Windows checklist discovery can allow Phase 04 despite unfinished implementation items. This is a significant existing enforcement defect, with unchanged exposure in the reviewed delta.",
+            "evidence": "The snapshot uses os.path.relpath without slash normalization. On Windows its backslash candidates disagree with the core's slash-built exact path and slash-only stem extraction, yielding no implementation match and warn/exit 0. The supplied core and snapshot body are byte-identical to base. Deployment regenerates the existing hook pipeline; the ordinary 03/04 input does not depend on the new overlay or migration features. Baseline/candidate and installed dual-host reproductions support this classification. Current documentation accurately discloses the defect; it does not repair it.",
+            "scope": "within_design",
+            "preexisting": true,
+            "exposure": "unchanged"
+          }
+        ],
+        "unexplored": [
+          {
+            "blocking": false,
+            "item": "Windows 3.11 fixture rename WinError 5 remains unexplained. It occurred before the product assertion; successful reruns establish neither root cause nor resolution."
+          },
+          {
+            "blocking": false,
+            "item": "Actual fresh Claude/Codex model sessions were not demonstrated by the supplied installed-CLI/protocol evidence."
+          },
+          {
+            "blocking": false,
+            "item": "Aggregate I6 completion requires actual six-role and two-refuter receipts. This role supplement does not complete that procedure or change the stated overall BLOCKED status, authorize release, or waive budget and round limits."
+          }
+        ],
+        "blocking_unexplored": [],
+        "find_status": "HAS_FINDINGS",
+        "raw_clear_is_empty": false
+      }
+    },
+    {
+      "call": "lifecycle-coverage",
+      "role": "lifecycle",
+      "source_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+      "session_id": "01a1c11f-2326-7263-bba2-c4a7f3f57fd1",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 1098,
+      "prompt_sha256": "fe3decb8c638094d4723cef9c8b6c69a039204cdfd8721aa6fd1332ea5175a56",
+      "metadata_sha256": "4ec64db45968dde53356281ab3fd6d828b2363c888a92fb96d6a0bc1f7f90761",
+      "raw_report_sha256": "375db8f42c1ceb5eadf0cd2530dee87b6f325e8602264aaa1f72ec32b69a3569",
+      "report_raw": "{\n  \"subject_commit\": \"552314884423406770302c3cfa8ba287d4aa57c6\",\n  \"verdict\": \"CLEAR\",\n  \"coverage\": \"Conditional lifecycle FIND verdict for the inspected source scope. Inspected the supplied 12 user-document diffs, three test diffs and supplied raw test bodies, platform/approval records, checklist core, snapshot builder, and upgrade deployment function. Inherited the historical lifecycle integration analysis; did not reread unchanged production files or independently verify product identity. No new changed-scope lifecycle defect or concrete missing code dependency was established. This verdict does not approve overall closure.\",\n  \"findings\": [\n    {\n      \"id\": \"WIN-PHASE4-01\",\n      \"severity\": \"P2\",\n      \"file\": \"scripts/sage_harness/hooks/runtime/hook_runtime.py\",\n      \"line\": 1066,\n      \"claim\": \"Windows checklist discovery can miss an existing unfinished implementation document and allow Phase 04 with a warning.\",\n      \"evidence\": \"os.path.relpath preserves native backslashes in snapshot candidates, while the core constructs slash-separated exact paths and splits stems only on '/'. A missed implementation match produces gate_warn_no_impl with exit_code 0. Both implementations are supplied as unchanged from base; no changed reach was established for this ordinary 03/04 workflow. The documentation discloses the defect without repairing enforcement.\",\n      \"scope\": \"within_design\",\n      \"preexisting\": true,\n      \"exposure\": \"unchanged\"\n    }\n  ],\n  \"unexplored\": [\n    {\n      \"blocking\": false,\n      \"item\": \"I6 is not claimed complete. Required role and whole-round refuter receipts remain the host's closure dependency; overall FinalStatus must remain BLOCKED until actual receipts and resolved findings satisfy acceptance.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"The original Windows 3.11 fixture rename WinError 5 remains unexplained. Successful reruns do not establish its cause or resolution; the failure occurred before product assertions.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"Supplied installed CLI/protocol evidence does not establish fresh Claude/Codex application model-session delivery. No tools or tests were run in this review.\"\n    }\n  ]\n}",
+      "report": {
+        "subject_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+        "verdict": "CLEAR",
+        "coverage": "Conditional lifecycle FIND verdict for the inspected source scope. Inspected the supplied 12 user-document diffs, three test diffs and supplied raw test bodies, platform/approval records, checklist core, snapshot builder, and upgrade deployment function. Inherited the historical lifecycle integration analysis; did not reread unchanged production files or independently verify product identity. No new changed-scope lifecycle defect or concrete missing code dependency was established. This verdict does not approve overall closure.",
+        "findings": [
+          {
+            "id": "WIN-PHASE4-01",
+            "severity": "P2",
+            "file": "scripts/sage_harness/hooks/runtime/hook_runtime.py",
+            "line": 1066,
+            "claim": "Windows checklist discovery can miss an existing unfinished implementation document and allow Phase 04 with a warning.",
+            "evidence": "os.path.relpath preserves native backslashes in snapshot candidates, while the core constructs slash-separated exact paths and splits stems only on '/'. A missed implementation match produces gate_warn_no_impl with exit_code 0. Both implementations are supplied as unchanged from base; no changed reach was established for this ordinary 03/04 workflow. The documentation discloses the defect without repairing enforcement.",
+            "scope": "within_design",
+            "preexisting": true,
+            "exposure": "unchanged"
+          }
+        ],
+        "unexplored": [
+          {
+            "blocking": false,
+            "item": "I6 is not claimed complete. Required role and whole-round refuter receipts remain the host's closure dependency; overall FinalStatus must remain BLOCKED until actual receipts and resolved findings satisfy acceptance."
+          },
+          {
+            "blocking": false,
+            "item": "The original Windows 3.11 fixture rename WinError 5 remains unexplained. Successful reruns do not establish its cause or resolution; the failure occurred before product assertions."
+          },
+          {
+            "blocking": false,
+            "item": "Supplied installed CLI/protocol evidence does not establish fresh Claude/Codex application model-session delivery. No tools or tests were run in this review."
+          }
+        ],
+        "blocking_unexplored": [],
+        "find_status": "HAS_FINDINGS",
+        "raw_clear_is_empty": false
+      }
+    },
+    {
+      "call": "peer",
+      "role": "peer",
+      "source_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+      "session_id": "dff304ff-8751-46ac-86bf-8becada68bc9",
+      "model": [
+        "claude-opus-5-5"
+      ],
+      "new_io": 79006,
+      "prompt_sha256": "527b888bf1dfbbade8395f72b2fac14ed4640fd9f080870716c335d924cb157a",
+      "metadata_sha256": "51985059899c05d646b8731e2df01af8ad4cc2009ae0d71e8b9376448ba52efd",
+      "raw_report_sha256": "49bdd4815f61a1d37cd8f76e05cec9c48744dc793c35dba2e6e5f0b4bccd017d",
+      "report_raw": "```json\n{\n  \"subject_commit\": \"552314884423406770302c3cfa8ba287d4aa57c6\",\n  \"role\": \"peer\",\n  \"verdict\": \"CLEAR\",\n  \"verdict_scope_note\": \"Peer-lens verdict on the changed scope only. It does not satisfy I6 (6-role + 2 refuter receipts still pending), it does not change Final Status (remains BLOCKED), and it was not inferred from CI or prior opinions.\",\n  \"coverage\": \"INSPECTED from the packet. (1) i18n en/ko delta: note_migration_deferred, blocker_migration_extension_invalid, the rewritten project_hook/custom_strategy blockers and post_commit_failed. Placeholders match their call sites in _plan/_apply. (2) upgrade.py: _plan@143, _migration_mode@296, _strategy_error@362, _python_source_error@373, _migration_executes@385, _print_report@518, _scope_entries@632, _snapshot_tree@664, _restore_tree@698, _managed_steps@744, _finalize_layout@796, _capture_times@873, _restore_user_owned@887, _apply@945, _finish_report@1175. (3) install.py: _atomic_write, _prune_legacy_skill, _install_codex_skill_at, _manifest, _core_trust_conflicts, _install_preconditions, run@1243, _run_locked@1319. (4) The complete upgrade_transaction.py and install_transaction.py. (5) asset_paths.escapes_root, project_hook_contract.inspect_project_hook, layout_migration.plan/_active_user_extensions/_custom_strategy. (6) The raw TestLegacyOverlayIntegration and the raw changed test bodies in test_gate_followups/test_install/test_overlay_materialize. (7) The literal post-R1 delta for all 12 user-doc files. Traced: the deferred path (legacy layout, no layout_override, force reinstall at the legacy path, legacy adapter canonicality being idempotent across the two applies the test exercises); lock non-reentrancy (upgrade .sage lock, dest lock, global skills lock with verify_lock instead of re-acquire); global staged-write/rollback/commit ordering versus the project snapshot restore; the post_commit_failed classification; and the GlobalRollbackError surfacing. Line numbers are the raw starts given in the packet. INHERITED, not reread: every unchanged file outside these units; bodies of _copy_tree, _copy_file, _write, _tree, _list_names, _is_user_owned, _passes_link, _is_sage_temp, _write_declaration, _cycle_migration, layout_migration._legacy_removals/apply/runtime_loads, asset_paths.detect_layout/is_reparse/points_elsewhere, generate/sync_overlays/validate.run, overlay_materialize internals, UserExtensionsStayPut._aged_project, the _alias() helper, the full Korean/English troubleshooting prose outside the delta, and plan_docs evidence. Preservation of user hook code and strategy files under force reinstall relies on _copy_tree not deleting unknown files; that is confirmed only empirically by the test assertions and the CI/native runs, not by reading the body.\",\n  \"findings\": [\n    {\n      \"id\": \"PEER-01\",\n      \"severity\": \"P3\",\n      \"file\": \"sage/commands/upgrade.py\",\n      \"line\": 373,\n      \"claim\": \"_python_source_error catches only OSError, UnicodeError, SyntaxError, LookupError and ValueError. Pathologically nested user hook or strategy source makes compile() raise RecursionError or MemoryError. That escapes _migration_mode/_plan as an uncaught exception instead of being reported as blocker_migration_extension_invalid.\",\n      \"evidence\": \"compile(handle.read(), ...) sits inside an except tuple without RecursionError or MemoryError. CPython raises RecursionError ('maximum recursion depth exceeded during compilation') or a parser MemoryError for deeply nested unary or expression chains, depending on version. The failure stays fail-closed: _plan runs before any write, and the inspect_project_hook path catches Exception. The impact is a traceback in place of the documented diagnostic.\",\n      \"scope\": \"within_design\",\n      \"preexisting\": false,\n      \"exposure\": \"touched\"\n    },\n    {\n      \"id\": \"PEER-02\",\n      \"severity\": \"P3\",\n      \"file\": \"sage/commands/upgrade.py\",\n      \"line\": 1175,\n      \"claim\": \"In deferred mode the persisted report fills both migration.deferred_reasons and migration.blockers with the same project_hook/custom_strategy entries, while the run succeeds. Automation that treats a non-empty migration.blockers as blocked will misclassify a successful deferred upgrade.\",\n      \"evidence\": \"The 'blockers' key is built unconditionally from migration['blockers'], and 'deferred_reasons' is the same list when migration_mode == 'deferred'. The docs say to read migration.mode: deferred, but say nothing about migration.blockers in that mode.\",\n      \"scope\": \"within_design\",\n      \"preexisting\": false,\n      \"exposure\": \"touched\"\n    },\n    {\n      \"id\": \"WIN-PHASE4-01\",\n      \"severity\": \"P1\",\n      \"file\": \"docs/troubleshooting.md\",\n      \"line\": 60,\n      \"claim\": \"On Windows the Phase 04 checklist gate warns and allows instead of blocking when an unfinished 03 document exists, because backslash paths are compared against a slash-based namespace. This governance gate fails open.\",\n      \"evidence\": \"Reproduced on baseline, current source and current installed builds, on both hosts. No product fix is in this subject. The integration does not touch gate code: the changed units are upgrade, install, transaction and i18n. Deferred migration lets legacy projects with extensions reach the new version, but the defect also exists at baseline, so reach is unchanged. This delta adds disclosure only (README Windows note, troubleshooting sections at ko:60 and en:70). Classified independently, not dismissed: it remains an open P1 product defect outside this change.\",\n      \"scope\": \"within_design\",\n      \"preexisting\": true,\n      \"exposure\": \"unchanged\"\n    }\n  ],\n  \"unexplored\": [\n    {\n      \"blocking\": false,\n      \"item\": \"Claude-primary with a Codex secondary in global scope. core_installations adds Codex only when codex_scope == 'project-local', and GlobalSkillUpgrade is created only for a Codex primary. Upgrade therefore never refreshes Codex global skills in that combination. There is no unguarded global write and no rollback hole, but the README/cli-reference claim 'versions and managed assets update' may be partially untrue there. Whether troubleshooting documents this limit, and whether validate flags the stale Codex receipt, was not visible.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"_restore_tree restores and deletes files only; directories created by a failed step are left behind. In deferred mode the writes stay under legacy paths, so this is likely harmless. Whether a residual directory can change detect_layout in any mode (for example an empty root sage_harness/ in execute mode) was not checked; that would be preexisting execute-mode behavior.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"No integration test covers PEER-01 (compile RecursionError) or a failure injected at or after global commit. The late-failure tests mock only validate returning 1.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"i18n keys for the blocked kinds project_hook_irregular, project_hook_missing_core, occupied_current, unexpected_current and escapes_root (blocker_migration_{kind}) were assumed to exist from the prior overlay; they are not shown in this delta.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"Custom strategies in package form (name/__init__.py) are reported as missing_or_unsafe_strategy. Whether the legacy runtime loader supports package strategies, which would make this a false block rather than deferral, was not verified.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"test_a_resolved_windows_short_name_receives_normal_gates assumes a real 8.3 alias. On Windows volumes with 8.3 generation disabled it would likely fail rather than skip; the _alias() body was not provided. The double stop() of the patch is safe on 3.8+.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"Windows 3.11 fixture rename WinError 5 occurred once before the product assertion, and its root cause is UNKNOWN. The isolated rerun and the current full-53 rerun passed, but that does not explain the original failure. Residual flakiness or AV/indexer interference risk on the Windows self-hosted path is preserved, not dismissed.\"\n    },\n    {\n      \"blocking\": false,\n      \"item\": \"The evidence is installed CLI/protocol tests. No fresh Claude or Codex app model session confirmed the overlay context delivery that the README/ARTIFACTS prose describes (seven root skills, Standard 2-source and Fast 4-source order).\"\n    }\n  ]\n}\n```",
+      "report": {
+        "subject_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+        "role": "peer",
+        "verdict": "CLEAR",
+        "verdict_scope_note": "Peer-lens verdict on the changed scope only. It does not satisfy I6 (6-role + 2 refuter receipts still pending), it does not change Final Status (remains BLOCKED), and it was not inferred from CI or prior opinions.",
+        "coverage": "INSPECTED from the packet. (1) i18n en/ko delta: note_migration_deferred, blocker_migration_extension_invalid, the rewritten project_hook/custom_strategy blockers and post_commit_failed. Placeholders match their call sites in _plan/_apply. (2) upgrade.py: _plan@143, _migration_mode@296, _strategy_error@362, _python_source_error@373, _migration_executes@385, _print_report@518, _scope_entries@632, _snapshot_tree@664, _restore_tree@698, _managed_steps@744, _finalize_layout@796, _capture_times@873, _restore_user_owned@887, _apply@945, _finish_report@1175. (3) install.py: _atomic_write, _prune_legacy_skill, _install_codex_skill_at, _manifest, _core_trust_conflicts, _install_preconditions, run@1243, _run_locked@1319. (4) The complete upgrade_transaction.py and install_transaction.py. (5) asset_paths.escapes_root, project_hook_contract.inspect_project_hook, layout_migration.plan/_active_user_extensions/_custom_strategy. (6) The raw TestLegacyOverlayIntegration and the raw changed test bodies in test_gate_followups/test_install/test_overlay_materialize. (7) The literal post-R1 delta for all 12 user-doc files. Traced: the deferred path (legacy layout, no layout_override, force reinstall at the legacy path, legacy adapter canonicality being idempotent across the two applies the test exercises); lock non-reentrancy (upgrade .sage lock, dest lock, global skills lock with verify_lock instead of re-acquire); global staged-write/rollback/commit ordering versus the project snapshot restore; the post_commit_failed classification; and the GlobalRollbackError surfacing. Line numbers are the raw starts given in the packet. INHERITED, not reread: every unchanged file outside these units; bodies of _copy_tree, _copy_file, _write, _tree, _list_names, _is_user_owned, _passes_link, _is_sage_temp, _write_declaration, _cycle_migration, layout_migration._legacy_removals/apply/runtime_loads, asset_paths.detect_layout/is_reparse/points_elsewhere, generate/sync_overlays/validate.run, overlay_materialize internals, UserExtensionsStayPut._aged_project, the _alias() helper, the full Korean/English troubleshooting prose outside the delta, and plan_docs evidence. Preservation of user hook code and strategy files under force reinstall relies on _copy_tree not deleting unknown files; that is confirmed only empirically by the test assertions and the CI/native runs, not by reading the body.",
+        "findings": [
+          {
+            "id": "PEER-01",
+            "severity": "P3",
+            "file": "sage/commands/upgrade.py",
+            "line": 373,
+            "claim": "_python_source_error catches only OSError, UnicodeError, SyntaxError, LookupError and ValueError. Pathologically nested user hook or strategy source makes compile() raise RecursionError or MemoryError. That escapes _migration_mode/_plan as an uncaught exception instead of being reported as blocker_migration_extension_invalid.",
+            "evidence": "compile(handle.read(), ...) sits inside an except tuple without RecursionError or MemoryError. CPython raises RecursionError ('maximum recursion depth exceeded during compilation') or a parser MemoryError for deeply nested unary or expression chains, depending on version. The failure stays fail-closed: _plan runs before any write, and the inspect_project_hook path catches Exception. The impact is a traceback in place of the documented diagnostic.",
+            "scope": "within_design",
+            "preexisting": false,
+            "exposure": "touched"
+          },
+          {
+            "id": "PEER-02",
+            "severity": "P3",
+            "file": "sage/commands/upgrade.py",
+            "line": 1175,
+            "claim": "In deferred mode the persisted report fills both migration.deferred_reasons and migration.blockers with the same project_hook/custom_strategy entries, while the run succeeds. Automation that treats a non-empty migration.blockers as blocked will misclassify a successful deferred upgrade.",
+            "evidence": "The 'blockers' key is built unconditionally from migration['blockers'], and 'deferred_reasons' is the same list when migration_mode == 'deferred'. The docs say to read migration.mode: deferred, but say nothing about migration.blockers in that mode.",
+            "scope": "within_design",
+            "preexisting": false,
+            "exposure": "touched"
+          },
+          {
+            "id": "WIN-PHASE4-01",
+            "severity": "P1",
+            "file": "docs/troubleshooting.md",
+            "line": 60,
+            "claim": "On Windows the Phase 04 checklist gate warns and allows instead of blocking when an unfinished 03 document exists, because backslash paths are compared against a slash-based namespace. This governance gate fails open.",
+            "evidence": "Reproduced on baseline, current source and current installed builds, on both hosts. No product fix is in this subject. The integration does not touch gate code: the changed units are upgrade, install, transaction and i18n. Deferred migration lets legacy projects with extensions reach the new version, but the defect also exists at baseline, so reach is unchanged. This delta adds disclosure only (README Windows note, troubleshooting sections at ko:60 and en:70). Classified independently, not dismissed: it remains an open P1 product defect outside this change.",
+            "scope": "within_design",
+            "preexisting": true,
+            "exposure": "unchanged"
+          }
+        ],
+        "unexplored": [
+          {
+            "blocking": false,
+            "item": "Claude-primary with a Codex secondary in global scope. core_installations adds Codex only when codex_scope == 'project-local', and GlobalSkillUpgrade is created only for a Codex primary. Upgrade therefore never refreshes Codex global skills in that combination. There is no unguarded global write and no rollback hole, but the README/cli-reference claim 'versions and managed assets update' may be partially untrue there. Whether troubleshooting documents this limit, and whether validate flags the stale Codex receipt, was not visible."
+          },
+          {
+            "blocking": false,
+            "item": "_restore_tree restores and deletes files only; directories created by a failed step are left behind. In deferred mode the writes stay under legacy paths, so this is likely harmless. Whether a residual directory can change detect_layout in any mode (for example an empty root sage_harness/ in execute mode) was not checked; that would be preexisting execute-mode behavior."
+          },
+          {
+            "blocking": false,
+            "item": "No integration test covers PEER-01 (compile RecursionError) or a failure injected at or after global commit. The late-failure tests mock only validate returning 1."
+          },
+          {
+            "blocking": false,
+            "item": "i18n keys for the blocked kinds project_hook_irregular, project_hook_missing_core, occupied_current, unexpected_current and escapes_root (blocker_migration_{kind}) were assumed to exist from the prior overlay; they are not shown in this delta."
+          },
+          {
+            "blocking": false,
+            "item": "Custom strategies in package form (name/__init__.py) are reported as missing_or_unsafe_strategy. Whether the legacy runtime loader supports package strategies, which would make this a false block rather than deferral, was not verified."
+          },
+          {
+            "blocking": false,
+            "item": "test_a_resolved_windows_short_name_receives_normal_gates assumes a real 8.3 alias. On Windows volumes with 8.3 generation disabled it would likely fail rather than skip; the _alias() body was not provided. The double stop() of the patch is safe on 3.8+."
+          },
+          {
+            "blocking": false,
+            "item": "Windows 3.11 fixture rename WinError 5 occurred once before the product assertion, and its root cause is UNKNOWN. The isolated rerun and the current full-53 rerun passed, but that does not explain the original failure. Residual flakiness or AV/indexer interference risk on the Windows self-hosted path is preserved, not dismissed."
+          },
+          {
+            "blocking": false,
+            "item": "The evidence is installed CLI/protocol tests. No fresh Claude or Codex app model session confirmed the overlay context delivery that the README/ARTIFACTS prose describes (seven root skills, Standard 2-source and Fast 4-source order)."
+          }
+        ],
+        "blocking_unexplored": [],
+        "find_status": "HAS_FINDINGS",
+        "raw_clear_is_empty": false
+      }
+    },
+    {
+      "call": "refuter-1",
+      "role": "refuter-1",
+      "source_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+      "session_id": "01a1c126-2b5e-7d53-b318-58bf8793d20f",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 17015,
+      "prompt_sha256": "1c27fdf3be7aedda684411a8a013fa00e3885a0a3bd73a552e161d00fb4464c5",
+      "metadata_sha256": "fa198f7ad5d80d08e2b8a658dbf28102e9b6c12d40c938751e80f2133f7281ca",
+      "raw_report_sha256": "9e5b5b1def68549941b1ecd0484a5c3ac821b2e5259d8aa81dafa92c23bb92e8",
+      "report_raw": "{\n  \"subject_commit\": \"552314884423406770302c3cfa8ba287d4aa57c6\",\n  \"verdict\": \"CONSISTENT\",\n  \"votes\": [\n    {\n      \"finding_id\": \"COR-WIN-PHASE4-01\",\n      \"refuted\": true,\n      \"drop_reason\": \"out_of_scope_preexisting\",\n      \"reason\": \"The path mismatch is real, but both implementations are unchanged from baseline. Ordinary checklist inputs already encounter this gate; hook regeneration establishes no additional exposure.\"\n    },\n    {\n      \"finding_id\": \"SEC-WIN-PHASE4-01\",\n      \"refuted\": true,\n      \"drop_reason\": \"out_of_scope_preexisting\",\n      \"reason\": \"Native relative paths can defeat slash-based matching and fail open. Baseline reproduction and unchanged gate, snapshot, and ordinary input paths establish unchanged exposure in this scope.\"\n    },\n    {\n      \"finding_id\": \"CON-WIN-PHASE4-01\",\n      \"refuted\": true,\n      \"drop_reason\": \"out_of_scope_preexisting\",\n      \"reason\": \"The supplied code supports the functional defect. Deployment regenerates existing hooks without introducing a new checklist input class or demonstrating increased reach; the defect predates this change.\"\n    },\n    {\n      \"finding_id\": \"CVN-WIN-PHASE4-01\",\n      \"refuted\": true,\n      \"drop_reason\": \"out_of_scope_preexisting\",\n      \"reason\": \"The P1 enforcement defect remains open. Unchanged implementations, baseline reproduction, and the existing ordinary checklist workflow support unchanged exposure, permitting exclusion from this change's required findings.\"\n    },\n    {\n      \"finding_id\": \"LIF-WIN-PHASE4-01\",\n      \"refuted\": true,\n      \"drop_reason\": \"out_of_scope_preexisting\",\n      \"reason\": \"The missing implementation match and warning follow from the supplied code. Neither the documentation supplement nor managed hook regeneration changes the affected workflow's exposure.\"\n    },\n    {\n      \"finding_id\": \"PEER-01\",\n      \"refuted\": false,\n      \"drop_reason\": \"survives\",\n      \"reason\": \"RecursionError is absent from the exception tuple and propagates through the supplied strategy planning path. The public CLI reproduction confirms the traceback. Unchanged managed bytes limit impact but do not eliminate the diagnostic defect.\"\n    },\n    {\n      \"finding_id\": \"PEER-02\",\n      \"refuted\": true,\n      \"drop_reason\": \"false_positive\",\n      \"reason\": \"The duplicated entries accurately remain blockers to layout migration while the upgrade proceeds with migration deferred. The report separately provides migration.mode, top-level blockers, and outcome. No supplied contract makes nested migration.blockers an overall upgrade failure indicator; the proposed automation conflates those states.\"\n    },\n    {\n      \"finding_id\": \"PEER-WIN-PHASE4-01\",\n      \"refuted\": true,\n      \"drop_reason\": \"out_of_scope_preexisting\",\n      \"reason\": \"Baseline and candidate evidence establishes the same ordinary-path failure. Deferred upgrades retain the existing hook pipeline; the supplied deployment code establishes no increased gate exposure. Disclosure does not fix or erase this open P1 product defect.\"\n    }\n  ],\n  \"process_gaps\": [],\n  \"closure\": \"This conditional refuter-1 batch is assessable, not source approval. PEER-01 survives this ballot. Refutation requires both independent refuters to vote true; ties survive. WIN-PHASE4-01 remains a disclosed open product defect. Root final status remains BLOCKED pending both real refuter receipts, budget/source checks, all I1-I6 evidence, and resolution of every required finding.\"\n}",
+      "report": {
+        "subject_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+        "verdict": "CONSISTENT",
+        "votes": [
+          {
+            "finding_id": "COR-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The path mismatch is real, but both implementations are unchanged from baseline. Ordinary checklist inputs already encounter this gate; hook regeneration establishes no additional exposure."
+          },
+          {
+            "finding_id": "SEC-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "Native relative paths can defeat slash-based matching and fail open. Baseline reproduction and unchanged gate, snapshot, and ordinary input paths establish unchanged exposure in this scope."
+          },
+          {
+            "finding_id": "CON-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The supplied code supports the functional defect. Deployment regenerates existing hooks without introducing a new checklist input class or demonstrating increased reach; the defect predates this change."
+          },
+          {
+            "finding_id": "CVN-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The P1 enforcement defect remains open. Unchanged implementations, baseline reproduction, and the existing ordinary checklist workflow support unchanged exposure, permitting exclusion from this change's required findings."
+          },
+          {
+            "finding_id": "LIF-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The missing implementation match and warning follow from the supplied code. Neither the documentation supplement nor managed hook regeneration changes the affected workflow's exposure."
+          },
+          {
+            "finding_id": "PEER-01",
+            "refuted": false,
+            "drop_reason": "survives",
+            "reason": "RecursionError is absent from the exception tuple and propagates through the supplied strategy planning path. The public CLI reproduction confirms the traceback. Unchanged managed bytes limit impact but do not eliminate the diagnostic defect."
+          },
+          {
+            "finding_id": "PEER-02",
+            "refuted": true,
+            "drop_reason": "false_positive",
+            "reason": "The duplicated entries accurately remain blockers to layout migration while the upgrade proceeds with migration deferred. The report separately provides migration.mode, top-level blockers, and outcome. No supplied contract makes nested migration.blockers an overall upgrade failure indicator; the proposed automation conflates those states."
+          },
+          {
+            "finding_id": "PEER-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "Baseline and candidate evidence establishes the same ordinary-path failure. Deferred upgrades retain the existing hook pipeline; the supplied deployment code establishes no increased gate exposure. Disclosure does not fix or erase this open P1 product defect."
+          }
+        ],
+        "process_gaps": [],
+        "closure": "This conditional refuter-1 batch is assessable, not source approval. PEER-01 survives this ballot. Refutation requires both independent refuters to vote true; ties survive. WIN-PHASE4-01 remains a disclosed open product defect. Root final status remains BLOCKED pending both real refuter receipts, budget/source checks, all I1-I6 evidence, and resolution of every required finding."
+      }
+    },
+    {
+      "call": "refuter-2",
+      "role": "refuter-2",
+      "source_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+      "session_id": "01a1c126-aa08-7480-858f-0212d5d3c2c7",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 17167,
+      "prompt_sha256": "69b86bd9eda9ca10a3db415e71a9b3882b68a6d894fee8947b94893c4845777e",
+      "metadata_sha256": "cc7ddccd46b721595e5c04ae4288706cceb5d47f8262341b2e023a3d723d6b83",
+      "raw_report_sha256": "31cdce6ccb3f27c4b1f44c1a5a79caa91f6bf5d6539457a245df9863ba219d58",
+      "report_raw": "{\n  \"subject_commit\": \"552314884423406770302c3cfa8ba287d4aa57c6\",\n  \"verdict\": \"CONSISTENT\",\n  \"votes\": [\n    {\n      \"finding_id\": \"COR-WIN-PHASE4-01\",\n      \"refuted\": true,\n      \"drop_reason\": \"out_of_scope_preexisting\",\n      \"reason\": \"The path mismatch is real, but both implementations are unchanged. Ordinary checklist inputs already reached this pipeline; installation and hook regeneration establish no additional exposure. The product defect remains open.\"\n    },\n    {\n      \"finding_id\": \"SEC-WIN-PHASE4-01\",\n      \"refuted\": true,\n      \"drop_reason\": \"out_of_scope_preexisting\",\n      \"reason\": \"Native snapshot separators disagree with slash-based matching and can fail open. The supplied baseline identity and deployment code establish unchanged enforcement and reach, supporting exclusion from this change without dismissing the defect.\"\n    },\n    {\n      \"finding_id\": \"CON-WIN-PHASE4-01\",\n      \"refuted\": true,\n      \"drop_reason\": \"out_of_scope_preexisting\",\n      \"reason\": \"The failure follows directly from unchanged path representation and matching. Deployment regenerates the existing dual-host hooks without introducing a new checklist input class or concurrency-dependent exposure.\"\n    },\n    {\n      \"finding_id\": \"CVN-WIN-PHASE4-01\",\n      \"refuted\": true,\n      \"drop_reason\": \"out_of_scope_preexisting\",\n      \"reason\": \"The significant enforcement defect is supported, but its exposure is unchanged: ordinary 03/04 workflows already encounter the same snapshot and gate. Disclosure does not repair it, and exclusion does not erase its open P1 status.\"\n    },\n    {\n      \"finding_id\": \"LIF-WIN-PHASE4-01\",\n      \"refuted\": true,\n      \"drop_reason\": \"out_of_scope_preexisting\",\n      \"reason\": \"The unchanged snapshot and core explain the missed implementation document. The deployment function preserves the existing hook pipeline; no feature-specific expansion of this ordinary workflow is established.\"\n    },\n    {\n      \"finding_id\": \"PEER-01\",\n      \"refuted\": false,\n      \"drop_reason\": \"survives\",\n      \"reason\": \"RecursionError is absent from the exception tuple and propagates through strategy validation during planning. The bounded compiler evidence and public CLI traceback corroborate the source. Remaining fail-closed and preserving bytes do not cure the missing diagnostic.\"\n    },\n    {\n      \"finding_id\": \"PEER-02\",\n      \"refuted\": true,\n      \"drop_reason\": \"false_positive\",\n      \"reason\": \"Nested migration.blockers records impediments to the layout move, which remains deferred. Overall blockers, outcome, and migration.mode separately describe upgrade success. No supplied contract or consumer requires nested blockers to be empty after a successful deferred upgrade; the asserted automation failure assumes that interpretation.\"\n    },\n    {\n      \"finding_id\": \"PEER-WIN-PHASE4-01\",\n      \"refuted\": true,\n      \"drop_reason\": \"out_of_scope_preexisting\",\n      \"reason\": \"Independent inspection supports the peer's unchanged-exposure premise: native relative paths and slash-only matching predate this change, while deployment reuses the existing hooks. Deferred upgrades do not establish newly reachable defective inputs. The disclosed P1 remains an open product defect.\"\n    }\n  ],\n  \"process_gaps\": [],\n  \"closure\": \"This is a conditional batch judgment, not source approval. PEER-01 survives this vote. Aggregate refutation requires both independent true votes; ties survive. Root final status remains BLOCKED until both real refuter receipts, budget/source checks, all I1-I6 evidence, and resolution of every required finding are established. WIN-PHASE4-01 remains disclosed and unfixed.\"\n}",
+      "report": {
+        "subject_commit": "552314884423406770302c3cfa8ba287d4aa57c6",
+        "verdict": "CONSISTENT",
+        "votes": [
+          {
+            "finding_id": "COR-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The path mismatch is real, but both implementations are unchanged. Ordinary checklist inputs already reached this pipeline; installation and hook regeneration establish no additional exposure. The product defect remains open."
+          },
+          {
+            "finding_id": "SEC-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "Native snapshot separators disagree with slash-based matching and can fail open. The supplied baseline identity and deployment code establish unchanged enforcement and reach, supporting exclusion from this change without dismissing the defect."
+          },
+          {
+            "finding_id": "CON-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The failure follows directly from unchanged path representation and matching. Deployment regenerates the existing dual-host hooks without introducing a new checklist input class or concurrency-dependent exposure."
+          },
+          {
+            "finding_id": "CVN-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The significant enforcement defect is supported, but its exposure is unchanged: ordinary 03/04 workflows already encounter the same snapshot and gate. Disclosure does not repair it, and exclusion does not erase its open P1 status."
+          },
+          {
+            "finding_id": "LIF-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The unchanged snapshot and core explain the missed implementation document. The deployment function preserves the existing hook pipeline; no feature-specific expansion of this ordinary workflow is established."
+          },
+          {
+            "finding_id": "PEER-01",
+            "refuted": false,
+            "drop_reason": "survives",
+            "reason": "RecursionError is absent from the exception tuple and propagates through strategy validation during planning. The bounded compiler evidence and public CLI traceback corroborate the source. Remaining fail-closed and preserving bytes do not cure the missing diagnostic."
+          },
+          {
+            "finding_id": "PEER-02",
+            "refuted": true,
+            "drop_reason": "false_positive",
+            "reason": "Nested migration.blockers records impediments to the layout move, which remains deferred. Overall blockers, outcome, and migration.mode separately describe upgrade success. No supplied contract or consumer requires nested blockers to be empty after a successful deferred upgrade; the asserted automation failure assumes that interpretation."
+          },
+          {
+            "finding_id": "PEER-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "Independent inspection supports the peer's unchanged-exposure premise: native relative paths and slash-only matching predate this change, while deployment reuses the existing hooks. Deferred upgrades do not establish newly reachable defective inputs. The disclosed P1 remains an open product defect."
+          }
+        ],
+        "process_gaps": [],
+        "closure": "This is a conditional batch judgment, not source approval. PEER-01 survives this vote. Aggregate refutation requires both independent true votes; ties survive. Root final status remains BLOCKED until both real refuter receipts, budget/source checks, all I1-I6 evidence, and resolution of every required finding are established. WIN-PHASE4-01 remains disclosed and unfixed."
+      }
+    }
+  ],
+  "round1_adjudication": {
+    "cycle_round": 4,
+    "resume_round": 1,
+    "source": "552314884423406770302c3cfa8ba287d4aa57c6",
+    "strict_majority": "2 of 2",
+    "adjudication": [
+      {
+        "finding_id": "COR-WIN-PHASE4-01",
+        "refuted_votes": 2,
+        "dropped": true,
+        "votes": [
+          {
+            "finding_id": "COR-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The path mismatch is real, but both implementations are unchanged from baseline. Ordinary checklist inputs already encounter this gate; hook regeneration establishes no additional exposure."
+          },
+          {
+            "finding_id": "COR-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The path mismatch is real, but both implementations are unchanged. Ordinary checklist inputs already reached this pipeline; installation and hook regeneration establish no additional exposure. The product defect remains open."
+          }
+        ]
+      },
+      {
+        "finding_id": "SEC-WIN-PHASE4-01",
+        "refuted_votes": 2,
+        "dropped": true,
+        "votes": [
+          {
+            "finding_id": "SEC-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "Native relative paths can defeat slash-based matching and fail open. Baseline reproduction and unchanged gate, snapshot, and ordinary input paths establish unchanged exposure in this scope."
+          },
+          {
+            "finding_id": "SEC-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "Native snapshot separators disagree with slash-based matching and can fail open. The supplied baseline identity and deployment code establish unchanged enforcement and reach, supporting exclusion from this change without dismissing the defect."
+          }
+        ]
+      },
+      {
+        "finding_id": "CON-WIN-PHASE4-01",
+        "refuted_votes": 2,
+        "dropped": true,
+        "votes": [
+          {
+            "finding_id": "CON-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The supplied code supports the functional defect. Deployment regenerates existing hooks without introducing a new checklist input class or demonstrating increased reach; the defect predates this change."
+          },
+          {
+            "finding_id": "CON-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The failure follows directly from unchanged path representation and matching. Deployment regenerates the existing dual-host hooks without introducing a new checklist input class or concurrency-dependent exposure."
+          }
+        ]
+      },
+      {
+        "finding_id": "CVN-WIN-PHASE4-01",
+        "refuted_votes": 2,
+        "dropped": true,
+        "votes": [
+          {
+            "finding_id": "CVN-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The P1 enforcement defect remains open. Unchanged implementations, baseline reproduction, and the existing ordinary checklist workflow support unchanged exposure, permitting exclusion from this change's required findings."
+          },
+          {
+            "finding_id": "CVN-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The significant enforcement defect is supported, but its exposure is unchanged: ordinary 03/04 workflows already encounter the same snapshot and gate. Disclosure does not repair it, and exclusion does not erase its open P1 status."
+          }
+        ]
+      },
+      {
+        "finding_id": "LIF-WIN-PHASE4-01",
+        "refuted_votes": 2,
+        "dropped": true,
+        "votes": [
+          {
+            "finding_id": "LIF-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The missing implementation match and warning follow from the supplied code. Neither the documentation supplement nor managed hook regeneration changes the affected workflow's exposure."
+          },
+          {
+            "finding_id": "LIF-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "The unchanged snapshot and core explain the missed implementation document. The deployment function preserves the existing hook pipeline; no feature-specific expansion of this ordinary workflow is established."
+          }
+        ]
+      },
+      {
+        "finding_id": "PEER-01",
+        "refuted_votes": 0,
+        "dropped": false,
+        "votes": [
+          {
+            "finding_id": "PEER-01",
+            "refuted": false,
+            "drop_reason": "survives",
+            "reason": "RecursionError is absent from the exception tuple and propagates through the supplied strategy planning path. The public CLI reproduction confirms the traceback. Unchanged managed bytes limit impact but do not eliminate the diagnostic defect."
+          },
+          {
+            "finding_id": "PEER-01",
+            "refuted": false,
+            "drop_reason": "survives",
+            "reason": "RecursionError is absent from the exception tuple and propagates through strategy validation during planning. The bounded compiler evidence and public CLI traceback corroborate the source. Remaining fail-closed and preserving bytes do not cure the missing diagnostic."
+          }
+        ]
+      },
+      {
+        "finding_id": "PEER-02",
+        "refuted_votes": 2,
+        "dropped": true,
+        "votes": [
+          {
+            "finding_id": "PEER-02",
+            "refuted": true,
+            "drop_reason": "false_positive",
+            "reason": "The duplicated entries accurately remain blockers to layout migration while the upgrade proceeds with migration deferred. The report separately provides migration.mode, top-level blockers, and outcome. No supplied contract makes nested migration.blockers an overall upgrade failure indicator; the proposed automation conflates those states."
+          },
+          {
+            "finding_id": "PEER-02",
+            "refuted": true,
+            "drop_reason": "false_positive",
+            "reason": "Nested migration.blockers records impediments to the layout move, which remains deferred. Overall blockers, outcome, and migration.mode separately describe upgrade success. No supplied contract or consumer requires nested blockers to be empty after a successful deferred upgrade; the asserted automation failure assumes that interpretation."
+          }
+        ]
+      },
+      {
+        "finding_id": "PEER-WIN-PHASE4-01",
+        "refuted_votes": 2,
+        "dropped": true,
+        "votes": [
+          {
+            "finding_id": "PEER-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "Baseline and candidate evidence establishes the same ordinary-path failure. Deferred upgrades retain the existing hook pipeline; the supplied deployment code establishes no increased gate exposure. Disclosure does not fix or erase this open P1 product defect."
+          },
+          {
+            "finding_id": "PEER-WIN-PHASE4-01",
+            "refuted": true,
+            "drop_reason": "out_of_scope_preexisting",
+            "reason": "Independent inspection supports the peer's unchanged-exposure premise: native relative paths and slash-only matching predate this change, while deployment reuses the existing hooks. Deferred upgrades do not establish newly reachable defective inputs. The disclosed P1 remains an open product defect."
+          }
+        ]
+      }
+    ],
+    "survivors": [
+      "PEER-01"
+    ],
+    "triage": {
+      "PEER-01": "within_design: add two resource exceptions to the existing fail-closed read-only source validation; no state/lock/protocol changes"
+    },
+    "not_approval": true
+  },
+  "final_active_receipts": [
+    {
+      "call": "r2b-correctness",
+      "role": "correctness",
+      "source_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+      "session_id": "01a1c54a-6bec-77b1-9245-f84344d39e52",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7632,
+      "prompt_sha256": "d9b63ba0ab547a064fcbe2bebb50a23bd03188bdceb1a8bd6abb931521a342df",
+      "metadata_sha256": "04d2ab6b37efefa609d3af6976b627f6c4a0a99f1b030954faac245043151e76",
+      "raw_report_sha256": "a25c53150a4ac656e22333209b34b7085069d96c5649ea1923b14ab87d2c0e92",
+      "report_raw": "{\"subject_commit\":\"2e79f7736df6d724b0438f8e43cee9e37ce38300\",\"verdict\":\"CLEAR\",\"findings\":[],\"unexplored\":[\"Judgment is limited to the supplied correctness delta and reported CI evidence; repository contents, manifest digest, and CI receipt were not independently inspected.\",\"WIN-PHASE4-01 remains open; no Windows rerun or real OOM behavior was evaluated.\",\"Whole-product approval, remaining review receipts, budget/source gates, and I6 closure are outside this judgment.\"],\"closure\":[{\"id\":\"PEER-01\",\"status\":\"CLOSED\",\"reason\":\"The supplied validator catches compiler RecursionError and MemoryError without executing authored Python. Its nonempty diagnostic follows the stated blocker path before transaction/version writes. Public CLI regression coverage checks return 1, unchanged managed/user file bytes, and exactly one blocked report for both exceptions.\"},{\"id\":\"QA-PORTABILITY\",\"status\":\"CLOSED\",\"reason\":\"Controlled injection at the upgrade module's compile lookup exercises the actual public CLI without depending on interpreter-specific recursion thresholds. The separate real RecursionError reproduction remains supporting evidence. Reported exact-commit CI passes Python 3.10/3.11/3.12 regression and isolated wheel consumers; no universal recursion threshold or real OOM claim is required.\"}]}",
+      "report": {
+        "subject_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+        "verdict": "CLEAR",
+        "findings": [],
+        "unexplored": [
+          "Judgment is limited to the supplied correctness delta and reported CI evidence; repository contents, manifest digest, and CI receipt were not independently inspected.",
+          "WIN-PHASE4-01 remains open; no Windows rerun or real OOM behavior was evaluated.",
+          "Whole-product approval, remaining review receipts, budget/source gates, and I6 closure are outside this judgment."
+        ],
+        "closure": [
+          {
+            "id": "PEER-01",
+            "status": "CLOSED",
+            "reason": "The supplied validator catches compiler RecursionError and MemoryError without executing authored Python. Its nonempty diagnostic follows the stated blocker path before transaction/version writes. Public CLI regression coverage checks return 1, unchanged managed/user file bytes, and exactly one blocked report for both exceptions."
+          },
+          {
+            "id": "QA-PORTABILITY",
+            "status": "CLOSED",
+            "reason": "Controlled injection at the upgrade module's compile lookup exercises the actual public CLI without depending on interpreter-specific recursion thresholds. The separate real RecursionError reproduction remains supporting evidence. Reported exact-commit CI passes Python 3.10/3.11/3.12 regression and isolated wheel consumers; no universal recursion threshold or real OOM claim is required."
+          }
+        ],
+        "blocking_unexplored": [
+          "Judgment is limited to the supplied correctness delta and reported CI evidence; repository contents, manifest digest, and CI receipt were not independently inspected.",
+          "WIN-PHASE4-01 remains open; no Windows rerun or real OOM behavior was evaluated.",
+          "Whole-product approval, remaining review receipts, budget/source gates, and I6 closure are outside this judgment."
+        ],
+        "find_status": "BLOCKED",
+        "raw_clear_is_empty": false
+      }
+    },
+    {
+      "call": "r2b-security",
+      "role": "security",
+      "source_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+      "session_id": "01a1c54d-309a-7300-86aa-9b79dfa148f5",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7753,
+      "prompt_sha256": "4e86c32903be58581f2e013dbd58fe818a403b399479ceaac7791f5fc6d22bb6",
+      "metadata_sha256": "500b1884e1a156ab855c86abb0f0a6d2bf1ab60c8a6ded60ba65017df21c945a",
+      "raw_report_sha256": "17d7c20424a2ad4f768314145a778fe1d1a318ae7eb53205b133192822a128e2",
+      "report_raw": "{\n  \"subject_commit\": \"2e79f7736df6d724b0438f8e43cee9e37ce38300\",\n  \"verdict\": \"CLEAR\",\n  \"findings\": [],\n  \"unexplored\": [],\n  \"closure\": [\n    {\n      \"id\": \"PEER-01\",\n      \"status\": \"CLOSED\",\n      \"reason\": \"The supplied source catches RecursionError and MemoryError during compilation without executing authored code. The existing error propagation blocks upgrade before transaction/version writes. Both injected failures exercise public CLI main and verify return 1, unchanged managed/user bytes, and exactly one blocked report.\"\n    },\n    {\n      \"id\": \"QA-PORTABILITY\",\n      \"status\": \"CLOSED\",\n      \"reason\": \"Controlled exceptions at the upgrade module's compile lookup remove the interpreter-dependent recursion threshold. The fresh fixture and byte comparison support the intended regression assertion. Externally verified current-commit CI reports Python 3.10/3.11/3.12 and isolated wheel consumers passing.\"\n    }\n  ],\n  \"limitations\": [\n    {\n      \"blocking\": false,\n      \"reason\": \"Security judgment covers the supplied literal source delta; source identity and CI receipts are verified by the external orchestrator.\"\n    },\n    {\n      \"blocking\": false,\n      \"reason\": \"Fault injection establishes exception handling, not survival of actual process memory exhaustion. No real OOM or Windows rerun is claimed; WIN-PHASE4-01 remains open.\"\n    },\n    {\n      \"blocking\": false,\n      \"reason\": \"This scoped security CLEAR supplies neither final root approval nor I6 closure; remaining mandatory receipts and budget/source checks retain their requirements.\"\n    }\n  ]\n}",
+      "report": {
+        "subject_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+        "verdict": "CLEAR",
+        "findings": [],
+        "unexplored": [],
+        "closure": [
+          {
+            "id": "PEER-01",
+            "status": "CLOSED",
+            "reason": "The supplied source catches RecursionError and MemoryError during compilation without executing authored code. The existing error propagation blocks upgrade before transaction/version writes. Both injected failures exercise public CLI main and verify return 1, unchanged managed/user bytes, and exactly one blocked report."
+          },
+          {
+            "id": "QA-PORTABILITY",
+            "status": "CLOSED",
+            "reason": "Controlled exceptions at the upgrade module's compile lookup remove the interpreter-dependent recursion threshold. The fresh fixture and byte comparison support the intended regression assertion. Externally verified current-commit CI reports Python 3.10/3.11/3.12 and isolated wheel consumers passing."
+          }
+        ],
+        "limitations": [
+          {
+            "blocking": false,
+            "reason": "Security judgment covers the supplied literal source delta; source identity and CI receipts are verified by the external orchestrator."
+          },
+          {
+            "blocking": false,
+            "reason": "Fault injection establishes exception handling, not survival of actual process memory exhaustion. No real OOM or Windows rerun is claimed; WIN-PHASE4-01 remains open."
+          },
+          {
+            "blocking": false,
+            "reason": "This scoped security CLEAR supplies neither final root approval nor I6 closure; remaining mandatory receipts and budget/source checks retain their requirements."
+          }
+        ],
+        "blocking_unexplored": [],
+        "find_status": "EMPTY",
+        "raw_clear_is_empty": true
+      }
+    },
+    {
+      "call": "r2b-concurrency",
+      "role": "concurrency",
+      "source_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+      "session_id": "01a1c54d-6c68-7140-9716-1439a9012815",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7724,
+      "prompt_sha256": "6ebf7489d612fc493322aed507b8a1ed0cbf72477c7327c0e48450e61548c208",
+      "metadata_sha256": "94bf8255237afdbc05dc22b095b3052d758e49add33cfd4b586beead58fdce0b",
+      "raw_report_sha256": "21324db5d519ff6b595ead3b62d07df6252e4a1c7cb16f21295c06bb50135000",
+      "report_raw": "{\"subject_commit\":\"2e79f7736df6d724b0438f8e43cee9e37ce38300\",\"verdict\":\"CLEAR\",\"findings\":[],\"unexplored\":[],\"closure\":[{\"id\":\"PEER-01\",\"status\":\"CLOSED\",\"reason\":\"The supplied helper catches both compiler resource exceptions during read-only planning. The stated blocker propagation produces blocked/return1 before transaction/version writes. This repair adds no shared mutable production state or new concurrency dependency.\"},{\"id\":\"QA-PORTABILITY\",\"status\":\"CLOSED\",\"reason\":\"Patching the upgrade module's compile lookup deterministically exercises both exception handlers through public CLI main, independent of interpreter compilation thresholds. Fresh fixtures verify unchanged managed/user bytes and exactly one blocked report. Supplied current-commit CI passes Python 3.10–3.12.\"}],\"limitations\":[{\"blocking\":false,\"reason\":\"Concurrency-lens judgment covers the supplied literal source delta; manifest and CI verification are supplied by the external orchestrator.\"},{\"blocking\":false,\"reason\":\"Fault injection establishes exception handling and write prevention, not behavior under actual memory exhaustion or concurrent upgrade processes. No Windows rerun is claimed.\"},{\"blocking\":false,\"reason\":\"CLEAR applies only to this independent scoped review. It does not close I6 or replace mandatory lens, peer, refuter, budget, and source checks.\"}]}",
+      "report": {
+        "subject_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+        "verdict": "CLEAR",
+        "findings": [],
+        "unexplored": [],
+        "closure": [
+          {
+            "id": "PEER-01",
+            "status": "CLOSED",
+            "reason": "The supplied helper catches both compiler resource exceptions during read-only planning. The stated blocker propagation produces blocked/return1 before transaction/version writes. This repair adds no shared mutable production state or new concurrency dependency."
+          },
+          {
+            "id": "QA-PORTABILITY",
+            "status": "CLOSED",
+            "reason": "Patching the upgrade module's compile lookup deterministically exercises both exception handlers through public CLI main, independent of interpreter compilation thresholds. Fresh fixtures verify unchanged managed/user bytes and exactly one blocked report. Supplied current-commit CI passes Python 3.10–3.12."
+          }
+        ],
+        "limitations": [
+          {
+            "blocking": false,
+            "reason": "Concurrency-lens judgment covers the supplied literal source delta; manifest and CI verification are supplied by the external orchestrator."
+          },
+          {
+            "blocking": false,
+            "reason": "Fault injection establishes exception handling and write prevention, not behavior under actual memory exhaustion or concurrent upgrade processes. No Windows rerun is claimed."
+          },
+          {
+            "blocking": false,
+            "reason": "CLEAR applies only to this independent scoped review. It does not close I6 or replace mandatory lens, peer, refuter, budget, and source checks."
+          }
+        ],
+        "blocking_unexplored": [],
+        "find_status": "EMPTY",
+        "raw_clear_is_empty": true
+      }
+    },
+    {
+      "call": "r2b-convention",
+      "role": "convention",
+      "source_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+      "session_id": "01a1c54d-c32b-7da1-aa24-6e0216ec0168",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7737,
+      "prompt_sha256": "7454b42b51a0835b37861e8218777457468cfdf808df452cbda6619402fa255f",
+      "metadata_sha256": "afb522c1c5b9e42a980cd8e5c202eed1771f5bf242a723edd827560df2f3517f",
+      "raw_report_sha256": "d9bfa0d299156423fa56dbfcfb33f1ea807d0158beb75df5c0b6d6af70785dac",
+      "report_raw": "{\n  \"subject_commit\": \"2e79f7736df6d724b0438f8e43cee9e37ce38300\",\n  \"verdict\": \"CLEAR\",\n  \"findings\": [],\n  \"unexplored\": [],\n  \"closure\": [\n    {\n      \"id\": \"PEER-01\",\n      \"status\": \"CLOSED\",\n      \"reason\": \"The supplied helper consistently converts compiler RecursionError and MemoryError into the existing source diagnostic. The supplied propagation path blocks before transaction/version writes while preserving compile-only validation and the report contract.\"\n    },\n    {\n      \"id\": \"QA-PORTABILITY\",\n      \"status\": \"CLOSED\",\n      \"reason\": \"Controlled injection at the upgrade module's compile lookup removes interpreter-dependent compiler-depth assumptions. Both exceptions pass through public CLI main, with return 1, unchanged managed/user bytes, and exactly one blocked report asserted. Reported exact-commit CI passes Python 3.10/3.11/3.12.\"\n    }\n  ],\n  \"limitations\": [\n    {\n      \"blocking\": false,\n      \"reason\": \"Convention-role judgment covers the supplied literal source delta; manifest and CI verification are externally managed.\"\n    },\n    {\n      \"blocking\": false,\n      \"reason\": \"WIN-PHASE4-01 remains open. Windows was skipped, and no real OOM validation is claimed.\"\n    },\n    {\n      \"blocking\": false,\n      \"reason\": \"This checkpoint judgment does not grant root/I6 approval. Mandatory review receipts and budget/source checks remain required.\"\n    }\n  ]\n}",
+      "report": {
+        "subject_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+        "verdict": "CLEAR",
+        "findings": [],
+        "unexplored": [],
+        "closure": [
+          {
+            "id": "PEER-01",
+            "status": "CLOSED",
+            "reason": "The supplied helper consistently converts compiler RecursionError and MemoryError into the existing source diagnostic. The supplied propagation path blocks before transaction/version writes while preserving compile-only validation and the report contract."
+          },
+          {
+            "id": "QA-PORTABILITY",
+            "status": "CLOSED",
+            "reason": "Controlled injection at the upgrade module's compile lookup removes interpreter-dependent compiler-depth assumptions. Both exceptions pass through public CLI main, with return 1, unchanged managed/user bytes, and exactly one blocked report asserted. Reported exact-commit CI passes Python 3.10/3.11/3.12."
+          }
+        ],
+        "limitations": [
+          {
+            "blocking": false,
+            "reason": "Convention-role judgment covers the supplied literal source delta; manifest and CI verification are externally managed."
+          },
+          {
+            "blocking": false,
+            "reason": "WIN-PHASE4-01 remains open. Windows was skipped, and no real OOM validation is claimed."
+          },
+          {
+            "blocking": false,
+            "reason": "This checkpoint judgment does not grant root/I6 approval. Mandatory review receipts and budget/source checks remain required."
+          }
+        ],
+        "blocking_unexplored": [],
+        "find_status": "EMPTY",
+        "raw_clear_is_empty": true
+      }
+    },
+    {
+      "call": "r2b-lifecycle",
+      "role": "lifecycle",
+      "source_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+      "session_id": "01a1c54e-17d6-7603-bbdc-cf3206f5e73c",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7704,
+      "prompt_sha256": "5dc28f1307543f7ebd36c049c248a7505045dfa5222d9d2b0feb3945cb29d23d",
+      "metadata_sha256": "91f0c41935aa95f45863a2ed670c6ccac449f892e33061749651e2de549647bc",
+      "raw_report_sha256": "b37f41b6990cd8cbdf55cc7cd822c039341bbc87bc3b73af232c3be3334eb537",
+      "report_raw": "{\n  \"subject_commit\": \"2e79f7736df6d724b0438f8e43cee9e37ce38300\",\n  \"verdict\": \"CLEAR\",\n  \"findings\": [],\n  \"unexplored\": [],\n  \"closure\": [\n    {\n      \"id\": \"PEER-01\",\n      \"status\": \"CLOSED\",\n      \"reason\": \"The supplied helper converts compiler RecursionError and MemoryError into the existing source diagnostic. The stated blocker propagation prevents transaction/version writes and returns 1 with a blocked report, preserving the read-only planning lifecycle.\"\n    },\n    {\n      \"id\": \"QA-PORTABILITY\",\n      \"status\": \"CLOSED\",\n      \"reason\": \"Controlled fault injection removes the interpreter-dependent recursion threshold. Each exception exercises public CLI main from a fresh legacy fixture and asserts return 1, unchanged managed/user bytes, and exactly one blocked report. Supplied exact-commit CI reports Python 3.10–3.12 and isolated wheel consumers passing.\"\n    }\n  ],\n  \"limitations\": [\n    {\n      \"blocking\": false,\n      \"reason\": \"This lifecycle judgment covers the supplied literal delta and externally verified source/CI evidence; it is not final root approval or I6 closure.\"\n    },\n    {\n      \"blocking\": false,\n      \"reason\": \"Windows was skipped and WIN-PHASE4-01 remains open. Fault injection establishes exception handling, not real OOM recovery.\"\n    },\n    {\n      \"blocking\": false,\n      \"reason\": \"Remaining mandatory review receipts and budget/source checks still govern final approval; this judgment does not reset rounds, costs, or Done Criteria.\"\n    }\n  ]\n}",
+      "report": {
+        "subject_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+        "verdict": "CLEAR",
+        "findings": [],
+        "unexplored": [],
+        "closure": [
+          {
+            "id": "PEER-01",
+            "status": "CLOSED",
+            "reason": "The supplied helper converts compiler RecursionError and MemoryError into the existing source diagnostic. The stated blocker propagation prevents transaction/version writes and returns 1 with a blocked report, preserving the read-only planning lifecycle."
+          },
+          {
+            "id": "QA-PORTABILITY",
+            "status": "CLOSED",
+            "reason": "Controlled fault injection removes the interpreter-dependent recursion threshold. Each exception exercises public CLI main from a fresh legacy fixture and asserts return 1, unchanged managed/user bytes, and exactly one blocked report. Supplied exact-commit CI reports Python 3.10–3.12 and isolated wheel consumers passing."
+          }
+        ],
+        "limitations": [
+          {
+            "blocking": false,
+            "reason": "This lifecycle judgment covers the supplied literal delta and externally verified source/CI evidence; it is not final root approval or I6 closure."
+          },
+          {
+            "blocking": false,
+            "reason": "Windows was skipped and WIN-PHASE4-01 remains open. Fault injection establishes exception handling, not real OOM recovery."
+          },
+          {
+            "blocking": false,
+            "reason": "Remaining mandatory review receipts and budget/source checks still govern final approval; this judgment does not reset rounds, costs, or Done Criteria."
+          }
+        ],
+        "blocking_unexplored": [],
+        "find_status": "EMPTY",
+        "raw_clear_is_empty": true
+      }
+    },
+    {
+      "call": "r2b-peer-context",
+      "role": "peer",
+      "source_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+      "session_id": "be68c669-5dfb-4f53-805a-e9edacbc54f3",
+      "model": [
+        "claude-opus-5-5"
+      ],
+      "new_io": 4185,
+      "prompt_sha256": "3ba52fa2e8579c23d933addbfa7f0c974c0b84f49b2e3e10ed6608e2e9072521",
+      "metadata_sha256": "db1affb178c02491c949e7361becee7718a94c928519eaf8c9d2eeb5ea55a722",
+      "raw_report_sha256": "ce62f6475486a23e87254eefcbce1280b0f9f725617f8c2e337e6e40c9daf7e9",
+      "report_raw": "```json\n{\"subject_commit\":\"2e79f7736df6d724b0438f8e43cee9e37ce38300\",\"verdict\":\"CLEAR\",\"findings\":[],\"unexplored\":[],\"closure\":[{\"id\":\"PEER-01\",\"status\":\"CLOSED\",\"reason\":\"There are no source changes or new FIND opinions since my report. Nothing new reopens it.\"},{\"id\":\"QA-PORTABILITY\",\"status\":\"CLOSED\",\"reason\":\"Exact-current CI run42659320255 passed all Python 3.10/3.11/3.12 regression and isolated consumers: 13 success, 0 failure. The one skip is the Windows job.\"},{\"id\":\"R6-PEER-01\",\"status\":\"CLOSED\",\"reason\":\"This was speculative hardening, not a current defect. Line 379 shows that bare compile resolves through sage.commands.upgrade globals in the same module as _python_source_error, so the patch target is correct. The no-mock control on the same fixture returns rc0, applied, no blockers. So the test's required rc1, blocked outcome and unchanged bytes can only come from the injected fault. Each injection called the mock and produced unreadable_python_source. A module-move counterfactual leaves the patch unused, normal CLI returns rc0, and the test's rc1 assertion fails. The existing assertions therefore act as an implicit positive control and the test cannot pass vacuously. No concrete alternative blocking cause exists in the current input. Asserting mock-called and the blocker reason remains optional hardening only.\"}],\"limitations\":[{\"blocking\":false,\"note\":\"This is source judgment only, without tool re-execution. I relied on the provided numbered code, fixture captures and CI summary. Windows coverage is a skip, not a pass. This is not root approval or I6 completion.\"}]}\n```",
+      "report": {
+        "subject_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+        "verdict": "CLEAR",
+        "findings": [],
+        "unexplored": [],
+        "closure": [
+          {
+            "id": "PEER-01",
+            "status": "CLOSED",
+            "reason": "There are no source changes or new FIND opinions since my report. Nothing new reopens it."
+          },
+          {
+            "id": "QA-PORTABILITY",
+            "status": "CLOSED",
+            "reason": "Exact-current CI run42659320255 passed all Python 3.10/3.11/3.12 regression and isolated consumers: 13 success, 0 failure. The one skip is the Windows job."
+          },
+          {
+            "id": "R6-PEER-01",
+            "status": "CLOSED",
+            "reason": "This was speculative hardening, not a current defect. Line 379 shows that bare compile resolves through sage.commands.upgrade globals in the same module as _python_source_error, so the patch target is correct. The no-mock control on the same fixture returns rc0, applied, no blockers. So the test's required rc1, blocked outcome and unchanged bytes can only come from the injected fault. Each injection called the mock and produced unreadable_python_source. A module-move counterfactual leaves the patch unused, normal CLI returns rc0, and the test's rc1 assertion fails. The existing assertions therefore act as an implicit positive control and the test cannot pass vacuously. No concrete alternative blocking cause exists in the current input. Asserting mock-called and the blocker reason remains optional hardening only."
+          }
+        ],
+        "limitations": [
+          {
+            "blocking": false,
+            "note": "This is source judgment only, without tool re-execution. I relied on the provided numbered code, fixture captures and CI summary. Windows coverage is a skip, not a pass. This is not root approval or I6 completion."
+          }
+        ],
+        "blocking_unexplored": [],
+        "find_status": "EMPTY",
+        "raw_clear_is_empty": true
+      }
+    },
+    {
+      "call": "r2b-refuter-1",
+      "role": "refuter-1",
+      "source_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+      "session_id": "01a1c556-e6cd-7533-866b-3bdf84ddeca5",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7891,
+      "prompt_sha256": "7030a6123a3d47095833e770571aceebf0a470a9dbcbc8e5824e64cafeec71bc",
+      "metadata_sha256": "8d3f2081c717fed7bbd99288f2bf4ecd1728fa89faf117a878ced2008e649085",
+      "raw_report_sha256": "c81dc98e0131c4834293aa204d98e0f2a06346d82f329d5ae0b26080e0c7ed67",
+      "report_raw": "{\n  \"subject_commit\": \"2e79f7736df6d724b0438f8e43cee9e37ce38300\",\n  \"verdict\": \"CONSISTENT\",\n  \"votes\": [\n    {\n      \"finding_id\": \"R6-PEER-01\",\n      \"refuted\": true,\n      \"drop_reason\": \"false_positive\",\n      \"reason\": \"The supplied definition resolves compile in sage.commands.upgrade globals. Same-fixture captures establish an applied, return-0 positive control and confirm both injected exceptions call the mock, produce unreadable_python_source, and block without changing protected bytes. Moving the helper so the patch becomes unused would restore the successful path and fail the test's return-1 assertion. Explicit mock/reason assertions could strengthen future diagnostics, but their absence establishes no concrete current defect.\"\n    }\n  ],\n  \"closure\": [\n    {\n      \"id\": \"PEER-01\",\n      \"closed\": true,\n      \"reason\": \"The exception tuple catches both originally uncaught compiler resource errors. Public-entry injection captures demonstrate blocked reporting, no traceback, and unchanged protected bytes for each exception. This supports closure of the reported handling defect; it does not establish behavior under actual system memory exhaustion.\"\n    },\n    {\n      \"id\": \"QA-PORTABILITY\",\n      \"closed\": true,\n      \"reason\": \"Injection removes dependence on interpreter-specific compiler depth thresholds. The positive control establishes fixture viability, and reported exact-source CI covers Python 3.10/3.11/3.12 and isolated wheel consumers. All six supplied role receipts report no current findings and confirm both closures.\"\n    }\n  ],\n  \"scope_notes_blocking\": false,\n  \"process_gaps\": [],\n  \"scope_assessment\": \"Correctness limitations are nonblocking packet-review boundaries, not missing delta inputs: host-verified manifests and CI are supplied; model-side tools, real OOM, and a Windows rerun are not required. WIN-PHASE4-01 remains open. This refuter-1 receipt does not grant root/I6 approval, which still requires both refuter receipts and budget/source/acceptance checks.\"\n}",
+      "report": {
+        "subject_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+        "verdict": "CONSISTENT",
+        "votes": [
+          {
+            "finding_id": "R6-PEER-01",
+            "refuted": true,
+            "drop_reason": "false_positive",
+            "reason": "The supplied definition resolves compile in sage.commands.upgrade globals. Same-fixture captures establish an applied, return-0 positive control and confirm both injected exceptions call the mock, produce unreadable_python_source, and block without changing protected bytes. Moving the helper so the patch becomes unused would restore the successful path and fail the test's return-1 assertion. Explicit mock/reason assertions could strengthen future diagnostics, but their absence establishes no concrete current defect."
+          }
+        ],
+        "closure": [
+          {
+            "id": "PEER-01",
+            "closed": true,
+            "reason": "The exception tuple catches both originally uncaught compiler resource errors. Public-entry injection captures demonstrate blocked reporting, no traceback, and unchanged protected bytes for each exception. This supports closure of the reported handling defect; it does not establish behavior under actual system memory exhaustion."
+          },
+          {
+            "id": "QA-PORTABILITY",
+            "closed": true,
+            "reason": "Injection removes dependence on interpreter-specific compiler depth thresholds. The positive control establishes fixture viability, and reported exact-source CI covers Python 3.10/3.11/3.12 and isolated wheel consumers. All six supplied role receipts report no current findings and confirm both closures."
+          }
+        ],
+        "scope_notes_blocking": false,
+        "process_gaps": [],
+        "scope_assessment": "Correctness limitations are nonblocking packet-review boundaries, not missing delta inputs: host-verified manifests and CI are supplied; model-side tools, real OOM, and a Windows rerun are not required. WIN-PHASE4-01 remains open. This refuter-1 receipt does not grant root/I6 approval, which still requires both refuter receipts and budget/source/acceptance checks."
+      }
+    },
+    {
+      "call": "r2b-refuter-2",
+      "role": "refuter-2",
+      "source_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+      "session_id": "01a1c557-538b-7f12-991e-3941cd6de3a9",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7617,
+      "prompt_sha256": "c7cefed976f8663d540ecadf996c7f0873089ffddcdd8ffa660ec125cff30e25",
+      "metadata_sha256": "2bf857f4bcf4068aff7cf115e977cf691e669abc73aaad03952889e8cb120dfd",
+      "raw_report_sha256": "7fabe03ef02fbafae03db844488f485354d7f899a2fc27d147e220b71974c74a",
+      "report_raw": "{\n  \"subject_commit\": \"2e79f7736df6d724b0438f8e43cee9e37ce38300\",\n  \"verdict\": \"CONSISTENT\",\n  \"votes\": [\n    {\n      \"finding_id\": \"R6-PEER-01\",\n      \"refuted\": true,\n      \"drop_reason\": \"false_positive\",\n      \"reason\": \"The supplied definition places compile lookup in sage.commands.upgrade globals. The same-fixture positive control returns 0/applied; both injected cases call the mock and return 1/blocked with unreadable_python_source and unchanged project bytes. If a module move made the patch unused, normal execution would return 0 and fail the test's required return 1. Additional assertions would improve diagnostics, but their absence establishes no concrete current defect.\"\n    }\n  ],\n  \"closure\": [\n    {\n      \"id\": \"PEER-01\",\n      \"closed\": true,\n      \"reason\": \"The exception handler now catches RecursionError and MemoryError around source reading and compilation. Supplied public-entry-point captures demonstrate both exceptions produce a blocked report without traceback or project mutation. Real OOM behavior is outside this closure claim.\"\n    },\n    {\n      \"id\": \"QA-PORTABILITY\",\n      \"closed\": true,\n      \"reason\": \"Deterministic exception injection removes the interpreter-dependent compiler-depth assumption. Both exception paths are exercised, with reported full regression and isolated wheel-consumer success across Python 3.10–3.12.\"\n    }\n  ],\n  \"scope_notes_blocking\": false,\n  \"process_gaps\": []\n}",
+      "report": {
+        "subject_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+        "verdict": "CONSISTENT",
+        "votes": [
+          {
+            "finding_id": "R6-PEER-01",
+            "refuted": true,
+            "drop_reason": "false_positive",
+            "reason": "The supplied definition places compile lookup in sage.commands.upgrade globals. The same-fixture positive control returns 0/applied; both injected cases call the mock and return 1/blocked with unreadable_python_source and unchanged project bytes. If a module move made the patch unused, normal execution would return 0 and fail the test's required return 1. Additional assertions would improve diagnostics, but their absence establishes no concrete current defect."
+          }
+        ],
+        "closure": [
+          {
+            "id": "PEER-01",
+            "closed": true,
+            "reason": "The exception handler now catches RecursionError and MemoryError around source reading and compilation. Supplied public-entry-point captures demonstrate both exceptions produce a blocked report without traceback or project mutation. Real OOM behavior is outside this closure claim."
+          },
+          {
+            "id": "QA-PORTABILITY",
+            "closed": true,
+            "reason": "Deterministic exception injection removes the interpreter-dependent compiler-depth assumption. Both exception paths are exercised, with reported full regression and isolated wheel-consumer success across Python 3.10–3.12."
+          }
+        ],
+        "scope_notes_blocking": false,
+        "process_gaps": []
+      }
+    }
+  ],
+  "withdrawn_current_peer_claim": {
+    "call": "r2b-peer",
+    "role": "peer",
+    "source_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+    "session_id": "a744b020-8091-4d33-9eba-97bc383e2cd7",
+    "model": [
+      "claude-opus-5-5"
+    ],
+    "new_io": 8831,
+    "prompt_sha256": "8e84ccfb3938c0ace52afdac7753d0ab97353ee7be7b4beeb452036ed9925cc1",
+    "metadata_sha256": "83593b615bae4a8908abbf8350f66a1607a80da9e447e7fc802956ad472e3582",
+    "raw_report_sha256": "ba6642e7bc8986ba615222cbab8670ea2a69503d32ba8abc0cb7a16982ec4a75",
+    "report_raw": "```json\n{\"subject_commit\":\"2e79f7736df6d724b0438f8e43cee9e37ce38300\",\"verdict\":\"CLEAR\",\"findings\":[{\"id\":\"R6-PEER-01\",\"severity\":\"P3\",\"file\":\"scripts/sage_harness/hooks/tests/test_layout_migration.py\",\"line\":null,\"claim\":\"Non-blocking. The fault-injection test has no positive control, so it could pass vacuously.\",\"evidence\":\"The patch uses create=True on sage.commands.upgrade.compile. If _python_source_error is defined in a shared helper rather than in upgrade, or if 'value = 1' is blocked for some other reason, the test still passes with return 1, a single blocked report and unchanged bytes. Hardening: assert the mock was called, and assert that the report's blocker reason is unreadable_python_source.\"}],\"unexplored\":[\"The module that defines _python_source_error. The patch only takes effect if bare compile resolves through sage.commands.upgrade globals.\",\"A no-mock control showing that a valid 'value = 1' strategy plans and applies without blocking.\",\"Whether the hook core's call path catches the same exception tuple.\"],\"closure\":[{\"id\":\"PEER-01\",\"status\":\"CLOSED\",\"reason\":\"The compile-only helper catches RecursionError and MemoryError, along with OSError, Unicode, Syntax, Lookup and Value errors. A nonempty reason flows through _migration_mode, then _plan as a blocker, then run as blocked/1, all before any writes. No authored code executes. CI on 3.10, 3.11 and 3.12 is green.\"},{\"id\":\"QA-PORTABILITY\",\"status\":\"CLOSED\",\"reason\":\"R5-PEER-01 is closed. The interpreter-limit fixture was removed, and injection through public main is version-independent. _bytes excludes .sage/upgrades, and the fresh install-only fixture makes len(reports)==1 unambiguous. The exact-commit run 42659320255 passed on 3.10, 3.11 and 3.12. R6-PEER-01 remains as advisory hardening.\"}]}\n```",
+    "report": {
+      "subject_commit": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+      "verdict": "CLEAR",
+      "findings": [
+        {
+          "id": "R6-PEER-01",
+          "severity": "P3",
+          "file": "scripts/sage_harness/hooks/tests/test_layout_migration.py",
+          "line": null,
+          "claim": "Non-blocking. The fault-injection test has no positive control, so it could pass vacuously.",
+          "evidence": "The patch uses create=True on sage.commands.upgrade.compile. If _python_source_error is defined in a shared helper rather than in upgrade, or if 'value = 1' is blocked for some other reason, the test still passes with return 1, a single blocked report and unchanged bytes. Hardening: assert the mock was called, and assert that the report's blocker reason is unreadable_python_source."
+        }
+      ],
+      "unexplored": [
+        "The module that defines _python_source_error. The patch only takes effect if bare compile resolves through sage.commands.upgrade globals.",
+        "A no-mock control showing that a valid 'value = 1' strategy plans and applies without blocking.",
+        "Whether the hook core's call path catches the same exception tuple."
+      ],
+      "closure": [
+        {
+          "id": "PEER-01",
+          "status": "CLOSED",
+          "reason": "The compile-only helper catches RecursionError and MemoryError, along with OSError, Unicode, Syntax, Lookup and Value errors. A nonempty reason flows through _migration_mode, then _plan as a blocker, then run as blocked/1, all before any writes. No authored code executes. CI on 3.10, 3.11 and 3.12 is green."
+        },
+        {
+          "id": "QA-PORTABILITY",
+          "status": "CLOSED",
+          "reason": "R5-PEER-01 is closed. The interpreter-limit fixture was removed, and injection through public main is version-independent. _bytes excludes .sage/upgrades, and the fresh install-only fixture makes len(reports)==1 unambiguous. The exact-commit run 42659320255 passed on 3.10, 3.11 and 3.12. R6-PEER-01 remains as advisory hardening."
+        }
+      ],
+      "blocking_unexplored": [
+        "The module that defines _python_source_error. The patch only takes effect if bare compile resolves through sage.commands.upgrade globals.",
+        "A no-mock control showing that a valid 'value = 1' strategy plans and applies without blocking.",
+        "Whether the hook core's call path catches the same exception tuple."
+      ],
+      "find_status": "HAS_FINDINGS",
+      "raw_clear_is_empty": false
+    }
+  },
+  "partial_candidate_portability_claim": {
+    "call": "r2-peer",
+    "role": "peer",
+    "source_commit": "6f6c99283a61e8d51b7cea141bd0c324b1bf63ae",
+    "session_id": "3f1a763b-2ca9-46b6-b662-6d006562a0dc",
+    "model": [
+      "claude-opus-5-5"
+    ],
+    "new_io": 6432,
+    "prompt_sha256": "543656afe47e6fa3dbef37c880817f993004af2200a5eb8039cf9309ff2bb29e",
+    "metadata_sha256": "e0f305ef9e4eb234d8f6fa31d53bd7a7ae946689162ad499e9d43ac04a764bf0",
+    "raw_report_sha256": "c59cb8850bc676a1778768ea9434d5e03a879ef8ed10b543231a8121c5d1106c",
+    "report_raw": "```json\n{\"subject_commit\":\"6f6c99283a61e8d51b7cea141bd0c324b1bf63ae\",\"verdict\":\"CLEAR\",\"findings\":[{\"id\":\"R5-PEER-01\",\"severity\":\"P3\",\"file\":\"scripts/sage_harness/hooks/tests/test_layout_migration.py\",\"line\":661,\"claim\":\"The compiler_recursion fixture depends on interpreter limits. If a CPython version compiles 3000 nested unary '+' without error, the CLI subtest fails with exit 0 instead of exercising the catch. Product code is unaffected because the parser and compiler raise SyntaxError, MemoryError or RecursionError depending on version, and all three are now caught.\",\"evidence\":\"Pegen MAXSTACK, the C recursion limit and the symtable/AST limits differ across 3.10, 3.12 and 3.13+ (newer versions use stack-based checks). Only 3.11 was verified green; 3.10/3.12 CI is pending. The helper mock test covers both exception classes regardless of version.\"}],\"unexplored\":[\"Definition of _bytes(dest), and whether it excludes .sage/upgrades. A blocked report is written while byte equality is still asserted, which needs reconciling.\",\"Lines 659-666: whether an earlier plan or dry-run report exists. next(glob('*.json')) is order-arbitrary, so it might check a different run's report than the --apply run's.\",\"Results of the 3.10/3.12 CI run.\"],\"closure\":[{\"id\":\"PEER-01\",\"status\":\"CLOSED\",\"reason\":\"RecursionError and MemoryError are added to the same tuple, so they return unreadable_python_source. The one-hop path is unchanged: _strategy_error, then extension_errors, then a blocker, then outcome=blocked with exit 1 before any transactions. The project-hook path shares the helper. Module-global compile patching shadows the builtin, so the mock test is valid. Closure covers source only; the CI portability caveat is noted above.\"}]}\n```",
+    "report": {
+      "subject_commit": "6f6c99283a61e8d51b7cea141bd0c324b1bf63ae",
+      "verdict": "CLEAR",
+      "findings": [
+        {
+          "id": "R5-PEER-01",
+          "severity": "P3",
+          "file": "scripts/sage_harness/hooks/tests/test_layout_migration.py",
+          "line": 661,
+          "claim": "The compiler_recursion fixture depends on interpreter limits. If a CPython version compiles 3000 nested unary '+' without error, the CLI subtest fails with exit 0 instead of exercising the catch. Product code is unaffected because the parser and compiler raise SyntaxError, MemoryError or RecursionError depending on version, and all three are now caught.",
+          "evidence": "Pegen MAXSTACK, the C recursion limit and the symtable/AST limits differ across 3.10, 3.12 and 3.13+ (newer versions use stack-based checks). Only 3.11 was verified green; 3.10/3.12 CI is pending. The helper mock test covers both exception classes regardless of version."
+        }
+      ],
+      "unexplored": [
+        "Definition of _bytes(dest), and whether it excludes .sage/upgrades. A blocked report is written while byte equality is still asserted, which needs reconciling.",
+        "Lines 659-666: whether an earlier plan or dry-run report exists. next(glob('*.json')) is order-arbitrary, so it might check a different run's report than the --apply run's.",
+        "Results of the 3.10/3.12 CI run."
+      ],
+      "closure": [
+        {
+          "id": "PEER-01",
+          "status": "CLOSED",
+          "reason": "RecursionError and MemoryError are added to the same tuple, so they return unreadable_python_source. The one-hop path is unchanged: _strategy_error, then extension_errors, then a blocker, then outcome=blocked with exit 1 before any transactions. The project-hook path shares the helper. Module-global compile patching shadows the builtin, so the mock test is valid. Closure covers source only; the CI portability caveat is noted above."
+        }
+      ],
+      "blocking_unexplored": [
+        "Definition of _bytes(dest), and whether it excludes .sage/upgrades. A blocked report is written while byte equality is still asserted, which needs reconciling.",
+        "Lines 659-666: whether an earlier plan or dry-run report exists. next(glob('*.json')) is order-arbitrary, so it might check a different run's report than the --apply run's.",
+        "Results of the 3.10/3.12 CI run."
+      ],
+      "find_status": "HAS_FINDINGS",
+      "raw_clear_is_empty": false
+    }
+  },
+  "all_call_usage_receipts": [
+    {
+      "call": "concurrency",
+      "role": "concurrency",
+      "session_id": "01a1c120-68b5-7042-944b-0e84fc858efe",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 23076,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "c67de8f75aecdcb4f7120bde89eaa84ab94a527b0bb3db9b02449aa830aff665",
+      "error": null
+    },
+    {
+      "call": "concurrency-discarded-isolation1",
+      "role": "concurrency",
+      "session_id": "01a1c11d-4529-7023-a514-4ebd1ed334c8",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 26891,
+      "cache_read": 4864,
+      "valid_invocation": false,
+      "current_active": false,
+      "metadata_sha256": "c1afb3697815c8c4dea37996b60893d30f5af90361373c990290d88d5dbe12cd",
+      "error": null
+    },
+    {
+      "call": "convention",
+      "role": "convention",
+      "session_id": "01a1c11e-007c-74c3-97f2-5d0c445a2a57",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 23668,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "658a5cad4d4e26feba637ea9812d86ca4ff1cf08df4ac2390e2867395170260b",
+      "error": null
+    },
+    {
+      "call": "correctness",
+      "role": "correctness",
+      "session_id": "01a1c118-d65d-7ab3-af9b-c09bc6c9563e",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 19186,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "0e2b0e696749cd7aa5e1cf710a30dc44b7309727e9ab83a030a77fa823dce3df",
+      "error": null
+    },
+    {
+      "call": "correctness-coverage",
+      "role": "correctness",
+      "session_id": "01a1c118-d65d-7ab3-af9b-c09bc6c9563e",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 4947,
+      "cache_read": 27904,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "ddeec6b020d175d0cf1cb60897aedf58bd30477ae5163f843310428dacd4f30d",
+      "error": null
+    },
+    {
+      "call": "lifecycle",
+      "role": "lifecycle",
+      "session_id": "01a1c11f-2326-7263-bba2-c4a7f3f57fd1",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 23514,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "dfea6d345b6a1b5698f41b0506633db296dd4cc28da434bc8f9bc1f32f610c29",
+      "error": null
+    },
+    {
+      "call": "lifecycle-coverage",
+      "role": "lifecycle",
+      "session_id": "01a1c11f-2326-7263-bba2-c4a7f3f57fd1",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 1098,
+      "cache_read": 32256,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "4ec64db45968dde53356281ab3fd6d828b2363c888a92fb96d6a0bc1f7f90761",
+      "error": null
+    },
+    {
+      "call": "peer",
+      "role": "peer",
+      "session_id": "dff304ff-8751-46ac-86bf-8becada68bc9",
+      "model": [
+        "claude-opus-5-5"
+      ],
+      "new_io": 79006,
+      "cache_read": 0,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "51985059899c05d646b8731e2df01af8ad4cc2009ae0d71e8b9376448ba52efd",
+      "error": null
+    },
+    {
+      "call": "peer-transport-preflight1",
+      "role": "peer",
+      "session_id": "76fe46b8-6456-48fa-a79c-3f4461a70288",
+      "model": [],
+      "new_io": 0,
+      "cache_read": 0,
+      "valid_invocation": false,
+      "current_active": false,
+      "metadata_sha256": "923426edc1630e0bce09a84f1884536d97596c3425684b617f2d717ffa4e30d6",
+      "error": "AssertionError: {'attempts': 1, 'forwarded': 1, 'denied': 0, 'reservation': 231407, 'usage': {}, 'usage_complete': False, 'error': 'URLError', 'credentials_logged': False}"
+    },
+    {
+      "call": "r2-concurrency",
+      "role": "concurrency",
+      "session_id": "01a1c130-d2bf-7a81-ac2f-71ef9d8503e5",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7684,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "b1aa79868fecf0695a1f3aaceaa7d4d95927ff0173b3b72eafdbd0c879a5a321",
+      "error": null
+    },
+    {
+      "call": "r2-convention",
+      "role": "convention",
+      "session_id": "01a1c131-027a-7553-b150-a71b2f0e0b3d",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7747,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "72ab17c802a314dc4dc8bf9eb3cc7066cda7a417aec3da0126727445025af85a",
+      "error": null
+    },
+    {
+      "call": "r2-correctness",
+      "role": "correctness",
+      "session_id": "01a1c130-5b6b-7e61-af10-5981447196c2",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7161,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "2bcb388993952a811a4eb15b593a965cb1a48542f251aa33582c0aff4cae2880",
+      "error": null
+    },
+    {
+      "call": "r2-peer",
+      "role": "peer",
+      "session_id": "3f1a763b-2ca9-46b6-b662-6d006562a0dc",
+      "model": [
+        "claude-opus-5-5"
+      ],
+      "new_io": 6432,
+      "cache_read": 1408,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "e0f305ef9e4eb234d8f6fa31d53bd7a7ae946689162ad499e9d43ac04a764bf0",
+      "error": null
+    },
+    {
+      "call": "r2-security",
+      "role": "security",
+      "session_id": "01a1c130-95fc-7be1-a2f1-18896b4be14d",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7162,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "78088dca35d95d0f08eb68dc681b4310d058372c105a0834ae260c71a9e212b5",
+      "error": null
+    },
+    {
+      "call": "r2b-concurrency",
+      "role": "concurrency",
+      "session_id": "01a1c54d-6c68-7140-9716-1439a9012815",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7724,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": true,
+      "metadata_sha256": "94bf8255237afdbc05dc22b095b3052d758e49add33cfd4b586beead58fdce0b",
+      "error": null
+    },
+    {
+      "call": "r2b-convention",
+      "role": "convention",
+      "session_id": "01a1c54d-c32b-7da1-aa24-6e0216ec0168",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7737,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": true,
+      "metadata_sha256": "afb522c1c5b9e42a980cd8e5c202eed1771f5bf242a723edd827560df2f3517f",
+      "error": null
+    },
+    {
+      "call": "r2b-correctness",
+      "role": "correctness",
+      "session_id": "01a1c54a-6bec-77b1-9245-f84344d39e52",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7632,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": true,
+      "metadata_sha256": "04d2ab6b37efefa609d3af6976b627f6c4a0a99f1b030954faac245043151e76",
+      "error": null
+    },
+    {
+      "call": "r2b-lifecycle",
+      "role": "lifecycle",
+      "session_id": "01a1c54e-17d6-7603-bbdc-cf3206f5e73c",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7704,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": true,
+      "metadata_sha256": "91f0c41935aa95f45863a2ed670c6ccac449f892e33061749651e2de549647bc",
+      "error": null
+    },
+    {
+      "call": "r2b-peer",
+      "role": "peer",
+      "session_id": "a744b020-8091-4d33-9eba-97bc383e2cd7",
+      "model": [
+        "claude-opus-5-5"
+      ],
+      "new_io": 8831,
+      "cache_read": 0,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "83593b615bae4a8908abbf8350f66a1607a80da9e447e7fc802956ad472e3582",
+      "error": null
+    },
+    {
+      "call": "r2b-peer-context",
+      "role": "peer",
+      "session_id": "be68c669-5dfb-4f53-805a-e9edacbc54f3",
+      "model": [
+        "claude-opus-5-5"
+      ],
+      "new_io": 4185,
+      "cache_read": 1527,
+      "valid_invocation": true,
+      "current_active": true,
+      "metadata_sha256": "db1affb178c02491c949e7361becee7718a94c928519eaf8c9d2eeb5ea55a722",
+      "error": null
+    },
+    {
+      "call": "r2b-refuter-1",
+      "role": "refuter-1",
+      "session_id": "01a1c556-e6cd-7533-866b-3bdf84ddeca5",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7891,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": true,
+      "metadata_sha256": "8d3f2081c717fed7bbd99288f2bf4ecd1728fa89faf117a878ced2008e649085",
+      "error": null
+    },
+    {
+      "call": "r2b-refuter-2",
+      "role": "refuter-2",
+      "session_id": "01a1c557-538b-7f12-991e-3941cd6de3a9",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7617,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": true,
+      "metadata_sha256": "2bf857f4bcf4068aff7cf115e977cf691e669abc73aaad03952889e8cb120dfd",
+      "error": null
+    },
+    {
+      "call": "r2b-security",
+      "role": "security",
+      "session_id": "01a1c54d-309a-7300-86aa-9b79dfa148f5",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 7753,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": true,
+      "metadata_sha256": "500b1884e1a156ab855c86abb0f0a6d2bf1ab60c8a6ded60ba65017df21c945a",
+      "error": null
+    },
+    {
+      "call": "refuter-1",
+      "role": "refuter-1",
+      "session_id": "01a1c126-2b5e-7d53-b318-58bf8793d20f",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 17015,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "fa198f7ad5d80d08e2b8a658dbf28102e9b6c12d40c938751e80f2133f7281ca",
+      "error": null
+    },
+    {
+      "call": "refuter-2",
+      "role": "refuter-2",
+      "session_id": "01a1c126-aa08-7480-858f-0212d5d3c2c7",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 17167,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "cc7ddccd46b721595e5c04ae4288706cceb5d47f8262341b2e023a3d723d6b83",
+      "error": null
+    },
+    {
+      "call": "security",
+      "role": "security",
+      "session_id": "01a1c119-c625-7941-9456-8707cbdcab31",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 20590,
+      "cache_read": 8960,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "d0ff25d430e8a406a7ff824928ded7dae00a714ffe11a50c72402d385f88e90f",
+      "error": null
+    },
+    {
+      "call": "security-coverage",
+      "role": "security",
+      "session_id": "01a1c119-c625-7941-9456-8707cbdcab31",
+      "model": [
+        "gpt-6.1-sol"
+      ],
+      "new_io": 5894,
+      "cache_read": 29312,
+      "valid_invocation": true,
+      "current_active": false,
+      "metadata_sha256": "f863ab7f3492e33d60008fb30927c183f467dd01e4420e7596047ff25c4df493",
+      "error": null
+    }
+  ],
+  "current_ci": {
+    "run_id": 42659320255,
+    "url": "https://github.com/SeJonJ/SAGE/actions/runs/42659320255",
+    "head_sha": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+    "conclusion": "success",
+    "jobs": {
+      "success": 13,
+      "skipped": 1,
+      "failure": 0
+    }
+  },
+  "native_control": {
+    "module": "sage.commands.upgrade",
+    "source_file": "sage/commands/upgrade.py",
+    "results": [
+      {
+        "injected": null,
+        "rc": 0,
+        "mock_called": null,
+        "unchanged": false,
+        "reports": 1,
+        "outcome": "applied",
+        "migration_mode": "deferred",
+        "blockers": [],
+        "traceback": false
+      },
+      {
+        "injected": "RecursionError",
+        "rc": 1,
+        "mock_called": true,
+        "unchanged": true,
+        "reports": 1,
+        "outcome": "blocked",
+        "migration_mode": "blocked",
+        "blockers": [
+          "자동 이행 대상이 아닌 review strategy가 있습니다: project_strategy\n  정상 구 레이아웃은 이행을 보류하고 버전을 갱신합니다. 코드 누락·손상·경로 충돌은 전체 갱신을 차단합니다.\n  사용자 코드를 신 경로로 직접 옮기지 마세요.",
+          "사용자 확장을 확인할 수 없어 업그레이드를 차단합니다: project_strategy (unreadable_python_source). 기존 경로의 코드·spec과 CORE ID 충돌을 확인하세요."
+        ],
+        "traceback": false
+      },
+      {
+        "injected": "MemoryError",
+        "rc": 1,
+        "mock_called": true,
+        "unchanged": true,
+        "reports": 1,
+        "outcome": "blocked",
+        "migration_mode": "blocked",
+        "blockers": [
+          "자동 이행 대상이 아닌 review strategy가 있습니다: project_strategy\n  정상 구 레이아웃은 이행을 보류하고 버전을 갱신합니다. 코드 누락·손상·경로 충돌은 전체 갱신을 차단합니다.\n  사용자 코드를 신 경로로 직접 옮기지 마세요.",
+          "사용자 확장을 확인할 수 없어 업그레이드를 차단합니다: project_strategy (unreadable_python_source). 기존 경로의 코드·spec과 CORE ID 충돌을 확인하세요."
+        ],
+        "traceback": false
+      }
+    ]
+  },
+  "historical_source_disposition": {
+    "source": "6f6c99283a61e8d51b7cea141bd0c324b1bf63ae",
+    "current_source": "2e79f7736df6d724b0438f8e43cee9e37ce38300",
+    "source_guard_intentionally_invalidated": true,
+    "original_reports_valid_at_invocation": true,
+    "eligible_for_current_candidate_approval": false,
+    "round_completed": false,
+    "all_usage_retained": true,
+    "reason": "QA confirmed peer R5-PEER-01 before final FIND/refuters; repair test fixture and collect all current-candidate role/refuter evidence"
+  }
+}

@@ -4,7 +4,7 @@ Cycle-Stem: overlay-issue36-integration
 Document-Language: ko
 Risk Level: L3
 Done-Criteria-Revision: 1
-Status: LOCAL_VERIFICATION_EXECUTED — Windows baseline failures / candidate CI NOT_TESTED / independent review BLOCKED
+Status: VERIFIED_SCOPE_AND_REVIEW_COMPLETE — Windows baseline failures remain
 
 | ID | 결과 | 근거 |
 |---|---|---|
@@ -13,11 +13,11 @@ Status: LOCAL_VERIFICATION_EXECUTED — Windows baseline failures / candidate CI
 | I3 | PASS | 통합3회귀와 실제v1.0설치→최종wheel3조합, 양hosthook_entry·2/4catalog·legacy유지·reapply |
 | I4 | PASS | 기존89upgrade/53layout, 새dual-local/globalprimary+secondarylocal후반실패 bytes/mode복원 |
 | I5 | PASS | 전체4149Ran(13skip), 실패오류0/exit0; wheel217동일, sdist검사 |
-| I6 | BLOCKED | 재개 R1 완료; 최소 수정·테스트 이식성 수리 후 최종 후보 독립 검토 미완료 |
+| I6 | PASS | 현재2e79f77의 Codex5관점·Claude 및 최종 반박2명 완료; 필수 finding0, 05와 원문 JSON 참조 |
 
 독립QA 원문 qa-independent.json은 전체 runner 종료 전 I5를PARTIAL로 보존한다. 위I5는 이후full-summary.json의 실제exit0/ALL PASS와 loghash를 따른다. local 결과를 원격CI/다른OSmatrix/native모델재실행으로 승격하지 않는다. 제품 결함은 이번 기능·QA 단계에서 확인되지 않았다. release/mainmerge는 아직 미실행이다.
 
-## 독립 QA 최종 확인
+## 2026-11-07 독립 QA 확인 기록
 
 qa-independent.json LOCAL_QA_COMPLETE가 whole4149/13skip/0fail·exit0 및sdist/217source를직접검산했다. I6은유효한Claude결과·반박2명미완료로NOT_TESTED를유지하며05예산초과BLOCKED다. 기능PASS는독립승인/출시PASS가아니다.
 
@@ -41,3 +41,8 @@ qa-independent.json LOCAL_QA_COMPLETE가 whole4149/13skip/0fail·exit0 및sdist/
 ## 2026-11-10 변경분 QA 보완
 
 컴파일 resource 예외 진단 수정은 layout54/upgrade92 및 fresh isolated wheel consumer PASS. 당시 wheel SHA256은41bae5bd10c0e6386b7beaa01f48d02d5c3f163437b949e04de4563b7966eba7이다. 이어 CI42657175958은3.10/3.11 PASS,3.12 새 recursion fixture1건 FAIL,Windows self-hosted skipped다. 이 실패는 유효한 코드를 반드시 오류로 가정한 테스트 때문으로 확인했다. 제품 수정은 유지하고 public CLI main에 RecursionError/MemoryError를 주입하여 파일 불변과 단일 blocked 보고서를 확인하도록 테스트만 바꿨다. 로컬 layout54 재검증 PASS. 변경된 테스트를 포함한 정확한 최종 commit의 CI는 후속 결과를 따른다. 미완료 I6과 기존 Windows P1을 PASS로 올리지 않는다.
+
+
+## 2026-11-10 최종 수용 상태
+
+I1~I6 PASS. 위 초기 표의 I1~I5는 당시 통합·설치·복구 증거이며 파일별 checkpoint 연결을 유지한다. 후속 예외 처리 수리는 layout54/upgrade92, 이식성 테스트 수정은 layout54, 문서18, 정상입력/두 예외의 실제 public main 대조로 확인했다.2e79f77 CI42659320255는13success/1Windows skipped/0failure이고 Python3.10/3.11/3.12 전체 회귀·격리 설치 소비자에 통과했다. 최종 반박2명은 PEER-01과 QA-PORTABILITY 종료, R6 false_positive, 범위 제한 비차단·절차 공백 없음으로 각각 판단했다. 새 리뷰 원장365,312/400,000. 기존 Windows P1과 전체baseline 실패는 이 수용 범위 밖 미해결이며 Windows PASS로 바꾸지 않는다. 최종 근거는 같은stem05와 review.json이다. 후속 문서 head CI는 PR에서 별도 확인한다.

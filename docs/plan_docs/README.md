@@ -13,7 +13,7 @@
 |---|---|---|
 | [Overlay 단독 05](05/overlay-context-delivery.md)·[06](06/overlay-context-delivery.md) | 제품 hash `93d541024b737af26048290415aa8b513855330ef411aa9e591d2ded5efbb611` | 당시 후보의 독립 승인·완료 기록 |
 | [통합 03](03/overlay-issue36-integration.md)·[04](04/overlay-issue36-integration.md) | #36을 포함한 제품 hash `205ba39f9b2f587573fb44c31f313a2f3c7975a2dabc1e2d6b9941785282ae70` | 구현·로컬 검증 수행 |
-| [통합 05](05/overlay-issue36-integration.md) | 통합 후보와 최소 컴파일 진단 수정 | `BLOCKED`: 재개 R1·반박 완료, 테스트 수정 후 최종 변경분 검토·예산 답변 대기 |
+| [통합 05](05/overlay-issue36-integration.md) | 통합 후보와 최소 컴파일 진단 수정 | `APPROVED`: 최종 Codex5관점·Claude·반박2명 완료, I1~I6 충족 |
 | [플랫폼 검증 요약](04/platform-validation.md) | 2026-11-07 Windows·Mac 실행 | 원본 실패, 수정 후 재검증, 건너뜀을 분리 |
 
 통합 후보의 06 문서는 작성하지 않았습니다. 2026-11-09 후속 작업에서는 사용자 설명서만 추가
@@ -30,4 +30,4 @@
 
 2026-11-10 재개 리뷰는 이전 비용을 보존한 새 원장으로 수행했습니다. 컴파일 예외 진단1건을
 최소 수정했고, Python3.12에서 확인한 새 테스트의 인터프리터 가정도 수정했습니다.
-제품 기능 범위는 확대하지 않았으며 최종 독립 승인과 수정 후 정확한 commit CI는 별도 확인합니다.
+제품 기능 범위는 확대하지 않았으며 2e79f77의 독립 승인을 완료했습니다. 새 리뷰 사용량은365,312/400,000토큰입니다. 후속 문서 head CI는 PR에서 확인합니다. [검토 원문과 비용](05/overlay-issue36-integration.review.json)을 함께 보존합니다.

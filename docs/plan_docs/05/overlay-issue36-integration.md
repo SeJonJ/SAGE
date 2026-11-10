@@ -1,16 +1,60 @@
-# 통합 독립 검토 — 변경분 최종 검토 대기
+# 통합 독립 검토 — 변경분 검토 완료
 
 Cycle-Stem: overlay-issue36-integration
 Document-Language: ko
 Risk Level: L3
 Done-Criteria-Revision: 1
-Status: BLOCKED
+Status: APPROVED
 Review-Mode: external clean-context cross-model
-Loop-Run: external-20261107-issue36-integration
-Final Status: BLOCKED
-Review-Close-Reason: BUDGET_TOK / INVALID_PEER_RESULT
-Product-Hash: sha256:205ba39f9b2f587573fb44c31f313a2f3c7975a2dabc1e2d6b9941785282ae70
-Review-Patch-SHA256: f833c1621ceaec4532550ee6f233a2e297a8e290c426c7bbf80c85f04e99d0c1
+Loop-Run: external-20261110-overlay-delta-resume
+Final Status: APPROVED
+Review-Close-Reason: CONVERGED
+Review-Rounds: 5 (configured max: 5)
+Current-Run-Completed-Rounds: 2
+Reviewed-Commit: 2e79f7736df6d724b0438f8e43cee9e37ce38300
+Product-Hash: sha256:e5f5b25a2a63daa09c0723a0a941ec3d0018f4e9503d898e3afe3deb05f8db7f
+Review-Patch-SHA256: ab6aa360643a394aad1a56dc3c7056521fe52af4d9a69c3cf8af782c8b8a80c4
+Phase00-Hash: sha256:37a471995680a0ed224220ac45e06e6fb7ffd0962f755f5f92e68e745d8f89e7
+Evidence-SHA256: c8a1c99a660ddcef6469aec4c109e3a0bcd1b134fa2db86449aed6131568ebe1
+
+## 최종 판정과 범위
+
+독립5개 Codex 관점과 Claude의 변경분 검토, 최종 전체라운드 반박2명의 실제 결과를 모두 확인했다. 필수 미해결 finding0, 구체적 탐색 누락0, 절차 차단0이다. I1~I6을 충족하여 Phase05를 승인한다. 기존 승인된 overlay 전체를 다시 읽었다고 주장하지 않는다. checkpoint의 파일별 source 동일성과 현재 수정 함수·호출 경계·테스트에 대한 확인을 연결했다. 제품·테스트 승인 대상은 위2e79f77이며 이후 수정은 이 승인 기록과 수용 상태를 정리하는 문서 변경이다.
+
+[검토 원문·실제 모델·세션·사용량 및 반박 근거](overlay-issue36-integration.review.json)에 원문을 보존했다. 제품 해시는 정렬된 logical-path→파일sha JSON 맵의 해시다. 과거205ba39f 집계값과 계산 형식이 달라 파일별 맵으로 연결했으며,217제품 중216파일이 동일하고 upgrade.py의 기존 컴파일 예외 처리1곳만 달라졌다. 테스트의 인터프리터 깊이 가정도 수정했다. 새 상태·의존성·아키텍처를 추가하지 않았다.
+
+## 수정과 반박 결과
+
+| 항목 | 실제 확인 | 최종 처리 |
+|---|---|---|
+| PEER-01 | 계획 중 컴파일 RecursionError/MemoryError가 진단 대신 traceback으로 이탈 | 기존 예외 묶음에 두 종류 추가. 실제 CLI 및 두 예외 주입에서 blocked/1·파일 불변 확인. 반박2명 모두 종료 확인 |
+| QA-PORTABILITY / R5-PEER-01 | 깊이3000 식이 Python3.12에서 정상 컴파일되어 새 테스트가 실패 | public CLI main에 예외를 주입해 실제 차단·파일 보존·단일 보고서 확인.3.10/3.11/3.12 CI PASS. 반박2명 모두 종료 확인 |
+| R6-PEER-01 | 테스트가 다른 차단 원인으로도 통과할 수 있다는 품질 주장 | 동일 fixture 정상입력은 applied/0이고 두 주입은 mock호출·unreadable_python_source·blocked/1. 실제 모듈·호출 경로 확인 후 Claude 철회, 반박2명 모두 false_positive |
+| PEER-02 | deferred migration.blockers를 전체 upgrade 실패로 해석한 주장 | 재개 R1 반박2명이 각각 false_positive. 원래 보고서 계약 유지 |
+| WIN-PHASE4-01 | 기존 Windows03/04 경로표기 불일치 P1 | 재개 R1 반박2명 모두 source·도달범위 불변 확인. 이번 변경의 필수 finding에서만 제외, 기존 제품 결함은 미해결 |
+
+correctness 원문의 unexplored3개는 source/CI 직접 조회·실제OOM/Windows·최종root승인에 관한 범위 제한이었다. 원문을 지우지 않았으며 최종 반박2명이 각각 구체적 누락이 아닌 비차단 한계로 확인했다. 모델의 packet 검토를 직접 저장소·네트워크 조회로 승격하지 않는다. 실제 OOM·새 Windows 전체 실행·실제 모델 앱 세션 검증은 추가 수행하지 않았다.
+
+## 라운드와 비용
+
+| 단계 | 검토 대상 | 신규IO | 완료 상태 |
+|---|---|---:|---|
+| 재개 R1 / cycle4 | 5523148 checkpoint·통합/문서/테스트 delta |262,052| FIND6역할·반박2명 완료, PEER-01 생존 |
+| 중간 R2A |6f6c992의 컴파일 수리·테스트 |36,186| 부분 FIND만 수행.3.12 테스트 실패로 대체됐으며 완료라운드·최종승인으로 사용하지 않음 |
+| 최종 R2B / cycle5 |2e79f77의 컴파일 수리·이식성 테스트 |67,074| FIND6역할·반박2명 완료, 필수 생존0 |
+| 새 원장 합계 | 무효·폐기·보완 호출 비용 포함 |**365,312 / 400,000**| 잔여34,688, 추가 모델 호출 종료 |
+
+이전 원장1,953,432/1,800,000과 초과153,432를 보존한다. 신규IO는 cache read를 제외하며 input·cache creation·output/추론을 포함한다. root·구현·QA의 원장 밖 사용량은 미측정이며0이 아니다. TLS0비용 실패, 의견이 섞여 폐기한 concurrency26,891, 테스트 실패, 두 차례 반박 비용 예약 누락을 삭제하지 않았다. 원장 초기화·상한 조정은 아래 사용자 결정 기록대로 수행했고 완료라운드나 cap5는 초기화하지 않았다. 최종 반박은 각7,891/7,617토큰, 합계15,508이다.
+
+## 검증·출시 경계
+
+검토한2e79f77의 [CI42659320255](https://github.com/SeJonJ/SAGE/actions/runs/42659320255)는13success/1Windows self-hosted skipped/0failure다.3개 Python 버전의 전체 회귀와 fresh isolated wheel consumer를 포함한다. 후속 문서 커밋의 CI는 PR 정확한 head에서 별도 확인한다. Windows 전체 회귀 실패·기존P1·원인 미확인 WinError5와 실제 모델 검증 범위를 유지한다. Phase06·main merge·release·전역 설치는 이번 검토 완료에 포함하지 않았다.
+
+개인 reviewer overlay 사용은 UNRECORDED다. 외부 절차에서 overlay-local을 호출하지 않았으며 사용·부재를 추정해 기록하지 않는다. SAGE 개발 엔진의 review-loop·waiver·자기승인 gate는 실행하지 않았다. 실제 모델 판단과 외부 집계 근거로 완료했다.
+
+## 과거 중단·사용자 결정 원문 기록
+
+아래 BLOCKED·미실행·비용 대기 문구는 각 시점의 기록이다. 현재 판정은 이 문서 상단과 위 근거 표를 따른다. 과거 비용 초과와 실패를 현재 승인으로 덮어쓰지 않는다.
 
 ## 2026-11-07 중단 당시 판정
 
@@ -74,3 +118,20 @@ PEER-01은 두 반박자 모두 유효하다고 판단했다. 사용자 Python �
 R2A는 Claude와 Codex4관점의 부분 FIND만 있고 최종 반박·라운드 승인은 없다. 테스트 수정으로 이전 후보 보고서를 최종 후보 승인에 옮기지 않는다. 후속 후보는 모든5관점·Claude가 변경 테스트를 재확인하고 반박자2명이 판단해야 한다. 기존 completed cycle4/5 및 모든 비용을 유지한다. 현재 I6/Final Status는BLOCKED다. Phase06·main merge·release는 실행하지 않는다.
 
 원자료: sibling overlay-review-resume-20261110의 reset-authorization.json, calls/*/{metadata.json,parsed.json,stdout}, round1-adjudication.json, budget-checkpoint-298238.json, r2a-qa-rework.json, rework-*-green.log, r2-ci-python312.log, r2-consumer-integrity/report.json. 호출별 source/prompt/report hash·실제 model/session·캐시와 신규IO를 보존한다. TLS0비용 실패와 peer 의견이 섞여 폐기한 concurrency26,891토큰도 남겼다. 원문CLEAR에 finding이 있으면 승인으로 취급하지 않았다. 원래 stash/ref와 #36 원본은 유지한다.
+
+
+## 2026-11-10 운영 상한 조정 승인
+
+사용자 답변 “조정해서 진행해줘”에 따라 새 원장 상한을350,000토큰으로 조정한다. 시작 사용량298,238과 이전 원장1,953,432는 유지한다. 원장·라운드 수를 다시 초기화하지 않으며, 변경된 테스트의5관점·Claude 확인과 최종 반박2명을 완료한다. 이미 확정된 기능 범위·cycle cap5·출시/병합 권한은 바꾸지 않는다. 현재2e79f77 CI는13success/1Windows self-hosted skipped/0failure로 완료됐다.
+
+
+## 2026-11-10 최종 FIND 완료와 반박 비용 예약 누락
+
+현재2e79f77에 대해5개 독립 Codex 관점과 Claude의 변경분 판단은CLEAR/finding0이다. Claude의 R6-PEER-01은 실제 정상입력 대조와 모듈·호출 경로 확인 뒤 스스로 철회했다. 정상value=1은applied/0이고 두 예외 주입은 실제mock호출·blocked/1·unreadable_python_source·파일 불변을 확인했다. 최초 원문·추가 확인은 모두 보존한다. correctness의 원문unexplored는 source/CI 직접 조회·실제OOM/Windows·최종root승인 범위의 제한이며, 최종 반박2명이 이 제한의 차단 여부도 판단해야 한다.
+
+새 원장 실제349,804/350,000, 잔여196이다. **진행자가 필수 반박2명분을 먼저 예약하지 않은 채 FIND 호출을 진행한 오류**로 최종 반박은0/2이다. stable home/cwd 캐시 절감도 기대만큼 관찰되지 않았다. 상한은 넘기지 않았고 추가 호출을 멈췄다. CODEX5관점·Claude CLEAR를 최종독립승인으로 승격하지 않는다. 최대370,000으로 반박2명만 마칠지 추가 확인 전까지 상한을 바꾸지 않는다. 기존 비용·cycle4완료/5상한·모든 중간 호출을 보존한다. 현재 I6/Final Status BLOCKED.
+
+
+## 2026-11-10 최종 반박 상한 승인
+
+사용자 지시 “40만까지로 조정해서 마지막 반박까지마쳐”에 따라 새 원장 상한을400,000으로 조정한다. 기존 사용349,804와 이전 원장1,953,432를 보존한다. 이미 준비된 전체라운드 반박2명을 수행하며, 상한·완료 기준·코드 범위·cycle cap5를 임의로 다시 바꾸지 않는다. 실제 반박 결과와 최종 수용 근거가 확인되기 전까지 승인을 기록하지 않는다.
