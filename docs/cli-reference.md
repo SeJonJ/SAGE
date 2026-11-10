@@ -5,7 +5,8 @@
 
 ## 개인 overlay
 
-공유 `sage/asset_overrides/{agents,skills}/<id>.md`는 기존처럼 커밋하고 렌더에 합성합니다.
+공유 `sage/asset_overrides/{agents,skills}/<id>.md`는 프로젝트 원문입니다. worker는 공유 렌더 합성을
+유지하고 root 스킬 7종은 공유/개인 모두 문맥 catalog로 공급합니다(아래 설명).
 개인 작업 습관·도구 환경은 Git 제외 `sage/asset_overrides.local/{agents,skills}/<id>.md`에 둡니다.
 개인 층은 같은 체크아웃에서만 적용하며 HOME 전역 층은 없습니다.
 
@@ -17,15 +18,24 @@ sage overlay-local --kind skill --id sage-review --root <project-root>
 이 명령은 읽기 전용입니다. 성공하면 `kind`, `id`, 상대 `path`, `sha256`, `content` JSON을
 반환하고, 해당 파일이 없거나 공백뿐이면 `null`, exit 0입니다. SHA-256은 실제 반환할 LF 정규화
 UTF-8 본문에서 계산합니다. JSON `kind`는 내부 복수형 `agents` 또는 `skills`입니다. 자동 탐색은 Git 경계를 넘지 않으며, 명시한 `--root`에서 다른
-프로젝트로 올라가지 않습니다. 현재 `COMPOSE_ALLOWED` 8개 자산만 허용하고 같은 완화·예약
+프로젝트로 올라가지 않습니다. 실행 정책상 자격을 가진 worker 4종과 root 스킬 7종을 허용하고 같은 완화·예약
 토큰·경로 검사를 수행합니다. 알려진 개인 inventory의 blocked/unknown/비정규 파일명·symlink·
 판독 오류도 실패입니다. 실패는 본문 없이 stderr와 nonzero로 알립니다. 오류·구버전 CLI는
 입력 수정/업그레이드로 해결하고 raw 파일 직접 읽기로 우회하지 않습니다.
 
-개인 내용은 공유/전역 CORE 렌더·manifest에 기록하지 않습니다. 기존 shared validate/sync는
-개인 층을 읽지 않습니다. headless review는 개인 reviewer가 있을 때 같은 대상의 공유 지침
+개인 내용은 공유/전역 CORE 렌더·manifest에 기록하지 않습니다. root 스킬의 공통 collector는 공유/개인 전체 inventory를 함께 검증합니다.
+worker의 shared 물리 합성 경로에는 개인 본문을 넣지 않습니다. headless review는 개인 reviewer가 있을 때 같은 대상의 공유 지침
 다음 개인 지침을 packet에 한 번씩 추가합니다. 개인 `sage-review` skill은 호스트 운영용으로
 reviewer persona에 섞지 않습니다. `SAGE_LOCAL_OVERLAY_REF`는 본문 없는 관측 참조입니다.
+
+7종 root 스킬은 `overlay-local` 실행을 정상 원문 공급 경로로 요구하지 않습니다. 위 명령은
+수동 진단과 기존 worker 역할 packet용입니다. 스킬 목록·표준/Fast 순서·실패 시 외부 수리·호스트별
+예산은 [문맥 공급 계약](ARCHITECTURE.md#대상별-overlay-문맥-공급)을 따릅니다. 공통 source/catalog 한도는
+UTF-8 10,000/49,152 bytes이고 Claude catalog는 wrapper·escape 포함 7,500 UTF-16 code units,
+최종 병합 `additionalContext`는 10,000 units입니다. 이모지는 2 units일 수 있으며 token 수가 아닙니다.
+Codex `additionalContextLimit=60000`은 유지합니다. 공통 한도에 맞는 입력도 Claude에서는 초과할 수
+있으며 `sage doctor`가 입력 유효성과 호스트별 지원 예산을 구분합니다. 기존 7종의
+관리 공유 span은 소유 확인 후 제거하고 원본은 남기며, worker 공유 span은 유지합니다.
 
 retro/저작은 제안마다 `scope: personal|project`를 확인하며 personal이 기본입니다. scope 없는
 과거 제안은 personal 기본 후보로 표시하고 기존 적용 파일을 옮기지 않습니다. 잘못된 scope는
@@ -83,6 +93,18 @@ project core의 `decide(event, profile, snapshot)`에서 `event`는 `hook_id`, `
 비어 있습니다. `plan_reads()`는 정확히 `{'globs': [...]}`를 반환해야 하고 `globs` 키가 없으면 계약
 오류입니다. 재귀 glob이 매치한 디렉터리는 건너뛰지만 symlink ancestor를 포함한 root 이탈, symlink
 leaf match, 그 밖의 비정규 파일은 계약 오류로 차단합니다.
+
+### `sage upgrade --check` / `sage upgrade --apply`
+
+패키지를 먼저 갱신하고 `--check`로 계획을 확인한 뒤 `--apply`로 적용합니다.
+정상적인 구 레이아웃의 project hook·review strategy는 기존 위치에 남기고 관리 자산과 버전을
+갱신합니다. `migration.mode: deferred`는 경로 이행만 보류했다는 뜻입니다.
+코드 누락·손상·경로 충돌 같은 다른 차단 사유는 계속 전체 갱신을 멈춥니다.
+
+기존 버전 차이에 대한 명시적 확인이 필요하다는 안내가 있을 때 계획을 확인하고 `--force`를
+추가합니다. 이 옵션으로 사용자 확장을 옮기거나 검증 실패를 무시할 수는 없습니다.
+Codex global scope의 변경도 가역 단계의 후반 실패 시 복구합니다. 외부 편집이나 백업 손상이
+발견된 경로는 덮어쓰지 않습니다. 범위와 한계는 [업그레이드 복구](troubleshooting.md)를 참조하세요.
 
 ### `sage uninstall [--global|--all]`
 

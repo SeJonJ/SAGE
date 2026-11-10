@@ -968,7 +968,17 @@ class TestRealReleaseFixture(unittest.TestCase):
             raise unittest.SkipTest("git archive 실패")
         import io, tarfile
         with tarfile.open(fileobj=io.BytesIO(export.stdout)) as tar:
-            tar.extractall(cls._tmp, filter="data")
+            # Only these two regular files are fixture inputs. Reading their bytes
+            # avoids both arbitrary archive extraction and the newer filter API,
+            # which is unavailable on supported older Python 3.10 patch releases.
+            for relative in ("templates/project-profile.yaml", "docs/sage_harness/.manifest.json"):
+                member = tar.getmember(relative)
+                if not member.isfile():
+                    raise AssertionError(f"release fixture is not a regular file: {relative}")
+                target = Path(cls._tmp, relative)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with tar.extractfile(member) as content:
+                    target.write_bytes(content.read())
         os.makedirs(os.path.join(cls.root, "sage"), exist_ok=True)
         os.makedirs(os.path.join(cls.root, "docs", "sage_harness"), exist_ok=True)
         # v0.9.84 **소비자**는 `/sage-init` 를 마친 상태다. 템플릿 원본은 부트스트랩 이전이라
@@ -1462,6 +1472,603 @@ class TestLockFailureIsReported(unittest.TestCase):
                 self.assertEqual((applied, complete), (0, True))
                 self.assertIn("upgrade lock failed", error)
         self.assertEqual(_tree(root), before, "잠금을 못 잡았는데 트리가 바뀌었다")
+
+
+class TestDualHostLocalStaging(unittest.TestCase):
+    def _consumer(self, primary="claude", secondary_scope="project-local"):
+        from unittest import mock
+        root_tmp = tempfile.TemporaryDirectory()
+        home_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(root_tmp.cleanup)
+        self.addCleanup(home_tmp.cleanup)
+        environment = mock.patch.dict(os.environ, {
+            "CODEX_HOME": home_tmp.name,
+            "PYTHONPATH": os.pathsep.join([str(REPO), os.environ.get("PYTHONPATH", "")]),
+        })
+        environment.start()
+        self.addCleanup(environment.stop)
+        root = Path(root_tmp.name)
+        for host in (primary, "codex" if primary == "claude" else "claude"):
+            arguments = ["install", "--host", host, "--prefix", "smoke", "--dest", str(root)]
+            if host == "codex":
+                arguments += ["--skill-scope", secondary_scope]
+            _sage_cli(*arguments)
+        (root / "sage/project-profile.yaml").write_text(PROFILE)
+        if secondary_scope == "project-local":
+            from sage.overlay_common import compose_block
+            source = root / "sage/asset_overrides/skills/sage-team.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("DUAL_LOCAL_SHARED_GUIDANCE\n")
+            for host in ("claude", "codex"):
+                render = root / f".{host}/skills/sage-team/SKILL.md"
+                render.write_text("# Old CORE\n" + compose_block("DUAL_LOCAL_SHARED_GUIDANCE", "skills", "sage-team"))
+        return root, Path(home_tmp.name)
+
+    @staticmethod
+    def _identity(root):
+        manifest = json.loads((root / "docs/sage_harness/.manifest.json").read_text())
+        return (manifest["host_runtime"], manifest["installed_hosts"],
+                {host: receipt["scope"] for host, receipt in manifest["core_skill_receipts"].items()})
+
+    def _assert_dual_upgrade(self, primary):
+        import contextlib, io
+        root, _global_home = self._consumer(primary)
+        before = self._identity(root)
+        output, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            result = _run(str(root), apply=True, force=True)
+        self.assertEqual(result, up.EXIT_OK, output.getvalue() + errors.getvalue())
+        self.assertEqual(self._identity(root), before)
+        for host in ("claude", "codex"):
+            render = (root / f".{host}/skills/sage-team/SKILL.md").read_text()
+            self.assertIn("Current overlay target: `sage-team`", render)
+            self.assertNotIn("DUAL_LOCAL_SHARED_GUIDANCE", render)
+        self.assertEqual((root / "sage/asset_overrides/skills/sage-team.md").read_text(),
+                         "DUAL_LOCAL_SHARED_GUIDANCE\n")
+
+    def test_claude_primary_dual_local_upgrade(self):
+        self._assert_dual_upgrade("claude")
+
+    def test_codex_primary_dual_local_upgrade(self):
+        self._assert_dual_upgrade("codex")
+
+    def test_late_failure_restores_both_local_hosts(self):
+        import contextlib, io
+        from unittest import mock
+        root, _global_home = self._consumer()
+        before = _tree(root)
+        original = up._managed_steps
+        reached = []
+        def fail_at_validate(root_, plan, language):
+            steps = original(root_, plan, language)
+            def fail():
+                reached.append(True)
+                return 1
+            return [(name, fail if name == "validate" else call) for name, call in steps]
+        with mock.patch.object(up, "_managed_steps", side_effect=fail_at_validate), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(_run(str(root), apply=True, force=True), up.EXIT_BLOCKED)
+        self.assertEqual(reached, [True])
+        self.assertEqual(_changed(before, _tree(root)), set())
+
+    def test_secondary_global_gets_no_new_install_or_global_write(self):
+        import contextlib, io
+        from unittest import mock
+        from sage.commands import install
+        root, global_home = self._consumer(secondary_scope="global")
+        before_global, before_identity = _tree(global_home), self._identity(root)
+        output, errors = io.StringIO(), io.StringIO()
+        with mock.patch.object(install, "run", wraps=install.run) as installed, \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            result = _run(str(root), apply=True, force=True)
+        self.assertEqual(result, up.EXIT_OK, output.getvalue() + errors.getvalue())
+        self.assertEqual([call.args[0].host for call in installed.call_args_list], ["claude"])
+        self.assertEqual(_tree(global_home), before_global)
+        self.assertEqual(self._identity(root), before_identity)
+
+    def test_staging_uses_the_planned_local_scope_without_recomputing(self):
+        from unittest import mock
+        from sage.commands import install
+        root, _global_home = self._consumer()
+        plan, blockers = up._plan(str(root), "en")
+        self.assertEqual(blockers, [])
+        manifest = root / "docs/sage_harness/.manifest.json"
+        changed = json.loads(manifest.read_text())
+        changed["core_skill_receipts"]["codex"]["scope"] = "global"
+        manifest.write_text(json.dumps(changed))
+        with mock.patch.object(install, "run", return_value=0) as installed:
+            next(call for name, call in up._managed_steps(str(root), plan, "en") if name == "core-assets")()
+        self.assertEqual([(call.args[0].host, call.args[0].skill_scope)
+                          for call in installed.call_args_list],
+                         [("claude", None), ("codex", "project-local")])
+
+    def test_existing_primary_global_selection_is_unchanged(self):
+        from unittest import mock
+        from sage.commands import install
+        with tempfile.TemporaryDirectory() as root:
+            _install(root, manifest={"host_runtime": "codex", "installed_hosts": ["codex"],
+                "assets": {}, "core_skill_receipts": {"codex": {"scope": "global"}}}, real=False)
+            plan, blockers = up._plan(root, "en")
+            self.assertEqual(blockers, [])
+            with mock.patch.object(install, "run", return_value=0) as installed:
+                next(call for name, call in up._managed_steps(root, plan, "en") if name == "core-assets")()
+            self.assertEqual([(call.args[0].host, call.args[0].skill_scope)
+                              for call in installed.call_args_list], [("codex", "global")])
+
+    def test_secondary_disabled_and_unknown_scope_never_select_global(self):
+        for scope in ("disabled", None, "broken", [], {}):
+            with self.subTest(scope=scope), tempfile.TemporaryDirectory() as root:
+                receipts = {"claude": {"scope": "project-local"}}
+                if scope is not None:
+                    receipts["codex"] = {"scope": scope}
+                _install(root, manifest={"host_runtime": "claude", "installed_hosts": ["claude", "codex"],
+                                        "assets": {}, "core_skill_receipts": receipts}, real=False)
+                plan, blockers = up._plan(root, "en")
+                if scope != "disabled":
+                    self.assertTrue(blockers)
+                else:
+                    self.assertEqual(blockers, [])
+                from unittest import mock
+                from sage.commands import install
+                with mock.patch.object(install, "run", return_value=0) as installed:
+                    next(call for name, call in up._managed_steps(root, plan, "en") if name == "core-assets")()
+                self.assertTrue(all(call.args[0].host != "codex" for call in installed.call_args_list))
+
+
+class TestGlobalUpgradeRollback(unittest.TestCase):
+    """설치가 먼저 commit해 후반 실패에 전역 새 버전이 남는 회귀를 잡는다."""
+
+    def setUp(self):
+        from unittest import mock
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name, "codex-home")
+        self.root = Path(self.tmp.name, "consumer")
+        self.root.mkdir()
+        env = mock.patch.dict(os.environ, CODEX_HOME=str(self.home))
+        env.start()
+        self.addCleanup(env.stop)
+        done = subprocess.run(
+            [sys.executable, "-m", "sage", "install", "--host", "codex",
+             "--skill-scope", "global", "--dest", str(self.root)],
+            cwd=str(REPO), env=dict(os.environ, PYTHONPATH=str(REPO)),
+            capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        Path(self.root, "sage", "project-profile.yaml").write_text(PROFILE, encoding="utf-8")
+        self.skill = self.home / "skills/sage-plan/SKILL.md"
+        self.skill.write_text("previous global skill\n", encoding="utf-8")
+        self.skill.chmod(0o640)
+        self.skills = self.home / "skills"
+
+    def fail_after_install(self, action=None, stage="overlays"):
+        from unittest import mock
+        real_steps = up._managed_steps
+        def failure():
+            if action:
+                action()
+            return 1
+        def steps(*args):
+            return [(name, failure if name == stage else call)
+                    for name, call in real_steps(*args)]
+        with mock.patch.object(up, "_managed_steps", side_effect=steps):
+            return _run(str(self.root), apply=True, force=True)
+
+    def test_late_failure_restores_global_bytes_mode_and_existing_identity(self):
+        before = _tree(str(self.skills))
+        inode = self.skill.stat().st_ino
+        self.assertEqual(self.fail_after_install(), up.EXIT_BLOCKED)
+        self.assertEqual(_tree(str(self.skills)), before)
+        self.assertEqual(self.skill.stat().st_ino, inode)
+        self.assertFalse(list(self.skills.rglob(".sage-install-backup-*")))
+        self.assertIn('required_version: "0.0.1"',
+                      Path(self.root, "sage/project-profile.yaml").read_text())
+
+    def test_failure_removes_new_skill_and_restores_retired_tree_only(self):
+        self.skill.unlink()
+        self.skill.parent.rmdir()
+        retired = self.skills / "pdca-start"
+        retired.mkdir()
+        (retired / "SKILL.md").write_text("CORE framework bootstrap asset\nold\n")
+        (retired / "extra.txt").write_text("preserve retired companion")
+        (retired / "extra.txt").chmod(0o600)
+        unrelated = self.skills / "user-skill"
+        unrelated.mkdir()
+        (unrelated / "SKILL.md").write_text("user owned")
+        same_name_user = self.skills / "sage-pdca-start"
+        same_name_user.mkdir()
+        (same_name_user / "SKILL.md").write_text("user asset without SAGE signature")
+        before = _tree(str(self.skills))
+        self.assertEqual(self.fail_after_install(stage="validate"), up.EXIT_BLOCKED)
+        self.assertEqual(_tree(str(self.skills)), before)
+        self.assertFalse(self.skill.parent.exists())
+        self.assertEqual(_run(str(self.root), apply=True, force=True), up.EXIT_OK)
+        self.assertTrue(self.skill.exists())
+        self.assertFalse(retired.exists())
+        self.assertEqual((unrelated / "SKILL.md").read_text(), "user owned")
+        self.assertEqual((same_name_user / "SKILL.md").read_text(), "user asset without SAGE signature")
+        self.assertFalse(list(self.skills.rglob(".sage-install-backup-*")))
+
+    def test_foreign_edit_survives_and_reports_incomplete_rollback(self):
+        import contextlib
+        import io
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            rc = self.fail_after_install(lambda: self.skill.write_text("concurrent editor\n"))
+        self.assertEqual(rc, up.EXIT_UNSAFE)
+        self.assertEqual(self.skill.read_text(), "concurrent editor\n")
+        backups = list(self.skill.parent.glob(".sage-install-backup-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(), "previous global skill\n")
+        self.assertIn(str(backups[0]), stream.getvalue())
+
+    def test_success_holds_global_lock_through_late_steps_and_releases_it(self):
+        from sage.install_transaction import DestinationLock, InstallBusyError
+        from unittest import mock
+        real_steps = up._managed_steps
+        real_validate = None
+        busy = []
+        def validate():
+            competitor = DestinationLock(str(self.skills))
+            try:
+                competitor.acquire()
+            except InstallBusyError:
+                busy.append(True)
+            else:
+                competitor.release()
+                busy.append(False)
+            return real_validate()
+        def steps(*args):
+            nonlocal real_validate
+            scheduled = real_steps(*args)
+            real_validate = dict(scheduled)["validate"]
+            return [(name, validate if name == "validate" else call) for name, call in scheduled]
+        with mock.patch.object(up, "_managed_steps", side_effect=steps):
+            self.assertEqual(_run(str(self.root), apply=True, force=True), up.EXIT_OK)
+        self.assertEqual(busy, [True])
+        self.assertNotEqual(self.skill.read_text(), "previous global skill\n")
+        competitor = DestinationLock(str(self.skills))
+        competitor.acquire()
+        competitor.release()
+        self.assertFalse(list(self.skills.rglob(".sage-install-backup-*")))
+
+    def test_success_path_foreign_edit_is_detected_before_global_commit(self):
+        from unittest import mock
+        original_restore = up._restore_user_owned
+        def edit_after_validation(*args, **kwargs):
+            result = original_restore(*args, **kwargs)
+            self.skill.write_text("editor after validation\n")
+            return result
+        with mock.patch.object(up, "_restore_user_owned", side_effect=edit_after_validation):
+            self.assertEqual(_run(str(self.root), apply=True, force=True), up.EXIT_UNSAFE)
+        self.assertEqual(self.skill.read_text(), "editor after validation\n")
+        self.assertEqual(len(list(self.skill.parent.glob(".sage-install-backup-*"))), 1)
+
+    def test_foreign_deletion_is_preserved_with_recoverable_backup(self):
+        self.assertEqual(self.fail_after_install(self.skill.unlink), up.EXIT_UNSAFE)
+        self.assertFalse(self.skill.exists())
+        backups = list(self.skill.parent.glob(".sage-install-backup-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(), "previous global skill\n")
+
+    def test_modified_backup_is_not_restored_or_claimed_complete(self):
+        def change_backup():
+            backup = next(self.skill.parent.glob(".sage-install-backup-*"))
+            backup.write_text("foreign backup change\n")
+        self.assertEqual(self.fail_after_install(change_backup), up.EXIT_UNSAFE)
+        self.assertNotEqual(self.skill.read_text(), "foreign backup change\n")
+        self.assertEqual(len(list(self.skill.parent.glob(".sage-install-backup-*"))), 1)
+
+    def test_replaced_parent_preserves_foreign_tree_and_recovery_backup(self):
+        relocated = self.skills / "saved-original-directory"
+        def replace_parent():
+            self.skill.parent.rename(relocated)
+            self.skill.parent.mkdir()
+            self.skill.write_text("foreign parent and file\n")
+        self.assertEqual(self.fail_after_install(replace_parent), up.EXIT_UNSAFE)
+        self.assertEqual(self.skill.read_text(), "foreign parent and file\n")
+        backups = list(relocated.glob(".sage-install-backup-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(), "previous global skill\n")
+
+    def test_finalize_failure_keeps_both_updated_scopes_for_reapply(self):
+        from unittest import mock
+        with mock.patch.object(up, "_finalize_layout", return_value=(False, 0)):
+            self.assertEqual(_run(str(self.root), apply=True, force=True), up.EXIT_BLOCKED)
+        self.assertNotEqual(self.skill.read_text(), "previous global skill\n")
+        self.assertFalse(list(self.skills.rglob(".sage-install-backup-*")))
+        self.assertIn(f'required_version: "{__version__}"',
+                      Path(self.root, "sage/project-profile.yaml").read_text())
+        self.assertEqual(_run(str(self.root), apply=True, force=True), up.EXIT_OK)
+
+    def test_postcommit_cleanup_error_never_rolls_back_only_project(self):
+        from unittest import mock
+        from sage.install_transaction import InstallDriftError
+        from sage.upgrade_transaction import _GlobalTransaction
+        real_remove = _GlobalTransaction._remove
+        def cleanup_error(tx, path):
+            if tx.committed and ".sage-install-backup-" in str(path):
+                raise InstallDriftError("injected postcommit cleanup failure")
+            return real_remove(tx, path)
+        with mock.patch.object(_GlobalTransaction, "_remove", new=cleanup_error):
+            self.assertEqual(_run(str(self.root), apply=True, force=True), up.EXIT_BLOCKED)
+        self.assertNotEqual(self.skill.read_text(), "previous global skill\n")
+        self.assertIn(f'required_version: "{__version__}"',
+                      Path(self.root, "sage/project-profile.yaml").read_text())
+        self.assertTrue(list(self.skills.rglob(".sage-install-backup-*")))
+
+    @unittest.skipIf(os.name == "nt", "POSIX symlink acceptance; Windows native proof separate")
+    def test_symlink_parent_swap_never_writes_through_to_foreign_directory(self):
+        relocated = self.skills / "saved-original-directory"
+        foreign = Path(self.tmp.name, "foreign")
+        foreign.mkdir()
+        sentinel = foreign / "SKILL.md"
+        sentinel.write_text("foreign directory sentinel\n")
+        def swap_parent():
+            self.skill.parent.rename(relocated)
+            self.skill.parent.symlink_to(foreign, target_is_directory=True)
+        self.assertEqual(self.fail_after_install(swap_parent), up.EXIT_UNSAFE)
+        self.assertEqual(sentinel.read_text(), "foreign directory sentinel\n")
+        self.assertTrue(self.skill.parent.is_symlink())
+        self.assertEqual(len(list(relocated.glob(".sage-install-backup-*"))), 1)
+
+    def test_initially_absent_codex_home_is_removed_after_late_failure(self):
+        from unittest import mock
+        absent = Path(self.tmp.name, "initially-absent-home")
+        with mock.patch.dict(os.environ, CODEX_HOME=str(absent)):
+            self.assertEqual(self.fail_after_install(), up.EXIT_BLOCKED)
+        self.assertFalse(absent.exists())
+
+    def test_install_failure_after_global_writes_restores_both_scopes(self):
+        from unittest import mock
+        from sage.commands import install
+        real_write = install._write
+        def fail_manifest(path, *args, **kwargs):
+            if Path(path).name == ".manifest.json":
+                raise OSError("injected failure after global writes")
+            return real_write(path, *args, **kwargs)
+        before = _tree(str(self.skills))
+        with mock.patch.object(install, "_write", side_effect=fail_manifest):
+            self.assertEqual(_run(str(self.root), apply=True, force=True), up.EXIT_BLOCKED)
+        self.assertEqual(_tree(str(self.skills)), before)
+        self.assertFalse(list(self.skills.rglob(".sage-install-backup-*")))
+
+    def test_global_write_error_is_fatal_for_upgrade_and_restores_old_state(self):
+        from unittest import mock
+        from sage.commands import install
+        real_write = install._atomic_write
+        def denied(path, *args, **kwargs):
+            if os.path.abspath(path) == str(self.skill):
+                raise PermissionError("injected global write denied")
+            return real_write(path, *args, **kwargs)
+        before = _tree(str(self.skills))
+        with mock.patch.object(install, "_atomic_write", side_effect=denied):
+            self.assertEqual(_run(str(self.root), apply=True, force=True), up.EXIT_BLOCKED)
+        self.assertEqual(_tree(str(self.skills)), before)
+        self.assertIn('required_version: "0.0.1"',
+                      Path(self.root, "sage/project-profile.yaml").read_text())
+
+    def test_owned_retired_skill_removal_error_aborts_upgrade(self):
+        from unittest import mock
+        from sage.upgrade_transaction import _GlobalTransaction
+        retired = self.skills / "pdca-start"
+        retired.mkdir()
+        (retired / "SKILL.md").write_text("CORE framework bootstrap asset\nold\n")
+        before = _tree(str(self.skills))
+        with mock.patch.object(_GlobalTransaction, "stage_remove_tree", side_effect=PermissionError("retire denied")):
+            self.assertEqual(_run(str(self.root), apply=True, force=True), up.EXIT_BLOCKED)
+        self.assertEqual(_tree(str(self.skills)), before)
+
+    def test_standalone_install_keeps_optional_global_write_error_contract(self):
+        from unittest import mock
+        from sage.commands import install
+        real_write = install._atomic_write
+        def denied(path, *args, **kwargs):
+            if os.path.abspath(path) == str(self.skill):
+                raise PermissionError("injected standalone global write denied")
+            return real_write(path, *args, **kwargs)
+        args = up._StepArgs(host="codex", dest=str(self.root), prefix="smoke",
+                            force=True, no_global_skill=False, skill_scope="global")
+        with mock.patch.object(install, "_atomic_write", side_effect=denied):
+            self.assertEqual(install.run(args), 0)
+        self.assertEqual(self.skill.read_text(), "previous global skill\n")
+
+    @unittest.skipIf(os.name == "nt", "POSIX symlink acceptance; Windows native proof separate")
+    def test_linked_codex_home_can_upgrade_and_rollback(self):
+        actual = Path(self.tmp.name, "physical-home")
+        self.home.rename(actual)
+        self.home.symlink_to(actual, target_is_directory=True)
+        before = _tree(str(self.skills))
+        called = []
+        self.assertEqual(self.fail_after_install(lambda: called.append(True)), up.EXIT_BLOCKED)
+        self.assertEqual(called, [True], "must reach the late step through the linked home")
+        self.assertEqual(_tree(str(self.skills)), before)
+        self.assertTrue(self.home.is_symlink())
+        self.assertEqual(_run(str(self.root), apply=True, force=True), up.EXIT_OK)
+        self.assertTrue(self.home.is_symlink())
+        self.assertNotEqual(self.skill.read_text(), "previous global skill\n")
+
+    @unittest.skipIf(os.name == "nt", "POSIX symlink acceptance; Windows native proof separate")
+    def test_linked_home_target_replacement_preserves_foreign_state(self):
+        actual = Path(self.tmp.name, "physical-home")
+        self.home.rename(actual)
+        self.home.symlink_to(actual, target_is_directory=True)
+        saved = Path(self.tmp.name, "saved-physical-home")
+        called = []
+        def swap_target():
+            called.append(True)
+            actual.rename(saved)
+            actual.mkdir()
+            self.skill.parent.mkdir(parents=True)
+            self.skill.write_text("foreign replacement home\n")
+        self.assertEqual(self.fail_after_install(swap_target), up.EXIT_UNSAFE)
+        self.assertEqual(called, [True])
+        self.assertEqual(self.skill.read_text(), "foreign replacement home\n")
+        self.assertEqual(len(list((saved / "skills/sage-plan").glob(".sage-install-backup-*"))), 1)
+
+    def test_guard_failure_during_committed_backup_gc_warns_and_keeps_updates(self):
+        import contextlib
+        import io
+        from unittest import mock
+        from sage.install_transaction import InstallDriftError
+        from sage.upgrade_transaction import _GlobalTransaction
+        real_guard = _GlobalTransaction._guard_path
+        def guard(tx, path):
+            if tx.committed:
+                raise InstallDriftError("injected guard failure during committed backup GC")
+            return real_guard(tx, path)
+        err = io.StringIO()
+        with mock.patch.object(_GlobalTransaction, "_guard_path", new=guard), contextlib.redirect_stderr(err):
+            self.assertEqual(_run(str(self.root), apply=True, force=True), up.EXIT_OK)
+        self.assertTrue(list(self.skills.rglob(".sage-install-backup-*")))
+        self.assertIn(".sage-install-backup-", err.getvalue())
+        self.assertNotEqual(self.skill.read_text(), "previous global skill\n")
+        self.assertIn(f'required_version: "{__version__}"',
+                      Path(self.root, "sage/project-profile.yaml").read_text())
+
+    def test_overlapping_home_is_blocked_before_project_writes(self):
+        from unittest import mock
+        before = _tree(str(self.root))
+        with mock.patch.dict(os.environ, CODEX_HOME=str(self.root / ".codex-home")):
+            self.assertEqual(_run(str(self.root), apply=True, force=True), up.EXIT_BLOCKED)
+        self.assertEqual(_tree(str(self.root)), before)
+
+    def test_busy_global_lock_blocks_before_any_declaration_write(self):
+        from sage.install_transaction import DestinationLock
+        lock = DestinationLock(str(self.skills))
+        lock.acquire()
+        try:
+            before = _tree(str(self.root))
+            self.assertEqual(_run(str(self.root), apply=True, force=True), up.EXIT_BLOCKED)
+            self.assertEqual(_tree(str(self.root)), before)
+        finally:
+            lock.release()
+
+
+class TestLegacyOverlayIntegration(unittest.TestCase):
+    """#36's deferred migration must compose with dual-host context delivery."""
+
+    def _consumer(self, primary, codex_scope="project-local"):
+        from unittest import mock
+        from test_layout_migration import UserExtensionsStayPut
+
+        temporary = tempfile.TemporaryDirectory()
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.addCleanup(home.cleanup)
+        environment = mock.patch.dict(os.environ, CODEX_HOME=home.name,
+                                      PYTHONPATH=str(REPO))
+        environment.start()
+        self.addCleanup(environment.stop)
+        root = Path(temporary.name)
+        if primary == "codex":
+            _sage_cli("install", "--host", "codex", "--skill-scope", codex_scope,
+                      "--dest", str(root))
+        fixture = UserExtensionsStayPut()
+        fixture._aged_project(str(root))
+        _sage_cli("install", "--host", "codex", "--skill-scope", codex_scope,
+                  "--force", "--dest", str(root))
+        if primary == "claude":
+            _sage_cli("install", "--host", "claude", "--force", "--dest", str(root))
+        core = root / "scripts/sage_harness/hooks/my_guard_core.py"
+        core.write_text(
+            'CONTRACT_VERSION = "1"\n\ndef decide(event, profile, snapshot):\n'
+            "    return {'status': 'block', 'exit_code': 2, "
+            "'message': 'legacy overlay integration decision'}\n", encoding="utf-8")
+        sources = {}
+        for directory, scope in (("asset_overrides", "shared"),
+                                 ("asset_overrides.local", "personal")):
+            for asset in ("sage-plan", "sage-plan-fast"):
+                path = root / "sage" / directory / "skills" / (asset + ".md")
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f"Integration guidance for {scope} {asset}.\n", encoding="utf-8")
+                sources[path] = path.read_bytes()
+        _sage_cli("generate", "--kind", "hook", "--write", "--target", "both",
+                  "--root", str(root), "--dest", str(root))
+        _sage_cli("sync-overlays", "--root", str(root))
+        manifest_path = root / "docs/sage_harness/.manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest.update(sage_version="0.0.1", generator_version="0.0.1")
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        return root, Path(home.name), sources
+
+    def _assert_project_restored(self, root, before):
+        after = _tree(str(root))
+        self.assertEqual({p: value[:2] for p, value in after.items()},
+                         {p: value[:2] for p, value in before.items()})
+        # Recovery guarantees bytes/modes; also verify untouched overlay source timestamps.
+        for path, value in before.items():
+            if path.startswith(("sage/asset_overrides/", "sage/asset_overrides.local/")):
+                self.assertEqual(after[path], value, path)
+
+    def test_both_primary_orders_keep_legacy_hook_and_four_slot_delivery(self):
+        from sage import asset_paths, overlay_delivery
+        for primary in ("claude", "codex"):
+            with self.subTest(primary=primary):
+                root, _home, sources = self._consumer(primary)
+                plan, blockers = up._plan(str(root), "ko")
+                self.assertEqual(blockers, [])
+                self.assertEqual(plan["migration_mode"], "deferred")
+                self.assertEqual([item["host"] for item in plan["core_installations"]],
+                                 [primary, "codex" if primary == "claude" else "claude"])
+                for _ in range(2):
+                    self.assertEqual(_run(str(root), apply=True, force=True), up.EXIT_OK)
+                    self.assertEqual(asset_paths.detect_layout(str(root)),
+                                     asset_paths.LAYOUT_CONSUMER_LEGACY)
+                    self.assertFalse((root / "sage_harness").exists())
+                    self.assertEqual({p: p.read_bytes() for p in sources}, sources)
+                    catalog = overlay_delivery.collect_catalog(str(root))
+                    self.assertEqual(catalog["targets"]["sage-plan"],
+                                     ["skills/sage-plan/shared", "skills/sage-plan/personal"])
+                    self.assertEqual(catalog["targets"]["sage-plan-fast"],
+                                     ["skills/sage-plan/shared", "skills/sage-plan-fast/shared",
+                                      "skills/sage-plan/personal", "skills/sage-plan-fast/personal"])
+                for host, event in (
+                    ("claude", {"tool_name": "Write", "tool_input": {"file_path": "app/core/a.src"}}),
+                    ("codex", {"tool_name": "apply_patch", "tool_input": {
+                        "command": "*** Update File: app/core/a.src\n+x"}}),
+                ):
+                    adapter = root / "scripts/sage_harness/hooks/adapters" / host / "my-guard.sh"
+                    result = subprocess.run(
+                        ["bash", str(adapter)], input=json.dumps(event), capture_output=True, text=True,
+                        env=dict(os.environ, SAGE_PROJECT_ROOT=str(root), SAGE_PYTHON=sys.executable))
+                    self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                    self.assertIn("legacy overlay integration decision", result.stderr)
+
+    def test_late_failure_restores_legacy_dual_local_and_overlay_sources(self):
+        from unittest import mock
+        root, _home, sources = self._consumer("claude")
+        before = _tree(str(root))
+        real_steps = up._managed_steps
+
+        def steps(*args):
+            return [(name, (lambda: 1) if name == "validate" else call)
+                    for name, call in real_steps(*args)]
+
+        with mock.patch.object(up, "_managed_steps", side_effect=steps):
+            self.assertEqual(_run(str(root), apply=True, force=True), up.EXIT_BLOCKED)
+        self._assert_project_restored(root, before)
+        self.assertEqual({p: p.read_bytes() for p in sources}, sources)
+
+    def test_global_primary_secondary_local_failure_restores_both_scopes_then_reapplies(self):
+        from unittest import mock
+        root, home, sources = self._consumer("codex", "global")
+        skill = home / "skills/sage-plan/SKILL.md"
+        skill.write_text("previous global integration skill\n", encoding="utf-8")
+        skill.chmod(0o640)
+        before_root, before_global = _tree(str(root)), _tree(str(home))
+        real_steps = up._managed_steps
+
+        def steps(*args):
+            return [(name, (lambda: 1) if name == "validate" else call)
+                    for name, call in real_steps(*args)]
+
+        with mock.patch.object(up, "_managed_steps", side_effect=steps):
+            self.assertEqual(_run(str(root), apply=True, force=True), up.EXIT_BLOCKED)
+        self._assert_project_restored(root, before_root)
+        self.assertEqual(_tree(str(home)), before_global)
+        self.assertEqual({p: p.read_bytes() for p in sources}, sources)
+        self.assertEqual(_run(str(root), apply=True, force=True), up.EXIT_OK)
+        self.assertNotEqual(skill.read_text(encoding="utf-8"), "previous global integration skill\n")
 
 
 class TestRunAllRegistration(unittest.TestCase):

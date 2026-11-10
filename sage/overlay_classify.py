@@ -1,4 +1,9 @@
-"""오버레이 합성 자격 분류(gate-classification) — 단일 resolver.
+"""오버레이 적용 자격 분류(gate-classification) — 단일 resolver.
+
+`classify`의 compose는 추가 지침 적용 자격이며 디스크 합성 여부가 아니다.
+`delivery_mode`는 root 스킬 7종을 context, 기존 worker 4종을 physical로 구분한다.
+Fast BACKING은 독립 구조 하한만 검증한다. catalog 노출에 따른 모델의 자동 Fast
+선택이나 다른 대상 적용의 행동 안전성을 증명하지 않으며 별도 native acceptance가 필요하다.
 
 이슈 #5 봉쇄의 핵심: CORE 자산 오버레이가 물리 반영되면 "read overlay before CORE" 프로즈
 보다 강하게 게이트-완화를 심을 수 있다(승인 조작 등). 그런데 게이트 완화 여부를 내용
@@ -53,6 +58,8 @@ INDEPENDENT_ORACLE_COMPOSE_ALLOWED = frozenset({
     ("agents", "leader"), ("agents", "reviewer"),
     ("skills", "sage-cycle"), ("skills", "sage-plan"),
     ("skills", "sage-review"), ("skills", "sage-team"),
+    ("skills", "sage-cycle-fast"), ("skills", "sage-plan-fast"),
+    ("skills", "sage-team-fast"),
 })
 
 # 등록 항목별 backing 근거(오라클)와 적대적 테스트(test_overlay_reclassification_backing.py).
@@ -81,9 +88,39 @@ BACKING = {
     ("skills", "sage-team"): {
         "oracles": ["_report_gate", "_acceptance_gate", "_missing_pre_impl_phases"],
         "adversarial_tests": ["test_sage_team_skip_review_blocked_loop_off"]},
+    ("skills", "sage-cycle-fast"): {
+        "oracles": ["_fast_cycle_state", "_report_gate", "_audit_gate"],
+        "adversarial_tests": ["test_sage_cycle_fast_four_slot_fresh_binding_and_fake_close"]},
+    ("skills", "sage-plan-fast"): {
+        "oracles": ["_fast_cycle_state", "_fast_policy_floor_issue", "_fast_covers_required"],
+        "adversarial_tests": ["test_sage_plan_fast_four_slot_phase_and_policy_floor"]},
+    ("skills", "sage-team-fast"): {
+        "oracles": ["_acceptance_gate", "_audit_gate", "_report_gate"],
+        "adversarial_tests": ["test_sage_team_fast_four_slot_required_acceptance_and_audit"]},
 }
 
 COMPOSE_ALLOWED = NON_GATE_COMPOSE_ALLOWED | INDEPENDENT_ORACLE_COMPOSE_ALLOWED
+
+# Eligibility is independent of delivery. Root skills share source/target policy
+# with the event collector; only workers retain physical shared composition.
+ROOT_CONTEXT_TARGET_SOURCES = {
+    "sage-cycle": ("sage-cycle",),
+    "sage-plan": ("sage-plan",),
+    "sage-team": ("sage-team",),
+    "sage-review": ("sage-review",),
+    "sage-cycle-fast": ("sage-cycle", "sage-cycle-fast"),
+    "sage-plan-fast": ("sage-plan", "sage-plan-fast"),
+    "sage-team-fast": ("sage-team", "sage-team-fast"),
+}
+ROOT_CONTEXT_SKILL_IDS = frozenset(ROOT_CONTEXT_TARGET_SOURCES)
+
+
+def delivery_mode(kind, id):
+    """Return context/physical/blocked without weakening eligibility checks."""
+    if classify(kind, id) == "blocked":
+        return "blocked"
+    return "context" if kind == "skills" and id in ROOT_CONTEXT_SKILL_IDS else "physical"
+
 
 # 명시적 (c) — 게이트 보유하나 오라클 미보증(문서화용; 실제 차단은 COMPOSE_ALLOWED 미포함으로 성립).
 GATE_BEARING_UNBACKED = frozenset({
@@ -150,10 +187,11 @@ def expected_block(kind, id, root):
     """이 자산에 반영돼야 할 관리 블록 문자열 → str.
 
     - blocked((c)/미분류): 항상 '' — 합성하지 않는다(오버레이를 읽지도 넣지도 않음).
-    - compose((a)/(b)): 오버레이가 있으면 compose_block, 없으면 ''.
+    - context root skills: 검증된 source가 있어도 항상 '' (collector가 전달).
+    - physical workers: 오버레이가 있으면 compose_block, 없으면 ''.
     반환 (block, error). error 는 오버레이 읽기 실패/토큰 주입 시.
     """
-    if classify(kind, id) == "blocked":
+    if delivery_mode(kind, id) != "physical":
         return "", None
     text, err = overlay_text(root, kind, id)
     if err:

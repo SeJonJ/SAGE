@@ -43,6 +43,12 @@ POSIX에서는 `python3 scripts/ci/publish_preflight.py`, Windows에서는
 
 ## 플랫폼 계약
 
+PR의 CI 성공은 해당 commit의 자동 검사를 통과했다는 뜻입니다. 독립 L3 리뷰 승인이나 릴리스
+승인을 대신하지 않습니다. 엔진 checkout의 자기 `validate`를 승인 권위로 사용하지 않고,
+별도 빌드한 wheel을 새 consumer에 설치해 번들 무결성과 CLI 제품 동작을 확인합니다.
+overlay·#36 통합 후보의 플랫폼 결과와 남은 조건은 [검증 기록 인덱스](plan_docs/README.md)에서
+확인하고, 현재 commit의 CI 상태는 PR checks와 대조하세요.
+
 `scripts/ci/platform_smoke.py`가 Linux·macOS·Windows 11 데스크톱에서 같은 항목을 확인한다. POSIX
 둘은 매 PR 의 hosted matrix 에서 돌고, Windows 는 아래 **self-hosted 전용 job** 에서 돈다.
 

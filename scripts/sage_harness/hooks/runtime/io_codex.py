@@ -120,8 +120,18 @@ def render_session_context(text):
     지금은 압축 직후(source `compact`) 재진입 문맥에만 쓴다. stdout 에는 이 JSON 한 줄만 나가야 한다 —
     다른 SessionStart 출력은 전부 stderr 다.
     """
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
+    render_context("SessionStart", text)
+
+
+def render_context(event, text):
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": event,
                                               "additionalContext": text}}, ensure_ascii=False))
+
+
+def render_overlay_block(event, message):
+    if event == "UserPromptSubmit":
+        print(json.dumps({"decision": "block", "reason": message}, ensure_ascii=False))
+    print(message, file=sys.stderr)
 
 
 def render_declared_ambiguous(root=None, key="risk_declaration_ambiguous"):

@@ -134,16 +134,24 @@ class TestWriteGuardSmoke(unittest.TestCase):
         which.assert_called_once_with("bash")
 
     def test_validate_check_still_runs_write_guard_smoke(self):
-        manifest = json.loads(Path(
-            ROOT, "docs", "sage_harness", ".manifest.json").read_text(encoding="utf-8"))
-        entry = manifest["assets"]["hooks/generated-artifact-write-guard"]
-        with mock.patch.object(V, "_write_guard_smoke",
-                               return_value=("FAIL", "  FAIL injected smoke")) as smoke:
-            severity, messages = V._validate_hook(
-                ROOT, "hooks/generated-artifact-write-guard", entry, run_regression=False)
+        # Use an isolated product consumer. The engine's checked-in historical
+        # receipt becomes stale whenever the guard changes and is not its own
+        # development approval mechanism.
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as codex_home:
+            with mock.patch.dict(os.environ, {"CODEX_HOME": codex_home}), redirect_stdout(io.StringIO()):
+                self.assertEqual(install.run(_InstallArgs(root, "project-local")), 0)
+            paths = V._hook_paths(root, 'hooks/generated-artifact-write-guard')
+            entry = {'form': 'core_adapter', 'spec_hash': V._sha(paths['spec']),
+                     'canonical_hash': V._sha(paths['core_py']), 'adapter_hash': {
+                         'claude': V._sha(paths['adapter_claude']),
+                         'codex': V._sha(paths['adapter_codex'])}}
+            with mock.patch.object(V, "_write_guard_smoke",
+                                   return_value=("FAIL", "  FAIL injected smoke")) as smoke:
+                severity, messages = V._validate_hook(
+                    root, "hooks/generated-artifact-write-guard", entry, run_regression=False)
+            smoke.assert_called_once_with(root, None)
         self.assertEqual(severity, "FAIL")
         self.assertIn("  FAIL injected smoke", messages)
-        smoke.assert_called_once_with(ROOT, None)
 
 
 class TestCoreSkillScopeReceipt(unittest.TestCase):
@@ -551,7 +559,7 @@ def _runtime_root(d):
     os.makedirs(strategies, exist_ok=True)
     for fn in ("run_hook.py", "hook_runtime.py", "checklist_contract.py", "loop_audit.py", "retro_audit.py",
                "acceptance_waiver.py", "override_audit.py", "messages.py", "recovery.py", "cycle_state.py",
-               "document_language.py", "prose_language.py", "compact_reentry.py",
+               "document_language.py", "prose_language.py", "compact_reentry.py", "overlay_context.py",
                "io_claude.py", "io_codex.py"):
         Path(os.path.join(runtime, fn)).write_text(f"# {fn}\n", encoding="utf-8")
     Path(os.path.join(hooks, "cycle_binding.py")).write_text("# cycle_binding.py\n", encoding="utf-8")
@@ -564,6 +572,20 @@ def _runtime_root(d):
 
 
 class TestHookRuntimeHash(unittest.TestCase):
+    def test_overlay_context_drift_and_missing_are_detected(self):
+        with tempfile.TemporaryDirectory() as root:
+            _runtime_root(root)
+            hashes, missing = calculate_hook_runtime_hash(root)
+            self.assertEqual(missing, [])
+            helper = Path(root, 'sage_harness/hooks/runtime/overlay_context.py')
+            helper.write_text('def current(root, raw): return "", None\n')
+            severity, _ = _validate_hook_runtime_hash(root, {'hook_runtime_hash': hashes})
+            self.assertEqual(severity, 'STALE')
+            helper.unlink()
+            severity, messages = _validate_hook_runtime_hash(root, {'hook_runtime_hash': hashes})
+            self.assertEqual(severity, 'FAIL')
+            self.assertTrue(any('overlay_context.py' in message for message in messages))
+
     def test_missing_stamp_is_stale(self):
         with tempfile.TemporaryDirectory() as d:
             _runtime_root(d)

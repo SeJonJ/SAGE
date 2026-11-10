@@ -443,6 +443,8 @@ python3 "$HERE/test_review_blocking_convergence.py" || rc=1
 echo ""
 echo "### 86. personal overlay consumer behavior"
 python3 "$HERE/test_overlay_local.py" || rc=1
+python3 "$HERE/test_overlay_delivery.py" || rc=1
+python3 "$HERE/test_overlay_runtime_delivery.py" || rc=1
 
 echo ""
 if [[ "$rc" == "0" ]]; then echo "✅ ALL HOOK TESTS PASS"; else echo "❌ FAILURES"; fi

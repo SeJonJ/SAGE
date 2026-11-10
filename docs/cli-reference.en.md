@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:c4c4257059a635e04e6cdb1849f5ca90988991c2134523dc884bc82ea1385443 -->
+<!-- sage-doc-source: cli-reference.md sha256:d06894991c46c8ef2773639e447ccc8767fce2b53c60064a3a396c54c3373337 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for
@@ -6,8 +6,8 @@ the exact options available in your environment
 
 ## Personal overlays
 
-Keep committing shared `sage/asset_overrides/{agents,skills}/<id>.md` files and composing their
-renders as before. Put developer habits and tool-environment guidance in Git-ignored
+Shared `sage/asset_overrides/{agents,skills}/<id>.md` files are project originals. Workers retain
+shared render composition; the seven root skills deliver shared/personal guidance through context catalogs. Put developer habits and tool-environment guidance in Git-ignored
 `sage/asset_overrides.local/{agents,skills}/<id>.md`. Personal guidance belongs to one checkout;
 there is no HOME-wide personal layer.
 
@@ -19,17 +19,27 @@ sage overlay-local --kind skill --id sage-review --root <project-root>
 This read-only command returns JSON with `kind`, `id`, relative `path`, `sha256`, and `content`.
 A missing or whitespace-only selected file returns `null`, exit 0. SHA-256 covers the exact
 LF-normalized UTF-8 content returned. JSON `kind` uses the internal plural `agents` or `skills`. Automatic discovery stops at Git boundaries; an explicit
-`--root` never climbs into another project. Only the current eight `COMPOSE_ALLOWED` assets are
-eligible, using the same relaxation, reserved-token, and path checks. Blocked/unknown assets,
+`--root` never climbs into another project. The four workers and seven root skills are eligible under the executable policy, using the same relaxation, reserved-token, and path checks. Blocked/unknown assets,
 noncanonical filenames, symlinks, and unreadable files elsewhere in the known personal inventory
 also fail. Errors return nonzero and body-free stderr. Fix inputs or upgrade an older CLI;
 never bypass errors by reading raw personal files.
 
-Personal bodies never enter shared/global CORE renders or manifests. Existing shared
-validate/sync does not read this layer. When personal reviewer guidance exists, headless review
+Personal bodies never enter shared/global CORE renders or manifests. The root-skill collector validates the entire shared/personal inventory together.
+Worker shared physical composition never embeds personal bodies. When personal reviewer guidance exists, headless review
 appends same-target shared additions then personal additions once each to the packet. The host's
 personal `sage-review` skill is not reviewer persona text. `SAGE_LOCAL_OVERLAY_REF` emits a
 body-free observation reference.
+
+The seven root skills do not require `overlay-local` as their normal body delivery path. The
+command above remains useful for manual diagnostics and existing worker role packets. See the
+[context contract](ARCHITECTURE.en.md#target-specific-overlay-context-delivery) for target scope,
+standard/Fast order, external repair, and host budgets. Common source/catalog ceilings are UTF-8
+10,000/49,152 bytes. Claude catalogs also fit 7,500 UTF-16 code units including wrapper/escaping,
+and the final merged `additionalContext` fits 10,000 units. Emoji may occupy two units; these are
+not token counts. Codex retains `additionalContextLimit=60000`. Input within the common ceiling
+can exceed Claude's budget; `sage doctor` separates input validity from each host's support budget.
+Verified owned legacy shared
+spans for the seven skills are removed while originals remain; worker shared spans remain.
 
 Retro/authoring confirms `scope: personal|project` per proposal, defaulting to personal. Legacy
 proposals without scope show the personal default candidate without moving applied files.
@@ -91,6 +101,18 @@ both are empty when it is not. `plan_reads()` must return exactly `{'globs': [..
 `globs` key is a contract failure. Directories matched by recursive globs are skipped; root escapes
 including symlink ancestors, symlink leaf matches, and other non-regular paths are contract
 failures.
+
+### `sage upgrade --check` / `sage upgrade --apply`
+
+Update the package first, inspect the plan with `--check`, then apply it with `--apply`.
+Valid legacy project hooks and review strategies stay in place while managed assets and versions
+update. `migration.mode: deferred` means only layout migration was postponed. Missing or invalid
+code and path conflicts still block the entire update.
+
+Add `--force` only after checking a plan that explicitly requests confirmation of version drift.
+It does not move user extensions or bypass validation failures. Global Codex skill changes also
+roll back on late failures in the reversible stages; paths with detected external edits or damaged
+backups are not overwritten. See [upgrade recovery](troubleshooting.en.md) for the boundaries.
 
 ### `sage uninstall [--global|--all]`
 

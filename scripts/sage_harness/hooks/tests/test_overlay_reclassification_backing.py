@@ -188,6 +188,67 @@ class TestAcceptanceContentGapIsPreExisting(unittest.TestCase):
         self.assertIn(("agents", "qa"), ocl.GATE_BEARING_UNBACKED)
 
 
+class TestFastOverlayBacking(unittest.TestCase):
+    # Four independently supplied slots induce the same malicious state. The oracles
+    # receive only state/profile/event, never any slot's instruction text.
+    SLOTS = ("shared-standard", "shared-Fast", "personal-standard", "personal-Fast")
+
+    def _fixture(self):
+        import test_fast_convert
+        fixture = test_fast_convert.TestConvertedRunAtTheGate()
+        fixture.setUp()
+        return fixture
+
+    def test_sage_plan_fast_four_slot_phase_and_policy_floor(self):
+        self.assertEqual(ocl.classify("skills", "sage-plan-fast"), "compose")
+        for slot in self.SLOTS:
+            f = self._fixture()
+            for bad in ({"minimum_rounds": 0}, {"lenses": ["correctness"]},
+                        {"actual_risk": "L3"}, {"chain_ok": False},
+                        {"seq_ok": False}, {"cycle_stem": "wrong"}):
+                with self.subTest(slot=slot, bad=bad):
+                    state, error = core._fast_cycle_state(
+                        f._event(), f.profile, f._snapshot(f._converted_audit(**bad)),
+                        f.profile["pdca"])
+                    self.assertIsNone(state)
+            audit = f._converted_audit(current_phase="00", source_phases_open=f._provenance("00"))
+            decision = core.decide(f._event(), f.profile, f._snapshot(audit), None)
+            self.assertEqual(decision["message_key"], "block_phase_incomplete")
+            f.profile["pdca"]["fast_cycle"]["enabled"] = False
+            state, error = core._fast_cycle_state(
+                f._event(), f.profile, f._snapshot(f._converted_audit()), f.profile["pdca"])
+            self.assertIsNone(state)
+
+    def test_sage_cycle_fast_four_slot_fresh_binding_and_fake_close(self):
+        self.assertEqual(ocl.classify("skills", "sage-cycle-fast"), "compose")
+        for slot in self.SLOTS:
+            f = self._fixture()
+            with self.subTest(slot=slot):
+                state, error = core._fast_cycle_state(
+                    f._event(), f.profile, f._snapshot(f._converted_audit(entry_mode="FAST")),
+                    f.profile["pdca"])
+                self.assertIsNone(state)  # standard 00 is not a fresh composite plan
+                d = core.decide(pig._REPORT_EV, pig.PDCA_PROFILE, pig.snap_audit([]), None)
+                self.assertEqual(d["message_key"], "block_report_without_approval")
+                d = core.decide(pig._REPORT_EV, pig._audit_profile(mode="enforce"),
+                    pig.snap_audit([_doc("Final Status: APPROVED\nLoop-Run: other-run")],
+                                   runs={"r1": _UNCLEAN}), None)
+                self.assertEqual(d["message_key"], "block_report_without_audit")
+
+    def test_sage_team_fast_four_slot_required_acceptance_and_audit(self):
+        self.assertEqual(ocl.classify("skills", "sage-team-fast"), "compose")
+        gap = TestAcceptanceContentGapIsPreExisting()
+        for slot in self.SLOTS:
+            with self.subTest(slot=slot):
+                self.assertEqual(gap._decide(["A1", "A2"], ["A1"])["message_key"],
+                                 "block_report_without_acceptance")
+                for damaged in (_DEGRADED, _UNCLEAN, _SEQ_BROKEN):
+                    d = core.decide(pig._REPORT_EV, pig._audit_profile(mode="enforce"),
+                        pig.snap_audit([_doc("Final Status: APPROVED\nLoop-Run: r1")],
+                                       runs={"r1": damaged}), None)
+                    self.assertEqual(d["message_key"], "block_report_without_audit")
+
+
 class TestBackingRecordEnforcement(unittest.TestCase):
     """산출물 ③ — 등록=BACKING+적대적 테스트 보유(위조불가 배선)."""
 
@@ -197,6 +258,9 @@ class TestBackingRecordEnforcement(unittest.TestCase):
             rec = ocl.BACKING.get(entry)
             self.assertIsNotNone(rec, f"{entry} registered without BACKING record")
             self.assertTrue(rec.get("oracles"), f"{entry} BACKING has no oracles")
+            for oracle in rec["oracles"]:
+                self.assertTrue(callable(getattr(core, oracle, None)),
+                                f"{entry} names nonexistent oracle {oracle}")
             names = rec.get("adversarial_tests") or []
             self.assertTrue(names, f"{entry} BACKING has no adversarial tests")
             for tname in names:

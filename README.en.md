@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:09e08bc55042767cfb6b2423908e61a2e5c1127996b9b3a8869640960368e30e -->
+<!-- sage-doc-source: README.md sha256:03033165201c03799d83ea85d28244c927a51ff97090b66d365ed82f0c5ae39e -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)
@@ -12,8 +12,7 @@
 
 ## Why you need this
 
-Telling an agent "plan first, be careful with risky files, always get a review" every time is easy
-to forget or skip. SAGE turns those reminders into automatic checks (hooks) a human need not repeat.
+Telling an agent "plan first, be careful with risky files, always get a review" every time is easy to forget or skip. SAGE turns those reminders into automatic checks (hooks) a human need not repeat.
 
 - **Edits a risky file without a plan?** SAGE blocks it until a plan document exists.
 - **Reports "done" without a review?** SAGE checks for an approved review and blocks without one.
@@ -22,8 +21,7 @@ to forget or skip. SAGE turns those reminders into automatic checks (hooks) a hu
 - **One model reviewing its own code?** SAGE hands it to the opposite model (Claude ↔ Codex).
 - **Cross-review and review loops raise token usage as much as you use them.**
 
-These checks are not the AI's "judgment" — they are code that decides **deterministically**. The
-same situation always produces the same result, so nobody has to re-explain the rules.
+These checks are not the AI's "judgment" — they are code that decides **deterministically**. The same situation always produces the same result, so nobody has to re-explain the rules.
 
 ## Quickstart
 
@@ -44,8 +42,7 @@ Then follow **only the path that matches the AI tool you use** — you do not ne
 sage install --host codex --skill-scope project-local
 ```
 
-Once installed, run `$sage-init` **inside Codex** to fill in this project's configuration (profile)
-through conversation. Then come back to the terminal to finish:
+Once installed, run `$sage-init` **inside Codex** to fill in this project's configuration (profile) through conversation. Then come back to the terminal to finish:
 
 ```bash
 sage generate --kind hook --write --target codex
@@ -65,8 +62,7 @@ sage generate --kind hook --write --target claude
 sage validate --kind all
 ```
 
-When a shared profile exists, run `sage-init-local` instead of `sage-init`. If `CLAUDE.md` or
-`AGENTS.md` already exists the install stops and nothing changes — see the
+When a shared profile exists, run `sage-init-local` instead of `sage-init`. If `CLAUDE.md` or `AGENTS.md` already exists the install stops and nothing changes — see the
 [English quickstart](docs/quickstart.en.md) and [troubleshooting](docs/troubleshooting.en.md).
 
 ## What SAGE provides
@@ -87,8 +83,7 @@ When a shared profile exists, run `sage-init-local` instead of `sage-init`. If `
 
 ## Supported environments
 
-The general CLI and hooks run on Python 3.10+ with no bash on Windows; only `verify-changes.sh` and
-custom `.sh` tests need Git Bash.
+The general CLI and hooks run on Python 3.10+ with no bash on Windows; only `verify-changes.sh` and custom `.sh` tests need Git Bash.
 
 The **automatic removal scope** is narrower. SAGE stops before mutation in unverified environments.
 
@@ -101,11 +96,7 @@ The **automatic removal scope** is narrower. SAGE stops before mutation in unver
 | Windows Server and domain controllers | Outside formal support (not directly verified) | No automatic removal; plan-based manual list provided |
 | 32-bit Python, native ARM64 Python, non-NTFS, network, or UNC paths | Environment-specific limits | No automatic removal; inspect the plan with `--check` |
 
-NTFS is the default filesystem on typical local Windows disks. **Being able to run and being
-formally supported are different things** — the general CLI may work outside the supported scope,
-but that behaviour is neither promised nor directly verified. Automatic removal on Windows 11
-desktop was **verified by actually running it on that SKU** — no Windows Server result was
-substituted for it. For the two refusal screens see the [CLI reference](docs/cli-reference.en.md)
+NTFS is the default filesystem on typical local Windows disks. **Being able to run and being formally supported are different things** — the general CLI may work outside the supported scope, but that behaviour is neither promised nor directly verified. Automatic removal on Windows 11 desktop was **verified by actually running it on that SKU** — no Windows Server result was substituted for it. For the two refusal screens see the [CLI reference](docs/cli-reference.en.md)
 and [troubleshooting](docs/troubleshooting.en.md).
 
 On Windows, `sage-hook.exe` runs hooks, so Git Bash and WSL are not required:
@@ -118,6 +109,8 @@ sage doctor
 ```
 
 Set `SAGE_BASH` to the Git Bash path when running `.sh` tests on Windows.
+Windows still has a pre-existing defect that can miss the Phase 04 checklist block. Do not treat
+automatic passage through that gate as completion evidence ([troubleshooting](docs/troubleshooting.en.md)).
 
 ## Upgrade
 
@@ -130,9 +123,10 @@ sage upgrade --apply
 sage status
 ```
 
-`--check` only shows the plan. `--apply` is transactional: on failure it rolls back only the paths SAGE manages and
-leaves other files, such as build output, alone. **Coming from 1.0, SAGE files gather into a single `sage_harness/` tree**
-— recreated and verified before the old one is removed, and it stops at files you added and hooks you wrote ([troubleshooting](docs/troubleshooting.en.md)).
+`--check` only shows the plan. `--apply` restores managed changes on failure. A valid 1.0 installation with
+user hooks or review strategies **updates its version and managed assets in place while deferring layout migration**.
+Without those extensions, it verifies a new `sage_harness/` tree before deleting proven-owned old files.
+Damage and path conflicts still block; see [troubleshooting](docs/troubleshooting.en.md) for global Codex skill rollback guarantees and limits.
 
 ## Remove SAGE safely
 
@@ -175,7 +169,9 @@ fail-open/fail-closed policy.
 - **PDCA** binds planning → implementation → independent review ([single and cross review](docs/cross-review.en.md)) → completion reporting.
 - **completion criteria (Done Criteria)** track evidence and revalidate affected phases on change.
 - **Profile and overlays** separate shared and personal settings and guidance. Shared guidance lives in `sage/asset_overrides/`;
-  personal guidance stays in Git-ignored `sage/asset_overrides.local/` ([lookup and manual migration](docs/cli-reference.en.md#personal-overlays)).
+  personal guidance stays in Git-ignored `sage/asset_overrides.local/`. Both hosts automatically receive current sources
+  for seven root skills at message and reentry boundaries. Standard uses shared→personal; Fast uses shared Standard→shared Fast→personal Standard→personal Fast.
+  Personal text stays out of shared renders ([delivery, limits, and recovery](docs/ARCHITECTURE.en.md#target-specific-overlay-context-delivery)).
 - **Fast Cycle** reduces document count only when enabled and records the transition in the audit.
 - **Early completion** logs explicit user acceptance of residual risk, apart from normal approval.
 

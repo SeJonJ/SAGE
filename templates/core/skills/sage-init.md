@@ -51,9 +51,14 @@ joining later and `/sage-profile-modify` handles every change after bootstrap.
    language preference, and then only to the local profile and only after explicit user
    approval. It is never written to the shared profile.
 8. Present the complete YAML for both layers and get explicit approval before writing.
-9. Validate: `sage validate --check --schema --kind all` and `sage doctor`. Never bypass a
-   FAIL — it is the guardrail working. Then hand off, asking whether asset generation should
-   run automatically or manually.
+9. Hand off generated runtime artifacts, then validate with
+   `sage validate --check --schema --kind all` and `sage doctor`. If active hooks reject
+   in-session tools for a YAML/JSON mismatch or pending render, use a terminal outside
+   that AI session in this project root: `sage generate --kind hook --write
+   --target <claude|codex|both>` matching the installed host, then `sage sync-overlays`,
+   then validation. Auto approval does not bypass a blocked tool. Keep guards enabled;
+   never edit generated JSON directly. Resume after next-boundary validation succeeds.
+   Never bypass a FAIL. If tools are not blocked, the approved auto/manual handoff applies.
 
 ## advisory_scope
 - role_boundary: authors the profile (SSOT) directly, NOT via generate (that is for assets);

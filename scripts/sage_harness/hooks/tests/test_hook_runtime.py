@@ -1676,14 +1676,18 @@ class TestSessionStartOverlayL1(unittest.TestCase):
             with open(skill, encoding="utf-8") as f:
                 self.assertNotIn("project skill rule", f.read())
 
-    def test_codex_project_local_receipt_materializes_local_core_skill(self):
+    def test_codex_project_local_receipt_keeps_root_skill_body_out_of_render(self):
         with tempfile.TemporaryDirectory() as d:
             skill = self._codex_skill_and_manifest(d, "project-local")
 
             self.assertEqual(hr._session_start_overlay_l1(io_codex, d), 0)
 
             with open(skill, encoding="utf-8") as f:
-                self.assertIn("project skill rule", f.read())
+                self.assertNotIn("project skill rule", f.read())
+            from sage.overlay_delivery import collect_catalog
+            catalog = collect_catalog(d)
+            self.assertEqual(catalog["sources"]["skills/sage-team/shared"]["content"],
+                             "project skill rule")
 
     def test_strips_blocked_asset_injected_block(self):
         # (c) 게이트-미보증 자산에 과거 물리화된 조작 블록은 blocked overlay 오류와 무관하게 제거한다.
@@ -1699,9 +1703,9 @@ class TestSessionStartOverlayL1(unittest.TestCase):
                 render = f.read()
             self.assertNotIn("skip the review", render)
             self.assertNotIn(oc.MARKER_START, render)
-            self.assertEqual(rc, 2)  # blocked overlay 파일 자체는 L3 오류로 세션 시작 차단
+            self.assertEqual(rc, 2)  # L1 오류를 보고; SessionStart는 진단, UPS/PreToolUse는 차단한다.
 
-    def test_malformed_block_blocks_session_but_other_target_is_cleaned(self):
+    def test_malformed_block_is_diagnosed_and_other_target_is_cleaned(self):
         from sage import overlay_common as oc
         with tempfile.TemporaryDirectory() as d:
             self._base_renders(d)
@@ -1718,7 +1722,7 @@ class TestSessionStartOverlayL1(unittest.TestCase):
             with redirect_stderr(err):
                 rc = hr.run_session_start_snapshot(io_claude, d, HOOKS_DIR, '{}')
 
-            self.assertEqual(rc, 2)
+            self.assertEqual(rc, 0)
             self.assertIn("BLOCK", err.getvalue())
             self.assertIn("중복", err.getvalue())
             with open(qa, encoding="utf-8") as f:

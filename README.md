@@ -11,8 +11,7 @@
 
 ## 왜 필요한가
 
-AI 에이전트에게 "계획부터 세우고, 위험한 파일은 조심히 다루고, 꼭 리뷰를 받아라"라고 매번 말해도 그
-지시는 잊히거나 생략됩니다. SAGE는 그 규칙을 자동으로 확인하는 장치(hook)로 만듭니다.
+AI 에이전트에게 "계획부터 세우고, 위험한 파일은 조심히 다루고, 꼭 리뷰를 받아라"라고 매번 말해도 그 지시는 잊히거나 생략됩니다. SAGE는 그 규칙을 자동으로 확인하는 장치(hook)로 만듭니다.
 
 - **계획 없이 위험한 파일을 고치려 하면** → 먼저 계획 문서를 쓰라고 막습니다.
 - **리뷰 없이 "완료됐다"고 보고하면** → 승인된 리뷰가 있는지 확인하고 없으면 막습니다.
@@ -22,8 +21,7 @@ AI 에이전트에게 "계획부터 세우고, 위험한 파일은 조심히 다
   맡길 수 있습니다.
 - **cross-review 및 loop를 사용하는 만큼 토큰 사용량이 높을 수 있습니다.**
 
-이 확인들은 AI의 "판단"이 아니라 코드가 "결정론적으로" 검사합니다 — 같은 상황이면 항상 같은 결과가
-나오고, 사람이 매번 다시 설명할 필요가 없습니다.
+이 확인들은 AI의 "판단"이 아니라 코드가 "결정론적으로" 검사합니다 — 같은 상황이면 항상 같은 결과가 나오고, 사람이 매번 다시 설명할 필요가 없습니다.
 
 ## 빠른 시작
 
@@ -44,8 +42,7 @@ cd your-project
 sage install --host codex --skill-scope project-local
 ```
 
-설치가 끝나면 **Codex 안에서** `$sage-init`을 실행해 이 프로젝트의 설정(profile)을 대화로 채웁니다.
-그다음 터미널로 돌아와 마무리합니다.
+설치가 끝나면 **Codex 안에서** `$sage-init`을 실행해 이 프로젝트의 설정(profile)을 대화로 채웁니다. 그다음 터미널로 돌아와 마무리합니다.
 
 ```bash
 sage generate --kind hook --write --target codex
@@ -65,8 +62,7 @@ sage generate --kind hook --write --target claude
 sage validate --kind all
 ```
 
-공유 profile이 있다면 `sage-init` 대신 `sage-init-local`만 실행합니다. 이미 `CLAUDE.md`·`AGENTS.md`가
-있으면 설치가 멈춥니다(무변경) — 절차는 [퀵스타트](docs/quickstart.md)와 [문제 해결](docs/troubleshooting.md).
+공유 profile이 있다면 `sage-init` 대신 `sage-init-local`만 실행합니다. 이미 `CLAUDE.md`·`AGENTS.md`가 있으면 설치가 멈춥니다(무변경) — 절차는 [퀵스타트](docs/quickstart.md)와 [문제 해결](docs/troubleshooting.md).
 
 ## 주요 기능
 
@@ -81,16 +77,13 @@ sage validate --kind all
 | 설치한 프로젝트·전역 자산 제거 | `sage uninstall --check` → `sage uninstall --yes` |
 | 계획·구현·독립 리뷰·완료 증거 결속 | 표준 PDCA, Fast Cycle, Done Criteria |
 
-`status`, `explain`, `audit show`, `upgrade --check`, `uninstall --check`는 읽기 전용 진단입니다.
-자동화용 `--json`, 전체 옵션과 종료 코드는 [CLI 레퍼런스](docs/cli-reference.md)를 참조하세요.
+`status`, `explain`, `audit show`, `upgrade --check`, `uninstall --check`는 읽기 전용 진단입니다. 자동화용 `--json`, 전체 옵션과 종료 코드는 [CLI 레퍼런스](docs/cli-reference.md)를 참조하세요.
 
 ## 지원 환경
 
-SAGE의 일반 CLI와 설치 hook은 Python 3.10+에서 동작하며 Windows에서도 bash가 필요 없습니다. 다만
-`sage_harness/verify-changes.sh`와 사용자 정의 `.sh` 테스트에는 Git Bash가 필요합니다.
+SAGE의 일반 CLI와 설치 hook은 Python 3.10+에서 동작하며 Windows에서도 bash가 필요 없습니다. 다만 `sage_harness/verify-changes.sh`와 사용자 정의 `.sh` 테스트에는 Git Bash가 필요합니다.
 
-`sage uninstall`의 **자동 제거 지원 범위**는 더 좁습니다. 파일을 지우는 기능이므로 검증되지 않은
-환경에서는 추측해서 실행하지 않고 첫 변경 전에 멈춥니다.
+`sage uninstall`의 **자동 제거 지원 범위**는 더 좁습니다. 파일을 지우는 기능이므로 검증되지 않은 환경에서는 추측해서 실행하지 않고 첫 변경 전에 멈춥니다.
 
 | 환경 | 일반 CLI·hook | `sage uninstall` |
 |---|:---:|---|
@@ -101,9 +94,7 @@ SAGE의 일반 CLI와 설치 hook은 Python 3.10+에서 동작하며 Windows에�
 | Windows Server·도메인 컨트롤러 | 정식 지원 범위 밖 (직접 검증하지 않음) | 자동 제거 미지원; 계획 기반 수동 목록 제공 |
 | 32-bit Python, native ARM64 Python, 비 NTFS·네트워크·UNC 경로 | 환경별 제한 | 자동 제거하지 않음; `--check`로 계획 확인 가능 |
 
-NTFS는 일반적인 Windows 로컬 디스크의 기본 파일 시스템입니다. **동작할 수 있다는 것과 정식으로
-지원한다는 것은 다릅니다** — 범위 밖 환경에서 일반 CLI가 도는 경우가 있어도 그 동작을 약속하지 않고,
-직접 검증하지도 않습니다. Windows 11 데스크톱의 자동 제거는 그 SKU에서 **실제로 실행해
+NTFS는 일반적인 Windows 로컬 디스크의 기본 파일 시스템입니다. **동작할 수 있다는 것과 정식으로 지원한다는 것은 다릅니다** — 범위 밖 환경에서 일반 CLI가 도는 경우가 있어도 그 동작을 약속하지 않고, 직접 검증하지도 않습니다. Windows 11 데스크톱의 자동 제거는 그 SKU에서 **실제로 실행해
 검증했습니다** — Windows Server 결과로 갈음하지 않았습니다. 두 종류의 거부 화면과 자세한 판정은
 [CLI 레퍼런스](docs/cli-reference.md)와 [문제 해결](docs/troubleshooting.md)에 있습니다.
 
@@ -117,6 +108,8 @@ sage doctor
 ```
 
 Windows에서 `.sh` 테스트를 실행할 때는 `SAGE_BASH`로 Git Bash 경로를 명시합니다.
+Windows에는 Phase 04 체크리스트의 자동 차단이 누락되는 기존 결함이 남아 있습니다.
+해당 단계의 자동 통과를 완료 근거로 삼지 마세요([문제 해결](docs/troubleshooting.md)).
 
 ## 업그레이드
 
@@ -129,9 +122,10 @@ sage upgrade --apply
 sage status
 ```
 
-`--check`는 계획만 보여 줍니다. `--apply`는 transaction이라 실패하면 SAGE가 관리하는 경로만 되돌리고, 빌드 산출물
-같은 다른 파일은 건드리지 않습니다. **1.0에서 올라오면 설치 위치가 `sage_harness/` 한 곳으로 모입니다** — 옮기지 않고
-새로 만들어 검증한 뒤 옛 것을 지우고, 직접 넣은 파일과 직접 쓴 hook 앞에서는 멈춥니다([troubleshooting](docs/troubleshooting.md)).
+`--check`는 계획만 보여 줍니다. `--apply`는 실패 시 관리 대상 변경을 복구합니다. 정상적인 1.0 설치본에
+사용자 hook·review strategy가 있으면 **기존 위치에서 버전과 관리 자산을 갱신하고 경로 이행만 보류**합니다.
+확장이 없는 설치본은 새 `sage_harness/` 트리를 검증한 뒤 소유가 확인된 옛 파일만 지웁니다.
+손상·경로 충돌은 계속 차단하며, Codex 전역 스킬 복구의 범위와 한계는 [문제 해결](docs/troubleshooting.md)을 따릅니다.
 
 ## 안전하게 제거
 
@@ -173,7 +167,9 @@ hook / agent / skill spec    <------------------>   .claude / .codex
 - **PDCA** — 계획 → 구현 → 독립 리뷰([단일·교차 리뷰](docs/cross-review.md)) → 완료보고를 결속합니다.
 - **완료 기준(Done Criteria)** — 요구별 증거를 추적하고, 기준이 바뀌면 해당 단계를 다시 검증합니다.
 - **profile·overlay** — 팀 공유와 개인 설정·지침을 분리합니다. 공유 지침은 `sage/asset_overrides/`,
-  개인 지침은 Git 제외 `sage/asset_overrides.local/`에 둡니다([조회·수동 이행](docs/cli-reference.md#개인-overlay)).
+  개인 지침은 Git 제외 `sage/asset_overrides.local/`에 둡니다. 양 host의 root 스킬 7종에 현재 원문을
+  메시지·재진입 경계에서 자동 공급합니다. 표준은 공유→개인, Fast는 공유 표준→공유 Fast→개인 표준→개인 Fast를
+  적용합니다. 개인 원문은 공용 렌더에 넣지 않습니다([공급·한도·복구](docs/ARCHITECTURE.md#대상별-overlay-문맥-공급)).
 - **Fast Cycle** — 명시적으로 켠 경우 문서 수를 줄이되 전환 과정을 감사 기록에 남깁니다.
 - **조기 완료 승인** — 사용자가 남은 위험을 명시적으로 인수했을 때만 일반 승인과 구분해 기록합니다.
 

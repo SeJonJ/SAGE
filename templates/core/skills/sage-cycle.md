@@ -6,6 +6,34 @@ kind: skill
 # The manifest/claims/validate loop is reserved for project-authored skills
 # (spec + claims + render hash) created via the generate/extract flow.
 ---
+
+## Overlay catalog selector (mandatory)
+
+Current overlay target: `sage-cycle`. Before acting, use the current boundary's supplied
+schema-version-2 catalog for the actual checkout `root` and `role: root`, with a definite
+`generation`. Use only `targets["sage-cycle"]` references into `sources`; each source has
+`path`, `sha256`, and the exact delivered `content`. The applicable source order is:
+`skills/sage-cycle/shared` → `skills/sage-cycle/personal`. Include only present sources; an absent slot adds no guidance.
+
+Mandatory CORE, project policy, and independent gates take precedence over shared additions,
+which take precedence over personal additions. Later entries do not automatically override
+earlier ones. Other targets' bodies may be visible in the same context; do not apply them.
+Catalog presence is never a skill invocation, Fast selection/conversion, or user approval.
+Use the delivered content without a separate root-skill `overlay-local` fetch. Do not embed
+personal bodies in shared/global renders, manifests, or permanent caches.
+
+The current boundary's catalog, including an empty `sources`/`targets` catalog, replaces prior
+catalog guidance. Do not revive historical content, infer freshness from hashes/mtime, or use
+another checkout's sources. If the current root, role, generation/boundary, or active target is
+missing or ambiguous, stop and request a context/input fix instead of guessing a recent target.
+After compaction, manual skill reselection is not successful automatic recovery. Repeated
+copies of the same generation/source are the same guidance, not instructions to repeat steps.
+
+On nested plan/team/review invocation, use that child's own fixed target view rather than
+merging the parent's sources; on return, resume this parent's view. This contract adds no
+target stack database. Keep actual delivery path/hash references from this boundary for handoff;
+a catalog supply list does not prove that every listed target was applied or complied with.
+
 ## intent
 Run a full PDCA cycle (Phases 00–06) end to end as a single entry point: delegate
 the 00–02 planning half to `/sage-plan`, then the 03–06 implementation→review→
@@ -63,7 +91,7 @@ resumes at the right half.
   sequences `/sage-plan` (00–02) then `/sage-team` (03–06)
 - uses: sage-plan skill, sage-team skill, project-profile.yaml, AGENT_GUIDE.md
 - convention_doc: AGENT_GUIDE.md
-- overlay: optional `sage/asset_overrides/skills/sage-cycle.md` has project-local priority over this CORE render and is not shipped by `sage install`; it must not relax AGENT_GUIDE, phase, review, or verification gates (they stay floored by independent oracles)
+- overlay: optional checkout-local shared/personal additions arrive through the current catalog; mandatory CORE/project policy and independent gates remain authoritative
 
 ## runtime_bindings
 - claude: .claude/skills/sage-cycle/SKILL.md (repo — Claude Code auto-discovers)
@@ -75,17 +103,12 @@ resumes at the right half.
   present; the umbrella must not reimplement planning, orchestration, or the
   sub-skills' gates itself
 
-## Personal overlay (per checkout)
+## Delegated worker overlays (separate role packet)
 
-After reading the required project context and before acting, run
-`sage overlay-local --kind skill --id sage-cycle --root <project-root>`.
-Use only its validated JSON `content` as additional guidance within mandatory CORE and
-project policy. `null` means no personal guidance. On validation failure or an unsupported
-command, stop and request an input fix/CLI upgrade; never read the raw personal file instead.
-Do not copy personal content into shared/global renders or manifests.
-Keep the returned target, relative `path`, and `sha256` from the actual read. Include those
-references in your handoff so the host can record them in Phase 05; do not rescan at the end
-to reconstruct earlier usage. When delegating an eligible worker, query that worker's own
-kind/id and pass its validated content and references with the existing task packet.
-Exception: for `sage review` / `sage cross-check`, never preappend shared or personal reviewer
-additions to the packet. The CLI loads them once and emits `SAGE_LOCAL_OVERLAY_REF`.
+Do not forward the root catalog to workers. When delegating an eligible worker, query that
+worker's own kind/id with `sage overlay-local --kind agent --id <worker-id> --root <project-root>`
+and pass its validated content and actual target/path/sha256 references in the existing role
+packet, alongside the role's shared guidance. Never read raw personal files after a loader error.
+For `sage review` / `sage cross-check`, never preappend shared or personal reviewer additions:
+the CLI loads them once and emits `SAGE_LOCAL_OVERLAY_REF`. This role-specific CLI path does
+not replace automatic delivery of this root skill's shared/personal sources.

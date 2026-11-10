@@ -301,6 +301,21 @@ class TestUnconfirmedOutsideThroughTheHook(unittest.TestCase):
                             else os.environ.pop(k, None))
         os.environ.pop("SAGE_CYCLE_STEM", None)
         self.alias = self._alias()
+        if os.name == "nt":
+            # Windows resolves real 8.3 names. These cases exercise uncertainty,
+            # so make only this alias's canonicalization unavailable explicitly.
+            from unittest import mock
+            realpath = os.path.realpath
+
+            def unavailable_alias(path, *args, **kwargs):
+                if os.fspath(path).casefold() == self.alias.casefold():
+                    raise OSError("alias canonicalization unavailable")
+                return realpath(path, *args, **kwargs)
+
+            self._canonicalization_patch = mock.patch.object(
+                hr.os.path, "realpath", side_effect=unavailable_alias)
+            self._canonicalization_patch.start()
+            self.addCleanup(self._canonicalization_patch.stop)
         self.outside = os.path.join(self.base, "notes.md")
 
     def _alias(self):
@@ -351,20 +366,40 @@ class TestUnconfirmedOutsideThroughTheHook(unittest.TestCase):
         self.assertEqual(envelope["hookSpecificOutput"]["hookEventName"], "PreToolUse")
         return envelope["hookSpecificOutput"]["additionalContext"]
 
-    def _targets(self):
-        targets = [self.alias]
-        if os.name != "nt":
-            alias = os.path.join(self.base, "alias")
-            os.symlink(self.root, alias)
-            targets.append(os.path.join(alias, "src", "x.py"))
-        return targets
+    def test_an_unresolved_case_alias_of_the_project_is_warned(self):
+        for run in (self._claude, self._codex):
+            rc, out, _err = run(self.alias)
+            self.assertEqual(rc, 0, run.__name__)
+            self.assertIn(self.alias, self._context(out), run.__name__)
 
-    def test_an_alias_of_the_project_is_warned(self):
-        for target in self._targets():
-            for run in (self._claude, self._codex):
-                rc, out, _err = run(target)
-                self.assertEqual(rc, 0, (run.__name__, target))
-                self.assertIn(target, self._context(out), (run.__name__, target))
+    @unittest.skipUnless(os.name == "nt", "Windows 8.3 path resolution")
+    def test_a_resolved_windows_short_name_receives_normal_gates(self):
+        self._canonicalization_patch.stop()
+        self.assertEqual(hr.make_rel(self.root)(self.alias), "src/x.py")
+        for run in (self._claude, self._codex):
+            self.assertEqual(run(self.alias), (0, "", ""), run.__name__)
+        self._declare("L3")
+        for run in (self._claude, self._codex):
+            rc, out, err = run(self.alias)
+            self.assertEqual((rc, out), (2, ""), run.__name__)
+            self.assertIn("src/x.py", err)
+
+    @unittest.skipIf(os.name == "nt", "symlink permission depends on the Windows host")
+    def test_a_resolved_checkout_alias_receives_normal_gates(self):
+        alias = os.path.join(self.base, "alias")
+        os.symlink(self.root, alias)
+        target = os.path.join(alias, "src", "x.py")
+        for run in (self._claude, self._codex):
+            # This fixture has every required phase, so the ordinary L2 write
+            # passes without an incorrect outside-project notice.
+            rc, out, err = run(target)
+            self.assertEqual((rc, out, err), (0, "", ""), run.__name__)
+        # The same alias must not escape an actual L3 risk/phase requirement.
+        self._declare("L3")
+        for run in (self._claude, self._codex):
+            rc, out, err = run(target)
+            self.assertEqual(rc, 2, (run.__name__, out, err))
+            self.assertIn("src/x.py", err)
 
     def test_a_confirmed_outside_path_is_quiet(self):
         for run in (self._claude, self._codex):

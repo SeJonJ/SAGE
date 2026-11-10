@@ -1,7 +1,7 @@
 name: CI
 
-# 외부검토 P2-10: 자기 도그푸딩(CI 부재) 해소 — push/PR 마다 hook 회귀 전체 + sage validate 자가검증 +
-# sdist 패키징 리소스 가드를 실행한다.
+# 일반 회귀와 독립 패키지 검사는 엔진 변경을 검사한다. CLI validate 제품 동작은
+# fresh wheel consumer에서만 검사하며 엔진 checkout의 승인 gate로 사용하지 않는다.
 on:
   push:
     branches: [main]
@@ -14,7 +14,7 @@ on:
 
 jobs:
   test:
-    name: hook regression + self-validate (py${{ matrix.python-version }})
+    name: hook regression + isolated consumer (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -35,8 +35,8 @@ jobs:
           python -m pip install -e ".[schema]"
       - name: Hook regression suite (run-all.sh)
         run: bash scripts/sage_harness/hooks/tests/run-all.sh
-      - name: sage validate (self — drift/staleness + manifest schema)
-        run: python -m sage validate --check --schema
+      - name: Isolated wheel consumer (independent bundle check + CLI product behavior)
+        run: python -I scripts/ci/check_consumer_integrity.py --work-dir "${{ runner.temp }}/sage-consumer-integrity"
 
   packaging:
     name: sdist build + resource bundle guard

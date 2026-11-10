@@ -210,7 +210,7 @@ def _warn_if_retro_audit_tracked(dest, language=None):
     )
 
 
-def _prune_legacy_skill(skill_dir, pruned, transaction=None):
+def _prune_legacy_skill(skill_dir, pruned, transaction=None, strict=False):
     """은퇴한 CORE skill 사본을 제거(rename 수렴). codex 전역 $CODEX_HOME/skills 는 공유 공간이라
     SKILL.md 에 SAGE hand-ship 시그니처가 있을 때만 삭제 — 같은 이름의 사용자 skill 오삭제 방지(codex R2-P2).
     비치명적: 권한/읽기전용/비-UTF-8 실패는 install 을 깨지 않는다(전역 home 쓰기와 동일 철학)."""
@@ -225,13 +225,17 @@ def _prune_legacy_skill(skill_dir, pruned, transaction=None):
     try:
         if _LEGACY_SKILL_SIGNATURE not in Path(skill_md).read_text(encoding="utf-8"):
             return   # SAGE 가 ship 한 자산 아님 → 사용자 skill 로 보고 보존
+    except (OSError, UnicodeError):
+        return
+    try:
         if transaction is not None:
             transaction.stage_remove_tree(skill_dir)
         else:
             shutil.rmtree(skill_dir)
         pruned.append(skill_dir)
-    except (OSError, UnicodeError):
-        pass
+    except OSError:
+        if strict:
+            raise
 
 
 def _prune_legacy_native_write_guard(dest, pruned, layout, transaction=None):
@@ -601,6 +605,12 @@ def _install_codex_skill_at(src_skill_md, dst, force, skill_id="sage-init", tran
         _atomic_write(dst, src_text, transaction=transaction)
         return ("installed", dst)
     except (OSError, UnicodeError) as e:
+        from sage.upgrade_transaction import active_global_upgrade
+        global_upgrade = active_global_upgrade()
+        if global_upgrade is not None and transaction is global_upgrade.transaction:
+            # Upgrade owns strict recovery (including guarded directory cleanup).
+            # The standalone optional restore_path path is deliberately not used.
+            raise
         if transaction is not None:
             try:
                 transaction.restore_path(dst)
@@ -897,6 +907,18 @@ def _core_trust_conflicts(dest, host, profile, existing_manifest, allow_base_rep
             conflicts.append({"key": key, "path": path, "reason": reason,
                               "expected_sha": expected_sha, "actual_sha": actual_sha})
             continue
+        # A force upgrade may replace the base, but it must not reinterpret a
+        # damaged/foreign legacy context span as owned SAGE additions.
+        if (_cls.delivery_mode(kind, asset_id) == "context" and os.path.isfile(path)
+                and not os.path.islink(path)):
+            context_text, context_error = overlay_common.read_text_lf(path)
+            if not context_error:
+                _cleaned, context_error = overlay_materialize._remove_context_span(
+                    context_text, kind, asset_id)
+            if context_error:
+                conflicts.append({"key": key, "path": path, "reason": context_error,
+                                  "expected_sha": expected_sha, "actual_sha": "unavailable"})
+                continue
         if allow_base_replacement:
             continue
         if not os.path.lexists(path):
@@ -1073,6 +1095,19 @@ def _cleanup_blocked_core_renders(dest, host, codex_skill_scope=None, language=N
     return errors
 
 
+def _report_fast_overlay_inheritance(dest):
+    """Upgrade visibility: paths/mapping only, never shared or private bodies."""
+    for target, source_ids in _cls.ROOT_CONTEXT_TARGET_SOURCES.items():
+        if len(source_ids) != 2:
+            continue
+        standard = source_ids[0]
+        paths = [f"sage/{directory}/skills/{standard}.md"
+                 for directory in ("asset_overrides", "asset_overrides.local")
+                 if os.path.isfile(os.path.join(dest, "sage", directory, "skills", standard + ".md"))]
+        if paths:
+            print(f"  overlay_inheritance: {target} <- " + ", ".join(paths))
+
+
 def _onboarding_text(host, skill_scope):
     if host == "claude":
         detail = (
@@ -1220,9 +1255,14 @@ def run(args) -> int:
         print(f"[sage install] TOOL ERROR: {scope_error}", file=sys.stderr)
         return 2
     args._sage_skill_scope = skill_scope
+    from sage.upgrade_transaction import active_global_upgrade
+    global_upgrade = active_global_upgrade()
     lock_targets = [os.path.abspath(args.dest)]
     if args.host == "codex" and skill_scope == "global":
-        lock_targets.append(_codex_skills_root())
+        if global_upgrade is not None:
+            global_upgrade.verify_lock(_codex_skills_root(), args.dest)
+        else:
+            lock_targets.append(_codex_skills_root())
     locks_by_path = {}
     for target in lock_targets:
         candidate = _tx.DestinationLock(target)
@@ -1383,12 +1423,18 @@ def _run_locked(args) -> int:
             or confirmed_overlay_errors or confirmed_trust_conflicts):
         raise _tx.InstallDriftError(
             "install inputs changed while establishing the preflight snapshot")
+    from sage.upgrade_transaction import active_global_upgrade
+    global_upgrade = (active_global_upgrade()
+                      if args.host == "codex" and skill_scope == "global" else None)
+    if global_upgrade is not None:
+        preconditions = global_upgrade.prepare(preconditions)
     write_roots = [dest]
-    if args.host == "codex" and getattr(args, "_sage_skill_scope", None) == "global":
+    if args.host == "codex" and skill_scope == "global" and global_upgrade is None:
         write_roots.append(os.path.dirname(_codex_skills_root()))
     transaction = _tx.InstallTransaction(expected=preconditions, write_roots=write_roots)
     transaction.verify_unconsumed()
     args._sage_install_transaction = transaction
+    global_transaction = (global_upgrade.transaction if global_upgrade is not None else transaction)
 
     # 1. profile — 인스턴스 커스터마이즈 SSOT(위험분류/pdca/team 등). F5: 엔진 자산이 아니므로
     #    --force(엔진 업그레이드)여도 절대 덮어쓰지 않는다 — 덮으면 프로젝트 값 소실로 클린 업그레이드 불가.
@@ -1458,7 +1504,7 @@ def _run_locked(args) -> int:
             skill_src_md = _core_skill_source(skill_id)
             if skill_scope == "global":
                 status = _install_codex_global_skill(
-                    skill_src_md, args.force, skill_id=skill_id, transaction=transaction)
+                    skill_src_md, args.force, skill_id=skill_id, transaction=global_transaction)
             elif skill_scope == "project-local":
                 status = _install_codex_project_skill(
                     dest, skill_src_md, args.force, skill_id=skill_id, transaction=transaction)
@@ -1529,7 +1575,8 @@ def _run_locked(args) -> int:
                          else lambda src, force, skill_id, transaction: _install_codex_project_skill(
                              dest, src, force, skill_id=skill_id, transaction=transaction))
             core_skill_status.append((sid, installer(
-                src_md, args.force, skill_id=sid, transaction=transaction)))
+                src_md, args.force, skill_id=sid,
+                transaction=(global_transaction if skill_scope == "global" else transaction))))
 
     # 5d. 은퇴한 CORE skill 잔존 사본 정리 — 옛 이름이 새 이름과 함께 남아 호출되는 혼선 방지.
     #     설치한 host 의 발견 경로만 정리(claude=repo .claude/skills, codex=전역 $CODEX_HOME/skills).
@@ -1541,7 +1588,15 @@ def _run_locked(args) -> int:
             skill_root = (_codex_skills_root() if skill_scope == "global"
                           else os.path.join(dest, ".codex", "skills"))
             _prune_legacy_skill(os.path.join(skill_root, legacy), pruned,
-                                transaction=transaction)
+                                transaction=(global_transaction if skill_scope == "global" else transaction),
+                                strict=global_upgrade is not None)
+
+    if global_upgrade is not None:
+        failed_skills = [(sid, status, detail) for sid, (status, detail)
+                         in bootstrap_skill_status + core_skill_status
+                         if status not in ("installed", "skipped")]
+        if failed_skills:
+            raise _tx.InstallDriftError(f"global upgrade skill installation failed: {failed_skills}")
 
     # 5e. 오버레이 물리화 + core_renders 앵커 — CORE 렌더 base 에 (a)/(b) 오버레이 블록을 물리 삽입하고
     #     (c)/미분류는 블록 없이 base 앵커만 기록. install·sync·L1·validate 가 같은 로직(overlay_materialize)을 경유.
@@ -1616,6 +1671,7 @@ def _run_locked(args) -> int:
     #    가 manifest 와 어긋나지 않았는지 설치 직후 바로 확인하도록 안내한다(현재는 사람이 별도 validate
     #    를 돌려야만 orphan drift 를 발견).
     if args.force:
+        _report_fast_overlay_inheritance(dest)
         print("")
         print(tr(language_of(args), 'cli.install.msg34'))
         print(tr(language_of(args), 'cli.install.msg35'))

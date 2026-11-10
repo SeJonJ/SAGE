@@ -399,7 +399,7 @@ class TestDispatchIntegration(unittest.TestCase):
             r = self._run("post-tool-logger", stdin="{}", root=root)
             self.assertEqual(r.returncode, 0)
 
-    def test_session_start_propagates_blocked_overlay_exit_two(self):
+    def test_session_start_reports_overlay_diagnostic_without_losing_context(self):
         with tempfile.TemporaryDirectory() as root:
             agents = os.path.join(root, ".claude", "agents")
             os.makedirs(agents)
@@ -419,7 +419,7 @@ class TestDispatchIntegration(unittest.TestCase):
 
             r = self._run("session-start-snapshot", stdin="{}", root=root)
 
-            self.assertEqual(r.returncode, 2, r.stderr)
+            self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("[session-start-overlay] BLOCK", r.stderr)
             with open(qa, encoding="utf-8") as fh:
                 self.assertNotIn(overlay_common.MARKER_START, fh.read())
@@ -601,6 +601,126 @@ class TestStopRetryNotBlockedForever(unittest.TestCase):
         self.assertEqual(hint.code, "entry.not_an_install_target")
         self.assertEqual(hint.arguments.get("settings"), ".codex/hooks.json")
         self.assertNotIn("config.toml", str(hint.arguments))
+
+
+class TestEventRootPolicyIsolation(unittest.TestCase):
+    """A non-SAGE event boundary isolates catalogs without moving installed policy state."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='sage-root-split-')
+        self.addCleanup(self.tmp.cleanup)
+        self.parent = Path(self.tmp.name) / 'installed'
+        self.nested = self.parent / 'vendor/non-sage'
+        self.nested.mkdir(parents=True)
+        (self.nested / '.git').mkdir()
+        self.make_project(self.parent, 'PRIVATE_PARENT_CATALOG')
+
+    def make_project(self, root, marker):
+        (root / 'sage').mkdir(parents=True, exist_ok=True)
+        (root / 'vault').mkdir(exist_ok=True)
+        profile = {'project': {'name': 'root-split'},
+                   'risk': {'default_level': 'L2', 'l2_path_globs': ['src/**']},
+                   'pdca': {'enabled': True, 'phases': [{'id': '06', 'glob': 'plan_docs/06-*.md'}],
+                            'retro': {'report_gate_enforce': 'enforce'}},
+                   'knowledge_capture': {'retro_note': True, 'vault_path': str(root / 'vault')}}
+        (root / 'sage/project-profile.yaml').write_text(yaml.safe_dump(profile))
+        (root / 'sage/project-profile.json').write_text(json.dumps(materialize_profile(profile)))
+        private = root / 'sage/asset_overrides.local/skills'
+        private.mkdir(parents=True)
+        (private / 'sage-team.md').write_text(marker)
+
+    def run_entry(self, hook, event, runtime='claude', explicit=None, core=CORE):
+        env = _source_env()
+        for key in ('SAGE_PROFILE', 'SAGE_OVERLAY_ROLE'):
+            env.pop(key, None)
+        env.update(SAGE_PROJECT_ROOT=str(self.parent), CLAUDE_PROJECT_DIR=str(self.parent),
+                   CODEX_PROJECT_ROOT=str(self.parent), PYTHONDONTWRITEBYTECODE='1')
+        args = [sys.executable, '-m', 'sage.hook_entry', '--runtime', runtime,
+                '--hook', hook, '--core-dir', str(core)]
+        if explicit:
+            args += ['--root', str(explicit)]
+        return subprocess.run(args, input=json.dumps(event), cwd=self.parent,
+                              env=env, text=True, capture_output=True)
+
+    def test_nested_non_sage_cwd_keeps_risk_in_installed_root_without_parent_catalog(self):
+        for runtime in ('claude', 'codex'):
+            with self.subTest(runtime=runtime):
+                done = self.run_entry('capture-declared-risk',
+                    {'cwd': str(self.nested), 'session_id': runtime, 'prompt': 'SAGE-RISK: L3'}, runtime)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                state = self.parent / ('.' + runtime) / 'logs' / ('declared-risk-' + runtime + '.json')
+                self.assertTrue(state.is_file(), 'risk capture moved into the non-SAGE nested root')
+                self.assertEqual(json.loads(state.read_text())['level'], 'L3')
+                self.assertFalse((self.nested / ('.' + runtime) / 'logs').exists())
+                self.assertNotIn('PRIVATE_PARENT_CATALOG', done.stdout + done.stderr)
+
+    def test_nested_session_start_keeps_independent_baseline_in_installed_root(self):
+        for runtime in ('claude', 'codex'):
+            done = self.run_entry('session-start-snapshot',
+                {'cwd': str(self.nested), 'session_id': runtime, 'source': 'resume'}, runtime)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            baseline = self.parent / ('.' + runtime) / 'logs' / ('session-snapshot-' + runtime + '.json')
+            self.assertTrue(baseline.is_file(), 'SessionStart baseline moved with catalog boundary')
+            self.assertNotIn('PRIVATE_PARENT_CATALOG', done.stdout + done.stderr)
+
+    def test_nested_stop_evaluates_installed_gate_on_first_call_and_retry(self):
+        for runtime in ('claude', 'codex'):
+            session = 'stop-' + runtime
+            start = self.run_entry('session-start-snapshot',
+                {'cwd': str(self.parent), 'session_id': session, 'source': 'startup'}, runtime,
+                explicit=self.parent)
+            self.assertEqual(start.returncode, 0, start.stderr)
+            plan = self.parent / 'plan_docs'
+            plan.mkdir(exist_ok=True)
+            (plan / ('06-' + runtime + '.md')).write_text('new completion after baseline')
+            event = {'cwd': str(self.nested), 'session_id': session, 'stop_hook_active': False}
+            first = self.run_entry('stop-compliance-report', event, runtime)
+            if runtime == 'claude':
+                self.assertEqual(first.returncode, 2, first.stderr)
+            else:
+                self.assertEqual(json.loads(first.stdout)['decision'], 'block')
+            reports = list((self.parent / ('.' + runtime) / 'logs').glob('compliance-*.md'))
+            self.assertTrue(reports, 'Stop returned without evaluating the installed project gate')
+            original = reports[0].read_bytes()
+            self.assertIn(b'retro_gate', original)
+            event['stop_hook_active'] = True
+            retry = self.run_entry('stop-compliance-report', event, runtime)
+            self.assertEqual(retry.returncode, 0, retry.stderr)
+            self.assertGreater(len(reports[0].read_bytes()), len(original),
+                               'retry bypassed Stop instead of evaluating its WARN policy')
+            self.assertNotIn('entry.profile_yaml_unreadable', retry.stderr)
+
+    def test_real_other_sage_root_and_explicit_root_still_win(self):
+        other = self.parent / 'other-sage'
+        self.make_project(other, 'OTHER_SAGE_CATALOG')
+        done = self.run_entry('capture-declared-risk',
+            {'cwd': str(other), 'session_id': 'other', 'prompt': 'SAGE-RISK: L3'})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn('OTHER_SAGE_CATALOG', done.stdout)
+        self.assertNotIn('PRIVATE_PARENT_CATALOG', done.stdout)
+        self.assertTrue((other / '.claude/logs/declared-risk-other.json').is_file())
+        explicit = self.run_entry('capture-declared-risk',
+            {'cwd': str(self.nested), 'session_id': 'explicit', 'prompt': 'continue'}, explicit=other)
+        self.assertEqual(explicit.returncode, 0, explicit.stderr)
+        self.assertIn('OTHER_SAGE_CATALOG', explicit.stdout)
+
+    def test_old_dispatcher_cannot_receive_split_context_or_leak_parent_catalog(self):
+        old = Path(self.tmp.name) / 'old-core/runtime'
+        old.mkdir(parents=True)
+        (old / 'run_hook.py').write_text(
+            'def dispatch(runtime, hook, root, core_dir, raw_text, direct_path=None):\n'
+            '    print("OLD_DISPATCH_EXECUTED_PARENT_CONTEXT")\n'
+            '    return 0\n')
+        for hook in ('capture-declared-risk', 'session-start-snapshot'):
+            done = self.run_entry(hook, {'cwd': str(self.nested), 'session_id': 'old'}, core=old.parent)
+            self.assertEqual(done.returncode, 0 if hook == 'session-start-snapshot' else 2)
+            self.assertNotIn('OLD_DISPATCH_EXECUTED_PARENT_CONTEXT', done.stdout)
+            self.assertNotIn('TypeError', done.stderr)
+            self.assertIn('API 3', done.stderr)
+        same = self.run_entry('capture-declared-risk',
+                              {'cwd': str(self.parent), 'session_id': 'same'}, core=old.parent)
+        self.assertEqual(same.returncode, 0, same.stderr)
+        self.assertIn('OLD_DISPATCH_EXECUTED_PARENT_CONTEXT', same.stdout)
 
 
 if __name__ == "__main__":

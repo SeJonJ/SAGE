@@ -2,18 +2,26 @@
 id: generated-artifact-write-guard
 kind: hook
 runtime_bindings:
-  claude: { event: PreToolUse, matcher: "Write|Edit|MultiEdit", timeout: 10 }
-  codex: { event: PreToolUse, matcher: "apply_patch", timeout: 10 }
+  claude: { event: PreToolUse, matcher: "*", timeout: 10 }
+  codex: { event: PreToolUse, matcher: "*", timeout: 10 }
 ---
 ## intent
+Before every supported PreToolUse call in a SAGE checkout, validate the current shared/personal
+overlay inventory through the common collector. Registration uses `matcher: "*"` on both hosts;
+this broadens input validation to supported tool calls, including reads and Bash. A bad inventory,
+size excess, damaged SAGE marker, or validator exception yields body-free native deny/exit 2
+before the original write/phase gates. A genuinely non-SAGE checkout remains pass-through.
+Validation does not prove that the model received a catalog. It adds no shell side-effect parser
+or repair exception; use an external terminal/editor to repair inputs, then retry the next prompt.
+
 Deterministically block direct edits to generated artifacts (agents, hooks and skills under
 `.claude` and `.codex`) and redirect to the spec under `docs/sage_harness`. This is the lock on
 the SSOT model. Without it, "always edit the spec" is only advice, and an AI fixing an artifact
 in passing during development produces silent drift.
 
 ## runtime_bindings
-- claude: { event: PreToolUse, matcher: "Write|Edit|MultiEdit" }
-- codex:  { event: PreToolUse, matcher: "apply_patch" }
+- claude: { event: PreToolUse, matcher: "*" }
+- codex:  { event: PreToolUse, matcher: "*" }
 - on_fail: block — the adapter maps it to exit 2 on stderr, or to JSON.
 
 ## canonical
@@ -29,17 +37,18 @@ sage_harness/hooks/generated_artifact_write_guard_core.py
   `CODEX.md`, `AGENTS.md`), and the cycle declaration state `*/.sage/cycle.json`.
 - pass (exit 0): anything outside those ownership boundaries — in particular the
   `docs/sage_harness/**` and `scripts/sage_harness/**` sources.
-- No path, or a parse failure → pass. It is not a guard target, and failing loudly here would be
+- For the original generated-path classification, no path or a parse failure → pass after
+  overlay input validation succeeds. It is not a guard target, and failing loudly here would be
   a silent malfunction of a different kind.
-- No exemption is needed for the CLI: `sage generate` and `sage cycle` do not go through an
-  editing tool (Write / Edit / apply_patch), so they never reach this PreToolUse guard.
+- CLI source writes are not themselves editing-tool targets of the original path classifier.
+  Invoking a CLI through a supported Bash tool still undergoes the preceding inventory validation;
+  external terminal execution is outside the host hook boundary.
 - `.sage/cycle.json` is matched on the **path tail**. Matching on basename, as `.mcp.json` does,
   would block any `cycle.json` anywhere in the project. This is the file the gate reads to answer
   "which cycle is this edit part of", so being able to write it with an editing tool would let
   someone point at a completed cycle and switch their own gate off. That was impossible while the
-  channel was an env var; the hole appeared when it moved to a file. The matcher covers editing
-  tools only, so Bash is still not covered — but anyone with Bash can write the source itself
-  without a gate, so this is not a new lever.
+  channel was an env var; the hole appeared when it moved to a file. The original path classifier still covers editing-tool paths, not arbitrary Bash effects.
+  The broader matcher adds overlay inventory validation to Bash, not a general shell write gate.
 
 ## Blocking CORE bootstrap renders, with eligibility-aware guidance (exit 2)
 Hand-shipped CORE renders (CORE skills and roster agents) are blocked exactly like any other
@@ -49,14 +58,16 @@ left direct edits to CORE renders unprotected and `sage install --force` silentl
 The project-local overlay path is only suggested for assets whose executable eligibility is
 proven. That currently covers the non-gate workers `implementer-a` and `implementer-b` on both
 hosts, plus the reclassified gate-bearing assets `leader` and `reviewer` (agents) and
-`sage-cycle`, `sage-plan`, `sage-review` and `sage-team` (skills). These redirect to the
+`sage-cycle`, `sage-plan`, `sage-review`, `sage-team`, `sage-cycle-fast`,
+`sage-plan-fast`, and `sage-team-fast` (skills). These redirect to the
 canonical lowercase overlay path (`core_overlay_hint`; a skill overlay id is the skill directory
-name). Overlay synthesis is safe for them because an asset-independent deterministic oracle
-floors their gates. The remaining `qa` and `convention-checker` (agents) and `sage-init`,
+name). Eligibility is backed by asset-independent deterministic oracles that floor structural gates.
+The seven skills use context delivery; worker agents retain physical shared composition.
+This does not authenticate human consent or prove semantic compliance. The remaining `qa` and `convention-checker` (agents) and `sage-init`,
 `sage-asset`, `sage-asset-override` and `sage-profile-modify` (skills) have no independent
 oracle, so the guidance states that overlays are not currently supported for them
 (`is_blocked_core_render`). That keeps users from creating an overlay file which would be
-preserved but could never be synthesized.
+preserved but could never be applied as that asset's own overlay. Other eligible target bodies may still be visible in the root catalog context.
 
 A codex CORE skill installs to `$CODEX_HOME/skills` when the chosen scope is global, and to the
 repository `.codex/skills/` when it is project-local. A project-local CORE name is identified as
@@ -65,7 +76,7 @@ and the guidance points at reinstalling with the same `--skill-scope project-loc
 at the supported overlay flow. A non-CORE `.codex/skills/` entry is blocked as before, as an
 ordinary project skill artifact with spec→generate guidance. Non-CORE renders redirect to
 `docs/sage_harness/<kind>s/<id>.md` as before. Eligible overlay authoring goes through the
-`/sage-asset-override` skill, which only offers currently eligible non-gate assets, and gate
+`/sage-asset-override` skill, which only offers currently eligible assets, and gate
 relaxation hard-fails in materialization preflight and `sage validate --strict`.
 
 ## Blocking AGENT_GUIDE.md, the CORE framework document, with a project-profile redirect (exit 2)

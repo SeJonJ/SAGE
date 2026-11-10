@@ -138,7 +138,13 @@ def _build_registration(root, target, hook_ids, project_hooks=None):
         ev = rb[target].get("event", "PreToolUse")
         mt = rb[target].get("matcher", "")
         to = rb[target].get("timeout", 10)
+        # The shared guard also validates overlay input before any supported tool.
+        # Its pure write decision remains unchanged for non-writing tools.
+        if hid == "generated-artifact-write-guard" and ev == "PreToolUse":
+            mt = "*"
         blk = {"type": "command", "command": _command_template(target, hid), "timeout": to}
+        if target == "codex" and hid in ("session-start-snapshot", "capture-declared-risk"):
+            blk["additionalContextLimit"] = 60000
         by_event.setdefault(ev, {}).setdefault(mt, []).append(blk)
 
     reg = {}

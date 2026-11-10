@@ -9,6 +9,7 @@ manifest.core_renders 에 기록한다. 이것은 tamper-proof 앵커가 아니�
 (로컬이라 위조 가능) — 진짜 권위는 CI-pinned canonical 로 재계산하는 것이다. base 무결성 검사는
 (c) 포함 모든 CORE 렌더에 적용해, (c) 렌더에 overlay-read 지시를 심는 변조도 잡는다.
 """
+import ast
 import hashlib
 import json
 import os
@@ -237,16 +238,102 @@ def _load_profile(dest):
     return load_profile(dest)
 
 
+def _remove_context_span(installed_text, kind, id):
+    """Strip only an exactly owned legacy shared span; preserve all other bytes."""
+    _base, error = _oc.base_of(installed_text)
+    if error:
+        return installed_text, error
+    span = _oc.extract_block(installed_text)
+    if not span:
+        return installed_text, None
+    expected_header = (f"{_oc.MARKER_START}\n"
+                       f"## Project-Local Additions (sage/asset_overrides/{kind}/{id}.md)\n")
+    if not span.startswith(expected_header):
+        return installed_text, Diagnostic("overlay.marker_unextractable")
+    return installed_text.replace(span, "", 1), None
+
+
+def _context_delivery_issue(dest, id, core_base):
+    """구설치의 공유 본문을 지우기 전 지원 형태만 확인한다. 무결성 권위는 아니다.
+
+    현재 bundle과 바이트가 다른 호환 runtime도 허용한다. CORE/base hash 검증과
+    native 전달 acceptance는 별도 권위이며, 이 검사는 코드를 실행하지 않는다.
+    """
+    unsupported = Diagnostic("overlay.context_upgrade_required", id=id,
+                             evidence="sage upgrade --apply")
+    if not (f"Current overlay target: `{id}`" in core_base
+            and f'targets["{id}"]' in core_base
+            and "schema-version-2 catalog" in core_base):
+        return unsupported
+    try:
+        from sage import asset_paths
+        runtime = os.path.join(asset_paths.layout_hooks_dir(dest, asset_paths.detect_layout(dest)),
+                               "runtime")
+        modules = {}
+        for name in ("overlay_context.py", "hook_runtime.py"):
+            path = os.path.join(runtime, name)
+            path_issue = _project_path_issue(dest, path, leaf_kind="file")
+            if path_issue:
+                return path_issue
+            text, read_issue = _oc.read_text_lf(path)
+            if read_issue:
+                return unsupported
+            tree = ast.parse(text)
+            modules[name] = {node.name: node for node in tree.body
+                             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+        def calls(function, owner, attribute=None):
+            if function is None:
+                return False
+            for node in ast.walk(function):
+                if not isinstance(node, ast.Call):
+                    continue
+                target = node.func
+                if attribute is None:
+                    if isinstance(target, ast.Name) and target.id == owner:
+                        return True
+                elif (isinstance(target, ast.Attribute) and target.attr == attribute
+                      and isinstance(target.value, ast.Name) and target.value.id == owner):
+                    return True
+            return False
+
+        overlay = modules["overlay_context.py"]
+        current = overlay.get("current")
+        if (not calls(current, "collect_catalog") or not calls(current, "render_catalog")
+                or "merge_output" not in overlay):
+            return unsupported
+        for function, output in (("run_session_start_snapshot", "render_session_context"),
+                                 ("run_capture_declared_risk", "render_context")):
+            event = modules["hook_runtime.py"].get(function)
+            if not (calls(event, "overlay_context", "current")
+                    and calls(event, "overlay_context", "merge_output")
+                    and calls(event, "io", output)):
+                return unsupported
+        return None
+    except (OSError, UnicodeError, ValueError, SyntaxError, TypeError):
+        return unsupported
+
+
 def _materialized_render(installed_text, kind, id, dest, profile=None):
     """설치본 → (물리화된 렌더, canonical base, error). 관리 구간을 expected_block 으로 수렴.
 
-    (a)/(b)=오버레이 블록 삽입/갱신, (c)/미분류=expected_block=''→기존 블록 제거(스트립).
+    physical worker=공유 블록 삽입/갱신, context root skill=정상 소유 legacy span만 제거,
+    blocked/미분류=expected_block=''→기존 블록 제거(스트립).
     이어서 라우팅 블록(FB25)을 수렴한다 — AGENT_GUIDE 만 채워지고 나머지는 ''(스트립). base 영역은
     절대 재작성하지 않으며, base_of 가 두 관리 구간을 함께 제거하므로 앵커는 라우팅 값에 불변.
     """
     base, berr = _oc.base_of(installed_text)
     if berr:
         return None, None, berr
+    if _cls.delivery_mode(kind, id) == "context":
+        cleaned, error = _remove_context_span(installed_text, kind, id)
+        if not error and cleaned != installed_text:
+            error = _context_delivery_issue(dest, id, base)
+        if not error:
+            routing = _oc.extract_routing_block(cleaned)
+            if routing:
+                cleaned = cleaned.replace(routing, "", 1)
+        return (None, base, error) if error else (cleaned, base, None)
     block, cerr = _cls.expected_block(kind, id, dest)
     if cerr:
         return None, base, cerr
@@ -262,8 +349,14 @@ def _materialized_render(installed_text, kind, id, dest, profile=None):
     return new_text, base, None
 
 
-def preflight_overlays(dest, profile=None):
-    """Validate all overlay/domain inputs without requiring installed CORE renders."""
+def preflight_overlays(dest, profile=None, *, context_validated=False):
+    """Validate overlay/domain inputs without requiring installed CORE renders.
+
+    Only a successful whole-inventory collector for this same root/event may set
+    context_validated. In that case root-context bodies were already checked and
+    are not read again. Inventory/path/eligibility and physical workers retain
+    their normal checks. Other callers use the default independent validation.
+    """
     errors = []
     if profile is None:
         profile, profile_error = load_profile(dest)
@@ -312,6 +405,8 @@ def preflight_overlays(dest, profile=None):
         if _cls.classify(kind, id) == "blocked":
             errors.append((path, Diagnostic("overlay.unsupported_blocked", kind=kind, id=id)))
             continue
+        if context_validated and _cls.delivery_mode(kind, id) == "context":
+            continue
         text, read_error = _oc.read_text_lf(path)
         if read_error:
             errors.append((path, read_error))
@@ -359,7 +454,8 @@ def _language_policy_receipt(dest):
     }, None
 
 
-def plan_materialize(dest, host, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
+def plan_materialize(dest, host, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO, *,
+                     context_validated=False):
     """모든 CORE 렌더의 물리화 계획과 앵커를 쓰기 없이 계산한다.
 
     반환 (core_renders, plans, errors). plans 항목은
@@ -371,7 +467,7 @@ def plan_materialize(dest, host, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
     profile, profile_error = _load_profile(dest)
     if profile_error:
         errors.append((os.path.join(dest, "sage", "project-profile.yaml"), profile_error))
-    errors.extend(preflight_overlays(dest, profile))
+    errors.extend(preflight_overlays(dest, profile, context_validated=context_validated))
 
     for kind, id, path in render_targets(dest, host, codex_skill_scope):
         if not os.path.isfile(path):
@@ -413,7 +509,7 @@ def apply_materialization(plans, writer=None):
 
 def plan_blocked_cleanup(dest, host, path_guard=None,
                          codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
-    """blocked CORE 자산에 남은 SAGE managed block 제거 계획을 계산한다.
+    """blocked 자산 및 context root skill의 legacy managed block 제거 계획.
 
     FB12 이전에 materialize된 framework/gate-bearing block은 현재 overlay 파일의 오류 때문에
     일반 preflight가 중단돼도 실행 지침으로 남아서는 안 된다. SAGE 마커 구간만 제거하며 base와
@@ -422,7 +518,8 @@ def plan_blocked_cleanup(dest, host, path_guard=None,
     """
     plans, errors = [], []
     for kind, id, path in render_targets(dest, host, codex_skill_scope):
-        if _cls.classify(kind, id) != "blocked":
+        mode = _cls.delivery_mode(kind, id)
+        if mode == "physical":
             continue
         if path_guard is not None:
             path_issue = path_guard(path)
@@ -436,7 +533,16 @@ def plan_blocked_cleanup(dest, host, path_guard=None,
         if rerr:
             errors.append((path, rerr))
             continue
-        stripped, serr = _oc.insert_block(installed, "")
+        stripped, serr = (_remove_context_span(installed, kind, id) if mode == "context"
+                          else _oc.insert_block(installed, ""))
+        if not serr and mode == "context" and stripped != installed:
+            core_base, serr = _oc.base_of(stripped)
+            if not serr:
+                serr = _context_delivery_issue(dest, id, core_base)
+        if not serr and mode == "context":
+            routing = _oc.extract_routing_block(stripped)
+            if routing:
+                stripped = stripped.replace(routing, "", 1)
         if serr:
             errors.append((path, serr))
             continue
@@ -445,7 +551,8 @@ def plan_blocked_cleanup(dest, host, path_guard=None,
     return plans, errors
 
 
-def materialize(dest, host, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
+def materialize(dest, host, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO, *,
+                context_validated=False):
     """단일 host의 CORE 렌더를 물리화(블록 수렴) + 앵커 계산.
 
     반환 (core_renders, changed_paths, errors).
@@ -461,7 +568,8 @@ def materialize(dest, host, codex_skill_scope=_CODEX_SKILL_SCOPE_AUTO):
     cleanup_changed = apply_materialization(cleanup_plans)
     if cleanup_errors:
         return {}, cleanup_changed, cleanup_errors
-    core_renders, plans, errors = plan_materialize(dest, host, codex_skill_scope)
+    core_renders, plans, errors = plan_materialize(
+        dest, host, codex_skill_scope, context_validated=context_validated)
     if errors:
         return {}, cleanup_changed, errors
     return core_renders, cleanup_changed + apply_materialization(plans), []

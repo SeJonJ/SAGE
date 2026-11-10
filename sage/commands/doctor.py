@@ -351,6 +351,134 @@ def _check_core_render_drift(profile, prof_path, language=None):
     return 0
 
 
+def _overlay_registration_hooks(document):
+    """외부 JSON의 중첩 컨테이너를 확인한 뒤 등록 진단에 넘긴다."""
+    if not isinstance(document, dict) or not isinstance(document.get("hooks"), dict):
+        raise ValueError("invalid_registration_shape")
+    hooks = document["hooks"]
+    for blocks in hooks.values():
+        if not isinstance(blocks, list):
+            raise ValueError("invalid_registration_shape")
+        for block in blocks:
+            if (not isinstance(block, dict) or not isinstance(block.get("hooks"), list)
+                    or not isinstance(block.get("matcher", ""), str)
+                    or any(not isinstance(handler, dict) for handler in block["hooks"])):
+                raise ValueError("invalid_registration_shape")
+    return hooks
+
+
+def _report_overlay_render_sync(root, hosts, catalog_error=None):
+    """current 경계와 같은 읽기 전용 계획으로 입력 유효성과 렌더 수렴을 구분한다."""
+    from sage.overlay_materialize import plan_materialize
+    for host in hosts:
+        code = catalog_error
+        if not code:
+            try:
+                _anchors, plans, errors = plan_materialize(root, host, context_validated=True)
+                if errors:
+                    code = getattr(errors[0][1], "code", "overlay_delivery.render_invalid")
+                elif any(new != old for _path, new, old in plans):
+                    print(f"  [{host}] render_sync=REQUIRED code=overlay_delivery.render_sync_required")
+                    continue
+                else:
+                    print(f"  [{host}] render_sync=CURRENT")
+                    continue
+            except Exception as exc:
+                code = getattr(exc, "code", "overlay_delivery.validator_unavailable")
+        print(f"  [{host}] render_sync=INVALID code={code}")
+
+
+def _report_overlay_delivery(root, profile, manifest, language=None):
+    """Read-only configuration/input evidence; never imply native acceptance."""
+    if root is None:
+        return
+    import json
+    from sage import overlay_delivery as delivery
+    from sage.build_identity import source_core_content_hash
+    print("## Overlay context delivery")
+    print(f"  common_budget: source_utf8_bytes={delivery.MAX_SOURCE_UTF8_BYTES} "
+          f"catalog_utf8_bytes={delivery.MAX_CATALOG_UTF8_BYTES}")
+    print(f"  claude_budget: catalog_utf16_code_units={delivery.MAX_CLAUDE_CATALOG_UTF16_UNITS} "
+          f"merged_event_utf16_code_units={delivery.MAX_CLAUDE_EVENT_UTF16_UNITS} "
+          "reentry_declared_reserve_utf16_code_units=2500")
+    print("  codex_handler: additionalContextLimit=60000")
+    print("  host_support=UNVERIFIED hook_trust=UNVERIFIED native_acceptance=UNVERIFIED")
+    catalog_error = None
+    try:
+        catalog = delivery.collect_catalog(root)
+        rendered = delivery.render_catalog(catalog)
+        size = len(rendered.encode("utf-8"))
+        units = delivery.utf16_code_units(rendered)
+        print(f"  catalog_input=VALID sources={len(catalog['sources'])} "
+              f"utf8_bytes={size} utf16_code_units={units}")
+        for host in ('claude', 'codex'):
+            try:
+                delivery.check_host_context(rendered, host, catalog=True)
+                measure = (f"observed={units} limit={delivery.MAX_CLAUDE_CATALOG_UTF16_UNITS} "
+                           "unit=utf16_code_units" if host == 'claude' else
+                           f"observed={size} limit={delivery.MAX_CATALOG_UTF8_BYTES} unit=utf8_bytes")
+                print(f"  [{host}] catalog_budget=SUPPORTED {measure} merged_event=UNVERIFIED")
+            except delivery.OverlayDeliveryError as exc:
+                print(f"  [{host}] catalog_budget=EXCEEDED code={exc.code} "
+                      f"observed={exc.observed} limit={exc.limit} unit={exc.unit}")
+    except delivery.OverlayDeliveryError as exc:
+        catalog_error = exc.code
+        print(f"  catalog=INVALID code={exc.code} path={exc.path}")
+    except Exception:
+        catalog_error = "overlay_delivery.validator_unavailable"
+        print(f"  catalog=INVALID code={catalog_error}")
+    _report_overlay_render_sync(root, configured_hosts(profile), catalog_error)
+    recorded = manifest.get("source_core_content_hash") if isinstance(manifest, dict) else None
+    try:
+        state = "current" if recorded == source_core_content_hash() else "mixed_or_unknown"
+    except Exception:
+        state = "unknown"
+    print(f"  source_bundle={state}")
+    try:
+        from sage.hook_runtime_hash import calculate_hook_runtime_hash
+        hashes, absent = calculate_hook_runtime_hash(root)
+        recorded_runtime = manifest.get("hook_runtime_hash") if isinstance(manifest, dict) else None
+        runtime_state = ("current" if not absent and hashes and hashes == recorded_runtime
+                         else "mixed_or_unknown")
+    except Exception:
+        runtime_state = "unknown"
+    print(f"  installed_runtime={runtime_state}")
+    for host in configured_hosts(profile):
+        path = Path(root, ".claude/settings.json" if host == "claude" else ".codex/hooks.json")
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            hooks = _overlay_registration_hooks(data)
+        except FileNotFoundError:
+            print(f"  [{host}] native_registration=missing path={path}")
+            continue
+        except Exception:
+            print(f"  [{host}] native_registration=invalid path={path}")
+            continue
+        missing = []
+        for event, hid in (("SessionStart", "session-start-snapshot"),
+                           ("UserPromptSubmit", "capture-declared-risk"),
+                           ("PreToolUse", "generated-artifact-write-guard")):
+            blocks = hooks.get(event)
+            matches = [(block, handler) for block in blocks if isinstance(block, dict)
+                       for handler in block.get("hooks", []) if isinstance(handler, dict)
+                       and hid in str(handler.get("command", ""))] if isinstance(blocks, list) else []
+            if not matches or not any(
+                (block.get("matcher") == "*" if event == "PreToolUse"
+                 else block.get("matcher", "") in ("", "*"))
+                and handler.get("type") == "command"
+                and type(handler.get("timeout")) in (int, float) and handler["timeout"] > 0
+                and (host != "codex" or event == "PreToolUse"
+                     or (type(handler.get("additionalContextLimit")) is int
+                         and handler["additionalContextLimit"] >= 60000))
+                for block, handler in matches):
+                missing.append(hid)
+        status = "configured_unverified" if not missing else "incomplete"
+        print(f"  [{host}] native_registration={status} missing={','.join(missing) or 'none'}")
+        if missing:
+            suffix = " --target codex" if host == "codex" else ""
+            print(f"    repair: sage generate --kind hook --write{suffix}")
+
+
 def _is_repo_boundary(path):
     """git 저장소 경계. `.git`(디렉토리·worktree 파일) 또는 bare repo 레이아웃.
     상위 저장소의 profile 을 집어 남의 프로젝트를 진단하지 않도록 여기서 상승을 멈춘다."""
@@ -555,6 +683,7 @@ def run(args):
     if _report_version_contract(profile, manifest, language):
         rc = 1
     _report_codex_core_skill_scope(root, manifest, language)
+    _report_overlay_delivery(root, profile, manifest, language)
     if _check_core_render_drift(profile, prof_path, language):
         rc = 1   # 에이전트 frontmatter 로 주입될 값이 무효 = 설정이 조용히 무시되는 것 방지
     _check_codex_skill_deployment(prof_path, profile, language)

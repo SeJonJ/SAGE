@@ -1,7 +1,83 @@
-<!-- sage-doc-source: troubleshooting.md sha256:f8cb3b55a4eefb67c1f01301dc83decd94352b4e0bad9cad112f4404809a0f74 -->
+<!-- sage-doc-source: troubleshooting.md sha256:fe4a9844b11c89640e447ee406d322bda63c25db090bcb3e349ef851a094faf5 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
+
+## Target-specific overlay context delivery
+
+Claude Code and Codex automatically supply shared/personal bodies for seven root skills:
+`sage-cycle`, `sage-plan`, `sage-team`, `sage-review`, `sage-cycle-fast`, `sage-plan-fast`, and
+`sage-team-fast`, using a schema-2 catalog. Startup SessionStart defers bodies to the following
+UserPromptSubmit; resume/fork/compact supplies the current catalog because continuation may
+occur without a new user message. Verified hosts are Claude Code 2.1.318 and Codex CLI 0.166.0.
+Isolated-consumer tests used the native hosts and local mock endpoints to check delivery of all
+14 source bodies/hashes, manual compaction/resume paths, size/blocking behavior and external
+repair recovery. Mock-directed Skill/read-tool entry tests native transport, not a real model's
+spontaneous selection. Separate finite samples with actual `claude-opus-5-5`/`gpt-6.1-sol` models
+observed standard two-source/Fast four-source application, current-view retention and subsequent
+verification responses after manual/automatic compaction. These results do not guarantee all
+host versions, future models/sessions, arbitrary long-term stability, or every worker's own
+compaction/fork recovery.
+
+Each `skills/<id>/shared|personal` source appears once; targets are ordered source references.
+Standard uses shared standard → personal standard. Fast uses shared standard → shared Fast →
+personal standard → personal Fast. Bodies for all seven targets are visible in the root context,
+but each CORE applies only its fixed-id view. Mandatory CORE/project policy/independent gates
+precede shared guidance, which precedes personal guidance. Catalog presence is no invocation,
+Fast conversion, or human approval. Scope compliance was observed within the finite model
+behavior samples described above.
+The current boundary's empty catalog also replaces earlier guidance; personal files never
+implicitly transfer between checkouts.
+
+Four workers retain shared physical composition and role-specific body/ref packets. Do not
+newly attach the root catalog to workers. A host's role-specific loader call and the headless
+reviewer CLI's single automatic load are separate routes. Install/sync removes only verified,
+owned legacy overlay spans for the seven skills and preserves originals. Damaged or unowned
+spans conflict; CORE/user bytes remain intact. Personal bodies never enter global/local SKILL.md,
+manifests, or permanent caches.
+
+Invalid inventory, size excess, damaged SAGE markers, and validator exceptions never produce a
+partial normal catalog. SessionStart emits body-free diagnostics; UserPromptSubmit natively
+blocks; PreToolUse on every supported tool natively denies/exits 2. Non-SAGE checkouts pass
+through. Repair inputs in an external terminal/editor, then send the next message for a fresh
+check. For `profile_yaml_json_mismatch`, run `sage generate --kind hook --write --target <claude|codex|both>`
+from the project root in a terminal outside the blocked session to reconcile YAML and compiled
+JSON. Preserve the installed host target: `claude` for Claude-only, `codex` for Codex-only, and
+`both` for cross-model/dual-host installations. For
+`render_sync_required` affecting physical worker renders or routing changes, run
+`sage sync-overlays` outside the session. When both states follow a profile edit, generate first,
+then sync. Editing a context-only root-skill source does not always require physical sync.
+`sage doctor` provides read-only input, host-budget and render-synchronization diagnostics; it
+does not repair them. Check diagnostics after repair and the next message's fresh validation.
+This does not guarantee blocking when hooks are skipped, untrusted, or timed out with
+continuation, or for arbitrary execution outside the host.
+
+Common ceilings remain UTF-8 10,000 bytes per source and UTF-8 49,152 bytes per catalog,
+including wrapper and JSON escaping. Claude additionally limits catalogs to 7,500 UTF-16 code
+units, reserving 2,500 for reentry/declared-risk text; the final merged single `additionalContext`
+string must fit 10,000 units. An astral emoji occupies two units. Codex retains the common
+ceilings and `additionalContextLimit=60000`. Bytes, UTF-16 units and tokens are different measures.
+
+Claude Code 2.1.318 replaced the former maximum catalog with a file/preview.
+[The official reference](https://code.claude.com/docs/en/hooks#json-output) documents a 10,000-character
+per-field cap with no setting to raise it. Even a single 10,000-byte source can exceed Claude's
+serialized budget after wrapper and other sources: this is a new support restriction for existing
+inputs. Distinguish `catalog_input=VALID` from `[claude|codex] catalog_budget=SUPPORTED|EXCEEDED`
+in `sage doctor`, and check the active host's observed size, limit and unit. Edit inputs externally
+to fit, then recheck. Never truncate, split or fall back to preview/model fetch. Installation,
+configuration and budget checks do not prove actual delivery/application or accumulated compaction cost.
+
+## Windows Phase 04 checklist does not block
+
+Windows can pass with a `03-implementation document not found` warning even when an unfinished
+03 document exists. This pre-existing defect (`WIN-PHASE4-01`) compares backslash paths against a
+slash-based namespace. It was reproduced in the previous and candidate sources and in both
+Claude and Codex entrypoints of the installed wheel. This overlay/upgrade change does not fix it.
+
+Do not treat passage through this gate as checklist evidence. Inspect the cycle's 03 document and
+unfinished items directly, and do not report the Windows Phase 04 gate as verified until it is
+fixed and tested. The [platform evidence](plan_docs/04/platform-validation.md) separates existing
+Windows regression failures from an intermittent fixture-directory `WinError 5`.
 
 ## Personal guidance also affects a teammate
 
@@ -22,6 +98,29 @@ Before `upgrade --apply`, finish editing personal files, save them, and keep a b
 failure rollback restores the pre-upgrade snapshot, so personal edits, creations, or deletions made
 while it runs can be reverted. Successful-upgrade preservation does not guarantee that concurrent
 edits survive rollback after an upgrade failure.
+
+## Codex global skills after an upgrade failure
+
+A Codex global-scope upgrade retains its global SAGE skill journal and lock through installation,
+hook generation, overlays, validation, and user-file restoration. A failure before that boundary
+restores existing global `SKILL.md` bytes, permissions, and existence, plus retired skill trees
+whose SAGE ownership was verified. Newly created files are removed; unrelated global skills and
+same-name skills without proven ownership are preserved. An existing symlink at `CODEX_HOME` itself is supported; changing its target during the upgrade is
+rejected. If the project and Codex global home overlap, upgrade stops before mutation. Choose a
+separate global home or project-local scope. Failure to write a global skill or remove an owned
+retired skill also fails the upgrade. Standalone `sage install` retains its existing
+warning and non-fatal handling of optional global write errors.
+
+If recovery detects an external edit or deletion, a modified backup, or a replaced parent directory,
+it preserves that path instead of overwriting it. Exit 2 and the incomplete-recovery message identify
+remaining backup locations. Keep the files and backups, compare their changes, and recover manually.
+The lock excludes other SAGE installations using that global path; it does not lock ordinary editors.
+
+Once all reversible steps succeed, global changes commit before layout activation and cleanup.
+A later cleanup failure preserves updated assets; fix the cause and reapply. Backup cleanup failure
+after a successful commit produces a warning and residue, never a project-only downgrade.
+This does not provide automatic recovery after forced process termination or power loss, or general
+protection for concurrent edits to the project snapshot.
 
 ## Install stops on a conflict with an existing `CLAUDE.md` or `AGENTS.md`
 
@@ -59,7 +158,7 @@ sage install --host claude --dest .
 # move your instructions from the backup into sage/asset_overrides/agents/leader.md
 ```
 
-An overlay is composed **on top of** the CORE render and survives `sage install --force`. It cannot
+A worker shared overlay is appended to its CORE render (the seven root skills use context delivery) and survives `sage install --force`. It cannot
 weaken AGENT_GUIDE, phase, review or verification gates.
 
 **The error message tells you which path applies** to the asset that conflicted, so follow what it
@@ -112,22 +211,43 @@ removed.
 | An edited `verify-changes.sh` | left alone — we cannot tell an edit from an older install |
 | `scripts/` and `schema/` | **may remain.** They are not removed automatically, even when empty; the result lists only the empty old directories it could check safely |
 
-### When migration stops
+### User extensions defer only the layout migration
 
 ```
-Migration stopped — a project hook is in use: hooks/my-guard
+Layout migration is deferred for project extensions: hooks/my-guard
 ```
 
-If you wrote your own project hook or review strategy, migration **stops before writing
-anything.** Your project wrote that code, so the package cannot recreate it, and the tool does not
-get to decide where it belongs. It is neither moved nor silently disabled.
+On a valid legacy installation with a project hook or custom review strategy, **only the
+layout migration is deferred. Versions and managed assets are updated at the existing
+`scripts/sage_harness/` path.** Authored code is neither moved nor disabled. Inspect the
+plan and blockers with `sage upgrade --check`, then use `--apply`. If installed/generated
+version drift requires `--force`, review the plan and run `sage upgrade --apply --force`.
+The existing drift acknowledgement remains required; force does not bypass damage or path conflicts.
 
-**This release does not migrate user extensions automatically.** Such an install **keeps working
-exactly where it is** — the same gates, the same registrations, the same validation. You do not
-need to move anything by hand, and we do not recommend it (below). **Moving the files does not clear
-the block while the registration remains, and there is no command to unregister it.** If you already
-moved them, put the code back at the old location (`scripts/sage_harness/hooks/`). Automatic
-migration for user extensions is scoped to a later release.
+On success, `required_version`, the compiled profile, installed CORE, and generated hooks
+match the running engine. The notice and JSON report's `migration.mode: deferred` distinguish
+**version updates from layout migration**. No new tree is created and no old files are deleted.
+
+Missing code, irregular files, damaged specs/adapters, invalid authored Python syntax, or
+conflicting layouts still block the whole upgrade. Static strategy checks cover its file,
+path, and syntax; they cannot guarantee arbitrary project code will execute successfully.
+Resolve accompanying blockers before retrying.
+
+If a project hook ID collides with a current bundled CORE name, upgrade blocks instead of
+overwriting authored code. Previously protected project-owned files such as
+`scripts/verify-changes.sh` retain their original bytes. “Managed assets updated” does not
+mean these files or authored sources are overwritten. Python syntax checks use the **CLI
+interpreter**; if hook execution uses a different `SAGE_PYTHON`, also verify that environment.
+
+In JSON, `migration.blockers` contains layout-level reasons. Use `outcome` for the overall
+result and `migration.mode` for migration execution. Deferral leaves `remove` empty and
+records `deferred_reasons`. Because the old layout remains, `--check` may still report `ready`
+on an up-to-date project; `--apply` reruns the managed update steps as before.
+
+Automatic relocation of project extensions is not supported. Restore files to the old location
+if you moved them manually. Editing only `required_version` first or regenerating hooks before
+installing the new runtime can fail with YAML/JSON mismatch or missing runtime files; use the
+complete upgrade command instead.
 
 ### Do not move the files yourself
 

@@ -3,6 +3,33 @@ name: sage-plan-fast
 description: Author and open a composite 00 Fast Plan for an explicitly enabled L2/L3 Fast Cycle.
 ---
 
+## Overlay catalog selector (mandatory)
+
+Current overlay target: `sage-plan-fast`. Before acting, use the current boundary's supplied
+schema-version-2 catalog for the actual checkout `root` and `role: root`, with a definite
+`generation`. Use only `targets["sage-plan-fast"]` references into `sources`; each source has
+`path`, `sha256`, and the exact delivered `content`. The applicable source order is:
+`skills/sage-plan/shared` → `skills/sage-plan-fast/shared` → `skills/sage-plan/personal` → `skills/sage-plan-fast/personal`. Include only present sources; an absent slot adds no guidance.
+
+Mandatory CORE, project policy, and independent gates take precedence over shared additions,
+which take precedence over personal additions. Later entries do not automatically override
+earlier ones. Other targets' bodies may be visible in the same context; do not apply them.
+Catalog presence is never a skill invocation, Fast selection/conversion, or user approval.
+Use the delivered content without a separate root-skill `overlay-local` fetch. Do not embed
+personal bodies in shared/global renders, manifests, or permanent caches.
+
+The current boundary's catalog, including an empty `sources`/`targets` catalog, replaces prior
+catalog guidance. Do not revive historical content, infer freshness from hashes/mtime, or use
+another checkout's sources. If the current root, role, generation/boundary, or active target is
+missing or ambiguous, stop and request a context/input fix instead of guessing a recent target.
+After compaction, manual skill reselection is not successful automatic recovery. Repeated
+copies of the same generation/source are the same guidance, not instructions to repeat steps.
+
+On nested plan/team/review invocation, use that child's own fixed target view rather than
+merging the parent's sources; on return, resume this parent's view. This contract adds no
+target stack database. Keep actual delivery path/hash references from this boundary for handoff;
+a catalog supply list does not prove that every listed target was applied or complied with.
+
 # sage-plan-fast
 
 Invoke as `/sage-plan-fast` on Claude or `$sage-plan-fast` on Codex.
@@ -41,6 +68,10 @@ Before any document, cycle declaration, audit, or source write, explicitly obtai
 If any value is missing or invalid, stop without writing anything. Separately
 classify the actual `Risk Level`; Fast level never lowers actual risk or its
 build/test/lint/acceptance requirements. Fast is unavailable for actual L0/L1.
+
+Shared/personal standard+Fast additions use the catalog above. Independent Fast state,
+policy-floor, phase-coverage, review/close and CI oracles preserve structural protections;
+neither delivered text nor `--confirmed-by` strings authenticate human consent.
 
 ## Procedure
 
@@ -115,3 +146,13 @@ What the conversion does and does not do:
 After a successful convert, hand off to `sage-team-fast` exactly as with a fresh open. The
 converted run has no `Fast-Audit-Run` line to check — it binds by stem and its single active
 run, so do not add one to the document.
+
+## Delegated worker overlays (separate role packet)
+
+Do not forward the root catalog to workers. When delegating an eligible worker, query that
+worker's own kind/id with `sage overlay-local --kind agent --id <worker-id> --root <project-root>`
+and pass its validated content and actual target/path/sha256 references in the existing role
+packet, alongside the role's shared guidance. Never read raw personal files after a loader error.
+For `sage review` / `sage cross-check`, never preappend shared or personal reviewer additions:
+the CLI loads them once and emits `SAGE_LOCAL_OVERLAY_REF`. This role-specific CLI path does
+not replace automatic delivery of this root skill's shared/personal sources.

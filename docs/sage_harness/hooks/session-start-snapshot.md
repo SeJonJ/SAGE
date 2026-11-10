@@ -6,6 +6,20 @@ runtime_bindings:
   codex: { event: SessionStart, matcher: "", timeout: 10 }
 ---
 ## intent
+The adapter preserves the baseline contract below while supporting root overlay delivery.
+Startup SessionStart checks baseline/input state and defers the initial catalog body to
+UserPromptSubmit. SessionStart resume/fork/compact supplies the current root's validated
+schema-2 catalog without assuming another user prompt will follow. Existing compact reentry and
+Phase 06 baseline outcomes remain distinct and are assembled with catalog context into one host
+JSON object. A collection failure emits only a body-free diagnostic; `continue: false` here is
+not a reliable request block. UserPromptSubmit and supported PreToolUse perform current-input
+native blocking. No new error latch or session target database is introduced.
+
+A resume/compact/fork and UserPromptSubmit before the same request can supply two copies.
+Identical generation/source copies are the same guidance, not repeated actions. Empty current
+catalogs replace earlier catalog guidance, but historical messages are not deleted. Manual
+reselection after compaction does not establish automatic recovery.
+
 At session start, snapshot the baseline of this session's Phase 06 documents — existence plus the
 sha256 of their contents. The Stop hook's retro gate compares against that baseline to detect a
 06 written during this session **regardless of which tool wrote it**. post-tool-logger only logs
@@ -50,10 +64,12 @@ legacy baseline with no claim, and an abandoned temp, are cleaned up by TTL.
 ## runtime_bindings
 - claude: { event: SessionStart, matcher: "", input: session_id }
 - codex:  { event: SessionStart, matcher: "", input: session_id }
-- output: none — a create-once write of `.{host}/logs/session-snapshot-{session_id}.json` only.
+- output: single host JSON context/diagnostic when applicable, plus a create-once write of `.{host}/logs/session-snapshot-{session_id}.json` only.
 - on_fail: an input, profile or baseline publish failure exits 0 and resolves into Stop's degraded
   verdict. Only a failure to create the first-opportunity claim exits 2, blocking work from
-  starting on both SessionStart and UserPromptSubmit.
+  starting on both SessionStart and UserPromptSubmit. Overlay collection errors at SessionStart
+  provide body-free diagnostics and do not supply a normal catalog; later native input/tool checks
+  block invalid current inventory independently of these preserved baseline results.
 
 ## canonical
 sage_harness/hooks/session_start_snapshot_core.py → decide(event, snapshot) -> decision (pure)

@@ -29,6 +29,9 @@ SAGE는 "판단은 AI가, 경계는 결정론 코드가"라는 원칙 위에 선
 | L3 전략 실행 크래시 | **fail-closed** (BLOCK 유지) | 고위험 경로를 판정할 수 없으면 안전하게 막는다 |
 | root 밖 / 절대경로 glob | 거부 | 프로젝트 독립성 보장 |
 
+위 일반 실패 정책과 별도로, 설치된 SAGE checkout의 overlay 입력 검증은 아래 문맥 공급 절의
+UPS/PreToolUse fail-closed 계약을 따른다. 손상 마커를 비SAGE로 취급하지 않는다.
+
 근거: `scripts/sage_harness/hooks/runtime/hook_runtime.py` 상단 "보존 원칙" 주석과 profile 로드·L3
 전략 로드 경로.
 
@@ -45,12 +48,67 @@ host 는 이벤트와 exit code 에 따라 **읽는 채널이 다릅니다.** �
 |---|---|---|
 | 차단 (exit 2) | stderr — stdout 은 무시된다 | stderr |
 | PreToolUse 통과 (exit 0) | `hookSpecificOutput.additionalContext` | 〃 |
-| UserPromptSubmit (exit 0) | 평문 stdout — 그대로 컨텍스트가 된다 | `hookSpecificOutput` |
+| UserPromptSubmit (exit 0) | 단일 `hookSpecificOutput` JSON | `hookSpecificOutput` JSON |
 | Stop 차단 | exit 2 + stderr | exit 0 + `decision: block` |
 
 Claude Code 에서 exit 0 평문 stdout 이 컨텍스트로 올라가는 이벤트는
 `UserPromptSubmit`·`UserPromptExpansion`·`SessionStart` 뿐이고, 그 밖의 이벤트는 디버그 로그로만
 갑니다. 문구 자체는 `runtime/messages.py`가 단독 소유하고 채널만 `io_claude`·`io_codex`가 정합니다.
+
+## 대상별 overlay 문맥 공급
+
+Claude Code와 Codex는 root 스킬 `sage-cycle`, `sage-plan`, `sage-team`, `sage-review`,
+`sage-cycle-fast`, `sage-plan-fast`, `sage-team-fast`의 공유/개인 원문을 schema 2 catalog로
+자동 공급합니다. SessionStart startup은 본문을 뒤따르는 UserPromptSubmit에 맡기며,
+resume/fork/compact는 사용자 메시지 없이도 진행할 수 있어 현재 묶음을 다시 공급합니다.
+검증한 호스트는 Claude Code 2.1.318과 Codex CLI 0.166.0입니다. 격리 consumer에서
+14개 source의 원문/hash 전달, 수동 압축·resume 경로와 한도/차단·외부 수리 복귀를 native
+호스트와 로컬 mock endpoint로 확인했습니다. mock가 유도한 Skill/read-tool 진입은 실제 도구
+경로의 전송 시험이며 실제 모델의 자발적 선택 시험은 아닙니다. 별도 실제 모델
+`claude-opus-5-5`/`gpt-6.1-sol`의 유한 표본에서는 표준 두 출처·Fast 네 출처의 적용,
+수동·자동 압축 뒤 현재 view 유지와 후속 검증 응답을 관측했습니다. 모든 호스트 버전·미래
+모델/세션의 준수, 임의 장기 안정성, 모든 worker의 자체 압축/fork 복구를 보장하지 않습니다.
+
+source는 `skills/<id>/shared|personal`별 한 번만 실리고 target은 source 참조 배열입니다.
+표준은 공유 표준 → 개인 표준, Fast는 공유 표준 → 공유 Fast → 개인 표준 → 개인 Fast입니다.
+7종 모두 같은 root 문맥에 노출되지만 각 CORE는 자신의 고정 id view만 적용합니다.
+필수 CORE·프로젝트 정책·독립 gate > 공유 > 개인 우선순위이며 묶음의 존재는 호출·Fast
+전환·사람 승인이 아닙니다. 다른 target 적용 방지는 위 유한 모델 행동 표본의 범위에서 확인한 계약입니다.
+현재 경계의 빈 catalog도 이전 지침을 대체하며 다른 checkout의 개인 파일은 상속하지 않습니다.
+
+worker 4종의 공유 물리 합성과 역할별 본문/ref packet은 유지합니다. root 7종 묶음을 worker에
+새로 붙이지 않습니다. 일반 worker의 역할별 loader 호출과 headless reviewer CLI의 1회 자동
+로딩은 별도 경로입니다. 7종의 소유가 확인된 기존 관리 overlay span은 설치/sync에서 제거하고
+원문은 보존합니다. 손상 span·소유 불명은 충돌이며 CORE/사용자 바이트를 지우지 않습니다.
+개인 원문을 global/local SKILL.md·manifest·영구 cache에 굽지 않습니다.
+
+잘못된 inventory·한도 초과·손상 SAGE 마커·검증 예외는 정상 부분 catalog를 만들지 않습니다.
+SessionStart는 본문 없는 진단, UserPromptSubmit은 native block, 모든 지원 도구의 PreToolUse는
+native deny/exit 2입니다. 비SAGE checkout은 통과합니다. 복구는 호스트 밖 터미널/에디터에서
+입력을 고친 뒤 다음 메시지에서 재검사하는 경로입니다. `profile_yaml_json_mismatch`는 프로젝트
+root의 세션 밖 터미널에서 `sage generate --kind hook --write --target <claude|codex|both>`로
+YAML/compiled JSON을 정합화합니다. 설치된 host target을 유지하세요: Claude-only는 `claude`,
+Codex-only는 `codex`, 교차 모델/양 host 설치는 `both`입니다. 물리 worker 렌더나 routing 변경의 `render_sync_required`는 세션 밖에서
+`sage sync-overlays`로 동기화합니다. profile 수정 뒤 두 상태가 함께 있으면 generate 후 sync
+순서로 실행하세요. context 전용 root 스킬 원문 편집이 항상 물리 sync를 요구하는 것은 아닙니다.
+`sage doctor`는 입력·host 예산·렌더 동기화 상태를 확인하는 읽기 전용 진단이며 직접 수리하지
+않습니다. 수리 후 진단과 다음 메시지의 재검사를 확인하세요. hook 미실행, 신뢰 거부·timeout
+continue, 호스트 밖 임의 실행까지 차단한다고 보장하지 않습니다.
+
+공통 ceiling은 source별 UTF-8 10,000 bytes, wrapper·JSON escape를 포함한 catalog UTF-8
+49,152 bytes입니다. Claude에는 별도로 catalog 7,500 UTF-16 code units 한도를 적용하며,
+reentry·declared-risk용 2,500 units를 남깁니다. 최종 병합된 한 `additionalContext` 문자열도
+10,000 units 이하인지 검사합니다. 한글은 보통 1 unit, 이모지 등 astral 문자는 2 units이며
+bytes나 token 수와 같은 단위가 아닙니다. Codex는 공통 ceiling과 `additionalContextLimit=60000`을 유지합니다.
+
+이는 실제 Claude Code 2.1.318에서 기존 49,152-byte catalog가 파일 경로와 preview로
+대체된 관측을 반영한 호스트별 지원 예산입니다. [Claude 공식 문자열 제한](https://code.claude.com/docs/en/hooks#json-output)은
+각 필드별 10,000자이며 초과 시 파일/preview로 바뀌고 올릴 설정이 없습니다. 7,500은 SAGE가
+나머지 문맥 여유를 확보하는 한도입니다. 공통 source ceiling을 만족하는 단일 10,000-byte 입력도
+Claude에서는 전체 직렬화 결과로 거부될 수 있습니다. 이는 기존 입력의 새 지원 제한입니다.
+`sage doctor`는 공통 입력 유효성과 각 호스트의 catalog 예산 충족을 구분합니다. 초과는 본문 없는
+진단과 native 차단으로 처리하며 축약·분할·preview/fetch fallback으로 성공 처리하지 않습니다.
+설치·예산 진단은 실제 모델 전달/적용, 여러 turn 누적이나 자동 압축 비용의 검증을 대신하지 않습니다.
 
 ## OS 경계와 두 판정 축 (`sage uninstall`)
 

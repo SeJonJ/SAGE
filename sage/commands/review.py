@@ -202,7 +202,9 @@ def _peer_env(peer):
     # 안에서 도는 SAGE hook 이 `CLAUDECODE` 같은 상속된 값을 보고 자기를 부모 host 로 오인한다
     # (실측: claude → codex exec 시 두 계열 표식이 동시에 관측됨).
     from sage.runtime_hosts import peer_env
-    return peer_env(peer)
+    env = peer_env(peer)
+    env["SAGE_OVERLAY_ROLE"] = "reviewer"
+    return env
 
 
 def _call_peer(peer, prompt, timeout, root, effort=None, model=None, legacy_effort=True):
