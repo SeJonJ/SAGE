@@ -33,13 +33,33 @@ Codex global primary+Claude입니다. 사용자 hook·공유/개인 원문 보�
 반복하지 않았습니다. 112는 하위 테스트 중복을 포함한 실패 이벤트 수이며 독립 기능 결함 수가 아닙니다.
 최초 외부 소비자 fixture의 CP949 읽기 오류도 보존했고 명시적 UTF-8 fixture로 따로 실행했습니다.
 
-## 남은 Windows 문제
+## Windows 문제와 후속 검증
 
 ### WIN-PHASE4-01 — 기존 게이트 결함
 
-미완료 03 문서가 존재해도 경로 구분자 비교가 어긋나 Phase 04 체크리스트 게이트가 경고 후 통과합니다.
-기존 버전·후보 소스와 설치 wheel, 양 host에서 재현했습니다. 이번 overlay·#36 수정 범위에
-편입하지 않았고 해결된 것으로 기록하지 않습니다. [사용자 안내](../../troubleshooting.md)를 따릅니다.
+2026-11-07에는 미완료 03 문서가 존재해도 경로 구분자 비교가 어긋나 Phase 04 게이트가 경고 후
+통과했습니다. 기존 버전·당시 후보 소스와 설치 wheel, 양 host에서 재현했고 원래 overlay·#36
+통합 범위에는 편입하지 않았습니다. 위 원본 실패 수치는 당시 관찰로 보존합니다.
+
+2026-11-10 후속 수정은 비교 키를 `/` 형식으로 통일하고 실제 파일은 원래 경로로 읽습니다.
+정규화된 키가 서로 다른 파일과 충돌하면 기존 계약 오류 경로로 차단합니다. 별도 Windows 11 Pro
+실기기(Build 26200, x64)에서 Python 3.10·3.11·3.12와 Claude·Codex hook을 확인했습니다.
+
+| 후속 검증 | 결과 |
+|---|---|
+| 관련 회귀 | 세 Python 합계60 Ran, POSIX 전용6 skip, 실패·오류0 |
+| 수정 전 대조 | native/Git Bash36사례. 미완료 문서가 있는12사례의 warn/exit0 재현 |
+| 수정 후 소스 | native/Git Bash36사례 PASS. 미완료는 block/2, 완료는 ok/0, 문서 미존재는 warn/0 |
+| 설치 wheel | 양 host 합계18사례 PASS. 소스 경로 주입 없이 설치된 hook 진입점 확인 |
+| Mac 회귀·패키지 |114스크립트·4155 Ran·15 skip·실패/오류0, 격리 wheel consumer PASS |
+
+Windows의6 skip은 실제 파일명에 역슬래시를 쓸 수 없는 환경을 제외하는 POSIX 전용2테스트×3버전이며,
+해당 테스트는 Mac에서 실행했습니다. 수정 후 hook54사례에는 skip이 없습니다. 전체 Windows 스위트와
+실제 모델 앱 세션은 다시 실행하지 않았고, 장비에 있는 Python3.14는 이번 행렬에 포함하지 않았습니다.
+검증 wheel SHA256은 `434c08c07f31120836f82f6a27052c0d8ec911b7cc6a5f98c46dc85fdc44b0fe`이며,
+[원문 결과와 코드·테스트 SHA](windows-phase4-paths.validation.json)를 보존합니다. Windows 실행은
+커밋 전 파일 snapshot에 결속되며 후속 문서 변경은 이 코드·테스트 바이트를 바꾸지 않았습니다.
+[사용자 안내](../../troubleshooting.md)는 수정이 포함된 패키지와 hook의 적용 여부를 구분합니다.
 
 ### Windows 3.11 fixture의 간헐 WinError 5
 
@@ -55,5 +75,7 @@ Codex global primary+Claude입니다. 사용자 hook·공유/개인 원문 보�
 `overlay-issue36-platform-20261107`의 `platform-summary.json`, `windows-evidence.zip`,
 `mac-stage-reviewed.json`, `final-wheel-bridge.json`입니다. 새 문서·PR commit에 대한 CI 산출물과는 별개입니다.
 
-리뷰 예산 초과로 [통합 독립 리뷰](../05/overlay-issue36-integration.md)는 `BLOCKED`입니다.
-이 플랫폼 결과나 새 PR의 CI 성공이 그 판정을 대신하지 않습니다. 통합 Phase06과 릴리스는 별도입니다.
+당시 통합 독립 리뷰는 예산 초과로 중단됐지만, 이후 `2e79f77`에 대한
+[통합 독립 리뷰](../05/overlay-issue36-integration.md)를 완료하고 `8497527`에 기록했습니다.
+그 승인은 이번 Windows P1 후속 코드에 자동 상속되지 않습니다. 이 문서는 플랫폼 검증 근거이며
+새 코드의 독립 승인이나 Phase06·머지·릴리스를 대신하지 않습니다.

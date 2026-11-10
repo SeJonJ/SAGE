@@ -1050,9 +1050,10 @@ def build_checklist_snapshot(core, event, profile, root):
     """pre-phase4 fs_adapter: core.plan_reads 가 요구한 glob 을 읽어 snapshot 구성(런타임 무관)."""
     reads = core.plan_reads(event, profile)
     glob_results, files = {}, {}
+    physical_paths = {}
     root_real = os.path.realpath(root)
     for g in reads["globs"]:
-        absolute_matches = []
+        matches = []
         for path in glob.glob(os.path.join(root, g), recursive=True):
             path_real = os.path.realpath(path)
             try:
@@ -1062,12 +1063,18 @@ def build_checklist_snapshot(core, event, profile, root):
             if not contained:
                 raise ProfileLoadError(
                     f"checklist_scan_targets glob이 root 밖 symlink를 매치함: {g}")
-            absolute_matches.append(path)
-        matches = sorted(os.path.relpath(p, root) for p in absolute_matches)
-        glob_results[g] = matches
-        for rp in matches:
+            rp = _canon_relkey(os.path.relpath(path, root))
+            previous = physical_paths.get(rp)
+            if previous is not None and os.path.realpath(previous) != path_real:
+                raise ProfileLoadError(
+                    f"checklist_scan_targets 경로 정규화가 충돌함: {rp}")
+            physical_paths[rp] = path
+            matches.append(rp)
+        glob_results[g] = sorted(set(matches))
+        for rp in glob_results[g]:
             try:
-                with open(os.path.join(root, rp), encoding="utf-8") as fh:
+                # Canonical keys are for comparison; filesystem IO keeps the original path.
+                with open(physical_paths[rp], encoding="utf-8") as fh:
                     files[rp] = fh.read()
             except Exception:
                 files[rp] = None

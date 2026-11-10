@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:03033165201c03799d83ea85d28244c927a51ff97090b66d365ed82f0c5ae39e -->
+<!-- sage-doc-source: README.md sha256:cce02d62325d579b30ba158cd5659550b190e38d582e256a89056ef65b6cc62e -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)
@@ -109,8 +109,9 @@ sage doctor
 ```
 
 Set `SAGE_BASH` to the Git Bash path when running `.sh` tests on Windows.
-Windows still has a pre-existing defect that can miss the Phase 04 checklist block. Do not treat
-automatic passage through that gate as completion evidence ([troubleshooting](docs/troubleshooting.en.md)).
+This change fixes Windows Phase 04 missing unfinished checklists because of path separators.
+Blocking was verified through Claude/Codex hooks on Windows 11 with Python 3.10, 3.11 and 3.12.
+Until the installed hooks include the fix, do not treat passage as completion evidence ([troubleshooting](docs/troubleshooting.en.md)).
 
 ## Upgrade
 

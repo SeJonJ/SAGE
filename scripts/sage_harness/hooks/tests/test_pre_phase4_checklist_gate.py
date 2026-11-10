@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOKS_DIR = os.path.dirname(HERE)
@@ -20,6 +21,8 @@ PROFILE_PATH = os.path.join(HERE, "fixtures", "pre_phase4", "example.profile.jso
 
 sys.path.insert(0, HOOKS_DIR)
 import pre_phase4_checklist_gate_core as core  # noqa: E402
+sys.path.insert(0, os.path.join(HOOKS_DIR, "runtime"))
+import hook_runtime as runtime  # noqa: E402
 
 with open(PROFILE_PATH, encoding="utf-8") as _f:
     PROFILE = json.load(_f)
@@ -108,6 +111,73 @@ def setup_tree(root, impl_content):
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "feature.md"), "w", encoding="utf-8") as f:
         f.write(impl_content)
+
+
+class TestSnapshotPaths(unittest.TestCase):
+    def test_path_separators_preserve_the_checklist_decision(self):
+        real_relpath = os.path.relpath
+        for separator in ("/", "\\"):
+            for content, want in (("- [ ] todo", ("block", 2)),
+                                  ("- [x] done", ("ok", 0))):
+                with self.subTest(separator=separator, content=content), \
+                        tempfile.TemporaryDirectory() as root:
+                    setup_tree(root, content)
+
+                    def relpath(path, start):
+                        return real_relpath(path, start).replace("\\", "/").replace("/", separator)
+
+                    # Only the OS-relative spelling is simulated; glob, file reads
+                    # and the checklist decision use the real temporary tree.
+                    with mock.patch.object(runtime.os.path, "relpath", side_effect=relpath):
+                        snapshot = runtime.build_checklist_snapshot(core, ev(), PROFILE, root)
+                    decision = core.decide(ev(), PROFILE, snapshot)
+                    self.assertEqual((decision["status"], decision["exit_code"]), want)
+                    key = "plan_docs/03-implementation/feature.md"
+                    self.assertEqual(snapshot["glob_results"][G_IMPL], [key])
+                    self.assertEqual(snapshot["files"], {key: content})
+
+    @unittest.skipIf(os.sep == "\\", "literal backslashes are not Windows filename characters")
+    def test_normalized_key_keeps_the_original_file_readable(self):
+        with tempfile.TemporaryDirectory() as root:
+            with open(os.path.join(root, r"plan_docs\03-implementation\feature.md"),
+                      "w", encoding="utf-8") as stream:
+                stream.write("- [ ] todo")
+            profile = dict(PROFILE, checklist_scan_targets=[
+                {"label": "implementation", "glob": "*.md", "is_impl": True},
+            ])
+            snapshot = runtime.build_checklist_snapshot(core, ev(), profile, root)
+            decision = core.decide(ev(), profile, snapshot)
+            self.assertEqual((decision["status"], decision["exit_code"]), ("block", 2))
+            self.assertEqual(snapshot["files"], {
+                "plan_docs/03-implementation/feature.md": "- [ ] todo",
+            })
+
+    @unittest.skipIf(os.sep == "\\", "literal backslashes are not Windows filename characters")
+    def test_conflicting_normalized_paths_are_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            setup_tree(root, "- [ ] must not disappear")
+            with open(os.path.join(root, r"plan_docs\03-implementation\feature.md"),
+                      "w", encoding="utf-8") as stream:
+                stream.write("- [x] different file")
+            for globs in (("**/*.md",), (G_IMPL, "*.md")):
+                with self.subTest(globs=globs):
+                    profile = dict(PROFILE, checklist_scan_targets=[
+                        {"label": "implementation", "glob": pattern, "is_impl": True}
+                        for pattern in globs
+                    ])
+                    with self.assertRaises(runtime.ProfileLoadError):
+                        runtime.build_checklist_snapshot(core, ev(), profile, root)
+
+    def test_overlapping_globs_can_read_the_same_file(self):
+        with tempfile.TemporaryDirectory() as root:
+            setup_tree(root, "- [ ] todo")
+            profile = dict(PROFILE, checklist_scan_targets=[
+                {"label": "implementation", "glob": G_IMPL, "is_impl": True},
+                {"label": "all documents", "glob": "**/*.md"},
+            ])
+            snapshot = runtime.build_checklist_snapshot(core, ev(), profile, root)
+            decision = core.decide(ev(), profile, snapshot)
+            self.assertEqual((decision["status"], decision["exit_code"]), ("block", 2))
 
 
 class TestAdapters(unittest.TestCase):

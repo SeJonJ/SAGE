@@ -7,7 +7,8 @@
 
 현재 후보는 `fix/overlay-context-delivery`의 overlay 수정과 #36 구 레이아웃 업그레이드 통합본입니다.
 2026-11-09 사용자는 문서 정리, 커밋·푸시, PR 생성과 CI 확인을 승인했습니다. 이 지시는 독립 리뷰
-차단을 해제하거나 main 병합·릴리스를 승인한 것으로 기록하지 않습니다. PR은 Draft로 제출합니다.
+차단을 해제하거나 main 병합·릴리스를 승인한 것으로 기록하지 않습니다. 당시 PR은 Draft로 제출했고,
+독립 검토와 최종 CI 완료 후 검토 가능한 상태로 전환했습니다.
 
 | 기록 | 적용 범위 | 판정 |
 |---|---|---|
@@ -15,6 +16,7 @@
 | [통합 03](03/overlay-issue36-integration.md)·[04](04/overlay-issue36-integration.md) | #36을 포함한 제품 hash `205ba39f9b2f587573fb44c31f313a2f3c7975a2dabc1e2d6b9941785282ae70` | 구현·로컬 검증 수행 |
 | [통합 05](05/overlay-issue36-integration.md) | 통합 후보와 최소 컴파일 진단 수정 | `APPROVED`: 최종 Codex5관점·Claude·반박2명 완료, I1~I6 충족 |
 | [플랫폼 검증 요약](04/platform-validation.md) | 2026-11-07 Windows·Mac 실행 | 원본 실패, 수정 후 재검증, 건너뜀을 분리 |
+| [Windows P1 후속 검증](04/platform-validation.md)·[원문](04/windows-phase4-paths.validation.json) | `fix/windows-phase4-paths`의 경로 수집 함수·회귀 테스트 | Windows3버전·양 host에서 수정 후 hook54사례 PASS; 기존 통합05 승인은 새 코드에 자동 상속하지 않음 |
 
 통합 후보의 06 문서는 작성하지 않았습니다. 2026-11-09 후속 작업에서는 사용자 설명서만 추가
 정리했으며 제품 동작을 더 확장하지 않았습니다. CI 결과는 PR의 정확한 commit checks를 확인합니다.
