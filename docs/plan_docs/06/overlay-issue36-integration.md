@@ -22,7 +22,7 @@ Completion-Date: 2026-11-11
 | Overlay 3가지 문제 | [기존 06](overlay-context-delivery.md), 원래 A1~A8의 근거·한계 보존 | 개발·독립 검토 완료 |
 | #36 결합과 최소 연결 수리 | 검토 source `2e79f7736df6d724b0438f8e43cee9e37ce38300`, 문서 head `8497527816377cdad26a224e90210269c7071c9b`, [PR #37](https://github.com/SeJonJ/SAGE/pull/37) | 외부 독립 검토 APPROVED / CONVERGED |
 | Windows `WIN-PHASE4-01` | 코드·테스트 `e025e87176af8739304ff29fbdd5d4d33147221b`, [PR #38 사용자 승인](https://github.com/SeJonJ/SAGE/pull/38) | PASS / USER_APPROVED, 별도 독립 리뷰 NOT_RUN |
-| 이번 보고·배포 준비 | 위 대상 이후 완료 보고·문서 인덱스·1.3.7 버전 두 곳만 변경 | 코드 검토를 새로 수행한 것으로 세지 않음 |
+| 이번 보고·배포 준비 | 위 대상 이후 완료 보고·문서 인덱스·패키지/엔진/기본 프로필의 1.3.7 버전 세 곳만 변경 | 코드 검토를 새로 수행한 것으로 세지 않음 |
 
 2026-11-11 사용자 결정 원문:
 
@@ -68,7 +68,7 @@ stash `bcb1711da4a7d386d14220bf3ce3c13f24353354`, 복구 ref
 | 통합 검토 source CI | [42659320255](https://github.com/SeJonJ/SAGE/actions/runs/42659320255), 13 success/1 skip/0 failure | 검토 source `2e79f77` |
 | PR #37 문서 head CI | [42813471796](https://github.com/SeJonJ/SAGE/actions/runs/42813471796), 13 success/1 skip/0 failure | `8497527` |
 | PR #38 코드 head CI | [42837721166](https://github.com/SeJonJ/SAGE/actions/runs/42837721166), 13 success/1 skip/0 failure | `e025e87` |
-| 1.3.7 격리 후보 | wheel consumer PASS·엔진 sentinel 불변, 패키지 비교356파일 동일/버전 파일1개 차이 | 이전 Windows 검증 코드와 연결, dist-info는 버전 metadata로 별도 |
+| 최초 1.3.7 격리 후보 | wheel consumer PASS·엔진 sentinel 불변, 패키지 비교356파일 동일/엔진 버전 파일1개 차이 | 최초 후보 이력이며 기본 프로필 버전 누락은 아래에서 정정 |
 | 설치 후보 언어·플랫폼 검사 | 12항목·21 CLI 호출 PASS | 한영 help·local 언어·영문00 skeleton·encoding·양 host CORE7종·양 언어 bootstrap 차단·legacy migration·project hook adapter |
 | 완료 보고 문서 검사 | 18개 PASS, diff 공백 검사 PASS | 보고·인덱스·버전 갱신 |
 
@@ -79,6 +79,18 @@ stash `bcb1711da4a7d386d14220bf3ce3c13f24353354`, 복구 ref
 GitHub Release의 정확한 SHA·태그에서 확인하며, 아래 계획을 완료 실적으로 미리 세지 않는다.
 
 ## 독립 검토와 비용
+
+### 릴리즈 버전 동기화 정정
+
+최초 배포 준비 commit `41d7bf9`는 패키지/엔진 버전만1.3.7로 바꾸고
+`templates/project-profile.yaml`의 required_version을1.3.6으로 남겼다.
+CI `42849879272`의 기존 `test_bundled_profile_template_matches_package_version`이 이를
+검출했다. 동일 단일 테스트를 로컬에서도 실패 재현한 뒤 템플릿 버전1줄을1.3.7로 맞췄다.
+이 실패를 기존 후보의 전체 회귀 성공으로 덮지 않는다. 최종 wheel·설치 검사와 CI를 새로
+실행하며, Windows 경로·overlay 동작 로직은 그대로 보존한다.
+로컬 설치145개·문서18개와 재빌드 wheel consumer가 통과했다. 최종 후보는 이전 Windows
+검증 wheel과 dist-info 외355파일 동일, 엔진/기본 프로필 버전2파일만 다르다.
+설치한 최종 후보의 언어·플랫폼12항목/21 CLI 호출도 다시 통과했다.
 
 통합 독립 검토는 Codex5관점·Claude peer·라운드별 반박2명이며 완료5/상한5,
 최종 필수 미해결 finding0이다. 새 원장365,312/400,000, 이전 원장1,953,432/1,800,000과
