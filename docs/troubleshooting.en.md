@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:fe4a9844b11c89640e447ee406d322bda63c25db090bcb3e349ef851a094faf5 -->
+<!-- sage-doc-source: troubleshooting.md sha256:f8ac38277a0d84c6456f75f355d53d59cceffb3ca1c45fdc1c45fb4b1eaff3c2 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -69,15 +69,20 @@ configuration and budget checks do not prove actual delivery/application or accu
 
 ## Windows Phase 04 checklist does not block
 
-Windows can pass with a `03-implementation document not found` warning even when an unfinished
-03 document exists. This pre-existing defect (`WIN-PHASE4-01`) compares backslash paths against a
-slash-based namespace. It was reproduced in the previous and candidate sources and in both
-Claude and Codex entrypoints of the installed wheel. This overlay/upgrade change does not fix it.
+Older installations could pass with a `03-implementation document not found` warning even when
+an unfinished 03 document existed (`WIN-PHASE4-01`). Windows backslash paths and the gate's
+slash-based paths were treated as different documents.
 
-Do not treat passage through this gate as checklist evidence. Inspect the cycle's 03 document and
-unfinished items directly, and do not report the Windows Phase 04 gate as verified until it is
-fixed and tested. The [platform evidence](plan_docs/04/platform-validation.md) separates existing
-Windows regression failures from an intermittent fixture-directory `WinError 5`.
+The follow-up fix normalizes comparison keys and reads files from their original paths.
+Unfinished items block with exit 2; completed checklists pass. A genuinely missing 03 document
+retains the existing warning policy. Different files colliding at one comparison key cause a
+diagnostic block instead of overwriting content. Native/Git Bash and installed-wheel hook
+entrypoints for Claude and Codex were checked on a Windows 11 device with Python 3.10, 3.11 and
+3.12. This does not establish full Windows regression or live model-app session coverage.
+
+Inspect unfinished items directly until both the package and project hooks contain the fix.
+Other Windows regression failures and intermittent fixture-directory `WinError 5` are separate
+issues. See the [platform evidence](plan_docs/04/platform-validation.md) for scope and before/after results.
 
 ## Personal guidance also affects a teammate
 

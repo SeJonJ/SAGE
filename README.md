@@ -108,8 +108,9 @@ sage doctor
 ```
 
 Windows에서 `.sh` 테스트를 실행할 때는 `SAGE_BASH`로 Git Bash 경로를 명시합니다.
-Windows에는 Phase 04 체크리스트의 자동 차단이 누락되는 기존 결함이 남아 있습니다.
-해당 단계의 자동 통과를 완료 근거로 삼지 마세요([문제 해결](docs/troubleshooting.md)).
+Windows Phase 04에서 경로 구분자 차이로 미완료 체크리스트를 놓치던 문제를 수정했습니다.
+Windows 11의 Python 3.10·3.11·3.12에서 Claude·Codex hook의 차단 동작을 확인했습니다.
+수정이 포함되지 않은 설치본은 자동 통과를 완료 근거로 삼지 마세요([문제 해결](docs/troubleshooting.md)).
 
 ## 업그레이드
 
