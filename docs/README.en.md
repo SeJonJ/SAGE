@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:9cd0379947078747c24aef9c9e2b1340d86513bc7ecbee0bbef8d812cd59bf5d -->
+<!-- sage-doc-source: README.md sha256:80eafaa6db6b9466b82f767f331b0d24ecbbdecceda3b4942e5bef3949339b88 -->
 # SAGE Documentation
 
 [한국어](README.md) | [Project README](../README.en.md)
@@ -34,5 +34,5 @@ framework renders.
 ## Development Evidence
 
 The [planning and verification index](plan_docs/README.md) distinguishes approval of the overlay-only
-candidate from the Issue #36 integration candidate. Platform tests, current-PR CI, independent review,
+candidate, the Issue #36 integration candidate and the follow-up recovery candidate. Platform tests, current-PR CI, independent review,
 and release approval require separate evidence.

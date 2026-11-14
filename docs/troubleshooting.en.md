@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:f8ac38277a0d84c6456f75f355d53d59cceffb3ca1c45fdc1c45fb4b1eaff3c2 -->
+<!-- sage-doc-source: troubleshooting.md sha256:b2b717141c7edde26aeb8660bd4ae99e5bf935d695aaec0aa1230d613a43d02c -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -36,21 +36,20 @@ owned legacy overlay spans for the seven skills and preserves originals. Damaged
 spans conflict; CORE/user bytes remain intact. Personal bodies never enter global/local SKILL.md,
 manifests, or permanent caches.
 
-Invalid inventory, size excess, damaged SAGE markers, and validator exceptions never produce a
-partial normal catalog. SessionStart emits body-free diagnostics; UserPromptSubmit natively
-blocks; PreToolUse on every supported tool natively denies/exits 2. Non-SAGE checkouts pass
-through. Repair inputs in an external terminal/editor, then send the next message for a fresh
-check. For `profile_yaml_json_mismatch`, run `sage generate --kind hook --write --target <claude|codex|both>`
-from the project root in a terminal outside the blocked session to reconcile YAML and compiled
-JSON. Preserve the installed host target: `claude` for Claude-only, `codex` for Codex-only, and
-`both` for cross-model/dual-host installations. For
-`render_sync_required` affecting physical worker renders or routing changes, run
-`sage sync-overlays` outside the session. When both states follow a profile edit, generate first,
-then sync. Editing a context-only root-skill source does not always require physical sync.
-`sage doctor` provides read-only input, host-budget and render-synchronization diagnostics; it
-does not repair them. Check diagnostics after repair and the next message's fresh validation.
-This does not guarantee blocking when hooks are skipped, untrusted, or timed out with
-continuation, or for arbitrary execution outside the host.
+Invalid input and size excess never produce a partial normal catalog. Recoverable overlay
+errors supply `SAGE_OVERLAY_UNAVAILABLE_V1`, invalidating earlier bodies for the current root/role.
+Pause the affected SAGE workflow until valid input is supplied, while allowing ordinary prompts,
+reading, diagnosis and user-directed source repair under the existing independent gates.
+Generated-file protection, profile/runtime integrity and independent phase/risk gates remain.
+The user adjusts the reported source after checking the cause, observed size, limit and unit;
+SAGE never migrates, shortens or splits user content automatically. The next request rechecks it.
+Integrity errors such as `profile_yaml_json_mismatch` remain distinct: if blocked, reconcile YAML
+and compiled JSON in an external terminal with
+`sage generate --kind hook --write --target <claude|codex|both>`, preserving the installed hosts.
+Use existing `sage sync-overlays` for `render_sync_required`; generate first when the profile also
+changed. `sage doctor` only diagnoses; its exit0 is not an application-readiness verdict.
+Install/sync/upgrade and hook generation check shared/personal input, sizes and hosts before apply.
+Validate explicitly checks delivery for installed hosts; Codex-only does not inherit Claude limits.
 
 Common ceilings remain UTF-8 10,000 bytes per source and UTF-8 49,152 bytes per catalog,
 including wrapper and JSON escaping. Claude additionally limits catalogs to 7,500 UTF-16 code
@@ -63,9 +62,17 @@ Claude Code 2.1.318 replaced the former maximum catalog with a file/preview.
 per-field cap with no setting to raise it. Even a single 10,000-byte source can exceed Claude's
 serialized budget after wrapper and other sources: this is a new support restriction for existing
 inputs. Distinguish `catalog_input=VALID` from `[claude|codex] catalog_budget=SUPPORTED|EXCEEDED`
-in `sage doctor`, and check the active host's observed size, limit and unit. Edit inputs externally
+in `sage doctor`, and check the active host's observed size, limit and unit. Let the user adjust inputs
 to fit, then recheck. Never truncate, split or fall back to preview/model fetch. Installation,
 configuration and budget checks do not prove actual delivery/application or accumulated compaction cost.
+
+### Updating an existing project
+
+Updating the package alone does not replace an installed project's hooks or CORE assets. Inspect
+`sage upgrade --check`, apply `sage upgrade --apply`, then verify the next delivery boundary. If
+preflight reports invalid or oversized existing source, edit that source yourself and retry. The
+recovery does not increase limits or migrate content automatically. See the
+[completion record](plan_docs/06/overlay-recovery-boundary.md) for actual-model and Windows coverage.
 
 ## Windows Phase 04 checklist does not block
 

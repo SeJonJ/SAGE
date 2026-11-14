@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARCHITECTURE.md sha256:a29a383e431d1a00fa88939fb9e629c0cd0403183477d9091591d7faf8c3f16c -->
+<!-- sage-doc-source: ARCHITECTURE.md sha256:9fca37c5802002e0e566a9c59587a63726442dacb5acda43dda7e7c9404814bb -->
 # SAGE Architecture
 
 [한국어](ARCHITECTURE.md) | [Documentation index](README.en.md)
@@ -27,14 +27,17 @@ The direction depends on what failed. The governing principle is **never disable
 
 | Failure point | Direction | Reason |
 |---|---|---|
-| Input JSON parsing | **fail-open** (exit 0) with stderr output | Treat it as a transient glitch without blocking development, but do not pass silently |
+| Common input-parser fail-open path | **fail-open** (exit 0) with stderr output | Treat it as a transient glitch without blocking development, but do not pass silently |
 | Profile parsing | **fail-open** with a **LOUD** warning | The gate is disabled, so the condition must be surfaced prominently |
 | L3 strategy crash | **fail-closed** and keep BLOCK | If a high-risk path cannot be evaluated, block it safely |
 | Glob outside the root or using an absolute path | Reject | Preserve project independence |
 
-Overlay input validation in an installed SAGE checkout has the specific UPS/PreToolUse
-fail-closed contract below, independently of this general failure policy. Damaged SAGE markers
-do not count as a non-SAGE checkout.
+The table describes common helpers, not every hook's final exit code. For invalid events,
+SessionStart retains body-free invalidation and the independent baseline result, while
+UserPromptSubmit's `capture-declared-risk` retains input rejection. Recoverable overlay input
+errors are not a common prerequisite for general tool permissions. Profile/runtime integrity and
+independent gates remain enforced under the separate recovery contract below. A damaged marker
+does not turn an installed checkout into a non-SAGE checkout.
 
 The source contract is the "preservation principles" comment at the top of
 `scripts/sage_harness/hooks/runtime/hook_runtime.py` and the profile-loading and L3-strategy-loading
@@ -94,21 +97,20 @@ owned legacy overlay spans for the seven skills and preserves originals. Damaged
 spans conflict; CORE/user bytes remain intact. Personal bodies never enter global/local SKILL.md,
 manifests, or permanent caches.
 
-Invalid inventory, size excess, damaged SAGE markers, and validator exceptions never produce a
-partial normal catalog. SessionStart emits body-free diagnostics; UserPromptSubmit natively
-blocks; PreToolUse on every supported tool natively denies/exits 2. Non-SAGE checkouts pass
-through. Repair inputs in an external terminal/editor, then send the next message for a fresh
-check. For `profile_yaml_json_mismatch`, run `sage generate --kind hook --write --target <claude|codex|both>`
-from the project root in a terminal outside the blocked session to reconcile YAML and compiled
-JSON. Preserve the installed host target: `claude` for Claude-only, `codex` for Codex-only, and
-`both` for cross-model/dual-host installations. For
-`render_sync_required` affecting physical worker renders or routing changes, run
-`sage sync-overlays` outside the session. When both states follow a profile edit, generate first,
-then sync. Editing a context-only root-skill source does not always require physical sync.
-`sage doctor` provides read-only input, host-budget and render-synchronization diagnostics; it
-does not repair them. Check diagnostics after repair and the next message's fresh validation.
-This does not guarantee blocking when hooks are skipped, untrusted, or timed out with
-continuation, or for arbitrary execution outside the host.
+Invalid input and size excess never produce a partial normal catalog. Recoverable overlay
+errors supply `SAGE_OVERLAY_UNAVAILABLE_V1`, invalidating earlier bodies for the current root/role.
+Pause the affected SAGE workflow until valid input is supplied, while allowing ordinary prompts,
+reading, diagnosis and user-directed source repair under the existing independent gates.
+Generated-file protection, profile/runtime integrity and independent phase/risk gates remain.
+The user adjusts the reported source after checking the cause, observed size, limit and unit;
+SAGE never migrates, shortens or splits user content automatically. The next request rechecks it.
+Integrity errors such as `profile_yaml_json_mismatch` remain distinct: if blocked, reconcile YAML
+and compiled JSON in an external terminal with
+`sage generate --kind hook --write --target <claude|codex|both>`, preserving the installed hosts.
+Use existing `sage sync-overlays` for `render_sync_required`; generate first when the profile also
+changed. `sage doctor` only diagnoses; its exit0 is not an application-readiness verdict.
+Install/sync/upgrade and hook generation check shared/personal input, sizes and hosts before apply.
+Validate explicitly checks delivery for installed hosts; Codex-only does not inherit Claude limits.
 
 Common ceilings remain UTF-8 10,000 bytes per source and UTF-8 49,152 bytes for the catalog,
 including its wrapper and JSON escaping. Claude additionally permits at most 7,500 UTF-16 code
@@ -123,7 +125,7 @@ is 10,000 characters per field, with no setting to raise it. SAGE's 7,500-unit c
 reserves room for other context. Even one 10,000-byte source within the common ceiling can exceed
 Claude's serialized budget: this is a new support restriction for existing inputs. `sage doctor`
 separates common input validity from each host's catalog budget. Excess produces body-free
-diagnostics and native blocking; never substitute truncation, splitting, preview or model fetch.
+diagnostics and current unavailable state; never substitute truncation, splitting, preview or model fetch.
 Configuration and budget checks do not prove model delivery/application, multi-turn accumulation
 or automatic-compaction cost.
 

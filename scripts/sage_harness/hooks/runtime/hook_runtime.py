@@ -887,14 +887,18 @@ def run_capture_declared_risk(io, root, core_dir, raw_text, *, overlay_root=None
         catalog_root, raw_text, runtime=io.RUNTIME, empty_if_absent=replace_absent)
     if issue:
         message = overlay_context.error_message(issue, root=root)
-        io.render_overlay_block("UserPromptSubmit", message)
-        return 2
+        if not overlay_context.recoverable(issue):
+            io.render_overlay_block("UserPromptSubmit", message)
+            return 2
+        print(message, file=sys.stderr)
+        context = overlay_context.unavailable(catalog_root, raw_text, issue)
     if not overlay_context.installed(catalog_root) and not context:
         return _capture_declared_risk(io, root, core_dir, raw_text)
     pending_issue = []
     def before_commit(risk_output):
-        text = overlay_context.merge_output(risk_output, context)
-        issue = overlay_context.output_issue(text, io.RUNTIME)
+        nonlocal context
+        _text, context, issue = overlay_context.merge_current_output(
+            risk_output, context, catalog_root, raw_text, io.RUNTIME)
         if issue:
             pending_issue.append(issue)
         return issue is None
@@ -908,6 +912,9 @@ def run_capture_declared_risk(io, root, core_dir, raw_text, *, overlay_root=None
         return rc
     text = overlay_context.merge_output(captured.getvalue(), context)
     issue = overlay_context.output_issue(text, io.RUNTIME)
+    if issue:
+        text, context, issue = overlay_context.merge_current_output(
+            captured.getvalue(), context, catalog_root, raw_text, io.RUNTIME)
     if issue:
         io.render_overlay_block("UserPromptSubmit", overlay_context.error_message(issue, root=root))
         return 2
@@ -1932,7 +1939,7 @@ def _overlay_say(root, diagnostic):
         return str(diagnostic)
 
 
-def _session_start_overlay_l1(io, root, *, context_validated=False):
+def _session_start_overlay_l1(io, root, *, context_validated=False, issue_out=None):
     """SessionStart — CORE 렌더의 오버레이 관리 블록을 재수렴한다.
 
     현재 오버레이 파일 기준으로 각 CORE 렌더 블록을 재합성해, sync 를 따로 안 돌려도 새 세션이 fresh
@@ -1969,12 +1976,16 @@ def _session_start_overlay_l1(io, root, *, context_validated=False):
             root, io.RUNTIME, skill_scope, **kwargs)
     except Exception as e:
         # Do not quote the exception: a parser/decoder may include source text.
+        if issue_out is not None:
+            issue_out.append('overlay_delivery.render_sync_failed')
         print(f"[session-start-overlay] BLOCK: overlay_delivery.render_sync_failed "
               f"({type(e).__name__}); repair input/permissions outside this session.",
               file=sys.stderr)
         return 2
     if errors:
         for path, message in errors:
+            if issue_out is not None:
+                issue_out.append(getattr(message, 'code', 'overlay_delivery.render_invalid'))
             print(f"[session-start-overlay] BLOCK: {path}: {_overlay_say(root, message)}",
                   file=sys.stderr)
         if changed:
@@ -1988,7 +1999,7 @@ def _ensure_session_06_snapshot(io, root, core_dir, raw_text):
     """SessionStart 또는 첫 UserPromptSubmit에서 세션별 06 baseline을 write-once 확보한다."""
     hid = "session-start-snapshot"
     raw = parse_input_fail_open(hid, raw_text, surface=False)
-    if raw is None:
+    if not isinstance(raw, dict):
         return 0
     session_id = raw.get("session_id") or ""
     # session_id가 없으면 상관키가 없어 "nosession" 공유 파일이 세션 간 오염되므로 claim도 쓰지 않는다.
@@ -2080,13 +2091,18 @@ def run_session_start_snapshot(io, root, core_dir, raw_text, *, overlay_root=Non
     context, issue = overlay_context.current(
         catalog_root, raw_text, runtime=io.RUNTIME, validate_materialization=False,
         empty_if_absent=replace_absent)
+    l1_issues = []
     overlay_rc = _session_start_overlay_l1(
         io, root, context_validated=(catalog_root == root
-                                    and overlay_context.installed(root) and issue is None))
+                                    and overlay_context.installed(root) and issue is None),
+        issue_out=l1_issues)
     if issue:
         print(overlay_context.error_message(issue, root=root), file=sys.stderr)
     if issue or (overlay_rc and not replace_absent):
-        context = ""
+        # SessionStart is diagnostic. Even an integrity failure must supersede
+        # old bodies here; the independent entry/UPS gates keep enforcing it.
+        current_issue = issue or (l1_issues[0] if l1_issues else 'overlay_delivery.render_sync_failed')
+        context = overlay_context.unavailable(catalog_root, raw_text, current_issue)
     rc = _ensure_session_06_snapshot(io, root, core_dir, raw_text)
     # 압축 직후에만 재진입 문맥을 넣는다. 06 baseline 은 session_id 가 같아 write-once 로 그대로다.
     # baseline 실패의 원래 nonzero 계약은 유지한다. 문맥 출력은 그 경우 best-effort이며,
@@ -2095,20 +2111,25 @@ def run_session_start_snapshot(io, root, core_dir, raw_text, *, overlay_root=Non
     with contextlib.redirect_stdout(captured):
         _emit_compact_reentry(io, root, raw_text)
     raw = parse_input_fail_open("session-start-snapshot", raw_text, surface=False)
-    if not isinstance(raw, dict) or raw.get("source") not in ("resume", "fork", "compact"):
+    if (issue != 'overlay_delivery.invalid_event'
+            and (not isinstance(raw, dict) or raw.get("source") not in ("resume", "fork", "compact"))):
         context = ""  # Startup's first full copy belongs to UserPromptSubmit.
+    # Invalid events cannot establish startup versus reentry; keep their
+    # body-free invalidation while preserving the independent baseline result.
     text = overlay_context.merge_output(captured.getvalue(), context)
     if overlay_context.installed(root):
-        merged_issue = overlay_context.output_issue(text, io.RUNTIME)
+        text, context, merged_issue = overlay_context.merge_current_output(
+            captured.getvalue(), context, catalog_root, raw_text, io.RUNTIME)
         if merged_issue:
             print(overlay_context.error_message(merged_issue, root=root), file=sys.stderr)
-            # Reentry is independently bounded. Keep it even when a catalog
-            # plus another context producer exceeds the native event ceiling.
-            text = overlay_context.merge_output(captured.getvalue(), "")
+            # Neither required reentry nor invalidation may be silently dropped.
+            # An independent producer that cannot fit the required state fails
+            # without emitting an unchecked envelope; baseline was still taken.
+            return rc or 2
     if text:
         io.render_session_context(text)
-    # SessionStart overlay failures are diagnostic; UPS/PreToolUse enforce the
-    # current input before product work. Only the independent baseline can block.
+    # Ordinary overlay failures are diagnostic; UPS and independent entry gates
+    # enforce current integrity before product work.
     return rc
 
 

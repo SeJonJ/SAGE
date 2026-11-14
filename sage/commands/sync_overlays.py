@@ -142,6 +142,12 @@ def run(args):
 
     # 2. 설치된 모든 host를 물리화한다. 한 host만 갱신하면 다른 discovery surface와 앵커가
     #    stale해지므로 manifest.installed_hosts가 동기화 범위의 단일 출처다.
+    from sage.overlay_delivery import preflight_delivery
+    delivery_errors = preflight_delivery(root, hosts)
+    if delivery_errors:
+        for _path, message in delivery_errors:
+            print(f"[sage overlay] {message}", file=sys.stderr)
+        return 1
     merged_renders = dict(existing_renders)
     all_plans = []
     for host in hosts:

@@ -45,7 +45,7 @@ def _check_path(root, path, leaf_kind):
         raise OverlayLocalError(issue.code, os.path.relpath(path, root).replace(os.sep, '/'))
 
 
-def _read(root, kind, asset_id, path):
+def _read(root, kind, asset_id, path, *, check_lint=True):
     """Use the same eligibility, markers and relaxation checks as shared input."""
     rel = os.path.relpath(path, root).replace(os.sep, '/')
     _check_path(root, path, 'file')
@@ -62,7 +62,7 @@ def _read(root, kind, asset_id, path):
     issue = common.validate_overlay(text)
     if issue:
         raise OverlayLocalError(issue.code, rel)
-    if scan_text(text):
+    if check_lint and scan_text(text):
         raise OverlayLocalError('overlay-gate-relaxation', rel)
     return text
 

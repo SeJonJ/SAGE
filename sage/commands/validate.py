@@ -775,6 +775,22 @@ def run(args):
 
     overall = "PASS"
     strict_hits = []
+    from sage.overlay_delivery import delivery_hosts, preflight_delivery
+    # Validate delivery against YAML's planned profile; stale compiled JSON keeps
+    # its existing WARN/strict policy below. Other profile/path errors still fail.
+    from sage.profile_compile import ProfileCompileError, materialize_profile
+    delivery_profile = None
+    if os.path.isfile(os.path.join(root, "sage", "project-profile.yaml")):
+        try:
+            delivery_profile = materialize_profile(_version_profile(root))
+        except ProfileCompileError:
+            pass  # The normal profile checks below report the invalid raw input.
+    # Lint is reported independently for both scopes. It must not terminate the
+    # source/catalog/host-size pass; apply/runtime callers keep check_lint=True.
+    for _path, message in preflight_delivery(root, delivery_hosts(manifest),
+            profile=delivery_profile, check_lint=False):
+        overall = "FAIL"
+        print(f"[sage overlay] FAIL: {message}")
     if assets_malformed:
         overall = "FAIL"
         print(tr(language_of(args), "cli.validate.msg05"))
@@ -967,7 +983,7 @@ def run(args):
     # CORE 자산 오버레이 게이트-완화 린트. default 는 heuristic 오탐 가능성 때문에 WARN, strict 는
     #   합성 preflight와 같은 check-id를 hard FAIL로 승격한다. 오버레이는 manifest 밖이라 위 루프가 못 본다.
     from sage.overlay_lint import scan_domain_contract, scan_overlays
-    ov = scan_overlays(root)
+    ov = scan_overlays(root, include_personal=True)
     if ov:
         if overall == "PASS":
             overall = "WARN"

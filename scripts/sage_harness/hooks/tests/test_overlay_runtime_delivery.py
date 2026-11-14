@@ -217,13 +217,13 @@ class OverlayRuntimeDelivery(unittest.TestCase):
                     if source == 'compact':
                         self.assertIn('SAGE', text)
 
-    def test_bad_inventory_blocks_submit_without_any_private_body(self):
+    def test_bad_inventory_marks_current_invalid_without_private_body(self):
         self.write('sage/asset_overrides.local/skills/typo.md', 'PRIVATE_BAD_INPUT')
         for host in (io_claude, io_codex):
             rc, out, err = self.call(hr.run_capture_declared_risk, host,
                                    {'session_id': 's', 'prompt': 'continue'})
-            self.assertEqual(rc, 2)
-            self.assertEqual(json.loads(out)['decision'], 'block')
+            self.assertEqual(rc, 0)
+            self.assertIn('SAGE_OVERLAY_UNAVAILABLE_V1', self.context(out, 'UserPromptSubmit'))
             self.assertNotIn('PERSONAL_TEAM_MARKER', out + err)
             self.assertNotIn('PRIVATE_BAD_INPUT', out + err)
 
@@ -239,7 +239,7 @@ class OverlayRuntimeDelivery(unittest.TestCase):
         self.write('sage/asset_overrides.local/skills/typo.md', 'PRIVATE_BAD_INPUT')
         rc, out, err = self.call(hr.run_capture_declared_risk, io_claude,
                                 {'session_id': 'first-blocked', 'prompt': 'continue'})
-        self.assertEqual(rc, 2)
+        self.assertEqual(rc, 0)
         baseline = self.root / '.claude/logs/session-snapshot-first-blocked.json'
         self.assertTrue(baseline.is_file(), 'blocked UPS skipped the independent 06 baseline')
         self.assertEqual(json.loads(baseline.read_text())['session_id'], 'first-blocked')
@@ -284,7 +284,7 @@ class OverlayRuntimeDelivery(unittest.TestCase):
         with redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
             rc = run_hook.dispatch('claude', 'generated-artifact-write-guard', str(self.root),
                 str(HOOKS), json.dumps({'tool_name': 'Bash', 'tool_input': {'command': 'echo ok'}}))
-        self.assertEqual(rc, 2)
+        self.assertEqual(rc, 0)
         self.write('.claude/skills/sage-team/SKILL.md', '# CORE\n')
         fixed = self.call(hr.run_capture_declared_risk, io_claude, {'prompt': 'continue'})
         self.assertEqual(fixed[0], 0, fixed[2])
@@ -297,15 +297,15 @@ class OverlayRuntimeDelivery(unittest.TestCase):
         self.assertNotIn('PERSONAL_TEAM_MARKER', out + err)
         self.assertNotIn('PRIVATE', out + err)
 
-    def test_routing_only_root_render_blocks_until_external_convergence(self):
+    def test_routing_only_root_render_warns_until_sync(self):
         from sage import overlay_common, overlay_materialize
         for host in (io_claude, io_codex):
             with self.subTest(host=host.RUNTIME):
                 path = f"{host.HOST_DIR}/skills/sage-team/SKILL.md"
                 self.write(path, "# CORE\n" + overlay_common.wrap_routing_block("ROUTING_PRIVATE_SENTINEL"))
                 rc, out, err = self.call(hr.run_capture_declared_risk, host, {"prompt": "continue"})
-                self.assertEqual(rc, 2)
-                self.assertEqual(json.loads(out)["decision"], "block")
+                self.assertEqual(rc, 0)
+                self.assertIn('SAGE_OVERLAY_UNAVAILABLE_V1', self.context(out, 'UserPromptSubmit'))
                 self.assertIn("sage sync-overlays", out)
                 self.assertNotIn("PERSONAL_TEAM_MARKER", out + err)
                 self.assertNotIn("ROUTING_PRIVATE_SENTINEL", out + err)
@@ -324,7 +324,7 @@ class OverlayRuntimeDelivery(unittest.TestCase):
         self.write('.claude/skills/sage-team/SKILL.md', core + '\n' +
                    compose_block('OLD_SHARED_BODY', 'skills', 'sage-team'))
         bad = self.call(hr.run_capture_declared_risk, io_claude, {'prompt': 'continue'})
-        self.assertEqual(bad[0], 2)
+        self.assertEqual(bad[0], 0)
         start = self.call(hr.run_session_start_snapshot, io_claude,
                           {'session_id': 's', 'source': 'resume'})
         self.assertEqual(start[0], 0, start[2])
@@ -347,7 +347,7 @@ class OverlayRuntimeDelivery(unittest.TestCase):
     def test_external_fix_releases_next_submit_without_latch(self):
         self.write('sage/asset_overrides.local/skills/typo.md', 'PRIVATE_BAD_INPUT')
         first = self.call(hr.run_capture_declared_risk, io_codex, {'prompt': 'continue'})
-        self.assertEqual(first[0], 2)
+        self.assertEqual(first[0], 0)
         (self.root / 'sage/asset_overrides.local/skills/typo.md').unlink()
         rc, out, err = self.call(hr.run_capture_declared_risk, io_codex, {'prompt': 'continue'})
         self.assertEqual(rc, 0, err)
@@ -389,13 +389,13 @@ class OverlayRuntimeDelivery(unittest.TestCase):
                     self.assertEqual(rc, 0, err)
                     self.assertNotIn('PERSONAL_TEAM_MARKER', out)
 
-    def test_invalid_inventory_denies_shell_before_original_write_guard(self):
+    def test_invalid_inventory_allows_shell_diagnosis(self):
         self.write('sage/asset_overrides.local/skills/typo.md', 'PRIVATE_BAD_INPUT')
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
             rc = run_hook.dispatch('codex', 'generated-artifact-write-guard', str(self.root),
                 str(HOOKS), json.dumps({'tool_name': 'Bash', 'tool_input': {'command': 'echo ok'}}))
-        self.assertEqual(rc, 2)
+        self.assertEqual(rc, 0)
         self.assertNotIn('PRIVATE_BAD_INPUT', out.getvalue() + err.getvalue())
 
     def test_valid_inventory_allows_reading_generated_skill(self):
@@ -407,16 +407,16 @@ class OverlayRuntimeDelivery(unittest.TestCase):
                     'file_path': str(self.root / '.claude/skills/sage-team/SKILL.md')}}))
         self.assertEqual(rc, 0, err.getvalue())
 
-    def test_oversize_is_blocked_without_truncation(self):
+    def test_oversize_is_unavailable_without_truncation(self):
         self.write('sage/asset_overrides.local/skills/sage-team.md', 'PRIVATE_LARGE_' * 1000)
         rc, out, err = self.call(hr.run_capture_declared_risk, io_claude, {'prompt': 'continue'})
-        self.assertEqual(rc, 2)
+        self.assertEqual(rc, 0)
         self.assertNotIn('PRIVATE_LARGE_', out + err)
 
     def test_claude_native_catalog_cap_is_checked_before_delivery(self):
         self.write('sage/asset_overrides.local/skills/sage-team.md', 'q' * 8000)
         claude = self.call(hr.run_capture_declared_risk, io_claude, {'prompt': 'continue'})
-        self.assertEqual(claude[0], 2)
+        self.assertEqual(claude[0], 0)
         self.assertNotIn('q' * 100, claude[1] + claude[2])
         codex = self.call(hr.run_capture_declared_risk, io_codex, {'prompt': 'continue'})
         self.assertEqual(codex[0], 0, codex[2])
@@ -452,16 +452,15 @@ class OverlayRuntimeDelivery(unittest.TestCase):
         self.assertTrue(state.exists(), 'blocked overflow cleared risk state')
         self.assertEqual(state.read_bytes(), original)
 
-    def test_merged_session_overflow_preserves_reentry_without_catalog(self):
+    def test_merged_session_overflow_cannot_drop_required_invalidation(self):
         def reentry(host, root, raw):
             host.render_session_context('r' * 9990)
         with mock.patch.object(hr, '_emit_compact_reentry', side_effect=reentry):
             rc, out, err = self.call(hr.run_session_start_snapshot, io_claude,
                                     {'session_id': 's', 'source': 'compact'})
-        self.assertEqual(rc, 0)
-        text = self.context(out, 'SessionStart')
-        self.assertEqual(text, 'r' * 9990)
-        self.assertNotIn('PERSONAL_TEAM_MARKER', text)
+        self.assertEqual(rc, 2)
+        self.assertEqual(out, '')
+        self.assertIn('host_context_too_large', err)
 
     def test_session_overlay_warning_does_not_hide_baseline_failure(self):
         self.write('sage/asset_overrides/skills/typo.md', 'BAD_SHARED')

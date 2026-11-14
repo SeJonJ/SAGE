@@ -37,6 +37,12 @@ Codex `additionalContextLimit=60000`은 유지합니다. 공통 한도에 맞는
 있으며 `sage doctor`가 입력 유효성과 호스트별 지원 예산을 구분합니다. 기존 7종의
 관리 공유 span은 소유 확인 후 제거하고 원본은 남기며, worker 공유 span은 유지합니다.
 
+적용 명령(`install`, `sync-overlays`, `upgrade`, `generate`)은 공유·개인 입력과 적용 대상 host를
+변경 전에 검사합니다. `--force`도 입력/한도를 건너뛰지 않습니다. 두 host가 설치되어 있으면
+Codex CORE skill의 global·project-local·disabled 범위와 별도로 두 host의 hook을 갱신·검사합니다.
+`validate`의 휴리스틱 lint는 WARN이며 `--strict`에서 실패로 승격됩니다. 입력 크기·전달 한도와
+독립 무결성 검사는 별도이며, WARN이 적용 명령의 거부를 무시한다는 뜻은 아닙니다.
+
 retro/저작은 제안마다 `scope: personal|project`를 확인하며 personal이 기본입니다. scope 없는
 과거 제안은 personal 기본 후보로 표시하고 기존 적용 파일을 옮기지 않습니다. 잘못된 scope는
 실패하고 미승인 제안은 후보를 출력하지 않습니다. hook/profile 제안은 기존 경로를 유지합니다.

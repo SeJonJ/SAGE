@@ -11,9 +11,17 @@ Startup SessionStart checks baseline/input state and defers the initial catalog 
 UserPromptSubmit. SessionStart resume/fork/compact supplies the current root's validated
 schema-2 catalog without assuming another user prompt will follow. Existing compact reentry and
 Phase 06 baseline outcomes remain distinct and are assembled with catalog context into one host
-JSON object. A collection failure emits only a body-free diagnostic; `continue: false` here is
-not a reliable request block. UserPromptSubmit and supported PreToolUse perform current-input
-native blocking. No new error latch or session target database is introduced.
+JSON object. Recoverable input failures supply a body-free current unavailable state on reentry;
+`continue: false` here is not a reliable request block. Ordinary diagnosis and user-directed
+source repair are not blocked by overlay delivery failure. Independent integrity gates remain. No new error latch or session target database is introduced.
+
+An L1 synchronization failure also supplies body-free current unavailable state on reentry.
+When the catalog plus reentry output exceeds the event budget, replace the catalog with that
+state and check the complete output again. If the required reentry output and invalidation still
+cannot fit, report the budget failure and return nonzero without emitting an unchecked envelope.
+The independent baseline is recorded before this output decision.
+Malformed or non-object event JSON also keeps body-free invalidation and reaches the independent
+baseline attempt. A valid startup event still defers its normal catalog to UserPromptSubmit.
 
 A resume/compact/fork and UserPromptSubmit before the same request can supply two copies.
 Identical generation/source copies are the same guidance, not repeated actions. Empty current
@@ -66,10 +74,12 @@ legacy baseline with no claim, and an abandoned temp, are cleaned up by TTL.
 - codex:  { event: SessionStart, matcher: "", input: session_id }
 - output: single host JSON context/diagnostic when applicable, plus a create-once write of `.{host}/logs/session-snapshot-{session_id}.json` only.
 - on_fail: an input, profile or baseline publish failure exits 0 and resolves into Stop's degraded
-  verdict. Only a failure to create the first-opportunity claim exits 2, blocking work from
+  verdict. A failure to create the first-opportunity claim exits 2, blocking work from
   starting on both SessionStart and UserPromptSubmit. Overlay collection errors at SessionStart
-  provide body-free diagnostics and do not supply a normal catalog; later native input/tool checks
-  block invalid current inventory independently of these preserved baseline results.
+  provide body-free current invalidation instead of a normal catalog; later native input and
+  independent gates enforce integrity separately. An independent reentry producer that cannot
+  fit the required invalidation also exits 2; its output is not silently discarded or emitted
+  beyond the host limit.
 
 ## canonical
 sage_harness/hooks/session_start_snapshot_core.py → decide(event, snapshot) -> decision (pure)

@@ -202,9 +202,9 @@ class TestOverlayErrorLanguage(unittest.TestCase):
                         self.assertIn(command, actual)
                         if language == "en":
                             self.assertNotRegex(actual, "[가-힣]")
-                            self.assertIn("external terminal", actual)
+                            self.assertIn("current project" if issue == "overlay_delivery.render_sync_required" else "external terminal", actual)
                         else:
-                            self.assertIn("외부 터미널", actual)
+                            self.assertIn("현재 프로젝트" if issue == "overlay_delivery.render_sync_required" else "외부 터미널", actual)
                             self.assertNotIn("Repair input/installation", actual)
 
     def test_profile_repair_preserves_installed_hook_targets(self):

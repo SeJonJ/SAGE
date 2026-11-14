@@ -98,10 +98,11 @@ MESSAGES = {
 # (core 가 낼 수 있는 key 집합과의 대조)이 조각까지 message_key 로 세어 무너진다.
 FRAGMENTS = {
     "hook.overlay_delivery.repair_profile": "[SAGE overlay] {issue}\n외부 터미널에서 현재 프로젝트의 `sage generate --kind hook --write --target {target}`를 실행해 profile 산출물을 다시 생성하세요. 기존 설치 host를 유지하며, 양쪽 host를 쓰는 설치는 both를 선택하세요. 이후 렌더 동기화가 필요하면 외부에서 `sage sync-overlays`를 실행한 뒤 다시 요청하세요.",
-    "hook.overlay_delivery.repair_render": "[SAGE overlay] {issue}\n외부 터미널에서 현재 프로젝트의 `sage sync-overlays`를 실행한 뒤 다시 요청하세요.",
+    "hook.overlay_delivery.repair_render": "[SAGE overlay] {issue}\n현재 프로젝트에서 `sage sync-overlays`로 동기화한 뒤 다시 요청하세요.",
     "hook.overlay_delivery.repair_upgrade": "[SAGE overlay] {issue}\n구형 공유 지침을 보존했습니다. 외부 터미널에서 현재 프로젝트의 `sage upgrade --apply`로 CORE와 hook runtime을 함께 업그레이드한 뒤 다시 요청하세요.",
     "hook.overlay.context_upgrade_required": "{id}의 구형 공유 추가 지침을 보존했습니다. 설치된 CORE와 hook runtime에 문맥 catalog 전달 지원이 함께 필요합니다. 함께 업그레이드한 뒤 다시 시도하세요.",
     "hook.overlay_delivery.input_error": "[SAGE overlay] {issue}\n외부 터미널/에디터에서 입력·설치를 고친 뒤 다시 요청하세요.",
+    "hook.overlay_delivery.recoverable_input_error": "[SAGE overlay] {issue}\n문제 파일·원인을 확인하고 사용자가 내용을 조정한 뒤 다시 요청하세요. 읽기·진단·허용된 원문 수리는 계속할 수 있습니다.",
     # 판정 줄에 이어 붙는 해소 안내. 본문만 번역하고 이걸 두면 en 출력의 절반이
     # 한국어로 남아, 번역하지 않은 것보다 읽기 어려운 줄이 된다.
     # key 는 `hint.<message_key>` 규약이다 — 표를 한 벌 더 두지 않기 위해서다.

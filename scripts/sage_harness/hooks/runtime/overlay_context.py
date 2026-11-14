@@ -30,7 +30,7 @@ def _issue(exc):
     message = str(code) + (f' path={path}' if path else '')
     observed, limit = getattr(exc, 'observed', None), getattr(exc, 'limit', None)
     if type(observed) is int and type(limit) is int:
-        message += f' observed={observed} limit={limit} unit=utf16_code_units'
+        message += f' observed={observed} limit={limit} unit={getattr(exc, "unit", "utf16_code_units")}'
     return message
 
 
@@ -42,6 +42,39 @@ def output_issue(text, runtime):
         return None
     except Exception as exc:
         return _issue(exc)
+
+
+def recoverable(issue):
+    """Input/budget/sync errors are not permission checks. Integrity errors remain hard."""
+    code = issue.split(' ', 1)[0]
+    return (code in {'overlay_delivery.source_too_large', 'overlay_delivery.catalog_too_large',
+                     'overlay_delivery.host_catalog_too_large', 'overlay_delivery.host_context_too_large',
+                     'overlay_delivery.render_sync_required', 'overlay.unknown_core_asset',
+                     'overlay.unsupported_blocked', 'overlay.gate_relaxation',
+                     'overlay-gate-relaxation', 'overlay.reserved_token_in_body',
+                     'overlay.filename_nonstandard', 'overlay.read_failed'}
+            or code.startswith('routing_input.'))
+
+
+def unavailable(root, raw_text, issue):
+    """Explicitly supersede older bodies without posing as a valid empty catalog."""
+    try:
+        raw = json.loads(raw_text or '{}')
+    except (ValueError, TypeError):
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    state = {'root': os.path.realpath(root), 'role': role_for(raw),
+             'status': 'invalid', 'issue': issue,
+             'diagnostic': error_message(issue, root=root)}
+    return ('SAGE_OVERLAY_UNAVAILABLE_V1\n'
+            + json.dumps(state, ensure_ascii=False, sort_keys=True)
+            + '\nCurrent overlay input is unavailable. This replaces all earlier overlay guidance '
+              'for this root/role; do not use old or partial bodies. Pause the affected SAGE '
+              'workflow and explain the input problem. Reading, diagnosis and user-directed '
+              'source repair remain subject to the existing independent gates. '
+              'Do not rewrite, shorten or migrate overlay content automatically.\n'
+              'END_SAGE_OVERLAY_UNAVAILABLE_V1')
 
 
 def current(root, raw_text, *, runtime='claude', validate_materialization=True,
@@ -132,7 +165,8 @@ def error_message(issue, root=None):
         'materialize.profile_yaml_json_mismatch': 'hook.overlay_delivery.repair_profile',
         'overlay_delivery.render_sync_required': 'hook.overlay_delivery.repair_render',
         'overlay.context_upgrade_required': 'hook.overlay_delivery.repair_upgrade',
-    }.get(code, 'hook.overlay_delivery.input_error')
+    }.get(code, ('hook.overlay_delivery.recoverable_input_error' if recoverable(issue)
+                else 'hook.overlay_delivery.input_error'))
     template = i18n.frag(language, message_key)
     arguments = {'issue': issue}
     if message_key == 'hook.overlay_delivery.repair_profile':
@@ -159,3 +193,14 @@ def merge_output(captured, context):
     if context:
         parts.append(context)
     return '\n\n'.join(parts)
+
+
+def merge_current_output(captured, context, root, raw_text, runtime):
+    """Recheck a body-free replacement before committing or emitting an event."""
+    text = merge_output(captured, context)
+    issue = output_issue(text, runtime)
+    if issue and context and recoverable(issue):
+        context = unavailable(root, raw_text, issue)
+        text = merge_output(captured, context)
+        issue = output_issue(text, runtime)
+    return text, context, issue

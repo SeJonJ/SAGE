@@ -5,6 +5,8 @@ description: Run the complete SAGE Fast Cycle by delegating planning to sage-pla
 
 ## Overlay catalog selector (mandatory)
 
+If the current boundary supplies `SAGE_OVERLAY_UNAVAILABLE_V1` for this root/role, it invalidates all earlier overlay bodies. Pause this SAGE workflow, explain the input problem, and allow diagnosis/user-directed source repair under the existing independent gates. Never shorten, split, migrate, or omit invalid overlay content automatically. Resume only after the next boundary supplies a valid current catalog.
+
 Current overlay target: `sage-cycle-fast`. Before acting, use the current boundary's supplied
 schema-version-2 catalog for the actual checkout `root` and `role: root`, with a definite
 `generation`. Use only `targets["sage-cycle-fast"]` references into `sources`; each source has
