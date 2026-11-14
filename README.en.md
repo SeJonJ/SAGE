@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:cce02d62325d579b30ba158cd5659550b190e38d582e256a89056ef65b6cc62e -->
+<!-- sage-doc-source: README.md sha256:852995d0365b4a4771afdd3223cc2f20e577c6a749a1b3275f5d1b2cec0c2cc6 -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)
@@ -22,6 +22,8 @@ Telling an agent "plan first, be careful with risky files, always get a review" 
 - **Cross-review and review loops raise token usage as much as you use them.**
 
 These checks are not the AI's "judgment" — they are code that decides **deterministically**. The same situation always produces the same result, so nobody has to re-explain the rules.
+
+**Overlay recovery in 1.3.7:** Invalid or oversized inputs pause the affected SAGE workflow while independent rules still permit reading, diagnosis and repair. **Users own source changes.** Apply commands check shared/personal inputs and host budgets; the next valid boundary supplies repaired guidance. See [recovery steps](docs/troubleshooting.en.md#target-specific-overlay-context-delivery) and [verification scope](docs/plan_docs/README.md).
 
 ## Quickstart
 
@@ -172,6 +174,7 @@ fail-open/fail-closed policy.
 - **Profile and overlays** separate shared and personal settings and guidance. Shared guidance lives in `sage/asset_overrides/`;
   personal guidance stays in Git-ignored `sage/asset_overrides.local/`. Both hosts automatically receive current sources
   for seven root skills at message and reentry boundaries. Standard uses shared→personal; Fast uses shared Standard→shared Fast→personal Standard→personal Fast.
+  Input problems report causes/limits for user adjustment; ordinary diagnosis and permitted repair remain available.
   Personal text stays out of shared renders ([delivery, limits, and recovery](docs/ARCHITECTURE.en.md#target-specific-overlay-context-delivery)).
 - **Fast Cycle** reduces document count only when enabled and records the transition in the audit.
 - **Early completion** logs explicit user acceptance of residual risk, apart from normal approval.

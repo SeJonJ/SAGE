@@ -24,13 +24,16 @@ SAGE는 "판단은 AI가, 경계는 결정론 코드가"라는 원칙 위에 선
 
 | 실패 지점 | 방향 | 이유 |
 |---|---|---|
-| 입력 JSON 파싱 실패 | **fail-open** (exit 0) + stderr surface | 일시적 글리치로 보고 개발 흐름을 막지 않되, 조용히 넘기지 않는다 |
+| 공통 입력 JSON 파서의 fail-open 경로 | **fail-open** (exit 0) + stderr surface | 일시적 글리치로 보고 개발 흐름을 막지 않되, 조용히 넘기지 않는다 |
 | profile 파싱 실패 | **fail-open** + **LOUD** surface | 게이트가 무력화된 상태이므로 반드시 시끄럽게 알린다 |
 | L3 전략 실행 크래시 | **fail-closed** (BLOCK 유지) | 고위험 경로를 판정할 수 없으면 안전하게 막는다 |
 | root 밖 / 절대경로 glob | 거부 | 프로젝트 독립성 보장 |
 
-위 일반 실패 정책과 별도로, 설치된 SAGE checkout의 overlay 입력 검증은 아래 문맥 공급 절의
-UPS/PreToolUse fail-closed 계약을 따른다. 손상 마커를 비SAGE로 취급하지 않는다.
+이 표는 공통 helper의 정책이며 모든 hook의 최종 종료 코드를 뜻하지 않는다. 잘못된 이벤트에
+SessionStart는 본문 없는 무효 상태와 독립 baseline 결과를 유지하고, UserPromptSubmit의
+`capture-declared-risk`는 기존 입력 거부를 유지한다. 회복 가능한 overlay 입력 오류는 일반 도구
+권한의 공통 전제가 아니다. 아래 문맥 공급 절의 복구 경계와 별도로 profile/runtime 무결성과
+독립 gate는 계속 검사한다. 손상 마커를 비SAGE로 취급하지 않는다.
 
 근거: `scripts/sage_harness/hooks/runtime/hook_runtime.py` 상단 "보존 원칙" 주석과 profile 로드·L3
 전략 로드 경로.
@@ -82,18 +85,19 @@ worker 4종의 공유 물리 합성과 역할별 본문/ref packet은 유지합�
 원문은 보존합니다. 손상 span·소유 불명은 충돌이며 CORE/사용자 바이트를 지우지 않습니다.
 개인 원문을 global/local SKILL.md·manifest·영구 cache에 굽지 않습니다.
 
-잘못된 inventory·한도 초과·손상 SAGE 마커·검증 예외는 정상 부분 catalog를 만들지 않습니다.
-SessionStart는 본문 없는 진단, UserPromptSubmit은 native block, 모든 지원 도구의 PreToolUse는
-native deny/exit 2입니다. 비SAGE checkout은 통과합니다. 복구는 호스트 밖 터미널/에디터에서
-입력을 고친 뒤 다음 메시지에서 재검사하는 경로입니다. `profile_yaml_json_mismatch`는 프로젝트
-root의 세션 밖 터미널에서 `sage generate --kind hook --write --target <claude|codex|both>`로
-YAML/compiled JSON을 정합화합니다. 설치된 host target을 유지하세요: Claude-only는 `claude`,
-Codex-only는 `codex`, 교차 모델/양 host 설치는 `both`입니다. 물리 worker 렌더나 routing 변경의 `render_sync_required`는 세션 밖에서
-`sage sync-overlays`로 동기화합니다. profile 수정 뒤 두 상태가 함께 있으면 generate 후 sync
-순서로 실행하세요. context 전용 root 스킬 원문 편집이 항상 물리 sync를 요구하는 것은 아닙니다.
-`sage doctor`는 입력·host 예산·렌더 동기화 상태를 확인하는 읽기 전용 진단이며 직접 수리하지
-않습니다. 수리 후 진단과 다음 메시지의 재검사를 확인하세요. hook 미실행, 신뢰 거부·timeout
-continue, 호스트 밖 임의 실행까지 차단한다고 보장하지 않습니다.
+입력 오류·한도 초과는 정상 부분 catalog를 만들지 않습니다. 회복 가능한 overlay 오류는
+`SAGE_OVERLAY_UNAVAILABLE_V1`로 현재 무효 상태를 알리고 이전 본문을 대체합니다. 해당 SAGE
+작업은 유효 입력 공급 전까지 보류하지만 일반 대화·읽기·진단·독립 규칙이 허용하는 원문 수리는
+계속할 수 있습니다. 생성물 쓰기 보호·profile/runtime 무결성·독립 phase/risk gate는 유지합니다.
+사용자가 문제 파일·원인·관측치·한도·단위를 확인해 내용을 직접 조정한 뒤 다음 요청에서
+재검사합니다. SAGE는 원문을 자동 이전·축약·분할하지 않습니다.
+`profile_yaml_json_mismatch` 같은 무결성 오류는 별도이며, 차단된 경우 외부 터미널에서
+`sage generate --kind hook --write --target <claude|codex|both>`로 YAML/compiled JSON을
+정합화합니다. 실제 설치 host를 유지하세요. `render_sync_required`는 기존 `sage sync-overlays`로
+동기화하며 profile도 바뀌었다면 generate 후 sync 순서입니다. `sage doctor`는 진단만 수행합니다.
+install/sync/upgrade 및 hook generate는 적용 전 shared/personal·크기·host를 같은 기준으로
+검사합니다. validate는 실제 설치 host의 전달 오류를 명시 검출하며 Codex-only에 Claude 한도를
+적용하지 않습니다. 진단에서0을 반환하는 doctor를 적용 가능 판정으로 사용하지 마세요.
 
 공통 ceiling은 source별 UTF-8 10,000 bytes, wrapper·JSON escape를 포함한 catalog UTF-8
 49,152 bytes입니다. Claude에는 별도로 catalog 7,500 UTF-16 code units 한도를 적용하며,
@@ -107,7 +111,7 @@ bytes나 token 수와 같은 단위가 아닙니다. Codex는 공통 ceiling과 
 나머지 문맥 여유를 확보하는 한도입니다. 공통 source ceiling을 만족하는 단일 10,000-byte 입력도
 Claude에서는 전체 직렬화 결과로 거부될 수 있습니다. 이는 기존 입력의 새 지원 제한입니다.
 `sage doctor`는 공통 입력 유효성과 각 호스트의 catalog 예산 충족을 구분합니다. 초과는 본문 없는
-진단과 native 차단으로 처리하며 축약·분할·preview/fetch fallback으로 성공 처리하지 않습니다.
+진단과 현재 무효 상태로 처리하며 축약·분할·preview/fetch fallback으로 성공 처리하지 않습니다.
 설치·예산 진단은 실제 모델 전달/적용, 여러 turn 누적이나 자동 압축 비용의 검증을 대신하지 않습니다.
 
 ## OS 경계와 두 판정 축 (`sage uninstall`)

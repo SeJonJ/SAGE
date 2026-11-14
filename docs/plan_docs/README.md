@@ -1,31 +1,26 @@
-# Overlay 전달·#36 통합 검증 기록
+# Overlay 전달·통합·복구 검증 기록
 
 이 디렉터리는 개발 당시의 계획과 실행 근거를 보존합니다. 과거 기록의 `COMPLETE`나 `APPROVED`를
 다른 제품 hash의 승인으로 옮겨 쓰지 않습니다.
 
 ## 현재 후보와 승인 경계
 
-2026-11-11 [통합 완료 보고](06/overlay-issue36-integration.md)를 작성했습니다.
-Windows P1 후속 변경은 PR #38에서 사용자 명시 승인으로 PASS 처리했고 별도 독립 리뷰는
-생략했습니다. 기존 통합05 승인과 구분하며, 사용자는 이어서 머지·1.3.7 릴리스를 승인했습니다.
-실제 머지·배포 결과는 PR #37/#38과 해당 태그의 workflow·Release에서 확인합니다.
-
-현재 후보는 `fix/overlay-context-delivery`의 overlay 수정과 #36 구 레이아웃 업그레이드 통합본입니다.
-2026-11-09 사용자는 문서 정리, 커밋·푸시, PR 생성과 CI 확인을 승인했습니다. 이 지시는 독립 리뷰
-차단을 해제하거나 main 병합·릴리스를 승인한 것으로 기록하지 않습니다. 당시 PR은 Draft로 제출했고,
-독립 검토와 최종 CI 완료 후 검토 가능한 상태로 전환했습니다.
+2026-11-15 현재 후보는 [overlay 복구 경계 완료 기록](06/overlay-recovery-boundary.md)입니다.
+이전 통합본은 PR #37/#38로 main에 병합됐지만 1.3.7 태그·PyPI 출하는 후속 오류 수정 때문에
+보류됐습니다. 이번 후보는 그 main을 기준으로 세션 봉쇄 해소·적용 전 검사·host 검증을 보완했습니다.
+사용자는 이번 사이클 종료·문서 갱신·커밋/푸시·머지·릴리즈를 명시 승인했습니다.
 
 | 기록 | 적용 범위 | 판정 |
 |---|---|---|
-| [Overlay 단독 05](05/overlay-context-delivery.md)·[06](06/overlay-context-delivery.md) | 제품 hash `93d541024b737af26048290415aa8b513855330ef411aa9e591d2ded5efbb611` | 당시 후보의 독립 승인·완료 기록 |
-| [통합 03](03/overlay-issue36-integration.md)·[04](04/overlay-issue36-integration.md) | #36을 포함한 제품 hash `205ba39f9b2f587573fb44c31f313a2f3c7975a2dabc1e2d6b9941785282ae70` | 구현·로컬 검증 수행 |
-| [통합 05](05/overlay-issue36-integration.md) | 통합 후보와 최소 컴파일 진단 수정 | `APPROVED`: 최종 Codex5관점·Claude·반박2명 완료, I1~I6 충족 |
-| [플랫폼 검증 요약](04/platform-validation.md) | 2026-11-07 Windows·Mac 실행 | 원본 실패, 수정 후 재검증, 건너뜀을 분리 |
-| [Windows P1 후속 검증](04/platform-validation.md)·[원문](04/windows-phase4-paths.validation.json) | `fix/windows-phase4-paths`의 경로 수집 함수·회귀 테스트 | Windows3버전·양 host에서 수정 후 hook54사례 PASS; 기존 통합05 승인은 새 코드에 자동 상속하지 않음 |
+| [현재 00](00/overlay-recovery-boundary.md)·[03](03/overlay-recovery-boundary.md)·[04](04/overlay-recovery-boundary.md) | 현재 복구 후보의 C1–C6와 추가 보완·[영수증](04/overlay-recovery-boundary.validation.json) | Mac 회귀, 실제 모델 대표 사례, Windows 11 실기기 검증 완료 |
+| [현재 05](05/overlay-recovery-boundary.md)·[06](06/overlay-recovery-boundary.md) | 고정 source의 same-runtime 리뷰와 후속 실행 근거 | 3라운드 완료, 최종 APPROVED, 개발 사이클 종료 |
+| [Overlay 단독 05](05/overlay-context-delivery.md)·[06](06/overlay-context-delivery.md) | 이전 overlay 전달 후보 | 당시 hash의 독립 승인·완료 기록 |
+| [통합 05](05/overlay-issue36-integration.md)·[06](06/overlay-issue36-integration.md) | 이전 #36 통합 후보·Windows checklist 수정 | 해당 단계의 승인·완료 기록; 현재 후보에 자동 상속하지 않음 |
+| [이전 플랫폼 검증](04/platform-validation.md)·[원문](04/windows-phase4-paths.validation.json) | 2026-11-07~11의 후보 | 이전 실행 실패·수정·scope를 보존 |
 
-통합 후보의 06 문서는 작성하지 않았습니다. 2026-11-09 후속 작업에서는 사용자 설명서만 추가
-정리했으며 제품 동작을 더 확장하지 않았습니다. CI 결과는 PR의 정확한 commit checks를 확인합니다.
-과거 문서의 ‘미커밋·CI 미실행’은 해당 문서가 작성된 시점의 상태입니다.
+개발 사이클 종료와 배포는 별도입니다. 실제 머지·배포 상태는 현재 PR의 정확한 commit checks와
+[릴리즈](https://github.com/SeJonJ/SAGE/releases/tag/v1.3.7), PyPI에서 확인합니다. 문서 작성 당시
+아직 실행하지 않은 CI/게시를 성공 실적으로 미리 세지 않습니다.
 
 ## 해석할 때 주의할 점
 

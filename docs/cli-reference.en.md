@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:d06894991c46c8ef2773639e447ccc8767fce2b53c60064a3a396c54c3373337 -->
+<!-- sage-doc-source: cli-reference.md sha256:db330f856de9bd625512ed632babaaa10e557452307f21d703dc11b4fa434602 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for
@@ -40,6 +40,13 @@ not token counts. Codex retains `additionalContextLimit=60000`. Input within the
 can exceed Claude's budget; `sage doctor` separates input validity from each host's support budget.
 Verified owned legacy shared
 spans for the seven skills are removed while originals remain; worker shared spans remain.
+
+Apply commands (`install`, `sync-overlays`, `upgrade`, `generate`) validate shared/personal inputs
+and destination-host budgets before mutation. `--force` does not bypass input or size checks. When
+both hosts are installed, hook regeneration and validation cover both independently of the Codex
+CORE skill scope (global, project-local or disabled). Heuristic lint from `validate` is WARN and
+becomes a failure under `--strict`; source/delivery budgets and independent integrity checks remain
+separate. A lint warning does not override an apply command's rejection.
 
 Retro/authoring confirms `scope: personal|project` per proposal, defaulting to personal. Legacy
 proposals without scope show the personal default candidate without moving applied files.

@@ -1,0 +1,98 @@
+{
+  "cycle": "overlay-recovery-boundary",
+  "base_commit": "f7b04e1713ca1a13fb6e10625aa0547a1887cd4a",
+  "review_subject_sha256": "dc1384334831540522c3c9450f81ce2567517e2ddc9e778a9fe0877cdb23bebd",
+  "review_patch_sha256": "1a7e24566ddfcef06dec18f0bf7a46cad8c577a9acd1c41382e0d3dbf858a151",
+  "review_execution": "COMPLETE",
+  "review_rounds": 3,
+  "final_round": {
+    "find_roles": 6,
+    "refuters": 2,
+    "new_findings": 0
+  },
+  "acceptance": {
+    "C1": "PASS_BOUNDED_REPRESENTATIVE",
+    "C2": "PASS_BOUNDED_REPRESENTATIVE",
+    "C3": "PASS_BOUNDED_REPRESENTATIVE",
+    "C4": "PASS_BOUNDED_REPRESENTATIVE",
+    "C5": "PASS_BOUNDED_REPRESENTATIVE",
+    "C6": "PASS_BOUNDED_REPRESENTATIVE"
+  },
+  "mac_regression": {
+    "summaries": 115,
+    "ran_including_skips": 4175,
+    "skipped": 15,
+    "failures": 0,
+    "errors": 0,
+    "after_windows_assertion_patch_focused": 91
+  },
+  "actual_models": {
+    "claude": [
+      "claude-opus-5-5"
+    ],
+    "codex": [
+      "gpt-6.1-sol"
+    ]
+  },
+  "actual_model_probe": "Both hosts: same-session root Fast four-source valid-A -> unavailable -> externally repaired valid-B; no reselection after first selection",
+  "windows": {
+    "system": "Windows11 Pro x64 build26200",
+    "matrix": [
+      {
+        "python": "3.10.11",
+        "normal_ran": 91,
+        "normal_pass": 88,
+        "normal_skip_symlink_fixture_creation": 3,
+        "privileged_link_tests_pass": 3,
+        "covered_unique_test_cases": 91,
+        "normal_failures": 0,
+        "normal_errors": 0,
+        "installed_native_checks": 84,
+        "platform_smoke_exit": 0,
+        "wheel_package_files_exact": 358
+      },
+      {
+        "python": "3.11.9",
+        "normal_ran": 91,
+        "normal_pass": 88,
+        "normal_skip_symlink_fixture_creation": 3,
+        "privileged_link_tests_pass": 3,
+        "covered_unique_test_cases": 91,
+        "normal_failures": 0,
+        "normal_errors": 0,
+        "installed_native_checks": 84,
+        "platform_smoke_exit": 0,
+        "wheel_package_files_exact": 358
+      },
+      {
+        "python": "3.12.10",
+        "normal_ran": 91,
+        "normal_pass": 88,
+        "normal_skip_symlink_fixture_creation": 3,
+        "privileged_link_tests_pass": 3,
+        "covered_unique_test_cases": 91,
+        "normal_failures": 0,
+        "normal_errors": 0,
+        "installed_native_checks": 84,
+        "platform_smoke_exit": 0,
+        "wheel_package_files_exact": 358
+      }
+    ],
+    "normal_user_skips_retained": 9,
+    "same_link_fixture_tests_elevated_pass": 9,
+    "full_windows_suite": "NOT_RUN",
+    "windows_actual_model": "NOT_RUN; actual-model evidence above is macOS"
+  },
+  "tested_wheel_sha256": "953e5b35660fdbd2f2b5ccdfeff989d151eee554a9ecfe2688d9c3d8b4766ab9",
+  "post_review_changes": "Execution evidence docs and one test expected path normalized using os.path.join; runtime source unchanged",
+  "artifact_receipts": {
+    "windows_archive_sha256": "808ccaed80f9380932f88ef376191f83be7913b9b1fe58a61847c8f0a1f27f3a",
+    "windows_manifest_sha256": "46fe914452673e300b7e30b30279c34f734fb9ce151f557a82f6135ee6a351eb"
+  },
+  "limits": [
+    "Not every child/checkout/compact/model or all stochastic behavior",
+    "Windows normal-user symlink creation requires extra OS privilege; separate elevated fixture checks retained",
+    "Optional child/integrity/concurrency/sync/destination candidates remain outside automatic rework"
+  ],
+  "authority": "External user-directed PDCA; no SAGE engine self-approval"
+}
