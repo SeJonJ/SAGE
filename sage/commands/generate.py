@@ -451,6 +451,16 @@ def _gen_hook_locked(args, root):
     profile_status, profile_data, profile_body, profile_path = _compile_profile(
         root, args.dest, language_of(args))
     runtime_hash = None
+    if args.write and profile_status != "fail":
+        from sage.overlay_delivery import delivery_hosts, preflight_delivery
+        requested = ["claude", "codex"] if args.target == "both" else [args.target]
+        delivery_errors = preflight_delivery(
+            root, delivery_hosts(manifest, requested),
+            profile=profile_data if isinstance(profile_data, dict) else {})
+        if delivery_errors:
+            for _path, message in delivery_errors:
+                print(f"[sage overlay] {message}", file=sys.stderr)
+            return 1
     if args.write:
         status = profile_status
         if status == "fail":

@@ -41,9 +41,8 @@ def dispatch(runtime, hook, root, core_dir, raw_text, direct_path=None, *, overl
     if hook == "session-start-snapshot":
         return hr.run_session_start_snapshot(io, root, core_dir, raw_text, **context_args)
     if hook == "generated-artifact-write-guard":
-        overlay_rc = hr.check_overlay_tool_input(io, root, raw_text, **context_args)
-        if overlay_rc:
-            return overlay_rc
+        # Overlay delivery errors belong to the context boundary. Do not turn
+        # a generated-file write guard into a ban on diagnosis/source repair.
         try:
             raw = json.loads(raw_text or "{}")
             tool = raw.get("tool_name", "") if isinstance(raw, dict) else ""

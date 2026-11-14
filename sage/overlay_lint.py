@@ -59,30 +59,38 @@ def scan_text(text):
     return hits
 
 
-def scan_overlays(root):
-    """<root>/sage/asset_overrides/{agents,skills,framework}/*.md 를 스캔.
-
-    반환 [(relpath, [(pattern_id, 진단), ...]), ...] — 매칭된 파일만. 디렉토리 없으면 빈 리스트.
-    """
-    base = os.path.join(root, OVERLAY_SUBDIR)
-    if not os.path.isdir(base):
-        return []
+def scan_overlays(root, *, include_personal=False):
+    """Report heuristic hits without bodies; validate may include personal input."""
+    bases = [OVERLAY_SUBDIR]
+    if include_personal:
+        from sage.overlay_materialize import _project_path_issue
+        bases.append(os.path.join('sage', 'asset_overrides.local'))
     results = []
-    for subdir in ("agents", "skills", "framework"):
-        d = os.path.join(base, subdir)
-        if not os.path.isdir(d):
+    for relative_base in bases:
+        base = os.path.join(root, relative_base)
+        if not os.path.isdir(base):
             continue
-        for fn in sorted(os.listdir(d)):
-            if not fn.lower().endswith(".md"):
+        if include_personal and _project_path_issue(root, base, leaf_kind='dir'):
+            continue
+        for subdir in ("agents", "skills", "framework"):
+            d = os.path.join(base, subdir)
+            if not os.path.isdir(d):
                 continue
-            p = os.path.join(d, fn)
-            try:
-                text = Path(p).read_text(encoding="utf-8")
-            except (OSError, UnicodeError):
+            if include_personal and _project_path_issue(root, d, leaf_kind='dir'):
                 continue
-            hits = scan_text(text)
-            if hits:
-                results.append((os.path.join(OVERLAY_SUBDIR, subdir, fn), hits))
+            for fn in sorted(os.listdir(d)):
+                if not fn.lower().endswith(".md"):
+                    continue
+                p = os.path.join(d, fn)
+                if include_personal and _project_path_issue(root, p, leaf_kind='file'):
+                    continue
+                try:
+                    text = Path(p).read_text(encoding="utf-8")
+                except (OSError, UnicodeError):
+                    continue
+                hits = scan_text(text)
+                if hits:
+                    results.append((os.path.join(relative_base, subdir, fn), hits))
     return results
 
 

@@ -151,6 +151,10 @@ def _plan(root, language):
     axes = version_axes(profile, manifest, __version__)
 
     blockers, notes, writes = [], [], []
+    if not manifest_error and not profile_error:
+        from sage.overlay_delivery import delivery_hosts, preflight_delivery
+        blockers.extend(message for _path, message in preflight_delivery(
+            root, delivery_hosts(manifest), profile=profile))
 
     # 레이아웃 이행. **옮기지 않는다 — 다시 만들고 지운다.**
     #
@@ -278,6 +282,8 @@ def _plan(root, language):
         "axes": {"required": axes.required, "installed": axes.installed,
                  "generated": axes.generated, "runtime": axes.runtime},
         "host_runtime": host,
+        "installed_hosts": list(dict.fromkeys(
+            h for h in [host, *installed_hosts] if h in ("claude", "codex"))),
         "bootstrapped": bootstrapped,
         "skill_scope": scope,
         "core_installations": core_installations,
@@ -770,7 +776,11 @@ def _managed_steps(root, plan, language):
 
     def regenerate_hooks():
         from sage.commands import generate
-        args = _StepArgs(kind="hook", id=None, write=True, target="both",
+        from sage.overlay_delivery import delivery_hosts
+        targets = delivery_hosts({"host_runtime": host,
+            "installed_hosts": plan.get("installed_hosts", [item["host"] for item in installations])})
+        target = "both" if len(targets) > 1 else targets[0]
+        args = _StepArgs(kind="hook", id=None, write=True, target=target,
                          dest=root, root=root, deploy_codex=False)
         return generate.run(args)
 

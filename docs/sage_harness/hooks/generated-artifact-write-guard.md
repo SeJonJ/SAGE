@@ -6,13 +6,10 @@ runtime_bindings:
   codex: { event: PreToolUse, matcher: "*", timeout: 10 }
 ---
 ## intent
-Before every supported PreToolUse call in a SAGE checkout, validate the current shared/personal
-overlay inventory through the common collector. Registration uses `matcher: "*"` on both hosts;
-this broadens input validation to supported tool calls, including reads and Bash. A bad inventory,
-size excess, damaged SAGE marker, or validator exception yields body-free native deny/exit 2
-before the original write/phase gates. A genuinely non-SAGE checkout remains pass-through.
-Validation does not prove that the model received a catalog. It adds no shell side-effect parser
-or repair exception; use an external terminal/editor to repair inputs, then retry the next prompt.
+Overlay delivery is not a tool-permission check. Registration still uses `matcher: "*"` for
+compatibility, but non-editing tools pass through this guard. Input and size failures are
+reported at the context boundary, allowing diagnosis and user-directed source repair.
+Independent phase/risk gates and the generated-path classifier below remain in force.
 
 Deterministically block direct edits to generated artifacts (agents, hooks and skills under
 `.claude` and `.codex`) and redirect to the spec under `docs/sage_harness`. This is the lock on
@@ -37,18 +34,17 @@ sage_harness/hooks/generated_artifact_write_guard_core.py
   `CODEX.md`, `AGENTS.md`), and the cycle declaration state `*/.sage/cycle.json`.
 - pass (exit 0): anything outside those ownership boundaries — in particular the
   `docs/sage_harness/**` and `scripts/sage_harness/**` sources.
-- For the original generated-path classification, no path or a parse failure → pass after
-  overlay input validation succeeds. It is not a guard target, and failing loudly here would be
+- For the original generated-path classification, no path or a parse failure → pass. It is not a guard target, and failing loudly here would be
   a silent malfunction of a different kind.
 - CLI source writes are not themselves editing-tool targets of the original path classifier.
-  Invoking a CLI through a supported Bash tool still undergoes the preceding inventory validation;
-  external terminal execution is outside the host hook boundary.
+  Invoking a CLI through Bash is not an overlay permission check; the CLI validates its own
+  inputs before applying them. Arbitrary shell effects are outside this path classifier.
 - `.sage/cycle.json` is matched on the **path tail**. Matching on basename, as `.mcp.json` does,
   would block any `cycle.json` anywhere in the project. This is the file the gate reads to answer
   "which cycle is this edit part of", so being able to write it with an editing tool would let
   someone point at a completed cycle and switch their own gate off. That was impossible while the
   channel was an env var; the hole appeared when it moved to a file. The original path classifier still covers editing-tool paths, not arbitrary Bash effects.
-  The broader matcher adds overlay inventory validation to Bash, not a general shell write gate.
+  The broader matcher does not create a general shell write gate.
 
 ## Blocking CORE bootstrap renders, with eligibility-aware guidance (exit 2)
 Hand-shipped CORE renders (CORE skills and roster agents) are blocked exactly like any other

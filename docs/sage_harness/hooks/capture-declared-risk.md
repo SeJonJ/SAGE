@@ -6,12 +6,17 @@ runtime_bindings:
   codex: { event: UserPromptSubmit, matcher: "", timeout: 5 }
 ---
 ## intent
-The UserPromptSubmit adapter also validates and supplies the current root schema-2 overlay
-catalog. Shared/personal input errors, inventory damage, size excess, and validator exceptions
-return body-free native `decision: block`; no partial normal catalog is emitted. This preceding
-input check does not weaken risk capture or the write-once Phase 06 baseline. Successful output
-combines the catalog, baseline/reentry notices and risk-capture context into one host JSON object,
-not consecutive JSON documents or separate plain text. The risk-decision core remains pure.
+Refresh the root shared/personal overlay catalog and combine it with risk context in one native
+JSON response. Recoverable input/size/sync failures supply `SAGE_OVERLAY_UNAVAILABLE_V1` with
+root/role and body-free diagnostics. This invalidates older overlay bodies and pauses the
+affected SAGE workflow while allowing ordinary diagnosis and user-directed source repair.
+It never supplies a partial catalog or edits/shortens user content. Integrity/runtime failures
+remain distinct; the independent risk core and write-once Phase06 baseline are unchanged.
+
+Before risk cleanup, capture or clear, check the prepared risk output together with the catalog.
+If their combined size exceeds the host event budget, replace only the catalog with current
+unavailable state and recheck. If the independent output and required replacement still cannot
+fit, block without mutating risk state. Render the risk notice once and preserve its bytes.
 
 Capture an explicit risk level declaration (L0–L3) from the user prompt and store it per session.
 pre-implementation-gate reads it and applies the gate at an effective level of

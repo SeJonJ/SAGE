@@ -1386,6 +1386,10 @@ def _run_locked(args) -> int:
         return 1
 
     overlay_preflight_errors = overlay_materialize.preflight_overlays(dest, _profile)
+    from sage.overlay_delivery import delivery_hosts, preflight_delivery
+    overlay_preflight_errors += preflight_delivery(
+        dest, delivery_hosts(existing_manifest, [args.host]), profile=_profile,
+        validate_manifest=not args.force)
     for path, message in overlay_preflight_errors:
         print(tr(language_of(args), 'cli.install.msg23', os_path=os.path.relpath(path, dest),
                  message=render_issue(language_of(args), message)), file=sys.stderr)
@@ -1415,6 +1419,9 @@ def _run_locked(args) -> int:
     confirmed_profile, confirmed_profile_error = _installed_profile(dest)
     confirmed_manifest = _load_manifest(dest)
     confirmed_overlay_errors = overlay_materialize.preflight_overlays(dest, confirmed_profile)
+    confirmed_overlay_errors += preflight_delivery(
+        dest, delivery_hosts(confirmed_manifest, [args.host]), profile=confirmed_profile,
+        validate_manifest=not args.force)
     confirmed_trust_conflicts = _core_trust_conflicts(
         dest, args.host, confirmed_profile if args.host == "claude" else {}, confirmed_manifest,
         allow_base_replacement=args.force, codex_skill_scope=skill_scope)
