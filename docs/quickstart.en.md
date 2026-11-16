@@ -1,4 +1,4 @@
-<!-- sage-doc-source: quickstart.md sha256:33c2bdfdc0334cb9b11885bbbf8e8cb3b7c4f40d679a9032e066c8ecc281cb53 -->
+<!-- sage-doc-source: quickstart.md sha256:7e0926a8121b0c5f143baaf6e16d585694e28b680bec57f103a9e5a831f3f54f -->
 # SAGE Quickstart
 
 [한국어](quickstart.md) | [README](../README.en.md)
@@ -136,3 +136,7 @@ the new revision, reason, and affected phases, then rerun those phases and Phase
 - [CLI reference](cli-reference.md)
 - [Profile reference](profile-reference.md)
 - [Troubleshooting](troubleshooting.md)
+
+## Planning, QA and verification evidence
+
+Keep the source of each requirement—user instruction, approved contract, repository observation or assumption—through Phase 01 and QA. Derive expected results from approved requirements, rather than copying current output. `sage_harness/verify-changes.sh L2` distinguishes executed and skipped checks; zero executions yield `NO_EVIDENCE` (exit 0). Record an acceptance ID missing required execution evidence as `NOT TESTED`. See the [verification reference](profile-reference.en.md#verification).

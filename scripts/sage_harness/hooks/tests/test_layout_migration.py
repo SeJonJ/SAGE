@@ -15,6 +15,7 @@
 세 번째가 가장 조용하다. 사용자가 `sage_harness/` 를 자기 용도로 만들어 뒀다면, 공존 상태를
 "중단된 이행" 으로 읽는 순간 그 트리를 정본으로 승격시키고 진짜 정본을 지운다.
 """
+import hashlib
 import json
 import os
 import shutil
@@ -100,14 +101,27 @@ class WhatGetsRemoved(unittest.TestCase):
                           dict(plan["preserve"]))
 
     def test_an_untouched_shared_file_is_removed_despite_the_path_token(self):
-        """이 사이클이 바꾼 경로 토큰 때문에 손대지 않은 파일이 '수정본' 으로 읽히면,
-        `scripts/` 는 어느 프로젝트에서도 정리되지 않는다. 우리가 만든 차이다."""
+        """실제 v1.0.0 배포 바이트를 사용한다. 최신 runner의 경로만 치환하면
+        runner 로직 변경 뒤에는 배포한 적 없는 파일을 구버전으로 오인하게 된다."""
         with tempfile.TemporaryDirectory() as dest:
             _legacy_project(dest)
             verify = Path(dest, "scripts", "verify-changes.sh")
-            verify.write_bytes(
-                verify.read_bytes().replace(
-                    b"sage_harness/verify-changes.sh", b"scripts/verify-changes.sh"))
+            historical = Path(HERE, "fixtures", "layout_migration", "verify-changes-v1.0.0.sh").read_bytes()
+            self.assertEqual(hashlib.sha256(historical).hexdigest(),
+                             "40cc051c8cf42661f4e0d7ec3bfc7fde97d6bfd202b4bb885ebd9b8e81ff2712")
+            verify.write_bytes(historical)
+            plan = lm.plan(dest, manifest=_manifest(dest))
+            self.assertIn(os.path.join("scripts", "verify-changes.sh"), plan["remove"])
+
+            verify.write_bytes(historical + b"# user edit\n")
+            edited_plan = lm.plan(dest, manifest=_manifest(dest))
+            self.assertIn(os.path.join("scripts", "verify-changes.sh"),
+                          dict(edited_plan["preserve"]))
+            self.assertNotIn(os.path.join("scripts", "verify-changes.sh"), edited_plan["remove"])
+
+    def test_an_untouched_current_shared_file_is_removed(self):
+        with tempfile.TemporaryDirectory() as dest:
+            _legacy_project(dest)
             plan = lm.plan(dest, manifest=_manifest(dest))
             self.assertIn(os.path.join("scripts", "verify-changes.sh"), plan["remove"])
 

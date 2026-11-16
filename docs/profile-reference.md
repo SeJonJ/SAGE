@@ -340,3 +340,7 @@ verification:
 | `conventions` | `[]` | 스택별 컨벤션 문서 포인터. `[{ scope, stack, doc, file_globs }]` |
 | `context_management.compaction` | `enabled: true` | 세션 압축 시 보존할 항목(`architectural_decisions`, `open_bugs` 등)과 최대 스냅샷 크기 |
 | `hooks.register` | `[claude]` | 어느 host에 hook을 등록할지. cross-model 프로젝트는 `[claude, codex]` |
+
+## Runner 결과와 소유권
+
+`verify-changes.sh`의 PASS는 실행한 check의 성공이며 전체 요구의 통과가 아닙니다. 0개 실행·profile 부재는 `NO_EVIDENCE`, 명령 실패는 FAIL입니다. 기존 exit는 성공·생략 0, 명령 실패 1, profile이 있는 상태의 잘못된 level 2를 유지합니다. 필수 증거 부재는 해당 ID의 `NOT TESTED`로, 원문 관측은 evidence/notes에 기록합니다. `verification.project_local_script`가 `sage_harness/verify-changes.sh` 또는 구 선언 `scripts/verify-changes.sh`이고 대상 파일이 있으면 force 설치도 보존합니다. 공유 YAML에는 `/` 표기를 사용하세요. Windows는 두 지원 경로의 native 표기도 인식하며 임의 경로 정규화는 하지 않습니다.

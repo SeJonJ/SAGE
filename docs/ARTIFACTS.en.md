@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARTIFACTS.md sha256:8d000abb96e9718755b1b38d92ee03e05581b4d1c57c9dba584368216b7e0cf8 -->
+<!-- sage-doc-source: ARTIFACTS.md sha256:2ee986e7fd07a101ce8cc64b646a5bdd349d2c01b01af620d676adf1a8c32bea -->
 # SAGE Artifact Map
 
 [한국어](ARTIFACTS.md) | [Documentation index](README.en.md)
@@ -275,3 +275,7 @@ leave the next run unable to prove why those files are there (`sage.uninstall_pl
 The actual list varies by host, scope, project location, and `CODEX_HOME`, so the list printed by
 `sage uninstall --check` is authoritative. For the automatic-removal scope and the two refusal
 screens see the [CLI reference](cli-reference.en.md).
+
+## Evidence stays in existing documents
+
+Keep requirement sources in existing Phase 01 prose/cells; record expected/observed values, execution scope and missing evidence in Phase 03/04 and the review packet. No database, audit file or acceptance status is added. Raw `NO_EVIDENCE`/`UNKNOWN` belongs in evidence/notes, while acceptance status vocabulary stays unchanged. See the [CLI reference](cli-reference.en.md#project-owned-verification-runner) for installer ownership preservation.

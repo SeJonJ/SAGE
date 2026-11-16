@@ -26,6 +26,32 @@ blocks L3 changes (safe default).
 
 ## Acceptance evidence
 
+### Runner outcomes and scope
+
+`verify-changes.sh` reports executed and skipped check names/counts. PASS means only that
+commands which ran succeeded, not that skipped checks or all acceptance requirements passed.
+NO_EVIDENCE means no command ran (including a missing profile); skipped count is unknown
+when the profile is missing. The existing exits remain: success/skip 0, command failure 1.
+With an existing profile, an invalid level retains exit 2; the existing missing-profile
+early exit 0 stays unchanged. A failed command remains FAIL. Exit 0 alone never proves
+a required check was performed.
+
+In Standard, Fast and rework verification, keep required checks and acceptance evidence
+under the existing policy. Do not turn NO_EVIDENCE into a required-check PASS merely to
+advance a round. NO_EVIDENCE/exit 0 alone is not a command failure and does not itself
+trigger rework retries; carry its scope and missing required evidence forward.
+Review may inspect missing evidence, but required unresolved acceptance
+still prevents approval under the existing rules below; an optional skipped check creates
+no new failure rule. In Phase 04, an ID whose required evidence was not obtained is NOT TESTED;
+retain the runner observation or UNKNOWN in evidence/notes. Do not introduce these words as
+new status values or mark unrelated IDs untested when they have sufficient evidence.
+
+The bundled output contract applies to the bundled runner. A project-owned runner is not
+overwritten to adopt it: inspect its actual command/result evidence and report unknown
+coverage honestly. Non-force installs may retain older documents or reject changed CORE
+trust; verify the installed version and follow the existing explicit update procedure.
+### Acceptance rules
+
 Deterministic commands prove that configured checks ran; they do not prove every
 explicit user requirement was satisfied. When `profile.verification.acceptance`
 is enabled:

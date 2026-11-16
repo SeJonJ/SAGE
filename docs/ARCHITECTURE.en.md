@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARCHITECTURE.md sha256:9fca37c5802002e0e566a9c59587a63726442dacb5acda43dda7e7c9404814bb -->
+<!-- sage-doc-source: ARCHITECTURE.md sha256:dcca07bd2f9d7f53c42238f751768dadf5d3a6789fe09888c3e27db1adc5c6c1 -->
 # SAGE Architecture
 
 [한국어](ARCHITECTURE.md) | [Documentation index](README.en.md)
@@ -215,3 +215,7 @@ The CI gate only consumes that result.
 Threats beyond this boundary, such as a compromised runtime or audit-log tampering, are mitigated by
 higher-level procedures such as cross-model review and human approval. Deterministic gates prevent
 mistakes, laziness, and drift by an honest host; they are not intended to stop an adversarial host.
+
+## Requirement-source and execution-evidence boundaries
+
+The planning interview, Phase 01 and QA retain requirement provenance. Repository observations and unconfirmed assumptions alone are neither approved requirements nor QA oracles. Bundled-runner execution/skipping counts cover configured checks, not acceptance satisfaction. `NO_EVIDENCE` observes zero executions without extending acceptance vocabulary, gates or waivers. Standard, Fast and rework share this interpretation.

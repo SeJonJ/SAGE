@@ -1,4 +1,4 @@
-<!-- sage-doc-source: troubleshooting.md sha256:b2b717141c7edde26aeb8660bd4ae99e5bf935d695aaec0aa1230d613a43d02c -->
+<!-- sage-doc-source: troubleshooting.md sha256:ab341ec25f46cfe275d72ecf34f00a6471b63d3d3d376788a7b67c1d6f963b33 -->
 # SAGE Troubleshooting
 
 [한국어](troubleshooting.md) | [Documentation index](README.en.md)
@@ -951,3 +951,7 @@ evidence, not a defect.
 
 Phase 00–06 documents being written in Korean is unrelated to this setting. Document language is
 fixed per cycle with `Document-Language:`, and an active cycle does not change with `--lang`.
+
+## Exit 0 without executed verification
+
+`NO_EVIDENCE` means a missing profile or zero commands executed for the selected level. Check the profile and `verification.commands`, prepare required verification and rerun. For partial PASS, inspect executed/skipped scope against the actual requirement IDs. Missing required execution evidence remains `NOT TESTED`; exit 0 cannot replace it. Non-force installs may retain old runners/docs or refuse changed CORE trust, so inspect installed assets and follow the explicit update procedure. Project-owned runners stay preserved. Portable `/` ownership protection on Windows is included from 1.3.8. Old runner bytes at a legacy path may safely remain when ownership proof is insufficient; inspect them before manual cleanup.

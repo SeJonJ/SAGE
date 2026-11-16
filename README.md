@@ -25,6 +25,10 @@ AI 에이전트에게 "계획부터 세우고, 위험한 파일은 조심히 다
 
 **1.3.7 overlay 복구:** 입력 오류·한도 초과는 해당 SAGE 작업을 보류하고 문제를 알립니다. 독립 규칙이 허용하는 읽기·진단·수리는 유지하며 **원문 조정은 사용자가 직접 합니다.** 적용 전 shared/personal·host 한도를 검사하고, 다음 유효 경계에서 새 지침을 공급합니다. [복구 절차](docs/troubleshooting.md#대상별-overlay-문맥-공급)·[검증 범위](docs/plan_docs/README.md)를 확인하세요.
 
+## 1.3.8: 요구사항과 검증 근거
+
+요구사항 출처를 계획과 QA에 유지하고, 기대값은 승인된 요구·계약에서 도출합니다. 검증 runner는 실행·생략 범위를 표시하며 0개 실행을 `NO_EVIDENCE`로 구분합니다. exit 0만으로 인수 PASS를 판단하지 않습니다. Windows에서도 지원 경로의 `/` 선언을 인식해 사용자 소유 runner를 강제 재설치에서 보존합니다. [검증과 한계](docs/plan_docs/06/q00-evidence-adoption.md)를 확인하세요.
+
 ## 빠른 시작
 
 요구사항은 Python 3.10+와 Git입니다.
@@ -187,6 +191,9 @@ hook / agent / skill spec    <------------------>   .claude / .codex
 | 설계와 신뢰 경계 | [Architecture](docs/ARCHITECTURE.md) |
 | 생성 위치와 소유권 | [Artifacts](docs/ARTIFACTS.md) |
 | 전체 문서 지도 | [문서 인덱스](docs/README.md) |
+
+
+[변경 내역](CHANGELOG.md) · [개발·검증 기록](docs/plan_docs/README.md)
 
 ## 적합한 사용자
 

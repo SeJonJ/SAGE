@@ -269,6 +269,14 @@ Initial revision 1. No replanning record.
 
 > A `ko` cycle translates these headings and table headers — see **Template language** above.
 
+State the completed behavior the user will observe. Keep the source beside each requirement
+in this existing prose/cell: user instruction/prior approval, applicable documented contract,
+repository observation (with location), or assumption. Carry that distinction from the
+interview into QA; current behavior alone does not define the intended behavior of a fix.
+Observations and assumptions are not new required outcomes without an approved basis.
+Retain mandatory policy requirements. Name evidence and environment prerequisites in the
+existing acceptance matrix/prose; do not add columns or invent missing facts.
+
 ```markdown
 # [Plan] {Feature Name}
 

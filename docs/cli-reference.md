@@ -557,3 +557,7 @@ retro 의 노트 경로는 저장소 상대경로로 정상이어도 출력하�
 
 명령별 세부 계약은 `--help`와 출력이 우선합니다. 일반적으로 `0`은 PASS, `1`은 검증 FAIL, `2`는
 도구·게이트 오류 또는 BLOCK, `3`은 STALE을 의미합니다. Hook에서는 `0`이 통과, `2`가 차단입니다.
+
+## 프로젝트 소유 검증 runner
+
+`sage install --force`는 `verification.project_local_script`로 소유권을 선언한 기존 runner를 보존합니다. 지원 선언은 `sage_harness/verify-changes.sh`와 `scripts/verify-changes.sh`이며 Windows에서도 `/` 표기가 유효합니다. 공유 profile에는 `/`를 권장합니다. 이 예외는 기존 대상 파일이 있을 때만 적용하며 다른 경로를 자동 정규화하지 않습니다. 번들 runner의 `NO_EVIDENCE`는 별도 CLI 종료코드가 아니며 exit 0을 인수 PASS로 해석하지 않습니다.

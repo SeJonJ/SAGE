@@ -1,4 +1,4 @@
-<!-- sage-doc-source: release-readiness.md sha256:f74adfc365395f8a88f6cde120b2e9a8149f891a6e2473c431a7428c65b0893e -->
+<!-- sage-doc-source: release-readiness.md sha256:cf282b4ef39e9c64cbe57a00cb85b59969a290d61612a5ebb5f80cb1e7da0637 -->
 # Release readiness
 
 This document records **how readiness is decided**, not what it currently is. The current answer
@@ -158,3 +158,7 @@ is at `.sage/upgrades/<run-id>.json` and Git does not track it.
 The reverting procedure is deliberately not built into the tool: safely rolling back sometimes
 requires reverting files that upgrade does not own. Deciding what to revert belongs to whoever knows
 that project's state.
+
+## Interpreting 1.3.8 evidence
+
+The [Q00 completion record](plan_docs/06/q00-evidence-adoption.md) separates full macOS regression from targeted Windows 11 checks. Runner, installation and ownership checks on Python 3.10/3.11/3.12 are not full Windows regression or a new comprehensive uninstall certification. A skipped Windows self-hosted PR job is not device PASS. Verify release and PyPI publication separately through the tag workflow and public artifacts.

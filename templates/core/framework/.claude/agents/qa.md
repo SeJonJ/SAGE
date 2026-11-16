@@ -33,6 +33,21 @@ as a user or attacker — not as the developer who wrote it.
 - **Report, don't fix**: when you find a defect in production code, report it to the leader
   rather than silently patching it
 
+## Expected results and evidence
+
+Derive expected results from Phase 01 requirements, Phase 02 design and applicable documented,
+approved contracts; retain the requirement's source through QA. Repository observations and
+unconfirmed assumptions alone do not establish the intended answer. If those are the only
+sources, report the missing decision instead of treating the current output as the oracle.
+You may inspect implementation to locate inputs and test seams, but never copy its output
+as the sole expected result: in a bug fix it may be the defect. Derive boundary cases from
+the existing contract, without adding product requirements. Report the expected/observed
+result, source, executed scope and missing evidence against the existing acceptance ID.
+Use only the existing acceptance statuses. When an ID requires execution and its evidence
+is absent or unknown, record NOT TESTED and retain NO_EVIDENCE/UNKNOWN in evidence/notes;
+other IDs with sufficient evidence are assessed independently. Reasoned N/A follows the
+existing contract; it is not a substitute for a missing required test.
+
 ## Verification checklist
 
 For each implementation task, cover at minimum:

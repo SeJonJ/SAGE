@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:180431ba4fc1538d67a91230617f1387e87426937b2a7b4292cbf2dc7e6019c7 -->
+<!-- sage-doc-source: profile-reference.md sha256:e0c95a8e4ab53ca32bc5bdf57a1afbc11d7995b1530deaf62dcf72163c83ac1c -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -353,3 +353,7 @@ matched exactly to the cycle and requirement ID; there is no silent pass.
 | `conventions` | `[]` | Pointers to stack-specific convention docs: `[{ scope, stack, doc, file_globs }]` |
 | `context_management.compaction` | `enabled: true` | What to preserve on session compaction (`architectural_decisions`, `open_bugs`, etc.) and the max snapshot size |
 | `hooks.register` | `[claude]` | Which hosts register hooks. Cross-model projects use `[claude, codex]` |
+
+## Runner outcomes and ownership
+
+Runner PASS means that checks which ran succeeded, not that every requirement passed. Zero executions or a missing profile yield `NO_EVIDENCE`; a failed command remains FAIL. Existing exits remain 0 for success/skip, 1 for command failure, and 2 for an invalid level when a profile exists. Map missing required evidence to the affected ID's `NOT TESTED`, retaining raw observations in evidence/notes. When `verification.project_local_script` declares `sage_harness/verify-changes.sh` or legacy `scripts/verify-changes.sh` and the target exists, even force installation preserves it. Use `/` in shared YAML. Windows also recognizes native spelling of these two supported paths; arbitrary paths are not normalized.

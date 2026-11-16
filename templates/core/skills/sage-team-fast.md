@@ -63,3 +63,10 @@ packet, alongside the role's shared guidance. Never read raw personal files afte
 For `sage review` / `sage cross-check`, never preappend shared or personal reviewer additions:
 the CLI loads them once and emits `SAGE_LOCAL_OVERLAY_REF`. This role-specific CLI path does
 not replace automatic delivery of this root skill's shared/personal sources.
+
+## Verification evidence
+
+Apply `verification-protocol.md` **Runner outcomes and scope** in Standard, Fast
+and rework. Preserve executed/skipped scope and required NOT TESTED evidence.
+NO_EVIDENCE/exit 0 alone is not command failure, an automatic rework retry reason,
+or required-check PASS. Keep the existing approval/waiver rules unchanged.

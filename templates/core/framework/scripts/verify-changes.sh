@@ -16,6 +16,7 @@ echo "== verify-changes ($LEVEL) =="
 
 if [ ! -f "$PROFILE" ]; then
   echo "  (no profile at $PROFILE — nothing to run; declare profile.verification.commands)"
+  echo "== verify-changes: NO_EVIDENCE (executed=0; skipped=unknown) =="
   exit 0
 fi
 
@@ -33,12 +34,20 @@ case "$LEVEL" in
 esac
 
 rc=0
+executed=0
+skipped=0
+executed_checks=""
+skipped_checks=""
 for c in $CHECKS; do
   cmd=$(awk -v key="    $c:" '$0 ~ key {sub(/^[^:]*:[[:space:]]*/,""); gsub(/^"|"$/,""); print; exit}' "$PROFILE" 2>/dev/null || true)
   if [ -z "$cmd" ]; then
+    skipped=$((skipped + 1))
+    skipped_checks="${skipped_checks:+$skipped_checks }$c"
     echo "  - $c: (no command declared — skipped)"
     continue
   fi
+  executed=$((executed + 1))
+  executed_checks="${executed_checks:+$executed_checks }$c"
   echo "  - $c: $cmd"
   if ! bash -c "$cmd"; then
     echo "    FAIL: $c" >&2
@@ -46,5 +55,13 @@ for c in $CHECKS; do
   fi
 done
 
-[ "$rc" -eq 0 ] && echo "== verify-changes: PASS ==" || echo "== verify-changes: FAIL ==" >&2
+echo "  executed checks: ${executed_checks:-(none)}"
+echo "  skipped checks: ${skipped_checks:-(none)}"
+if [ "$rc" -ne 0 ]; then
+  echo "== verify-changes: FAIL (executed=$executed; skipped=$skipped) ==" >&2
+elif [ "$executed" -eq 0 ]; then
+  echo "== verify-changes: NO_EVIDENCE (executed=0; skipped=$skipped) =="
+else
+  echo "== verify-changes: PASS (executed=$executed; skipped=$skipped) =="
+fi
 exit $rc

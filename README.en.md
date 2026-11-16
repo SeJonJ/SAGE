@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:852995d0365b4a4771afdd3223cc2f20e577c6a749a1b3275f5d1b2cec0c2cc6 -->
+<!-- sage-doc-source: README.md sha256:dbf91da1bde4eff1ad622b57916eb1820a765da2ddf2118ee1a5146122a27e6c -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)
@@ -24,6 +24,10 @@ Telling an agent "plan first, be careful with risky files, always get a review" 
 These checks are not the AI's "judgment" — they are code that decides **deterministically**. The same situation always produces the same result, so nobody has to re-explain the rules.
 
 **Overlay recovery in 1.3.7:** Invalid or oversized inputs pause the affected SAGE workflow while independent rules still permit reading, diagnosis and repair. **Users own source changes.** Apply commands check shared/personal inputs and host budgets; the next valid boundary supplies repaired guidance. See [recovery steps](docs/troubleshooting.en.md#target-specific-overlay-context-delivery) and [verification scope](docs/plan_docs/README.md).
+
+## 1.3.8: requirements and verification evidence
+
+Preserve requirement sources through planning and QA, and derive expected results from approved requirements and contracts. The runner reports executed/skipped scope and uses `NO_EVIDENCE` when no check runs; exit 0 alone is not acceptance PASS. On Windows, portable `/` declarations for the supported paths now preserve project-owned runners during force installation. See [verification and limits](docs/plan_docs/06/q00-evidence-adoption.md).
 
 ## Quickstart
 
@@ -190,6 +194,9 @@ fail-open/fail-closed policy.
 | Architecture and trust | [Architecture](docs/ARCHITECTURE.en.md) |
 | Output locations and ownership | [Artifacts](docs/ARTIFACTS.en.md) |
 | Browse all documentation | [English docs index](docs/README.en.md) |
+
+
+[Changelog](CHANGELOG.md) · [Development and verification records](docs/plan_docs/README.md)
 
 ## Who it is for
 

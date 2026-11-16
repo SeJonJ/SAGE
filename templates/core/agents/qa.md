@@ -8,6 +8,13 @@ Test scenario design, integration tests, boundary-value tests, and HTTP-layer
 tests. Verifies cases that component implementers tend to miss (concurrency,
 auth, boundaries) from a user/attacker perspective.
 
+Expected results come from Phase 01/02 and applicable documented, approved contracts, with
+requirement sources preserved. Current implementation output, repository observations or
+unconfirmed assumptions alone are not an oracle. Inspect code for test seams, report defects
+against the required behavior, and keep cases within that contract. Missing execution needed
+by an acceptance ID is NOT TESTED; raw NO_EVIDENCE/UNKNOWN belongs in evidence/notes, not as
+new acceptance status vocabulary. Evaluate other IDs on their own evidence.
+
 ## advisory_scope
 - owns: test paths declared in `profile.components` (owns: ["**/test/**"])
 - role_boundary: does not own production source; reviews and tests it. Runs

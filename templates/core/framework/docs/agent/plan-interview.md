@@ -53,6 +53,18 @@ Map every follow-up answer to 00 (context, risk) or 01 (requirements, data, acce
 
 ## How to run it
 
+- Read available profile/repository facts before asking. Cite the file for current behavior;
+  it is descriptive evidence, not authority for the behavior a change should implement.
+- Distinguish user instructions or prior approvals, applicable documented policy/contracts,
+  repository observations, and assumptions. Ask only about unresolved intent; do not repeat
+  settled decisions or turn every implementation choice into a new approval request.
+- Preserve each requirement's source in the existing Phase 01 requirement prose or cell
+  (for example `[user]`, `[approved contract: file]`, `[repository observation: file]`,
+  `[assumption]`). Do not silently promote an observation or assumption to a required outcome.
+  Existing mandatory policies remain applicable without being re-approved in every interview.
+- Before handoff, name the verification prerequisites (target, fixture, service access or
+  command), or state that this cycle must prepare them. Keep unavailable facts unresolved.
+
 - **Ask in batches** — a few related questions at a time. The form differs per host: claude asks
   structured questions, codex asks them sequentially. Only the form differs, never the content.
 - Finish once the five core answers plus whatever the user considered worth expanding are in.
