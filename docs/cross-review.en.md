@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cross-review.md sha256:036e9bbd2b3f95221d16d7b838cd12e2e5fa72546b8da5d797451d157041d7f1 -->
+<!-- sage-doc-source: cross-review.md sha256:c3664ef4dfd7ffe92db1a5b0bd5b2c8a6e615c986b112bf25e30911d508d49a7 -->
 # Phase 05 Review: Single Review and Cross Review
 
 [한국어](cross-review.md) | [Documentation index](README.en.md)
@@ -230,3 +230,7 @@ with controlled reviewers. Values are `REVIEWER_TOKENS`.
   the ChatForYou code as it was before round 2. Its acceptance criteria: find both defects round 2
   found, with at most 12 tool calls, 80K non-cached input, 1.2M reported input, and 5 minutes of wall
   clock. Meeting the cost targets while missing a defect counts as a failure.
+
+## Verification summaries and revalidation
+
+Include each command, exit code, short observed output, executed/skipped scope, acceptance IDs, missing evidence and original result references. `NO_EVIDENCE`/exit 0 alone is neither command failure, an automatic rework retry reason, nor required-check PASS. Keep IDs missing required execution evidence as existing `NOT TESTED` and assess sufficiently evidenced IDs independently. Existing retries for actual command/validation failures and approval/waiver policy remain in force.

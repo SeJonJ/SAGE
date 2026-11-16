@@ -256,3 +256,7 @@ SSOT입니다. 자세한 게이트·신뢰 경계는 [ARCHITECTURE.md](ARCHITECT
 실제 목록은 host·scope·프로젝트 위치·`CODEX_HOME`에 따라 달라지므로 `sage uninstall --check`가 내는
 목록이 정본입니다. 자동 제거 지원 범위와 두 종류의 거부 화면은 [CLI 레퍼런스](cli-reference.md)에
 있습니다.
+
+## 검증 근거는 기존 문서에 기록
+
+요구 출처는 기존 Phase 01 본문/셀에, 기대값·관측값·실행 범위·누락 근거는 Phase 03/04와 리뷰 패킷에 기록합니다. 별도 DB·새 감사 파일·새 acceptance 상태를 추가하지 않습니다. `NO_EVIDENCE`/`UNKNOWN` 원문은 evidence/notes이며 인수 상태값은 기존 어휘를 유지합니다. 프로젝트 소유 runner의 설치 보존 조건은 [CLI 레퍼런스](cli-reference.md#프로젝트-소유-검증-runner)를 따릅니다.

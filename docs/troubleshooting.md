@@ -894,3 +894,7 @@ interface:
 
 Phase 00~06 문서가 한국어로 쓰이는 것은 이 설정과 무관합니다. 문서 언어는 사이클마다
 `Document-Language:`로 따로 고정하며, 진행 중인 사이클은 `--lang`으로 바뀌지 않습니다.
+
+## 검증 명령을 실행하지 않았는데 exit 0인 경우
+
+`NO_EVIDENCE`는 profile 부재 또는 해당 level의 명령 0개 실행입니다. profile과 `verification.commands`를 확인하고 필요한 검증을 준비한 뒤 다시 실행하세요. 부분 PASS라면 실행/생략 목록과 실제 요구 ID를 함께 확인합니다. 필수 실행 증거 부재는 `NOT TESTED`이며 단순 exit 0으로 바꾸지 않습니다. non-force 설치는 구 runner·문서를 유지하거나 CORE trust 변경을 거부할 수 있으므로 설치본을 확인하세요. 기존 업데이트 절차로 명시적으로 갱신하되 개인 runner는 보존합니다. Windows의 `/` 소유 선언 보호는 1.3.8부터 포함됩니다. legacy 경로의 구판 runner는 소유 바이트 증거가 부족하면 안전하게 남을 수 있으며 수동 정리 전에 내용을 확인하세요.

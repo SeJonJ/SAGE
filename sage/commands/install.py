@@ -1470,7 +1470,11 @@ def _run_locked(args) -> int:
                             if isinstance(_profile.get("verification"), dict) else None)
     # 구 레이아웃 profile 이 구 경로 문자열을 갖고 있을 수 있다. 선언의 **의도**는 "프로젝트가
     # 자기 검증 스크립트를 소유한다" 이므로, 경로 표기가 바뀌었다고 그 선언을 무효로 읽지 않는다.
-    if (project_local_script in (asset_paths._VERIFY_REL, asset_paths.LEGACY_VERIFY_REL)
+    # Profiles also use portable '/' spelling on Windows. Accept only these
+    # exact supported aliases; do not normalize arbitrary paths into ownership.
+    if (project_local_script in (asset_paths._VERIFY_REL, asset_paths.LEGACY_VERIFY_REL,
+                                asset_paths._VERIFY_REL.replace(os.sep, "/"),
+                                asset_paths.LEGACY_VERIFY_REL.replace(os.sep, "/"))
             and os.path.isfile(verify_dst)):
         print(tr(language_of(args), 'cli.install.msg26'))
         skipped.append(verify_dst)

@@ -2273,16 +2273,23 @@ class TestAgentRender(unittest.TestCase):
             self.assertNotIn("model:", text)
 
     def test_force_preserves_declared_project_local_verify_script(self):
-        with tempfile.TemporaryDirectory() as d:
-            install.run(Args("claude", d))
-            profile = os.path.join(d, "sage", "project-profile.yaml")
-            Path(profile).write_text(
-                "project: {name: test}\nverification:\n  project_local_script: scripts/verify-changes.sh\n",
-                encoding="utf-8")
-            script = os.path.join(d, "sage_harness", "verify-changes.sh")
-            Path(script).write_text("#!/usr/bin/env bash\necho project-local\n", encoding="utf-8")
-            self.assertEqual(install.run(Args("claude", d, force=True)), 0)
-            self.assertIn("project-local", Path(script).read_text(encoding="utf-8"))
+        spellings = dict.fromkeys(("sage_harness/verify-changes.sh", "scripts/verify-changes.sh",
+                                  os.path.join("sage_harness", "verify-changes.sh"),
+                                  os.path.join("scripts", "verify-changes.sh")))
+        for host in ("claude", "codex"):
+            for declared in spellings:
+                with self.subTest(host=host, declared=declared), tempfile.TemporaryDirectory() as d:
+                    args = Args(host, d, no_global_skill=True)
+                    self.assertEqual(install.run(args), 0)
+                    profile = Path(d, "sage", "project-profile.yaml")
+                    profile.write_text("project: {name: test}\nverification:\n  project_local_script: "
+                                       + json.dumps(declared) + "\n", encoding="utf-8")
+                    script = Path(d, "sage_harness", "verify-changes.sh")
+                    custom = b"#!/usr/bin/env bash\necho project-local\n"
+                    script.write_bytes(custom)
+                    args.force = True
+                    self.assertEqual(install.run(args), 0)
+                    self.assertEqual(script.read_bytes(), custom)
 
 
 if __name__ == "__main__":

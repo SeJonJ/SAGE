@@ -147,3 +147,7 @@ git archive HEAD | (mkdir -p /tmp/sage-candidate && tar -x -C /tmp/sage-candidat
 
 되돌리는 절차를 도구에 넣지 않은 이유는 upgrade 가 소유하지 않는 파일까지 함께 되돌려야 안전한
 경우가 있기 때문이다. 무엇을 되돌릴지는 그 프로젝트의 상태를 아는 사람이 정한다.
+
+## 1.3.8의 검증 근거 해석
+
+이번 변경의 macOS 전체 회귀와 Windows 11 대상 검증은 [Q00 적용 완료 기록](plan_docs/06/q00-evidence-adoption.md)에 구분해 기록합니다. Windows 실기기 Python 3.10/3.11/3.12의 runner·설치·소유권 검증은 전체 Windows 회귀나 자동 제거의 새 전면 검증이 아닙니다. PR CI의 Windows self-hosted skip도 실기기 PASS로 바꾸지 않습니다. 릴리즈·PyPI 게시 결과는 tag workflow와 공개 배포물로 별도 확인합니다.

@@ -196,6 +196,9 @@ These are inherited by every agent/skill claim set as
 ## Definition of Done
 
 - Plan doc updated; implementation matches the plan.
-- `sage_harness/verify-changes.sh` passes at the required gate level.
+- `sage_harness/verify-changes.sh` passes for checks that ran at the required gate level.
+  Apply `verification-protocol.md` **Runner outcomes and scope**: zero-execution
+  NO_EVIDENCE/exit 0 is not required-check PASS. Carry missing required evidence as
+  NOT TESTED under the existing approval/waiver rules.
 - Conventions in `profile.conventions` satisfied.
 - No direct edits to generated artifacts.

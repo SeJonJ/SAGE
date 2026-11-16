@@ -13,6 +13,9 @@ export SAGE_STATE_HOME
 trap 'rm -rf "$SAGE_STATE_HOME"' EXIT
 rc=0
 
+echo "### 0. verification runner execution evidence"
+python3 "$HERE/test_verify_changes.py" || rc=1
+
 echo "### 1. generated-artifact write guard"
 python3 "$HERE/test_generated_artifact_write_guard.py" || rc=1
 

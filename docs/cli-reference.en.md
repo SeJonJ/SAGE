@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:db330f856de9bd625512ed632babaaa10e557452307f21d703dc11b4fa434602 -->
+<!-- sage-doc-source: cli-reference.md sha256:1c83aac41dfd92813bc0e398e1f08e52dad678f49180141d99745ee430bb3a4b -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for
@@ -610,3 +610,7 @@ output says so. The result is never an input to any gate.
 Command-specific `--help` and output take precedence. In general, `0` means PASS, `1` means
 validation FAIL, `2` means a tool or gate error or BLOCK, and `3` means STALE. For hooks, `0` allows
 the operation and `2` blocks it.
+
+## Project-owned verification runner
+
+`sage install --force` preserves an existing runner declared by `verification.project_local_script`. Supported declarations are `sage_harness/verify-changes.sh` and `scripts/verify-changes.sh`; `/` spelling works on Windows too and is recommended for shared profiles. This exception requires an existing target file and does not normalize other paths. Bundled-runner `NO_EVIDENCE` is not a new CLI exit code, and exit 0 is not acceptance PASS.

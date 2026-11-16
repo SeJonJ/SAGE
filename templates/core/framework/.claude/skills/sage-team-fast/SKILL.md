@@ -91,6 +91,11 @@ neither delivered text nor `--confirmed-by` strings authenticate human consent.
 3. Replace the Phase 04 pending marker with design-gap, coverage, acceptance
    evidence, and external review context. Required acceptance IDs must have real
    evidence under the existing acceptance contract.
+
+   Apply `verification-protocol.md` **Runner outcomes and scope** to fresh and converted
+   Fast runs: keep executed/skipped evidence distinct. NO_EVIDENCE/exit 0 alone is not a
+   required-check PASS. Missing required evidence is NOT TESTED for the affected ID, with
+   raw observations in evidence/notes; existing review/approval/waiver rules stay in force.
 4. Run the existing independent `sage-review` loop, not a copied review engine.
    Open the Loop Audit with the exact stem and selected lenses, and record every
    round with exact lens receipts:

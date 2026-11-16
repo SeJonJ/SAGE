@@ -1,11 +1,17 @@
-# Overlay 전달·통합·복구 검증 기록
+# SAGE 개발·검증 기록
 
 이 디렉터리는 개발 당시의 계획과 실행 근거를 보존합니다. 과거 기록의 `COMPLETE`나 `APPROVED`를
 다른 제품 hash의 승인으로 옮겨 쓰지 않습니다.
 
-## 현재 후보와 승인 경계
+## 1.3.8 Q00 제한 적용
 
-2026-11-15 현재 후보는 [overlay 복구 경계 완료 기록](06/overlay-recovery-boundary.md)입니다.
+[00](00/q00-evidence-adoption.md) → [01](01/q00-evidence-adoption.md) → [02](02/q00-evidence-adoption.md) → [03](03/q00-evidence-adoption.md) → [04](04/q00-evidence-adoption.md) → [05](05/q00-evidence-adoption.md) → [06](06/q00-evidence-adoption.md).
+
+요구 출처·QA 기대값·검증 근거를 기존 흐름에 보완했다. Windows portable 경로의 사용자 runner 보존 결함도 수정했다. macOS4,186회귀와 Windows42targeted executions·24ownership subcases·9설치·10platform smoke를 구분해 보존한다. 전체 Windows 회귀·실제 모델 앱cycle을 검증했다고 주장하지 않는다. 문서 감사·버전 반영 뒤의 CI/배포는 PR/tag 결과로 확인한다.
+
+## Overlay 전달·통합·복구 당시 기록 (1.3.7)
+
+아래는1.3.7 배포 준비 당시의 기록이다. 2026-11-15 당시 후보는 [overlay 복구 경계 완료 기록](06/overlay-recovery-boundary.md)입니다.
 이전 통합본은 PR #37/#38로 main에 병합됐지만 1.3.7 태그·PyPI 출하는 후속 오류 수정 때문에
 보류됐습니다. 이번 후보는 그 main을 기준으로 세션 봉쇄 해소·적용 전 검사·host 검증을 보완했습니다.
 사용자는 이번 사이클 종료·문서 갱신·커밋/푸시·머지·릴리즈를 명시 승인했습니다.

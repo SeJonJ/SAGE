@@ -95,6 +95,12 @@ Include:
   reset"). Not the raw plan documents.
 - **Verification summary** — what Phase 03/04 already ran and the results, so the reviewer
   does not re-run tests or builds.
+
+  Include each command, exit code, short observed output, check/acceptance-ID scope, and
+  skipped or unavailable evidence. Link retained source results rather than copying entire
+  logs. Unknown execution counts/scopes stay unknown. Exit 0 or a project-wide build is not
+  proof of every acceptance ID. Use NOT TESTED for an ID missing its required evidence;
+  keep raw NO_EVIDENCE/UNKNOWN in evidence/notes, not as new acceptance statuses.
 - **Diff hunks plus the full body of every changed function.**
 - **Context map** — one hop out from the change: callers, callees, and the models / DTOs /
   storage signatures they touch, as `file:line`. Defects that live outside the diff (a caller
@@ -156,7 +162,8 @@ across every run of the cycle — default L3 5 · L2 3):
    and 06 carry the same four markers as an early completion, with that value. A loop bound to a
    Fast run keeps going until the Fast minimum rounds even when it converged earlier.
 5. **REWORK + re-validate** — `within_design` survivors are reworked within the approved
-   design; `verify-changes.sh` and `sage validate` must PASS before the next round. Under
+   design; executed checks in `verify-changes.sh` and `sage validate` must PASS before
+   the next round. Command or validation failure retains the existing retry rule. Under
    blocking convergence a non-blocking survivor is fixed only locally (no new state, lock,
    marker, protocol or background process) and otherwise stays residual; a blocking finding
    whose fix needs such a mechanism is `architecture_change`. A rework lists what it closes
@@ -165,6 +172,12 @@ across every run of the cycle — default L3 5 · L2 3):
    this change touched them or changed their reach — a P0/P1/critical one stays when it did.
    If rework changes acceptance coverage, update Phase 03 and Phase 04 before
    the next review pass.
+
+   For the runner's PASS requirement, apply `verification-protocol.md` **Runner outcomes
+   and scope**: NO_EVIDENCE/exit 0 alone is not a command failure and does not itself trigger
+   rework retries. It does not certify a required check. Preserve skipped scope
+   and unresolved acceptance through the next review; the existing approval/waiver policy
+   remains unchanged. This is evidence interpretation, not a new exit-code or gate policy.
 
 Determinism boundary: the loop *body* (find/refute/rework) is judgement and runs in the
 host runtime. SAGE owns the deterministic gates only — round counters, budget, termination,

@@ -131,3 +131,7 @@ level·렌즈 수·사유를 모두 받기 전에는 문서나 감사를 쓰지 
 - [CLI 레퍼런스](cli-reference.md)
 - [Profile 레퍼런스](profile-reference.md)
 - [문제 해결](troubleshooting.md)
+
+## 계획·QA·검증 근거
+
+요구사항에는 사용자 지시·승인된 계약·저장소 관측·가정의 출처를 남기고 Phase 01과 QA까지 이어갑니다. QA 기대값은 현재 구현 출력만 복사하지 않고 승인된 요구에서 구합니다. `sage_harness/verify-changes.sh L2`는 실행·생략 check를 구분하며 실행 0건은 `NO_EVIDENCE`(exit 0)입니다. 필수 실행 근거가 없으면 해당 인수 ID는 `NOT TESTED`로 남깁니다. [상세 규약](profile-reference.md#verification)을 확인하세요.

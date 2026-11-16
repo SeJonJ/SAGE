@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:80eafaa6db6b9466b82f767f331b0d24ecbbdecceda3b4942e5bef3949339b88 -->
+<!-- sage-doc-source: README.md sha256:e2924d1828e3f91a44f0aad46e58806169b38cc06dcdb3101a2248531860302c -->
 # SAGE Documentation
 
 [한국어](README.md) | [Project README](../README.en.md)
@@ -36,3 +36,7 @@ framework renders.
 The [planning and verification index](plan_docs/README.md) distinguishes approval of the overlay-only
 candidate, the Issue #36 integration candidate and the follow-up recovery candidate. Platform tests, current-PR CI, independent review,
 and release approval require separate evidence.
+
+## 1.3.8 requirements and verification evidence
+
+See the [cycle records](plan_docs/README.md) for the focused Q00 adoption, Windows runner ownership fix, verification scope and residuals. This adds no agent runtime, database or automatic repair loop.

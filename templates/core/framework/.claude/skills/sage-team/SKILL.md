@@ -213,6 +213,11 @@ skill only triggers the run. (`pre-implementation-gate` is the edit/phase hook �
 **not** the verification executor; do not conflate them.) Record results in the 03 doc.
 If the gate is red, STOP — do not advance to review on a failing build/test/lint.
 
+Interpret runner output under `verification-protocol.md` **Runner outcomes and scope**.
+Record executed/skipped scope; NO_EVIDENCE or exit 0 alone is not required-check evidence.
+Keep an acceptance ID missing its required evidence as NOT TESTED, with the raw observation
+in evidence/notes; retain the existing required-evidence approval/waiver rules.
+
 ## Step 3 — QA (Phase 04)
 
 Invoke the `qa` agent: assess design↔implementation gap + **test coverage** (covered /

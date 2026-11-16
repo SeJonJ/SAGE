@@ -6,6 +6,7 @@ recursive-include scripts/sage_harness *.py *.sh *.md
 recursive-include docs *.md *.json *.yml
 include README.md
 include README.en.md
+include CHANGELOG.md
 include LICENSE
 include NOTICE
 include AGENT_GUIDE.md
