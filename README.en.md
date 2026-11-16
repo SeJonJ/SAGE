@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:dbf91da1bde4eff1ad622b57916eb1820a765da2ddf2118ee1a5146122a27e6c -->
+<!-- sage-doc-source: README.md sha256:478e8cf0fb4bc7e2a1a99e2d23d2c9b99c7f5c664e1357ef1801053606af78a3 -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)
@@ -25,15 +25,11 @@ These checks are not the AI's "judgment" — they are code that decides **determ
 
 **Overlay recovery in 1.3.7:** Invalid or oversized inputs pause the affected SAGE workflow while independent rules still permit reading, diagnosis and repair. **Users own source changes.** Apply commands check shared/personal inputs and host budgets; the next valid boundary supplies repaired guidance. See [recovery steps](docs/troubleshooting.en.md#target-specific-overlay-context-delivery) and [verification scope](docs/plan_docs/README.md).
 
-## 1.3.8: requirements and verification evidence
-
-Preserve requirement sources through planning and QA, and derive expected results from approved requirements and contracts. The runner reports executed/skipped scope and uses `NO_EVIDENCE` when no check runs; exit 0 alone is not acceptance PASS. On Windows, portable `/` declarations for the supported paths now preserve project-owned runners during force installation. See [verification and limits](docs/plan_docs/06/q00-evidence-adoption.md).
+**1.3.8: requirements and verification evidence.** Preserve requirement sources through planning and QA, and derive expected results from approved requirements and contracts. The runner reports executed/skipped scope and uses `NO_EVIDENCE` when no check runs; exit 0 alone is not acceptance PASS. On Windows, portable `/` declarations for the supported paths now preserve project-owned runners during force installation. See [verification and limits](docs/plan_docs/06/q00-evidence-adoption.md).
 
 ## Quickstart
 
-SAGE requires Python 3.10+ and Git.
-
-First, install SAGE itself.
+SAGE requires Python 3.10+ and Git. Install SAGE itself.
 
 ```bash
 pipx install "sage-harness[schema]"
@@ -48,7 +44,7 @@ Then follow **only the path that matches the AI tool you use** — you do not ne
 sage install --host codex --skill-scope project-local
 ```
 
-Once installed, run `$sage-init` **inside Codex** to fill in this project's configuration (profile) through conversation. Then come back to the terminal to finish:
+After installation, fill in the profile with `$sage-init` **inside Codex**, then finish in the terminal:
 
 ```bash
 sage generate --kind hook --write --target codex
@@ -102,8 +98,7 @@ The **automatic removal scope** is narrower. SAGE stops before mutation in unver
 | Windows Server and domain controllers | Outside formal support (not directly verified) | No automatic removal; plan-based manual list provided |
 | 32-bit Python, native ARM64 Python, non-NTFS, network, or UNC paths | Environment-specific limits | No automatic removal; inspect the plan with `--check` |
 
-NTFS is the default filesystem on typical local Windows disks. **Being able to run and being formally supported are different things** — the general CLI may work outside the supported scope, but that behaviour is neither promised nor directly verified. Automatic removal on Windows 11 desktop was **verified by actually running it on that SKU** — no Windows Server result was substituted for it. For the two refusal screens see the [CLI reference](docs/cli-reference.en.md)
-and [troubleshooting](docs/troubleshooting.en.md).
+NTFS is the default filesystem on typical local Windows disks. **Being able to run and being formally supported are different things** — the general CLI may work outside the supported scope, but that behaviour is neither promised nor directly verified. Automatic removal on Windows 11 desktop was **verified by actually running it on that SKU** — no Windows Server result was substituted for it. For the two refusal screens see the [CLI reference](docs/cli-reference.en.md) and [troubleshooting](docs/troubleshooting.en.md).
 
 On Windows, `sage-hook.exe` runs hooks, so Git Bash and WSL are not required:
 
@@ -152,8 +147,7 @@ and `CODEX_HOME`; never delete `PRESERVE` or `BLOCK` — see
 
 ## How it works
 
-SAGE separates two kinds of files — **definitions that a human edits**, and the **runtime files an
-AI actually reads**, generated automatically from those definitions.
+SAGE separates two kinds of files — **definitions that a human edits**, and the **runtime files an AI actually reads**, generated automatically from those definitions.
 
 ```
 definitions (human-edited)       sage generate       runtime files (AI-read)
@@ -185,6 +179,8 @@ fail-open/fail-closed policy.
 
 ## Documentation
 
+[Changelog](CHANGELOG.md) · [Verification records](docs/plan_docs/README.md)
+
 | Need | Document |
 |---|---|
 | Install and run SAGE | [English quickstart](docs/quickstart.en.md) |
@@ -194,9 +190,6 @@ fail-open/fail-closed policy.
 | Architecture and trust | [Architecture](docs/ARCHITECTURE.en.md) |
 | Output locations and ownership | [Artifacts](docs/ARTIFACTS.en.md) |
 | Browse all documentation | [English docs index](docs/README.en.md) |
-
-
-[Changelog](CHANGELOG.md) · [Development and verification records](docs/plan_docs/README.md)
 
 ## Who it is for
 

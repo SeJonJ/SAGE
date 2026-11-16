@@ -25,15 +25,11 @@ AI 에이전트에게 "계획부터 세우고, 위험한 파일은 조심히 다
 
 **1.3.7 overlay 복구:** 입력 오류·한도 초과는 해당 SAGE 작업을 보류하고 문제를 알립니다. 독립 규칙이 허용하는 읽기·진단·수리는 유지하며 **원문 조정은 사용자가 직접 합니다.** 적용 전 shared/personal·host 한도를 검사하고, 다음 유효 경계에서 새 지침을 공급합니다. [복구 절차](docs/troubleshooting.md#대상별-overlay-문맥-공급)·[검증 범위](docs/plan_docs/README.md)를 확인하세요.
 
-## 1.3.8: 요구사항과 검증 근거
-
-요구사항 출처를 계획과 QA에 유지하고, 기대값은 승인된 요구·계약에서 도출합니다. 검증 runner는 실행·생략 범위를 표시하며 0개 실행을 `NO_EVIDENCE`로 구분합니다. exit 0만으로 인수 PASS를 판단하지 않습니다. Windows에서도 지원 경로의 `/` 선언을 인식해 사용자 소유 runner를 강제 재설치에서 보존합니다. [검증과 한계](docs/plan_docs/06/q00-evidence-adoption.md)를 확인하세요.
+**1.3.8: 요구사항과 검증 근거.** 요구사항 출처를 계획과 QA에 유지하고, 기대값은 승인된 요구·계약에서 도출합니다. 검증 runner는 실행·생략 범위를 표시하며 0개 실행을 `NO_EVIDENCE`로 구분합니다. exit 0만으로 인수 PASS를 판단하지 않습니다. Windows에서도 지원 경로의 `/` 선언을 인식해 사용자 소유 runner를 강제 재설치에서 보존합니다. [검증과 한계](docs/plan_docs/06/q00-evidence-adoption.md)를 확인하세요.
 
 ## 빠른 시작
 
-요구사항은 Python 3.10+와 Git입니다.
-
-먼저 SAGE 자체를 설치합니다.
+Python 3.10+와 Git이 필요합니다. 먼저 SAGE 자체를 설치합니다.
 
 ```bash
 pipx install "sage-harness[schema]"
@@ -48,7 +44,7 @@ cd your-project
 sage install --host codex --skill-scope project-local
 ```
 
-설치가 끝나면 **Codex 안에서** `$sage-init`을 실행해 이 프로젝트의 설정(profile)을 대화로 채웁니다. 그다음 터미널로 돌아와 마무리합니다.
+설치 후 **Codex 안에서** `$sage-init`으로 profile을 채우고, 터미널에서 마무리합니다.
 
 ```bash
 sage generate --kind hook --write --target codex
@@ -100,9 +96,7 @@ SAGE의 일반 CLI와 설치 hook은 Python 3.10+에서 동작하며 Windows에�
 | Windows Server·도메인 컨트롤러 | 정식 지원 범위 밖 (직접 검증하지 않음) | 자동 제거 미지원; 계획 기반 수동 목록 제공 |
 | 32-bit Python, native ARM64 Python, 비 NTFS·네트워크·UNC 경로 | 환경별 제한 | 자동 제거하지 않음; `--check`로 계획 확인 가능 |
 
-NTFS는 일반적인 Windows 로컬 디스크의 기본 파일 시스템입니다. **동작할 수 있다는 것과 정식으로 지원한다는 것은 다릅니다** — 범위 밖 환경에서 일반 CLI가 도는 경우가 있어도 그 동작을 약속하지 않고, 직접 검증하지도 않습니다. Windows 11 데스크톱의 자동 제거는 그 SKU에서 **실제로 실행해
-검증했습니다** — Windows Server 결과로 갈음하지 않았습니다. 두 종류의 거부 화면과 자세한 판정은
-[CLI 레퍼런스](docs/cli-reference.md)와 [문제 해결](docs/troubleshooting.md)에 있습니다.
+NTFS는 일반적인 Windows 로컬 디스크의 기본 파일 시스템입니다. **동작할 수 있다는 것과 정식으로 지원한다는 것은 다릅니다** — 범위 밖 환경에서 일반 CLI가 도는 경우가 있어도 그 동작을 약속하지 않고, 직접 검증하지도 않습니다. Windows 11 데스크톱의 자동 제거는 그 SKU에서 **실제로 실행해 검증했습니다** — Windows Server 결과로 갈음하지 않았습니다. 두 종류의 거부 화면과 자세한 판정은 [CLI 레퍼런스](docs/cli-reference.md)와 [문제 해결](docs/troubleshooting.md)에 있습니다.
 
 Windows 설치 예시입니다. `sage-hook.exe`가 hook을 실행하므로 Git Bash나 WSL은 필요 없습니다.
 
@@ -166,8 +160,7 @@ hook / agent / skill spec    <------------------>   .claude / .codex
 파일이 어긋나면(직접 고쳤거나 갱신을 깜빡했으면) `sage validate`가 잡아냅니다. AI가 실행 파일을 직접
 고치려 하면 SAGE가 막고, 대신 정의 파일을 고치도록 안내합니다.
 
-판단이 필요한 코드 작성과 리뷰는 AI가 담당하고, 무결성·단계·승인 경계는 SAGE가 코드로 검사합니다. 더
-자세한 신뢰 경계와 실패 정책은 [Architecture](docs/ARCHITECTURE.md)에 있습니다.
+판단이 필요한 코드 작성과 리뷰는 AI가 담당하고, 무결성·단계·승인 경계는 SAGE가 코드로 검사합니다. 더 자세한 신뢰 경계와 실패 정책은 [Architecture](docs/ARCHITECTURE.md)에 있습니다.
 
 ## 개발 절차
 
@@ -190,10 +183,8 @@ hook / agent / skill spec    <------------------>   .claude / .codex
 | 오류 해결 | [문제 해결](docs/troubleshooting.md) |
 | 설계와 신뢰 경계 | [Architecture](docs/ARCHITECTURE.md) |
 | 생성 위치와 소유권 | [Artifacts](docs/ARTIFACTS.md) |
+| 변경 내역·검증 | [Changelog](CHANGELOG.md) · [기록](docs/plan_docs/README.md) |
 | 전체 문서 지도 | [문서 인덱스](docs/README.md) |
-
-
-[변경 내역](CHANGELOG.md) · [개발·검증 기록](docs/plan_docs/README.md)
 
 ## 적합한 사용자
 
