@@ -1,4 +1,4 @@
-<!-- sage-doc-source: release-readiness.md sha256:b6bc67e6b5c377ec5a43dc248aa331db8f9e8fd2e7a440bd253d24a5f59851e1 -->
+<!-- sage-doc-source: release-readiness.md sha256:80f782557c2986ec56f57f2b88ceeb426bd817fc5accc67d09dd00695cb78bda -->
 # Release readiness
 
 This document records **how readiness is decided**, not what it currently is. The current answer
@@ -17,6 +17,12 @@ The Korean authoring source is [release-readiness.md](release-readiness.md).
 
 `RELEASED` is deliberately absent. Tooling reports whether a release is possible; performing it is a
 human decision. A checking tool that crosses that line removes the approval step entirely.
+
+## Release-note authoring policy
+
+All new release notes must be written in Korean. Product names, commands and configuration keys may retain their original spelling. The upcoming EGM release notes cover only preimplementation plan-context review and exclude the operational change that splits regular CI from manual pre-release macOS checks. This omission does not remove code or verification. Historical entries are not translated retroactively.
+
+Before pushing a tag, finalize the Korean body from CHANGELOG and place it in a GitHub Release draft so English PR titles and CI entries do not enter through generated notes. The current publishing workflow preserves an existing body but does not publish a draft automatically. After confirming successful PyPI publication, explicitly publish that draft and verify its body matches the approved Korean notes. Do not publish automatically generated notes unchanged; preparing notes does not authorize a release.
 
 ## What blocks a release
 
