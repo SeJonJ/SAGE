@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARTIFACTS.md sha256:89b99ab75ec601b0bae7854ca1056ea25afdfc83cee70c5154477a46a2a3dc60 -->
+<!-- sage-doc-source: ARTIFACTS.md sha256:454aa2d3921a0ee48f270e213cbee1f74036970682abbbefb55bb769fdc83582 -->
 # SAGE Artifact Map
 
 [한국어](ARTIFACTS.md) | [Documentation index](README.en.md)
@@ -280,6 +280,6 @@ screens see the [CLI reference](cli-reference.en.md).
 
 Keep requirement sources in existing Phase 01 prose/cells; record expected/observed values, execution scope and missing evidence in Phase 03/04 and the review packet. No database, audit file or acceptance status is added. Raw `NO_EVIDENCE`/`UNKNOWN` belongs in evidence/notes, while acceptance status vocabulary stays unchanged. See the [CLI reference](cli-reference.en.md#project-owned-verification-runner) for installer ownership preservation.
 
-## Raw plan-review results (unreleased)
+## Raw plan-review results (1.3.9)
 
 Optional sage plan-review stores input paths/hashes/bytes, final/partial text, usage, controls and change observations in a new .sage/plan-reviews/ JSON. Use the returned output_path; existing results are never overwritten. Raw results are Git-ignored local state, not Phase05 audit or approval records. They may contain private paths or responses; publish reviewed summaries only. See the [CLI](cli-reference.en.md#preimplementation-plan-context-review) and [verification record](plan_docs/06/egm-plan-review.md).

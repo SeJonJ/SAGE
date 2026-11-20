@@ -261,6 +261,6 @@ SSOT입니다. 자세한 게이트·신뢰 경계는 [ARCHITECTURE.md](ARCHITECT
 
 요구 출처는 기존 Phase 01 본문/셀에, 기대값·관측값·실행 범위·누락 근거는 Phase 03/04와 리뷰 패킷에 기록합니다. 별도 DB·새 감사 파일·새 acceptance 상태를 추가하지 않습니다. `NO_EVIDENCE`/`UNKNOWN` 원문은 evidence/notes이며 인수 상태값은 기존 어휘를 유지합니다. 프로젝트 소유 runner의 설치 보존 조건은 [CLI 레퍼런스](cli-reference.md#프로젝트-소유-검증-runner)를 따릅니다.
 
-## 계획 검토 원시 결과 (미출시)
+## 계획 검토 원시 결과 (1.3.9)
 
 선택형 sage plan-review는 새 .sage/plan-reviews/ JSON에 입력 경로·hash·bytes와 최종/부분 응답·사용량·통제·변경 정보를 저장합니다. CLI가 돌려준 output_path를 사용하며 기존 결과를 덮어쓰지 않습니다. 이 원시 결과는 Git 제외 로컬 상태이고 Phase05 감사나 승인 기록이 아닙니다. 비공개 경로·응답이 들어갈 수 있으므로 공개 문서에는 검토한 요약만 남깁니다. [CLI](cli-reference.md#구현-전-계획-맥락-검토)·[검증 기록](plan_docs/06/egm-plan-review.md)을 참고하세요.

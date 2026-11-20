@@ -5,7 +5,7 @@
 
 ## 구현 전 계획 맥락 검토
 
-이 절은 미출시 개발 기능입니다. 공개 배포1.3.8에는 포함되지 않습니다.
+이 절의 기능은 1.3.9에 포함됩니다.
 
 `sage plan-review`는 EGM의 새 맥락 검토 원칙을 적용한 선택 기능입니다. EGM 플러그인 설치나
 Phase05 대체 기능이 아닙니다. shared `pdca.plan_review.enabled: true`와 실제 L2/L3의 `levels`

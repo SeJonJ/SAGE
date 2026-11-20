@@ -3,7 +3,7 @@
 이 디렉터리는 개발 당시의 계획과 실행 근거를 보존합니다. 과거 기록의 `COMPLETE`나 `APPROVED`를
 다른 제품 hash의 승인으로 옮겨 쓰지 않습니다.
 
-## 미출시 EGM 계획 맥락 검토
+## 1.3.9 EGM 계획 맥락 검토 개발 기록
 
 [00](00/egm-plan-review.md) → [01](01/egm-plan-review.md) → [02](02/egm-plan-review.md) → [03](03/egm-plan-review.md) → [04](04/egm-plan-review.md) → [05](05/egm-plan-review.md) → [06](06/egm-plan-review.md).
 

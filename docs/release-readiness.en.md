@@ -1,4 +1,4 @@
-<!-- sage-doc-source: release-readiness.md sha256:fc730fc2cde7e69a0281a1609cf83d6eac1ce2c6dfa60d4cb98cb80c5fa39429 -->
+<!-- sage-doc-source: release-readiness.md sha256:b0088c61087f47c5cb37f05a7a6805749fabbd2e8a0ce8eaf83b5d77ec521325 -->
 # Release readiness
 
 This document records **how readiness is decided**, not what it currently is. The current answer
@@ -177,6 +177,6 @@ that project's state.
 
 The [Q00 completion record](plan_docs/06/q00-evidence-adoption.md) separates full macOS regression from targeted Windows 11 checks. Runner, installation and ownership checks on Python 3.10/3.11/3.12 are not full Windows regression or a new comprehensive uninstall certification. A skipped Windows self-hosted PR job is not device PASS. Verify release and PyPI publication separately through the tag workflow and public artifacts.
 
-## Unreleased EGM development candidate
+## 1.3.9 EGM release candidate
 
-The optional plan-context review [development cycle](plan_docs/06/egm-plan-review.md) is closed with E01-E12 and independent Phase05 evidence. This does not place the feature in published1.3.8 or publish a new version. Before a later release, reconcile that candidate commit's documentation, package, CI and platform evidence with its actual version/tag.
+The optional plan-context review [development cycle](plan_docs/06/egm-plan-review.md) is closed with E01-E12 and independent Phase05 evidence. It was not included in 1.3.8; the publication target is 1.3.9. Keep development review inputs separate from the release commit. Before tagging, reconcile documentation, package, CI and manual macOS evidence for that commit; confirm actual publication separately on GitHub Release and PyPI.

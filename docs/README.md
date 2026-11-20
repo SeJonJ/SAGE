@@ -38,6 +38,6 @@
 
 [계획·검증 기록](plan_docs/README.md)에서 Q00 원칙의 제한 적용, Windows runner 보존 수정, 검증 범위와 잔여를 확인합니다. 새 runtime·DB·자동 수정 루프를 도입하지 않았습니다.
 
-## 미출시: 계획 맥락 검토
+## 1.3.9: 계획 맥락 검토
 
-구현 전 계획과 명시 원천을 새 맥락에서 대조하는 선택 기능입니다. [CLI 사용법](cli-reference.md#구현-전-계획-맥락-검토), [공유 설정](profile-reference.md), [개발 완료·검증 범위](plan_docs/06/egm-plan-review.md)를 확인하세요. 기본 OFF이며 기존 Phase05 독립 리뷰를 대체하지 않습니다. 공개 배포1.3.8에는 아직 포함되지 않습니다.
+구현 전 계획과 명시 원천을 새 맥락에서 대조하는 선택 기능입니다. [CLI 사용법](cli-reference.md#구현-전-계획-맥락-검토), [공유 설정](profile-reference.md), [개발 완료·검증 범위](plan_docs/06/egm-plan-review.md)를 확인하세요. 기본 OFF이며 기존 Phase05 독립 리뷰를 대체하지 않습니다. 1.3.9에 포함됩니다.

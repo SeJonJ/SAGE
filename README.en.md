@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:cdab9dc3b87e55e7dc461cb6047686a082882bebe3fcd701ad234f2056d958fd -->
+<!-- sage-doc-source: README.md sha256:048e13575bae40838c188762987dfffb399231693fd3dd3e71b84af7619bcd2c -->
 # SAGE - System for Agentic Governance & Engineering
 
 [한국어](README.md)
@@ -23,7 +23,7 @@ Telling an agent "plan first, be careful with risky files, always get a review" 
 
 These checks are not the AI's "judgment" — they are code that decides **deterministically**. The same situation always produces the same result, so nobody has to re-explain the rules.
 
-**Unreleased: EGM-inspired plan-context review.** Review explicit plans and sources once in a fresh process of the same host, then let a human disposition findings. Default OFF; Phase05 remains required. See [usage](docs/cli-reference.en.md#preimplementation-plan-context-review) and [completion evidence](docs/plan_docs/06/egm-plan-review.md). This is not part of the published 1.3.8 release.
+**1.3.9: EGM-inspired plan-context review.** Review explicit plans and sources once in a fresh process of the same host, then let a human disposition findings. Default OFF; Phase05 remains required. See [usage](docs/cli-reference.en.md#preimplementation-plan-context-review) and [completion evidence](docs/plan_docs/06/egm-plan-review.md). Available in 1.3.9.
 
 **1.3.8: requirements and verification evidence.** Preserve requirement sources through planning and QA, and derive expected results from approved requirements and contracts. The runner reports executed/skipped scope and uses `NO_EVIDENCE` when no check runs; exit 0 alone is not acceptance PASS. On Windows, portable `/` declarations for the supported paths now preserve project-owned runners during force installation. See [verification and limits](docs/plan_docs/06/q00-evidence-adoption.md).
 

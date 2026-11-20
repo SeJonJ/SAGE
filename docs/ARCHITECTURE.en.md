@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARCHITECTURE.md sha256:6c66466b6af1ec5d32011a8665805b47caad0cf25af0432d659f3c4fa8b19f42 -->
+<!-- sage-doc-source: ARCHITECTURE.md sha256:799983e64cda50061ec55e58cf45f895f07493830ffe897d830c7d61e9b5e741 -->
 # SAGE Architecture
 
 [한국어](ARCHITECTURE.md) | [Documentation index](README.en.md)
@@ -220,7 +220,7 @@ mistakes, laziness, and drift by an honest host; they are not intended to stop a
 
 The planning interview, Phase 01 and QA retain requirement provenance. Repository observations and unconfirmed assumptions alone are neither approved requirements nor QA oracles. Bundled-runner execution/skipping counts cover configured checks, not acceptance satisfaction. `NO_EVIDENCE` observes zero executions without extending acceptance vocabulary, gates or waivers. Standard, Fast and rework share this interpretation.
 
-## Optional plan-context review (unreleased)
+## Optional plan-context review (1.3.9)
 
 plan-review is advisory before implementation approval. sage/plan_review.py reuses existing stem/language/risk/Fast parsers to snapshot explicit file bytes/hashes into one packet. sage/commands/plan_review.py invokes the same host once with required controls and writes a new raw JSON result directly. The common peer_process keeps the default Phase05 contract; contract/require_controls are optional for the new purpose.
 

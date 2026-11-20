@@ -1,4 +1,4 @@
-<!-- sage-doc-source: README.md sha256:b722ec6c4894905c3b07f3ce30646e3fea005c6a360857be25d9fc332ff397f0 -->
+<!-- sage-doc-source: README.md sha256:4b95f1e12a9225fe44cadd52ac1f5fa71e601f550830d13332f51d2d2ce589c0 -->
 # SAGE Documentation
 
 [한국어](README.md) | [Project README](../README.en.md)
@@ -41,6 +41,6 @@ and release approval require separate evidence.
 
 See the [cycle records](plan_docs/README.md) for the focused Q00 adoption, Windows runner ownership fix, verification scope and residuals. This adds no agent runtime, database or automatic repair loop.
 
-## Unreleased: plan-context review
+## 1.3.9: plan-context review
 
-An optional fresh-context comparison of plans with explicit sources before implementation. See [CLI usage](cli-reference.en.md#preimplementation-plan-context-review), [shared settings](profile-reference.en.md), and [completion evidence](plan_docs/06/egm-plan-review.md). It defaults OFF and does not replace independent Phase05 review. It is not in the published 1.3.8 release.
+An optional fresh-context comparison of plans with explicit sources before implementation. See [CLI usage](cli-reference.en.md#preimplementation-plan-context-review), [shared settings](profile-reference.en.md), and [completion evidence](plan_docs/06/egm-plan-review.md). It defaults OFF and does not replace independent Phase05 review. Available in 1.3.9.

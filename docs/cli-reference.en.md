@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cli-reference.md sha256:a53fab3efa1b7ee327bbe0935c199df46dcd1ed5220a20ade48f5af7fd7aaba3 -->
+<!-- sage-doc-source: cli-reference.md sha256:0f740bd0b9930579316d051ceffccd1dd54eac22b504fa9599cef7c7d51d4be1 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for
@@ -6,7 +6,7 @@ the exact options available in your environment
 
 ## Preimplementation plan-context review
 
-This section describes an unreleased development feature, not the published 1.3.8 release.
+This section describes the optional feature included in 1.3.9.
 
 `sage plan-review` is an optional fresh-context planning aid inspired by EGM. It does
 not install EGM or replace Phase05. Enable shared `pdca.plan_review.enabled: true`
