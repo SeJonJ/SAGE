@@ -67,6 +67,14 @@ overlay·#36 통합과 후속 복구 후보의 플랫폼 결과·한계는 [검�
 실패한 플랫폼은 skip 이 아니라 실패로 남는다. 조용한 skip 은 통과로 세어져 플랫폼 하나가 미검증인 채
 릴리스에 실린다.
 
+## 일반 CI와 배포 전 macOS 검사
+
+일반 PR/main CI의 제거 검증은 Ubuntu Python3.10·3.11·3.12와 macOS Python3.12의4조합입니다. macOS3.10·3.11의 테스트를 삭제하지 않고 `.github/workflows/macos-compat.yml`의 수동 검사2조합으로 분리했습니다. hook 회귀·패키징·platform smoke·publish preflight와 Windows 승인 조건은 유지합니다. 이 분리는 runner 요청을 줄이며 GitHub의 macOS 용량을 보장하지 않습니다.
+
+workflow가 main에 반영된 뒤 Actions → **macOS compatibility (release precheck)** → **Run workflow**에서 배포할 후보의40자리 소문자 commit SHA를 입력합니다. 두 Python에서 기존 uninstall smoke/race/core를 순차 실행하며 입력 형식과 실제 checkout SHA가 일치해야 검사합니다. maintenance branch/tag 이름이나 짧은 SHA는 거부합니다. 저장소를 쓸 수 있는 유지관리자가 실행하는 절차이며 `contents: read`만 사용합니다.
+
+배포 전에는 일반 CI와 이 수동 검사2개가 모두 같은 후보 commit에서 성공했는지 확인한 뒤 그 commit을 tag로 지정합니다. 이 workflow는 배포하지 않으며 기존 publish workflow가 결과를 자동 조회해 차단하는 새 gate도 아닙니다. main 반영 전에는 새 수동 버튼을 사용할 수 없고, 로컬 스크립트 검증을 GitHub-hosted 실행 성공으로 기록하지 않습니다.
+
 ## Windows 증거는 hosted 러너가 만들 수 없다
 
 GitHub-hosted `windows-latest`의 실체는 **Windows Server 2025** 다. 그 러너의 초록은 backend 회귀

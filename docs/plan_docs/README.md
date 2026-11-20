@@ -9,6 +9,12 @@
 
 기본 OFF·실제 L2/L3·명시 계획/원천·같은 호스트 새 프로세스1회·원시 JSON 저장·사람 처분을 구현했습니다. E01~E12와 외부 독립 검토를 완료했고 Windows는2026-11-20 다시 확인했습니다. cycle 종료는 커밋/원격 반영·CI·main 병합·릴리스·실제 사용자 설치와 별개입니다. 비정상 native frame과 부분 계측의 비차단 한계는05/06에 남깁니다.
 
+## CI macOS 호환성 검사 실행 시점 분리
+
+[00](00/ci-macos-compat.md) → [01](01/ci-macos-compat.md) → [02](02/ci-macos-compat.md) → [03](03/ci-macos-compat.md) → [04](04/ci-macos-compat.md) → [05](05/ci-macos-compat.md) → [06](06/ci-macos-compat.md).
+
+일반 제거 검사4조합과 배포 전 수동 macOS2조합으로 나눴다. 기존 검사와 Windows 조건·게시 흐름은 유지한다. 로컬 검증·독립 검토를 완료했으며 새 수동 버튼과 GitHub-hosted 결과는 main 반영 뒤 확인한다. EGM 마감 commit0081e58을 기반으로 한 별도 CI 브랜치의 기록이다.
+
 ## 1.3.8 Q00 제한 적용
 
 [00](00/q00-evidence-adoption.md) → [01](01/q00-evidence-adoption.md) → [02](02/q00-evidence-adoption.md) → [03](03/q00-evidence-adoption.md) → [04](04/q00-evidence-adoption.md) → [05](05/q00-evidence-adoption.md) → [06](06/q00-evidence-adoption.md).
