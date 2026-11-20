@@ -197,7 +197,7 @@ Claude에서는 전체 직렬화 결과로 거부될 수 있습니다. 이는 �
 
 계획 인터뷰→Phase 01→QA가 요구 출처를 보존합니다. 저장소 관측·미확인 가정은 단독으로 승인된 요구나 QA 정답이 되지 않습니다. 번들 runner의 실행/생략 집계는 configured check 범위이며 인수 ID 충족을 판정하지 않습니다. `NO_EVIDENCE`는 0개 실행의 관측값으로 기존 acceptance 어휘·gate·waiver를 확장하지 않습니다. Standard·Fast·rework는 같은 검증 해석을 공유합니다.
 
-## 선택형 계획 맥락 검토 (미출시)
+## 선택형 계획 맥락 검토 (1.3.9)
 
 plan-review는 승인 이전의 보조 판단 경로입니다. sage/plan_review.py가 기존 stem·언어·위험·Fast 해석기를 재사용해 명시 파일의 bytes/hash와 단일 packet을 만들고, sage/commands/plan_review.py가 필수 통제 아래 같은 호스트를 한 번 호출해 결과를 새 JSON에 직접 저장합니다. 공통 peer_process의 기본 Phase05 계약은 유지하며 새 목적의 contract/require_controls만 선택적으로 사용합니다.
 

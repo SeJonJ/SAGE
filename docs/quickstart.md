@@ -136,6 +136,6 @@ level·렌즈 수·사유를 모두 받기 전에는 문서나 감사를 쓰지 
 
 요구사항에는 사용자 지시·승인된 계약·저장소 관측·가정의 출처를 남기고 Phase 01과 QA까지 이어갑니다. QA 기대값은 현재 구현 출력만 복사하지 않고 승인된 요구에서 구합니다. `sage_harness/verify-changes.sh L2`는 실행·생략 check를 구분하며 실행 0건은 `NO_EVIDENCE`(exit 0)입니다. 필수 실행 근거가 없으면 해당 인수 ID는 `NOT TESTED`로 남깁니다. [상세 규약](profile-reference.md#verification)을 확인하세요.
 
-## 선택형 계획 맥락 검토 (미출시)
+## 선택형 계획 맥락 검토 (1.3.9)
 
 현재 개발 소스의 선택 기능이며 공개 배포1.3.8에는 없습니다. 기존 공유 profile의 pdca 매핑에 plan_review.enabled를 true로 설정하면 실제 L2/L3에서 사용할 수 있습니다. 기본은 OFF입니다. 표준00/01/02 또는 Fast 합본00과 전송을 허용한 원천을 명시하고 같은 호스트의 새 프로세스를 한 번 실행합니다. FINDINGS/REVIEWED/UNVERIFIED를 읽고 기존02에 반영·보류·반박을 기록한 다음 일반 구현·검증·Phase05를 진행합니다. 정확한 옵션과 예시는 [CLI 레퍼런스](cli-reference.md#구현-전-계획-맥락-검토)를 따릅니다.

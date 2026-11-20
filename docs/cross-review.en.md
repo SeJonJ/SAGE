@@ -1,4 +1,4 @@
-<!-- sage-doc-source: cross-review.md sha256:7e977ebe374f8e6884ec0c53d93994684d6f2d4974167721dff282abe5a10f2e -->
+<!-- sage-doc-source: cross-review.md sha256:b3c74b9320875e07bd395f7989a2464e3baf0e7c77cd62467fbbc9bcab279c5e -->
 # Phase 05 Review: Single Review and Cross Review
 
 [한국어](cross-review.md) | [Documentation index](README.en.md)
@@ -235,6 +235,6 @@ with controlled reviewers. Values are `REVIEWER_TOKENS`.
 
 Include each command, exit code, short observed output, executed/skipped scope, acceptance IDs, missing evidence and original result references. `NO_EVIDENCE`/exit 0 alone is neither command failure, an automatic rework retry reason, nor required-check PASS. Keep IDs missing required execution evidence as existing `NOT TESTED` and assess sufficiently evidenced IDs independently. Existing retries for actual command/validation failures and approval/waiver policy remain in force.
 
-## Separate preimplementation aid (unreleased)
+## Separate preimplementation aid (1.3.9)
 
 sage plan-review optionally reviews explicit plans and sources in a fresh process of the same host before implementation. It defaults OFF and uses neither cross_model policy nor Phase05 reviewer overlays. It does not retry uncontrolled when required controls are unavailable. COMPLETE is process completion, not human plan approval or a Phase05 result. See [CLI usage](cli-reference.en.md#preimplementation-plan-context-review) and [development evidence](plan_docs/06/egm-plan-review.md). This section does not change existing Phase05 behavior in published1.3.8.

@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:28086b0aad3146092987d16c390c9ab97a46580932d88a1900f2fe0601b76a23 -->
+<!-- sage-doc-source: profile-reference.md sha256:c2bd0219f47415d6775069cf5fa082d8f6d783b16b2e4be00c57ef4406184f7a -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -144,7 +144,7 @@ does not modify it.
 
 ### Optional plan-context review
 
-This is an unreleased development feature, not part of published1.3.8.
+This optional feature is included in 1.3.9.
 
 ```yaml
 pdca:
