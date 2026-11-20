@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add optional EGM-inspired preimplementation plan-context review with explicit sources, fresh same-host execution, input hashes, honest usage metadata and exclusive raw JSON storage.
+- Default OFF; preserve human disposition and existing Phase04/05/06 approval boundaries.
+- Wire standard/Fast planning skills for both hosts and document verified scope plus remaining limits in the [completion record](docs/plan_docs/06/egm-plan-review.md).
+
 ## 1.3.8 — 2026-11-17
 
 - Keep requirement sources visible through planning and QA; use approved contracts to derive expected results.

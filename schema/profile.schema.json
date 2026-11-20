@@ -349,6 +349,18 @@
             }
           }
         },
+        "plan_review": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Optional preimplementation plan-context review; never an approval gate.",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "levels": {
+              "type": "array", "minItems": 1, "uniqueItems": true,
+              "items": { "enum": ["L2", "L3"] }
+            }
+          }
+        },
         "review_loop": {
           "type": "object",
           "additionalProperties": false,

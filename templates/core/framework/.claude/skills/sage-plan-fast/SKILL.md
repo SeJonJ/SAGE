@@ -97,6 +97,13 @@ neither delivered text nor `--confirmed-by` strings authenticate human consent.
 5. Embed Phase 01 requirements and acceptance matrix, Phase 02 design/failure
    handling, and Phase 03 ownership/checklists/verification plan. Leave Phase 04
    at the exact pre-implementation pending marker.
+   Before approval/open, follow `docs/agent/plan-review-protocol.md`: if shared
+   `pdca.plan_review.enabled` includes the actual L2/L3 risk, run `sage plan-review`
+   once on the populated composite00 and explicitly authorized sources. Do not use
+   the lower Fast review level for this selection or open Fast just to enable review.
+   Keep Phase04 pending. Preserve the CLI-created JSON and record human dispositions
+   in embedded Phase02; a failure/skip is not COMPLETE and triggers no automatic retry.
+   This does not replace human approval or Phase05.
 6. Obtain user approval of the complete 00 through 03 content, check all required
    pre-edit checklist items, and then run:
 

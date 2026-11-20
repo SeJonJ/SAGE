@@ -99,6 +99,12 @@ L2/L3 code is written. Hands back an ownership map; `/sage-team` drives 03–06.
    contract is valid with revision 1 and at least one concrete `[ ]` item, and that every file basename equals its
    single `Cycle-Stem` declaration — if missing/unfilled/mismatched, block and have the
    leader set it.
+   Before handoff, follow `docs/agent/plan-review-protocol.md`. If shared
+   `pdca.plan_review.enabled` includes actual L2/L3 risk, run `sage plan-review`
+   once on the verified standard00/01/02 and explicit authorized sources. Preserve
+   the CLI-created JSON, discuss findings/coverage/unverified scope with the user,
+   and record dispositions in existing02. OFF/excluded means no model call;
+   failure/skip is not COMPLETE. No automatic retry or approval bypass.
 7. Report the ownership map to the user and confirm they are ready to proceed
    to implementation via `/sage-team` (or the `/sage-cycle` umbrella).
 8. State the phase flow so the user does not misorder 03/04: 00–02 now (leader);

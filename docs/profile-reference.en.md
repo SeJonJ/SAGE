@@ -1,4 +1,4 @@
-<!-- sage-doc-source: profile-reference.md sha256:e0c95a8e4ab53ca32bc5bdf57a1afbc11d7995b1530deaf62dcf72163c83ac1c -->
+<!-- sage-doc-source: profile-reference.md sha256:28086b0aad3146092987d16c390c9ab97a46580932d88a1900f2fe0601b76a23 -->
 # SAGE Profile Reference
 
 [한국어](profile-reference.md) | [Documentation index](README.en.md)
@@ -141,6 +141,25 @@ criteria, invalid revisions, stale affected phases, and stale Phase 05 approval 
 `Done-Criteria-Revision: 1`; changing criterion text or scope records a new revision, reason, and
 affected phases. `sage-init` and `sage-profile-modify` collect this shared policy; `sage-init-local`
 does not modify it.
+
+### Optional plan-context review
+
+This is an unreleased development feature, not part of published1.3.8.
+
+```yaml
+pdca:
+  plan_review:
+    enabled: false
+    levels: [L2, L3]
+```
+
+Shared policy, OFF when absent. `enabled` is boolean; `levels` is a nonempty unique
+subset of L2/L3 (defaults to `[L2, L3]` when omitted). Unknown keys are errors and
+local profiles cannot override it. After existing checks and before implementation
+approval, standard/Fast planning skills invoke it once for the actual selected risk.
+Phase05, approvals and gates remain unchanged. Timeout/input limits are
+[`sage plan-review` options](cli-reference.en.md#preimplementation-plan-context-review),
+not profile keys.
 
 ### Review loop (Phase 05)
 

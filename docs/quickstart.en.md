@@ -1,4 +1,4 @@
-<!-- sage-doc-source: quickstart.md sha256:7e0926a8121b0c5f143baaf6e16d585694e28b680bec57f103a9e5a831f3f54f -->
+<!-- sage-doc-source: quickstart.md sha256:345ecef7056207ae319d3f35d9dff546daa3b6cd03b089cde02c182597d68a63 -->
 # SAGE Quickstart
 
 [한국어](quickstart.md) | [README](../README.en.md)
@@ -140,3 +140,7 @@ the new revision, reason, and affected phases, then rerun those phases and Phase
 ## Planning, QA and verification evidence
 
 Keep the source of each requirement—user instruction, approved contract, repository observation or assumption—through Phase 01 and QA. Derive expected results from approved requirements, rather than copying current output. `sage_harness/verify-changes.sh L2` distinguishes executed and skipped checks; zero executions yield `NO_EVIDENCE` (exit 0). Record an acceptance ID missing required execution evidence as `NOT TESTED`. See the [verification reference](profile-reference.en.md#verification).
+
+## Optional plan-context review (unreleased)
+
+This development feature is not in the published 1.3.8 release. Enable plan_review.enabled under the existing shared profile's pdca mapping to opt actual L2/L3 plans in; the default is OFF. Select standard00/01/02 or Fast composite00 and sources authorized for transmission, then run one fresh process of the same host. Read FINDINGS/REVIEWED/UNVERIFIED, record human disposition in existing02, and continue ordinary implementation, verification and Phase05. Follow the [CLI reference](cli-reference.en.md#preimplementation-plan-context-review) for exact options and examples.

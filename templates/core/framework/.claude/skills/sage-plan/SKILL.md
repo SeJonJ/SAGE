@@ -185,6 +185,16 @@ sage cycle set <stem>
 Do not declare before these checks. If the command reports that `SAGE_CYCLE_STEM`
 still wins, surface that warning and resolve the environment declaration before handoff.
 
+## Optional plan-context review
+
+Before the implementation handoff, follow `docs/agent/plan-review-protocol.md`.
+Only when shared `pdca.plan_review.enabled` is true and the actual L2/L3 risk is
+included, run `sage plan-review` once on the verified standard00/01/02 and explicitly
+selected authorized sources. Preserve the CLI-created JSON and discuss findings,
+reviewed scope and unverified scope with the user; record dispositions in existing02.
+OFF/excluded means no model call. Failure/skip is never COMPLETE; no automatic retry.
+This is advisory and replaces neither human approval nor independent Phase05.
+
 ## Step 4 — Report ownership map
 
 Present the ownership map to the user:

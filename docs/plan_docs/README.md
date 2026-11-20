@@ -3,6 +3,12 @@
 이 디렉터리는 개발 당시의 계획과 실행 근거를 보존합니다. 과거 기록의 `COMPLETE`나 `APPROVED`를
 다른 제품 hash의 승인으로 옮겨 쓰지 않습니다.
 
+## 미출시 EGM 계획 맥락 검토
+
+[00](00/egm-plan-review.md) → [01](01/egm-plan-review.md) → [02](02/egm-plan-review.md) → [03](03/egm-plan-review.md) → [04](04/egm-plan-review.md) → [05](05/egm-plan-review.md) → [06](06/egm-plan-review.md).
+
+기본 OFF·실제 L2/L3·명시 계획/원천·같은 호스트 새 프로세스1회·원시 JSON 저장·사람 처분을 구현했습니다. E01~E12와 외부 독립 검토를 완료했고 Windows는2026-11-20 다시 확인했습니다. cycle 종료는 커밋/원격 반영·CI·main 병합·릴리스·실제 사용자 설치와 별개입니다. 비정상 native frame과 부분 계측의 비차단 한계는05/06에 남깁니다.
+
 ## 1.3.8 Q00 제한 적용
 
 [00](00/q00-evidence-adoption.md) → [01](01/q00-evidence-adoption.md) → [02](02/q00-evidence-adoption.md) → [03](03/q00-evidence-adoption.md) → [04](04/q00-evidence-adoption.md) → [05](05/q00-evidence-adoption.md) → [06](06/q00-evidence-adoption.md).

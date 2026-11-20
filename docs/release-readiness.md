@@ -151,3 +151,7 @@ git archive HEAD | (mkdir -p /tmp/sage-candidate && tar -x -C /tmp/sage-candidat
 ## 1.3.8의 검증 근거 해석
 
 이번 변경의 macOS 전체 회귀와 Windows 11 대상 검증은 [Q00 적용 완료 기록](plan_docs/06/q00-evidence-adoption.md)에 구분해 기록합니다. Windows 실기기 Python 3.10/3.11/3.12의 runner·설치·소유권 검증은 전체 Windows 회귀나 자동 제거의 새 전면 검증이 아닙니다. PR CI의 Windows self-hosted skip도 실기기 PASS로 바꾸지 않습니다. 릴리즈·PyPI 게시 결과는 tag workflow와 공개 배포물로 별도 확인합니다.
+
+## 미출시 EGM 개발 후보
+
+선택형 계획 맥락 검토의 [개발 cycle](plan_docs/06/egm-plan-review.md)은 종료됐으며 E01~E12와 독립 Phase05를 확인했습니다. 이는 공개 배포1.3.8에 기능이 포함됐거나 신규 버전을 게시했다는 뜻이 아닙니다. 다음 릴리스에서는 해당 후보 commit의 문서·패키지·CI·플랫폼 근거와 실제 버전/tag를 다시 대조합니다.
