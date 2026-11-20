@@ -209,3 +209,7 @@ L3 버그 수정 사이클에서 `pdca.review_loop`(렌즈 4개, 반박자 2명,
 ## 검증 요약과 재검증
 
 패킷에는 명령·exit·짧은 실제 출력·실행/생략 범위·인수 ID·누락된 증거와 원본 참조를 남깁니다. `NO_EVIDENCE`/exit 0 단독은 명령 실패도, 자동 rework 재시도 사유도, 필수 check PASS도 아닙니다. 필수 실행 근거가 없는 ID는 기존 `NOT TESTED`로 유지하고 다른 충분한 ID는 독립 판단합니다. 실제 명령·validation 실패의 재시도 및 기존 승인·waiver 규칙은 유지합니다.
+
+## 계획 단계 보조 검토와 구분 (미출시)
+
+sage plan-review는 구현 전에 명시 계획·원천만 같은 호스트의 새 맥락에서 검토하는 선택 기능입니다. 기본 OFF이고 cross_model 정책이나 Phase05 reviewer overlay를 사용하지 않습니다. 필요한 통제를 사용할 수 없으면 무통제로 재호출하지 않습니다. COMPLETE는 프로세스 완료이며 사람의 계획 승인이나 Phase05 결과가 아닙니다. [CLI 사용법](cli-reference.md#구현-전-계획-맥락-검토)과 [개발 검증](plan_docs/06/egm-plan-review.md)을 확인하세요. 이 절은 공개 배포1.3.8의 기존 Phase05 동작을 변경하지 않습니다.

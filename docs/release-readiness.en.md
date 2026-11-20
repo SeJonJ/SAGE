@@ -1,4 +1,4 @@
-<!-- sage-doc-source: release-readiness.md sha256:cf282b4ef39e9c64cbe57a00cb85b59969a290d61612a5ebb5f80cb1e7da0637 -->
+<!-- sage-doc-source: release-readiness.md sha256:80f782557c2986ec56f57f2b88ceeb426bd817fc5accc67d09dd00695cb78bda -->
 # Release readiness
 
 This document records **how readiness is decided**, not what it currently is. The current answer
@@ -17,6 +17,12 @@ The Korean authoring source is [release-readiness.md](release-readiness.md).
 
 `RELEASED` is deliberately absent. Tooling reports whether a release is possible; performing it is a
 human decision. A checking tool that crosses that line removes the approval step entirely.
+
+## Release-note authoring policy
+
+All new release notes must be written in Korean. Product names, commands and configuration keys may retain their original spelling. The upcoming EGM release notes cover only preimplementation plan-context review and exclude the operational change that splits regular CI from manual pre-release macOS checks. This omission does not remove code or verification. Historical entries are not translated retroactively.
+
+Before pushing a tag, finalize the Korean body from CHANGELOG and place it in a GitHub Release draft so English PR titles and CI entries do not enter through generated notes. The current publishing workflow preserves an existing body but does not publish a draft automatically. After confirming successful PyPI publication, explicitly publish that draft and verify its body matches the approved Korean notes. Do not publish automatically generated notes unchanged; preparing notes does not authorize a release.
 
 ## What blocks a release
 
@@ -162,3 +168,7 @@ that project's state.
 ## Interpreting 1.3.8 evidence
 
 The [Q00 completion record](plan_docs/06/q00-evidence-adoption.md) separates full macOS regression from targeted Windows 11 checks. Runner, installation and ownership checks on Python 3.10/3.11/3.12 are not full Windows regression or a new comprehensive uninstall certification. A skipped Windows self-hosted PR job is not device PASS. Verify release and PyPI publication separately through the tag workflow and public artifacts.
+
+## Unreleased EGM development candidate
+
+The optional plan-context review [development cycle](plan_docs/06/egm-plan-review.md) is closed with E01-E12 and independent Phase05 evidence. This does not place the feature in published1.3.8 or publish a new version. Before a later release, reconcile that candidate commit's documentation, package, CI and platform evidence with its actual version/tag.

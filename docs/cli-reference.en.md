@@ -1,8 +1,59 @@
-<!-- sage-doc-source: cli-reference.md sha256:1c83aac41dfd92813bc0e398e1f08e52dad678f49180141d99745ee430bb3a4b -->
+<!-- sage-doc-source: cli-reference.md sha256:a53fab3efa1b7ee327bbe0935c199df46dcd1ed5220a20ade48f5af7fd7aaba3 -->
 # SAGE CLI Reference
 
 [한국어](cli-reference.md) | [Documentation index](README.en.md) | Run `sage <command> --help` for
 the exact options available in your environment
+
+## Preimplementation plan-context review
+
+This section describes an unreleased development feature, not the published 1.3.8 release.
+
+`sage plan-review` is an optional fresh-context planning aid inspired by EGM. It does
+not install EGM or replace Phase05. Enable shared `pdca.plan_review.enabled: true`
+and include the actual L2/L3 risk in `levels`; it is OFF by default.
+
+```bash
+sage plan-review --root . --host codex --stem webhooks \
+  --plan plan_docs/00-base_plan/webhooks.md \
+  --plan plan_docs/01-plan/webhooks.md \
+  --plan plan_docs/02-design/webhooks.md --source docs/requirements.md --json
+```
+
+Specify the current host with `--host claude|codex`. Supply standard00/01/02 matching
+the profile's phase globs, or one populated Fast composite00 (before Fast open is
+allowed). The CLI checks stem, document language and actual Phase00 risk. It reads
+only explicit regular UTF-8 files (BOM accepted). Select sources authorized for
+transmission; omit `--source` if unavailable and source agreement stays unverified.
+There is no URL/link discovery or automatic conversation inclusion. Plans must stay
+inside the repository; explicitly selected sources may be external files.
+
+Defaults are one fresh controlled process of the same host, 300 seconds, and 1MiB
+of UTF-8 input including the final prompt. `--timeout` accepts 30..1800 seconds and
+`--max-input-bytes` 4096..4194304. Oversize input is rejected, never truncated. Time
+and bytes are not hard token/billing caps. No automatic retry, model fallback or
+plan edits occur. The host CLI's default model is used; unavailable observed-model
+or usage data is null.
+
+The CLI saves raw results directly to a new JSON file under `.sage/plan-reviews/`
+and returns its path. `--output` selects a new `.json` there; overwriting is refused.
+Storage failure exits3 and retains the raw response on stdout. Results include input
+paths/hashes/bytes, final/partial text, usage, controls/audit and input changes during
+execution. They can contain private inputs/outputs; review before sharing publicly.
+
+| Status | Exit | Meaning |
+| --- | --- | --- |
+| COMPLETE | 0 | Execution finished; not approval, a clean design or Phase05 completion |
+| SKIPPED | 0 | Disabled/risk excluded; no model call |
+| INVALID_INPUT | 2 | Invalid profile, plan, host, source, limit or storage path |
+| UNSUPPORTED | 3 | Required controls unavailable; no uncontrolled fallback |
+| PARTIAL / FAILED | 3 | Partial findings or failure; preserve results before retrying |
+| STALE | 3 | Input changed/disappeared during execution; result covers the old hashes |
+
+Read FINDINGS/REVIEWED/UNVERIFIED even with no findings. Humans apply, defer or rebut
+issues and record reasons plus the result path in existing02 or Fast Phase02. Do
+not reuse old results as review completion for edited plans. This adds no gate and
+waives no implementation approval or Phase04/05/06. Installed
+`docs/agent/plan-review-protocol.md` supplies the standard/Fast skill handoff.
 
 ## Personal overlays
 

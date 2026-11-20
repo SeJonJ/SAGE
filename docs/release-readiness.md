@@ -19,6 +19,12 @@ POSIX에서는 `python3 scripts/ci/publish_preflight.py`, Windows에서는
 `RELEASED`는 이 목록에 없다. 도구는 릴리스 가능 여부까지만 말하고, 실제 릴리스는 사람의 결정이다.
 검사 도구가 그 경계를 넘으면 승인이라는 절차 자체가 사라진다.
 
+## 릴리즈 노트 작성 원칙
+
+앞으로 모든 새 릴리즈 노트는 반드시 한글로 작성합니다. 제품명·명령·설정 키 등은 원래 표기를 유지할 수 있습니다. 이번 EGM 릴리즈 노트에는 구현 전 계획 맥락 검토 기능만 포함하고, 일반 CI와 배포 전 수동 macOS 검사를 분리한 운영 변경은 제외합니다. 이 제외는 변경 코드나 검증을 제거한다는 뜻이 아닙니다. 이전 버전의 과거 기록은 소급 번역하지 않습니다.
+
+영어 PR 제목과 CI 항목이 자동으로 들어오지 않도록 태그 push 전에 CHANGELOG를 바탕으로 한글 본문을 확정하고 GitHub Release 초안에 작성합니다. 현재 게시 workflow는 기존 본문을 보존하지만 초안을 자동으로 공개하지는 않습니다. PyPI 게시 성공을 확인한 뒤 해당 초안을 별도로 공개하고 실제 본문이 승인한 한글 노트인지 확인합니다. 자동 생성 노트를 그대로 게시하지 않으며, 노트 준비만으로 배포 승인을 대신하지 않습니다.
+
 ## 무엇이 릴리스를 막는가
 
 `publish_preflight.py`의 각 검사는 독립이고 전부 실행된다. 첫 실패에서 멈추면 두 번째 문제를 다음
@@ -151,3 +157,7 @@ git archive HEAD | (mkdir -p /tmp/sage-candidate && tar -x -C /tmp/sage-candidat
 ## 1.3.8의 검증 근거 해석
 
 이번 변경의 macOS 전체 회귀와 Windows 11 대상 검증은 [Q00 적용 완료 기록](plan_docs/06/q00-evidence-adoption.md)에 구분해 기록합니다. Windows 실기기 Python 3.10/3.11/3.12의 runner·설치·소유권 검증은 전체 Windows 회귀나 자동 제거의 새 전면 검증이 아닙니다. PR CI의 Windows self-hosted skip도 실기기 PASS로 바꾸지 않습니다. 릴리즈·PyPI 게시 결과는 tag workflow와 공개 배포물로 별도 확인합니다.
+
+## 미출시 EGM 개발 후보
+
+선택형 계획 맥락 검토의 [개발 cycle](plan_docs/06/egm-plan-review.md)은 종료됐으며 E01~E12와 독립 Phase05를 확인했습니다. 이는 공개 배포1.3.8에 기능이 포함됐거나 신규 버전을 게시했다는 뜻이 아닙니다. 다음 릴리스에서는 해당 후보 commit의 문서·패키지·CI·플랫폼 근거와 실제 버전/tag를 다시 대조합니다.

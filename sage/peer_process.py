@@ -76,7 +76,7 @@ class PeerRun:
     """peer 1회 실행의 결과. `reason` 은 기계 판독용 실패 사유(성공이면 None)."""
 
     __slots__ = ("peer", "ok", "review", "error", "reason", "partial", "usage", "tool_calls",
-                 "violations", "warnings", "controls", "wall_s", "rate_limited")
+                 "violations", "warnings", "controls", "wall_s", "rate_limited", "model_observed")
 
     def __init__(self, peer, ok=False, review=None, error=None, reason=None, partial=None,
                  usage=None, tool_calls=None, violations=(), controls="none", wall_s=None,
@@ -95,6 +95,7 @@ class PeerRun:
         self.controls = controls
         self.wall_s = wall_s
         self.rate_limited = rate_limited
+        self.model_observed = None
 
     @classmethod
     def from_legacy(cls, peer, ok, review, error):
@@ -614,7 +615,80 @@ def _account_codex_sessions(run, thread_id, started_at, collab_calls=0):
                 run.usage = merged
 
 
-def run_peer(peer, prompt, timeout, effort=None, model=None, root=None, env=None):
+def _packet_observations(peer, text, run):
+    """Packet-only consumers need complete tool observation and honest missing counters.
+
+    The legacy Phase05 summaries/default call path stay unchanged. This refinement is
+    used only when the caller explicitly requires controls.
+    """
+    events = list(_json_lines(text))
+    rows, messages, result = [], {}, None
+    tools = set()
+    kinds = {"command_execution", "collab_tool_call", "mcp_tool_call", "web_search",
+             "file_change", "todo_list"}
+    for index, event in enumerate(events):
+        item = event.get("item") or {}
+        if peer == "codex":
+            if event.get("type") in ("item.started", "item.completed") and item.get("type") in kinds:
+                identity = item.get("id")
+                if type(identity) not in (str, int) or identity == "":
+                    identity = index
+                    warning = "tool_identity_unavailable:conservative_event_count"
+                    if warning not in run.warnings:
+                        run.warnings.append(warning)
+                tools.add((item["type"], identity))
+            if event.get("type") == "turn.completed" and isinstance(event.get("usage"), dict):
+                rows.append(event["usage"])
+        else:
+            if event.get("type") == "system" and event.get("subtype") == "init":
+                if isinstance(event.get("model"), str):
+                    run.model_observed = event["model"]
+            if event.get("type") == "assistant":
+                message = event.get("message") or {}
+                if isinstance(message.get("model"), str):
+                    run.model_observed = message["model"]
+                if isinstance(message.get("usage"), dict):
+                    messages[message.get("id") or index] = message["usage"]
+            if event.get("type") == "result":
+                result = event
+    if peer == "codex":
+        run.tool_calls = max(run.tool_calls or 0, len(tools))
+    else:
+        rows = ([result["usage"]] if result is not None and isinstance(result.get("usage"), dict)
+                else list(messages.values()))
+    if not rows:
+        return  # Preserve the existing partial/session fallback when no native usage object exists.
+
+    def number(row, name):
+        value = row.get(name)
+        return value if type(value) is int and value >= 0 else None
+
+    normalized, observed = [], False
+    for row in rows:
+        if peer == "codex":
+            total, cached, output = (number(row, k) for k in
+                                     ("input_tokens", "cached_input_tokens", "output_tokens"))
+            new = max(0, total - cached) if total is not None and cached is not None else None
+            observed |= any(v is not None for v in (total, cached, output))
+        else:
+            direct, created, cached, output = (number(row, k) for k in
+                ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens"))
+            new = direct + created if direct is not None and created is not None else None
+            observed |= any(v is not None for v in (direct, created, cached, output))
+        normalized.append({"new_input": new, "cached_input": cached, "output": output})
+    usage = dict(run.usage or {})
+    for key in ("new_input", "cached_input", "output"):
+        values = [row[key] for row in normalized]
+        # Session accounting may already include observed child usage; never replace it with parent-only totals.
+        if all(v is not None for v in values):
+            usage[key] = usage.get(key) if usage.get(key) is not None else sum(values)
+        else:
+            usage[key] = None
+    run.usage = usage if observed or usage.get("cost_usd") is not None else None
+
+
+def run_peer(peer, prompt, timeout, effort=None, model=None, root=None, env=None,
+             contract=None, require_controls=False):
     """peer 리뷰 1회 → PeerRun."""
     if not shutil.which(peer):
         return PeerRun(peer, error=Diagnostic("review.peer_cli_missing", peer=peer),
@@ -622,9 +696,13 @@ def run_peer(peer, prompt, timeout, effort=None, model=None, root=None, env=None
     # 통제 조합이 없는 peer 는 버전을 물을 이유가 없다 — 리뷰 시작만 늦춘다.
     version = cli_version(peer) if peer in MIN_CONTROLLED_VERSION else None
     controlled = controls_supported(peer, version)
+    if require_controls and not controlled:
+        return PeerRun(peer, reason="controls_unsupported", error=Diagnostic(
+            "plan_review.controls_unsupported", peer=peer))
     cmd = peer_command(peer, effort, model, root=root, controlled=controlled)
     if controlled:
-        prompt = REVIEW_CONTRACT.format(root=root or os.getcwd(), max_lookups=12) + prompt
+        prompt = (REVIEW_CONTRACT.format(root=root or os.getcwd(), max_lookups=12)
+                  if contract is None else contract) + prompt
     workdir = tempfile.mkdtemp(prefix="sage-peer-") if controlled else None
     started_at = time.time()
     try:
@@ -649,6 +727,8 @@ def run_peer(peer, prompt, timeout, effort=None, model=None, root=None, env=None
         run.review = parse_codex_jsonl(out) if peer == "codex" else parse_claude_json(out)
         if peer == "codex":
             run.rate_limited = codex_rate_limited(out)
+    if require_controls:
+        _packet_observations(peer, out, run)
     if timed_out:
         run.reason = "timeout"
         run.error = Diagnostic("review.peer_timeout", peer=peer, timeout=timeout)

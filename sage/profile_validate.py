@@ -34,7 +34,7 @@ _CLOSED_SECTION_FALLBACK = {
              "domains", "plan_glob", "review_patterns"},
     "pdca": {"approve_marker", "approve_phase", "base_plan", "cycle_binding_visibility", "enabled",
              "phases", "pre_implementation_required", "report_phase", "review_loop", "fast_cycle",
-             "retro", "writeback"},
+             "retro", "writeback", "plan_review"},
     "output_contract": {"markers"},
     "mcp": {"enabled"},
     "extraction": {"config"},
@@ -1003,6 +1003,7 @@ def validate_profile(profile, root):
     issues = _schema_issues(profile, root)
     try:
         from sage.context_packet import profile_issues as context_profile_issues
+        from sage.plan_review import profile_issues as plan_review_profile_issues
 
         issues = issues + _semantic_issues(profile, root) + _review_loop_issues(profile) \
             + _done_criteria_gate_issues(profile) \
@@ -1013,7 +1014,7 @@ def validate_profile(profile, root):
             + _writeback_gate_issues(profile) + _governance_docs_issues(profile, root) \
             + _feedback_issues(profile)
         issues = issues + _runtime_host_issues(profile) + _component_model_issues(profile) \
-            + context_profile_issues(profile)
+            + context_profile_issues(profile) + plan_review_profile_issues(profile)
     except Exception as e:
         issues.append(("FAIL", Diagnostic("validate.exception_fallback", kind=type(e).__name__)))
     return issues

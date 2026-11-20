@@ -133,6 +133,23 @@ revision, 영향 phase 재실행, 최신 Phase 05 승인 결속 문제를 경고
 바뀌면 revision과 사유·영향 phase를 기록합니다. 이 shared 정책은 `sage-init`과
 `sage-profile-modify`가 수집하고 `sage-init-local`은 수정하지 않습니다.
 
+### 선택형 계획 맥락 검토
+
+미출시 개발 기능이며 공개 배포1.3.8에는 포함되지 않습니다.
+
+```yaml
+pdca:
+  plan_review:
+    enabled: false
+    levels: [L2, L3]
+```
+
+부재 시 OFF인 공유 정책입니다. `enabled`는 boolean, `levels`는 중복 없는 비어 있지 않은
+L2/L3 부분집합입니다(부재 시 `[L2, L3]`). 알 수 없는 키는 오류이며 로컬에서 덮어쓸 수 없습니다.
+표준/Fast 계획 스킬은 기존 검사를 마친 뒤 구현 승인 전에 해당 실제 위험도에서 1회 호출합니다.
+기존 Phase05/승인/gate는 바뀌지 않습니다. timeout/입력 상한은 프로필 키가 아닌
+[`sage plan-review` 옵션](cli-reference.md#구현-전-계획-맥락-검토)입니다.
+
 ### Review loop (Phase 05)
 
 ```yaml

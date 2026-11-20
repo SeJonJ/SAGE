@@ -3,6 +3,52 @@
 [English](cli-reference.en.md) | [문서 인덱스](README.md) | 실행 환경의 정확한 옵션은
 `sage <command> --help`
 
+## 구현 전 계획 맥락 검토
+
+이 절은 미출시 개발 기능입니다. 공개 배포1.3.8에는 포함되지 않습니다.
+
+`sage plan-review`는 EGM의 새 맥락 검토 원칙을 적용한 선택 기능입니다. EGM 플러그인 설치나
+Phase05 대체 기능이 아닙니다. shared `pdca.plan_review.enabled: true`와 실제 L2/L3의 `levels`
+포함이 필요하며, 기본은 OFF입니다.
+
+```bash
+sage plan-review --root . --host codex --stem webhooks \
+  --plan plan_docs/00-base_plan/webhooks.md \
+  --plan plan_docs/01-plan/webhooks.md \
+  --plan plan_docs/02-design/webhooks.md --source docs/requirements.md --json
+```
+
+현재 작업 호스트를 `--host claude|codex`로 명시합니다. 표준은 프로필 phase glob에 맞는 00/01/02,
+Fast는 완성된 합본00 하나를 지정합니다(Fast open 이전 가능). stem·문서 언어·00의 실제 위험도를
+확인하고, 명시한 UTF-8 일반 파일만 읽습니다(BOM 허용). source는 전송을 허용한 파일만 직접
+선택하며, 없으면 생략할 수 있습니다. 이때 근거 대조는 미확인입니다. URL·링크 자동 탐색·대화
+이력 추가는 하지 않습니다. plan은 저장소 내부, source는 명시적 외부 파일도 가능합니다.
+
+기본은 같은 호스트의 새 통제 프로세스 1회, 300초, 최종 프롬프트 포함 UTF-8 1MiB입니다.
+`--timeout`은 30~1800초, `--max-input-bytes`는 4096~4194304입니다. 초과 입력은 절단 없이 거부합니다.
+시간/bytes는 hard token·과금 상한이 아닙니다. 자동 재시도·다른 모델 fallback·자동 수정은 없습니다.
+모델은 해당 CLI의 기본 설정을 사용하며 관측 모델/사용량을 얻지 못하면 null로 기록합니다.
+
+원시 결과는 `.sage/plan-reviews/`의 새 JSON에 CLI가 직접 저장하고 경로를 반환합니다.
+`--output`으로 그 디렉터리 안의 새 `.json`을 선택할 수 있으며 덮어쓰기는 거부합니다.
+저장 실패는 exit3이며 stdout 원문은 보존합니다. 결과에는 입력 경로/hash/bytes, 최종/부분 본문,
+사용량, 통제/관측 정보와 실행 중 변경 여부가 들어갑니다. 비공개 입력/출력이 포함될 수 있으므로
+공개 이슈나 로그에 그대로 복사하지 않습니다.
+
+| 상태 | exit | 의미 |
+| --- | --- | --- |
+| COMPLETE | 0 | 실행 완료; 계획 승인·지적 없음·Phase05 완료를 뜻하지 않음 |
+| SKIPPED | 0 | OFF/위험 수준 제외; 외부 모델 미호출 |
+| INVALID_INPUT | 2 | 프로필·계획·host·원천·상한·저장 위치 오류 |
+| UNSUPPORTED | 3 | 필요한 통제 불가; 무통제 실행 없음 |
+| PARTIAL / FAILED | 3 | 부분 지적 또는 실패; 재시도 전 기존 결과 보존 |
+| STALE | 3 | 실행 중 입력 변경/삭제; 결과는 이전 hash 대상 |
+
+지적이 없어도 FINDINGS/REVIEWED/UNVERIFIED를 확인합니다. 반영·보류·반박은 사람이 판단해 기존02
+또는 Fast Phase02에 이유와 결과 경로를 기록합니다. 계획을 고친 뒤 과거 결과를 현재 계획의 검토
+완료로 재사용하지 않습니다. 이 기능은 새 gate가 아니며 기존 구현 승인과 04/05/06은 유지합니다.
+설치된 `docs/agent/plan-review-protocol.md`가 표준/Fast 계획 스킬의 연결 절차입니다.
+
 ## 개인 overlay
 
 공유 `sage/asset_overrides/{agents,skills}/<id>.md`는 프로젝트 원문입니다. worker는 공유 렌더 합성을

@@ -1,4 +1,4 @@
-<!-- sage-doc-source: ARCHITECTURE.md sha256:dcca07bd2f9d7f53c42238f751768dadf5d3a6789fe09888c3e27db1adc5c6c1 -->
+<!-- sage-doc-source: ARCHITECTURE.md sha256:6c66466b6af1ec5d32011a8665805b47caad0cf25af0432d659f3c4fa8b19f42 -->
 # SAGE Architecture
 
 [한국어](ARCHITECTURE.md) | [Documentation index](README.en.md)
@@ -219,3 +219,9 @@ mistakes, laziness, and drift by an honest host; they are not intended to stop a
 ## Requirement-source and execution-evidence boundaries
 
 The planning interview, Phase 01 and QA retain requirement provenance. Repository observations and unconfirmed assumptions alone are neither approved requirements nor QA oracles. Bundled-runner execution/skipping counts cover configured checks, not acceptance satisfaction. `NO_EVIDENCE` observes zero executions without extending acceptance vocabulary, gates or waivers. Standard, Fast and rework share this interpretation.
+
+## Optional plan-context review (unreleased)
+
+plan-review is advisory before implementation approval. sage/plan_review.py reuses existing stem/language/risk/Fast parsers to snapshot explicit file bytes/hashes into one packet. sage/commands/plan_review.py invokes the same host once with required controls and writes a new raw JSON result directly. The common peer_process keeps the default Phase05 contract; contract/require_controls are optional for the new purpose.
+
+OFF makes no model call. COMPLETE means execution finished, not approval/PASS. Changed inputs are STALE and unmeasured usage/model names remain UNKNOWN. Humans disposition findings in existing02. This adds neither the full EGM pipeline nor gates, retries or automatic edits; Phase04/05/06 remain. An empty working directory, fresh process and observed controls do not certify full host/filesystem isolation or the provider model. See [verification and remaining limits](plan_docs/06/egm-plan-review.md).
