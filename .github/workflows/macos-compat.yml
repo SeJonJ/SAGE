@@ -1,0 +1,80 @@
+name: macOS compatibility (release precheck)
+run-name: macOS compatibility for ${{ inputs.candidate_sha }}
+
+# 일반 CI에서 분리한 두 조합만 배포 전에 확인한다. 게시 권한이나 자동 release gate는 없다.
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: "Release candidate commit SHA (40 lowercase hexadecimal characters)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  macos_compat:
+    name: macOS uninstall compatibility (py${{ matrix.python-version }})
+    runs-on: macos-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        python-version: ["3.10", "3.11"]
+    steps:
+      - name: Validate candidate SHA before checkout
+        id: validate_candidate
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::candidate_sha must be a full 40-character lowercase commit SHA"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify the checked-out candidate
+        id: verify_candidate
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          checked_out="$(git rev-parse HEAD)"
+          echo "candidate_sha=$CANDIDATE_SHA"
+          echo "checked_out=$checked_out"
+          if [[ "$checked_out" != "$CANDIDATE_SHA" ]]; then
+            echo "::error::checked-out commit differs from the requested candidate"
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install (editable + schema extra)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[schema]"
+
+      - name: Uninstall smoke (project, global and all mutation)
+        env:
+          SAGE_UNINSTALL_REQUIRE_MUTATION: "1"
+        run: python scripts/ci/uninstall_smoke.py
+
+      - name: Uninstall race smoke (required injection coverage)
+        env:
+          SAGE_UNINSTALL_REQUIRE_MUTATION: "1"
+        run: python scripts/ci/uninstall_race_smoke.py
+
+      - name: Uninstall core checks (required selectors, zero skips)
+        run: python scripts/ci/uninstall_core_checks.py

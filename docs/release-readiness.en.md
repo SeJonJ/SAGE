@@ -1,4 +1,4 @@
-<!-- sage-doc-source: release-readiness.md sha256:80f782557c2986ec56f57f2b88ceeb426bd817fc5accc67d09dd00695cb78bda -->
+<!-- sage-doc-source: release-readiness.md sha256:fc730fc2cde7e69a0281a1609cf83d6eac1ce2c6dfa60d4cb98cb80c5fa39429 -->
 # Release readiness
 
 This document records **how readiness is decided**, not what it currently is. The current answer
@@ -73,6 +73,14 @@ so a checking tool that requires bash would leave that environment permanently u
 
 A failing platform stays a failure, never a skip. A silent skip counts as a pass and ships a release
 with one platform unverified.
+
+## Regular CI and pre-release macOS checks
+
+Regular PR/main uninstall CI covers four combinations: Ubuntu Python3.10/3.11/3.12 and macOS Python3.12. The macOS3.10/3.11 tests remain in the two manual combinations in `.github/workflows/macos-compat.yml`. Hook regressions, packaging, platform smoke, publish preflight and Windows approval conditions remain. Fewer runner requests do not guarantee GitHub macOS capacity.
+
+After the workflow reaches main, open Actions → **macOS compatibility (release precheck)** → **Run workflow** and supply the release candidate's full 40-character lowercase commit SHA. Both Python versions sequentially run the existing uninstall smoke/race/core checks, after input validation and checkout identity verification. Branch/tag names and short SHAs are rejected. A maintainer with repository write access runs it; the workflow token has only `contents: read`.
+
+Before release, verify regular CI and both manual checks succeeded for the same candidate commit, then tag that commit. This workflow does not publish, and the existing publish workflow does not automatically inspect these results as a new blocking gate. The new button is unavailable until the workflow reaches main. Local script verification is not a successful GitHub-hosted execution.
 
 ## Hosted runners cannot produce the Windows evidence
 

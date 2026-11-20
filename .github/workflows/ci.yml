@@ -82,8 +82,8 @@ jobs:
         run: python scripts/ci/platform_smoke.py
 
   uninstall_matrix:
-    # 제거 명령을 두 OS × 세 Python 에서 돌린다. 되돌릴 수 없는 쪽으로 틀리는 명령이라, 한
-    # 환경에서만 검증하고 배포하면 나머지 환경의 첫 사용자가 검사자가 된다.
+    # 일반 PR/main은 Ubuntu 세 Python과 macOS3.12를 검사한다. macOS3.10/3.11은
+    # macos-compat.yml의 배포 전 수동 검사로 보존한다. 테스트와 제거 계약은 삭제하지 않는다.
     #
     # **갈림의 기준은 OS 이름이 아니라 제품이 스스로 내리는 판정이다.** 지원 범위
     # (POSIX · Windows 11 데스크톱 workstation · x64 · 64-bit Python · 로컬 NTFS)에서는 실제로
@@ -106,6 +106,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         python-version: ["3.10", "3.11", "3.12"]
+        exclude:
+          - { os: macos-latest, python-version: "3.10" }
+          - { os: macos-latest, python-version: "3.11" }
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6

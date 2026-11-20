@@ -881,5 +881,105 @@ def _load_smoke():
     return _load(SMOKE, "_smoke")
 
 
+class TestSplitMacosCompatibility(unittest.TestCase):
+    """일반 CI 누락과 배포 전 검증의 결속·실패 은폐를 실제 소비 경계에서 잡는다."""
+
+    def _manual(self):
+        import yaml
+        path = REPO / ".github/workflows/macos-compat.yml"
+        self.assertTrue(path.is_file(), "deferred macOS compatibility workflow missing")
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return workflow, workflow["jobs"]["macos_compat"]
+
+    def _regular_cases(self):
+        matrix = _ci_workflow()["jobs"]["uninstall_matrix"]["strategy"]["matrix"]
+        return {(host, py) for host in matrix["os"] for py in matrix["python-version"]
+                if not any(all({"os": host, "python-version": py}.get(k) == value
+                               for k, value in excluded.items())
+                           for excluded in matrix.get("exclude", []))}
+
+    def test_regular_removal_ci_keeps_four_required_combinations(self):
+        self.assertEqual(self._regular_cases(), {
+            ("ubuntu-latest", "3.10"), ("ubuntu-latest", "3.11"),
+            ("ubuntu-latest", "3.12"), ("macos-latest", "3.12")})
+
+    def test_manual_run_restores_exactly_the_deferred_combinations(self):
+        workflow, job = self._manual()
+        self.assertEqual(set(_workflow_triggers(workflow)), {"workflow_dispatch"})
+        deferred = {(job["runs-on"], py)
+                    for py in job["strategy"]["matrix"]["python-version"]}
+        self.assertEqual(deferred, {("macos-latest", "3.10"), ("macos-latest", "3.11")})
+        self.assertFalse(self._regular_cases() & deferred)
+        self.assertEqual(self._regular_cases() | deferred, {
+            ("ubuntu-latest", "3.10"), ("ubuntu-latest", "3.11"),
+            ("ubuntu-latest", "3.12"), ("macos-latest", "3.10"),
+            ("macos-latest", "3.11"), ("macos-latest", "3.12")})
+
+    def test_manual_run_preserves_real_removal_race_and_core_checks(self):
+        _, job = self._manual()
+        commands = {step.get("run", "").strip(): step for step in job["steps"]}
+        for command in ("python scripts/ci/uninstall_smoke.py",
+                        "python scripts/ci/uninstall_race_smoke.py",
+                        "python scripts/ci/uninstall_core_checks.py"):
+            self.assertIn(command, commands)
+            step = commands[command]
+            self.assertNotIn("if", step, "required removal check must not silently skip")
+            self.assertFalse(step.get("continue-on-error", False))
+        for command in ("python scripts/ci/uninstall_smoke.py",
+                        "python scripts/ci/uninstall_race_smoke.py"):
+            self.assertEqual(str(commands[command]["env"]["SAGE_UNINSTALL_REQUIRE_MUTATION"]), "1")
+        self.assertFalse(job.get("continue-on-error", False))
+        self.assertFalse(job["strategy"]["fail-fast"])
+
+    def test_bad_candidate_inputs_are_rejected_before_checkout(self):
+        workflow, job = self._manual()
+        source = _workflow_triggers(workflow)["workflow_dispatch"]["inputs"]["candidate_sha"]
+        self.assertTrue(source["required"])
+        steps = job["steps"]
+        validation = next(step for step in steps if step.get("id") == "validate_candidate")
+        checkout = next(step for step in steps if str(step.get("uses", "")).startswith("actions/checkout@"))
+        self.assertLess(steps.index(validation), steps.index(checkout))
+        self.assertEqual(checkout["with"]["ref"], "${{ inputs.candidate_sha }}")
+        self.assertEqual(validation["env"]["CANDIDATE_SHA"], "${{ inputs.candidate_sha }}")
+        cases = [("a" * 40, 0), ("", 1), ("main", 1), ("v1.3.8", 1),
+                 ("a" * 39, 1), ("a" * 41, 1), ("A" * 40, 1),
+                 ("a" * 40 + "\n", 1), ("$(echo injected)", 1)]
+        for candidate, expected in cases:
+            with self.subTest(candidate=candidate):
+                done = subprocess.run(["bash", "-c", validation["run"]], cwd=REPO,
+                                      env=dict(os.environ, CANDIDATE_SHA=candidate),
+                                      stdin=subprocess.DEVNULL,
+                                      capture_output=True, text=True)
+                self.assertEqual(done.returncode, expected, done.stdout + done.stderr)
+
+    def test_checked_out_candidate_identity_is_enforced(self):
+        _, job = self._manual()
+        step = next(step for step in job["steps"] if step.get("id") == "verify_candidate")
+        checkout_index = next(i for i, row in enumerate(job["steps"])
+                              if str(row.get("uses", "")).startswith("actions/checkout@"))
+        removal_index = next(i for i, row in enumerate(job["steps"])
+                             if row.get("run", "").strip() == "python scripts/ci/uninstall_smoke.py")
+        self.assertLess(checkout_index, job["steps"].index(step))
+        self.assertLess(job["steps"].index(step), removal_index)
+        actual = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip()
+        wrong = "b" * 40 if actual != "b" * 40 else "c" * 40
+        for candidate, expected in ((actual, 0), (wrong, 1)):
+            done = subprocess.run(["bash", "-c", step["run"]], cwd=REPO,
+                                  env=dict(os.environ, CANDIDATE_SHA=candidate),
+                                  stdin=subprocess.DEVNULL,
+                                  capture_output=True, text=True)
+            self.assertEqual(done.returncode, expected, done.stdout + done.stderr)
+
+    def test_manual_validation_has_no_publication_authority(self):
+        workflow, job = self._manual()
+        self.assertEqual(workflow["permissions"], {"contents": "read"})
+        self.assertNotIn("permissions", job)
+        self.assertNotIn("environment", job)
+        self.assertEqual(job["runs-on"], "macos-latest")
+        self.assertNotIn("secrets.", json.dumps(workflow))
+        checkout = next(step for step in job["steps"]
+                        if str(step.get("uses", "")).startswith("actions/checkout@"))
+        self.assertFalse(checkout["with"]["persist-credentials"])
+
 if __name__ == "__main__":
     unittest.main()
